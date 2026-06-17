@@ -1,139 +1,143 @@
+import { AgenticProcess, Shell, type TabRow, Tab, TypeId } from '@sdk';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { Button } from '@src/components/ui/button';
-import { shouldAutoSavePtyTitle } from './rename-rules';
-import { TabStrip } from '@src/components/tabs/TabStrip';
-import {
-  terminalProcessId,
-  terminalTargetKey,
-  terminalTransportShellId,
-  type TerminalTab,
-} from '@src/tabs/useTabs';
-import {
-  useTerminalStripController,
-} from '@src/tabs/useTerminalStripController';
-import { Loader2, SquareTerminal } from 'lucide-react';
-import React from 'react';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useTerminalTabRows } from '@src/tabs/useTabs';
+import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
+import { History, Loader2, SquareTerminal } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
 import { TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
+import { allowRename, shouldAutoSaveTitleForTarget } from './rename-rules';
 
 interface TabbedTerminalProps {
   className?: string;
-  /** Whether to show the "Add Tab" button (default: false) */
-  addTabButton?: boolean;
-  /** When set, only shells shared into this collaboration room are shown. */
-  collaborationRoomId?: string | null;
-  /**
-   * When set, new shells/processes created from this tab strip are pinned to
-   * this project_id (not `dataContext.project?.id` at click time). Used by the
-   * CollaborationSpace view to prevent the active project context leaking into
-   * a process that belongs to the space's project.
-   */
+  /** Which terminals the body keeps warm-mounted: the active project +
+   *  projectless (`'project'`, default) or every project (`'all'`, the dev
+   *  sessions view). Matches the `scope` passed to the host's `UnifiedTabStrip`. */
+  scope?: 'project' | 'all';
+  /** Pin spawned shells/processes to this project (CollaborationSpace / dev view);
+   *  otherwise the active project. */
   spawnProjectId?: string | null;
-  /**
-   * Fires when the user clicks a tab. The consumer performs navigation; the
-   * component never calls navigation.openDock for tab clicks itself.
-   */
-  onTabClick?: (targetKey: string, session: TerminalTab) => void;
-  /**
-   * Fires after a tab's close has been committed to the backend (shell status
-   * transitions to CLOSED). The consumer decides where to navigate next.
-   */
-  onTabClose?: (targetKey: string | string[]) => void;
-  /**
-   * Fires after a new tab has been created (Shell/AgenticProcess persisted).
-   * The consumer decides the destination URL.
-   */
-  onTabOpen?: (session: TerminalTab) => void;
-  /**
-   * Render the embedded tab strip (default: true). The content panel passes
-   * false because the unified TabStrip in its header already renders the
-   * terminal section — a second embedded strip would double up
-   * (tab-management.md Part 3 §6). Keyboard shortcuts follow the strip: the
-   * strip owner registers them.
-   */
-  showStrip?: boolean;
 }
 
 /**
- * TabbedTerminal - Multi-tab terminal interface
- *
- * Thin composition over `useTerminalStripController` (the extracted strip
- * controller — data, active-key derivation, self-heal, creation/close/rename/
- * popout strategies, shortcuts) + the generic TabStrip + lazy-mounted
- * terminal panels + the controller's modals.
- *
- * Active tab is URL-derived (controller). Tab clicks navigate via
- * navigation.openDock(entity.dockPointer) in the consumer's onTabClick.
- * All flags and statuses come from Shell / AgenticProcess entities via the
- * unified tabs store.
+ * One warm-mounted terminal panel. Renders from a `TabRow` plus its OWN live
+ * entity (URL-first corollary: the view hydrates + attaches on mount, not via a
+ * list-wide join). A process panel resolves its transport shell from the live
+ * `AgenticProcess.shell_id` (so a worker restart reconnects the PTY); a plain
+ * shell's transport is its target id. The OSC title auto-save saves the live
+ * entity and mirrors the label onto the Tab via `set_name` (no `auto_rename` pin).
+ */
+const TerminalPanel: React.FC<{
+  row: TabRow;
+  isActive: boolean;
+  isMounted: boolean;
+  flow: AgenticProcess | null;
+}> = ({ row, isActive, isMounted, flow }) => {
+  const isProcess = row.target_type === AgenticProcess.type;
+  const targetId = row.target_id ?? '';
+  const { data: process } = useEntity<AgenticProcess>(
+    isProcess && targetId ? new TypeId(AgenticProcess.type, targetId) : null,
+  );
+  const { data: shell } = useEntity<Shell>(
+    !isProcess && targetId ? new TypeId(Shell.type, targetId) : null,
+  );
+  const transportShellId = isProcess ? (process?.shell_id ?? '') : targetId;
+  const source = isProcess ? process : shell;
+
+  const handleTitleChange = (title: string): void => {
+    if (row.is_disabled) return;
+    if (!shouldAutoSaveTitleForTarget(row.target_type, isProcess ? process : null)) return;
+    if (!source || !source.auto_rename) return; // user pinned this tab
+    if (!allowRename(title) || source.name === title) return;
+    source.name = title;
+    void source.save().catch(() => {});
+    // Mirror onto the durable Tab label so the chip stays right once inactive —
+    // set_name, NOT rename (which would pin auto_rename off).
+    void Tab.setNameById(row.id, title).catch(() => {});
+  };
+
+  return (
+    <div
+      data-testid="terminal-panel"
+      data-session-id={row.pointer}
+      data-active={isActive ? 'true' : 'false'}
+      className="absolute inset-0 min-h-0 overflow-hidden"
+      style={isActive ? { zIndex: 1 } : { visibility: 'hidden', zIndex: 0 }}
+    >
+      {isMounted &&
+        (transportShellId ? (
+          <InteractiveTerminal
+            sessionId={transportShellId}
+            flow={flow}
+            className="h-full"
+            active={isActive}
+            process={isProcess ? (process ?? undefined) : undefined}
+            onTitleChange={handleTitleChange}
+          />
+        ) : isProcess && !process ? null /* process entity still hydrating */ : (
+          // Process loaded but has no shell (worker binary missing / start_failure):
+          // a clear error + Retry instead of a silent blank panel.
+          <TerminalRuntimeErrorBanner />
+        ))}
+    </div>
+  );
+};
+
+/**
+ * TabbedTerminal — the terminal BODY (docs/tab-management.md). It renders only the
+ * warm-mounted terminal panels; the chip strip is the shared `UnifiedTabStrip` the
+ * host renders above it. Rows come from the one backend-authoritative source
+ * (`useTerminalTabRows` → `tab` action), the active panel is URL-derived, and each
+ * panel hydrates its own entity on mount. The empty state offers the spawn openers
+ * (via the chrome controller).
  */
 const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   className = '',
-  addTabButton,
-  collaborationRoomId,
+  scope = 'project',
   spawnProjectId,
-  onTabClick,
-  onTabClose,
-  onTabOpen,
-  showStrip = true,
 }) => {
   const { flow } = useAgentContext();
-  const controller = useTerminalStripController({
-    addTabButton,
-    collaborationRoomId,
-    spawnProjectId,
-    onTabClick,
-    onTabClose,
-    onTabOpen,
-    // The strip owner owns the window shortcuts; with the strip hidden the
-    // unified content-panel strip's controller registers them instead.
-    enableShortcuts: showStrip,
-  });
+  const { currentDock } = useDockNavigation();
+  const rows = useTerminalTabRows(scope, spawnProjectId);
+
+  // Active panel = the URL (every row is keyed by its `pointer` == tabHash). A
+  // non-terminal dock's tabHash never matches a terminal row, so no special-case.
+  const activeKey = currentDock?.tabHash ?? '';
+
+  // Lazy-mount: mount the active panel on first visit; keep mounted ones warm
+  // (the Set never shrinks) so re-activation is instant.
+  const [mounted, setMounted] = useState<Set<string>>(() => new Set(activeKey ? [activeKey] : []));
+  useEffect(() => {
+    if (!activeKey) return;
+    setMounted((prev) => {
+      if (prev.has(activeKey)) return prev;
+      const next = new Set(prev);
+      next.add(activeKey);
+      return next;
+    });
+  }, [activeKey]);
+
+  // Chrome controller — spawn openers + modals only (the strip owns shortcuts).
+  const controller = useTerminalStripController({ spawnProjectId });
   const {
-    visibleSessions,
-    activeTargetKey,
-    mountedTargetKeys,
-    contextAgenticProcess,
-    onTabRename,
+    modals,
     isTabCreationPending,
     isClaudeCreationPending,
     isTerminalCreationPending,
     handleStartClaude,
     handleStartTerminal,
+    handleOpenHistory,
   } = controller;
 
   return (
     <div className={`flex h-full ${className}`}>
-      {/* Main terminal area */}
       <div className="flex h-full w-full flex-col">
-        {/* Tab Bar — the generic TabStrip; the controller's handlers are the
-            terminal kind strategies: close = backend teardown (batched),
-            rename = entity save + PTY /rename, popout = external browser +
-            resolver detach (Part 3 §3/§6). */}
-        {showStrip && (
-          <TabStrip
-            items={controller.stripItems}
-            activeKey={activeTargetKey}
-            onSelect={controller.handleSelect}
-            onClose={controller.handleCloseTab}
-            onCloseMany={controller.handleCloseMany}
-            onRename={controller.handleRenameCommit}
-            onPopout={controller.handleOpenExternalTab}
-            newTabMenuItems={controller.newTabMenuItems}
-            closeShortcutLabel={controller.closeShortcutLabel}
-            leading={controller.leading}
-            trailing={controller.trailing}
-          />
-        )}
-
-        {/* Terminal Content - Lazy-mount: only render InteractiveTerminal for
-             sessions that have been active at least once (mountedTargetKeys).
-             Inactive never-visited sessions render a cheap placeholder div.
-             Keep all terminals mounted — once mounted, terminals stay alive; inactive ones are
-             hidden via visibility:hidden so their canvas is preserved for instant re-activation. */}
         <div className="relative flex-1 overflow-hidden" data-testid="terminal-panels">
-          {visibleSessions.length === 0 ? (
+          {rows.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
               <p className="text-sm">No terminal sessions</p>
               <div className="flex gap-2">
@@ -141,9 +145,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   variant="outline"
                   size="sm"
                   className="gap-2"
-                  onClick={() => {
-                    void handleStartClaude();
-                  }}
+                  onClick={() => void handleStartClaude()}
                   disabled={isTabCreationPending}
                   data-testid="start-claude-button"
                 >
@@ -158,9 +160,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   variant="outline"
                   size="sm"
                   className="gap-2"
-                  onClick={() => {
-                    void handleStartTerminal();
-                  }}
+                  onClick={() => void handleStartTerminal()}
                   disabled={isTabCreationPending}
                 >
                   {isTerminalCreationPending ? (
@@ -170,60 +170,33 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   )}
                   Terminal
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={handleOpenHistory}
+                  disabled={isTabCreationPending}
+                  data-testid="open-history-button"
+                >
+                  <History className="h-4 w-4" />
+                  Open from history
+                </Button>
               </div>
             </div>
           ) : (
-            visibleSessions.map((session) => {
-              const targetKey = terminalTargetKey(session);
-              const transportShellId = terminalTransportShellId(session);
-              const isActive = activeTargetKey === targetKey;
-              const isMounted = mountedTargetKeys.has(targetKey);
-              const sessionProcess =
-                terminalProcessId(session) && contextAgenticProcess?.id === terminalProcessId(session)
-                  ? contextAgenticProcess
-                  : session.agenticProcess;
-              const autoSavePtyTitle = shouldAutoSavePtyTitle(session, sessionProcess);
-
-              return (
-                <div
-                  key={targetKey}
-                  data-testid="terminal-panel"
-                  data-session-id={targetKey}
-                  data-active={isActive ? 'true' : 'false'}
-                  className="absolute inset-0 min-h-0 overflow-hidden"
-                  style={isActive ? { zIndex: 1 } : { visibility: 'hidden', zIndex: 0 }}
-                >
-                  {isMounted &&
-                    (transportShellId ? (
-                      <InteractiveTerminal
-                        sessionId={transportShellId}
-                        flow={flow}
-                        className="h-full"
-                        active={isActive}
-                        process={sessionProcess}
-                        onTitleChange={
-                          autoSavePtyTitle
-                            ? (title) => {
-                                if (session.isDisabled) return;
-                                onTabRename(session, title, true, sessionProcess);
-                              }
-                            : undefined
-                        }
-                      />
-                    ) : (
-                      // No shell behind this tab (e.g. worker binary missing →
-                      // start_failure latched, shell_id cleared). InteractiveTerminal
-                      // can't mount, so render the runtime-error banner standalone —
-                      // a clear error + Retry instead of a silent blank panel.
-                      <TerminalRuntimeErrorBanner />
-                    ))}
-                </div>
-              );
-            })
+            rows.map((row) => (
+              <TerminalPanel
+                key={row.pointer}
+                row={row}
+                isActive={row.pointer === activeKey}
+                isMounted={mounted.has(row.pointer)}
+                flow={flow ?? null}
+              />
+            ))
           )}
         </div>
       </div>
-      {controller.modals}
+      {modals}
     </div>
   );
 };

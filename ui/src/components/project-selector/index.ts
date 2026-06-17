@@ -3,4 +3,4 @@ export { ProjectSelectorModal, type ProjectSelectorModalProps } from './ProjectS
 export { NewProjectDialog, type NewProjectDialogProps } from './NewProjectDialog';
 export { NewProjectFromGitDialog, type NewProjectFromGitDialogProps } from './NewProjectFromGitDialog';
 export { projectListToSelectorItems } from './project-items';
-export { canonicalPath, useEnsureProject, useSelectExistingProject } from './use-ensure-project';
+export { canonicalPath, selectProjectContext, useEnsureProject, useSelectExistingProject } from './use-ensure-project';

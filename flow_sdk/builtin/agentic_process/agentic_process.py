@@ -3249,6 +3249,22 @@ class AgenticProcess(Entity):
             }
         )
 
+    @action.get(action_name="cmd-line")
+    async def cmd_line_action(self) -> "ApiSuccessResponse":
+        """Live launch command for this process, computed on demand.
+
+        Deliberately an explicit per-process read, NOT a serialized field:
+        resolving ``cmd_line`` walks cli_options -> transcript_descriptor ->
+        get_claude_session (disk I/O), which must never run inside model_dump().
+        The UI fetches this only for the one process whose run drawer / session
+        info popover is open. Failure-tolerant: returns ``cmd_line: None`` if a
+        driver isn't wired or the cli_config is malformed.
+        """
+        try:
+            return ApiSuccessResponse(data={"cmd_line": self.cmd_line})
+        except Exception:
+            return ApiSuccessResponse(data={"cmd_line": None})
+
     @cached_property
     def driver(self) -> WorkerDriver:
         """The vendor-specific driver for this process's ``worker_type``.
@@ -3300,14 +3316,12 @@ class AgenticProcess(Entity):
         data["ready_for_input"] = ready
         data["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         data["queue"] = self._queue_state()
-        # Surface the live launch command so the UI (run drawer, session info
-        # popover, etc.) can show what was actually spawned. Failure-tolerant:
-        # if a driver hasn't been wired or the cli_config is malformed, omit
-        # the field rather than failing the whole entity serialization.
-        try:
-            data["cmd_line"] = self.cmd_line
-        except Exception:
-            data["cmd_line"] = None
+        # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
+        # cli_options -> transcript_descriptor -> get_claude_session, i.e. live
+        # worker work with disk I/O — which must never run inside a model_dump()
+        # (the universal currency for persistence, query-filter, WS broadcast and
+        # REST response). The launch command is fetched explicitly, per-process,
+        # via the "cmd-line" action below, only when the UI actually needs it.
         # Derive per-process execution folders when absent from the row.
         # Rows synced before this field existed have no folder dicts; the
         # record's on-disk layout is deterministic from (type, id), so we
@@ -3587,15 +3601,14 @@ class AgenticProcess(Entity):
         worker + linked shell (today's terminal-close semantics)."""
         await self.close()
 
-    async def _on_tab_renamed(self, payload: dict) -> dict:
-        """``tab-renamed`` reflection: mirror the new tab name and pin it
-        (``auto_rename=False``) so the worker title can't overwrite it."""
-        new_name = (payload or {}).get("name")
-        if new_name and self.name != new_name:
-            self.name = new_name
+    async def rename(self, name: str) -> None:
+        """Tab-rename reflection (``Tab.rename`` → ``target.rename``): mirror the
+        new name and pin it (``auto_rename=False``) so the worker title can't
+        overwrite it. Extends the generic ``Entity.rename`` with that pin."""
+        if name and self.name != name:
+            self.name = name
             self.auto_rename = False
             await self.save()
-        return {"name": self.name}
 
     async def close(self) -> bool:
         """Terminate this process and close its linked shell entity.
@@ -4257,8 +4270,3 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
-
-
-# Register on the owning subclass so the handler doesn't leak to siblings
-# (docs/tab-management.md — generic Tab.rename reflects onto subscribers).
-AgenticProcess.on_event("tab-renamed")(AgenticProcess._on_tab_renamed)

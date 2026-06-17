@@ -1,11 +1,16 @@
 import { apiClient, dataManager, Project, Skill, TypeId } from '@sdk';
+import { useEntityOps } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { RoomTab } from '../RoomTabs';
+
+// Module constant so the useEntityOps subscription array has a stable identity
+// across renders (a fresh `[Skill.type]` each render would re-subscribe).
+const SKILL_OP_TYPES = [Skill.type];
 
 interface Props {
   projectId: string | null;
@@ -47,6 +52,15 @@ export function SkillsCategory({ projectId, onOpenTab }: Props) {
     },
     staleTime: 30_000,
   });
+
+  // Self-heal when a skill is created/updated/deleted elsewhere: the backend
+  // broadcasts the entity op over the WS, so refetch the list (mirrors
+  // use-entity-by-path's onEntityOp invalidation).
+  const queryClient = useQueryClient();
+  const onSkillOp = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['skills-include-system'] });
+  }, [queryClient]);
+  useEntityOps(SKILL_OP_TYPES, onSkillOp);
 
   const items = useMemo(() => {
     if (!mount || !data) return [] as Skill[];

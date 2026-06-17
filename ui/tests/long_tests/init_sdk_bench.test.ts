@@ -28,39 +28,11 @@
  *
  * Run: cd ui && npx vitest run --bail 0 --project long init_sdk_bench
  */
-import { afterAll, describe, expect, it, vi } from 'vitest';
-import { launchInstance, killInstance } from './_backend_lifecycle';
+import { afterAll, describe, expect, it } from 'vitest';
+import { launchInstance, killInstance, prepareCleanRealm } from './_backend_lifecycle';
 
 const RUNS = 10;
 const results: Array<{ run: number; name: string; ok: boolean; launchMs?: number; initMs?: number; note?: string }> = [];
-
-type SdkRealm = typeof import('@sdk');
-type SdkMain = typeof import('@sdk/main');
-
-/**
- * Give the next `import('@sdk')` a clean, isolated realm pointed at `port`:
- * reset the SHARED jsdom window/global state, repoint the runtime API url, drop
- * the module registry, then re-import the SDK graph + its `main` entrypoint
- * (both resolve into the same fresh realm, sharing its singletons).
- */
-async function prepareCleanRealm(port: number): Promise<{ sdk: SdkRealm; main: SdkMain }> {
-  // Wipe the shared window context so this instance doesn't inherit the prior run's
-  // persisted context entities / appReady flag.
-  try {
-    window.localStorage.clear();
-  } catch {
-    /* no localStorage in this env */
-  }
-  delete (window as Record<string, unknown>).appReady;
-  delete (window as Record<string, unknown>).context;
-  delete (window as Record<string, unknown>).sniffer;
-
-  (globalThis as any).__FLOWPAD_API_URL__ = `http://localhost:${port}`;
-  vi.resetModules();
-  const sdk: SdkRealm = await import('@sdk');
-  const main: SdkMain = await import('@sdk/main');
-  return { sdk, main };
-}
 
 describe('init-sdk benchmark (fresh instance per timing)', () => {
   for (let i = 1; i <= RUNS; i++) {

@@ -14,12 +14,14 @@ send, future email pull) goes through ``materialize_flow_message`` so that:
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from datetime import datetime
 from typing import Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.fs_store.operations.conversation import (
@@ -46,6 +48,7 @@ async def ensure_conversation_entity(
     title: Optional[str] = None,
     someone_typeid: Optional[str] = None,
     created_by: Optional[str] = None,
+    remote: bool = False,
 ) -> Conversation:
     """Idempotent: return the local Conversation entity, creating it if missing.
 
@@ -63,11 +66,12 @@ async def ensure_conversation_entity(
     project to the same local Project without re-prompting. Null on
     local-origin conversations.
 
-    ``created_by`` — explicit creator attribution for REMOTE materialization
-    (the wire sender or 'system'). When set, the driver preserves it instead
-    of stamping the local request-context user; receiver-materialized rows
-    must never claim the local user as their creator. Sender-side callers
-    omit it (a locally-born conversation IS created by the local user).
+    ``created_by`` — the hub-authoritative creator for REMOTE materialization,
+    carried VERBATIM (may be ``None`` when the hub sent no owner). The receiver
+    must never fabricate it or claim the local user. Pass ``remote=True`` for a
+    hub reflection so the driver preserves created_by/updated_by/dates as-is
+    instead of stamping the local request user. Sender-side callers omit both
+    (a locally-born conversation IS created by the local user).
     """
     conv = await Conversation.get_one({"id": conversation_id})
     title_clean = (title or "").strip() or None
@@ -75,6 +79,8 @@ async def ensure_conversation_entity(
         payload: dict = {"id": conversation_id}
         if created_by:
             payload["created_by"] = created_by
+        if remote:
+            payload["remote"] = True
         if project_id:
             payload["project_id"] = project_id
         if remote_project_id:
@@ -89,7 +95,9 @@ async def ensure_conversation_entity(
             payload["shared_context_entities"] = [str(parent_typeid)]
         conv = Conversation.model_validate(payload)
         conv.id = conversation_id
-        conv = await conv.save(someone_typeid, notify=False)
+        # Remote bare row → reflect (preserve hub attribution); local → normal stamp.
+        with (remote_reflection() if remote else nullcontext()):
+            conv = await conv.save(someone_typeid, notify=False)
     else:
         dirty = False
         if participants and not (conv.participants or []):
@@ -191,30 +199,32 @@ async def materialize_flow_message(
             merged = FlowMessage.merge_hub_payload(existing, payload)
             merged["remote"] = True
             fm = FlowMessage.model_validate(merged)
-            fm = await fm.save(someone_typeid, notify=False)
+            # Pure reflection: preserve the hub's created_by/updated_by/dates
+            # verbatim, never the local sync user.
+            with remote_reflection():
+                fm = await fm.save(someone_typeid, notify=False)
         elif remote and not existing.remote:
             # Not stale, but the local row never got flagged remote (legacy
             # rows from before remote-marking) — flip the flag without touching
-            # content.
+            # content or re-stamping attribution.
             existing.remote = True
-            fm = await existing.save(someone_typeid, notify=False)
+            with remote_reflection():
+                fm = await existing.save(someone_typeid, notify=False)
     else:
         if remote:
+            # Hub-origin row: carry the wire created_by VERBATIM (the hub stamps
+            # it from the sender's auth token; absent → stays null). NEVER
+            # fabricate it from sender_id/'system', and never let the driver
+            # stamp the local request user — the reflection block guarantees the
+            # latter.
             payload = {**payload, "remote": True}
-            # Pure reflection: the hub stamps ``created_by`` from the sender's
-            # auth token, so when the payload doesn't carry it, reconstruct it
-            # from the wire sender — NEVER let the driver stamp the local
-            # request-context user onto a hub-origin row.
-            if not payload.get("created_by"):
-                payload["created_by"] = payload.get("sender_id") or "system"
         fm = FlowMessage.model_validate(payload)
         if not payload.get("id"):
             fm.id = FlowMessage.allocate_id(payload)
-        # Save with notify=False — the CREATE is emitted explicitly below.
-        # ``save()`` would emit an UPDATE here because ``model_validate``
-        # carried the hub's ``created_by`` over (making ``exist_in_db``
-        # True), and CREATE-only subscribers would never see it.
-        fm = await fm.save(someone_typeid, notify=False)
+        # Save with notify=False — the CREATE is emitted explicitly below. Remote
+        # rows reflect (preserve hub attribution); local rows stamp normally.
+        with (remote_reflection() if remote else nullcontext()):
+            fm = await fm.save(someone_typeid, notify=False)
 
     # Emit the explicit local CREATE that drives entity-event subscribers
     # (TS SDK ``conv.on('message')``).
@@ -236,11 +246,13 @@ async def materialize_flow_message(
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         # Caller didn't pre-create the conversation — build a bare one. For a
-        # hub-origin message the bare row is a remote reflection too: attribute
-        # it to the wire sender (or 'system'), never the local request user.
+        # hub-origin message the bare row is a remote reflection too: carry the
+        # hub message's created_by VERBATIM (never synthesize an owner from
+        # sender_id/'system'), and never let the driver stamp the local user.
         conv = await ensure_conversation_entity(
             conversation_id, parent_typeid=None, someone_typeid=someone_typeid,
-            created_by=(payload.get("sender_id") or "system") if remote else None,
+            created_by=payload.get("created_by") if remote else None,
+            remote=remote,
         )
 
     parent_typeid = conv.first_context_of_type(BuiltinEntityType.TASK.value)

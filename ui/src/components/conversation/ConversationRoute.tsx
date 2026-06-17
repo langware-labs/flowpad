@@ -15,6 +15,7 @@ import {
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { notify } from '@src/notifications';
 import { ConversationPanel, EditableConversationTitle } from './ConversationPanel';
+import { ConversationHeaderSession } from './ConversationHeaderSession';
 import { MembersAvatarStack } from './MembersAvatarStack';
 import {
   applyProjectToConversation,
@@ -179,7 +180,7 @@ export function ConversationRoute() {
   // states so the back affordance + styling stay in one place. The subject is
   // the conversation's own click-to-rename title (same component as the panel
   // header) — a rename here saves with Hub-Reflect and fans out to every
-  // member. Task displayName is only the fallback for untitled conversations.
+  // member. Untitled conversations fall back to the generic "Conversation".
   const header = (
     <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b px-3 py-1.5">
       <div className="flex min-w-0 items-center gap-2">
@@ -193,7 +194,7 @@ export function ConversationRoute() {
         </button>
         <EditableConversationTitle
           conv={conversation ?? null}
-          fallback={task?.displayName ?? 'Conversation'}
+          fallback="Conversation"
           className="min-w-0 flex-1 truncate text-sm font-semibold"
         />
       </div>
@@ -202,7 +203,12 @@ export function ConversationRoute() {
           <ConversationSetProjectButton conversation={conversation} task={task} />
         )}
       </div>
-      <div className="flex min-w-0 justify-end">
+      <div className="flex min-w-0 items-center justify-end gap-2">
+        {/* Open-the-session / launch-a-worker — the conversation always shows
+            exactly one of the two (never neither). Logged-out skips it. */}
+        {cloudUser && conversation && (
+          <ConversationHeaderSession conversation={conversation} task={task} />
+        )}
         {/* Roster fetch is pointless under the logged-out overlay — skip it. */}
         {cloudUser && convTypeId && <MembersAvatarStack typeId={convTypeId} />}
       </div>

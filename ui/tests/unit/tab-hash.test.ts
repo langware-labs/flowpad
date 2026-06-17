@@ -18,11 +18,24 @@ describe('DockPointer.tabHash', () => {
 
   it('differs when viewType or pointer differ', () => {
     const assets = new DockPointer(ViewType.ASSETS).tabHash;
-    const shell = new DockPointer(ViewType.SHELL).tabHash;
+    const shell = new DockPointer(ViewType.SHELL, 'shell-1').tabHash;
     const doc1 = new DockPointer(ViewType.ASSETS, 'doc-1').tabHash;
     const doc2 = new DockPointer(ViewType.ASSETS, 'doc-2').tabHash;
     expect(assets).not.toBe(shell);
     expect(doc1).not.toBe(doc2);
+  });
+
+  it('is null for surfaces that are not tabs (no chip)', () => {
+    // A bare shell is the terminal HOST — its sessions are the tabs, not it.
+    expect(new DockPointer(ViewType.SHELL).tabHash).toBeNull();
+    // Home is an app landing, never a strip chip.
+    expect(new DockPointer(ViewType.HOME, 'summary').tabHash).toBeNull();
+    // A missing viewType has no tab.
+    expect(new DockPointer(undefined, 'x').tabHash).toBeNull();
+  });
+
+  it('a shell WITH a session is a tab (the session is the identity)', () => {
+    expect(new DockPointer(ViewType.SHELL, 'agentic_process-1').tabHash).toBe('shell|agentic_process-1');
   });
 
   it('excludes layout — a /win popout and the /dock view are ONE tab', () => {

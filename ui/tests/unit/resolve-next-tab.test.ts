@@ -1,110 +1,110 @@
 /**
- * `resolveNextTab` (tab-candidates.ts) — the loader-side default-tab pick,
- * now routed through the single `resolveActive` resolver (tab-management.md
- * Part 1 §5, Phase 3: retires `resolveDefaultTab`).
+ * `resolveNextTabRow` (tab-candidates.ts) — the loader-side default-tab pick over
+ * backend `TabRow`s, routed through the single `resolveActive` resolver.
  *
- * INTENTIONAL PRECEDENCE CHANGE vs the retired `resolveDefaultTab`
- * (characterized in the previous revision of this file as
- * resolve-default-tab.test.ts):
- *   old: dataContext.activeTerminalTargetTypeId → dataContext.activeShellId
- *        → first pickable tab (list order)
- *   new: pending intent (consume-once) → recency (max lastActiveAt)
- *        → lowest tabOrder
- * The previous-target preference is expressed by the recency tier: every
- * loader load stamps the loaded entity (`bumpLastActive` + server `activate`),
- * so the previously-active tab is exactly the max-recency member.
+ * Precedence: pending intent (consume-once) → recency (max `last_active_at`) →
+ * lowest `tab_order`. Recency lives on the Tab (server-stamped by the `activate`
+ * action on select), so the previously-active tab is the max-recency member.
  *
- * "Pickable" exclusions are UNCHANGED: not disabled and not in `excludeIds`
- * (by target string, target id, transport shell id, or owning process id) —
- * filtered BEFORE resolving, so an excluded tab can never win any tier.
- *
- * Entity ids must be valid v4/v5 UUIDs (TypeId enforces the entity-id policy).
+ * "Pickable" exclusions: not disabled and not in `excludeIds` (by the row's
+ * target key `shell-<id>` / `agentic_process-<id>` or its bare target id),
+ * filtered BEFORE resolving so an excluded tab can never win any tier.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type Shell } from '@sdk';
-import { resolveNextTab } from '@src/tabs/tab-candidates';
+import { type TabRow } from '@sdk';
+import { resolveNextTabRow, rowTargetKey } from '@src/tabs/tab-candidates';
 import { peekPendingIntent, setPendingIntent } from '@src/tabs/pending-intent';
-import { type TerminalTab } from '@src/tabs/useTabs';
-import { procTab, shellTab, uid } from '../utils/terminal-tab-fixtures';
+import { uid } from '../utils/terminal-tab-fixtures';
 
 beforeEach(() => setPendingIntent(null));
 afterEach(() => setPendingIntent(null));
 
-/** A shell tab whose cached Shell entity carries a recency stamp. */
-function recentShellTab(label: string, lastActiveAt: number | null, tabOrder = 0): TerminalTab {
-  return shellTab(label, tabOrder, {
-    shell: (lastActiveAt == null ? {} : { last_active_at: lastActiveAt }) as unknown as Shell,
-  });
+function row(
+  name: string,
+  opts: { type?: string; tabOrder?: number; lastActiveAt?: number | null; disabled?: boolean } = {},
+): TabRow {
+  const target_type = opts.type ?? 'shell';
+  const target_id = uid(name);
+  return {
+    id: `tab-${name}`,
+    pointer: `shell|${target_type}-${target_id}`,
+    target_type,
+    target_id,
+    project_id: null,
+    name,
+    icon_key: null,
+    worktree: false,
+    tab_order: opts.tabOrder ?? 0,
+    last_active_at: opts.lastActiveAt ?? null,
+    status: null,
+    is_disabled: opts.disabled ?? false,
+  };
 }
 
-describe('resolveNextTab — resolveActive precedence', () => {
-  it('picks the lowest tabOrder when there is no intent and no recency', () => {
-    // (Old behavior was "first in list order"; the resolver uses tabOrder.)
-    const tabs = [shellTab('b', 2), shellTab('a', 1)];
-    expect(resolveNextTab(tabs)?.name).toBe('a');
+describe('resolveNextTabRow — resolveActive precedence', () => {
+  it('picks the lowest tab_order when there is no intent and no recency', () => {
+    const rows = [row('b', { tabOrder: 2 }), row('a', { tabOrder: 1 })];
+    expect(resolveNextTabRow(rows)?.name).toBe('a');
   });
 
-  it('prefers the most-recently-active tab over tabOrder (Bug 1 tier)', () => {
-    const tabs = [recentShellTab('a', 1_000, 0), recentShellTab('b', 2_000, 5)];
-    expect(resolveNextTab(tabs)?.name).toBe('b');
+  it('prefers the most-recently-active tab over tab_order', () => {
+    const rows = [row('a', { lastActiveAt: 1_000, tabOrder: 0 }), row('b', { lastActiveAt: 2_000, tabOrder: 5 })];
+    expect(resolveNextTabRow(rows)?.name).toBe('b');
   });
 
-  it('expresses the old previous-target preference via recency: the last-loaded tab wins', () => {
-    // bumpLastActive stamps the loaded entity on every loader load — so the
-    // previously-active tab is the max-recency member, replacing the old
-    // dataContext.activeTerminalTargetTypeId / activeShellId tiers.
-    const tabs = [recentShellTab('a', 1_000), recentShellTab('prev', Date.now())];
-    expect(resolveNextTab(tabs)?.name).toBe('prev');
+  it('the last-activated tab wins via recency (replaces the old previous-target tier)', () => {
+    const rows = [row('a', { lastActiveAt: 1_000 }), row('prev', { lastActiveAt: 9_999_999 })];
+    expect(resolveNextTabRow(rows)?.name).toBe('prev');
   });
 
   it('an explicit pending intent wins over recency and is consumed', () => {
-    const a = recentShellTab('a', Date.now());
-    const b = shellTab('b', 9);
-    setPendingIntent(b.targetTypeId.toString());
-    expect(resolveNextTab([a, b])?.name).toBe('b');
+    const a = row('a', { lastActiveAt: 9_999_999 });
+    const b = row('b', { tabOrder: 9 });
+    setPendingIntent(rowTargetKey(b));
+    expect(resolveNextTabRow([a, b])?.name).toBe('b');
     expect(peekPendingIntent()).toBeNull(); // consumed — decided the pick
   });
 
   it('an intent for a non-member is ignored and NOT consumed', () => {
-    const tabs = [shellTab('a', 1)];
+    const rows = [row('a', { tabOrder: 1 })];
     setPendingIntent(`shell-${uid('elsewhere')}`);
-    expect(resolveNextTab(tabs)?.name).toBe('a');
+    expect(resolveNextTabRow(rows)?.name).toBe('a');
     expect(peekPendingIntent()).toBe(`shell-${uid('elsewhere')}`);
   });
 
   it('an intent for an EXCLUDED tab cannot win (candidates filtered first) and is not consumed', () => {
-    const a = shellTab('a', 1);
-    const b = shellTab('b', 2);
-    setPendingIntent(a.targetTypeId.toString());
-    expect(resolveNextTab([a, b], new Set([uid('a')]))?.name).toBe('b');
-    expect(peekPendingIntent()).toBe(a.targetTypeId.toString());
+    const a = row('a', { tabOrder: 1 });
+    const b = row('b', { tabOrder: 2 });
+    setPendingIntent(rowTargetKey(a));
+    expect(resolveNextTabRow([a, b], new Set([uid('a')]))?.name).toBe('b');
+    expect(peekPendingIntent()).toBe(rowTargetKey(a));
   });
 });
 
-describe('resolveNextTab — pickability exclusions (unchanged)', () => {
+describe('resolveNextTabRow — pickability exclusions', () => {
   it('skips disabled tabs', () => {
-    const tabs = [shellTab('a', 0, { isDisabled: true }), shellTab('b', 1)];
-    expect(resolveNextTab(tabs)?.name).toBe('b');
+    const rows = [row('a', { disabled: true }), row('b', { tabOrder: 1 })];
+    expect(resolveNextTabRow(rows)?.name).toBe('b');
   });
 
   it('skips tabs whose target id is excluded', () => {
-    const tabs = [shellTab('a', 0), shellTab('b', 1)];
-    expect(resolveNextTab(tabs, new Set([uid('a')]))?.name).toBe('b');
+    const rows = [row('a'), row('b', { tabOrder: 1 })];
+    expect(resolveNextTabRow(rows, new Set([uid('a')]))?.name).toBe('b');
   });
 
-  it('skips a process tab whose owning process id is excluded', () => {
-    const tabs = [procTab('p1', 0, { shellId: uid('s1') }), shellTab('b', 1)];
-    expect(resolveNextTab(tabs, new Set([uid('p1')]))?.name).toBe('b');
+  it('skips a process tab whose process id (its target id) is excluded', () => {
+    const rows = [row('p1', { type: 'agentic_process' }), row('b', { tabOrder: 1 })];
+    expect(resolveNextTabRow(rows, new Set([uid('p1')]))?.name).toBe('b');
   });
 
-  it('skips a process tab whose transport shell id is excluded', () => {
-    const tabs = [procTab('p1', 0, { shellId: uid('s1') }), shellTab('b', 1)];
-    expect(resolveNextTab(tabs, new Set([uid('s1')]))?.name).toBe('b');
+  it('skips a tab excluded by its target key (shell-<id> / agentic_process-<id>)', () => {
+    const a = row('a');
+    const rows = [a, row('b', { tabOrder: 1 })];
+    expect(resolveNextTabRow(rows, new Set([rowTargetKey(a)]))?.name).toBe('b');
   });
 
   it('returns null when nothing is pickable', () => {
-    const tabs = [shellTab('a', 0, { isDisabled: true })];
-    expect(resolveNextTab(tabs)).toBeNull();
-    expect(resolveNextTab([])).toBeNull();
+    expect(resolveNextTabRow([row('a', { disabled: true })])).toBeNull();
+    expect(resolveNextTabRow([])).toBeNull();
   });
 });

@@ -5,12 +5,15 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { BookMarked, FileText } from 'lucide-react';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
+import { SideTabTooltipContent } from './LastPromptTooltip';
 import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
 
 interface TerminalBottomRibbonProps {
   fileCount: number;
   isActive: boolean;
   promptCount?: number;
+  /** Most recent prompt text — shown in the Prompts icon hover card. */
+  lastPromptText?: string | null;
   openTabs: SideTabIdType[];
   activeSideTab: SideTabIdType | null;
   onOpenSideTab: (tab: SideTabIdType) => void;
@@ -35,6 +38,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   fileCount,
   isActive,
   promptCount = 0,
+  lastPromptText = null,
   openTabs,
   activeSideTab,
   onOpenSideTab,
@@ -79,11 +83,12 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
             const Icon = descriptor.icon;
             const isOpen = openTabs.includes(tabId);
             const isActive = isOpen && activeSideTab === tabId;
+            const isPrompts = tabId === SideTabId.Prompts;
 
             // Badge for files and prompts
             let badge: number | null = null;
             if (tabId === SideTabId.Files) badge = fileCount;
-            if (tabId === SideTabId.Prompts) badge = promptCount;
+            if (isPrompts) badge = promptCount;
 
             return (
               <Tooltip key={tabId}>
@@ -112,9 +117,13 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                     )}
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {descriptor.description}
-                </TooltipContent>
+                <SideTabTooltipContent
+                  side="top"
+                  isPrompts={isPrompts}
+                  lastPromptText={lastPromptText}
+                  promptCount={promptCount}
+                  fallback={descriptor.description}
+                />
               </Tooltip>
             );
           })}

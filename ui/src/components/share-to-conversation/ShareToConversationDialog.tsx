@@ -11,6 +11,7 @@ import { useSendToConversation, type SendTarget } from '@src/hooks/use-send-to-c
 import { useConversationsForContacts } from '@src/hooks/use-conversations-for-contacts';
 import { useAutoTitle } from '@src/hooks/use-auto-title';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { guardCloudAction } from '@src/services/privacy-guard';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import type { ShareSource } from '@src/hooks/share-sources';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
@@ -132,6 +133,16 @@ export function ShareToConversationDialog({
   defaultNoteRef.current = defaultNote;
   const initialParticipantsRef = useRef(initialParticipants);
   initialParticipantsRef.current = initialParticipants;
+
+  // Single share gate: in Local (private) mode the cloud is off-limits, so the
+  // share dialog never opens — all 7 share surfaces funnel through here. The
+  // guard raises the one standardized "Sharing disabled in Local mode" notice.
+  useEffect(() => {
+    if (!open) return;
+    if (!guardCloudAction('share')) {
+      onClose();
+    }
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open) return;

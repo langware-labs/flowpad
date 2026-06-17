@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Archive, Inbox as InboxIcon, LifeBuoy, MailPlus, RefreshCw, Search, SquarePen, Trash2, X } from 'lucide-react';
+import { Archive, Inbox as InboxIcon, LifeBuoy, Mail, MailOpen, MailPlus, RefreshCw, Search, SquarePen, Trash2, X } from 'lucide-react';
 import { notify } from '@src/notifications';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import {
@@ -7,7 +7,6 @@ import {
   FlowMessage,
   Invitation,
   QueryRequest,
-  Task,
   TypeId,
   acceptInvitation,
   archiveAllConversations,
@@ -26,6 +25,7 @@ import {
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
+import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -40,6 +40,7 @@ import {
 import { conversationFacets, actionsFor } from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { RowActions } from '@src/components/conversation/RowActions';
+import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from '@src/components/conversation/constants';
 
 type RowDeleteAction =
   | { kind: 'invitation'; invitationId: string; conversationId: string }
@@ -89,6 +90,13 @@ interface ConversationListRowProps {
    *  to the Inbox. */
   onUnarchive: (convId: string) => void;
   onToggleRead: (messageId: string, isRead: boolean) => void;
+  /** Whether this row is currently ticked for a bulk (multi-select) action.
+   *  Optional so the row can render standalone (e.g. in tests) without the
+   *  multi-select host wiring. */
+  selected?: boolean;
+  /** Toggle this row's membership in the multi-select set. Optional — see
+   *  ``selected``. */
+  onToggleSelect?: (convId: string) => void;
   /** Caller resolves the appropriate dialog/action mode based on the row's
    *  role + the current cloud user id. */
   onRequestDelete: (action: RowDeleteAction) => void;
@@ -101,13 +109,8 @@ interface ConversationListRowProps {
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onUnarchive, onToggleRead, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
+export function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onUnarchive, onToggleRead, selected, onToggleSelect, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
-  const taskTypeId = useMemo(
-    () => conv.firstContextOfType?.('task') ?? null,
-    [conv],
-  );
-  const { data: task } = useEntity<Task>(taskTypeId);
 
   // For invitation rows the first message IS the only message; for regular
   // rows we want the latest message preview but still need to peek at the
@@ -229,14 +232,23 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
 
   const senderLabel = participantNames.join(', ');
   const count = pointers.length;
+  // The inbox subject is the conversation's own user-set / hub-synced title
+  // (NewConversationDialog at creation; carried in the bundle on cross-user
+  // send). A task that happens to sit in the conversation's shared context is
+  // there to drive cwd/project_root and the task-gated chips — it is NOT a
+  // title source, so it must not feed the subject. Fall back to the email-style
+  // "(no subject)" placeholder only when there's no title. The snippet (latest
+  // message preview) still renders after it.
   const subject = isInvitationRow
     ? 'You’ve been invited to a conversation'
-    : (task?.displayName ?? 'Conversation');
+    : (conv.title?.trim() || '(no subject)');
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
   const rawText = isInvitationRow ? firstMessage?.text : latestMessage?.text;
-  const snippet = String(rawText ?? '').replace(/\s+/g, ' ').trim();
+  const snippetSource =
+    rawText === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT ? '' : rawText;
+  const snippet = String(snippetSource ?? '').replace(/\s+/g, ' ').trim();
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
   const isUnread = facets.isUnread;
@@ -275,14 +287,30 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
       data-unread={isUnread ? 'true' : 'false'}
       data-kind={isInvitationRow ? 'invitation' : 'user'}
       onClick={handleClick}
+      data-selected={selected ? 'true' : 'false'}
       className={`group relative flex h-9 ${
         isInvitationRow ? 'cursor-default' : 'cursor-pointer'
       } items-center gap-3 border-b border-border/40 px-3 text-sm transition-colors hover:bg-accent/40 hover:shadow-sm ${
-        isFocused ? 'bg-primary/10' : ''
+        selected ? 'bg-primary/10' : isFocused ? 'bg-primary/10' : ''
       } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${
         isInvitationRow ? 'border-l-2 border-l-violet-500/60' : ''
       }`}
     >
+      {/* Multi-select tick. Stops propagation so ticking a row never opens it.
+          Always visible per line but faded (light border, dimmed) so it doesn't
+          compete with the message content; brightens on hover and when ticked. */}
+      <span
+        onClick={(e) => e.stopPropagation()}
+        className="flex shrink-0 items-center"
+      >
+        <Checkbox
+          checked={!!selected}
+          onCheckedChange={() => convId && onToggleSelect?.(convId)}
+          aria-label="Select conversation"
+          data-testid="inbox-row-select"
+          className="h-3.5 w-3.5 border-muted-foreground/30 opacity-50 transition-opacity hover:opacity-100 data-[state=checked]:border-primary data-[state=checked]:opacity-100"
+        />
+      </span>
       <span
         data-testid="inbox-row-sender"
         // ``title`` doubles as the trim-overflow tooltip. Browsers only show
@@ -371,9 +399,24 @@ export function InboxView() {
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [rowDelete, setRowDelete] = useState<RowDeleteAction | null>(null);
+  // Multi-select: ids of rows ticked for a bulk mark-read/unread/archive/delete.
+  // Constrained to currently-visible rows when actions run, so a stale id left
+  // over from a view switch can never act on a hidden conversation.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selDeleteOpen, setSelDeleteOpen] = useState(false);
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
-  const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
+  const { data: conversations = [], refetch, isLoading, isSuccess } = useEntitiesQuery<Conversation>(request);
+
+  // Only the FIRST load gets the full-screen "Loading…" state. Every
+  // ``refetch()`` (mount hub-pull, mark-read, archive, …) flips ``isLoading``
+  // back to true while KEEPING the previous ``data`` — so gating the row list
+  // on raw ``isLoading`` blanks the whole list to the spinner and back on every
+  // refetch, which is the on-open flicker. Once we've loaded successfully once,
+  // a background refetch keeps the existing rows on screen.
+  const hasLoadedOnce = useRef(false);
+  if (isSuccess) hasLoadedOnce.current = true;
+  const initialLoading = isLoading && !hasLoadedOnce.current;
 
   // Text search over message bodies. The substring match runs in the DB —
   // a ``$LIKE`` filter on FlowMessage.text (SQL ``LIKE %needle%``, spans ALL
@@ -509,21 +552,24 @@ export function InboxView() {
     () => conversations.filter((c) => c.archived_at),
     [conversations],
   );
-  const buckets = useMemo(() => {
+  // Classify a conversation by the user's relationship to it — drives both the
+  // bulk-delete confirm summary and the hub-reachability gate. Shared by the
+  // "Delete all archived" flow and the multi-select "Delete" flow.
+  const seemsInvitationConv = useCallback((c: Conversation) => {
+    const pointers = c.conversationMessageIds ?? [];
+    // We don't have the FM entity loaded for convs the user never opened, so
+    // heuristic: invitation-kind conversations carry the canonical title and at
+    // least one pointer. The server's classifier is the source of truth; here
+    // we just give the user a reasonable preview.
+    return !!pointers[0] && (c.title || '').toLowerCase() === 'invitation';
+  }, []);
+  const bucketsFor = useCallback((convs: Conversation[]) => {
     let ownerCount = 0;
     let nonOwnerCount = 0;
     let invitationCount = 0;
     let localCount = 0;
-    for (const c of archivedConvs) {
-      const pointers = c.conversationMessageIds ?? [];
-      const firstPtr = pointers[0];
-      // We don't have the FM entity loaded for archived convs the user
-      // never opened, so heuristic: invitation-kind conversations are
-      // expected to be `remote=true` with the matching invitation entity
-      // in the local DB. The server's classifier is the source of truth;
-      // here we just give the user a reasonable preview.
-      const seemsInvitation = !!firstPtr && (c.title || '').toLowerCase() === 'invitation';
-      if (seemsInvitation) {
+    for (const c of convs) {
+      if (seemsInvitationConv(c)) {
         invitationCount += 1;
       } else if (!c.remote) {
         localCount += 1;
@@ -534,8 +580,110 @@ export function InboxView() {
       }
     }
     return { ownerCount, nonOwnerCount, invitationCount, localCount };
-  }, [archivedConvs, cloudUserId]);
+  }, [cloudUserId, seemsInvitationConv]);
+  const buckets = useMemo(() => bucketsFor(archivedConvs), [bucketsFor, archivedConvs]);
   const needsHub = buckets.ownerCount + buckets.nonOwnerCount + buckets.invitationCount > 0;
+
+  // ── Multi-select derived state ─────────────────────────────────────────────
+  // Only visible rows can be acted on — a selected id left behind by a view
+  // switch or a row that hid itself is ignored.
+  const selectedConvs = useMemo(
+    () => sorted.filter((c) => c.id && selectedIds.has(c.id) && visibleIds.has(c.id)),
+    [sorted, selectedIds, visibleIds],
+  );
+  const selectedCount = selectedConvs.length;
+  const selectedBuckets = useMemo(() => bucketsFor(selectedConvs), [bucketsFor, selectedConvs]);
+  const selectedNeedsHub =
+    selectedBuckets.ownerCount + selectedBuckets.nonOwnerCount + selectedBuckets.invitationCount > 0;
+  const allVisibleSelected =
+    visibleCount > 0 && [...visibleIds].every((id) => selectedIds.has(id));
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+  const toggleSelect = useCallback((convId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(convId)) next.delete(convId);
+      else next.add(convId);
+      return next;
+    });
+  }, []);
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const allSel = visibleIds.size > 0 && [...visibleIds].every((id) => prev.has(id));
+      return allSel ? new Set() : new Set(visibleIds);
+    });
+  }, [visibleIds]);
+
+  // FlowMessage id of a conversation's latest message — the read/unread flag
+  // lives on the message, so bulk read toggles patch the last pointer's FM.
+  const latestMessageId = (c: Conversation): string | null => {
+    const pointers = c.conversationMessageIds ?? [];
+    return pointers[pointers.length - 1]?.id ?? null;
+  };
+
+  const handleBulkMarkRead = useCallback(async (isRead: boolean) => {
+    const ids = selectedConvs.map(latestMessageId).filter((id): id is string => !!id);
+    await Promise.all(ids.map((id) => updateMessage(id, { is_read: isRead })));
+    clearSelection();
+    void refetch();
+  }, [selectedConvs, clearSelection, refetch]);
+
+  const handleBulkArchive = useCallback(async () => {
+    await Promise.all(
+      selectedConvs.map((c) => (c.id ? archiveConversation({ conversation_id: c.id }) : Promise.resolve())),
+    );
+    clearSelection();
+    void refetch();
+  }, [selectedConvs, clearSelection, refetch]);
+
+  const handleBulkDelete = useCallback(() => {
+    if (selectedConvs.length === 0) return;
+    if (selectedNeedsHub && !hubReachable) {
+      notify.error({
+        title: 'Cloud disconnected',
+        message: 'Reconnect to the cloud to delete shared conversations.',
+      });
+      return;
+    }
+    setSelDeleteOpen(true);
+  }, [selectedConvs.length, selectedNeedsHub, hubReachable]);
+
+  const runBulkDeleteSelected = useCallback(async () => {
+    // No single server endpoint for an arbitrary set, so loop per conversation
+    // using the same per-row classification the row's trash button applies.
+    const convs = selectedConvs;
+    let ok = 0;
+    const failed: string[] = [];
+    for (const c of convs) {
+      if (!c.id) continue;
+      try {
+        if (seemsInvitationConv(c)) {
+          // Hide without notifying the inviter — the selection UI has no place
+          // to surface the decline-vs-dismiss choice the per-row dialog offers.
+          await dismissConversation({ conversation_id: c.id });
+        } else if (!c.remote) {
+          await deleteConversation({ conversation_id: c.id, mode: 'local' });
+        } else if (cloudUserId && c.created_by === cloudUserId) {
+          await deleteConversation({ conversation_id: c.id, mode: 'delete_for_all' });
+        } else {
+          await leaveConversation({ conversation_id: c.id });
+        }
+        ok += 1;
+      } catch {
+        failed.push(c.id.slice(0, 8));
+      }
+    }
+    if (failed.length === 0) {
+      notify.success({ title: `Deleted ${ok} conversation${ok === 1 ? '' : 's'}` });
+    } else {
+      notify.error({
+        title: `Deleted ${ok}, ${failed.length} failed`,
+        message: failed.slice(0, 3).join(', '),
+      });
+    }
+    clearSelection();
+    void refetch();
+  }, [selectedConvs, seemsInvitationConv, cloudUserId, clearSelection, refetch]);
 
   const handleDeleteArchived = useCallback(() => {
     if (archivedConvs.length === 0) return;
@@ -644,8 +792,10 @@ export function InboxView() {
     setViewMode((cur) => {
       if (cur === next) return cur;
       // Visible-ids tracks the previous mode's rows; reset so the count
-      // badge doesn't flash stale during the swap.
+      // badge doesn't flash stale during the swap. Selection is per-view, so
+      // drop it too — carrying ticks across modes would act on hidden rows.
       setVisibleIds(new Set());
+      setSelectedIds(new Set());
       return next;
     });
   }, []);
@@ -790,6 +940,66 @@ export function InboxView() {
         </div>
         {/* RIGHT — actions for the current view */}
         <div className="flex flex-1 items-center justify-end gap-1" data-testid="inbox-action-bar">
+          {selectedCount > 0 && !inCommunityView ? (
+            <div className="flex items-center gap-1" data-testid="inbox-selection-bar">
+              <span className="mr-1 text-xs text-muted-foreground" data-testid="inbox-selection-count">
+                {selectedCount} selected
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => void handleBulkMarkRead(true)}
+                data-testid="inbox-selection-mark-read"
+              >
+                <MailOpen className="mr-1 h-3.5 w-3.5" />
+                Read
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => void handleBulkMarkRead(false)}
+                data-testid="inbox-selection-mark-unread"
+              >
+                <Mail className="mr-1 h-3.5 w-3.5" />
+                Unread
+              </Button>
+              {!inArchivedView && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => void handleBulkArchive()}
+                  data-testid="inbox-selection-archive"
+                >
+                  <Archive className="mr-1 h-3.5 w-3.5" />
+                  Archive
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => void handleBulkDelete()}
+                data-testid="inbox-selection-delete"
+              >
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                Delete
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={clearSelection}
+                title="Clear selection"
+                data-testid="inbox-selection-clear"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : (
+          <>
           {inCommunityView && (
             <Button
               variant="ghost"
@@ -853,6 +1063,8 @@ export function InboxView() {
               <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
             </Button>
           )}
+          </>
+          )}
         </div>
       </div>
 
@@ -908,11 +1120,11 @@ export function InboxView() {
             </div>
           ))}
 
-        {!inCommunityView && isLoading && (
+        {!inCommunityView && initialLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         )}
 
-        {!inCommunityView && !isLoading && visibleCount === 0 && (
+        {!inCommunityView && !initialLoading && visibleCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
               {searchActive ? 'No matching conversations'
@@ -929,7 +1141,25 @@ export function InboxView() {
           </div>
         )}
 
-        {!inCommunityView && !isLoading &&
+        {!inCommunityView && !initialLoading && visibleCount > 0 && (
+          <div
+            className="flex h-7 items-center gap-3 border-b border-border/40 bg-muted/10 px-3"
+            data-testid="inbox-select-all-row"
+          >
+            <Checkbox
+              checked={allVisibleSelected ? true : selectedCount > 0 ? 'indeterminate' : false}
+              onCheckedChange={toggleSelectAll}
+              aria-label="Select all conversations"
+              data-testid="inbox-select-all"
+              className="h-3.5 w-3.5"
+            />
+            <span className="text-xs text-muted-foreground">
+              {selectedCount > 0 ? `${selectedCount} selected` : 'Select all'}
+            </span>
+          </div>
+        )}
+
+        {!inCommunityView && !initialLoading &&
           sorted.map((conv) => (
             <ConversationListRow
               key={conv.id ?? ''}
@@ -940,6 +1170,8 @@ export function InboxView() {
               onArchive={handleArchive}
               onUnarchive={handleUnarchive}
               onToggleRead={handleToggleRead}
+              selected={!!conv.id && selectedIds.has(conv.id)}
+              onToggleSelect={toggleSelect}
               onRequestDelete={handleRowDelete}
               cloudUserId={cloudUserId}
               onVisibilityChange={handleRowVisibility}
@@ -990,6 +1222,43 @@ export function InboxView() {
         ]}
         confirmLabel="Delete all"
         onConfirm={() => void runBulkDelete()}
+      />
+
+      <BulkConfirmDialog
+        open={selDeleteOpen}
+        onOpenChange={setSelDeleteOpen}
+        title={`Delete ${selectedCount} conversation${selectedCount === 1 ? '' : 's'}`}
+        intro={
+          selectedNeedsHub
+            ? 'This sends a cloud action per conversation:'
+            : 'These conversations exist only on this device.'
+        }
+        buckets={[
+          {
+            label: 'You own — delete for everyone',
+            count: selectedBuckets.ownerCount,
+            tone: 'destructive',
+            description: 'Removed for all participants',
+          },
+          {
+            label: 'You will leave',
+            count: selectedBuckets.nonOwnerCount,
+            description: 'Removed for you; other members keep it',
+          },
+          {
+            label: 'Invitations — dismiss',
+            count: selectedBuckets.invitationCount,
+            description: 'Hidden from your inbox',
+          },
+          {
+            label: 'Local only — permanent',
+            count: selectedBuckets.localCount,
+            tone: 'destructive',
+            description: 'Never synced to cloud',
+          },
+        ]}
+        confirmLabel="Delete"
+        onConfirm={() => void runBulkDeleteSelected()}
       />
 
       {rowDelete?.kind === 'invitation' && (

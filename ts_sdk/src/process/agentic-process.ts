@@ -386,6 +386,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     enableAssistant?: boolean;
     /** String TypeIds stamped onto the process's `shared_context_entities`. */
     sharedContextEntities?: string[];
+    /** Discriminator stamped on the new process (e.g. ProcessKind.Conversation). */
+    processType?: ProcessKind;
   }): Promise<AgenticProcess> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
@@ -396,6 +398,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         workerType: opts.workerType,
         ...(opts.enableAssistant ? { loadFlowpadAssistant: true } : {}),
         ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
+        ...(opts.processType ? { processType: opts.processType } : {}),
       },
       { visible: true, watchProcess: false, ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}) },
     );

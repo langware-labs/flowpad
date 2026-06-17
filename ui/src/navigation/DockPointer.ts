@@ -1,10 +1,10 @@
-import { AgenticProcess, Layout, Shell, TypeId, type IDockPointer } from '@sdk';
-import { VIEW_SLOTS, ViewSlot, ViewType } from '../types/ViewType';
+import { AgenticProcess, Layout, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
+import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { parseQueryParams } from './url-builder';
 import { isValidView } from './validators';
 import { AssetDocPointer } from './AssetDocPointer';
-import { AssetEditor, editorForType } from './asset-doc-types';
+import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType } from './asset-doc-types';
 
 /**
  * Lens pointer structure for sub-routing within lens viewer
@@ -829,11 +829,18 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Canonical tab identity for this pointer — the single knob that decides
-   * which pointers collapse to the SAME content-panel Tab (docs/tab-management.md).
+   * Canonical tab identity for this pointer, or **`null` when the surface is not
+   * a tab at all** — the single generic "no tab" signal every consumer honors
+   * (`ensureTabForCurrentDock` skips it; the strip's active-key resolves to no
+   * chip). Two surfaces have no chip: a **full-bleed** view (e.g. `home`, via the
+   * registry `chrome` flag) takes over the panel so there is no strip to sit in;
+   * and a **bare shell** (`/dock/shell` with no session — the terminal HOST whose
+   * sessions are the actual tabs at `/dock/shell/<session>`). Encoding "no tab"
+   * here (not as a special case in each consumer) keeps the whole tab-or-not
+   * decision in the one place that owns tab identity.
    *
-   * Identity is ``viewType`` + ``pointer`` ONLY. ``layout`` is excluded on
-   * purpose: a ``/win/`` popout and the ``/dock/`` view of the same content are
+   * Otherwise identity is ``viewType`` + ``pointer`` ONLY. ``layout`` is excluded
+   * on purpose: a ``/win/`` popout and the ``/dock/`` view of the same content are
    * the same Tab (placement is per-client URL state, not tab identity). Transient
    * ``options`` (slot, query params) are excluded too — by default a viewType's
    * sub-state shares one tab (e.g. all settings sub-paths → one "Settings" tab).
@@ -841,8 +848,57 @@ export class DockPointer implements IDockPointer {
    * canonicalization lives here and NOWHERE else, so there is no cross-language
    * canonicalizer to keep in agreement.
    */
-  get tabHash(): string {
-    return `${this.viewType ?? ''}|${this.pointer ?? ''}`;
+  get tabHash(): string | null {
+    if (!this.viewType) return null;
+    // A full-bleed surface (Home) takes over the panel — no strip, hence no chip.
+    if (VIEWER_REGISTRY[this.viewType]?.chrome === 'fullbleed') return null;
+    // A bare shell is the terminal host; only a session-pointer shell is a tab.
+    if (this.viewType === ViewType.SHELL && !this.pointer) return null;
+    return `${this.viewType}|${this.pointer ?? ''}`;
+  }
+
+  /**
+   * The entity this dock targets, as a TypeId — for the tab's denormalized
+   * target + project resolution (`Tab.getFromDockPointer`). Pure string parse,
+   * no network. Two shapes carry an entity: the type lives IN the pointer
+   * (`<type>-<id>` / `…/typeid/<type>-<id>`), or — for a bare-id pointer — in the
+   * viewType segment (e.g. `/dock/project/<id>` → `project-<id>`,
+   * `/dock/conversation/<id>`). vfs/list/folder/target-less docks → null.
+   */
+  get targetTypeId(): TypeId | null {
+    const pointer = this.pointer;
+    if (!pointer) return null;
+    const candidate = pointer.includes('/typeid/') ? pointer.split('/typeid/').pop() ?? '' : pointer;
+    const tryTypeId = (type: string, id?: string): TypeId | null => {
+      try {
+        return id !== undefined ? new TypeId(type, id) : new TypeId(type);
+      } catch {
+        return null;
+      }
+    };
+    return (
+      tryTypeId(candidate) ??
+      (this.viewType && !pointer.includes('/') ? tryTypeId(this.viewType, pointer) : null)
+    );
+  }
+
+  /**
+   * The VFS path an asset-editor dock addresses (`assets/editor/<editor>/vfs/<path>`),
+   * or null for any other shape. Pure parse via the canonical `AssetDocPointer`
+   * grammar — no network. Used by `Tab.getFromDockPointer` to resolve a
+   * path-addressed asset's project via `getEntityByPath`.
+   */
+  get vfsPath(): VFSPath | null {
+    if (this.viewType !== ViewType.ASSETS || !this.pointer) return null;
+    try {
+      const ap = AssetDocPointer.parse(this.pointer);
+      if (ap.mode === AssetMode.EDITOR && ap.method === AssetRoutingMethod.VFS) {
+        return VFSPath.parse(ap.value);
+      }
+    } catch {
+      /* list/folder/wiki or malformed — not a vfs editor pointer */
+    }
+    return null;
   }
 
   /** Reverse of `tabHash` — reconstruct the navigable DockPointer from a stored

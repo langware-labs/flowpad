@@ -16,7 +16,6 @@ import {
   TypeId,
 } from '@sdk';
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
-import { bumpLastActive } from '@src/tabs/last-active';
 import { perfLog, perfTime } from './_perf';
 import { loadProject } from './load-project';
 
@@ -212,7 +211,6 @@ export async function loadProcess(
   await perfTime('dataContext sync setters (shellId/target/workdir)', async () => {
     dataContext.setActiveShellId(shell!.id);
     dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
-    bumpLastActive(process); // recency seed on the process (tab identity) — Bug 1
     // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
     // must stay fast; the in-cache bump above is the synchronous seed.
     void process.activate().catch(() => {});

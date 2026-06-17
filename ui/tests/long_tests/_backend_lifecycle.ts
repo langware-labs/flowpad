@@ -14,6 +14,10 @@
 import { execFile, spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
+import { vi } from 'vitest';
+
+type SdkRealm = typeof import('@sdk');
+type SdkMain = typeof import('@sdk/main');
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const INSTANCE_CTL = path.join(REPO_ROOT, 'scripts', 'instance_ctl.sh');
@@ -85,6 +89,31 @@ export async function launchInstance(name: string, budgetMs = 90_000): Promise<n
 
 export async function killInstance(name: string): Promise<void> {
   await sh('bash', [INSTANCE_CTL, 'kill', name], 15_000);
+}
+
+/**
+ * Give the next `import('@sdk')` a clean, isolated realm pointed at `port`:
+ * reset the SHARED jsdom window/global state, repoint the runtime API url, drop
+ * the module registry, then re-import the SDK graph + its `main` entrypoint
+ * (both resolve into the same fresh realm, sharing its singletons).
+ */
+export async function prepareCleanRealm(port: number): Promise<{ sdk: SdkRealm; main: SdkMain }> {
+  // Wipe the shared window context so this instance doesn't inherit the prior run's
+  // persisted context entities / appReady flag.
+  try {
+    window.localStorage.clear();
+  } catch {
+    /* no localStorage in this env */
+  }
+  delete (window as Record<string, unknown>).appReady;
+  delete (window as Record<string, unknown>).context;
+  delete (window as Record<string, unknown>).sniffer;
+
+  (globalThis as any).__FLOWPAD_API_URL__ = `http://localhost:${port}`;
+  vi.resetModules();
+  const sdk: SdkRealm = await import('@sdk');
+  const main: SdkMain = await import('@sdk/main');
+  return { sdk, main };
 }
 
 /** Bounce ONLY the backend: kill its PID, re-spawn `uv run -m flow_sdk.server.run`

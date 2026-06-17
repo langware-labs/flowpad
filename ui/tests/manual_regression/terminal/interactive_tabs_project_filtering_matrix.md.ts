@@ -1,6 +1,6 @@
 /**
  * Interactive tabs / project filtering — regression matrix.
- * Source: interactive_tabs_project_filtering_matrix.md (50 scenarios, 8 areas).
+ * Source: interactive_tabs_project_filtering_matrix.md (52 scenarios, 9 areas).
  *
  * Fixtures are built via REST (project/shell/agentic_process) per the matrix's
  * "Setup helpers" block — no live SDK wait. The 5 tests the matrix explicitly
@@ -54,6 +54,27 @@ async function createProcess(rq: APIRequestContext, projectId: string, worker: '
 
 async function closeShell(rq: APIRequestContext, id: string): Promise<void> {
   await rq.post(`${API}/api/v1/graph/shell/${id}/close`);
+}
+
+/**
+ * Seed a CONTENT tab (e.g. markdown) directly — the chip's source is the
+ * `visible=true` Tab query, target-type-agnostic, so a project whose only open
+ * tab is content must still produce a chip row. Tab is a plain DB entity, so a
+ * generic POST creates the row; `target_id` is an opaque denormalized string.
+ */
+async function createContentTab(rq: APIRequestContext, projectId: string, targetType = 'markdown'): Promise<string> {
+  const targetId = globalThis.crypto.randomUUID();
+  const r = await rq.post(`${API}/api/v1/graph/tab`, {
+    data: {
+      pointer: `editor|${targetType}-${targetId}`,
+      target_type: targetType,
+      target_id: targetId,
+      project_id: projectId,
+      visible: true,
+    },
+  });
+  expect(r.status()).toBe(200);
+  return (await r.json()).data.id;
 }
 
 async function resetDb(rq: APIRequestContext): Promise<void> {
@@ -957,6 +978,56 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.waitForTimeout(1_000);
     expect(page.url()).not.toContain('new_terminal');
     void target;
+    await rq.dispose();
+  });
+
+  // ---- I. Project chip is kind-agnostic (content tabs count; select switches project) ----
+
+  test('test 51: Chip counts a project whose only open tab is a content (markdown) tab', async ({ page }) => {
+    const rq = await api();
+    await resetDb(rq);
+    const a = await createProject(rq, 'Proj-A', '/tmp/regression/proj-a');
+    const c = await createProject(rq, 'Proj-C', '/tmp/regression/proj-c');
+    for (let i = 0; i < 2; i++) await createShell(rq, a);
+    // Proj-C has NO shells — only one content (markdown) tab.
+    await createContentTab(rq, c);
+    await gotoDockShell(page);
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    // Count = 2 even though Proj-C owns zero terminal tabs (the fix: the chip is
+    // kind-agnostic, not terminal-only).
+    await expect(page.locator('[data-testid="projects-counter-chip"]').first()).toContainText('2', { timeout: 15_000 });
+    await page.locator('[data-testid="projects-counter-chip"]').first().click();
+    const popover = page.locator('[data-testid="projects-counter-popover"]');
+    await popover.waitFor({ state: 'visible', timeout: 10_000 });
+    // Proj-C is listed, with a per-project badge of 1 (its single content tab).
+    const cRow = popover.getByRole('button', { name: /Proj-C/ });
+    await expect(cRow).toBeVisible({ timeout: 10_000 });
+    await expect(cRow).toContainText('1');
+    await rq.dispose();
+  });
+
+  test('test 52: Selecting a content-only project switches the current project (footer parity)', async ({ page }) => {
+    const rq = await api();
+    await resetDb(rq);
+    const a = await createProject(rq, 'Proj-A', '/tmp/regression/proj-a');
+    const c = await createProject(rq, 'Proj-C', '/tmp/regression/proj-c');
+    for (let i = 0; i < 2; i++) await createShell(rq, a);
+    await createContentTab(rq, c);
+    // Land in Proj-A explicitly so the switch is observable.
+    const aShell = (await (await rq.get(`${API}/api/v1/graph/compute_node/@local/terminals/list`)).json()).data.pure_shells.find((s: { project_id: string }) => s.project_id === a).id;
+    await gotoUrl(page, `/dock/shell/shell-${aShell}`);
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(2);
+    // Select Proj-C from the chip — a current-project switch, not a tab nav.
+    await page.locator('[data-testid="projects-counter-chip"]').first().click();
+    const popover = page.locator('[data-testid="projects-counter-popover"]');
+    await popover.waitFor({ state: 'visible', timeout: 10_000 });
+    await popover.getByRole('button', { name: /Proj-C/ }).click();
+    // Current project switched to Proj-C even though it has no terminal tab to
+    // navigate to (the old navigate-to-first-tab chip could not do this).
+    await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-c/i, { timeout: 15_000 });
+    // Proj-C owns no terminal tab → strip is empty.
+    await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(0);
     await rq.dispose();
   });
 });

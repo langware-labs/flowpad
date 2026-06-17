@@ -443,10 +443,16 @@ export function EntityExecutionPanel({
   // status=RUNNING), so the pty arm skips the status gate and blocks only on
   // the gold mid-turn predicate — mirroring the backend prompt action's own
   // admission, which rejects only STOPPING/FAILED.
+  // PENDING_USER: the turn finished cleanly and the worker is waiting at its
+  // prompt for the next message — exactly when the user should be able to type.
+  // `isBusy` returns true for PENDING_USER (it isn't in READY_WORKER_STATUSES,
+  // mirroring Python's `is_ready_for_input`) but the drain-local superset and
+  // the prompt action both admit it. Carve it out so the textarea stays enabled.
+  const indicatorWorkerStatus = indicatorProcess?.workerStatus as WorkerStatus | undefined;
   const busy = !!indicatorProcess && (
     transport === 'pty-poll'
-      ? isWorkerRunning(indicatorProcess.workerStatus as WorkerStatus)
-      : isBusy(indicatorProcess)
+      ? isWorkerRunning(indicatorWorkerStatus as WorkerStatus)
+      : isBusy(indicatorProcess) && indicatorWorkerStatus !== WorkerStatus.PENDING_USER
   );
   const sendDisabled = !targetStr || sending || busy;
 

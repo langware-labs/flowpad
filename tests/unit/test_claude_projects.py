@@ -16,6 +16,48 @@ from flow_sdk.fs_store.indexer.functions._claude_projects import (
     _real_path_from_jsonl,
     iter_claude_project_paths,
 )
+from flow_sdk.fs_store.indexer.functions.claude_projects import _is_valid_cwd
+
+
+# ---------------------------------------------------------------------------
+# _is_valid_cwd — FLOWPAD-1879: empty projects list on Windows
+#
+# Pre-fix, the gate was `if not cwd or not cwd.startswith("/")`. Windows
+# absolute paths are drive-rooted ("C:/..." / "C:\\...") and never start with
+# "/", so every Windows project cwd was rejected and the project picker came
+# back empty. These lock the drive-rooted paths in as valid while still
+# rejecting bare roots and relative garbage.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "cwd",
+    [
+        "C:/Users/foo/proj",       # canonical_posix_path() forward-slash form
+        "C:\\Users\\foo\\proj",   # decode_claude_project_dir backslash form
+        "D:/work/repo",            # any drive letter
+        "/Users/foo/proj",         # POSIX path still valid
+    ],
+)
+def test_accepts_drive_rooted_and_posix_cwd(cwd: str) -> None:
+    """A Windows drive-rooted or POSIX absolute project cwd is valid."""
+    assert _is_valid_cwd(cwd) is True
+
+
+@pytest.mark.parametrize(
+    "cwd",
+    [
+        "",            # empty
+        "/",           # bare POSIX root
+        "C:/",         # bare Windows drive root
+        "C:\\",       # bare Windows drive root, backslash
+        "foo/bar",     # relative
+        "../escape",   # relative
+    ],
+)
+def test_rejects_bare_roots_and_relative_cwd(cwd: str) -> None:
+    """Empty, bare filesystem roots, and relative paths are rejected."""
+    assert _is_valid_cwd(cwd) is False
 
 
 # ---------------------------------------------------------------------------

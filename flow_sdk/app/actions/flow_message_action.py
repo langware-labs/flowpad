@@ -19,6 +19,7 @@ from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, DeliveryStatus, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
+from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -1229,8 +1230,13 @@ async def community_start_ticket() -> ApiResponse:
         if conv:
             conv.kind = ConversationKind.COMMUNITY
             conv.remote = True
-            conv.created_by = conv_data.get("initiated_by") or conv.created_by
-            await conv.save(someone_typeid, notify=False)
+            # Carry the hub owner VERBATIM when present; never mask a genuinely
+            # null hub owner with a stale local value. Reflection keeps the
+            # save from re-stamping updated_by with the local user.
+            if conv_data.get("initiated_by") is not None:
+                conv.created_by = conv_data["initiated_by"]
+            with remote_reflection():
+                await conv.save(someone_typeid, notify=False)
 
         return ApiSuccessResponse(data={"conversation_id": conv_id, "project_id": community_id})
     except Exception as e:
@@ -1982,17 +1988,21 @@ async def _materialize_invitation(
             "kind": FlowMessageKind.INVITATION.value,
             "shared_context_entities": [invitation_typeid],
             "remote": False,
-            # Machine-synthesized placeholder — attribute to 'system', never
-            # the local request user (the recipient didn't author the invite).
-            "created_by": "system",
+            # No fabricated identity: the hub sent no inviter for this notice, so
+            # created_by / sender_id / sender_name stay NULL — the UI honestly
+            # shows "unknown" rather than a pretend-valid sender. The
+            # remote-reflection block below stops the driver stamping the local
+            # recipient (who did NOT author the invite). The real inviter must
+            # come from the hub (a preview_message), not be guessed here.
         }
         try:
-            inv_fm = await materialize_flow_message(
-                synth_payload,
-                conversation_id=conv_id,
-                someone_typeid=someone_typeid,
-                notify=False,
-            )
+            with remote_reflection():
+                inv_fm = await materialize_flow_message(
+                    synth_payload,
+                    conversation_id=conv_id,
+                    someone_typeid=someone_typeid,
+                    notify=False,
+                )
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] synth preview failed: %s", e)
 
@@ -2419,13 +2429,14 @@ async def _upsert_hub_conversation_metadata(
                     if k == "participants" and isinstance(hub_conv[k], list)
                     else hub_conv[k]
                 )
-        # Hub owner field ``initiated_by`` mirrors locally as ``created_by``.
-        # When the hub carries no owner (share-created conversations), fall
-        # back to the neutral 'system' sentinel — NEVER the local user. A
-        # remote row is a pure reflection of the hub row; without this the
-        # driver stamps the request-context user, and received conversations
-        # surface as created by the recipient ("from <local git user.name>").
-        payload["created_by"] = hub_conv.get("initiated_by") or "system"
+        # Hub owner field ``initiated_by`` mirrors locally as ``created_by``,
+        # carried VERBATIM — including ``None`` (share-created conversations
+        # carry no owner). The receiver must NOT fabricate a 'system' sentinel
+        # nor let the driver stamp the local user; the remote-reflection block
+        # around the save guarantees both. A null owner resolves for display via
+        # the participant roster's ``owner`` role.
+        if hub_conv.get("initiated_by") is not None:
+            payload["created_by"] = hub_conv["initiated_by"]
         if hub_conv.get("message_status_visible") is not None:
             payload["message_status_visible"] = bool(hub_conv["message_status_visible"])
         # Carry the hub's updated_date so the local row records the hub
@@ -2444,7 +2455,10 @@ async def _upsert_hub_conversation_metadata(
         payload["fetched_at"] = datetime.now(UTC)
         conv = Conversation.model_validate(payload)
         conv.id = conv_id
-        return await conv.save(someone_typeid, notify=notify)
+        # Pure reflection of the hub row: preserve created_by/updated_by/dates
+        # verbatim, never the local sync user.
+        with remote_reflection():
+            return await conv.save(someone_typeid, notify=notify)
     # Update path: copy hub-owned fields without touching projections.
     changed = False
     for k in ("title", "participants", "remote_project_id", "remote_project_name"):
@@ -2492,7 +2506,10 @@ async def _upsert_hub_conversation_metadata(
     if changed:
         # We just refreshed this row from a hub payload — stamp the boundary.
         existing.fetched_at = datetime.now(UTC)
-        return await existing.save(someone_typeid, notify=notify)
+        # Reflection: don't let apply_update_fields clobber updated_by with the
+        # local sync user — the hub's updated_date/owner are authoritative here.
+        with remote_reflection():
+            return await existing.save(someone_typeid, notify=notify)
     return existing
 
 

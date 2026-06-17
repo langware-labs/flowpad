@@ -7,10 +7,11 @@ import { canonicalPath, projectListToSelectorItems, ProjectSelector } from '@src
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { useAllProjects } from '@src/hooks/use-all-projects';
-import { terminalDockPointer, useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/tabs/useTabs';
+import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
 import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
@@ -42,7 +43,7 @@ interface ProjectsCounterChipProps {
   onOpenHistory?: () => void;
 }
 
-function bucketDisplayName(bucket: TerminalProjectBucket): string {
+function bucketDisplayName(bucket: TabProjectBucket): string {
   return bucket.project?.getDisplayName() ?? bucket.project?.name ?? bucket.projectId;
 }
 
@@ -56,7 +57,7 @@ function bucketDisplayName(bucket: TerminalProjectBucket): string {
 export function resolveProjectChipName(
   currentProjectName: string | null | undefined,
   currentProjectId: string | null | undefined,
-  buckets: ReadonlyArray<TerminalProjectBucket>,
+  buckets: ReadonlyArray<TabProjectBucket>,
 ): string | null {
   if (currentProjectName?.trim()) return currentProjectName.trim();
   const bucket = currentProjectId ? buckets.find((b) => b.projectId === currentProjectId) : null;
@@ -67,13 +68,13 @@ export function resolveProjectChipName(
 // current-first or state-ranked — the list keeps a stable order as the user
 // switches projects or buckets change state; the current row is highlighted
 // instead of moved.
-function compareBuckets(a: TerminalProjectBucket, b: TerminalProjectBucket): number {
+function compareBuckets(a: TabProjectBucket, b: TabProjectBucket): number {
   return (
     bucketDisplayName(a).localeCompare(bucketDisplayName(b)) || a.projectId.localeCompare(b.projectId)
   );
 }
 
-function bucketRowLabel(bucket: TerminalProjectBucket): string {
+function bucketRowLabel(bucket: TabProjectBucket): string {
   if (bucket.state === 'live') return bucketDisplayName(bucket);
   if (bucket.state === 'loading') return 'Loading…';
   return `Project unavailable (${bucket.projectId.slice(0, 8)})`;
@@ -176,11 +177,11 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const [pickerWorker, setPickerWorker] = useState<PickerWorker | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
   const { navigation } = useDockNavigation();
-  const { buckets } = useTerminalProjectBuckets();
+  const { buckets } = useTabProjectBuckets();
 
   const sorted = useMemo(() => [...buckets].sort(compareBuckets), [buckets]);
 
-  const terminalTotal = buckets.reduce((sum, b) => sum + b.tabs.length, 0);
+  const tabTotal = buckets.reduce((sum, b) => sum + b.tabCount, 0);
   const projectTotal = buckets.length;
   const isEmpty = projectTotal === 0;
   // With an action callback the chip stays clickable even with zero buckets —
@@ -194,8 +195,8 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   );
   const hasProject = !!projectName;
 
-  const countTooltip = `${projectTotal} active project${projectTotal === 1 ? '' : 's'} with ${terminalTotal} terminal${
-    terminalTotal === 1 ? '' : 's'
+  const countTooltip = `${projectTotal} active project${projectTotal === 1 ? '' : 's'} with ${tabTotal} open tab${
+    tabTotal === 1 ? '' : 's'
   }`;
   const tooltipText = hasProject ? `${projectName} — ${countTooltip}` : countTooltip;
 
@@ -239,7 +240,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
       ) : null}
       <Layers className={`h-3 w-3 shrink-0 ${hasProject ? 'text-muted-foreground' : ''}`} />
       <span className={hasProject ? 'text-muted-foreground' : undefined}>{projectTotal}</span>
-      <sub className="ml-0.5 text-[9px] leading-none text-muted-foreground">{terminalTotal}</sub>
+      <sub className="ml-0.5 text-[9px] leading-none text-muted-foreground">{tabTotal}</sub>
     </>
   );
 
@@ -264,45 +265,40 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     );
   }
 
-  // URL-first (see CLAUDE.md): selecting a project NAVIGATES to its first tab
-  // (by tab_order); the shell-dock loader then writes project context. No
-  // dataContext writes from this click path — that inversion left the URL on
-  // the previous project's tab and the strip scoped to the new one.
-  const switchToBucket = (bucket: TerminalProjectBucket) => {
-    setOpen(false);
-    const first = [...bucket.tabs].sort((a, b) => (a.tabOrder ?? 0) - (b.tabOrder ?? 0))[0];
-    if (!first) return;
-    navigation.openDock(terminalDockPointer(first));
-  };
-
-  const handleRecover = async (bucket: TerminalProjectBucket) => {
+  const handleRecover = async (bucket: TabProjectBucket) => {
     setRecoveringId(bucket.projectId);
     try {
       const recovered = await bucket.recover();
       if (!recovered) {
         notify.error({
           title: 'Recovery failed',
-          message: `Couldn't recover the project for ${bucket.tabs.length} terminal${
-            bucket.tabs.length === 1 ? '' : 's'
+          message: `Couldn't recover the project for ${bucket.tabCount} open tab${
+            bucket.tabCount === 1 ? '' : 's'
           } (${bucket.projectId.slice(0, 8)}).`,
           id: `project-recover:${bucket.projectId}`,
         });
         return;
       }
-      switchToBucket(bucket);
+      setOpen(false);
+      navigation.openDock(await dockForProjectEntry(recovered.id));
     } finally {
       setRecoveringId(null);
     }
   };
 
-  const handleSelect = async (bucket: TerminalProjectBucket) => {
-    if (bucket.state === 'live' && bucket.project) {
-      switchToBucket(bucket);
-      return;
-    }
+  // Selecting a project is an active-project switch. URL-first (CLAUDE.md): the
+  // click only resolves a destination and navigates — it resumes the project's
+  // most-recently-active tab (or its landing when it has none) via
+  // `dockForProjectEntry`. The loader that the navigation triggers is the single
+  // writer of project context; the strip re-scopes off the URL-resolved project.
+  const handleSelect = async (bucket: TabProjectBucket) => {
     if (bucket.state === 'missing') {
       await handleRecover(bucket);
       return;
+    }
+    if (bucket.state === 'live' && bucket.project) {
+      setOpen(false);
+      navigation.openDock(await dockForProjectEntry(bucket.project.id));
     }
     // 'loading' — ignore; spinner is rendered in the row.
   };
@@ -399,7 +395,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                       type="button"
                       aria-current={isCurrent ? 'true' : undefined}
                       disabled={bucket.state === 'loading' || isRecovering}
-                      onClick={() => handleSelect(bucket)}
+                      onClick={() => void handleSelect(bucket)}
                       className={rowClass}
                     >
                       {leadingIcon}
@@ -410,7 +406,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                         </span>
                       ) : null}
                       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
-                        {bucket.tabs.length}
+                        {bucket.tabCount}
                       </span>
                     </button>
                   </li>

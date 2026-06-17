@@ -423,6 +423,21 @@ class SQLiteDBDriver(DBDriver):
         # Migrate vfs_record -> record_data_ref
         await _migrate_vfs_record_to_data_ref(conn)
 
+        # Partial expression index powering per-(project, type) asset counts.
+        # Indexes only the project/system-scoped rows (mirrors the project
+        # predicate in `_scope_sql_clause`) and leads with the GROUP BY columns
+        # (project_id, type) so SQLite streams the aggregate straight from the
+        # index and skips the temp B-tree sort. ~25x on large indexes; see
+        # scripts/bench_project_type_counts.py.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_project_type_counts "
+                "ON entities(json_extract(data, '$.project_id'), type) "
+                "WHERE json_extract(data, '$.scope') IN ('project', 'system') "
+                "AND json_extract(data, '$.project_id') IS NOT NULL"
+            )
+        )
+
     async def close(self):
         """Close database connection and ensure worker threads stop."""
         if self.engine:

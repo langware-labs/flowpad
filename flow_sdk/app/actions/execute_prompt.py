@@ -70,15 +70,24 @@ async def build_merged_prompt(fm: "FlowMessage") -> str:
     from flow_sdk.builtin.flow_message import (
         PROMPT_FILE_VFS_PREFIX,
         AttachmentType,
+        is_image_filename,
     )
     from flow_sdk.builtin.prompt import Prompt
 
     # Pull the body bundle once so file-backed attachments resolve to disk.
+    # Best-effort, but NOT silent: a failure here (e.g. body_status still
+    # UPLOADING) is exactly what strands an attachment with an unreadable
+    # relative VFS path, so surface it. The bridge now gates auto-run on
+    # body_status=READY (see hub_bridge ``_handle_flow_message_op``), so this
+    # should only fail on the manual-Execute edge.
     try:
         if fm.has_body():
             await fm.download_body()
-    except Exception:
-        pass  # best-effort — fall back to inline previews / raw paths
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[execute_prompt] body download failed for fm=%s — attachments may "
+            "not resolve to absolute paths: %s", fm.id, e,
+        )
 
     inline_parts: list[str] = []
     prompt_file_lines: list[str] = []
@@ -100,7 +109,13 @@ async def build_merged_prompt(fm: "FlowMessage") -> str:
         elif a.attachment_type == AttachmentType.PROMPT:
             if data.startswith(PROMPT_FILE_VFS_PREFIX):
                 lp = _resolve_local_path(fm.id, data) or data
-                prompt_file_lines.append(f"Your prompt to execute is here: {lp}")
+                fn = data.split("/")[-1] or data
+                # An image attached to the prompt is context to look at, not the
+                # instruction to run — list it with the other context files.
+                if is_image_filename(fn):
+                    file_lines.append(f"- {fn}: {lp}")
+                else:
+                    prompt_file_lines.append(f"Your prompt to execute is here: {lp}")
             elif data:
                 inline_parts.append(data)
         elif a.attachment_type == AttachmentType.FILE:
@@ -125,19 +140,6 @@ async def build_merged_prompt(fm: "FlowMessage") -> str:
 
 
 # ── headless run + capture (port of spawn/reuse + captureTurn) ──────────────
-
-def _transcript_entry_count(ap: "AgenticProcess") -> int:
-    """Number of transcript JSONL lines already written (the pre-trigger offset,
-    so capture ignores a reused process's prior-turn output)."""
-    try:
-        p = ap.transcript_path()
-        if not p or not Path(p).exists():
-            return 0
-        with open(p, encoding="utf-8") as f:
-            return sum(1 for _ in f)
-    except Exception:
-        return 0
-
 
 async def _reuse_or_spawn_headless(target_typeid_str: str, workdir: str) -> "AgenticProcess":
     """Reuse the most-recent non-failed headless AP for this conversation target
@@ -169,25 +171,71 @@ async def _reuse_or_spawn_headless(target_typeid_str: str, workdir: str) -> "Age
     return ap
 
 
-async def _capture_assistant_reply(ap: "AgenticProcess", *, before_count: int) -> str:
-    """Run the turn to completion and return the assistant CHAT text written
-    after ``before_count`` (the Python twin of ``captureTurn`` +
-    ``extractAssistantText``)."""
-    parts: list[str] = []
-    idx = 0
+def _is_user_turn_boundary(msg: dict) -> bool:
+    """True when ``msg`` is a genuine user prompt — the start of a new turn —
+    rather than a ``tool_result`` the tool runtime feeds back to the model
+    mid-turn. Used to slice only the latest turn's reply out of a transcript
+    that replays every prior turn (see ``_capture_assistant_reply``)."""
+    if msg.get("role") != "user":
+        return False
+    content = msg.get("content")
+    if isinstance(content, list):
+        # A tool_result block is mid-turn tool output, NOT a new prompt — it
+        # must not reset the turn.
+        return not any(
+            isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+        )
+    return bool(content)
+
+
+def _assistant_text(msg: dict) -> str:
+    """Concatenate the visible ``text`` blocks of one assistant message."""
+    content = msg.get("content")
+    if not isinstance(content, list):
+        return ""
+    out = [
+        (block.get("text") or "").strip()
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "text"
+    ]
+    return "\n\n".join(t for t in out if t)
+
+
+async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
+    """Run the turn to completion and return ONLY the latest turn's assistant
+    CHAT text.
+
+    ``stream_transcript`` replays the whole JSONL from the top, and a resumed
+    Claude session re-emits every prior turn — so a fixed line offset can't
+    isolate the new turn (it leaks every earlier reply). Instead we drop the
+    collected text every time a genuine user prompt appears, so only the
+    assistant text following the LAST user prompt (this turn's reply) survives.
+
+    Claude can also write an assistant message more than once (streaming +
+    finalized snapshot share ``message.id``); we key on the id with last-write-
+    wins so a repeated snapshot can't duplicate the text within a turn.
+    """
+    from collections import OrderedDict
+
+    turn: "OrderedDict[str, str]" = OrderedDict()
+    noid = 0
     async for entry in ap.stream_transcript(timeout=EXECUTE_TURN_TIMEOUT):
-        if idx >= before_count:
-            msg = entry.get("message") if isinstance(entry, dict) else None
-            if isinstance(msg, dict) and msg.get("role") == "assistant":
-                content = msg.get("content")
-                if isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            t = (block.get("text") or "").strip()
-                            if t:
-                                parts.append(t)
-        idx += 1
-    return "\n\n".join(parts).strip()
+        msg = entry.get("message") if isinstance(entry, dict) else None
+        if not isinstance(msg, dict):
+            continue
+        if _is_user_turn_boundary(msg):
+            turn.clear()  # new turn — discard everything from prior turns
+            continue
+        if msg.get("role") == "assistant":
+            text = _assistant_text(msg)
+            if not text:
+                continue
+            mid = msg.get("id")
+            if not mid:
+                mid = f"_noid_{noid}"
+                noid += 1
+            turn[mid] = text  # last write wins for a repeated snapshot id
+    return "\n\n".join(turn.values()).strip()
 
 
 # ── the convergence entrypoint ──────────────────────────────────────────────
@@ -232,9 +280,8 @@ async def execute_prompt_from_message(
         target = str(TypeId(type="conversation", id=conversation.id))
         ap = await _reuse_or_spawn_headless(target, workdir)
 
-        before = _transcript_entry_count(ap)
         await ap.prompt(prompt_text)
-        reply = await _capture_assistant_reply(ap, before_count=before)
+        reply = await _capture_assistant_reply(ap)
 
         if not reply:
             return ApiSuccessResponse(data={"executed": True, "reply": None, "process_id": ap.id})

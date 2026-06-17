@@ -85,6 +85,17 @@ export class CapabilityManager extends EventEmitter {
   private ensureCheckPromises = new Map<string, Promise<CapabilitySnapshot>>();
   private actionResults = new Map<string, CapabilityCheck>();
 
+  constructor() {
+    super();
+    // Each mounted `useCapability` (and the capabilities view) adds one
+    // 'change' listener and removes it on unmount — they are per-mount, not
+    // leaked. The app legitimately mounts >10 concurrent subscribers (the
+    // Claude/Codex/Copilot triple is read by App, both terminal strips, and
+    // the capabilities panel), which trips EventEmitter's default-10 leak
+    // heuristic. Disable the cap rather than pick a bound that re-trips later.
+    this.setMaxListeners(0);
+  }
+
   static getInstance(): CapabilityManager {
     if (!CapabilityManager.instance) {
       CapabilityManager.instance = new CapabilityManager();

@@ -31,11 +31,7 @@ import { useAgentContext } from '@src/contexts/agent-context';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
-import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
-import { useLoginRequired } from '@src/hooks/use-login-required';
-import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
-import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -200,26 +196,8 @@ export function HomeLanding() {
   }, [scanInfo]);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
-  const {
-    checkLoginAndProceed,
-    showLoginDialog,
-    closeLoginDialog,
-    pendingAction,
-    clearPending,
-    isPostLogin,
-  } = useLoginRequired();
-  const [showNewConversation, setShowNewConversation] = useState(false);
   const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
-  const handleStartConversation = () => {
-    if (!checkLoginAndProceed(ActionType.START_CONVERSATION, undefined, undefined, { forceLogin: true })) return;
-    setShowNewConversation(true);
-  };
-  useEffect(() => {
-    if (!isPostLogin || pendingAction?.action !== ActionType.START_CONVERSATION) return;
-    setShowNewConversation(true);
-    clearPending();
-  }, [clearPending, isPostLogin, pendingAction?.action]);
 
   // Inbox unread count — populates the shared store consumed by the sidebar
   // Inbox badge. The home Inbox row was removed; the Recent conversations strip
@@ -550,10 +528,15 @@ export function HomeLanding() {
           />
         </div>
 
-        {/* Middle column: Main content + Quick Access */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {/* Main content area - shrink-0 so it never collapses */}
-          <div className="flex shrink-0 flex-col items-center gap-6 pb-6 text-center">
+        {/* Middle column: Main content + Quick Access.
+            overflow-hidden so the column itself NEVER scrolls — the only scroll
+            region is the Feed, which is flex-1/min-h-0 and absorbs the leftover
+            column height (see Feed.tsx). The hero (greeting + input) stays
+            pinned on top and Quick Access / notifications sit below the feed;
+            gap-6 keeps the original inter-section spacing. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-hidden">
+          {/* Hero — fixed at the top, never scrolls */}
+          <div className="flex shrink-0 flex-col items-center gap-6 text-center">
             <h1 className="text-4xl font-bold tracking-tight">
               Hey{' '}
               <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
@@ -567,13 +550,6 @@ export function HomeLanding() {
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
               />
               <div className="flex w-full flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
-                  onClick={handleStartConversation}
-                >
-                  Start conversation
-                </Button>
                 <button
                   type="button"
                   className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
@@ -584,9 +560,13 @@ export function HomeLanding() {
                 </button>
               </div>
             </div>
+          </div>
 
-            <Feed />
+          {/* Feed — the single scroll region; grows to fill the leftover height */}
+          <Feed />
 
+          {/* Quick Access — fixed below the feed */}
+          <div className="flex shrink-0 flex-col items-center gap-6 text-center">
             <div className="w-full max-w-3xl">
               <MiniDesktop />
             </div>
@@ -595,7 +575,6 @@ export function HomeLanding() {
               variant="strip"
               className="w-full max-w-3xl flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted/60 transition-colors text-left"
             />
-
           </div>
 
           {/* Post-scan results panel — shown after scan completes when user hasn't searched yet */}
@@ -669,15 +648,10 @@ export function HomeLanding() {
         }}
       />
 
-      <NewConversationDialog
-        open={showNewConversation}
-        onClose={() => setShowNewConversation(false)}
-      />
       <CommunityAssistanceDialog
         open={showCommunityAssistance}
         onClose={() => setShowCommunityAssistance(false)}
       />
-      <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
 
       {/* Incoming task dialog — pull/clone flow for shared tasks */}
       {pendingTask && (
