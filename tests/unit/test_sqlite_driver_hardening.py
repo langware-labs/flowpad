@@ -117,6 +117,42 @@ class TestCountEntitiesByType:
         assert await driver.count_entities_by_type(None) == 3
 
 
+class TestUpdateNullCreatedBy:
+    @pytest.mark.asyncio
+    async def test_update_existing_row_with_null_created_by_succeeds(self, driver):
+        """Regression (soc2 missing attachments): a hub-origin reflection persists
+        with ``created_by=None`` — the hub stamps no owner (``initiated_by``) for
+        share/diagnostics conversations, and the receiver reflects that verbatim.
+
+        Re-saving that already-existing row to backfill fields (participants /
+        title / parent during invitation-preview + bundle unpack) must UPDATE it.
+        ``_update_entity`` used to treat the null ``created_by`` as a
+        create-on-existing collision and raise ``... already exists``, which
+        aborted the unpack so the recipient never saw the messages or their
+        attachments. The row provably exists by the time we reach the update, so
+        a null owner is legitimate and the update must proceed.
+        """
+        from flow_sdk.core.entity.entity_model import remote_reflection
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        p = AgenticProcess(session_id="soc2")
+        # Reflect a hub-origin row: created_by stays null (no fabricated owner).
+        with remote_reflection():
+            await driver.save(p)
+        existing = await driver.get_all(QueryFilter(type=AgenticProcess.get_type()))
+        assert len(existing) == 1
+        assert existing[0].created_by is None  # the reflection left it null
+
+        # The backfill re-save (invitation-preview / bundle-unpack update path).
+        p.session_id = "soc2-updated"
+        updated = await driver.save(p)  # must NOT raise "... already exists"
+        assert updated.session_id == "soc2-updated"
+
+        reloaded = await driver.get_all(QueryFilter(type=AgenticProcess.get_type()))
+        assert len(reloaded) == 1
+        assert reloaded[0].session_id == "soc2-updated"
+
+
 class TestGetAllJsonFieldFilter:
     def test_unknown_kwarg_raises(self):
         """QueryFilter(unknown_field=X) must raise, not silently drop the filter."""

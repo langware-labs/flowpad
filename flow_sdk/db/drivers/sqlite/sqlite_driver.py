@@ -1104,8 +1104,16 @@ class SQLiteDBDriver(DBDriver):
 
     async def _update_entity(self, entity: DBBaseRecord, session: AsyncSession) -> DBBaseRecord:
         """Update an existing entity. Outer _session_ctx drives commit."""
-        # Check if this is a create attempt on existing entity (matching NetworkX behavior)
-        if not hasattr(entity, "created_by") or entity.created_by is None:
+        # A row only reaches here after ``save()`` has SELECTed it and confirmed
+        # it exists, so a null ``created_by`` is NOT a create-on-existing
+        # collision. It is a legitimate hub-origin reflection: the hub stamps no
+        # owner (``initiated_by``) for share/diagnostics conversations, so the
+        # receiver faithfully reflects ``created_by=None`` — and a later backfill
+        # (participants/title/parent) must still be able to UPDATE that row.
+        # Rejecting it here aborted invitation-preview + bundle unpack, so the
+        # recipient never saw the messages or their attachments. Reject only a
+        # structurally malformed entity (the field missing entirely).
+        if not hasattr(entity, "created_by"):
             raise HTTPException(status_code=400, detail=f"Entity with ID {entity.id} already exists")
 
         self.apply_update_fields(entity)
