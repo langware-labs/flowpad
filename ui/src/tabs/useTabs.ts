@@ -1,5 +1,6 @@
 import { AgenticProcess, dataContext, Project, Shell, Tab, type TabRow, TypeId } from '@sdk';
 import { getAllTabRowsSnapshot, refreshAllTabRows, useAllTabRows } from '@src/tabs/all-tabs-store';
+import { tabRowInProject } from '@src/tabs/tab-candidates';
 import { useEffect, useMemo, useState } from 'react';
 
 // ─── Terminal rows (docs/tab-management.md) ─────────────────────────────────
@@ -20,7 +21,7 @@ export function terminalRowsForScope(
 ): TabRow[] {
   const terminals = rows.filter((r) => TERMINAL_TARGET_TYPES.has(r.target_type ?? ''));
   if (scope === 'all') return terminals;
-  return terminals.filter((r) => r.project_id === projectId || r.project_id == null);
+  return terminals.filter((r) => tabRowInProject(r, projectId));
 }
 
 /** React binding for {@link terminalRowsForScope}, reading the one global store. */
