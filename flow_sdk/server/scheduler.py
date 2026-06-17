@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
 
 _scheduler = None
+_job_registration_lock = asyncio.Lock()
 
 
 def get_scheduler():
@@ -56,3 +58,8 @@ def stop_scheduler():
     if _scheduler is not None and _scheduler.running:
         _scheduler.shutdown(wait=False)
         logger.info("CronEvent scheduler stopped")
+
+
+async def acquire_job_registration_lock():
+    """Acquire lock for thread-safe job registration."""
+    return _job_registration_lock
