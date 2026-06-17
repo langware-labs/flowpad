@@ -55,6 +55,41 @@ seed). Every mutation broadcasts a `tabs_changed` ping. Orphan cleanup:
 `AgenticProcess.close` calls `hide_tabs_for_target` (the process row persists as
 `stopped`, so delete-cleanup never fires for it).
 
+## A tab's project follows its target, never the ambient active project
+
+`Tab.project_id` is the project of the tab's **target entity**, not whatever project
+was active in the client when the tab was materialized. The ambient project is the
+wrong source: on a cross-project open (switching projects and resuming a tab that
+lives in a non-active project, a deep link, or a recovery that races the loader's
+context switch) the active project is a *different* project, and stamping it
+re-parented the tab — the chip then vanished from its real project's strip (the
+"wrong project minted on tab" bug).
+
+One chokepoint resolves it: **`Tab.getFromDockPointer(dock)`** (SDK, `entities/tab.ts`),
+called by the loader as the single writer (`main-loader.ts`). It is self-sufficient
+(cache-first, network fallback) and resolves `project_id` from the dock's TARGET:
+
+- a **project** tab (`targetTypeId.type === 'project'`) → its **own id** (a project
+  belongs to itself);
+- else an **entity** dock (`…/typeid/<type>-<id>`, `shell-<id>`, …) → the cached
+  entity's `project_id` (`getByTypeId` fallback on a cold miss);
+- else a **vfs** asset dock (`…/vfs/<path>`) → `dataManager.getEntityByPath(path)`
+  → that entity's `project_id`;
+- else (target-less: settings/search/home/diff) → null.
+
+The pieces, each at the right layer:
+
+- **`DockPointer`** stays a pure string manipulator — it only gains the parse-only
+  getters `targetTypeId: TypeId | null` and `vfsPath: VFSPath | null` (via the
+  canonical `AssetDocPointer` grammar). No network, no DB.
+- **`getEntityByPath(path)`** — a pure `asset_ref` index lookup
+  (`GET /api/v1/assets/entity` → `Entity.get_by_asset_ref`, no type arg: the type
+  isn't knowable from a vfs URL since one editor backs many types). No recovery, no
+  indexing — distinct from `discoverByPath`, which stays only in `useEntityByPath`
+  for the editor view's on-mount resolution.
+- The backend `ensure_tab` stores exactly the `project_id` it's given; all
+  resolution lives in `Tab.getFromDockPointer`.
+
 ## One client store, views derived locally
 
 `ui/src/tabs/all-tabs-store.ts` is the **single store**: it holds the global
@@ -90,13 +125,44 @@ consumer reads this one source and derives its view client-side:
   new-tab menu + the projects chip + modals — no session list, no active-key, no
   close/rename/select handlers.
 
+## The content panel — one main view + tabbed shell
+
+`content-panel.tsx` is two layers, both pure functions of the URL (`currentDock`):
+
+- **the main view** — `renderBody(viewType)` renders the body for ANY dock
+  (`bodyViewType = currentDock?.viewType ?? HOME`). One switch; only the active
+  body is mounted (the old radix `<Tabs>` did not `forceMount`, so this matches it).
+- **the tabbed shell** — unless the surface is full-bleed, `UnifiedTabStrip` renders
+  above the body; the active chip is `currentDock.tabHash`.
+
+Two independent, single-owned bits decide framing, each in the layer that owns it:
+
+| bit | owner | meaning |
+|---|---|---|
+| chip? | `DockPointer.tabHash` (`string \| null`) | does this dock get a strip chip? |
+| takeover? | `VIEWER_REGISTRY[viewType].chrome` (`'fullbleed' \| 'workspace'`) | does it hide the strip and own the panel? |
+
+`hideChrome = windowMode || chrome === 'fullbleed'`. Home = `fullbleed` (no strip,
+no chip); a bare shell = `workspace` + `tabHash === null` (strip stays, no own chip,
+body = launcher); a terminal/doc = `workspace` + a `tabHash` string (strip + chip).
+A full-bleed surface inherently has no chip, so `tabHash` returns null when
+`chrome === 'fullbleed'` — the one rule tying the two bits together (the rest of
+`tabHash`'s null cases are the bare-shell host and a missing viewType).
+
+The viewer-store overview axis is gone: `useViewerStore` is now just
+`currentContext` (a URL→params bag — `codeRef`/port/`checkpointHash` — that the body
+components read); `currentOverviewTab`, `isHomeView`, `OVERVIEW_NON_HOME_SLOTS`, and
+the radix `<Tabs>` ladder are deleted. Agent stream focus is URL-first:
+`useActiveViewer` routes it through `navigation.openDock`, not a store write.
+
 ## The flow (URL-first, non-negotiable)
 
 ```
 click → navigation.openDock(pointer)            # click handlers do ONLY this
       → react-router loader runs
-      → ensureTabForCurrentDock(dock)            # the loader is the single writer
-           → Tab.newTab(tabHash, {name, icon_key, worktree, …})  (get-or-create)
+      → Tab.getFromDockPointer(dock)             # the loader is the single writer
+           → resolve target + project_id from the dock (see above)
+           → Tab.newTab(tabHash, {project_id, name, icon_key, worktree, …})  (get-or-create)
            → refreshAllTabRows() + Tab.activateById(id)
       → all-tabs-store refreshes → strip + body re-render from the one source
 ```

@@ -21,6 +21,7 @@ import { TabStrip } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
+import { resolveNextTabRow } from '@src/tabs/tab-candidates';
 import { applyPredictedOrder, refreshAllTabRows, useAllTabRows } from '@src/tabs/all-tabs-store';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import React, { useCallback, useEffect, useMemo } from 'react';
@@ -29,21 +30,6 @@ export interface UnifiedTabStripProps {
   /** `'project'` (default) shows the active project + projectless tabs; `'all'`
    *  shows every project's tabs (the developer sessions view). */
   scope?: 'project' | 'all';
-}
-
-/** Most-recently-active remaining row (close→navigate target), excluding `exclude`. */
-function lastActiveExcept(rows: TabRow[], excludeId: string): TabRow | null {
-  let best: TabRow | null = null;
-  let bestAt = -Infinity;
-  for (const r of rows) {
-    if (r.id === excludeId) continue;
-    const at = typeof r.last_active_at === 'number' ? r.last_active_at : 0;
-    if (at >= bestAt) {
-      bestAt = at;
-      best = r;
-    }
-  }
-  return best;
 }
 
 export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'project' }) => {
@@ -90,7 +76,9 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       const row = rowByKey.get(key);
       if (!row) return;
       if (key === activeKey) {
-        const next = lastActiveExcept(rows, row.id);
+        // Same precedence the loaders use (intent → recency → tab_order), so the
+        // close-time pick can't diverge from a fresh navigation's pick.
+        const next = resolveNextTabRow(rows, new Set([row.target_id ?? '']));
         if (next) navigateTo(next.pointer, false);
         else navigation.closeDock();
       }
@@ -105,7 +93,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       const closingIds = new Set(closing.map((r) => r.id));
       if (keys.includes(activeKey)) {
         const survivors = rows.filter((r) => !closingIds.has(r.id));
-        const next = survivors.length ? lastActiveExcept(survivors, '') : null;
+        const next = resolveNextTabRow(survivors);
         if (next) navigateTo(next.pointer, false);
         else navigation.closeDock();
       }
