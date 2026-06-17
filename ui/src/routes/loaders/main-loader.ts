@@ -13,11 +13,11 @@ import {
   initSdk,
   QueryRequest,
   systemTools,
+  Tab,
   Trigger,
   TypeId,
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
-import { ensureTabForCurrentDock } from '@src/tabs/ensure-tab-for-dock';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
@@ -107,13 +107,14 @@ export async function loadAgentApp(args: LoaderArgs) {
   const { processId, viewType } = params;
   const pointer = params['*'] || '';
 
-  // URL-first tab materialization: the loader is the single writer — ensure a
-  // Tab exists for the dock the URL landed on (every view funnels here, before
-  // the per-view branch tree's early returns). Fire-and-forget; click handlers
-  // only navigate. Invalid view types (DockPointer.fromUrl throws) get no tab.
+  // URL-first tab materialization: the loader is the single writer — get-or-create
+  // the Tab for the dock the URL landed on (every view funnels here). The Tab's
+  // project follows its TARGET (resolved inside getFromDockPointer), never the
+  // ambient project. Fire-and-forget; click handlers only navigate. Invalid view
+  // types (DockPointer.fromUrl throws) get no tab.
   if (viewType) {
     try {
-      ensureTabForCurrentDock(DockPointer.fromUrl(viewType, pointer || undefined, requestUrl.searchParams));
+      void Tab.getFromDockPointer(DockPointer.fromUrl(viewType, pointer || undefined, requestUrl.searchParams));
     } catch {
       /* not a valid dock view — no tab */
     }

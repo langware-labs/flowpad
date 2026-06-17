@@ -1,6 +1,40 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
+import { IDockPointer } from '../models/DockPointer';
+import { EntityTypes } from '../schema/types';
+
+/** A terminal target's display fields, read off the (cached/resolved) entity. */
+interface TerminalTargetFields {
+  worker_type?: string | null;
+  cliOptions?: { worktree?: boolean } | null;
+}
+
+/** Provider/display kind for a terminal chip (vendor→glyph) denormalized onto
+ *  `Tab.icon_key`. Shells use `'shell'`; an AgenticProcess maps its
+ *  `worker_type`; unset/unknown → `'claude'` (the spawn default). */
+function providerKindForWorkerType(workerType: string | null | undefined): string {
+  const wt = (workerType ?? '').toLowerCase();
+  if (wt === 'codex') return 'codex';
+  if (wt === 'copilot') return 'copilot';
+  return 'claude';
+}
+
+/** CREATE-only chip primitives (provider glyph + worktree badge), derived from
+ *  the tab's target entity so the strip draws without fetching it. */
+function displayForTarget(
+  targetType: string | null,
+  target: TerminalTargetFields | null,
+): { iconKey: string | null; worktree: boolean } {
+  if (targetType === EntityTypes.Shell) return { iconKey: 'shell', worktree: false };
+  if (targetType === EntityTypes.AgenticProcess) {
+    return {
+      iconKey: providerKindForWorkerType(target?.worker_type),
+      worktree: Boolean(target?.cliOptions?.worktree),
+    };
+  }
+  return { iconKey: null, worktree: false };
+}
 
 /**
  * Tab — the frontend mirror of the DB-only backend ``Tab`` entity
@@ -117,6 +151,50 @@ export class Tab extends APIEntity<Tab> implements ITab {
     };
     const res = await dataManager.callAction<unknown, { tabs: TabRow[] }>(info);
     return res?.tabs ?? [];
+  }
+
+  /**
+   * THE tab chokepoint: get-or-create the Tab for a dock, with `project_id`
+   * resolved from the dock's TARGET — never the ambient active project (that
+   * re-parented tabs on a cross-project open). DockPointer stays a pure string
+   * manipulator; all network/DB resolution lives here.
+   *
+   * Self-sufficient (cache-first, network fallback) so it's correct regardless
+   * of call site: an entity dock resolves via `getByTypeId`; a vfs asset dock
+   * via `getEntityByPath` (the pure, no-recovery path lookup). `project_id`: a
+   * project tab belongs to its OWN id; otherwise the target entity's
+   * `project_id`; a target-less dock → null. No-tab docks (home, bare shell)
+   * return [].
+   */
+  static async getFromDockPointer(dock: IDockPointer): Promise<TabRow[]> {
+    const tabHash = dock.tabHash;
+    if (!tabHash) return [];
+
+    // An entity dock resolves via `getByTypeId` (already cache-first internally);
+    // a vfs asset dock via the pure `getEntityByPath`. One cast names the fields
+    // we read off the heterogeneous target (project + terminal-display).
+    let targetTypeId = dock.targetTypeId ?? null;
+    const target = (targetTypeId
+      ? await dataManager.getByTypeId<APIEntity<any>>(targetTypeId).catch(() => null)
+      : (dock.vfsPath ? await dataManager.getEntityByPath<APIEntity<any>>(dock.vfsPath.toString()) : null)
+    ) as (APIEntity<any> & TerminalTargetFields & { project_id?: string | null }) | null;
+    if (!targetTypeId && target) targetTypeId = target.typeId;
+
+    const projectId =
+      targetTypeId?.type === EntityTypes.Project
+        ? targetTypeId.id // a project belongs to itself
+        : (target?.project_id ?? null);
+
+    const { iconKey, worktree } = displayForTarget(targetTypeId?.type ?? null, target);
+
+    return Tab.newTab(tabHash, {
+      targetType: targetTypeId?.type ?? null,
+      targetId: targetTypeId?.id ?? null,
+      projectId,
+      name: dataManager.getTabName(dock),
+      iconKey,
+      worktree,
+    });
   }
 
   /** GET /graph/tab/list_all — EVERY visible Tab (any kind, ALL projects), fully

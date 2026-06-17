@@ -3,11 +3,15 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
-import { canonicalPath, projectListToSelectorItems, ProjectSelector, selectProjectContext } from '@src/components/project-selector';
+import { canonicalPath, projectListToSelectorItems, ProjectSelector } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { notify } from '@src/notifications';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { refreshAllTabRows } from '@src/tabs/all-tabs-store';
+import { resolveNextTabRow } from '@src/tabs/tab-candidates';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
 import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
@@ -39,6 +43,16 @@ interface ProjectsCounterChipProps {
    * this; the host owns the history modal.
    */
   onOpenHistory?: () => void;
+}
+
+/** Where to land when switching INTO a project: its most-recently-active tab's
+ *  native dock (the recency/order resolver the loaders use), or the project's
+ *  collaboration landing when it owns no tabs. URL-first: the click resolves a
+ *  dock and navigates; the loader is still the single writer of project context. */
+async function dockForProjectEntry(projectId: string): Promise<DockPointer> {
+  const rows = (await refreshAllTabRows()).filter((r) => r.project_id === projectId);
+  const tab = resolveNextTabRow(rows);
+  return (tab ? DockPointer.fromTabHash(tab.pointer) : null) ?? DockPointer.forProject(projectId);
 }
 
 function bucketDisplayName(bucket: TabProjectBucket): string {
@@ -174,6 +188,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // clicked icon on the action strip.
   const [pickerWorker, setPickerWorker] = useState<PickerWorker | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
+  const { navigation } = useDockNavigation();
   const { buckets } = useTabProjectBuckets();
 
   const sorted = useMemo(() => [...buckets].sort(compareBuckets), [buckets]);
@@ -277,17 +292,17 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
         return;
       }
       setOpen(false);
-      await selectProjectContext(recovered);
+      navigation.openDock(await dockForProjectEntry(recovered.id));
     } finally {
       setRecoveringId(null);
     }
   };
 
-  // Selecting a project is an active-project switch — identical to the footer
-  // (spec #6): set the current-project context via the shared helper. NOT a tab
-  // navigation. The strip re-scopes to the new project and the self-heal resolver
-  // picks the active tab, so the URL-first contract (CLAUDE.md) holds — the click
-  // only changes context; loaders stay the single writers.
+  // Selecting a project is an active-project switch. URL-first (CLAUDE.md): the
+  // click only resolves a destination and navigates — it resumes the project's
+  // most-recently-active tab (or its landing when it has none) via
+  // `dockForProjectEntry`. The loader that the navigation triggers is the single
+  // writer of project context; the strip re-scopes off the URL-resolved project.
   const handleSelect = async (bucket: TabProjectBucket) => {
     if (bucket.state === 'missing') {
       await handleRecover(bucket);
@@ -295,7 +310,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     }
     if (bucket.state === 'live' && bucket.project) {
       setOpen(false);
-      await selectProjectContext(bucket.project);
+      navigation.openDock(await dockForProjectEntry(bucket.project.id));
     }
     // 'loading' — ignore; spinner is rendered in the row.
   };
