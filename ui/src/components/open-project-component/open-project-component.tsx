@@ -11,6 +11,8 @@ import {
   QueryRequest,
 } from '@sdk';
 import { selectProjectContext } from '@src/components/project-selector';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { Button } from '@src/components/ui/button';
@@ -536,6 +538,7 @@ export function OpenProjectComponent({
 }: OpenProjectComponentProps) {
   const { project: currentProject } = useProject();
   const { computeNode } = useAgentContext();
+  const { navigation } = useDockNavigation();
 
   const [showCreate, setShowCreate] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -575,18 +578,26 @@ export function OpenProjectComponent({
       await selectProjectContext(project);
 
       onProjectChanged?.();
-      // Entity stamping (task/conversation/project_id, mapping table writes,
-      // remap navigation) happens inside `onPicked` — the gate's apply
-      // callback owns it so the wasReplacement signal isn't clobbered by a
-      // pre-stamp here. In the plain footer-switch case onPicked is undefined
-      // and only ctx.project changes, which is the right behavior.
-      try {
-        await onPicked?.(project);
-      } catch {
-        // continuation errors shouldn't break the picker
+      if (onPicked) {
+        // Entity stamping (task/conversation/project_id, mapping table writes,
+        // remap navigation) happens inside `onPicked` — the gate's apply
+        // callback owns it (and its own navigation) so the wasReplacement
+        // signal isn't clobbered by a pre-stamp here.
+        try {
+          await onPicked(project);
+        } catch {
+          // continuation errors shouldn't break the picker
+        }
+      } else {
+        // Plain switch: select the project by navigating to its tab — the same
+        // path as clicking that tab (dockForProjectEntry → fromTabHash →
+        // openDock). Resumes the last-active tab, or the project landing when it
+        // has no open tab. Without this the active project changed but the URL
+        // stayed on the old project's tab, so nothing was selected.
+        navigation.openDock(await dockForProjectEntry(project.id));
       }
     },
-    [onProjectChanged, onPicked],
+    [onProjectChanged, onPicked, navigation],
   );
 
   const ensureProjectAndSetContext = useCallback(
