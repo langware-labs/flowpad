@@ -79,10 +79,10 @@ export function ContentPanel() {
 
   const terminalRows = useTerminalTabRows();
 
-  /** Navigate to a terminal tab row by its pointer (tabHash). */
+  /** Navigate to a terminal tab row by its pointer. */
   const navigateToRow = useCallback(
     (row: TabRow) => {
-      const dock = DockPointer.fromTabHash(row.pointer);
+      const dock = DockPointer.fromJSON(row.pointer);
       if (dock) navigation.openDock(dock);
     },
     [navigation],
@@ -150,7 +150,10 @@ export function ContentPanel() {
   // resolves the default target), so we only act when a row matches the URL.
   useEffect(() => {
     if (currentDock?.viewType !== ViewType.SHELL || !currentDock.pointer) return;
-    const active = terminalRows.find((r) => r.pointer === currentDock.tabHash);
+    const active = terminalRows.find((r) => {
+      const rowDock = DockPointer.fromJSON(r.pointer);
+      return rowDock?.tabHash === currentDock.tabHash;
+    });
     if (active?.is_disabled) {
       const alive = terminalRows.find((r) => r.pointer !== active.pointer && !r.is_disabled);
       if (alive) navigateToRow(alive);

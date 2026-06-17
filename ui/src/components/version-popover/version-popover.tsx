@@ -5,6 +5,7 @@ import { Button } from '@src/components/ui/button';
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { sdkConfig } from '@sdk/config/index';
+import { connectionManager } from '@sdk/websocket';
 import {
   Check,
   ChevronDown,
@@ -182,6 +183,33 @@ function ReleaseNotes({ title, release, defaultOpen = false }: ReleaseNotesProps
         <MarkdownView value={release.body} compact />
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+function CopyableUrlField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore
+    }
+  }, [value]);
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <button
+        type="button"
+        onClick={() => void handleCopy()}
+        className="flex max-w-[200px] items-center gap-1 truncate rounded-sm bg-muted/30 px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        title={`Copy ${label.toLowerCase()}`}
+      >
+        <span className="truncate">{value}</span>
+        {copied ? <Check className="h-3 w-3 shrink-0 text-green-500" /> : <Copy className="h-3 w-3 shrink-0" />}
+      </button>
+    </div>
   );
 }
 
@@ -474,13 +502,9 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
 
           <div className="border-t" />
           <section className="space-y-1.5">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current URL</h4>
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="text-muted-foreground">Location</span>
-              <span className="max-w-[200px] truncate rounded-sm bg-muted/30 px-2 py-1 font-mono text-[10px] text-muted-foreground" title={window.location.href}>
-                {window.location.href}
-              </span>
-            </div>
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connection Info</h4>
+            <CopyableUrlField label="URL" value={window.location.href} />
+            <CopyableUrlField label="Connection ID" value={connectionManager.id} />
           </section>
 
           {/* Toolbar */}

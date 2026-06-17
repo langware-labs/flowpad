@@ -25,6 +25,7 @@ from .websocket import (
     get_active_connection_info,
     get_connection_infos,
     send_personal_message,
+    ConnectionInfo,
 )
 
 router = APIRouter()
@@ -36,9 +37,13 @@ class NavigateEntityRequest(BaseModel):
     ``typeid`` is the canonical string form, e.g. ``"shell-<uuid>"`` or
     ``"project-@local"``. The single-arg CLI and the internal ``TypeId`` class
     agree on this format.
+
+    ``connection_id`` is the optional WebSocket connection ID of the target browser tab.
+    If omitted, navigates the active (most-visible/focused) tab.
     """
 
     typeid: str
+    connection_id: Optional[str] = None
 
 
 def _error(status_code: int, code: str, message: str) -> JSONResponse:
@@ -120,12 +125,23 @@ async def navigate_entity(req: NavigateEntityRequest):
             f"Entity not found: {typeid.type}-{typeid.id}",
         )
 
-    # Pick the active tab. None means zero open tabs.
-    active = get_active_connection()
-    if active is None:
-        return _error(409, "NO_ACTIVE_TAB", "No active tab")
-
-    connection_id, ws = active
+    # Pick the target tab: explicit connection_id if provided, else the active tab
+    if req.connection_id:
+        infos = get_connection_infos()
+        info = infos.get(req.connection_id)
+        if info is None:
+            return _error(
+                404,
+                "CONNECTION_NOT_FOUND",
+                f"Connection not found: {req.connection_id}",
+            )
+        connection_id = req.connection_id
+        ws = info.ws
+    else:
+        active = get_active_connection()
+        if active is None:
+            return _error(409, "NO_ACTIVE_TAB", "No active tab")
+        connection_id, ws = active
 
     # Send a targeted UI command. The UI listener resolves the entity on its
     # side (so it benefits from the local cache) and invokes the navigation.

@@ -58,7 +58,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
 
   const navigateTo = useCallback(
     (pointer: string, inWindow: boolean) => {
-      const dock = DockPointer.fromTabHash(pointer);
+      const dock = DockPointer.fromJSON(pointer);
       if (!dock) return;
       if (inWindow) navigation.openDockInWindow(dock);
       else navigation.openDock(dock);

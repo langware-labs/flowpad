@@ -167,8 +167,8 @@ export class Tab extends APIEntity<Tab> implements ITab {
    * return [].
    */
   static async getFromDockPointer(dock: IDockPointer): Promise<TabRow[]> {
-    const tabHash = dock.tabHash;
-    if (!tabHash) return [];
+    const pointerJson = dock.toJSON?.();
+    if (!pointerJson) return [];
 
     // An entity dock resolves via `getByTypeId` (already cache-first internally);
     // a vfs asset dock via the pure `getEntityByPath`. One cast names the fields
@@ -187,7 +187,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
 
     const { iconKey, worktree } = displayForTarget(targetTypeId?.type ?? null, target);
 
-    return Tab.newTab(tabHash, {
+    return Tab.newTab(pointerJson, {
       targetType: targetTypeId?.type ?? null,
       targetId: targetTypeId?.id ?? null,
       projectId,

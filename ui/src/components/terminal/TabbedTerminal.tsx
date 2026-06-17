@@ -3,6 +3,7 @@ import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { Button } from '@src/components/ui/button';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTerminalTabRows } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
@@ -184,15 +185,19 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
               </div>
             </div>
           ) : (
-            rows.map((row) => (
-              <TerminalPanel
-                key={row.pointer}
-                row={row}
-                isActive={row.pointer === activeKey}
-                isMounted={mounted.has(row.pointer)}
-                flow={flow ?? null}
-              />
-            ))
+            rows.map((row) => {
+              // Derive tabHash from pointer; used as React key and active comparison.
+              const rowTabHash = DockPointer.fromJSON(row.pointer)?.tabHash ?? row.id;
+              return (
+                <TerminalPanel
+                  key={rowTabHash}
+                  row={row}
+                  isActive={rowTabHash === activeKey}
+                  isMounted={mounted.has(rowTabHash)}
+                  flow={flow ?? null}
+                />
+              );
+            })
           )}
         </div>
       </div>

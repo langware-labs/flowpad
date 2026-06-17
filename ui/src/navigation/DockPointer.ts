@@ -857,6 +857,26 @@ export class DockPointer implements IDockPointer {
     return `${this.viewType}|${this.pointer ?? ''}`;
   }
 
+  /** Serialize this dock's tab-identity fields (viewType + pointer) as JSON.
+   *  This is what Tab.pointer stores in the DB. Returns null if tabHash is null. */
+  toJSON(): string | null {
+    if (!this.tabHash) return null;
+    return JSON.stringify({ viewType: this.viewType ?? '', pointer: this.pointer ?? '' });
+  }
+
+  /** Deserialize a stored Tab.pointer JSON back to a navigable DockPointer.
+   *  Replaces fromTabHash — no opaque string parsing needed. Returns null on malformed input. */
+  static fromJSON(json: string): DockPointer | null {
+    try {
+      const parsed = JSON.parse(json) as { viewType?: string; pointer?: string };
+      const { viewType, pointer } = parsed;
+      if (!viewType) return null;
+      return DockPointer.fromUrl(viewType, pointer || undefined);
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * The entity this dock targets, as a TypeId — for the tab's denormalized
    * target + project resolution (`Tab.getFromDockPointer`). Pure string parse,
@@ -901,9 +921,9 @@ export class DockPointer implements IDockPointer {
     return null;
   }
 
-  /** Reverse of `tabHash` — reconstruct the navigable DockPointer from a stored
-   *  `Tab.pointer` (`viewType|sub`). Null when the viewType is invalid. The
-   *  format lives here (with `tabHash`) so callers never hand-split the string. */
+  /** DEPRECATED: use fromJSON instead. Reconstruct the navigable DockPointer from a
+   *  legacy stored `Tab.pointer` (`viewType|sub` string format). Null when invalid.
+   *  This method remains for backward compatibility but new code should use fromJSON. */
   static fromTabHash(hash: string): DockPointer | null {
     const i = hash.indexOf('|');
     const viewType = i >= 0 ? hash.slice(0, i) : hash;

@@ -17,6 +17,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { usePendingSessionIds } from '@src/store/pending-actions-store';
 import { LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
 
@@ -27,16 +28,13 @@ function clip(name: string): string {
   return name.length > TAB_LABEL_MAX ? name.slice(0, TAB_LABEL_MAX).trimEnd() + '…' : name;
 }
 
-/** The viewType segment of a Tab.pointer (`viewType|sub`). */
-function viewTypeOf(pointer: string): string {
-  const i = pointer.indexOf('|');
-  return i >= 0 ? pointer.slice(0, i) : pointer;
-}
-
 /** TabRow → chip. `isPending` is the only caller-supplied overlay (glow). */
 export function tabRowItem(row: TabRow, isPending: boolean): TabStripItem {
-  const key = row.pointer || row.id;
+  // Parse once; both key and viewType derive from the same dock.
+  const dock = DockPointer.fromJSON(row.pointer);
+  const key = dock?.tabHash ?? row.id;
   const label = clip(row.name ?? '');
+  const viewType = dock?.viewType || '';
 
   if (TERMINAL_TARGET_TYPES.has(row.target_type ?? '')) {
     const kind = (
@@ -74,7 +72,6 @@ export function tabRowItem(row: TabRow, isPending: boolean): TabStripItem {
 
   // Content tab: per-type icon from the backend TypeInfo registry when the dock
   // has a target entity (CLAUDE.md icon rule), else the viewType registry glyph.
-  const viewType = viewTypeOf(row.pointer ?? '');
   const meta = VIEWER_REGISTRY[viewType as ViewType];
   if (row.target_type && row.target_id) {
     const Icon = iconForType(row.target_type);
