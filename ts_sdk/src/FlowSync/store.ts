@@ -1560,6 +1560,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   /**
+   * Resolve the single entity whose `asset_ref` equals `path` — a PURE index
+   * lookup (`GET /assets/entity`, backed by `Entity.get_by_asset_ref`). No
+   * recovery, no discovery scan, no indexing — returns the entity or null.
+   * The cheap path→entity conversion (e.g. minting a vfs asset tab's project);
+   * `systemTools.discoverByPath` is the heavy recovery counterpart, used only by
+   * the editor view on a bulk miss. Hydrates + caches the hit via the standard
+   * dedup path.
+   */
+  public async getEntityByPath<U extends T>(path: string): Promise<U | null> {
+    const json = await apiClient.get<any>('/assets/entity', { params: { path } }).catch(() => null);
+    if (!json) return null;
+    return this.updateEntityFromJson<U>(json);
+  }
+
+  /**
    * Field-name whitelist for the TypeId auto-coercion in `deepAssign`.
    *
    * The default heuristic — "if the value looks like a TypeId string, treat it
