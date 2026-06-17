@@ -5,6 +5,7 @@ import {
   downloadFile,
   EditorLanguage,
   /* FSItem, */ fsStore,
+  isImagePath,
   VFSPath,
 } from '@sdk';
 import { useContext, useProject } from '@sdk/react/hooks';
@@ -94,6 +95,17 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
 
   const fs = useFS(effectiveTypeId);
 
+  // Images are binary: render them inline via the backend download URL instead
+  // of decoding the bytes as text into Monaco (which shows garbage).
+  const isImage = useMemo(
+    () => isImagePath(effectiveFilePath || file?.path || ''),
+    [effectiveFilePath, file?.path],
+  );
+  const imageUrl = useMemo(
+    () => (isImage && effectiveFilePath && fs ? fs.getDownloadUrl(effectiveFilePath) : null),
+    [isImage, effectiveFilePath, fs],
+  );
+
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const { resolvedTheme } = useTheme();
@@ -119,6 +131,10 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   // Auto-download file content if not in cache
   useEffect(() => {
     if (!effectiveFilePath || !effectiveTypeId) return;
+
+    // Images are streamed straight from the download URL into an <img>; never
+    // pull their bytes as text.
+    if (isImage) return;
 
     // Check if content is already cached
     if (cached) {
@@ -396,6 +412,33 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     return (
       <div className="flex flex-1 items-center justify-center text-muted-foreground">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+      </div>
+    );
+  }
+
+  // Image files render inline rather than in Monaco.
+  if (isImage) {
+    return (
+      <div className="group relative flex h-full min-h-0 flex-1 items-center justify-center overflow-auto bg-muted/20 p-4">
+        {imageUrl ? (
+          <>
+            <img
+              src={imageUrl}
+              alt={file.path.split('/').pop() || file.path}
+              className="max-h-full max-w-full object-contain"
+            />
+            <a
+              href={imageUrl}
+              download={file.path.split('/').pop() || file.path}
+              title="Download"
+              className="absolute right-5 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-lg border bg-background/50 text-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+            >
+              <Download className="h-4 w-4" />
+            </a>
+          </>
+        ) : (
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        )}
       </div>
     );
   }

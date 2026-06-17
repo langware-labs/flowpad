@@ -187,6 +187,50 @@ def test_tail_status_tool_running(tmp_path: Path):
     assert _tail_status(f) == WorkerStatus.TOOL_RUNNING
 
 
+def test_tail_status_last_prompt_after_end_turn_is_complete(tmp_path: Path):
+    """``last-prompt`` idle marker trailing a genuine ``end_turn`` → COMPLETE.
+
+    The normal end-of-turn shape: the model finishes (``stop_reason=end_turn``)
+    and Claude appends a ``last-prompt`` ack. This must stay terminal.
+    """
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+        {"type": "last-prompt"},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
+def test_tail_status_last_prompt_between_tool_calls_is_not_complete(tmp_path: Path):
+    """``last-prompt`` idle marker during an inter-tool pause must NOT be COMPLETE.
+
+    Regression: the worker finished a tool (tool_result landed, so nothing is
+    pending) and is slowly planning its next call — its last assistant turn ended
+    with ``stop_reason=tool_use``. Claude rides a ``last-prompt`` idle ack in
+    during that pause. Before the fix this was read as COMPLETE, cutting
+    ``stream_transcript`` off mid-turn so ``flow diagnose`` falsely reported the
+    result "not recorded". Only a real ``end_turn`` is terminal → here it stays
+    WAITING so the stream keeps reading.
+    """
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {
+            "role": "assistant", "stop_reason": "tool_use",
+            "content": [{"type": "tool_use", "id": "tu1", "name": "Bash", "input": {}}],
+        }},
+        {"type": "user", "message": {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "tu1", "content": "ok"}],
+        }},
+        {"type": "last-prompt"},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.WAITING
+
+
 def test_tail_status_waiting(tmp_path: Path):
     """Active file + last entry is a fresh user message (<90s) → WAITING."""
     f = tmp_path / "session.jsonl"

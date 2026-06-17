@@ -1,12 +1,16 @@
 """Unit tests for the flow-diagnose reporter (`report.py`).
 
-The reporter now lives **next to the flow-diagnose SKILL.md**
+The reporter lives **next to the flow-diagnose SKILL.md**
 (`.claude/skills/flow-diagnose/report.py`) and is run as a standalone script by
-the skill's Step 7 — it is no longer importable as `flow_sdk.diagnostics.report`.
-These tests load it by file path and exercise it end-to-end against the test DB
-(no server, no HTTP): `create_diagnostic_report` must create a hidden Conversation
-+ a summary FlowMessage pointed by that conversation + a NEW message_suggest
-FeedEntry, and the CLI entrypoint must wire flags through and print the ids.
+the skill's Step 7 — it is not importable as a normal package module. These tests
+load it by file path and exercise it end-to-end against the test DB (no server, no
+HTTP): `create_support_conversation` must create a hidden Conversation + a summary
+FlowMessage pointed by that conversation, and the CLI entrypoint must wire flags
+through and print the ids.
+
+`report.py` no longer creates the Home-Feed `FeedEntry` — posting the feed card is
+the CLI runner's job (CLI surface only). These tests therefore assert it creates the
+diagnosis record + support Conversation/FlowMessage and does NOT mint a FeedEntry.
 """
 import importlib.util
 import json
@@ -14,7 +18,6 @@ import json
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
 from flow_sdk.config import flowpad_assistant_project_root
 
 # Load the co-located reporter script by path (the skill folder is not a package).
@@ -33,7 +36,7 @@ def _load_report():
 
 
 report = _load_report()
-create_diagnostic_report = report.create_diagnostic_report
+create_support_conversation = report.create_support_conversation
 
 
 def test_report_script_exists_next_to_skill():
@@ -43,7 +46,7 @@ def test_report_script_exists_next_to_skill():
 
 
 @pytest.mark.asyncio
-async def test_create_diagnostic_report_creates_entities():
+async def test_create_support_conversation_creates_entities():
     from flow_sdk.server.routes.bootstrap import (
         get_or_create_local_project,
         get_or_create_local_user,
@@ -52,7 +55,7 @@ async def test_create_diagnostic_report_creates_entities():
     user = await get_or_create_local_user()
     await get_or_create_local_project(desktop_user=user)
 
-    result = await create_diagnostic_report(
+    result = await create_support_conversation(
         summary="Freed port 9007 and cleared a stale lock; backend should start now.",
         status="fixed",
         details="[FOUND] Port 9007 occupied (A1) — FIXED",
@@ -60,16 +63,9 @@ async def test_create_diagnostic_report_creates_entities():
     )
 
     assert "skipped" not in result, result
-    assert result["feed_entry_id"] and result["conversation_id"] and result["flow_message_id"]
-
-    # FeedEntry: new + message_suggest + payload pointing at the conversation/message
-    feed = await FeedEntry.get_one({"id": result["feed_entry_id"]})
-    assert feed is not None
-    assert feed.feed_status == FeedStatus.NEW.value
-    assert feed.kind == "message_suggest"
-    assert feed.feed_data["conversation_id"] == result["conversation_id"]
-    assert feed.feed_data["flow_message_id"] == result["flow_message_id"]
-    assert "Freed port 9007" in feed.feed_data["message_text"]
+    assert result["conversation_id"] and result["flow_message_id"]
+    # report.py records the support artifact only — never a Home-Feed FeedEntry.
+    assert "feed_entry_id" not in result
 
     # Conversation: exists, hidden (dismissed_at stamped), and pointing at 1 message
     conv = await Conversation.get_one({"id": result["conversation_id"]})
@@ -77,20 +73,9 @@ async def test_create_diagnostic_report_creates_entities():
     assert conv.dismissed_at is not None, "diagnostics conversation must be hidden from the strip"
     assert conv.message_count == 1
 
-    # Send-to-Support: dismiss the feed entry + un-hide the conversation
-    feed.feed_status = FeedStatus.DISMISSED.value
-    await feed.save([])
-    conv.dismissed_at = None
-    await conv.save([])
-
-    feed2 = await FeedEntry.get_one({"id": result["feed_entry_id"]})
-    conv2 = await Conversation.get_one({"id": result["conversation_id"]})
-    assert feed2.feed_status == FeedStatus.DISMISSED.value
-    assert conv2.dismissed_at is None, "conversation should be visible in the strip after Send to Support"
-
 
 @pytest.mark.asyncio
-async def test_create_diagnostic_report_attaches_type_id():
+async def test_create_support_conversation_attaches_type_id():
     """``attachment_type_id`` rides the summary message as a TYPE_ID attachment so
     the support card can carry the structured diagnosis entity."""
     from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage
@@ -103,7 +88,7 @@ async def test_create_diagnostic_report_attaches_type_id():
     await get_or_create_local_project(desktop_user=user)
 
     diag_typeid = "flowpad_diagnosis-94c12421-2e7c-5240-a4ac-82d014eec1e6"
-    result = await create_diagnostic_report(
+    result = await create_support_conversation(
         summary="Backend stuck on Starting; cleared a stale lock.",
         status="fixed",
         attachment_type_id=diag_typeid,
@@ -116,24 +101,25 @@ async def test_create_diagnostic_report_attaches_type_id():
 
 
 @pytest.mark.asyncio
-async def test_create_diagnostic_report_self_bootstraps_local():
+async def test_create_support_conversation_self_bootstraps_local():
     """The reporter CREATES @local if missing instead of skipping, so a fresh
-    install (app never ran a first time) still records a Feed entry."""
+    install (app never ran a first time) still records the support conversation."""
     from flow_sdk.builtin.project import Project
     from flow_sdk.builtin.user import User
 
     # Simulate a clean instance: no @local user/project pre-created here. (The DB
-    # is fresh per session; this asserts create_diagnostic_report stands them up.)
-    result = await create_diagnostic_report(summary="fresh install check", status="fixed")
+    # is fresh per session; this asserts create_support_conversation stands them up.)
+    result = await create_support_conversation(summary="fresh install check", status="fixed")
 
     assert "skipped" not in result, result
-    assert result["feed_entry_id"], result
+    assert result["conversation_id"], result
     assert await User.get_one({"uname": "local"}) is not None
     assert await Project.get_by_prop("uname", "local", "project") is not None
 
 
 # --------------------------------------------------------------------------- #
-# record_diagnosis — always records the diagnosis; Feed entry only on an issue
+# record_diagnosis — always records the diagnosis; support artifact only on an
+# issue. Never posts a Home-Feed FeedEntry (that is the CLI runner's job).
 # --------------------------------------------------------------------------- #
 
 async def _bootstrap_local_user():
@@ -147,46 +133,54 @@ async def _bootstrap_local_user():
 
 
 @pytest.mark.asyncio
-async def test_record_diagnosis_issue_creates_record_and_feed():
+async def test_record_diagnosis_issue_creates_record_and_support():
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
     await _bootstrap_local_user()
     res = await report.record_diagnosis(
         title="Stale lock blocked startup",
         symptoms="App stuck on Starting; backend not responding.",
         rca="server.lock left by a dead PID.",
         fix="Cleared the stale server.lock.",
+        summary="Cleared a stale server.lock; the backend starts now.",
         status="fixed",
     )
     assert res["diagnosis_id"]
-    assert res["feed_posted"] is True
-    assert res["feed_entry_id"] and res["conversation_id"] and res["flow_message_id"]
-    feed = await FeedEntry.get_one({"id": res["feed_entry_id"]})
-    assert feed is not None and feed.feed_status == FeedStatus.NEW.value
+    assert res["has_issue"] is True
+    assert res["conversation_id"] and res["flow_message_id"]
+    # No FeedEntry keys — report.py does not post the Home-Feed card anymore.
+    assert "feed_entry_id" not in res and "feed_posted" not in res
+
+    # The diagnosis record carries the human summary.
+    diag = await SchemaRegistry.get_entity_cls("flowpad_diagnosis").get_by_id(res["diagnosis_id"])
+    assert diag is not None
+    assert diag.summary == "Cleared a stale server.lock; the backend starts now."
 
 
 @pytest.mark.asyncio
-async def test_record_diagnosis_clean_sweep_records_no_feed():
-    """A clean sweep (--status ok) records the diagnosis for history but posts NO
-    Feed entry — nothing for the user to act on."""
+async def test_record_diagnosis_clean_sweep_records_no_support():
+    """A clean sweep (--status ok) records the diagnosis for history but creates NO
+    support conversation — nothing for the user to act on."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     await _bootstrap_local_user()
     res = await report.record_diagnosis(title="All healthy — no issue found", status="ok")
     assert res["diagnosis_id"]
-    assert res["feed_posted"] is False
-    assert res["feed_entry_id"] is None
+    assert res["has_issue"] is False
     assert res["conversation_id"] is None
+    assert res["flow_message_id"] is None
     # The diagnosis record still exists.
     diag = await SchemaRegistry.get_entity_cls("flowpad_diagnosis").get_by_id(res["diagnosis_id"])
     assert diag is not None
 
 
 @pytest.mark.asyncio
-async def test_record_diagnosis_informational_posts_no_feed():
+async def test_record_diagnosis_informational_creates_no_support():
     await _bootstrap_local_user()
     res = await report.record_diagnosis(title="Local hub down (benign)", status="informational")
     assert res["diagnosis_id"]
-    assert res["feed_posted"] is False
-    assert res["feed_entry_id"] is None
+    assert res["has_issue"] is False
+    assert res["conversation_id"] is None
 
 
 # --------------------------------------------------------------------------- #
@@ -237,7 +231,8 @@ async def test_amain_prints_ids_and_records(capsys):
     line = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()][-1]
     data = json.loads(line)
     assert data["diagnosis_id"]
-    assert data["feed_posted"] is True
-    assert data["feed_entry_id"]
-    feed = await FeedEntry.get_one({"id": data["feed_entry_id"]})
-    assert feed is not None and feed.feed_status == FeedStatus.NEW.value
+    assert data["has_issue"] is True
+    assert data["conversation_id"] and data["flow_message_id"]
+    # The printed JSON carries UUIDs/booleans only (no free text) — the runner
+    # scrapes it from the agent transcript, so it must stay regex-safe.
+    assert "feed_entry_id" not in data

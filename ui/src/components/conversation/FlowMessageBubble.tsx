@@ -1,4 +1,4 @@
-import { createConversationForShare, FlowMessage, GitRepo, Prompt, TypeId, User } from '@sdk';
+import { createConversationForShare, FlowMessage, GitRepo, isImagePath, Prompt, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -409,6 +409,22 @@ export function FlowMessageBubble({
   // they return early via MessageComposer above.
   const showLiveChips = downloaded && attachmentProjectId != null;
 
+  // Image attachments whose bytes are already local render as image cards right
+  // away — viewing or downloading a picture needs no project context, so they
+  // skip the project-mapping gate the other chips wait behind. This is what the
+  // sender sees the instant they send (their bytes are already on disk): the
+  // picture itself, not a "Download" button for something they just attached.
+  const localImageItems = attachmentItems.filter(
+    (i) => i.state === AttachmentChipState.Downloaded && !!i.url && isImagePath(i.filename),
+  );
+  // The gated chip list and the aggregate "Download N" button must not re-count
+  // what's already surfaced without a download: the images shown inline above,
+  // and prompt entities (their text is previewed in the prompt row and they
+  // materialize on Approve & Execute, not via this button).
+  const gatedItems = showLiveChips ? attachmentItems.filter((i) => !localImageItems.includes(i)) : [];
+  const promptEntityCount = entities.filter((t) => t.type === Prompt.type).length;
+  const pendingAssetCount = assetCount - localImageItems.length - promptEntityCount;
+
   const progressPct = progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
   const footer =
@@ -466,6 +482,24 @@ export function FlowMessageBubble({
             ))}
           </div>
         )}
+        {/* Locally-available images always render as image cards — no project
+            gate, no download step. The sender sees them immediately. */}
+        {localImageItems.map((item) => (
+          <AttachmentChip
+            key={item.key}
+            url={item.url ?? ''}
+            filename={item.filename}
+            state={item.state}
+            onOpenInEditor={
+              item.localPath ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!)) : undefined
+            }
+            onRevealInFolder={
+              item.localPath
+                ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
+                : undefined
+            }
+          />
+        ))}
         {showLiveChips ? (
           <>
             {otherEntities.length > 0 && (
@@ -480,7 +514,7 @@ export function FlowMessageBubble({
                 ))}
               </div>
             )}
-            {attachmentItems.map((item) => (
+            {gatedItems.map((item) => (
               <AttachmentChip
                 key={item.key}
                 url={item.url ?? ''}
@@ -498,7 +532,7 @@ export function FlowMessageBubble({
                 }
               />
             ))}
-            {attachmentItems.length > 1 && (
+            {gatedItems.length > 1 && (
               <a
                 href={localBundleUrl(messageId)}
                 download
@@ -509,9 +543,9 @@ export function FlowMessageBubble({
               </a>
             )}
           </>
-        ) : hasBody && assetCount > 0 ? (
+        ) : hasBody && pendingAssetCount > 0 ? (
           <DownloadAttachmentsButton
-            count={assetCount}
+            count={pendingAssetCount}
             labels={assetLabels}
             typeChips={assetTypeChips}
             uploading={bodyStatus === BodyStatus.UPLOADING}

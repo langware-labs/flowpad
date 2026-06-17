@@ -19,6 +19,24 @@ from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 router = APIRouter(prefix="/api/v1/cloud")
 
+# Standardized copy for the privacy-mode block — kept in sync with the
+# frontend guard (``ts_sdk/src/services/privacy-guard.ts``).
+LOCAL_MODE_LOGIN_MESSAGE = "Login disabled in Local mode"
+
+
+def _local_mode_login_block():
+    """Return a 403 ApiFailResponse when this instance is in Local privacy mode,
+    else ``None``. The single gate the cloud-auth routes call before any cloud
+    side effect."""
+    from flow_sdk.instance_settings.privacy_mode import is_local_mode
+
+    if is_local_mode():
+        return JSONResponse(
+            content=ApiFailResponse(message=LOCAL_MODE_LOGIN_MESSAGE).model_dump(mode="json"),
+            status_code=403,
+        )
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Branded result page (login/logout success or error in the system browser)
@@ -176,6 +194,9 @@ def _cloud_ws_error(message: str, status_code: int = 400):
 @router.post("/ws/connect")
 async def connect_ws():
     """Verify hub WS auth and start the background hub WebSocket listener."""
+    blocked = _local_mode_login_block()
+    if blocked is not None:
+        return blocked
     try:
         from flow_sdk.cli.auth.hub_login import is_logged_in
         from flow_sdk.cloud_client.ws_client import (
@@ -232,6 +253,9 @@ async def disconnect_ws():
 @router.post("/ws/verify")
 async def verify_ws():
     """Verify the current hub WebSocket credentials against the local cloud profile."""
+    blocked = _local_mode_login_block()
+    if blocked is not None:
+        return blocked
     try:
         from flow_sdk.cli.auth.hub_login import is_logged_in
         from flow_sdk.cloud_client.ws_client import (
@@ -271,6 +295,9 @@ async def login():
     On synchronous failure (rejected creds, can't open browser) returns a 400
     ``ApiFailResponse``.
     """
+    blocked = _local_mode_login_block()
+    if blocked is not None:
+        return blocked
     from flow_sdk.cli.auth.cloud_login import cloud_login
 
     try:

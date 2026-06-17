@@ -2,6 +2,8 @@ import { cloudManager } from '@sdk';
 import { LockKeyhole, LogIn } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { trackEvent } from '@src/utils/analytics';
+import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
+import { guardCloudAction } from '@src/services/privacy-guard';
 
 interface LoginRequiredOverlayProps {
   /** Sub-copy explaining what signing in unlocks. */
@@ -21,7 +23,12 @@ interface LoginRequiredOverlayProps {
 export function LoginRequiredOverlay({
   description = 'Sign in to your Flowpad Cloud account to view and send conversations.',
 }: LoginRequiredOverlayProps) {
+  const { isLocal } = usePrivacyMode();
+
   const handleLogin = () => {
+    // Defensive: the button is hidden in Local mode, but route through the
+    // single guard so a stray call still surfaces the standardized notice.
+    if (!guardCloudAction('login')) return;
     trackEvent({ event: 'login_clicked', event_source: 'login_required_overlay' });
     void cloudManager.login();
   };
@@ -36,19 +43,27 @@ export function LoginRequiredOverlay({
           <LockKeyhole className="h-6 w-6 text-primary" />
         </div>
         <div className="space-y-1">
-          <h3 className="text-sm font-semibold text-foreground">Login required</h3>
-          <p className="text-xs text-muted-foreground">{description}</p>
+          <h3 className="text-sm font-semibold text-foreground">
+            {isLocal ? 'Unavailable in Local mode' : 'Login required'}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            {isLocal
+              ? 'Conversations use Flowpad cloud, which is disabled in Local (private) data-privacy mode. Switch to Connected to sign in and share.'
+              : description}
+          </p>
         </div>
-        <Button
-          onClick={handleLogin}
-          size="sm"
-          className="w-full justify-center"
-          title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
-          data-testid="login-required-overlay-button"
-        >
-          <LogIn className="mr-2 h-4 w-4" />
-          Login
-        </Button>
+        {!isLocal && (
+          <Button
+            onClick={handleLogin}
+            size="sm"
+            className="w-full justify-center"
+            title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
+            data-testid="login-required-overlay-button"
+          >
+            <LogIn className="mr-2 h-4 w-4" />
+            Login
+          </Button>
+        )}
       </div>
     </div>
   );

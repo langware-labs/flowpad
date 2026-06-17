@@ -617,6 +617,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     });
   }, [transcriptPrompts, promptAnnotationIndex]);
 
+  // Most recent prompt (transcript order is chronological) — shown in the
+  // Prompts-icon hover card on both the ribbon and the side window.
+  const lastPromptText = mergedPrompts.length ? mergedPrompts[mergedPrompts.length - 1].text : null;
+
   const timeGutterRows = useTimeGutter(ptySyncSnapshot.vt, viewportY, rows, ptySyncSnapshot.version);
 
   const scrollAnnotationToLine = useCallback((absoluteLine: number) => {
@@ -1581,6 +1585,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                 activeTab={activeSideTab}
                 onSelect={selectSideTab}
                 onClose={closeSideTab}
+                lastPromptText={lastPromptText}
+                promptCount={mergedPrompts.length}
               >
                 {activeSideTab === SideTabId.Git && (
                   <GitPanel
@@ -1633,6 +1639,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           fileCount={fileCount}
           isActive={processIsActive}
           promptCount={mergedPrompts.length}
+          lastPromptText={lastPromptText}
           process={process}
           openTabs={ribbonOpenTabs}
           activeSideTab={ribbonActiveSideTab}

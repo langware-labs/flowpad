@@ -93,24 +93,30 @@ def _last_process_id(row) -> str | None:
     return None
 
 
-async def compute_capabilities_summary() -> CapabilitiesSummary:
+async def compute_capabilities_summary(wait_for_discovery: bool = True) -> CapabilitiesSummary:
     """Project every registered capability into a render-ready summary.
 
     Runs MCP reconcile + discovery first so dynamic leaves and their values are
     current, then for each kind resolves availability (with its dependency
     cascade), the discovered value, and the live entity-row metadata.
+
+    ``wait_for_discovery=False`` (the cold-bootstrap fast path) skips the
+    MCP-reconcile + ~860ms env-probe sweep and projects over what's been
+    discovered so far; both already run as startup tasks and the frontend
+    self-heals via capability-row ``data_op`` updates + its own ``ensureChecked``.
     """
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.core.capabilities.mcp import reconcile_mcp_capabilities
 
-    try:
-        await reconcile_mcp_capabilities()
-    except Exception:
-        logger.exception("compute_capabilities_summary: MCP reconcile failed")
-    try:
-        await ensure_discovered()
-    except Exception:
-        logger.exception("compute_capabilities_summary: discovery failed")
+    if wait_for_discovery:
+        try:
+            await reconcile_mcp_capabilities()
+        except Exception:
+            logger.exception("compute_capabilities_summary: MCP reconcile failed")
+        try:
+            await ensure_discovered()
+        except Exception:
+            logger.exception("compute_capabilities_summary: discovery failed")
 
     registry = get_capability_registry()
     rows = {row.kind: row for row in await Capability.get_all()}

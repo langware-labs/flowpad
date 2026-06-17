@@ -26,6 +26,34 @@ def _find_static_file(filename: str) -> Path | None:
     return None
 
 
+def serve_index_html(html: str) -> HTMLResponse:
+    """Return ``index.html`` with the runtime API origin injected — the single
+    entry point for both ``/`` and the SPA deep-link fallback.
+
+    Pins the served bundle's API base to *this* backend's own origin. The bundle
+    bakes an ``__API_URL__`` at build time, but the SDK's ``load_config`` honours
+    a runtime ``globalThis.__FLOWPAD_API_URL__`` ABOVE that compile-time define
+    (the same hook the Electron shell and tests use). We set it to
+    ``window.location.origin`` before the app bundle loads, so a bundle reached
+    on any host:port talks to the backend that served it — regardless of the URL
+    baked in. Without this, a bundle built/pinned for one port (e.g. 9007) but
+    served by a backend on another (e.g. a 9008 dev instance) fires every request
+    at the wrong — possibly stale — backend.
+
+    Idempotent, and ``|| ...`` so a host that already set the override (Electron
+    preload) wins.
+    """
+    snippet = (
+        "<script>globalThis.__FLOWPAD_API_URL__="
+        "globalThis.__FLOWPAD_API_URL__||window.location.origin;</script>"
+    )
+    if snippet not in html:
+        idx = html.lower().find("<head>")
+        at = idx + len("<head>") if idx != -1 else 0  # no <head> → prepend, still before the bundle
+        html = html[:at] + snippet + html[at:]
+    return HTMLResponse(content=html)
+
+
 def _get_index_candidates() -> list[Path]:
     """Get index.html candidates in priority order."""
     if getattr(sys, 'frozen', False):
@@ -53,7 +81,7 @@ async def serve_ui():
     """
     for candidate in _get_index_candidates():
         if candidate.exists():
-            return HTMLResponse(content=candidate.read_text())
+            return serve_index_html(candidate.read_text())
     return HTMLResponse(
         content="<h1>Flow UI not built. Run: python build_ui.py</h1>",
         status_code=404,

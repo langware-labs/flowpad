@@ -1,5 +1,18 @@
-import { Prompt, TypeId, type FlowMessage } from '@sdk';
+import { Prompt, TypeId, isImagePath, type FlowMessage } from '@sdk';
 import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
+
+/** VFS prefix under which a prompt's uploaded files live (mirrors the backend
+ *  ``PROMPT_FILE_VFS_PREFIX``). */
+export const PROMPT_FILE_PREFIX = 'prompt/';
+
+/** A prompt-file attachment whose bytes are an image — e.g. a screenshot
+ *  attached to a prompt. These render as real image attachment chips (rich
+ *  card + download + lightbox), not as a filename in the prompt row. */
+export function isImagePromptFileAttachment(a: Attachment): boolean {
+  if (a.attachment_type !== AttachmentType.PROMPT) return false;
+  const d = attachmentDataString(a);
+  return d.startsWith(PROMPT_FILE_PREFIX) && isImagePath(d);
+}
 
 /**
  * Prompt attachments come in two generations:

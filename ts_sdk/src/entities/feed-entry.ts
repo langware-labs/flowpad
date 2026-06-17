@@ -5,16 +5,18 @@ export type FeedStatus = 'new' | 'dismissed' | 'expired';
 export type FeedKind = 'message_suggest';
 
 /** Payload (the `T`) for a FeedEntry of kind `message_suggest`. Mirrors the
- *  backend `MessageSuggest`. */
+ *  backend `MessageSuggest`. An *issue* card carries the support conversation
+ *  (enabling Report/Forward); a *no-issue* card (posted when the user wasn't
+ *  watching the diagnose modal) omits it and just shows the summary. */
 export interface IMessageSuggest {
   /** User-facing header line. */
   text: string;
-  /** The (until-then hidden) support conversation this entry points at. */
-  conversation_id: string;
-  /** The summary FlowMessage in that conversation. */
-  flow_message_id: string;
   /** Summary body, so the card renders without a follow-up fetch. */
   message_text: string;
+  /** The (until-then hidden) support conversation this entry points at — issue only. */
+  conversation_id?: string;
+  /** The summary FlowMessage in that conversation — issue only. */
+  flow_message_id?: string;
 }
 
 export interface IFeedEntry extends IEntity {

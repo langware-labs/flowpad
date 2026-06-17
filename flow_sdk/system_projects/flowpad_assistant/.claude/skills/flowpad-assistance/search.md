@@ -78,6 +78,28 @@ Success — exit 0, single JSON line:
 
 If the user mentions a type (*"any tasks I touched today"*), filter the results yourself by `record_type == "task"` after the call returns. Don't try to pass type filters through this CLI — only `query`, `time`, and `limit` are wired.
 
+### Listing entities by an exact field value (e.g. "running processes")
+
+FTS search above is text-only — it can't answer *"list the agentic_processes whose `status` is `running`"*. When you need an **exact field match** on a typed list, query the graph API for that type and let the indexer's stored fields do the matching. **Do not hand-build a `key:value` filter string** — the backend parses `filter` with `json.loads`, so the param MUST be a JSON object:
+
+```bash
+# Correct — filter is a JSON object, URL-encoded:
+flow record search   # ← preferred whenever a text query suffices; only drop to the API for exact field lists.
+
+# When you genuinely need an exact field list, the graph GET's filter is JSON:
+#   filter={"match":{"status":"running"}}
+curl -sG "http://127.0.0.1:$PORT/api/v1/graph/agentic_process" \
+  --data-urlencode 'limit=10' \
+  --data-urlencode 'filter={"match":{"status":"running"}}'
+```
+
+| | `filter` value | Result |
+| --- | --- | --- |
+| ✅ Correct | `{"match":{"status":"running"}}` | matches `status == "running"` |
+| ❌ Wrong | `status:running` | **500** — `Invalid query filter JSON: Expecting value: line 1 column 1` |
+
+`--data-urlencode` is what keeps the JSON braces/quotes intact on the wire. Resolve `$PORT` from your instance's `server.json` (or `flow context`); never hardcode it. This is the one read-only exception to *"never call backend APIs directly"* — it mutates nothing.
+
 ### Disambiguating
 
 When several rows have the same `name` (common for things named after files, e.g. `electron.md`), use `asset_ref` to disambiguate to the user. Don't navigate without confirmation when the user's phrasing is ambiguous.

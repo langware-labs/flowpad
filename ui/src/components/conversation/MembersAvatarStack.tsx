@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useMembers } from '@src/hooks/use-members';
 import { useLocalUser } from './useLocalUser';
+import { avatarColorForParticipant } from './avatar-color';
 import { ContactPermissionsDialog } from './ContactPermissionsDialog';
 import {
   assignableRoles,
@@ -140,7 +141,9 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
           ) : (
             inline.map((p, i) => (
               <Avatar key={p.user_id || p.email || i} className="h-6 w-6 ring-2 ring-background">
-                <AvatarFallback className="text-[10px]">
+                <AvatarFallback
+                  className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
+                >
                   {participantInitials(p)}
                 </AvatarFallback>
               </Avatar>
@@ -170,7 +173,9 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
             const identity = (
               <>
                 <Avatar className="h-6 w-6">
-                  <AvatarFallback className="text-[10px]">
+                  <AvatarFallback
+                    className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
+                  >
                     {participantInitials(p)}
                   </AvatarFallback>
                 </Avatar>

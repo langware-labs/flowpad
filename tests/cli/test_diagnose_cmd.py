@@ -216,7 +216,7 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
                     "content": [
                         {
                             "type": "tool_result",
-                            "content": '{"diagnosis_id": "d1", "feed_entry_id": null, "feed_posted": false}',
+                            "content": '{"diagnosis_id": "d1", "conversation_id": null, "flow_message_id": null, "has_issue": false}',
                         }
                     ],
                 }
@@ -353,7 +353,7 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
                     "content": [
                         {
                             "type": "tool_result",
-                            "content": '{"diagnosis_id": "d1", "feed_entry_id": null, "feed_posted": false}',
+                            "content": '{"diagnosis_id": "d1", "conversation_id": null, "flow_message_id": null, "has_issue": false}',
                         }
                     ],
                 }
@@ -385,3 +385,197 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
         _tpath.unlink(missing_ok=True)
     assert rc == 0
     assert state["checks"] >= 3  # proves warmup waited through the empty-file polls
+
+
+# --------------------------------------------------------------------------- #
+# Home-Feed card appearance — the `create_feed_entry` switch is the on/off lever:
+# CLI always posts; the UI posts only when the user wasn't watching the modal as
+# it finished. Posting funnels through the single creator `_post_home_feed_entry`
+# (NOT mocked here), so these assert a real, queryable card lands in the store.
+# --------------------------------------------------------------------------- #
+
+async def _bootstrap_local_user():
+    from flow_sdk.server.routes.bootstrap import (
+        get_or_create_local_project,
+        get_or_create_local_user,
+    )
+
+    user = await get_or_create_local_user()
+    await get_or_create_local_project(desktop_user=user)
+
+
+@pytest.mark.asyncio
+async def test_post_home_feed_entry_makes_a_real_card_appear():
+    """The single creator both surfaces use. It mints a queryable `message_suggest` /
+    `new` FeedEntry whose payload carries the support conversation + message + the
+    diagnosis summary — i.e. the card actually APPEARS in the store (this is also the
+    creator the `diagnose_post_feed` action calls for the minimized-app UI path)."""
+    import uuid
+
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus
+    from flow_sdk.cli.commands.diagnose_cmd import _post_home_feed_entry
+
+    await _bootstrap_local_user()
+    conv_id, msg_id = str(uuid.uuid4()), str(uuid.uuid4())
+
+    fid = await _post_home_feed_entry(
+        conversation_id=conv_id,
+        flow_message_id=msg_id,
+        summary="Cleared a stale server.lock; the backend starts now.",
+    )
+    assert fid
+
+    entry = await FeedEntry.get_by_id(fid)
+    assert entry is not None
+    assert entry.kind == FeedKind.MESSAGE_SUGGEST.value
+    assert entry.feed_status == FeedStatus.NEW.value  # only `new` renders in the Feed
+    assert entry.feed_data["conversation_id"] == conv_id
+    assert entry.feed_data["flow_message_id"] == msg_id
+    assert entry.feed_data["message_text"] == "Cleared a stale server.lock; the backend starts now."
+
+
+@pytest.mark.asyncio
+async def test_post_home_feed_entry_no_issue_card_has_summary_no_conversation():
+    """The no-issue variant of the creator (posted when the user wasn't watching, so
+    they still get an answer): a `new`/`message_suggest` card carrying the summary as
+    its body, a non-error header, and NO conversation — nothing to report/forward."""
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus
+    from flow_sdk.cli.commands.diagnose_cmd import _post_home_feed_entry
+
+    await _bootstrap_local_user()
+    fid = await _post_home_feed_entry(summary="All healthy — typing works; nothing to fix.")
+    assert fid
+
+    entry = await FeedEntry.get_by_id(fid)
+    assert entry is not None
+    assert entry.kind == FeedKind.MESSAGE_SUGGEST.value
+    assert entry.feed_status == FeedStatus.NEW.value
+    assert entry.feed_data["message_text"] == "All healthy — typing works; nothing to fix."
+    assert not entry.feed_data.get("conversation_id")  # no issue → no support conversation
+    assert not entry.feed_data.get("flow_message_id")
+    assert "error came up" not in entry.feed_data["text"]  # not the issue header
+
+
+@pytest.mark.parametrize(
+    "label,create_feed_entry,has_issue,expect_card,expect_conversation",
+    [
+        # CLI (bool True) posts for an issue only; a clean sweep prints to the terminal.
+        ("cli_issue", True, True, True, True),
+        ("cli_no_issue", True, False, False, False),
+        # UI 'user not watching' callable posts for ANY result — issue card or summary card.
+        ("ui_unwatched_issue", lambda h: True, True, True, True),
+        ("ui_unwatched_no_issue", lambda h: True, False, True, False),  # the new behavior
+        # UI 'user watching' callable never posts — the modal shows the result itself.
+        ("ui_watching_issue", lambda h: False, True, False, False),
+        ("ui_watching_no_issue", lambda h: False, False, False, False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_feed_card_appears_per_watching_logic(
+    label, create_feed_entry, has_issue, expect_card, expect_conversation
+):
+    """End-to-end at the runner layer: `create_feed_entry` is the on/off switch for
+    whether a real Home-Feed card appears. Both directions are demonstrated across the
+    matrix — CLI posts for an issue only; the UI 'not watching' callable posts for ANY
+    result (including a no-issue summary card, so a user who walked away still gets an
+    answer); the UI 'watching' callable never posts. `_post_home_feed_entry` is NOT
+    mocked, so the card's existence (and whether it carries a conversation) is proven by
+    loading it back from the store."""
+    import tempfile
+    import uuid
+    from pathlib import Path
+    from unittest.mock import AsyncMock
+
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    await _bootstrap_local_user()
+    diag_id = str(uuid.uuid4())
+    if has_issue:
+        conv_id, msg_id = str(uuid.uuid4()), str(uuid.uuid4())
+        report_json = (
+            f'{{"diagnosis_id": "{diag_id}", "conversation_id": "{conv_id}", '
+            f'"flow_message_id": "{msg_id}", "has_issue": true}}'
+        )
+    else:
+        conv_id = msg_id = None
+        report_json = (
+            f'{{"diagnosis_id": "{diag_id}", "conversation_id": null, '
+            f'"flow_message_id": null, "has_issue": false}}'
+        )
+
+    _tf = tempfile.NamedTemporaryFile(prefix="diag_card_", suffix=".jsonl", delete=False)
+    _tf.write(b'{"type":"system"}\n')
+    _tf.flush()
+    _tf.close()
+    _tpath = Path(_tf.name)
+
+    class _FakeDriver:
+        def transcript_path(self, _ap):
+            return _tpath
+
+    class _FakeAP:
+        def __init__(self, **_kw):
+            self.id = "card-worker-id"
+            self.session_id = "fakesess"
+            self.driver = _FakeDriver()
+
+        def enable_assistant(self):
+            pass
+
+        async def prompt(self, _text):
+            return None
+
+        async def stream_transcript(self, timeout=0):
+            # report.py prints its result JSON, then the stream ends cleanly so the
+            # feed-decision runs immediately.
+            yield {
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "content": report_json}],
+                }
+            }
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            return None
+
+    events: list[dict] = []
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
+        patch(
+            "flow_sdk.core.capabilities.discovery.ensure_discovered",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
+            lambda _t: None,
+        ),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+    ):
+        rc = await asyncio.wait_for(
+            diagnose_cmd._run_diagnose(
+                "", 1800.0, emit=events.append, create_feed_entry=create_feed_entry
+            ),
+            timeout=5,
+        )
+    _tpath.unlink(missing_ok=True)
+
+    assert rc == 0
+    done = next(e for e in events if e.get("type") == "done")
+    assert done["feed_posted"] is expect_card
+    if expect_card:
+        fid = done["feed_entry_id"]
+        assert fid, "expected a Home-Feed card to be posted"
+        entry = await FeedEntry.get_by_id(fid)
+        assert entry is not None, "the posted card must actually exist in the store"
+        assert entry.kind == FeedKind.MESSAGE_SUGGEST.value
+        assert entry.feed_status == FeedStatus.NEW.value
+        if expect_conversation:
+            assert entry.feed_data["conversation_id"] == conv_id
+            assert entry.feed_data["flow_message_id"] == msg_id
+        else:
+            assert not entry.feed_data.get("conversation_id")  # no-issue summary card
+            assert not entry.feed_data.get("flow_message_id")
+    else:
+        assert done["feed_entry_id"] is None, "no card must be posted in this case"

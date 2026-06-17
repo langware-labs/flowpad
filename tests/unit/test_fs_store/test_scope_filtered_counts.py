@@ -158,6 +158,40 @@ async def test_count_system_matches_record_project_alias(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
+async def test_asset_stats_per_type_matches_count(tmp_path: Path) -> None:
+    """get_asset_stats reports the same per-type live count as the driver, and
+    narrows by ScopeFilter identically (the UI counter source of truth)."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    pid_a, _ = await _seed_scoped_markdowns(tmp_path)
+
+    unscoped = await SchemaRegistry.get_asset_stats()
+    assert unscoped.per_type["markdown"] == 4
+    assert unscoped.total == sum(unscoped.per_type.values())
+
+    proj = await SchemaRegistry.get_asset_stats(scope=ScopeFilter(user=False, projects=(pid_a,)))
+    assert proj.per_type["markdown"] == 1
+
+    both = await SchemaRegistry.get_asset_stats(scope=ScopeFilter(user=True, projects=(pid_a,)))
+    assert both.per_type["markdown"] == 3
+
+
+@pytest.mark.asyncio
+async def test_asset_stats_count_increments_on_create(tmp_path: Path) -> None:
+    """Creating an asset row bumps the live count get_asset_stats returns."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    await _seed_scoped_markdowns(tmp_path)
+    driver = get_db_driver()
+    before = (await SchemaRegistry.get_asset_stats()).per_type["markdown"]
+
+    await _insert_system_markdown(driver, row_id="new-md", project_id="proj-A")
+
+    after = (await SchemaRegistry.get_asset_stats()).per_type["markdown"]
+    assert after == before + 1
+
+
+@pytest.mark.asyncio
 async def test_delete_entities_scoped_leaves_other_scope_untouched(tmp_path: Path) -> None:
     pid_a, pid_b = await _seed_scoped_markdowns(tmp_path)
     driver = get_db_driver()

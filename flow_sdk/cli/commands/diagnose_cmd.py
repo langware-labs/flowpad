@@ -16,6 +16,7 @@ import logging
 import re
 import sys
 from pathlib import Path
+from typing import Callable
 
 import typer
 
@@ -145,14 +146,83 @@ class _Renderer:
         self._emit({"type": "flush"})
 
 
-async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -> int:
+async def _post_home_feed_entry(
+    *, summary: str, conversation_id: str | None = None, flow_message_id: str | None = None
+) -> str | None:
+    """Post the Home-Feed ``message_suggest`` card for a recorded diagnosis, SDK-direct.
+
+    The single creator both surfaces use (the CLI runner, and the UI's
+    ``diagnose_post_feed`` action). We create the ``FeedEntry`` here — in a process that
+    is bootstrapped and works even when the backend is down.
+
+    Two shapes, keyed on whether there's a support conversation:
+
+    * **Issue** (``conversation_id`` + ``flow_message_id`` given) — the card points at
+      the hidden support Conversation/FlowMessage so it can offer Report / Forward.
+    * **No issue** (neither given) — there's nothing to report, but the card still
+      carries the summary so a user who wasn't watching the modal still gets the answer.
+
+    Returns the new entry id, or ``None`` on failure (best-effort; never fails the run).
+    """
+    try:
+        from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus, MessageSuggest
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+
+        user = await get_or_create_local_user()
+        has_issue = bool(conversation_id and flow_message_id)
+        header = (
+            "An error came up while using Flowpad — here's what the diagnostic found:"
+            if has_issue
+            else "Flowpad diagnostic finished — here's what we found:"
+        )
+        suggest = MessageSuggest(
+            text=header,
+            message_text=(summary or "").strip(),
+            conversation_id=conversation_id,
+            flow_message_id=flow_message_id,
+        )
+        feed = FeedEntry(
+            kind=FeedKind.MESSAGE_SUGGEST.value,
+            feed_status=FeedStatus.NEW.value,
+            feed_data=suggest.model_dump(),
+        )
+        feed = await feed.save(user.typeid)
+        return feed.id
+    except Exception:
+        return None
+
+
+async def _run_diagnose(
+    message: str,
+    transcript_timeout: float,
+    *,
+    emit=None,
+    create_feed_entry: "bool | Callable[[bool], bool]" = True,
+) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
 
     ``emit`` is a callable invoked with structured event dicts (``narration`` /
     ``progress`` / ``status`` / ``error`` / ``done``). When omitted it defaults to
     ``_TerminalSink`` so the CLI renders exactly as before; the UI's HTTP endpoint
-    passes its own ``emit`` to forward the same events as SSE. Behavior is otherwise
-    identical between the two callers — same skill, same recording, same completion.
+    passes its own ``emit`` to forward the same events as SSE.
+
+    ``create_feed_entry`` decides whether to post the Home-Feed card. It is given the
+    run's ``has_issue`` and returns whether to post; it may also be a bool, where
+    ``True`` means "post for an issue only" (the no-issue card needs an explicit
+    callable). A callable is evaluated at posting time, so a late decision — "did the
+    UI modal close / go unwatched before we finished?" — is possible.
+
+    * **CLI** passes ``True``: post a card for an issue (its Report/Forward actions are
+      the CLI's lasting output); a clean sweep prints to the terminal, no card.
+    * **UI** passes ``lambda has_issue: <user wasn't watching>``: while the modal is
+      open and focused it shows the result itself, so nothing is posted; if the user
+      defocused / minimized, a card is posted **for any result** — an issue card with
+      the report buttons, or a no-issue card carrying the summary so they still get
+      the answer.
+
+    report.py is identical for both surfaces: it always records the diagnosis and (for
+    an issue) its support Conversation/FlowMessage; only this Feed posting differs, so
+    the split is fully deterministic and never relies on the worker.
     """
     if emit is None:
         emit = _TerminalSink()
@@ -264,14 +334,14 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
 
     async def _stream() -> None:
         """Render the worker's transcript, stopping when the turn ends OR — more
-        reliably — when a new Feed entry is recorded (Step 7 done).
+        reliably — when the diagnosis is recorded (report.py printed its JSON).
 
         We can't depend solely on the transcript's own end-of-turn detection:
         ``_tail_status`` derives COMPLETE from only the last 4 KB of the JSONL, and
         a long final report (one big assistant line) can push the terminal markers
         out of that window, so the stream never sees COMPLETE and polls to its
         deadline — the command hangs long after the work is done (seen on Windows).
-        ``_completed()`` is authoritative: once the Feed entry exists the run is
+        ``_completed()`` is authoritative: once report.py's result lands the run is
         finished, so we stop then. This is a definitive completion check, not a
         wait budget — we exit the instant either the stream ends or recording lands.
         """
@@ -295,8 +365,8 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
         "final recording step now (Step 7): the report.py reporter script with the "
         "diagnosis fields (--title/--symptoms/--rca/--fix) and --status. You MUST run it "
         "even if everything was healthy — use --status ok. It always creates the "
-        "flowpad_diagnosis record (and posts a Feed entry only for real issues). Do not "
-        "stop until it has printed its JSON."
+        "flowpad_diagnosis record (and a support conversation only for real issues). Do "
+        "not stop until it has printed its JSON."
     )
 
     async def _terminate_worker() -> None:
@@ -319,7 +389,10 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
                     "Check that the `claude` CLI is installed and on your PATH, then re-run "
                     "`flow diagnose`."
                 )})
-                emit({"type": "done", "ok": False, "diagnosis_id": None, "feed_posted": False, "feed_entry_id": None})
+                emit({
+                    "type": "done", "ok": False, "diagnosis_id": None, "conversation_id": None,
+                    "flow_message_id": None, "feed_posted": False, "feed_entry_id": None,
+                })
                 return 1
             await _stream()
             # The worker can end its turn early — diagnosing but not recording. Nudge
@@ -339,6 +412,9 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
             # uv-run subprocess doesn't inherit FLOWPAD_EXECUTION_SCOPE). The diagnosis
             # id came from report.py's own output (recorded); load it by id.
             did = recorded.get("diagnosis_id")
+            conv_id = recorded.get("conversation_id")
+            msg_id = recorded.get("flow_message_id")
+            diag = None
             try:
                 if did and _diag_cls is not None:
                     fresh = await AgenticProcess.get_by_id(ap.id)
@@ -347,13 +423,31 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
                         await cross_link_entities(fresh, diag)
             except Exception:
                 pass
+            # Post the Home-Feed card. has_issue ⇔ report.py created a support
+            # Conversation/FlowMessage. A bool create_feed_entry posts for an issue only
+            # (CLI); a callable gets has_issue and may also post a no-issue summary card
+            # (UI, when the user wasn't watching). Evaluated now so the decision can read
+            # live state (e.g. whether the modal is still connected).
+            has_issue = bool(conv_id and msg_id)
+            if callable(create_feed_entry):
+                want_feed = create_feed_entry(has_issue)
+            else:
+                want_feed = bool(create_feed_entry) and has_issue
+            feed_entry_id = None
+            if want_feed:
+                summary = (getattr(diag, "summary", None) or getattr(diag, "title", None) or "") if diag else ""
+                feed_entry_id = await _post_home_feed_entry(
+                    summary=summary, conversation_id=conv_id, flow_message_id=msg_id
+                )
             emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
             emit({
                 "type": "done",
                 "ok": True,
                 "diagnosis_id": did,
-                "feed_posted": bool(recorded.get("feed_posted")),
-                "feed_entry_id": recorded.get("feed_entry_id"),
+                "conversation_id": conv_id,
+                "flow_message_id": msg_id,
+                "feed_posted": bool(feed_entry_id),
+                "feed_entry_id": feed_entry_id,
             })
             return 0
         emit({
@@ -363,7 +457,10 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
                 "above; re-run `flow diagnose` to retry."
             ),
         })
-        emit({"type": "done", "ok": False, "diagnosis_id": None, "feed_posted": False, "feed_entry_id": None})
+        emit({
+            "type": "done", "ok": False, "diagnosis_id": None, "conversation_id": None,
+            "flow_message_id": None, "feed_posted": False, "feed_entry_id": None,
+        })
         return 1
     finally:
         await _terminate_worker()

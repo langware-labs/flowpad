@@ -27,6 +27,7 @@ type MessageType =
   | 'auth_expired_msg'
   | 'cloud_login_status_msg'
   | 'cloud_connection_status_msg'
+  | 'privacy_mode_msg'
   | 'ui_command'
   | 'recovered_msg';
 
@@ -112,6 +113,11 @@ export interface CloudConnectionStatusMessage extends BaseMessage {
   message_type: 'cloud_connection_status_msg';
   status: HubConnectionStatus;
   error?: string | null;
+}
+
+export interface PrivacyModeMessage extends BaseMessage {
+  message_type: 'privacy_mode_msg';
+  privacy_mode: 'local' | 'connected';
 }
 
 /**
@@ -491,6 +497,9 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'cloud_connection_status_msg') {
       return this.onCloudConnectionStatusMessage(data as CloudConnectionStatusMessage);
     }
+    if (data.message_type === 'privacy_mode_msg') {
+      return this.onPrivacyModeMessage(data as PrivacyModeMessage);
+    }
     if (data.message_type === 'ui_command') {
       return this.onUiCommandMessage(data as UiCommandMessage);
     }
@@ -512,6 +521,10 @@ export class ConnectionManager extends EventEmitter {
 
   onCloudConnectionStatusMessage(data: CloudConnectionStatusMessage) {
     this.emit('on_cloud_connection_status_msg', data);
+  }
+
+  onPrivacyModeMessage(data: PrivacyModeMessage) {
+    this.emit('on_privacy_mode_msg', data);
   }
 
   onUiCommandMessage(data: UiCommandMessage) {
