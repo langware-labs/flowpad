@@ -161,6 +161,8 @@ export interface IAgenticProcess extends IEntity {
   /** tabbed / tab_order / last_active_at come from IEntity (base-Entity fields). */
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
+  /** WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted) */
+  connection_id?: string | null;
   /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
   auto_rename?: boolean;
   /**
@@ -747,6 +749,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
 
+  /** WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted) */
+  connection_id?: string | null;
+
   /** Owning project ID */
   project_id?: string | null;
 
@@ -1152,6 +1157,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.tab_order = entity.tab_order ?? 0;
     this.last_active_at = entity.last_active_at ?? null;
     this.sidecar_shell_id = entity.sidecar_shell_id;
+    this.connection_id = entity.connection_id;
     this.auto_rename = entity.auto_rename ?? true;
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;

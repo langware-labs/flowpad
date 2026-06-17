@@ -1,8 +1,8 @@
 /**
- * DockPointer.tabHash — the single knob that decides which pointers collapse to
- * the same content-panel Tab (docs/tab-management.md). The backend stores this
- * string verbatim as Tab.pointer (the natural key), so its stability + the
- * exclusions below are load-bearing.
+ * DockPointer.tabHash, toJSON, fromJSON — the tab pointer serialization system.
+ *
+ * tabHash is the canonical "viewType|pointer" string used for UI active-key matching.
+ * toJSON/fromJSON serialize/deserialize the DockPointer for DB storage (Tab.pointer).
  */
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
@@ -56,5 +56,51 @@ describe('DockPointer.tabHash', () => {
     const i = hash.indexOf('|');
     expect(hash.slice(0, i)).toBe(ViewType.ASSETS);
     expect(hash.slice(i + 1)).toBe('editor/markdown/typeid/markdown-1');
+  });
+});
+
+describe('DockPointer.toJSON / fromJSON', () => {
+  it('toJSON serializes a dock to {"viewType","pointer"} JSON for DB storage', () => {
+    const dock = new DockPointer(ViewType.CONVERSATION, 'abc123');
+    const json = dock.toJSON();
+    expect(json).not.toBeNull();
+    const parsed = JSON.parse(json!);
+    expect(parsed).toEqual({ viewType: 'conversation', pointer: 'abc123' });
+  });
+
+  it('fromJSON deserializes a stored pointer JSON back to a DockPointer', () => {
+    const json = JSON.stringify({ viewType: 'conversation', pointer: 'abc123' });
+    const dock = DockPointer.fromJSON(json);
+    expect(dock).not.toBeNull();
+    expect(dock?.viewType).toBe(ViewType.CONVERSATION);
+    expect(dock?.pointer).toBe('abc123');
+    expect(dock?.tabHash).toBe('conversation|abc123');
+  });
+
+  it('round-trips: toJSON → fromJSON → toJSON', () => {
+    const orig = new DockPointer(ViewType.ASSETS, 'editor/markdown/typeid/doc-1');
+    const json1 = orig.toJSON();
+    const roundtrip = DockPointer.fromJSON(json1!);
+    const json2 = roundtrip?.toJSON();
+    expect(json1).toBe(json2);
+  });
+
+  it('toJSON returns null for non-tab surfaces', () => {
+    expect(new DockPointer(ViewType.SHELL).toJSON()).toBeNull();
+    expect(new DockPointer(ViewType.HOME).toJSON()).toBeNull();
+  });
+
+  it('fromJSON returns null on malformed input', () => {
+    expect(DockPointer.fromJSON('not json')).toBeNull();
+    expect(DockPointer.fromJSON('{}')).toBeNull(); // missing viewType
+    expect(DockPointer.fromJSON(JSON.stringify({ viewType: 'invalid' }))).toBeNull();
+  });
+
+  it('tabHash is preserved through JSON round-trip', () => {
+    const orig = new DockPointer(ViewType.SHELL, 'agentic_process-123');
+    const origHash = orig.tabHash;
+    const json = orig.toJSON();
+    const roundtrip = DockPointer.fromJSON(json!);
+    expect(roundtrip?.tabHash).toBe(origHash);
   });
 });

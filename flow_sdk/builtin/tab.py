@@ -22,6 +22,7 @@ expected to reset on such a rebuild anyway).
 
 from __future__ import annotations
 
+import json as _json
 import uuid
 
 from flow_sdk.actions.action_registry import action as _action_registry
@@ -36,13 +37,34 @@ from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.schema.types import EntityType
 
 
+def _pointer_to_hash(pointer: str) -> str:
+    """Extract the canonical 'viewType|sub' identity string from either format:
+    - new: JSON {"viewType": ..., "pointer": ...}
+    - old: legacy "viewType|sub" string (backward compat during migration)
+
+    This ensures UUID5 remains stable across the format transition.
+    """
+    if pointer.startswith('{'):
+        try:
+            data = _json.loads(pointer)
+            vt = data.get('viewType', '')
+            sub = data.get('pointer', '')
+            return f"{vt}|{sub}"
+        except (ValueError, TypeError):
+            return pointer
+    return pointer
+
+
 def tab_id_for(pointer: str) -> str:
     """Deterministic Tab id (uuid5) for a canonical pointer string.
 
     The ``tab:`` scheme prefix keeps the Tab keyspace disjoint from every other
-    ``mint_uuid`` caller that uses ``NAMESPACE_URL``.
+    ``mint_uuid`` caller that uses ``NAMESPACE_URL``. The pointer can be in either
+    new JSON format or legacy "viewType|sub" format — UUID5 is keyed on the
+    canonical hash extracted from it, so it remains stable across migration.
     """
-    return mint_uuid(key=f"tab:{pointer}", namespace=uuid.NAMESPACE_URL)
+    hash_str = _pointer_to_hash(pointer)
+    return mint_uuid(key=f"tab:{hash_str}", namespace=uuid.NAMESPACE_URL)
 
 
 class Tab(Entity):
@@ -206,6 +228,13 @@ async def ensure_tab(
             await stray.save()
     if existing is not None:
         dirty = False
+        # Heal legacy "viewType|sub" pointers on access — migrate to JSON format
+        if existing.pointer and not existing.pointer.startswith('{'):
+            parts = existing.pointer.split('|', 1)
+            vt = parts[0] if parts else ''
+            sub = parts[1] if len(parts) > 1 else ''
+            existing.pointer = _json.dumps({"viewType": vt, "pointer": sub})
+            dirty = True
         if not existing.visible:
             existing.visible = True
             dirty = True

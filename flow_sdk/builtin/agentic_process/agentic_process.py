@@ -24,7 +24,7 @@ from uuid import uuid4
 from pydantic import SerializationInfo, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
@@ -418,6 +418,11 @@ class AgenticProcess(Entity):
     )
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
+    connection_id: str | None = APIField(
+        default=None,
+        persist=Persist.FALSE,
+        description="WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted)",
+    )
     visible: bool = APIField(
         default=False,
         description=(
@@ -962,6 +967,9 @@ class AgenticProcess(Entity):
                 "FLOWPAD_EXECUTION_SCOPE",
                 json.dumps([{"type": self.get_type(), "id": self.id}]),
             )
+            # Inject the WebSocket connection ID so the worker can navigate its own tab explicitly
+            if self.connection_id:
+                cmd.add_env("FLOWPAD_CONNECTION_ID", self.connection_id)
 
             is_resume = cmd.resume
 
@@ -3670,6 +3678,9 @@ class AgenticProcess(Entity):
         ``start_failure`` latch so a failed-to-start process relaunches.
         """
         request_info = get_current_request_info()
+        # Capture the WebSocket connection ID so the worker can target this tab explicitly
+        if request_info and request_info.request_connection_id:
+            self.connection_id = request_info.request_connection_id
         body = await request_info.get_post_data() if request_info else {}
         instruction = body.get("instruction")
         visible = body.get("visible")
