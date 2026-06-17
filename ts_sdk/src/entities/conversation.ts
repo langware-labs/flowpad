@@ -114,6 +114,19 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.archived_at = entity.archived_at ?? null;
   }
 
+  /**
+   * A conversation's user-facing label is its `title` (set at creation, edited
+   * in the header, renamed via the hub). `name` is a generated
+   * `conversation-<id>` placeholder, so the generic `defaultDisplayName` chain
+   * (which ranks `name` first) would surface the id. Override to prefer `title`;
+   * returning null when untitled defers to the chain (→ name / participants).
+   * This is what makes the tab chip — and every `displayName` consumer — read
+   * the subject instead of the placeholder.
+   */
+  getDisplayName(): string | null {
+    return this.title?.trim() || null;
+  }
+
   // NOTE: FE-side project chip projection moved server-side. The backend's
   // ``Entity.get_implicit_private_context_entities`` projects project_id
   // for every entity that has one; the merged ``private_context_entities``

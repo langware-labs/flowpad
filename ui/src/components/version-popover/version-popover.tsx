@@ -472,6 +472,17 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             </>
           )}
 
+          <div className="border-t" />
+          <section className="space-y-1.5">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current URL</h4>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-muted-foreground">Location</span>
+              <span className="max-w-[200px] truncate rounded-sm bg-muted/30 px-2 py-1 font-mono text-[10px] text-muted-foreground" title={window.location.href}>
+                {window.location.href}
+              </span>
+            </div>
+          </section>
+
           {/* Toolbar */}
           <div className="-mx-3 -mb-3 mt-1 border-t px-3 pb-1 pt-2.5">
             <Button

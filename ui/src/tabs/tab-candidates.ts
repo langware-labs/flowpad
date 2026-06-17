@@ -15,6 +15,13 @@ export function rowTargetKey(row: TabRow): string {
   return `${row.target_type}-${row.target_id}`;
 }
 
+/** Whether a tab row is in `projectId`'s scope — its own project, or a projectless
+ *  tab (`project_id == null`), which belongs to every project (the backend
+ *  `filter_for_project` rule). */
+export function tabRowInProject(row: TabRow, projectId: string | null): boolean {
+  return row.project_id === projectId || row.project_id == null;
+}
+
 /** Epoch ms of a row's last activation (recency seed), or null. Wire is epoch-ms;
  *  tolerate a legacy ISO string during the transition. */
 function rowLastActiveMs(row: TabRow): number | null {
@@ -25,16 +32,11 @@ function rowLastActiveMs(row: TabRow): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
-/**
- * Pick the best terminal tab to make active from a pre-filtered row list, via the
- * single `resolveActive` precedence (intent → recency → tab_order; `urlActiveKey`
- * is null — loaders run this only when the URL has no concrete target).
- *
- * Eligibility: not disabled, has a target, and none of the row's ids (its target
- * key or bare target id) is in `excludeIds` (one set — process and shell ids are
- * both UUIDs and don't collide). A pending intent that decided the pick is consumed.
- */
-export function resolveNextTabRow(rows: TabRow[], excludeIds: Set<string> = new Set()): TabRow | null {
+/** Pick the best row from one candidate list via the single `resolveActive`
+ *  precedence (intent → recency → tab_order; `urlActiveKey` null — we run this
+ *  only when the URL has no concrete target). A pending intent that decided the
+ *  pick is consumed; a pass that picks nothing consumes nothing. */
+function pickActiveRow(rows: TabRow[], excludeIds: Set<string>): TabRow | null {
   const eligible = rows.filter((r) => {
     if (r.is_disabled || !r.target_id) return false;
     if (excludeIds.has(rowTargetKey(r)) || excludeIds.has(r.target_id)) return false;
@@ -48,6 +50,32 @@ export function resolveNextTabRow(rows: TabRow[], excludeIds: Set<string> = new 
   if (consumedPendingIntent) consumePendingIntent();
   if (!activeKey) return null;
   return eligible.find((r) => rowTargetKey(r) === activeKey) ?? null;
+}
+
+/**
+ * Pick the best terminal tab to make active.
+ *
+ * When `preferProjectId` is given, prefer a tab in that project (+ projectless
+ * tabs, which belong to every project) so closing a tab keeps you inside your
+ * project while it still has tabs; only when that project is empty does the pick
+ * skip to the next tab anywhere. Omit `preferProjectId` (or pass an already-scoped
+ * `rows`) for a plain global pick. `null` means no tab is left to make active.
+ *
+ * Eligibility: not disabled, has a target, and none of the row's ids (its target
+ * key or bare target id) is in `excludeIds` (one set — process and shell ids are
+ * both UUIDs and don't collide).
+ */
+export function resolveNextTabRow(
+  rows: TabRow[],
+  excludeIds: Set<string> = new Set(),
+  preferProjectId?: string | null,
+): TabRow | null {
+  if (preferProjectId !== undefined) {
+    const scoped = rows.filter((r) => tabRowInProject(r, preferProjectId));
+    const inProject = pickActiveRow(scoped, excludeIds);
+    if (inProject) return inProject;
+  }
+  return pickActiveRow(rows, excludeIds);
 }
 
 /** Whether a terminal row is backed by an AgenticProcess (vs a plain shell). */
