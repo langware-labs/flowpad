@@ -75,6 +75,7 @@ from .routes import (
     pty_stream_router,
     search_router,
     semantic_checker_router,
+    skills_router,
     testing_router,
     transcripts_router,
     ui_router,
@@ -459,6 +460,7 @@ server.add_router(debug_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)
 server.add_router(transcripts_router)
+server.add_router(skills_router)
 server.add_router(dep_graph_router)
 server.add_router(version_router)
 server.add_router(favorites_router)
