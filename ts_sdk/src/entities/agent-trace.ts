@@ -16,6 +16,7 @@ export class AgentTrace extends APIEntity<AgentTrace> {
 
   session_id: string = '';
   worker_type: string = 'claude';
+  analyzed_process_id?: string | null;
   verdict?: string;
   verdict_reason?: string;
   duration_ms?: number;
@@ -29,6 +30,7 @@ export class AgentTrace extends APIEntity<AgentTrace> {
     super(entity);
     this.session_id = entity.session_id ?? '';
     this.worker_type = entity.worker_type ?? 'claude';
+    this.analyzed_process_id = entity.analyzed_process_id ?? null;
     this.verdict = entity.verdict;
     this.verdict_reason = entity.verdict_reason;
     this.duration_ms = entity.duration_ms;
