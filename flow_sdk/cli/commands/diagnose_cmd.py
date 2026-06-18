@@ -149,11 +149,12 @@ class _Renderer:
 async def _post_home_feed_entry(
     *, summary: str, conversation_id: str | None = None, flow_message_id: str | None = None
 ) -> str | None:
-    """Post the Home-Feed ``message_suggest`` card for a recorded diagnosis, SDK-direct.
+    """Post the Home-Feed card for a recorded diagnosis, SDK-direct.
 
     The single creator both surfaces use (the CLI runner, and the UI's
-    ``diagnose_post_feed`` action). We create the ``FeedEntry`` here — in a process that
-    is bootstrapped and works even when the backend is down.
+    ``diagnose_post_feed`` action). We create the ``MessageSuggest`` content entity
+    and a generic ``FeedEntry`` pointing at it here — in a process that is
+    bootstrapped and works even when the backend is down.
 
     Two shapes, keyed on whether there's a support conversation:
 
@@ -165,7 +166,8 @@ async def _post_home_feed_entry(
     Returns the new entry id, or ``None`` on failure (best-effort; never fails the run).
     """
     try:
-        from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus, MessageSuggest
+        from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
+        from flow_sdk.builtin.message_suggest import MessageSuggest
         from flow_sdk.server.routes.bootstrap import get_or_create_local_user
 
         user = await get_or_create_local_user()
@@ -181,15 +183,48 @@ async def _post_home_feed_entry(
             conversation_id=conversation_id,
             flow_message_id=flow_message_id,
         )
+        suggest = await suggest.save(user.typeid)
         feed = FeedEntry(
-            kind=FeedKind.MESSAGE_SUGGEST.value,
             feed_status=FeedStatus.NEW.value,
-            feed_data=suggest.model_dump(),
+            data={"type_id": str(suggest.typeid)},
         )
         feed = await feed.save(user.typeid)
         return feed.id
     except Exception:
         return None
+
+
+async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
+    """Load the diagnosis just recorded by report.py.
+
+    The reporter runs in the worker process and syncs the record before printing
+    its JSON completion line, but the CLI process can still observe a short
+    cross-process visibility delay. Retry briefly so the Feed card can carry the
+    recorded summary instead of posting an empty body.
+    """
+    if not diagnosis_id:
+        return None
+
+    if diagnosis_cls is None:
+        try:
+            from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
+
+            diagnosis_cls = FlowpadDiagnosis
+        except Exception:
+            return None
+
+    last = None
+    for _ in range(20):
+        try:
+            last = await diagnosis_cls.get_by_id(diagnosis_id)
+            if last is not None and (
+                getattr(last, "summary", None) or getattr(last, "title", None)
+            ):
+                return last
+        except Exception:
+            last = None
+        await asyncio.sleep(0.25)
+    return last
 
 
 async def _run_diagnose(
@@ -212,8 +247,8 @@ async def _run_diagnose(
     callable). A callable is evaluated at posting time, so a late decision — "did the
     UI modal close / go unwatched before we finished?" — is possible.
 
-    * **CLI** passes ``True``: post a card for an issue (its Report/Forward actions are
-      the CLI's lasting output); a clean sweep prints to the terminal, no card.
+    * **CLI** passes ``lambda has_issue: True``: post a card for every completed
+      run, including clean sweeps, so the Home feed carries the recorded result.
     * **UI** passes ``lambda has_issue: <user wasn't watching>``: while the modal is
       open and focused it shows the result itself, so nothing is posted; if the user
       defocused / minimized, a card is posted **for any result** — an issue card with
@@ -414,25 +449,33 @@ async def _run_diagnose(
             did = recorded.get("diagnosis_id")
             conv_id = recorded.get("conversation_id")
             msg_id = recorded.get("flow_message_id")
-            diag = None
-            try:
-                if did and _diag_cls is not None:
-                    fresh = await AgenticProcess.get_by_id(ap.id)
-                    diag = await _diag_cls.get_by_id(did)
-                    if fresh is not None and diag is not None:
-                        await cross_link_entities(fresh, diag)
-            except Exception:
-                pass
-            # Post the Home-Feed card. has_issue ⇔ report.py created a support
-            # Conversation/FlowMessage. A bool create_feed_entry posts for an issue only
-            # (CLI); a callable gets has_issue and may also post a no-issue summary card
-            # (UI, when the user wasn't watching). Evaluated now so the decision can read
-            # live state (e.g. whether the modal is still connected).
             has_issue = bool(conv_id and msg_id)
             if callable(create_feed_entry):
                 want_feed = create_feed_entry(has_issue)
             else:
                 want_feed = bool(create_feed_entry) and has_issue
+
+            if want_feed:
+                diag = await _load_recorded_diagnosis(_diag_cls, did)
+            else:
+                diag = None
+                try:
+                    if did and _diag_cls is not None:
+                        diag = await _diag_cls.get_by_id(did)
+                except Exception:
+                    pass
+            try:
+                if diag is not None:
+                    fresh = await AgenticProcess.get_by_id(ap.id)
+                    if fresh is not None:
+                        await cross_link_entities(fresh, diag)
+            except Exception:
+                pass
+            # Post the Home-Feed card. has_issue ⇔ report.py created a support
+            # Conversation/FlowMessage. A bool create_feed_entry posts for an issue only;
+            # a callable gets has_issue and may also post a no-issue summary card.
+            # Evaluated now so the decision can read live state (e.g. whether the modal
+            # is still connected).
             feed_entry_id = None
             if want_feed:
                 summary = (getattr(diag, "summary", None) or getattr(diag, "title", None) or "") if diag else ""
@@ -498,5 +541,5 @@ def diagnose_command(
         ("Running a full diagnostic sweep" if not text else "Diagnosing your issue")
         + " — spinning up the agent (this can take a few seconds)…"
     )
-    rc = asyncio.run(_run_diagnose(text, timeout))
+    rc = asyncio.run(_run_diagnose(text, timeout, create_feed_entry=lambda _has_issue: True))
     raise typer.Exit(rc)

@@ -116,9 +116,14 @@ function shouldMaterializeDock(dock: DockPointer): boolean {
 }
 
 async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tabs: Tab[] }> {
+  const existing = await Tab.listAll();
+  const existingTab = findTabForDock(existing, dock);
+  if (existingTab) return { tab: existingTab, tabs: existing };
+
   const scoped = await Tab.getFromDockPointer(dock);
   const tab = findTabForDock(scoped, dock);
   if (tab) return { tab, tabs: scoped };
+
   const all = await Tab.listAll();
   return { tab: findTabForDock(all, dock), tabs: all };
 }

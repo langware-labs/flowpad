@@ -10,6 +10,8 @@ interface DiagnosisActionButtonsProps {
   suggestedConversationId?: string;
   busy?: boolean;
   error?: string;
+  /** Feed cards render hide in their constant header; modals keep the inline dismiss action. */
+  showDismiss?: boolean;
   /** Dismiss the diagnosis surface (Feed card: dismiss the entry; modal: close). */
   onDismiss: () => void;
   /** Send the report to a conversation — used by both "Report issue" and a Forward pick. */
@@ -26,6 +28,7 @@ export function DiagnosisActionButtons({
   suggestedConversationId,
   busy,
   error,
+  showDismiss = true,
   onDismiss,
   onReport,
 }: DiagnosisActionButtonsProps) {
@@ -39,16 +42,18 @@ export function DiagnosisActionButtons({
   return (
     <>
       <div className="mt-2 flex shrink-0 items-center gap-2">
-        <button
-          type="button"
-          aria-label="Dismiss"
-          title="Dismiss"
-          disabled={busy}
-          onClick={onDismiss}
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-        >
-          <EyeOff className="h-3.5 w-3.5" />
-        </button>
+        {showDismiss && (
+          <button
+            type="button"
+            aria-label="Dismiss"
+            title="Dismiss"
+            disabled={busy}
+            onClick={onDismiss}
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+          </button>
+        )}
         <Button
           type="button"
           size="sm"

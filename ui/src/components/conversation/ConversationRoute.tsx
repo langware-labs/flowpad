@@ -166,12 +166,49 @@ export function ConversationRoute() {
     [navigation, conversationId],
   );
 
-  const goBack = () => navigation.openDock(DockPointer.forInbox());
+  const goBack = () => window.history.back();
 
   if (!conversationId) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         No conversation specified.
+      </div>
+    );
+  }
+
+  // Conversation not found — show not-found screen within the tab
+  // Check after we've allowed the component to attempt loading but before showing other content
+  if (conversationId && !conversation && !taskMissing) {
+    return (
+      <div className="relative flex h-full flex-col">
+        <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b px-3 py-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={goBack}
+              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Back"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">Conversation not found</span>
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <div className="w-full max-w-md rounded-lg border bg-card p-8 text-center shadow-md">
+            <div className="mb-6">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+                <svg className="h-8 w-8 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h1 className="mb-2 text-2xl font-bold text-foreground">Conversation Not Found</h1>
+              <p className="text-muted-foreground">
+                The conversation you're looking for doesn't exist or you don't have access to it.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
