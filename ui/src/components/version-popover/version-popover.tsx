@@ -6,6 +6,8 @@ import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { sdkConfig } from '@sdk/config/index';
 import { connectionManager } from '@sdk/websocket';
+import { useIsDev } from '@src/components/view-mode';
+import { useContext } from '@sdk/react/hooks';
 import {
   Check,
   ChevronDown,
@@ -255,6 +257,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     flowMessageId?: string;
   } | null>(null);
 
+  const isDev = useIsDev();
+  const context = useContext();
+  const instanceName = context?.instanceName;
+
   const electronApi = getElectronApi();
   const mode: 'Desktop' | 'Browser' = electronApi ? 'Desktop' : 'Browser';
 
@@ -503,6 +509,14 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           <div className="border-t" />
           <section className="space-y-1.5">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connection Info</h4>
+            {isDev && instanceName && (
+              <div className="flex items-baseline justify-between gap-2 text-xs">
+                <span className="text-muted-foreground">Instance</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  {instanceName}
+                </span>
+              </div>
+            )}
             <CopyableUrlField label="URL" value={window.location.href} />
             <CopyableUrlField label="Connection ID" value={connectionManager.id} />
           </section>

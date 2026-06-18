@@ -15,6 +15,8 @@ export interface EnvInfo {
   cloud_api_url?: string;
   /** App version (e.g., "0.1.28") */
   version?: string;
+  /** Current instance name (e.g., "prod", "dev", "test"); dev-mode only */
+  instance_name?: string;
 }
 
 /**
