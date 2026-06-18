@@ -20,7 +20,7 @@
  * Wrapper `loadConversationRoute(pointer)` is the URL-aware shell. Mirrors
  * the load-shell / load-project two-layer split: the primitive doesn't know
  * about URLs and only throws typed errors; the wrapper translates failures
- * into redirects + toasts.
+ * into declarative dock-load resolutions.
  */
 
 import {
@@ -32,10 +32,9 @@ import {
   type Task,
   TypeId,
 } from '@sdk';
-import { Conversation as ConversationEntity, Task as TaskEntity } from '@sdk';
+import { Conversation as ConversationEntity } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { notify } from '@src/notifications';
-import { redirect } from 'react-router';
+import { DockLoadError } from './dock-load-error';
 
 export type ConversationLoadErrorKind = 'not_found' | 'unauthorized' | 'network_error';
 
@@ -62,8 +61,8 @@ export async function loadConversation(conversationId: string): Promise<Conversa
   try {
     conv = await dataManager.getByTypeId<Conversation>(new TypeId(ConversationEntity.type, conversationId));
   } catch (error) {
-    const anyError = error as any;
-    const status = anyError?.response?.status ?? anyError?.status;
+    const typedError = error as { response?: { status?: number }; status?: number } | null;
+    const status = typedError?.response?.status ?? typedError?.status;
 
     // Distinguish error types
     if (status === 404 || status === 403) {
@@ -127,7 +126,7 @@ export async function loadConversation(conversationId: string): Promise<Conversa
 }
 
 /**
- * Route-level loader for /dock/conversation/<id>. Owns redirect/error policy.
+ * Route-level loader for /dock/conversation/<id>. Owns route error policy.
  * Delegates the actual work to `loadConversation`.
  */
 export async function loadConversationRoute(pointer: string | undefined): Promise<void> {
@@ -147,12 +146,33 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
     await loadConversation(conversationId);
   } catch (e) {
     if (e instanceof ConversationLoadError) {
-      // Hard errors: not_found → redirect to inbox
       if (e.kind === 'not_found') {
-        return redirect('/dock/inbox');
+        throw new DockLoadError(
+          'conversation_not_found',
+          'hard',
+          {
+            action: 'render_error',
+            title: 'Conversation not found',
+            message: 'This conversation no longer exists or is unavailable.',
+          },
+          'conversation',
+          e,
+        );
       }
-      // Other errors: let error boundary handle
-      throw e;
+      if (e.kind === 'network_error') {
+        throw new DockLoadError(
+          'conversation_network_error',
+          'soft',
+          {
+            action: 'render_error',
+            title: 'Conversation unavailable',
+            message: 'Could not load this conversation. Try again in a moment.',
+            retryable: true,
+          },
+          'conversation',
+          e,
+        );
+      }
     }
     throw e;
   }

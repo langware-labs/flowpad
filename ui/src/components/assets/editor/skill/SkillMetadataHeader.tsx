@@ -12,7 +12,7 @@ export function SkillMetadataHeader({ metadata, onMetadataChange }: SkillMetadat
   }
 
   return (
-    <div className="border-b bg-muted/30 px-4 py-3">
+    <div className="border-b px-3 py-2">
       <div className="flex items-start gap-6">
         {/* Name and Description */}
         <div className="min-w-0 flex-1 space-y-1">
@@ -24,18 +24,18 @@ export function SkillMetadataHeader({ metadata, onMetadataChange }: SkillMetadat
               className="h-8 text-lg font-semibold"
             />
           ) : (
-            <h2 className="truncate text-lg font-semibold text-foreground">{metadata.name || 'Untitled Skill'}</h2>
+            <span className="truncate text-sm font-medium text-foreground">{metadata.name || 'Untitled Skill'}</span>
           )}
           {onMetadataChange ? (
             <Input
               value={metadata.description}
               onChange={(e) => onMetadataChange('description', e.target.value)}
               placeholder="Brief description of what this skill does"
-              className="h-7 text-sm text-muted-foreground"
+              className="h-7 text-sm"
             />
           ) : (
             metadata.description && (
-              <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{metadata.description}</p>
+              <p className="mt-0.5 line-clamp-2 text-sm text-foreground/70">{metadata.description}</p>
             )
           )}
         </div>

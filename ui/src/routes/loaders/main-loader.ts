@@ -11,9 +11,7 @@ import {
   ContextEntitiesEnum,
   dataContext,
   initSdk,
-  QueryRequest,
   systemTools,
-  Trigger,
   TypeId,
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
@@ -22,13 +20,10 @@ import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
-import { loadShellRoute } from './load-shell';
-import { loadProject, loadProjectRoute } from './load-project';
-import { loadConversationRoute } from './load-conversation';
-import { loadAssetRoute } from './load-asset';
-import { loadTasksRoute } from './load-tasks';
+import { loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { markPerfT0, perfLog } from './_perf';
+import { loadDockPointer } from './load-dock-pointer';
 
 // Re-export kept for existing consumers (unit tests import from here).
 export { describeProcessStartError };
@@ -158,59 +153,19 @@ export async function loadAgentApp(args: LoaderArgs) {
     t.time('ensureComputeNode');
     let setupHandled = false;
 
-    const runSetup = async (label: string, setupContent: () => Promise<void>) => {
+    const runSetup = async (setupContent: () => Promise<string>) => {
       setupHandled = true;
-      if (dockForSetup) await setupTab(dockForSetup, { setupContent });
-      else await setupContent();
+      let label = 'loadDockPointer';
+      const wrappedSetup = async () => {
+        label = await setupContent();
+      };
+      if (dockForSetup) await setupTab(dockForSetup, { setupContent: wrappedSetup });
+      else await wrappedSetup();
       t.time(label);
     };
 
-    if (viewType === ViewType.SHELL) {
-      // Pass the request path so shell-loader redirects preserve the layout
-      // keyword — /win/shell fallbacks stay chrome-less (Part 3 §7).
-      await runSetup('loadShellRoute', () => loadShellRoute(pointer || undefined, requestUrl.pathname));
-    }
-
-    if (viewType === ViewType.PROJECT) {
-      await runSetup('loadProjectRoute', () => loadProjectRoute(pointer || undefined));
-    }
-
-    if (viewType === ViewType.CONVERSATION) {
-      await runSetup('loadConversationRoute', () => loadConversationRoute(pointer || undefined));
-    }
-
-    if (viewType === ViewType.ASSETS) {
-      await runSetup('loadAssetRoute', () => loadAssetRoute(pointer || undefined));
-    }
-
-    if (viewType === ViewType.TASKS) {
-      await runSetup('loadTasksRoute', () => loadTasksRoute(pointer || undefined));
-    }
-
-    if (viewType === ViewType.TRIGGERS) {
-      await runSetup('loadTriggers', async () => {
-        await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));
-      });
-    }
-
-    if (viewType === ViewType.PLAN && pointer) {
-      await runSetup('loadPlan (set process context)', async () => {
-        const parsed = DockPointer.parsePlanPointer(pointer);
-        if (parsed) {
-          await dataContext.setContextEntityTypeId(
-            ContextEntitiesEnum.CurrentProcessTypeId,
-            parsed.agenticProcessTypeId,
-          );
-          const process = await AgenticProcess.getById(parsed.agenticProcessTypeId.id).catch(() => null);
-          if (process?.project_id) {
-            await loadProject(process.project_id).catch(() =>
-              systemTools.resolveProjectContext(process.workdir, process),
-            );
-          } else {
-            await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
-          }
-        }
-      });
+    if (dockForSetup) {
+      await runSetup(() => loadDockPointer(dockForSetup!, { requestPath: requestUrl.pathname }));
     }
 
     if (dockForSetup && !setupHandled) {

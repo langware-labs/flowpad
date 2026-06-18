@@ -56,7 +56,6 @@ function RootLayout() {
 import { loadHomePage } from './routes/loaders/home-loader';
 import { loadAgentApp } from './routes/loaders/main-loader';
 import { loadRoot } from './routes/loaders/root-loader';
-import { loadConversationRoute } from './routes/loaders/load-conversation';
 
 function shouldRevalidateDockShell({
   currentUrl,
@@ -95,7 +94,7 @@ export const router = createBrowserRouter(
       {/* Root dock routes - use default agent from bootstrap */}
       <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDockShell} errorElement={<ErrorScreen />}>
         <Route index element={<Navigate to="/" replace />} />
-        <Route path="conversation/*" element={<FlowPage />} loader={({ params }) => loadConversationRoute(params['*'])} />
+        <Route path="conversation/*" element={<FlowPage />} />
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />
       </Route>
