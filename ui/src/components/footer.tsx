@@ -36,7 +36,7 @@ export function Footer({ className = '' }: FooterProps) {
   const { agentId } = useParams();
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId);
-  const { data: projectArtifacts } = useCurrentArtifacts();
+  const { data: projectArtifacts, isLoading: isLoadingArtifacts } = useCurrentArtifacts();
   const { navigation } = useDockNavigation();
   useColorPalette(agent?.site_config);
   usePendingCompletionSound();
@@ -85,11 +85,17 @@ export function Footer({ className = '' }: FooterProps) {
 
         {/* Repo info centered in the available space */}
         <div className="flex-1 text-center">
-          {repoInfo && (
+          {isLoadingArtifacts ? (
+            <div className="font-mono text-[10px] text-muted-foreground">Loading…</div>
+          ) : repoInfo ? (
             <div className="font-mono text-[10px] text-muted-foreground">
               {repoInfo.isZip ? repoInfo.url : `${repoInfo.url}:${repoInfo.branch}`}
             </div>
-          )}
+          ) : projectArtifacts && projectArtifacts.length > 0 ? (
+            <div className="font-mono text-[10px] text-muted-foreground/50">
+              (no git repo)
+            </div>
+          ) : null}
         </div>
 
         {/* Version + Powered by on the right */}
