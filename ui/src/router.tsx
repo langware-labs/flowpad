@@ -94,7 +94,6 @@ export const router = createBrowserRouter(
       {/* Root dock routes - use default agent from bootstrap */}
       <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDockShell} errorElement={<ErrorScreen />}>
         <Route index element={<Navigate to="/" replace />} />
-        <Route path="conversation/*" element={<FlowPage />} />
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />
       </Route>

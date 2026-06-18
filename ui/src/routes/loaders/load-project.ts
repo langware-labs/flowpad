@@ -27,10 +27,16 @@ import { loadShell, ShellLoadError } from './load-shell';
 import { loadConversation } from './load-conversation';
 import { processLoadErrorToDockError } from './process-load-error-resolution';
 import { DockLoadError } from './dock-load-error';
+import { loadAssetRoute } from './load-asset';
 
 function errorStatus(error: unknown): number | undefined {
   return (error as { response?: { status?: number }; status?: number } | null)?.response?.status
     ?? (error as { status?: number } | null)?.status;
+}
+
+function hasProjectTabSegment(pointer: string | undefined): boolean {
+  const parts = pointer?.split('/').filter(Boolean) ?? [];
+  return parts[1] === 'collaboration_room' && parts[3] === 'tab';
 }
 
 export class ProjectLoadError extends Error {
@@ -205,6 +211,8 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
   };
   const { projectId, roomId, tabTypeId } = parsed;
   const conversationId = parsed.conversationId ?? null;
+  const { assetSubPointer } = DockPointer.splitProjectPointer(pointer);
+  const hasTabSegment = hasProjectTabSegment(pointer);
   if (!projectId) {
     // No project id in URL — page renders its empty state; nothing to load.
     return;
@@ -228,6 +236,14 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
     await dataContext.setActiveEntityTypeId(new TypeId(Project.type, projectId));
   }
 
+  if (!conversationId && !roomId && assetSubPointer) {
+    await loadAssetRoute(assetSubPointer);
+    await dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProjectTypeId,
+      new TypeId(Project.type, projectId),
+    );
+  }
+
   if (roomId) {
     let room: CollaborationRoom | null = null;
     try {
@@ -240,6 +256,19 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
     if (!room) {
       throwRoomLoadError({ status: 404 }, roomId);
     }
+  }
+
+  if (!tabTypeId && hasTabSegment) {
+    throw new DockLoadError(
+      'malformed_project_tab',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Unsupported tab',
+        message: 'This project tab URL is malformed.',
+      },
+      'project',
+    );
   }
 
   if (!tabTypeId) {

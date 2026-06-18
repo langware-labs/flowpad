@@ -1,6 +1,7 @@
 import { Tab } from '@sdk';
 import { useSyncExternalStore } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { ViewType } from '@src/types/ViewType';
 
 export enum TabLifecycleState {
   Opening = 'opening',
@@ -40,10 +41,8 @@ const setupInFlight = new Map<string, Promise<TabSetupResult>>();
 let snapshot: ReadonlyMap<string, TabLifecycleEntry> = new Map();
 
 const defaultAdapter: TabContentAdapter = {
-  async setupTab() {
-    return { tab: null };
-  },
-  async cleanupTab() {},
+  setupTab: () => Promise.resolve({ tab: null }),
+  cleanupTab: () => Promise.resolve(),
 };
 
 const adapters = new Map<string, TabContentAdapter>();
@@ -112,7 +111,8 @@ function findTabForDock(tabs: Tab[], dock: DockPointer): Tab | null {
 
 function shouldMaterializeDock(dock: DockPointer): boolean {
   if (!dock.tabHash) return false;
-  return !(dock.viewType === 'shell' && dock.pointer === 'new_terminal');
+  if (dock.viewType === ViewType.AGENTIC_PROCESS) return false;
+  return !(dock.viewType === ViewType.SHELL && dock.pointer === 'new_terminal');
 }
 
 async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tabs: Tab[] }> {
@@ -130,12 +130,13 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
 
 function adapterFor(dock: DockPointer, options: SetupTabOptions): TabContentAdapter {
   if (options.setupContent) {
+    const cleanupAdapter = options.adapter ?? defaultAdapter;
     return {
       async setupTab() {
         await options.setupContent?.();
         return { tab: null };
       },
-      cleanupTab: options.adapter?.cleanupTab ?? defaultAdapter.cleanupTab,
+      cleanupTab: (cleanupDock, tab) => cleanupAdapter.cleanupTab(cleanupDock, tab),
     };
   }
   return options.adapter ?? adapters.get(dock.viewType ?? '') ?? defaultAdapter;

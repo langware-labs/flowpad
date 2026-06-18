@@ -21,7 +21,7 @@ export function processLoadErrorToDockError(
   if (error.kind === 'network_error') {
     return new DockLoadError(
       'session_network_error',
-      'soft',
+      error.severity,
       {
         action: 'render_error',
         title: 'Session unavailable',
