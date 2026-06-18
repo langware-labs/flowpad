@@ -37,9 +37,13 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { notify } from '@src/notifications';
 import { redirect } from 'react-router';
 
+export type ConversationLoadErrorKind = 'not_found' | 'unauthorized' | 'network_error';
+
 export class ConversationLoadError extends Error {
+  readonly severity = 'hard'; // conversation not found is always terminal
+
   constructor(
-    readonly kind: 'not_found',
+    readonly kind: ConversationLoadErrorKind,
     readonly conversationId: string,
   ) {
     super(`conversation-load:${kind}`);
@@ -53,9 +57,22 @@ export class ConversationLoadError extends Error {
  * load (the page can still render the conversation without those).
  */
 export async function loadConversation(conversationId: string): Promise<Conversation> {
-  const conv = await dataManager
-    .getByTypeId<Conversation>(new TypeId(ConversationEntity.type, conversationId))
-    .catch(() => null);
+  let conv: Conversation | null = null;
+
+  try {
+    conv = await dataManager.getByTypeId<Conversation>(new TypeId(ConversationEntity.type, conversationId));
+  } catch (error) {
+    const anyError = error as any;
+    const status = anyError?.response?.status ?? anyError?.status;
+
+    // Distinguish error types
+    if (status === 404 || status === 403) {
+      throw new ConversationLoadError('not_found', conversationId);
+    }
+    // Network or other errors
+    throw new ConversationLoadError('network_error', conversationId);
+  }
+
   if (!conv) {
     throw new ConversationLoadError('not_found', conversationId);
   }
@@ -110,8 +127,8 @@ export async function loadConversation(conversationId: string): Promise<Conversa
 }
 
 /**
- * Route-level loader for /dock/conversation/<id>. Tries to load the conversation
- * but doesn't throw on not-found — the component handles that gracefully.
+ * Route-level loader for /dock/conversation/<id>. Owns redirect/error policy.
+ * Delegates the actual work to `loadConversation`.
  */
 export async function loadConversationRoute(pointer: string | undefined): Promise<void> {
   if (!pointer) {
@@ -129,8 +146,14 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
   try {
     await loadConversation(conversationId);
   } catch (e) {
-    // Don't throw — let the component handle not-found gracefully by showing
-    // a not-found view within the tab instead of a full-page error
-    if (!(e instanceof ConversationLoadError)) throw e;
+    if (e instanceof ConversationLoadError) {
+      // Hard errors: not_found → redirect to inbox
+      if (e.kind === 'not_found') {
+        return redirect('/dock/inbox');
+      }
+      // Other errors: let error boundary handle
+      throw e;
+    }
+    throw e;
   }
 }

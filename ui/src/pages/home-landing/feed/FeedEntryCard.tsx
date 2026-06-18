@@ -1,8 +1,9 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
-import { MessageSuggest, UserNote, type FeedEntry } from '@sdk';
+import { AgentTrace, MessageSuggest, UserNote, type FeedEntry } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FeedData } from './feed-data';
 import { formatRecorded } from './feed-utils';
 
@@ -77,6 +78,18 @@ export function FeedEntryCard({
       <UserNoteFeedEntryCard
         entry={entry}
         note={entity as UserNote}
+        busy={busy}
+        feedData={feedData}
+        onDismiss={onDismiss}
+      />
+    );
+  }
+
+  if (entity.getType() === AgentTrace.type) {
+    return (
+      <AgentTraceFeedEntryCard
+        entry={entry}
+        trace={entity as AgentTrace}
         busy={busy}
         feedData={feedData}
         onDismiss={onDismiss}
@@ -250,6 +263,33 @@ function UserNoteFeedEntryCard({ entry, note, busy, feedData, onDismiss }: UserN
           {note.content}
         </p>
       </div>
+    </FeedEntryFrame>
+  );
+}
+
+interface AgentTraceFeedEntryCardProps {
+  entry: FeedEntry;
+  trace: AgentTrace;
+  busy: boolean;
+  feedData: FeedData;
+  onDismiss: (entry: FeedEntry) => void;
+}
+
+function AgentTraceFeedEntryCard({ entry, trace, busy, feedData, onDismiss }: AgentTraceFeedEntryCardProps) {
+  const { navigation } = useDockNavigation();
+
+  return (
+    <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
+      <button
+        type="button"
+        className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => navigation.openDock(trace.editorDockPointer)}
+      >
+        <p className="min-w-0 text-xs font-medium leading-snug text-foreground">Skill analysis</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          Skill analysis ready for review and improvements
+        </p>
+      </button>
     </FeedEntryFrame>
   );
 }
