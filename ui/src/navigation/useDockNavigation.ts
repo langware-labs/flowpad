@@ -1,7 +1,7 @@
 import { Layout } from '@sdk';
 import { defineGlobal } from '@sdk/utils';
 import { useMemo } from 'react';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useParams } from 'react-router';
 import { DockPointer } from './DockPointer';
 import { NavigationActions } from './NavigationActions';
 import { detectLayout } from './url-builder';
@@ -50,20 +50,12 @@ export function useDockNavigation(): UseDockNavigationReturn {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ agentId: string; processId: string; viewType?: string; pointer?: string; '*'?: string }>();
-  const [searchParams] = useSearchParams();
 
   // Parse current dock state from URL
   const currentDock = useMemo(() => {
     if (params.viewType) {
       try {
-        // Detect layout from URL path (keyword→Layout table in url-builder)
-        const layout = detectLayout(location.pathname);
-
-        // Use pointer from URL params - check both :pointer param and * wildcard
-        // For routes like /:viewType/:pointer, params.pointer is used
-        // For routes like /:viewType/*, params["*"] captures the remaining path
-        const pointer = params.pointer || params['*'];
-        return DockPointer.fromUrl(params.viewType, pointer, searchParams, layout);
+        return DockPointer.fromUrl(`${location.pathname}${location.search}`);
       } catch (error) {
         console.warn('[useDockNavigation] Invalid URL, returning default dock:', error);
         // Return default dock pointer for invalid URLs
@@ -71,7 +63,7 @@ export function useDockNavigation(): UseDockNavigationReturn {
       }
     }
     return null;
-  }, [location.pathname, params.viewType, params.pointer, searchParams]);
+  }, [location.pathname, location.search, params.viewType]);
 
   // Create navigation instance with currentDock so openDock() can deduplicate
   const navigation = useMemo(() => {

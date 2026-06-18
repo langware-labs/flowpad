@@ -1,7 +1,7 @@
 import { AgenticProcess, Layout, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
-import { parseQueryParams } from './url-builder';
+import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
 import { isValidView } from './validators';
 import { AssetDocPointer } from './AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType } from './asset-doc-types';
@@ -78,12 +78,33 @@ export class DockPointer implements IDockPointer {
    * Parse dock pointer from URL segments
    * Returns null if invalid (URL validation)
    */
+  static fromUrl(url: string): DockPointer;
   static fromUrl(
     viewType: string,
     pointer?: string,
     searchParams?: URLSearchParams,
+    layout?: Layout,
+  ): DockPointer;
+  static fromUrl(
+    viewTypeOrUrl: string,
+    pointer?: string,
+    searchParams?: URLSearchParams,
     layout: Layout = Layout.DOCK, // Default to DOCK for backward compatibility
   ): DockPointer {
+    if (pointer === undefined && searchParams === undefined) {
+      try {
+        const url = new URL(viewTypeOrUrl, 'http://flowpad.local');
+        const parsedUrl = parseDockUrl(url.pathname);
+        if (parsedUrl?.viewType) {
+          return DockPointer.fromUrl(parsedUrl.viewType, parsedUrl.pointer, url.searchParams, parsedUrl.layout);
+        }
+      } catch {
+        // Not a URL-shaped value; continue with the historical viewType parser.
+      }
+    }
+
+    const viewType = viewTypeOrUrl;
+
     // Validate view type only
     if (!isValidView(viewType)) {
       throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, `Invalid view type: ${viewType}`);
@@ -944,6 +965,16 @@ export class DockPointer implements IDockPointer {
       pointer: this.pointer,
       layout: this.layout,
     };
+  }
+
+  /**
+   * Serialize this DockPointer into the canonical layout URL.
+   */
+  toUrl(currentPath: string = ''): string {
+    if (!this.viewType) {
+      throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, 'Cannot serialize DockPointer without a view type');
+    }
+    return buildDockUrl(currentPath, this.viewType, this.pointer, this.options, this.layout);
   }
 
   /**
