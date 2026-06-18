@@ -68,6 +68,9 @@ export interface ITab extends IEntity {
    */
   icon_key?: string | null;
   worktree?: boolean;
+  /** Runtime-computed fields: backing entity status and close-in-progress flag. Never persisted. */
+  status?: string | null;
+  is_disabled?: boolean;
   /** name / project_id / tab_order / last_active_at come from IEntity. */
 }
 
@@ -85,26 +88,6 @@ export interface INewTabOpts extends IEnsureTabOpts {
   afterTabId?: string | null;
 }
 
-/**
- * One fully-resolved strip row, as the backend `list`/`new_tab`/`order`/`close`
- * actions return it (flow_sdk/builtin/tab.py `_serialize_row`). The strip renders
- * straight off these — order, label, icon and live status are all backend-owned;
- * the frontend never re-derives order from entities.
- */
-export interface TabRow {
-  id: string;
-  pointer: string;
-  target_type: string | null;
-  target_id: string | null;
-  project_id: string | null;
-  name: string | null;
-  icon_key: string | null;
-  worktree: boolean;
-  tab_order: number;
-  last_active_at: number | string | null;
-  status: string | null;
-  is_disabled: boolean;
-}
 
 @registerEntity
 export class Tab extends APIEntity<Tab> implements ITab {
@@ -120,6 +103,23 @@ export class Tab extends APIEntity<Tab> implements ITab {
   project_id: string | null = null;
   tab_order: number = 0;
   last_active_at: number | string | null = null;
+  status: string | null = null;
+  is_disabled: boolean = false;
+
+  /** Computed DockPointer from the stored JSON pointer. Parsed directly (SDK layer, no UI dependency). */
+  get dockPointer(): IDockPointer | null {
+    if (!this.pointer) return null;
+    try {
+      return JSON.parse(this.pointer) as IDockPointer;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Get the key used for chip identity (tabHash or fallback to id). */
+  getKey(): string {
+    return this.dockPointer?.tabHash ?? this.id;
+  }
 
   // ── Backend-owned ordered list (the single render source) ───────────────────
   // These call the collection-level `tab` actions (no entity id) and return the
@@ -127,17 +127,17 @@ export class Tab extends APIEntity<Tab> implements ITab {
 
   /** GET /graph/tab/list?project=<id> — the deterministic ordered render list for
    *  one project view (projectless tabs inline). `null` ⇒ no active project. */
-  static async list(projectId: string | null = null): Promise<TabRow[]> {
+  static async list(projectId: string | null = null): Promise<Tab[]> {
     const info = new ActionInfo('list', Tab.type, null, 'GET');
     info.queryParameters = { project: projectId ?? '' };
-    const res = await dataManager.callAction<undefined, { tabs: TabRow[] }>(info);
-    return res?.tabs ?? [];
+    const res = await dataManager.callAction<undefined, { tabs: ITab[] }>(info);
+    return Tab.fromResponse(res?.tabs ?? []);
   }
 
   /** POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
    *  right after `opts.afterTabId` (the opener); reopen keeps its slot. Returns
    *  the updated list. */
-  static async newTab(pointer: string, opts: INewTabOpts = {}): Promise<TabRow[]> {
+  static async newTab(pointer: string, opts: INewTabOpts = {}): Promise<Tab[]> {
     const info = new ActionInfo('new_tab', Tab.type, null, 'POST');
     info.bodyParameters = {
       pointer,
@@ -149,8 +149,8 @@ export class Tab extends APIEntity<Tab> implements ITab {
       worktree: opts.worktree ?? false,
       after_tab_id: opts.afterTabId ?? null,
     };
-    const res = await dataManager.callAction<unknown, { tabs: TabRow[] }>(info);
-    return res?.tabs ?? [];
+    const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
+    return (res?.tabs ?? []).map(t => new Tab(t));
   }
 
   /**
@@ -166,7 +166,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
    * `project_id`; a target-less dock → null. No-tab docks (home, bare shell)
    * return [].
    */
-  static async getFromDockPointer(dock: IDockPointer): Promise<TabRow[]> {
+  static async getFromDockPointer(dock: IDockPointer): Promise<Tab[]> {
     const pointerJson = dock.toJSON?.();
     if (!pointerJson) return [];
 
@@ -201,10 +201,10 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  resolved, in global order. The single unscoped projection that the developer
    *  sessions view + footer projects-chip read; replaces the old reactive
    *  `tab?visible=true` entity query. (Project-scoped views use `list`.) */
-  static async listAll(): Promise<TabRow[]> {
+  static async listAll(): Promise<Tab[]> {
     const info = new ActionInfo('list_all', Tab.type, null, 'GET');
-    const res = await dataManager.callAction<undefined, { tabs: TabRow[] }>(info);
-    return res?.tabs ?? [];
+    const res = await dataManager.callAction<undefined, { tabs: ITab[] }>(info);
+    return Tab.fromResponse(res?.tabs ?? []);
   }
 
   /** POST /graph/tab/order — drag-drop commit. Splices `reorderId` into the
@@ -215,7 +215,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
     afterId: string | null,
     beforeId: string | null,
     projectId: string | null = null,
-  ): Promise<TabRow[]> {
+  ): Promise<Tab[]> {
     const info = new ActionInfo('order', Tab.type, null, 'POST');
     info.bodyParameters = {
       reorder_tab_id: reorderId,
@@ -223,31 +223,31 @@ export class Tab extends APIEntity<Tab> implements ITab {
       before_tab_id: beforeId,
       project: projectId ?? '',
     };
-    const res = await dataManager.callAction<unknown, { tabs: TabRow[] }>(info);
-    return res?.tabs ?? [];
+    const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
+    return (res?.tabs ?? []).map(t => new Tab(t));
   }
 
   // Action-by-id helpers — invoke a backend Tab action WITHOUT constructing a
-  // throwaway `new Tab({id})`. The strip renders from plain `TabRow` data (not
+  // throwaway `new Tab({id})`. The strip renders from plain Tab data (not
   // entities), so a fresh `Tab` with an already-cached id collides in the entity
   // store ("already registered with different entity"). These call the action by
   // id directly and return the canonical list.
 
   /** POST /graph/tab/<id>/close — soft-close (backend flips visible + dispatches
    *  target teardown). Returns the updated list. */
-  static async closeById(id: string): Promise<TabRow[]> {
+  static async closeById(id: string): Promise<Tab[]> {
     const info = new ActionInfo('close', Tab.type, id, 'POST');
-    const res = await dataManager.callAction<unknown, { tabs: TabRow[] }>(info);
-    return res?.tabs ?? [];
+    const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
+    return (res?.tabs ?? []).map(t => new Tab(t));
   }
 
   /** POST /graph/tab/<id>/rename {name} — the backend reflects onto the backing
    *  entity via generic `Entity.rename`. Returns the updated list. */
-  static async renameById(id: string, name: string): Promise<TabRow[]> {
+  static async renameById(id: string, name: string): Promise<Tab[]> {
     const info = new ActionInfo('rename', Tab.type, id, 'POST');
     info.bodyParameters = { name };
-    const res = await dataManager.callAction<{ name: string }, { tabs: TabRow[] }>(info);
-    return res?.tabs ?? [];
+    const res = await dataManager.callAction<{ name: string }, { tabs: ITab[] }>(info);
+    return (res?.tabs ?? []).map(t => new Tab(t));
   }
 
   /** POST /graph/tab/<id>/activate — stamp recency (resolver seed for opener /
@@ -262,25 +262,30 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  already saved the live name onto its Shell/AgenticProcess; this keeps the
    *  durable `Tab.name` in step so the chip stays right once inactive. NOT `rename`
    *  (which would pin `auto_rename=false` and stop future auto-titles). */
-  static async setNameById(id: string, name: string): Promise<TabRow[]> {
+  static async setNameById(id: string, name: string): Promise<Tab[]> {
     const info = new ActionInfo('set_name', Tab.type, id, 'POST');
     info.bodyParameters = { name };
-    const res = await dataManager.callAction<{ name: string }, { tabs: TabRow[] }>(info);
-    return res?.tabs ?? [];
+    const res = await dataManager.callAction<{ name: string }, { tabs: ITab[] }>(info);
+    return (res?.tabs ?? []).map(t => new Tab(t));
   }
 
   /** Instance soft-close (also updates the local flag). */
-  async closeTab(): Promise<TabRow[]> {
+  async closeTab(): Promise<Tab[]> {
     const rows = await Tab.closeById(this.id);
     this.visible = false;
     return rows;
   }
 
   /** Instance rename (also updates the local name). */
-  async rename(name: string): Promise<TabRow[]> {
+  async rename(name: string): Promise<Tab[]> {
     const rows = await Tab.renameById(this.id, name);
     this.name = name;
     return rows;
+  }
+
+  /** Factory to deserialize Tab array from API response. */
+  static fromResponse(data: ITab[]): Tab[] {
+    return data.map((t) => new Tab(t));
   }
 
   constructor(entity: Partial<ITab> = {}) {

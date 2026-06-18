@@ -18,7 +18,7 @@ import {
   Shell,
   TypeId,
 } from '@sdk';
-import { getTerminalTabRowsSnapshot } from '@src/tabs/useTabs';
+import { getTerminalTabsSnapshot } from '@src/tabs/useTabs';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
@@ -30,7 +30,7 @@ function notifyProcessStartError(error: unknown): void {
   const { title, description } = describeProcessStartError(error);
   notify.error({ title, message: description });
 }
-import { resolveNextTabRow, rowTargetKey } from '@src/tabs/tab-candidates';
+import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
 import { loadShell, ShellLoadError } from './load-shell';
 import { loadConversation } from './load-conversation';
 
@@ -134,22 +134,22 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
     // into the previously-active / first one so the xterm pane isn't blank.
     if (roomId) {
       // Room membership lives on the backing shell (`collaboration_room_id`),
-      // which isn't denormalized on the Tab — resolve it from cache: a shell row's
-      // own shell, a process row's linked shell.
-      const allTabs = await getTerminalTabRowsSnapshot('all');
-      const tabs = allTabs.filter((r) => {
+      // which isn't denormalized on the Tab — resolve it from cache: a shell tab's
+      // own shell, a process tab's linked shell.
+      const allTabs = await getTerminalTabsSnapshot('all');
+      const tabs = allTabs.filter((t) => {
         const shellId =
-          r.target_type === AgenticProcess.type
-            ? AgenticProcess.getByIdFromCache<AgenticProcess>(r.target_id ?? '')?.shell_id
-            : r.target_id;
+          t.target_type === AgenticProcess.type
+            ? AgenticProcess.getByIdFromCache<AgenticProcess>(t.target_id ?? '')?.shell_id
+            : t.target_id;
         const shell = shellId ? Shell.getByIdFromCache<Shell>(shellId) : null;
         return shell?.collaboration_room_id === roomId;
       });
-      const tab = resolveNextTabRow(tabs);
+      const tab = resolveNextTab(tabs);
       if (tab) {
         // The room-tab segment is the target TypeId string (shell-<id> /
-        // agentic_process-<id>) — exactly `rowTargetKey`.
-        const pointer = rowTargetKey(tab);
+        // agentic_process-<id>) — exactly `tabTargetKey`.
+        const pointer = tabTargetKey(tab);
         // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw redirect(`/dock/project/${projectId}/collaboration_room/${roomId}/tab/${pointer}`);
       }

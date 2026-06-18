@@ -40,8 +40,8 @@ import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { type TabRow } from '@sdk';
-import { useTerminalTabRows } from '@src/tabs/useTabs';
+import { Tab } from '@sdk';
+import { useTerminalTabs } from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
@@ -77,13 +77,12 @@ export function ContentPanel() {
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer(flow);
 
-  const terminalRows = useTerminalTabRows();
+  const terminalTabs = useTerminalTabs();
 
-  /** Navigate to a terminal tab row by its pointer. */
-  const navigateToRow = useCallback(
-    (row: TabRow) => {
-      const dock = DockPointer.fromJSON(row.pointer);
-      if (dock) navigation.openDock(dock);
+  /** Navigate to a terminal tab by its dockPointer. */
+  const navigateToTab = useCallback(
+    (tab: Tab) => {
+      if (tab.dockPointer) navigation.openDock(tab.dockPointer);
     },
     [navigation],
   );
@@ -147,18 +146,15 @@ export function ContentPanel() {
 
   // When the URL's active terminal is closing (is_disabled), redirect to the
   // first alive tab. A pointer-less shell URL is loader-owned (the loader
-  // resolves the default target), so we only act when a row matches the URL.
+  // resolves the default target), so we only act when a tab matches the URL.
   useEffect(() => {
     if (currentDock?.viewType !== ViewType.SHELL || !currentDock.pointer) return;
-    const active = terminalRows.find((r) => {
-      const rowDock = DockPointer.fromJSON(r.pointer);
-      return rowDock?.tabHash === currentDock.tabHash;
-    });
+    const active = terminalTabs.find((t) => t.dockPointer?.tabHash === currentDock.tabHash);
     if (active?.is_disabled) {
-      const alive = terminalRows.find((r) => r.pointer !== active.pointer && !r.is_disabled);
-      if (alive) navigateToRow(alive);
+      const alive = terminalTabs.find((t) => t.id !== active.id && !t.is_disabled);
+      if (alive) navigateToTab(alive);
     }
-  }, [currentDock, navigateToRow, terminalRows]);
+  }, [currentDock, navigateToTab, terminalTabs]);
 
   const { editorActivePath, checkpointHash } = useMemo(() => {
     return {
