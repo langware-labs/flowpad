@@ -257,6 +257,13 @@ class DataContext extends EventEmitter {
   }
 
   /**
+   * Get the current instance name from bootstrap info (dev-mode only)
+   */
+  get instanceName(): string | null {
+    return this.bootstrapInfo?.env?.instance_name ?? null;
+  }
+
+  /**
    * Get the current warnings list
    */
   get warnings(): UserWarning[] {
