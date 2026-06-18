@@ -63,10 +63,10 @@ describe('tab lifecycle registry', () => {
     mockNoExistingTabs();
     vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
     registerTabContentAdapter(ViewType.SHELL, {
-      async setupTab() {
-        throw new Error('attach failed');
+      setupTab() {
+        return Promise.reject(new Error('attach failed'));
       },
-      async cleanupTab() {},
+      cleanupTab: () => Promise.resolve(),
     });
 
     const result = await setupTab(d);
@@ -74,6 +74,45 @@ describe('tab lifecycle registry', () => {
     expect(result.tab?.id).toBe(tab.id);
     expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.OpenFailed);
     expect(getTabLifecycle(d.tabHash)?.error).toBe('attach failed');
+  });
+
+  it('emits materialized tabs before content setup resolves', async () => {
+    const d = dock();
+    const tab = tabFor(d);
+    mockNoExistingTabs();
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
+
+    let markSetupStarted: () => void = () => {};
+    let releaseSetup: () => void = () => {};
+    const setupStarted = new Promise<void>((resolve) => {
+      markSetupStarted = resolve;
+    });
+    const setupGate = new Promise<void>((resolve) => {
+      releaseSetup = resolve;
+    });
+    const setupContent = vi.fn(async () => {
+      markSetupStarted();
+      await setupGate;
+    });
+    const materializedTabs: Tab[][] = [];
+
+    const resultPromise = setupTab(d, {
+      setupContent,
+      onMaterialized: (tabs) => materializedTabs.push(tabs),
+    });
+
+    await setupStarted;
+
+    expect(materializedTabs).toHaveLength(1);
+    expect(materializedTabs[0].map((materialized) => materialized.id)).toEqual([tab.id]);
+    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opening);
+    expect(getTabLifecycle(d.tabHash)?.tabId).toBe(tab.id);
+
+    releaseSetup();
+    const result = await resultPromise;
+
+    expect(result.tab?.id).toBe(tab.id);
+    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
   });
 
   it('reuses a visible normalized legacy row before creating a canonical duplicate', async () => {
@@ -114,11 +153,11 @@ describe('tab lifecycle registry', () => {
     const d = dock();
     const tab = tabFor(d);
     registerTabContentAdapter(ViewType.SHELL, {
-      async setupTab() {
-        return { tab: null };
+      setupTab() {
+        return Promise.resolve({ tab: null });
       },
-      async cleanupTab() {
-        throw new Error('cleanup failed');
+      cleanupTab() {
+        return Promise.reject(new Error('cleanup failed'));
       },
     });
 
