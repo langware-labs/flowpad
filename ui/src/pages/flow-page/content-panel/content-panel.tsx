@@ -47,8 +47,9 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { useSendMessageStore } from '@src/store/use-send-message-store';
 import { useSurveyStore } from '@src/store/use-survey-store';
+import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
-import { LogIn } from 'lucide-react';
+import { AlertTriangle, LogIn } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 // Lazy-loaded: GraphView pulls in sigma.js + @sigma/node-image, which run
@@ -56,9 +57,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 // the entire app in any WebGL-less context (headless browsers, GPU-disabled
 // CI, software-render fallbacks). Loading it only when the graph tab opens
 // keeps app bootstrap independent of WebGL availability.
-const GraphView = lazy(() =>
-  import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })),
-);
+const GraphView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })));
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
 );
@@ -68,6 +67,7 @@ import { UnifiedTabStrip } from './unified-tab-strip';
 export function ContentPanel() {
   // Get navigation instance for URL-first architecture
   const { navigation, currentDock, isDockUrl, windowMode } = useDockNavigation();
+  const activeLifecycle = useTabLifecycle(currentDock?.tabHash);
 
   const { user } = useAuth();
 
@@ -166,6 +166,7 @@ export function ContentPanel() {
   // The body's viewType is the URL's dock viewType; no dock URL → Home (the
   // landing). URL-first: the URL is the single source of "what's shown".
   const bodyViewType = isDockUrl && currentDock?.viewType ? currentDock.viewType : ViewType.HOME;
+  const activeOpenFailed = activeLifecycle?.state === TabLifecycleState.OpenFailed;
 
   // Chrome-less when the surface is full-bleed (Home — a welcome landing, not a
   // tabbed workspace) or in the win/ focus layout. `chrome` (the registry
@@ -180,6 +181,23 @@ export function ContentPanel() {
   // the active body is mounted (matches the old radix Tabs, which did not
   // forceMount). `null`/unknown → the Home landing.
   const renderBody = (vt: ViewType | null) => {
+    if (activeOpenFailed) {
+      return (
+        <div
+          className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground"
+          data-testid="tab-open-failed-placeholder"
+        >
+          <AlertTriangle className="h-9 w-9 text-destructive" />
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Tab failed to open</h2>
+            <p className="mt-1 max-w-md text-sm">
+              {activeLifecycle?.error || 'The tab content could not be prepared.'}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     switch (vt) {
       case ViewType.SHELL:
         return <TabbedTerminal className="h-full" />;

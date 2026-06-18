@@ -14,9 +14,9 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { type TabStripItem } from '@src/components/tabs/TabStrip';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { usePendingSessionIds } from '@src/store/pending-actions-store';
+import { TabLifecycleState, type TabLifecycleEntry, useTabLifecycles } from '@src/tabs/tab-lifecycle';
 import { LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
 
@@ -27,18 +27,37 @@ function clip(name: string): string {
   return name.length > TAB_LABEL_MAX ? name.slice(0, TAB_LABEL_MAX).trimEnd() + '…' : name;
 }
 
-/** Tab → chip. `isPending` is the only caller-supplied overlay (glow). */
-export function tabItem(tab: Tab, isPending: boolean): TabStripItem {
+function lifecycleStatus(lifecycle: TabLifecycleEntry | null): {
+  hasError: boolean;
+  isClosing: boolean;
+  statusReason: string;
+} {
+  if (!lifecycle) return { hasError: false, isClosing: false, statusReason: '' };
+  if (lifecycle.state === TabLifecycleState.Closing) {
+    return { hasError: false, isClosing: true, statusReason: 'Closing...' };
+  }
+  if (lifecycle.state === TabLifecycleState.OpenFailed) {
+    return { hasError: true, isClosing: false, statusReason: lifecycle.error || 'Tab failed to open' };
+  }
+  if (lifecycle.state === TabLifecycleState.CloseFailed) {
+    return { hasError: true, isClosing: false, statusReason: lifecycle.error || 'Tab failed to close' };
+  }
+  return { hasError: false, isClosing: false, statusReason: '' };
+}
+
+/** Tab → chip. `isPending` is the only caller-supplied glow overlay. */
+export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEntry | null = null): TabStripItem {
   // DockPointer from the stored JSON pointer; key is the tabHash.
   const dock = tab.dockPointer;
   const key = dock?.tabHash ?? tab.id;
   const label = clip(tab.name ?? '');
   const viewType = dock?.viewType || '';
+  const lifecycleOverlay = lifecycleStatus(lifecycle);
+  const isDisabled = lifecycleOverlay.isClosing || tab.is_disabled;
+  const statusReason = lifecycleOverlay.statusReason || (tab.is_disabled ? 'Closing...' : '');
 
   if (TERMINAL_TARGET_TYPES.has(tab.target_type ?? '')) {
-    const kind = (
-      tab.icon_key && tab.icon_key in PROVIDER_META ? tab.icon_key : 'shell'
-    ) as keyof typeof PROVIDER_META;
+    const kind = (tab.icon_key && tab.icon_key in PROVIDER_META ? tab.icon_key : 'shell') as keyof typeof PROVIDER_META;
     const meta = PROVIDER_META[kind];
     const Icon = meta.Icon;
     const processId = tab.target_type === AgenticProcess.type ? tab.target_id : null;
@@ -46,23 +65,22 @@ export function tabItem(tab: Tab, isPending: boolean): TabStripItem {
       key,
       title: label || meta.label,
       icon: (
-        <Icon
-          className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`}
-          data-provider={kind}
-          aria-label={meta.label}
-        />
+        <Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`} data-provider={kind} aria-label={meta.label} />
       ),
       badge: tab.worktree ? <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" /> : undefined,
-      isDisabled: tab.is_disabled,
-      statusReason: tab.is_disabled ? 'Closing...' : '',
+      isDisabled,
+      hasError: lifecycleOverlay.hasError,
+      statusReason,
       isPending,
       renameable: true,
       tooltip: processId ? (
         <LazyProcessTooltip
           processId={processId}
           fallbackName={label || meta.label}
-          statusReason={tab.is_disabled ? 'Closing...' : undefined}
+          statusReason={statusReason || undefined}
         />
+      ) : statusReason ? (
+        statusReason
       ) : undefined,
       testId: `tab-${key}`,
       dataAttributes: { 'data-indicator-key': key },
@@ -77,13 +95,12 @@ export function tabItem(tab: Tab, isPending: boolean): TabStripItem {
     return {
       key,
       title: label || meta?.title || viewType,
-      icon: (
-        <Icon
-          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-          aria-label={`${tab.target_type} tab`}
-        />
-      ),
+      icon: <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={`${tab.target_type} tab`} />,
       renameable: true,
+      isDisabled,
+      hasError: lifecycleOverlay.hasError,
+      statusReason,
+      tooltip: statusReason || undefined,
       testId: `tab-content-${key}`,
       dataAttributes: { 'data-tab-kind': tab.target_type },
     };
@@ -94,6 +111,10 @@ export function tabItem(tab: Tab, isPending: boolean): TabStripItem {
     title: label || meta?.title || viewType,
     icon: <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />,
     renameable: false,
+    isDisabled,
+    hasError: lifecycleOverlay.hasError,
+    statusReason,
+    tooltip: statusReason || undefined,
     testId: `tab-content-${key}`,
   };
 }
@@ -101,9 +122,14 @@ export function tabItem(tab: Tab, isPending: boolean): TabStripItem {
 /** Map the ordered tabs → chips, overlaying the pending-glow by process id. */
 export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   const pending = usePendingSessionIds();
+  const lifecycles = useTabLifecycles();
   return useMemo(
-    () => tabs.map((t) => tabItem(t, t.target_id ? pending.has(t.target_id) : false)),
-    [tabs, pending],
+    () =>
+      tabs.map((t) => {
+        const key = t.dockPointer?.tabHash ?? t.id;
+        return tabItem(t, t.target_id ? pending.has(t.target_id) : false, lifecycles.get(key) ?? null);
+      }),
+    [tabs, pending, lifecycles],
   );
 }
 

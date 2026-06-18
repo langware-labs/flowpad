@@ -88,6 +88,21 @@ export interface INewTabOpts extends IEnsureTabOpts {
   afterTabId?: string | null;
 }
 
+/** Backward-compatible name for older call sites/tests during the Tab migration. */
+export interface TabRow extends ITab {
+  id: string;
+  pointer: string;
+  target_type: string | null;
+  target_id: string | null;
+  project_id: string | null;
+  name: string | null;
+  icon_key: string | null;
+  worktree: boolean;
+  tab_order: number;
+  last_active_at: number | string | null;
+  status: string | null;
+  is_disabled: boolean;
+}
 
 @registerEntity
 export class Tab extends APIEntity<Tab> implements ITab {
@@ -106,13 +121,25 @@ export class Tab extends APIEntity<Tab> implements ITab {
   status: string | null = null;
   is_disabled: boolean = false;
 
-  /** Computed DockPointer from the stored JSON pointer. Parsed directly (SDK layer, no UI dependency). */
+  /** Computed DockPointer from the stored pointer. Parsed directly (SDK layer, no UI dependency). */
   get dockPointer(): IDockPointer | null {
     if (!this.pointer) return null;
     try {
-      return JSON.parse(this.pointer) as IDockPointer;
+      const parsed = JSON.parse(this.pointer) as IDockPointer;
+      const viewType = parsed.viewType ?? '';
+      const subPointer = parsed.pointer ?? '';
+      return {
+        ...parsed,
+        tabHash: parsed.tabHash ?? `${viewType}|${subPointer}`,
+      };
     } catch {
-      return null;
+      const [viewType = '', subPointer = ''] = this.pointer.split('|', 2);
+      if (!viewType) return null;
+      return {
+        viewType,
+        pointer: subPointer,
+        tabHash: `${viewType}|${subPointer}`,
+      } as IDockPointer;
     }
   }
 
@@ -174,9 +201,12 @@ export class Tab extends APIEntity<Tab> implements ITab {
     // a vfs asset dock via the pure `getEntityByPath`. One cast names the fields
     // we read off the heterogeneous target (project + terminal-display).
     let targetTypeId = dock.targetTypeId ?? null;
-    const target = (targetTypeId
-      ? await dataManager.getByTypeId<APIEntity<any>>(targetTypeId).catch(() => null)
-      : (dock.vfsPath ? await dataManager.getEntityByPath<APIEntity<any>>(dock.vfsPath.toString()) : null)
+    const target = (
+      targetTypeId
+        ? await dataManager.getByTypeId<APIEntity<any>>(targetTypeId).catch(() => null)
+        : dock.vfsPath
+          ? await dataManager.getEntityByPath<APIEntity<any>>(dock.vfsPath.toString())
+          : null
     ) as (APIEntity<any> & TerminalTargetFields & { project_id?: string | null }) | null;
     if (!targetTypeId && target) targetTypeId = target.typeId;
 

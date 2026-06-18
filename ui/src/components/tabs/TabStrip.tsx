@@ -39,6 +39,7 @@ export interface TabStripItem {
   /** Extra inline markers after the icon (e.g. worktree badge). */
   badge?: React.ReactNode;
   isDisabled?: boolean;
+  hasError?: boolean;
   statusReason?: string;
   /** Soft attention glow (never on the active chip). */
   isPending?: boolean;
@@ -348,6 +349,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const { key } = item;
     const isActive = activeKey === key;
     const isDisabled = !!item.isDisabled;
+    const hasError = !!item.hasError;
     const isPending = !!item.isPending && !isActive;
 
     const tabContent = (
@@ -358,9 +360,11 @@ export const TabStrip: React.FC<TabStripProps> = ({
         className={`group flex shrink-0 select-none items-center gap-2 rounded-t border-b-2 px-3 py-1.5 transition-colors ${
           isDisabled
             ? 'cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground/50'
-            : isActive
-              ? 'cursor-pointer border-primary bg-background text-foreground'
-              : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+            : hasError
+              ? 'cursor-pointer border-destructive bg-destructive/10 text-destructive hover:bg-destructive/15'
+              : isActive
+                ? 'cursor-pointer border-primary bg-background text-foreground'
+                : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
         } ${isPending ? 'animate-pending-glow rounded-md' : ''} ${dragKey === key ? 'opacity-60' : ''}`}
         onPointerDown={(e) => startDrag(e, key, isDisabled)}
         onClick={() => {

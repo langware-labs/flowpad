@@ -13,11 +13,11 @@ import {
   initSdk,
   QueryRequest,
   systemTools,
-  Tab,
   Trigger,
   TypeId,
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
+import { setupTab } from '@src/tabs/tab-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
@@ -106,15 +106,14 @@ export async function loadAgentApp(args: LoaderArgs) {
 
   const { processId, viewType } = params;
   const pointer = params['*'] || '';
+  let dockForSetup: DockPointer | null = null;
 
-  // URL-first tab materialization: the loader is the single writer — get-or-create
-  // the Tab for the dock the URL landed on (every view funnels here). The Tab's
-  // project follows its TARGET (resolved inside getFromDockPointer), never the
-  // ambient project. Fire-and-forget; click handlers only navigate. Invalid view
-  // types (DockPointer.fromUrl throws) get no tab.
+  // URL-first tab materialization: the loader is the single writer, but it now
+  // happens through setupTab so content setup has an explicit opening/opened
+  // lifecycle and setup failures keep the visible tab with an error placeholder.
   if (viewType) {
     try {
-      void Tab.getFromDockPointer(DockPointer.fromUrl(viewType, pointer || undefined, requestUrl.searchParams));
+      dockForSetup = DockPointer.fromUrl(viewType, pointer || undefined, requestUrl.searchParams);
     } catch {
       /* not a valid dock view — no tab */
     }
@@ -139,9 +138,7 @@ export async function loadAgentApp(args: LoaderArgs) {
       await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, sessionProcessId));
       const process = await AgenticProcess.getById(sessionProcessId).catch(() => null);
       if (process?.project_id) {
-        await loadProject(process.project_id).catch(() =>
-          systemTools.resolveProjectContext(process.workdir, process),
-        );
+        await loadProject(process.project_id).catch(() => systemTools.resolveProjectContext(process.workdir, process));
       } else {
         await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
       }
@@ -149,6 +146,7 @@ export async function loadAgentApp(args: LoaderArgs) {
 
     // Session view doesn't require agent — just ensure compute node and return.
     await ensureComputeNodeLoaded();
+    if (dockForSetup) await setupTab(dockForSetup);
     t.time('ensureComputeNode');
     t.done(1.2);
     return;
@@ -158,53 +156,65 @@ export async function loadAgentApp(args: LoaderArgs) {
     // Project is already loaded by initSdk -> setupProject, just ensure compute node.
     await ensureComputeNodeLoaded();
     t.time('ensureComputeNode');
+    let setupHandled = false;
+
+    const runSetup = async (label: string, setupContent: () => Promise<void>) => {
+      setupHandled = true;
+      if (dockForSetup) await setupTab(dockForSetup, { setupContent });
+      else await setupContent();
+      t.time(label);
+    };
 
     if (viewType === ViewType.SHELL) {
       // Pass the request path so shell-loader redirects preserve the layout
       // keyword — /win/shell fallbacks stay chrome-less (Part 3 §7).
-      await loadShellRoute(pointer || undefined, requestUrl.pathname);
-      t.time('loadShellRoute');
+      await runSetup('loadShellRoute', () => loadShellRoute(pointer || undefined, requestUrl.pathname));
     }
 
     if (viewType === ViewType.PROJECT) {
-      await loadProjectRoute(pointer || undefined);
-      t.time('loadProjectRoute');
+      await runSetup('loadProjectRoute', () => loadProjectRoute(pointer || undefined));
     }
 
     if (viewType === ViewType.CONVERSATION) {
-      await loadConversationRoute(pointer || undefined);
-      t.time('loadConversationRoute');
+      await runSetup('loadConversationRoute', () => loadConversationRoute(pointer || undefined));
     }
 
     if (viewType === ViewType.ASSETS) {
-      await loadAssetRoute(pointer || undefined);
-      t.time('loadAssetRoute');
+      await runSetup('loadAssetRoute', () => loadAssetRoute(pointer || undefined));
     }
 
     if (viewType === ViewType.TASKS) {
-      await loadTasksRoute(pointer || undefined);
-      t.time('loadTasksRoute');
+      await runSetup('loadTasksRoute', () => loadTasksRoute(pointer || undefined));
     }
 
     if (viewType === ViewType.TRIGGERS) {
-      await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));
-      t.time('loadTriggers');
+      await runSetup('loadTriggers', async () => {
+        await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));
+      });
     }
 
     if (viewType === ViewType.PLAN && pointer) {
-      const parsed = DockPointer.parsePlanPointer(pointer);
-      if (parsed) {
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, parsed.agenticProcessTypeId);
-        const process = await AgenticProcess.getById(parsed.agenticProcessTypeId.id).catch(() => null);
-        if (process?.project_id) {
-          await loadProject(process.project_id).catch(() =>
-            systemTools.resolveProjectContext(process.workdir, process),
+      await runSetup('loadPlan (set process context)', async () => {
+        const parsed = DockPointer.parsePlanPointer(pointer);
+        if (parsed) {
+          await dataContext.setContextEntityTypeId(
+            ContextEntitiesEnum.CurrentProcessTypeId,
+            parsed.agenticProcessTypeId,
           );
-        } else {
-          await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
+          const process = await AgenticProcess.getById(parsed.agenticProcessTypeId.id).catch(() => null);
+          if (process?.project_id) {
+            await loadProject(process.project_id).catch(() =>
+              systemTools.resolveProjectContext(process.workdir, process),
+            );
+          } else {
+            await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
+          }
         }
-        t.time('loadPlan (set process context)');
-      }
+      });
+    }
+
+    if (dockForSetup && !setupHandled) {
+      await setupTab(dockForSetup);
     }
 
     t.done(1.2);
