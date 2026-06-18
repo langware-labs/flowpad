@@ -3,11 +3,13 @@ id: d344b080-a33a-4cf3-8916-cec2b50d3199
 title: View Modes
 ---
 
-# View Modes — Standard / Advanced "skin" system
+# View Modes — Standard / Advanced / Dev "skin" system
 
-A single global flag, **View mode**, lets a user dial the whole UI between
-**Standard** (calm, minimal) and **Advanced** (full power-user surface). It is
-toggled from the footer pill and behaves like the theme: one switch, app-wide.
+A single global flag, **View mode**, lets a user dial the whole UI across three
+tiers: **Standard** (calm, minimal) ⊂ **Advanced** (power-user) ⊂ **Dev** (full
+developer internals). Normal users toggle Standard ↔ Advanced; developers can
+enter Dev mode (console-only entry: `window.setDev(true)`). It is toggled from
+the footer pill and behaves like the theme: one switch, app-wide.
 
 This doc is the methodology + developer guidelines for building UI that honors
 View mode. **Read the skin-layer rule before adding a single conditional.**
@@ -41,34 +43,44 @@ instant, and impossible to break the data layer with.
 
 ## The toolkit — `@src/components/view-mode`
 
-One import surface. State lives in `ui/src/contexts/view-mode-context.tsx`
-(mirrors `dev-mode-context`); the barrel re-exports it alongside the components.
+One import surface. State lives in `ui/src/contexts/view-mode-context.tsx`;
+the barrel re-exports it alongside the components.
 
 ```ts
 import {
-  useIsAdvanced,   // () => boolean         — the primary read path
-  useViewMode,     // () => ViewMode         — when you need the enum value
-  ViewMode,        // enum { Standard, Advanced }
-  setViewMode,     // (ViewMode) => void     — imperative (also window.setView)
-  getViewMode,     // () => ViewMode         — imperative read (also window.getView)
+  useIsAdvanced,   // () => boolean    — true if Advanced or Dev (hierarchy)
+  useIsDev,        // () => boolean    — true only in Dev mode
+  useViewMode,     // () => ViewMode   — when you need the enum value
+  ViewMode,        // enum { Standard, Advanced, Dev }
+  setViewMode,     // (ViewMode) => void
+  getViewMode,     // () => ViewMode   — imperative read (also window.getView)
   AdvancedOnly,    // <AdvancedOnly reserve> — hide-in-Standard wrapper
+  DevOnly,         // <DevOnly reserve> — hide-in-non-Dev wrapper
   ViewSwap,        // <ViewSwap advanced standard /> — layout swap
 } from '@src/components/view-mode';
 ```
 
+Also available as globals:
+- `window.setView(mode)` — set to Standard/Advanced/Dev
+- `window.getView()` — read current mode
+- `window.setDev(val?)` — set Dev mode (no arg = toggle between Dev and Advanced)
+- `window.getDev()` — read Dev mode boolean
+
 The flag is persisted to `localStorage.viewMode` and reflected as a
-`data-view="standard|advanced"` attribute on `<html>` (set on first paint and on
+`data-view="standard|advanced|dev"` attribute on `<html>` (set on first paint and on
 every change) so CSS can react app-wide.
 
 ## Decision tree — how to gate a surface
 
 | Situation | Use |
 | --- | --- |
-| Element is identical in both modes, just hidden in Standard, in a **fixed grid/row** where collapsing would shift siblings | `<AdvancedOnly>` (default `reserve`) |
-| Hidden in Standard, in a **flow layout** where collapsing the gap is fine | `<AdvancedOnly reserve={false}>` |
-| The **arrangement differs** between modes (not just visibility) | slot-builder + two layout components + `<ViewSwap>` |
-| Pure visual tweak (spacing, density, accent) | CSS `[data-view='standard'] …` selector |
-| Imperative check in non-React code | `getViewMode()` |
+| Element identical in Advanced & Dev, hidden in Standard, in a **fixed grid/row** | `<AdvancedOnly>` (default `reserve`) |
+| Identical in Advanced & Dev, hidden in Standard, in a **flow layout** | `<AdvancedOnly reserve={false}>` |
+| Element visible **only in Dev**, in fixed layout | `<DevOnly>` (default `reserve`) |
+| Visible only in Dev, in flow layout | `<DevOnly reserve={false}>` |
+| The **arrangement differs** between modes (not just visibility) | slot-builder + two+ layout components + `<ViewSwap>` |
+| Pure visual tweak (spacing, density, accent) | CSS `[data-view='advanced'] …` or `[data-view='dev']` selector |
+| Imperative check in non-React code | `getViewMode()` or `getDev()` |
 
 ### `AdvancedOnly` — visibility with reserved space
 
@@ -148,15 +160,20 @@ Notes:
 
 ## Testing recipe (debugMCP)
 
-View mode is driven by a global the test can flip directly — no UI clicking
+View mode is driven by globals the test can flip directly — no UI clicking
 needed to set state:
 
 ```js
 // drive the mode (re-renders live, no reload)
 browser_evaluate: () => window.setView('standard')
 browser_evaluate: () => window.setView('advanced')
+browser_evaluate: () => window.setView('dev')
+browser_evaluate: () => window.setDev(true)     // enter Dev
+browser_evaluate: () => window.setDev(false)    // exit Dev → Advanced
+browser_evaluate: () => window.setDev()         // toggle Dev ↔ Advanced
 browser_evaluate: () => window.getView()
-browser_evaluate: () => document.documentElement.dataset.view   // 'standard' | 'advanced'
+browser_evaluate: () => window.getDev()
+browser_evaluate: () => document.documentElement.dataset.view   // 'standard' | 'advanced' | 'dev'
 ```
 
 Assertions:
@@ -172,28 +189,20 @@ Assertions:
 
 ## Checklist for gating a new surface
 
-1. Decide: visibility-only (`AdvancedOnly`) or arrangement-differs (slots +
-   `ViewSwap`)? Don't reach for slots if a wrapper suffices.
-2. Read the mode with `useIsAdvanced()` — never re-read `localStorage`.
+1. Decide the visibility rule:
+   - Visibility-only (`AdvancedOnly` or `DevOnly`)? 
+   - Arrangement differs (slots + `ViewSwap`)?
+   - Don't reach for slots if a wrapper suffices.
+2. Read the mode with `useIsAdvanced()` (for Advanced+Dev) or `useIsDev()` — never re-read `localStorage`.
 3. Keep **all** hooks above the gate; never make a hook conditional on mode.
-4. For `AdvancedOnly` in a fixed layout, keep `reserve` (default) so siblings
-   don't shift; use `reserve={false}` only in flow layouts.
-5. Add a `data-testid` and a row in the relevant mode×slot table; cover it with
-   a debugMCP `setView` assertion.
+4. For `AdvancedOnly`/`DevOnly` in a fixed layout, keep `reserve` (default) so siblings don't shift; use `reserve={false}` only in flow layouts.
+5. Add a `data-testid` and a row in the relevant mode×slot table; cover it with a debugMCP `setView` / `setDev` assertion.
 
 ## Decision log
 
-- **Reserve-by-default (visibility:hidden) over unmount.** A View toggle should
-  feel like flipping a skin, not reflowing the page. Reserving space keeps it
-  shift-free; `reserve={false}` is the opt-out for flow layouts. (The footer
-  trace-heartbeat and UsageBar shipped this way.)
-- **One global flag, not per-surface toggles.** View mode is a single mental
-  model for the user and a single read path (`useIsAdvanced`) for devs. A
-  per-tab/per-surface toggle was rejected as a second concept to manage; the
-  interactive header reads the global flag.
-- **Slots + two layout components over boolean props into one layout.** A single
-  component with `isAdvanced &&` sprinkled through its JSX drifts toward forked
-  logic and accidental conditional hooks. Splitting "build the controls" (stateful
-  container) from "arrange the controls" (presentational layouts) keeps the skin
-  rule enforceable by construction.
+- **3-tier hierarchy: Standard ⊂ Advanced ⊂ Dev.** `useIsAdvanced()` returns true for both Advanced and Dev, enforcing the hierarchy by construction. New consumers can use `useIsDev()` for Dev-specific gates. Migration from the old separate `devMode` boolean is automatic (one-time `localStorage` swap on startup).
+- **No-arg `setDev()` toggles Dev ↔ Advanced.** Developers use `window.setDev()` to toggle dev mode without reaching the console to type true/false. Non-developers never see Dev mode in the UI (normal users don't have access to the 3-state footer pill cycle).
+- **Reserve-by-default (visibility:hidden) over unmount.** A View toggle should feel like flipping a skin, not reflowing the page. Reserving space keeps it shift-free; `reserve={false}` is the opt-out for flow layouts. (The footer trace-heartbeat and UsageBar shipped this way.)
+- **One global flag, not per-surface toggles.** View mode is a single mental model for the user and a single read path (`useIsAdvanced`, `useIsDev`) for devs. A per-tab/per-surface toggle was rejected as a second concept to manage.
+- **Slots + two layout components over boolean props into one layout.** A single component with `isAdvanced &&` sprinkled through its JSX drifts toward forked logic and accidental conditional hooks. Splitting "build the controls" (stateful container) from "arrange the controls" (presentational layouts) keeps the skin rule enforceable by construction.
 ```
