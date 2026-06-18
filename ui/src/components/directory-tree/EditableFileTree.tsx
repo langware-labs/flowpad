@@ -4,6 +4,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { DirectoryTree } from './DirectoryTree';
 import { ItemHandler } from './ItemHandler';
+import type { DirectoryTreeHandle } from './types';
 
 /**
  * Build the single root `FSItem` for an editable tree rooted at an entity-scoped
@@ -61,14 +62,17 @@ export function EditableFileTree({
   const [showFolderInput, setShowFolderInput] = useState(false);
   const pendingActionRef = useRef<{ item: FSItem; callback: (name: string) => Promise<void> } | null>(null);
 
-  const [treeRefreshKey, setTreeRefreshKey] = useState(0);
-  const handleRefresh = useCallback(() => setTreeRefreshKey((prev) => prev + 1), []);
+  // Cache-busting refresh: DirectoryTree.refresh() clears the fsStore browse
+  // cache and reloads expanded folders. A remount/key bump alone re-reads the
+  // SAME stale cache, so a just-created file/folder would not appear.
+  const treeRef = useRef<DirectoryTreeHandle>(null);
+  const handleRefresh = useCallback(() => {
+    void treeRef.current?.refresh();
+  }, []);
 
   const rootFolders = useMemo(
     () => [buildRootFolder(rootTypeId, rootPath, rootLabel)],
-    // treeRefreshKey forces a fresh root identity so the tree re-lists after writes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rootTypeId.type, rootTypeId.id, rootPath, rootLabel, treeRefreshKey],
+    [rootTypeId.type, rootTypeId.id, rootPath, rootLabel],
   );
 
   const itemHandler = useMemo(
@@ -140,6 +144,7 @@ export function EditableFileTree({
   return (
     <>
       <DirectoryTree
+        ref={treeRef}
         rootFolders={rootFolders}
         selectedPath={selectedVfsPath ?? null}
         itemHandler={itemHandler}

@@ -20,7 +20,7 @@ import pytest
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.builtin.tab import Tab, ensure_tab, tab_id_for
+from flow_sdk.builtin.tab import Tab, delete_tabs_for_missing_project, ensure_tab, tab_id_for
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -173,6 +173,28 @@ async def test_deleting_target_soft_closes_its_tabs() -> None:
     await probe.delete()
     reloaded = await Tab.get_one({"id": tab.id})
     assert reloaded is not None and reloaded.visible is False
+
+
+@pytest.mark.asyncio
+async def test_missing_project_cleanup_deletes_tab_without_target_teardown() -> None:
+    # A missing project means the Tab row itself is stale. Clean it with
+    # Tab.delete(), not Tab.close(), so the backing target is not torn down.
+    dangling_project_id = str(uuid.uuid4())
+    probe = _TabTargetProbe(id=str(uuid.uuid4()))
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/missing-project-probe#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+        project_id=dangling_project_id,
+    )
+
+    deleted = await delete_tabs_for_missing_project(dangling_project_id)
+
+    assert deleted == 1
+    assert await Tab.get_one({"id": tab.id}) is None
+    reloaded_probe = await _TabTargetProbe.get_one({"id": probe.id})
+    assert reloaded_probe is not None and reloaded_probe.torn_down is False
 
 
 @pytest.mark.asyncio

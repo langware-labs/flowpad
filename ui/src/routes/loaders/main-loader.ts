@@ -15,6 +15,7 @@ import {
   TypeId,
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
+import { applyAllTabs } from '@src/tabs/all-tabs-store';
 import { setupTab } from '@src/tabs/tab-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
@@ -47,6 +48,25 @@ async function ensureComputeNodeLoaded(): Promise<void> {
         new TypeId(bootstrapNode.type, bootstrapNode.id),
       );
     }
+  }
+}
+
+async function setupTabAndAdopt(
+  dock: DockPointer,
+  options?: Parameters<typeof setupTab>[1],
+): Promise<void> {
+  const onMaterialized = options?.onMaterialized;
+  let adoptedMaterializedTabs = false;
+  const result = await setupTab(dock, {
+    ...options,
+    onMaterialized: (tabs) => {
+      adoptedMaterializedTabs = true;
+      onMaterialized?.(tabs);
+      applyAllTabs(tabs);
+    },
+  });
+  if (!adoptedMaterializedTabs && result.tabs && result.tabs.length > 0) {
+    applyAllTabs(result.tabs);
   }
 }
 
@@ -108,7 +128,7 @@ export async function loadAgentApp(args: LoaderArgs) {
   // lifecycle and setup failures keep the visible tab with an error placeholder.
   if (viewType) {
     try {
-      dockForSetup = DockPointer.fromUrl(viewType, pointer || undefined, requestUrl.searchParams);
+      dockForSetup = DockPointer.fromUrl(`${requestUrl.pathname}${requestUrl.search}`);
     } catch {
       /* not a valid dock view — no tab */
     }
@@ -141,7 +161,7 @@ export async function loadAgentApp(args: LoaderArgs) {
 
     // Session view doesn't require agent — just ensure compute node and return.
     await ensureComputeNodeLoaded();
-    if (dockForSetup) await setupTab(dockForSetup);
+    if (dockForSetup) await setupTabAndAdopt(dockForSetup);
     t.time('ensureComputeNode');
     t.done(1.2);
     return;
@@ -159,17 +179,18 @@ export async function loadAgentApp(args: LoaderArgs) {
       const wrappedSetup = async () => {
         label = await setupContent();
       };
-      if (dockForSetup) await setupTab(dockForSetup, { setupContent: wrappedSetup });
+      if (dockForSetup) await setupTabAndAdopt(dockForSetup, { setupContent: wrappedSetup });
       else await wrappedSetup();
       t.time(label);
     };
 
     if (dockForSetup) {
-      await runSetup(() => loadDockPointer(dockForSetup!, { requestPath: requestUrl.pathname }));
+      const dock = dockForSetup;
+      await runSetup(() => loadDockPointer(dock, { requestPath: requestUrl.pathname }));
     }
 
     if (dockForSetup && !setupHandled) {
-      await setupTab(dockForSetup);
+      await setupTabAndAdopt(dockForSetup);
     }
 
     t.done(1.2);

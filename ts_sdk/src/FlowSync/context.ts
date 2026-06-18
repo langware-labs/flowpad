@@ -776,7 +776,18 @@ class DataContext extends EventEmitter {
     }
     // Load history for process entities when added to context
     if (_entityKey === ContextEntitiesEnum.CurrentProcessTypeId && entity instanceof AgenticProcess) {
-      defineGlobal('process', entity);
+      defineGlobal('activeProcess', entity);
+      // In jsdom/Electron, window.process is the host Node process. Keep the
+      // explicit app global and only preserve the legacy alias in plain browsers.
+      const hostProcess = typeof window !== 'undefined' ? (window as { process?: unknown }).process : undefined;
+      const hasNodeProcess =
+        hostProcess &&
+        typeof hostProcess === 'object' &&
+        typeof (hostProcess as { listeners?: unknown }).listeners === 'function' &&
+        typeof (hostProcess as { exit?: unknown }).exit === 'function';
+      if (!hasNodeProcess) {
+        defineGlobal('process', entity);
+      }
       const s = performance.now();
       await entity.loadHistory();
       stamp(`_onAddedToContext(${_entityKey}) entity.loadHistory`, s);
