@@ -150,7 +150,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       after_tab_id: opts.afterTabId ?? null,
     };
     const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
-    return (res?.tabs ?? []).map(t => new Tab(t));
+    return Tab.fromResponse(res?.tabs ?? []);
   }
 
   /**
@@ -224,7 +224,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       project: projectId ?? '',
     };
     const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
-    return (res?.tabs ?? []).map(t => new Tab(t));
+    return Tab.fromResponse(res?.tabs ?? []);
   }
 
   // Action-by-id helpers — invoke a backend Tab action WITHOUT constructing a
@@ -238,7 +238,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
   static async closeById(id: string): Promise<Tab[]> {
     const info = new ActionInfo('close', Tab.type, id, 'POST');
     const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
-    return (res?.tabs ?? []).map(t => new Tab(t));
+    return Tab.fromResponse(res?.tabs ?? []);
   }
 
   /** POST /graph/tab/<id>/rename {name} — the backend reflects onto the backing
@@ -247,7 +247,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
     const info = new ActionInfo('rename', Tab.type, id, 'POST');
     info.bodyParameters = { name };
     const res = await dataManager.callAction<{ name: string }, { tabs: ITab[] }>(info);
-    return (res?.tabs ?? []).map(t => new Tab(t));
+    return Tab.fromResponse(res?.tabs ?? []);
   }
 
   /** POST /graph/tab/<id>/activate — stamp recency (resolver seed for opener /
@@ -266,7 +266,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
     const info = new ActionInfo('set_name', Tab.type, id, 'POST');
     info.bodyParameters = { name };
     const res = await dataManager.callAction<{ name: string }, { tabs: ITab[] }>(info);
-    return (res?.tabs ?? []).map(t => new Tab(t));
+    return Tab.fromResponse(res?.tabs ?? []);
   }
 
   /** Instance soft-close (also updates the local flag). */
@@ -283,9 +283,17 @@ export class Tab extends APIEntity<Tab> implements ITab {
     return rows;
   }
 
-  /** Factory to deserialize Tab array from API response. */
+  /** Factory to deserialize Tab array from API response. Uses entity cache
+   *  to reuse instances by id, preventing duplicate-registration warnings. */
   static fromResponse(data: ITab[]): Tab[] {
-    return data.map((t) => new Tab(t));
+    return data.map((t) => {
+      const cached = Tab.getByIdFromCache<Tab>(t.id ?? '');
+      if (cached) {
+        Object.assign(cached, t);
+        return cached;
+      }
+      return new Tab(t);
+    });
   }
 
   constructor(entity: Partial<ITab> = {}) {
