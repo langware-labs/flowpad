@@ -33,6 +33,7 @@ export interface TabLifecycleEntry {
 interface SetupTabOptions {
   setupContent?: () => Promise<void>;
   adapter?: TabContentAdapter;
+  onMaterialized?: (tabs: Tab[]) => void;
 }
 
 const entries = new Map<string, TabLifecycleEntry>();
@@ -172,6 +173,8 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
       if (!tab) {
         throw new Error('Tab could not be materialized for this URL.');
       }
+      setEntry(key, TabLifecycleState.Opening, { tabId: tab.id });
+      options.onMaterialized?.(tabs);
       await adapter.setupTab(dock);
       setEntry(key, TabLifecycleState.Opened, { tabId: tab.id });
       return { tab, tabs };

@@ -23,6 +23,7 @@ expected to reset on such a rebuild anyway).
 from __future__ import annotations
 
 import json as _json
+import logging
 import uuid
 
 from flow_sdk.actions.action_registry import action as _action_registry
@@ -35,6 +36,8 @@ from flow_sdk.builtin.tab_order import (
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.schema.types import EntityType
+
+logger = logging.getLogger(__name__)
 
 
 def _pointer_to_hash(pointer: str) -> str:
@@ -180,8 +183,77 @@ async def _visible_tabs_sorted() -> list[Tab]:
     """Every visible Tab in canonical GLOBAL order (``tab_order`` asc, ``id`` as
     the deterministic tiebreak so legacy ``tab_order==0`` rows never reshuffle)."""
     tabs = await Tab.get_all({"visible": True})
+    tabs = await _delete_tabs_for_missing_projects(tabs)
     tabs.sort(key=lambda t: (getattr(t, "tab_order", 0) or 0, t.id))
     return tabs
+
+
+async def _project_exists(project_id: str | None) -> bool:
+    if not project_id:
+        return True
+    try:
+        uuid.UUID(str(project_id))
+    except (TypeError, ValueError):
+        # Legacy/test project identifiers are not reliable Project primary keys;
+        # only UUID-shaped project refs are eligible for stale-row deletion.
+        return True
+    try:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        return await Project.get_by_id(str(project_id)) is not None
+    except Exception:
+        # Fail open: a transient project lookup problem must not hard-delete tabs.
+        return True
+
+
+async def delete_tabs_for_missing_project(project_id: str | None) -> int:
+    """Hard-delete stale Tab rows whose owning project no longer exists.
+
+    This is intentionally different from user-initiated tab close. Close remains
+    a soft membership change and may dispatch target teardown; stale project
+    cleanup removes only dangling Tab rows via ``Tab.delete()`` and never calls
+    ``Tab.close()``.
+    """
+    if await _project_exists(project_id):
+        return 0
+    try:
+        tabs = await Tab.get_all({"project_id": str(project_id)})
+    except Exception:
+        return 0
+    deleted = 0
+    for tab in tabs:
+        try:
+            await tab.delete()
+        except Exception:
+            continue
+        deleted += 1
+    if deleted:
+        await broadcast_tabs_changed()
+    return deleted
+
+
+async def _delete_tabs_for_missing_projects(tabs: list[Tab]) -> list[Tab]:
+    project_ids = sorted({str(t.project_id) for t in tabs if getattr(t, "project_id", None)})
+    if not project_ids:
+        return tabs
+    missing_ids = [pid for pid in project_ids if not await _project_exists(pid)]
+    if not missing_ids:
+        return tabs
+    deleted_ids: set[str] = set()
+    for project_id in missing_ids:
+        try:
+            project_tabs = await Tab.get_all({"project_id": project_id})
+        except Exception:
+            continue
+        for tab in project_tabs:
+            try:
+                await tab.delete()
+            except Exception:
+                continue
+            deleted_ids.add(tab.id)
+    if deleted_ids:
+        await broadcast_tabs_changed()
+    return [t for t in tabs if t.id not in deleted_ids]
 
 
 async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> bool:
