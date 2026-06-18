@@ -1,3 +1,7 @@
+---
+id: cea68048-7fbf-59cf-8316-fc6b9be99407
+---
+
 # Design: `loadConversation(pointer: DockPointer)` Loader
 
 ## Context

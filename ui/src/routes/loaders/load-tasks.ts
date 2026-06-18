@@ -26,17 +26,22 @@ import {
   Task,
   TypeId,
 } from '@sdk';
-import { notify } from '@src/notifications';
-import { redirect } from 'react-router';
+import { DockLoadError } from './dock-load-error';
 import { loadConversation } from './load-conversation';
 
 export class TaskLoadError extends Error {
   constructor(
-    readonly kind: 'not_found',
+    readonly kind: 'not_found' | 'network_error',
     readonly taskId: string,
+    readonly cause?: unknown,
   ) {
     super(`task-load:${kind}`);
   }
+}
+
+function taskLoadStatus(error: unknown): number | undefined {
+  return (error as { response?: { status?: number }; status?: number } | null)?.response?.status
+    ?? (error as { status?: number } | null)?.status;
 }
 
 /**
@@ -46,9 +51,16 @@ export class TaskLoadError extends Error {
  * shows the red "Select Project" pill until the user picks).
  */
 export async function loadTask(taskId: string): Promise<Task> {
-  const task = await dataManager
-    .getByTypeId<Task>(new TypeId(Task.type, taskId))
-    .catch(() => null);
+  let task: Task | null = null;
+  try {
+    task = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
+  } catch (cause) {
+    const status = taskLoadStatus(cause);
+    if (status === 404 || status === 403) {
+      throw new TaskLoadError('not_found', taskId, cause);
+    }
+    throw new TaskLoadError('network_error', taskId, cause);
+  }
   if (!task) {
     throw new TaskLoadError('not_found', taskId);
   }
@@ -90,7 +102,7 @@ export async function loadTask(taskId: string): Promise<Task> {
 
 /**
  * Route-level loader for /dock/tasks/<taskId>[/conversation/<convId>]. Owns
- * redirect policy. Delegates to `loadTask` and `loadConversation`.
+ * route error policy. Delegates to `loadTask` and `loadConversation`.
  */
 export async function loadTasksRoute(pointer: string | undefined): Promise<void> {
   if (!pointer) {
@@ -111,12 +123,31 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
     await loadTask(taskId);
   } catch (e) {
     if (!(e instanceof TaskLoadError)) throw e;
-    notify.error({
-      title: 'Task not found',
-      message: 'This task no longer exists.',
-    });
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect('/dock/tasks');
+    if (e.kind === 'network_error') {
+      throw new DockLoadError(
+        'task_network_error',
+        'soft',
+        {
+          action: 'render_error',
+          title: 'Task unavailable',
+          message: 'Could not load this task. Try again in a moment.',
+          retryable: true,
+        },
+        'tasks',
+        e,
+      );
+    }
+    throw new DockLoadError(
+      'task_not_found',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Task not found',
+        message: 'This task no longer exists or is unavailable.',
+      },
+      'tasks',
+      e,
+    );
   }
 
   // /dock/tasks/<taskId>/conversation/<convId> — warm-load the conversation
