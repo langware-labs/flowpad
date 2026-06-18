@@ -169,11 +169,10 @@ function TimestampRow({ label, timestamp }: TimestampRowProps) {
 interface ReleaseNotesProps {
   title: string;
   release: ReleaseInfo | null;
-  defaultOpen?: boolean;
 }
 
-function ReleaseNotes({ title, release, defaultOpen = false }: ReleaseNotesProps) {
-  const [open, setOpen] = useState(defaultOpen);
+function ReleaseNotes({ title, release }: ReleaseNotesProps) {
+  const [open, setOpen] = useState(false);
   if (!release || !release.body) return null;
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="mt-1">
@@ -361,6 +360,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {mode}
               </span>
+              {isDev && instanceName && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {instanceName}
+                </span>
+              )}
             </div>
             <button
               type="button"
@@ -405,10 +409,9 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             <ReleaseNotes
               title={`Notes for v${currentVersion}`}
               release={pypiCurrentRelease}
-              defaultOpen={!pypi?.update_available}
             />
             {pypi?.update_available && pypiLatestRelease && (
-              <ReleaseNotes title={`Notes for v${pypi.latest}`} release={pypiLatestRelease} defaultOpen={true} />
+              <ReleaseNotes title={`Notes for v${pypi.latest}`} release={pypiLatestRelease} />
             )}
             {pypi?.update_available && (
               <div className="pt-1">
@@ -469,14 +472,12 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               <ReleaseNotes
                 title={`Notes for v${electronVersion}`}
                 release={electronCurrentRelease}
-                defaultOpen={false}
               />
             )}
             {githubLatest && (
               <ReleaseNotes
                 title={`Notes for v${githubLatest.tag}`}
                 release={githubLatest}
-                defaultOpen={githubUpdateAvailable || mode === 'Browser'}
               />
             )}
             {mode === 'Desktop' && !githubUpdateAvailable && !data?.github_error && (
@@ -509,14 +510,6 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           <div className="border-t" />
           <section className="space-y-1.5">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connection Info</h4>
-            {isDev && instanceName && (
-              <div className="flex items-baseline justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">Instance</span>
-                <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
-                  {instanceName}
-                </span>
-              </div>
-            )}
             <CopyableUrlField label="URL" value={window.location.href} />
             <CopyableUrlField label="Connection ID" value={connectionManager.id} />
           </section>
