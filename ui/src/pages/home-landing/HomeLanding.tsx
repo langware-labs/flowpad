@@ -3,62 +3,31 @@ import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { NotificationFeed, notify } from '@src/notifications';
-import { type ProjectResourceListItem } from '@src/components/project-resource-list';
-import { ProjectActivityStrip, RecentConversationsStrip, BookmarkColumn } from '@src/components/project-activity-strip';
+import { RecentConversationsStrip } from '@src/components/project-activity-strip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
 import { MiniDesktop } from '@src/components/quick-create';
 import { SessionInput } from '@src/components/session-input/session-input';
-import { isSkillCreationTask, TaskStatus } from '@src/components/task-bar/task-utils';
-import { useBookmarkMutations } from '@src/hooks/use-bookmark-mutations';
-import { useClaudeErrorRecords } from '@src/hooks/useClaudeErrorRecords';
-import { useAnnotations } from '@src/hooks/use-annotations';
-import { useProjectBookmarks } from '@src/hooks/use-project-bookmarks';
-import { useProjectTasks } from '@src/hooks/use-project-tasks';
-import { useTaskMutations } from '@src/hooks/use-task-mutations';
-import { useProjectList } from '@src/hooks/use-claude-projects';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
-import { useSnifferContext } from '@src/contexts/SnifferContext';
 import { AdvancedOnly } from '@src/components/view-mode';
-import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useProjects } from '@src/hooks/use-projects';
-import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
-import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
-import { useForkInTerminal } from '@src/hooks/use-fork-in-terminal';
-import { Annotation, claudeSessionManager, ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
-import { refreshNotifications } from '@sdk/entities/notifications';
+import { claudeSessionManager, dataContext } from '@sdk';
 import { useAuth, useProject } from '@sdk/react/hooks';
-import { useAgentContext } from '@src/contexts/agent-context';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
 import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Feed } from './Feed';
-import { PackageSearch, X, CheckCircle2, Hammer, Users } from 'lucide-react';
+import { HomeFeedColumn } from './feed';
+import { X, CheckCircle2, Users } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDevMode } from '@src/contexts/dev-mode-context';
 import type { LastScanResult } from '@sdk';
-
-const getSafeTimestamp = (value?: string | null): number => {
-  if (!value) return 0;
-  const timestamp = new Date(value).getTime();
-  return Number.isNaN(timestamp) ? 0 : timestamp;
-};
-
-const normalizePath = (value: string): string => {
-  const normalized = value.trim().replace(/\\/g, '/');
-  if (!normalized) return '';
-  if (normalized === '/') return '/';
-  return normalized.replace(/\/+$/, '');
-};
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -66,8 +35,9 @@ const normalizePath = (value: string): string => {
  * Layout:
  * - Top row: Usage bar
  * - Main row:
- *   - Left column: Project list (full height)
- *   - Right column: Greeting, session input, project buttons, and Quick Access
+ *   - Left column: Inbox
+ *   - Middle column: Greeting, session input, and Quick Access
+ *   - Right column: Feed
  * URL: /dock/home
  */
 const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
@@ -125,58 +95,8 @@ export function HomeLanding() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useProjectList();
   const { project: currentProject } = useProject();
-  const { events: snifferEvents } = useSnifferContext();
-
-  // Per-session event counts for notification badges
-  const sessionEventCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const evt of snifferEvents) {
-      if (evt.session_id) {
-        counts.set(evt.session_id, (counts.get(evt.session_id) ?? 0) + 1);
-      }
-    }
-    return counts;
-  }, [snifferEvents]);
-
-  // Skill creation tasks for the Learnings tab
-  const { data: allTasks, refetch: taskRefetch, excludeTasks } = useProjectTasks();
-  const { archiveTask, removeTasks } = useTaskMutations({ refetch: taskRefetch, excludeTasks });
-  const learningTasks = useMemo(
-    () => allTasks.filter((t) => t.status !== 'archived' && !t.archived_at),
-    [allTasks],
-  );
-
-  // Bookmarks for the Bookmarks tab
-  const { data: bookmarks, refetch: bookmarkRefetch, excludeBookmarks } = useProjectBookmarks();
-  const { openDisplayCount: errorCount } = useClaudeErrorRecords();
-  const { closeBookmark, deleteBookmark, remindBookmark } = useBookmarkMutations({ refetch: bookmarkRefetch, excludeBookmarks });
-
-  // Comment annotations for the current project
-  const { annotations: allAnnotations, refetch: annotationsRefetch } = useAnnotations(currentProject?.typeId ?? null);
-  const commentAnnotations = useMemo(
-    () => allAnnotations.filter((a) => a.labels?.includes('comment:')),
-    [allAnnotations],
-  );
-  const createComment = useCallback(
-    async (content: string) => {
-      if (!currentProject?.typeId) return;
-      const annotation = new Annotation({
-        labels: ['comment:'],
-        target_type: currentProject.typeId.type,
-        target_id: currentProject.typeId.id,
-        content,
-        iso_timestamp: new Date().toISOString(),
-      });
-      await annotation.save([]);
-      await annotationsRefetch();
-    },
-    [currentProject?.typeId, annotationsRefetch],
-  );
-
-  const devMode = useDevMode();
-  const { busy, resetAndRescan, clearIndex, scanInfo, lastScanResult } = useSystemTools();
+  const { resetAndRescan, scanInfo, lastScanResult } = useSystemTools();
   const [showWelcome, setShowWelcome] = useState(false);
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
 
@@ -234,39 +154,8 @@ export function HomeLanding() {
     void navigateToResult(result, navigation);
   }, [navigation]);
 
-  const { resumeInTerminal } = useResumeInTerminal();
-  const { forkInTerminal } = useForkInTerminal();
-
   // Get paths from desktop_info
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
-
-  const currentProjectPath = useMemo(
-    () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
-    [currentProject?.fs_storage_mount_path, currentProject?.name],
-  );
-
-  const selectedClaudeProjectEncodedName = useMemo(() => {
-    if (!currentProject) return null;
-
-    const byId = claudeProjects.find((project) => project.id === currentProject.id);
-    if (byId?.encoded_name) return byId.encoded_name;
-
-    if (!currentProjectPath) return null;
-    const byPath = claudeProjects.find((project) => {
-      const scanPath = normalizePath(project.cwd || project.name || '');
-      return !!scanPath && scanPath === currentProjectPath;
-    });
-    return byPath?.encoded_name || null;
-  }, [claudeProjects, currentProject, currentProjectPath]);
-
-  const { actOnClassification, actingSessionId } = useActAccordingToClassification({
-    onStarted: () => {
-      void taskRefetch();
-    },
-    onCompleted: () => {
-      void taskRefetch();
-    },
-  });
 
   const handleSessionSubmit = (message: string) => {
     if (!currentProject?.typeId) {
@@ -285,185 +174,6 @@ export function HomeLanding() {
       }
     })();
   };
-
-  const resourceNavigationOptions = useMemo(
-    () =>
-      selectedClaudeProjectEncodedName
-        ? {
-            scope: 'project',
-            project: selectedClaudeProjectEncodedName,
-          }
-        : undefined,
-    [selectedClaudeProjectEncodedName],
-  );
-
-  const { items: collaborationRoomRows } = useCollaborationRooms({
-    projectId: currentProject?.typeId.id,
-    limit: 20,
-  });
-  const activityItems = useMemo(
-    () =>
-      collaborationRoomRows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        type: 'collaboration_room' as const,
-        // Subtitle = host. ProjectActivityStrip already renders the timestamp
-        // (from modifiedAt) on the row, so the subtitle line reads:
-        //   `<name>`  (big)
-        //   `by <host> · <time-ago>`  (rendered across subtitle + timestamp slots)
-        subtitle: row.hostName ? `by ${row.hostName}` : '',
-        // `path`'s last segment is rendered as the chip — use the project name.
-        path: row.projectName,
-        modifiedAt: row.updatedAt,
-      })),
-    [collaborationRoomRows],
-  );
-
-  const selectedClaudeProjectCwd = useMemo(() => {
-    if (!selectedClaudeProjectEncodedName) return undefined;
-    const match = claudeProjects.find((p) => p.encoded_name === selectedClaudeProjectEncodedName);
-    return match?.cwd || undefined;
-  }, [claudeProjects, selectedClaudeProjectEncodedName]);
-
-  /**
-   * Switch the current project context to match the given cwd.
-   * Finds an existing Project entity by path or creates a new one,
-   * then sets it as the active project so the terminal spawns there
-   * and the footer path updates accordingly.
-   */
-  const switchProjectByCwd = useCallback(
-    async (cwd: string) => {
-      if (!dataContext.someone) return;
-      const targetPath = normalizePath(cwd);
-      if (!targetPath) return;
-
-      // Skip if already on this project
-      if (currentProjectPath && currentProjectPath === targetPath) return;
-
-      const pathKey = targetPath.toLowerCase();
-      const getPath = (p: Project) => normalizePath(p.fs_storage_mount_path || p.name || '').toLowerCase();
-
-      const freshProjects = await Project.query(
-        new QueryRequest({
-          type: Project.type,
-          query: null,
-          scope: [],
-          name: 'home-landing-switch-project',
-        }),
-      );
-      let target = freshProjects.find((p) => getPath(p) === pathKey) || null;
-
-      if (!target) {
-        target = new Project({ name: targetPath });
-        await target.save([dataContext.someone]);
-      }
-      await target.setupForDesktop();
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, target.typeId);
-      await dataContext.refreshProject();
-      dataContext.setWorkdir(target.fs_storage_mount_path ?? null);
-    },
-    [currentProjectPath],
-  );
-
-  /** Switch project context and resume a Claude session in the terminal. */
-  const switchAndResume = useCallback(
-    (sessionId: string, resource: ProjectResourceListItem) => {
-      const sessionCwd = resource.path || selectedClaudeProjectCwd;
-      const doSwitch = sessionCwd ? switchProjectByCwd(sessionCwd) : Promise.resolve();
-      doSwitch
-        .then(() => resumeInTerminal(sessionId, sessionCwd))
-        .catch((err) => console.error('[HomeLanding] Failed to switch project for resume:', err));
-    },
-    [resumeInTerminal, selectedClaudeProjectCwd, switchProjectByCwd],
-  );
-
-  const handleSessionResume = useCallback(
-    (resource: ProjectResourceListItem) => {
-      if (!resource.sessionId) return;
-      switchAndResume(resource.sessionId, resource);
-    },
-    [switchAndResume],
-  );
-
-  const handleResourceClick = useCallback(
-    (resource: ProjectResourceListItem) => {
-      if (resource.type === 'skill') {
-        navigation.openDock(DockPointer.forSkills(resource.skillDockPath));
-        return;
-      }
-
-      switch (resource.type) {
-        case 'claude_session': {
-          // Same behavior as the resume icon — switch project and open terminal
-          handleSessionResume(resource);
-          break;
-        }
-        case 'collaboration_room': {
-          const row = collaborationRoomRows.find((r) => r.id === resource.id);
-          if (row && row.projectId) {
-            navigation.openDock(
-              DockPointer.forProject(row.projectId, { roomId: row.id }),
-            );
-          }
-          break;
-        }
-        case 'hook':
-          navigation.openSystemProfile('hooks', resource.itemId, resourceNavigationOptions);
-          break;
-        case 'command':
-          navigation.openSystemProfile('commands', resource.itemId, resourceNavigationOptions);
-          break;
-        case 'agent':
-          navigation.openSystemProfile('agents', resource.itemId, resourceNavigationOptions);
-          break;
-        case 'todo':
-          navigation.openSystemProfile('todos', resource.itemId, resourceNavigationOptions);
-          break;
-        case 'plugin':
-          navigation.openSystemProfile('plugins', resource.itemId, resourceNavigationOptions);
-          break;
-        case 'mcp_server':
-          navigation.openSystemProfile('projects', undefined, {
-            project: selectedClaudeProjectEncodedName ?? undefined,
-          });
-          break;
-        case 'claude_md':
-          navigation.openSystemProfile('summary', undefined, resourceNavigationOptions);
-          break;
-        default:
-          navigation.openSystemProfile();
-      }
-    },
-    [
-      navigation,
-      resourceNavigationOptions,
-      selectedClaudeProjectEncodedName,
-      handleSessionResume,
-      collaborationRoomRows,
-    ],
-  );
-
-  const handleSessionTasks = useCallback(
-    (resource: ProjectResourceListItem) => {
-      if (resource.sessionId) {
-        navigation.openLens('claude', 'tasks', resource.sessionId);
-      }
-    },
-    [navigation],
-  );
-
-
-  const handleActAccordingToClassification = useCallback(
-    async (resource: ProjectResourceListItem, command: string) => {
-      const cwd = resource.path || selectedClaudeProjectCwd;
-      if (!resource.sessionId || !cwd) {
-        notify.error({ title: 'Session unavailable', message: 'No session ID or working directory found.' });
-        return;
-      }
-      await actOnClassification(resource.sessionId, cwd, command);
-    },
-    [actOnClassification, selectedClaudeProjectCwd],
-  );
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -502,38 +212,15 @@ export function HomeLanding() {
 
       {/* Main row: Sidebar + Content */}
       <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
-        {/* Left column: Bookmarks / Todos */}
+        {/* Left column: Inbox */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
-          {/* Top spacer — mirrors the Inbox strip header height (h-9) so
-              Bookmarks/Todos stay aligned with the Inbox column on the right. */}
+          {/* Invisible spacer mirroring the right Feed column so Inbox aligns with Feed */}
           <div aria-hidden className="h-9 shrink-0" />
-
-          <BookmarkColumn
-            learningTasks={learningTasks}
-            bookmarks={bookmarks}
-            annotations={commentAnnotations}
-            errorCount={errorCount}
-            onErrorClick={() => navigation.openLens('heartbeat', 'errors', 'open')}
-            onAddComment={createComment}
-            onArchiveLearning={(task) => void archiveTask(task)}
-            onArchiveAllLearnings={() => void removeTasks(learningTasks)}
-            onCloseBookmark={(m) => void closeBookmark(m)}
-            onDeleteBookmark={(m) => void deleteBookmark(m)}
-            onRemindBookmark={(m, mins) => void remindBookmark(m, mins)}
-            onOpenSession={(m) => m.session_id && resumeInTerminal(m.session_id, m.work_dir ?? undefined, m.created_date ?? undefined)}
-            onForkSession={(m) => forkInTerminal(m.work_dir ?? undefined)}
-            onRefresh={() => refreshNotifications(currentProject?.fs_storage_mount_path ?? undefined)}
-            sessionEventCounts={sessionEventCounts}
-            snifferEvents={snifferEvents}
-          />
+          <RecentConversationsStrip />
         </div>
 
-        {/* Middle column: Main content + Quick Access.
-            overflow-hidden so the column itself NEVER scrolls — the only scroll
-            region is the Feed, which is flex-1/min-h-0 and absorbs the leftover
-            column height (see Feed.tsx). The hero (greeting + input) stays
-            pinned on top and Quick Access / notifications sit below the feed;
-            gap-6 keeps the original inter-section spacing. */}
+        {/* Middle column: Main content + Quick Access. The column itself never
+            scrolls; side panels own their own scrolling. */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-hidden">
           {/* Hero — fixed at the top, never scrolls */}
           <div className="flex shrink-0 flex-col items-center gap-6 text-center">
@@ -562,10 +249,7 @@ export function HomeLanding() {
             </div>
           </div>
 
-          {/* Feed — the single scroll region; grows to fill the leftover height */}
-          <Feed />
-
-          {/* Quick Access — fixed below the feed */}
+          {/* Quick Access — fixed below the hero */}
           <div className="flex shrink-0 flex-col items-center gap-6 text-center">
             <div className="w-full max-w-3xl">
               <MiniDesktop />
@@ -625,12 +309,7 @@ export function HomeLanding() {
           </AdvancedOnly>
         </div>
 
-        {/* Right column: Recent conversations */}
-        <div className="w-72 shrink-0 flex flex-col gap-2">
-          {/* Invisible spacer mirroring the left column's Inbox row so Recent conversations aligns with Todos */}
-          <div aria-hidden className="h-9 shrink-0" />
-          <RecentConversationsStrip />
-        </div>
+        <HomeFeedColumn />
 
       </div>
 

@@ -17,7 +17,13 @@ function dock(id = '5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'): DockPointer {
   return new DockPointer(ViewType.SHELL, `shell-${id}`);
 }
 
-function tabFor(d: DockPointer, id = 'tab-1'): Tab {
+let tabIdCounter = 0;
+function nextTabId(): string {
+  tabIdCounter += 1;
+  return `00000000-0000-4000-8000-${String(tabIdCounter).padStart(12, '0')}`;
+}
+
+function tabFor(d: DockPointer, id = nextTabId()): Tab {
   return new Tab({
     id,
     pointer: d.toJSON() ?? '',
@@ -29,6 +35,10 @@ function tabFor(d: DockPointer, id = 'tab-1'): Tab {
   });
 }
 
+function mockNoExistingTabs() {
+  return vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   resetTabLifecycleForTests();
@@ -38,6 +48,7 @@ describe('tab lifecycle registry', () => {
   it('moves successful setup from opening to opened', async () => {
     const d = dock();
     const tab = tabFor(d);
+    mockNoExistingTabs();
     vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
 
     await setupTab(d);
@@ -49,6 +60,7 @@ describe('tab lifecycle registry', () => {
   it('keeps a materialized tab visible when setup fails', async () => {
     const d = dock();
     const tab = tabFor(d);
+    mockNoExistingTabs();
     vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
     registerTabContentAdapter(ViewType.SHELL, {
       async setupTab() {
@@ -62,6 +74,28 @@ describe('tab lifecycle registry', () => {
     expect(result.tab?.id).toBe(tab.id);
     expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.OpenFailed);
     expect(getTabLifecycle(d.tabHash)?.error).toBe('attach failed');
+  });
+
+  it('reuses a visible normalized legacy row before creating a canonical duplicate', async () => {
+    const shellId = '8fc3bec4-0f33-4333-8b2b-c95a8f0ae194';
+    const d = dock(shellId);
+    const legacy = new Tab({
+      id: '11111111-1111-4111-8111-111111111111',
+      pointer: `dock/shell-${shellId}`,
+      target_type: 'shell',
+      target_id: shellId,
+      project_id: null,
+      name: 'pinned shell',
+      visible: true,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([legacy]);
+    const materialize = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tabFor(d)]);
+
+    const result = await setupTab(d);
+
+    expect(result.tab?.id).toBe(legacy.id);
+    expect(materialize).not.toHaveBeenCalled();
+    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
   });
 
   it('moves cleanup success from closing to removed after the tab list drops it', async () => {
@@ -108,6 +142,7 @@ describe('tab lifecycle registry', () => {
   it('clears lifecycle entries when tabs_changed removes the tab', async () => {
     const d = dock();
     const tab = tabFor(d);
+    mockNoExistingTabs();
     vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
     await setupTab(d);
 

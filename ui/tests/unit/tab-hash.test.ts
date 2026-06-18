@@ -6,7 +6,7 @@
  */
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { Layout } from '@sdk';
+import { Layout, Tab } from '@sdk';
 import { describe, expect, it } from 'vitest';
 
 describe('DockPointer.tabHash', () => {
@@ -102,5 +102,61 @@ describe('DockPointer.toJSON / fromJSON', () => {
     const json = orig.toJSON();
     const roundtrip = DockPointer.fromJSON(json!);
     expect(roundtrip?.tabHash).toBe(origHash);
+  });
+});
+
+describe('Tab.dockPointer legacy pointer compatibility', () => {
+  it('normalizes stale dock/shell-<id> rows to /dock/shell/shell-<id>', () => {
+    const shellId = '8fc3bec4-0f33-4333-8b2b-c95a8f0ae194';
+    const tab = new Tab({
+      id: '11111111-1111-4111-8111-111111111111',
+      pointer: `dock/shell-${shellId}`,
+      target_type: 'shell',
+      target_id: shellId,
+    });
+
+    expect(tab.dockPointer).toEqual(
+      expect.objectContaining({
+        viewType: ViewType.SHELL,
+        pointer: `shell-${shellId}`,
+        tabHash: `shell|shell-${shellId}`,
+      }),
+    );
+  });
+
+  it('normalizes stale dock/agentic_process-<id> rows to shell agentic tabs', () => {
+    const processId = 'f7d3f87c-4817-446a-8482-c3d7a3403800';
+    const tab = new Tab({
+      id: '22222222-2222-4222-8222-222222222222',
+      pointer: `dock/agentic_process-${processId}`,
+      target_type: 'agentic_process',
+      target_id: processId,
+    });
+
+    expect(tab.dockPointer).toEqual(
+      expect.objectContaining({
+        viewType: ViewType.SHELL,
+        pointer: `agentic_process-${processId}`,
+        tabHash: `shell|agentic_process-${processId}`,
+      }),
+    );
+  });
+
+  it('normalizes stale dock/conversation-<id> rows to conversation tabs', () => {
+    const conversationId = 'd8942fa1-bcb6-4356-8e7d-e79549ba62d4';
+    const tab = new Tab({
+      id: '33333333-3333-4333-8333-333333333333',
+      pointer: `dock/conversation-${conversationId}`,
+      target_type: 'conversation',
+      target_id: conversationId,
+    });
+
+    expect(tab.dockPointer).toEqual(
+      expect.objectContaining({
+        viewType: ViewType.CONVERSATION,
+        pointer: conversationId,
+        tabHash: `conversation|${conversationId}`,
+      }),
+    );
   });
 });

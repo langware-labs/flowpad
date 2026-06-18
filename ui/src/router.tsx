@@ -92,7 +92,7 @@ export const router = createBrowserRouter(
       <Route index element={<FlowPage />} loader={loadHomePage} />
       <Route path="agent" element={<AgentRedirect />} loader={loadAgentApp} />
       {/* Root dock routes - use default agent from bootstrap */}
-      <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDockShell}>
+      <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDockShell} errorElement={<ErrorScreen />}>
         <Route index element={<Navigate to="/" replace />} />
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />

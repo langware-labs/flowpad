@@ -110,8 +110,8 @@ export async function loadConversation(conversationId: string): Promise<Conversa
 }
 
 /**
- * Route-level loader for /dock/conversation/<id>. Owns redirect policy.
- * Delegates the actual work to `loadConversation`.
+ * Route-level loader for /dock/conversation/<id>. Tries to load the conversation
+ * but doesn't throw on not-found — the component handles that gracefully.
  */
 export async function loadConversationRoute(pointer: string | undefined): Promise<void> {
   if (!pointer) {
@@ -129,12 +129,8 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
   try {
     await loadConversation(conversationId);
   } catch (e) {
+    // Don't throw — let the component handle not-found gracefully by showing
+    // a not-found view within the tab instead of a full-page error
     if (!(e instanceof ConversationLoadError)) throw e;
-    notify.error({
-      title: 'Conversation not found',
-      message: 'This conversation no longer exists.',
-    });
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect('/dock/inbox');
   }
 }

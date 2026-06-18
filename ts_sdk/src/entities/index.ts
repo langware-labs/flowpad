@@ -35,6 +35,8 @@ export * from './conversation';
 export * from './conversation-send';
 export * from './contact-permission';
 export * from './feed-entry';
+export * from './message-suggest';
+export * from './user-note';
 export * from './flow-message';
 export * from './invitation';
 export * from './spec';

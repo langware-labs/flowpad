@@ -425,21 +425,26 @@ async def _build_list(project: str | None) -> list[dict]:
 
 
 # Stable sentinel TypeId for the global ping. ``flow_data_msg`` is dropped client-
-# side unless ``to_entity`` parses as ``<type>-<uuid>`` (websocket.parseTypeId), so
-# we ride a fixed Tab id; the frontend keys on ``element_type``, never this id.
-_TABS_CHANGED_SIGNAL = f"tab-{tab_id_for('__tabs_changed_signal__')}"
+# Broadcast signal moved to proper broadcast() function in websocket.py
+# (was: creating synthetic tab ID = uuid5(__tabs_changed_signal__), which was horrible design)
 
 
 async def broadcast_tabs_changed() -> None:
     """Global ``tabs-changed`` ping so every client refetches the list — covers
-    backend-originated changes (death/orphan-cleanup, rename, second window). Uses
-    the watcher-less broadcast channel (same path as scan/upload progress)."""
-    from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+    backend-originated changes (death/orphan-cleanup, rename, second window). Sends
+    a proper broadcast message to all connected clients."""
+    try:
+        from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
+        from pydantic import BaseModel
+        from flow_sdk.api.messages import WSMessageType
 
-    await broadcast_progress(
-        to_entity=_TABS_CHANGED_SIGNAL,
-        flow_data={"element_type": "tabs_changed", "attributes": {}},
-    )
+        class TabsChangedMessage(BaseModel):
+            message_type: str = WSMessageType.BROADCAST.value
+            broadcast_type: str = "tabs_changed"
+
+        await broadcast(TabsChangedMessage().model_dump_json())
+    except Exception as e:
+        logger.debug(f"broadcast_tabs_changed failed: {e}")
 
 
 async def _list_response(project: str | None):

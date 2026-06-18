@@ -1,4 +1,4 @@
-import { FeedEntry, sendDiagnosisReport } from '@sdk';
+import { FeedEntry } from '@sdk';
 import { useCallback } from 'react';
 
 interface UseFeedMutationsOptions {
@@ -6,17 +6,8 @@ interface UseFeedMutationsOptions {
 }
 
 /**
- * Feed entry mutations. These fire from the Home-landing Feed buttons inside the
- * running app, so they go through the live backend like any entity save (no
- * down-backend concern — the report was written SDK-direct by `flow diagnose`).
- *
- * - dismiss: flip feed_status → 'dismissed' so the entry stops rendering.
- * - reportIssue: the single send path. Both "Report issue" (the suggested
- *   support conversation) and a Forward pick (any existing conversation) call
- *   this with their conversation id — it sends the generated report text via
- *   the unified send path, then dismisses the entry and un-hides the
- *   conversation (clear dismissed_at + bump updated_date) so it appears in
- *   the Recent strip. The entry is dismissed only after the send succeeds.
+ * Feed entry lifecycle mutations. Content-specific actions live with the
+ * renderer for the entity referenced by FeedEntry.data.
  */
 export function useFeedMutations({ refetch }: UseFeedMutationsOptions) {
   const dismiss = useCallback(
@@ -28,23 +19,5 @@ export function useFeedMutations({ refetch }: UseFeedMutationsOptions) {
     [refetch],
   );
 
-  const reportIssue = useCallback(
-    async (entry: FeedEntry, conversationId: string) => {
-      // Shared send path: post the report into the conversation and un-hide it so
-      // it surfaces in the Recent strip (same helper the diagnose modal uses).
-      // Pass the support FlowMessage id so the full, formatted report body is sent
-      // (the bare `message_text` summary is only the no-message fallback).
-      await sendDiagnosisReport(conversationId, {
-        flowMessageId: entry.messageSuggest?.flow_message_id,
-        fallbackText: entry.messageSuggest?.message_text ?? '',
-      });
-      // Then dismiss the Feed entry — only after the send succeeds.
-      entry.feed_status = 'dismissed';
-      await entry.save([]);
-      await refetch();
-    },
-    [refetch],
-  );
-
-  return { dismiss, reportIssue };
+  return { dismiss };
 }

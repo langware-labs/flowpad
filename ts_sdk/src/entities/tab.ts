@@ -36,6 +36,72 @@ function displayForTarget(
   return { iconKey: null, worktree: false };
 }
 
+const LEGACY_LAYOUT_SEGMENTS = new Set(['dock', 'dev', 'win']);
+
+function targetDockPointer(targetType: string | null | undefined, targetId: string | null | undefined): {
+  viewType: string;
+  pointer: string;
+} | null {
+  if (!targetType || !targetId) return null;
+  if (targetType === EntityTypes.Shell) {
+    return { viewType: EntityTypes.Shell, pointer: `${EntityTypes.Shell}-${targetId}` };
+  }
+  if (targetType === EntityTypes.AgenticProcess) {
+    return { viewType: EntityTypes.Shell, pointer: `${EntityTypes.AgenticProcess}-${targetId}` };
+  }
+  return { viewType: targetType, pointer: targetId };
+}
+
+function normalizeLegacyPointer(
+  pointer: string,
+  targetType: string | null | undefined,
+  targetId: string | null | undefined,
+): { viewType: string; pointer: string } | null {
+  const separator = pointer.indexOf('|');
+  const rawViewType = separator >= 0 ? pointer.slice(0, separator) : pointer;
+  const rawSubPointer = separator >= 0 ? pointer.slice(separator + 1) : '';
+  const targetDock = targetDockPointer(targetType, targetId);
+
+  const fromPath = (rawPath: string): { viewType: string; pointer: string } | null => {
+    const parts = rawPath.replace(/^\/+/, '').split('/').filter(Boolean);
+    if (parts.length === 0) return targetDock;
+    if (LEGACY_LAYOUT_SEGMENTS.has(parts[0])) parts.shift();
+    const path = parts.join('/');
+    if (!path) return targetDock;
+
+    if (
+      targetDock &&
+      (path === targetDock.pointer ||
+        path === `${targetType}-${targetId}` ||
+        path === `${targetType}/${targetId}`)
+    ) {
+      return targetDock;
+    }
+
+    if (path.startsWith(`${EntityTypes.Shell}-`) || path.startsWith(`${EntityTypes.AgenticProcess}-`)) {
+      return { viewType: EntityTypes.Shell, pointer: path };
+    }
+
+    const slash = path.indexOf('/');
+    if (slash >= 0) {
+      return { viewType: path.slice(0, slash), pointer: path.slice(slash + 1) };
+    }
+    return { viewType: path, pointer: '' };
+  };
+
+  if (LEGACY_LAYOUT_SEGMENTS.has(rawViewType)) {
+    return fromPath(rawSubPointer);
+  }
+  if (rawViewType.includes('/')) {
+    return fromPath(rawViewType);
+  }
+  if (!rawViewType && targetDock) {
+    return targetDock;
+  }
+  if (!rawViewType) return null;
+  return { viewType: rawViewType, pointer: rawSubPointer };
+}
+
 /**
  * Tab — the frontend mirror of the DB-only backend ``Tab`` entity
  * (flow_sdk/builtin/tab.py, docs/tab-management.md).
@@ -133,8 +199,9 @@ export class Tab extends APIEntity<Tab> implements ITab {
         tabHash: parsed.tabHash ?? `${viewType}|${subPointer}`,
       };
     } catch {
-      const [viewType = '', subPointer = ''] = this.pointer.split('|', 2);
-      if (!viewType) return null;
+      const normalized = normalizeLegacyPointer(this.pointer, this.target_type, this.target_id);
+      if (!normalized) return null;
+      const { viewType, pointer: subPointer } = normalized;
       return {
         viewType,
         pointer: subPointer,

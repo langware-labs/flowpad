@@ -6,6 +6,7 @@ covered by tests/unit/test_diagnostic_report.py.
 """
 import asyncio
 import logging
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -91,6 +92,15 @@ def test_diagnose_passes_timeout_through():
         result = runner.invoke(app, ["diagnose", "--timeout", "42"], input="x\n")
     assert result.exit_code == 0
     assert mock_run.call_args.args[1] == 42.0
+
+
+def test_diagnose_posts_feed_for_any_completed_run():
+    with patch(_RUN, new=AsyncMock(return_value=0)) as mock_run:
+        result = runner.invoke(app, ["diagnose"], input="x\n")
+    assert result.exit_code == 0
+    create_feed_entry = mock_run.call_args.kwargs["create_feed_entry"]
+    assert create_feed_entry(False) is True
+    assert create_feed_entry(True) is True
 
 
 # --------------------------------------------------------------------------- #
@@ -242,6 +252,84 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0), timeout=5)
     _tpath.unlink(missing_ok=True)
     assert rc == 0
+
+
+@pytest.mark.asyncio
+async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails():
+    import tempfile
+    from pathlib import Path
+
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    _tf = tempfile.NamedTemporaryFile(prefix="diag_summary_", suffix=".jsonl", delete=False)
+    _tf.write(b'{"type":"system"}\n')
+    _tf.flush()
+    _tf.close()
+    _tpath = Path(_tf.name)
+
+    class _FakeDriver:
+        def transcript_path(self, _ap):
+            return _tpath
+
+    class _FakeAP:
+        def __init__(self, **_kw):
+            self.id = "fake-id"
+            self.session_id = "fakesess"
+            self.driver = _FakeDriver()
+
+        def enable_assistant(self):
+            pass
+
+        async def prompt(self, _text):
+            return None
+
+        async def stream_transcript(self, timeout=0):
+            yield {
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "content": '{"diagnosis_id": "d1", "conversation_id": null, "flow_message_id": null}',
+                        }
+                    ],
+                }
+            }
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            raise RuntimeError("cross-link source unavailable")
+
+    class _FakeDiagnosis:
+        @classmethod
+        async def get_by_id(cls, _id):
+            return SimpleNamespace(summary="diagnosis summary", title="diagnosis title")
+
+    post_feed = AsyncMock(return_value="feed-1")
+
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
+        patch(
+            "flow_sdk.core.capabilities.discovery.ensure_discovered",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
+            lambda _t: _FakeDiagnosis,
+        ),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+        patch("flow_sdk.cli.commands.diagnose_cmd._post_home_feed_entry", new=post_feed),
+    ):
+        rc = await diagnose_cmd._run_diagnose(
+            "x",
+            1800.0,
+            create_feed_entry=lambda _has_issue: True,
+        )
+
+    _tpath.unlink(missing_ok=True)
+    assert rc == 0
+    post_feed.assert_awaited_once()
+    assert post_feed.await_args.kwargs["summary"] == "diagnosis summary"
 
 
 # --------------------------------------------------------------------------- #
@@ -406,13 +494,13 @@ async def _bootstrap_local_user():
 
 @pytest.mark.asyncio
 async def test_post_home_feed_entry_makes_a_real_card_appear():
-    """The single creator both surfaces use. It mints a queryable `message_suggest` /
-    `new` FeedEntry whose payload carries the support conversation + message + the
-    diagnosis summary — i.e. the card actually APPEARS in the store (this is also the
-    creator the `diagnose_post_feed` action calls for the minimized-app UI path)."""
+    """The single creator both surfaces use. It mints a queryable MessageSuggest
+    content entity and a `new` FeedEntry pointing at it, so the card actually
+    APPEARS in the store."""
     import uuid
 
-    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
+    from flow_sdk.builtin.message_suggest import MessageSuggest
     from flow_sdk.cli.commands.diagnose_cmd import _post_home_feed_entry
 
     await _bootstrap_local_user()
@@ -427,19 +515,22 @@ async def test_post_home_feed_entry_makes_a_real_card_appear():
 
     entry = await FeedEntry.get_by_id(fid)
     assert entry is not None
-    assert entry.kind == FeedKind.MESSAGE_SUGGEST.value
     assert entry.feed_status == FeedStatus.NEW.value  # only `new` renders in the Feed
-    assert entry.feed_data["conversation_id"] == conv_id
-    assert entry.feed_data["flow_message_id"] == msg_id
-    assert entry.feed_data["message_text"] == "Cleared a stale server.lock; the backend starts now."
+    assert entry.data["type_id"].startswith("message_suggest-")
+    suggest = await MessageSuggest.get_by_id(entry.data["type_id"].split("-", 1)[1])
+    assert suggest is not None
+    assert suggest.conversation_id == conv_id
+    assert suggest.flow_message_id == msg_id
+    assert suggest.message_text == "Cleared a stale server.lock; the backend starts now."
 
 
 @pytest.mark.asyncio
 async def test_post_home_feed_entry_no_issue_card_has_summary_no_conversation():
     """The no-issue variant of the creator (posted when the user wasn't watching, so
-    they still get an answer): a `new`/`message_suggest` card carrying the summary as
-    its body, a non-error header, and NO conversation — nothing to report/forward."""
-    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus
+    they still get an answer): a `new` FeedEntry pointing at MessageSuggest content
+    carrying the summary as its body, a non-error header, and NO conversation."""
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
+    from flow_sdk.builtin.message_suggest import MessageSuggest
     from flow_sdk.cli.commands.diagnose_cmd import _post_home_feed_entry
 
     await _bootstrap_local_user()
@@ -448,18 +539,21 @@ async def test_post_home_feed_entry_no_issue_card_has_summary_no_conversation():
 
     entry = await FeedEntry.get_by_id(fid)
     assert entry is not None
-    assert entry.kind == FeedKind.MESSAGE_SUGGEST.value
     assert entry.feed_status == FeedStatus.NEW.value
-    assert entry.feed_data["message_text"] == "All healthy — typing works; nothing to fix."
-    assert not entry.feed_data.get("conversation_id")  # no issue → no support conversation
-    assert not entry.feed_data.get("flow_message_id")
-    assert "error came up" not in entry.feed_data["text"]  # not the issue header
+    assert entry.data["type_id"].startswith("message_suggest-")
+    suggest = await MessageSuggest.get_by_id(entry.data["type_id"].split("-", 1)[1])
+    assert suggest is not None
+    assert suggest.message_text == "All healthy — typing works; nothing to fix."
+    assert not suggest.conversation_id  # no issue -> no support conversation
+    assert not suggest.flow_message_id
+    assert "error came up" not in suggest.text  # not the issue header
 
 
 @pytest.mark.parametrize(
     "label,create_feed_entry,has_issue,expect_card,expect_conversation",
     [
-        # CLI (bool True) posts for an issue only; a clean sweep prints to the terminal.
+        # Raw bool True posts for an issue only; the CLI wrapper now passes a callable
+        # when it wants every completed run to surface in Feed.
         ("cli_issue", True, True, True, True),
         ("cli_no_issue", True, False, False, False),
         # UI 'user not watching' callable posts for ANY result — issue card or summary card.
@@ -476,9 +570,9 @@ async def test_feed_card_appears_per_watching_logic(
 ):
     """End-to-end at the runner layer: `create_feed_entry` is the on/off switch for
     whether a real Home-Feed card appears. Both directions are demonstrated across the
-    matrix — CLI posts for an issue only; the UI 'not watching' callable posts for ANY
-    result (including a no-issue summary card, so a user who walked away still gets an
-    answer); the UI 'watching' callable never posts. `_post_home_feed_entry` is NOT
+    matrix — raw bool mode posts for an issue only; the UI 'not watching' callable
+    posts for ANY result (including a no-issue summary card, so a user who walked away
+    still gets an answer); the UI 'watching' callable never posts. `_post_home_feed_entry` is NOT
     mocked, so the card's existence (and whether it carries a conversation) is proven by
     loading it back from the store."""
     import tempfile
@@ -486,7 +580,8 @@ async def test_feed_card_appears_per_watching_logic(
     from pathlib import Path
     from unittest.mock import AsyncMock
 
-    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
+    from flow_sdk.builtin.message_suggest import MessageSuggest
     from flow_sdk.cli.commands import diagnose_cmd
 
     await _bootstrap_local_user()
@@ -552,6 +647,15 @@ async def test_feed_card_appears_per_watching_logic(
             lambda _t: None,
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+        patch(
+            "flow_sdk.cli.commands.diagnose_cmd._load_recorded_diagnosis",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    summary="diagnosis summary",
+                    title="diagnosis title",
+                )
+            ),
+        ),
     ):
         rc = await asyncio.wait_for(
             diagnose_cmd._run_diagnose(
@@ -569,13 +673,15 @@ async def test_feed_card_appears_per_watching_logic(
         assert fid, "expected a Home-Feed card to be posted"
         entry = await FeedEntry.get_by_id(fid)
         assert entry is not None, "the posted card must actually exist in the store"
-        assert entry.kind == FeedKind.MESSAGE_SUGGEST.value
         assert entry.feed_status == FeedStatus.NEW.value
+        assert entry.data["type_id"].startswith("message_suggest-")
+        suggest = await MessageSuggest.get_by_id(entry.data["type_id"].split("-", 1)[1])
+        assert suggest is not None
         if expect_conversation:
-            assert entry.feed_data["conversation_id"] == conv_id
-            assert entry.feed_data["flow_message_id"] == msg_id
+            assert suggest.conversation_id == conv_id
+            assert suggest.flow_message_id == msg_id
         else:
-            assert not entry.feed_data.get("conversation_id")  # no-issue summary card
-            assert not entry.feed_data.get("flow_message_id")
+            assert not suggest.conversation_id  # no-issue summary card
+            assert not suggest.flow_message_id
     else:
         assert done["feed_entry_id"] is None, "no card must be posted in this case"

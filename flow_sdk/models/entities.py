@@ -121,6 +121,21 @@ except ImportError as e:
     print(f"[WARN] Failed to import FlowpadDiagnosis: {e}")
 
 try:
+    from flow_sdk.builtin.feed_entry import FeedEntry  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import FeedEntry: {e}")
+
+try:
+    from flow_sdk.builtin.message_suggest import MessageSuggest  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import MessageSuggest: {e}")
+
+try:
+    from flow_sdk.builtin.user_note import UserNote  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import UserNote: {e}")
+
+try:
     from flow_sdk.builtin.agent_trace import AgentTrace  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import AgentTrace: {e}")
