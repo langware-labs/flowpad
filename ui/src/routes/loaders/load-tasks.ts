@@ -44,6 +44,38 @@ function taskLoadStatus(error: unknown): number | undefined {
     ?? (error as { status?: number } | null)?.status;
 }
 
+async function applyTaskContext(taskId: string, task: Task): Promise<void> {
+  const projectId = task.project_id ?? undefined;
+  const projectRoot = task.project_root ?? undefined;
+
+  // Active entity = the task. Mirrors how load-project sets the project as
+  // the active entity for /dock/project/<id> and load-conversation sets the
+  // conversation for /dock/conversation/<id>.
+  await dataContext.setActiveEntityTypeId(new TypeId(Task.type, taskId));
+
+  if (projectId) {
+    await dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProjectTypeId,
+      new TypeId(Project.type, projectId),
+    );
+    // Warm the cache so any `useEntity(Project, …)` consumer hits immediately.
+    const project = await dataManager
+      .getByTypeId<Project>(new TypeId(Project.type, projectId))
+      .catch(() => null);
+    dataContext.setWorkdir(projectRoot ?? project?.fs_storage_mount_path ?? null);
+  } else {
+    // Task has no mapped project (receiver pre-mapping). Drop the global
+    // active project to null — the StatusBar will render the red
+    // "Select Project" pill. The mapping gate pops the picker when the user
+    // takes an action that needs cwd (Open Claude Code, Approve & Execute).
+    await dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProjectTypeId,
+      null,
+    );
+    dataContext.setWorkdir(projectRoot ?? null);
+  }
+}
+
 /**
  * Pure primitive — fetch the Task and set dataContext bits the page needs.
  * Throws `TaskLoadError` on a hard failure. Best-effort for the Project
@@ -65,37 +97,7 @@ export async function loadTask(taskId: string): Promise<Task> {
     throw new TaskLoadError('not_found', taskId);
   }
 
-  const projectId = task.project_id ?? undefined;
-  const projectRoot = task.project_root ?? undefined;
-
-  // Active entity = the task. Mirrors how load-project sets the project as
-  // the active entity for /dock/project/<id> and load-conversation sets the
-  // conversation for /dock/conversation/<id>.
-  await dataContext.setActiveEntityTypeId(new TypeId(Task.type, taskId));
-
-  if (projectId) {
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      new TypeId(Project.type, projectId),
-    );
-    // Warm the cache so any `useEntity(Project, …)` consumer hits immediately.
-    await dataManager
-      .getByTypeId<Project>(new TypeId(Project.type, projectId))
-      .catch(() => null);
-  } else {
-    // Task has no mapped project (receiver pre-mapping). Drop the global
-    // active project to null — the StatusBar will render the red
-    // "Select Project" pill. The mapping gate pops the picker when the user
-    // takes an action that needs cwd (Open Claude Code, Approve & Execute).
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      null,
-    );
-  }
-
-  if (projectRoot) {
-    dataContext.setWorkdir(projectRoot);
-  }
+  await applyTaskContext(taskId, task);
 
   return task;
 }
@@ -119,8 +121,9 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
     parts.length >= 3 && parts[1] === 'conversation' ? parts[2] : null;
   if (!taskId) return;
 
+  let task: Task;
   try {
-    await loadTask(taskId);
+    task = await loadTask(taskId);
   } catch (e) {
     if (!(e instanceof TaskLoadError)) throw e;
     if (e.kind === 'network_error') {
@@ -159,6 +162,6 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
     } catch {
       // Soft-fail: page renders its own "Loading conversation…" state.
     }
-    await dataContext.setActiveEntityTypeId(new TypeId(Task.type, taskId));
+    await applyTaskContext(taskId, task);
   }
 }

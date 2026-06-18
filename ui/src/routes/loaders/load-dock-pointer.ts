@@ -5,11 +5,12 @@ import {
   QueryRequest,
   systemTools,
   Trigger,
+  TypeId,
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
 import { clearDockLoadError } from './dock-load-error-store';
-import { handleDockLoadError } from './dock-load-error';
+import { DockLoadError, handleDockLoadError } from './dock-load-error';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
 import { loadProject, loadProjectRoute } from './load-project';
@@ -46,6 +47,21 @@ async function loadAgenticProcessRoute(pointer: string | undefined): Promise<voi
   const processId = DockPointer.isAgenticProcessPointer(pointer)
     ? DockPointer.extractAgenticProcessId(pointer)
     : pointer;
+  try {
+    new TypeId(AgenticProcess.type, processId);
+  } catch (error) {
+    throw new DockLoadError(
+      'malformed_session_pointer',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Session not found',
+        message: 'This session URL is malformed or unavailable.',
+      },
+      'agentic_process',
+      error,
+    );
+  }
   try {
     await loadProcess(processId);
   } catch (error) {
@@ -93,7 +109,7 @@ export async function loadDockPointer(
     clearDockLoadError(dock);
     return label;
   } catch (error) {
-    await handleDockLoadError(error, dock);
+    handleDockLoadError(error, dock);
     return label;
   }
 }

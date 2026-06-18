@@ -503,6 +503,7 @@ class DataContext extends EventEmitter {
       desktopInfo: computed,
       isDesktop: computed,
       version: computed,
+      instanceName: computed,
       _warnings: observable,
       warnings: computed,
       snifferHook: observable,
