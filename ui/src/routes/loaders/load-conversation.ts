@@ -20,7 +20,7 @@
  * Wrapper `loadConversationRoute(pointer)` is the URL-aware shell. Mirrors
  * the load-shell / load-project two-layer split: the primitive doesn't know
  * about URLs and only throws typed errors; the wrapper translates failures
- * into redirects + toasts.
+ * into declarative dock-load resolutions.
  */
 
 import {
@@ -32,14 +32,17 @@ import {
   type Task,
   TypeId,
 } from '@sdk';
-import { Conversation as ConversationEntity, Task as TaskEntity } from '@sdk';
+import { Conversation as ConversationEntity } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { notify } from '@src/notifications';
-import { redirect } from 'react-router';
+import { DockLoadError } from './dock-load-error';
+
+export type ConversationLoadErrorKind = 'not_found' | 'unauthorized' | 'network_error';
 
 export class ConversationLoadError extends Error {
+  readonly severity = 'hard'; // conversation not found is always terminal
+
   constructor(
-    readonly kind: 'not_found',
+    readonly kind: ConversationLoadErrorKind,
     readonly conversationId: string,
   ) {
     super(`conversation-load:${kind}`);
@@ -53,9 +56,22 @@ export class ConversationLoadError extends Error {
  * load (the page can still render the conversation without those).
  */
 export async function loadConversation(conversationId: string): Promise<Conversation> {
-  const conv = await dataManager
-    .getByTypeId<Conversation>(new TypeId(ConversationEntity.type, conversationId))
-    .catch(() => null);
+  let conv: Conversation | null = null;
+
+  try {
+    conv = await dataManager.getByTypeId<Conversation>(new TypeId(ConversationEntity.type, conversationId));
+  } catch (error) {
+    const typedError = error as { response?: { status?: number }; status?: number } | null;
+    const status = typedError?.response?.status ?? typedError?.status;
+
+    // Distinguish error types
+    if (status === 404 || status === 403) {
+      throw new ConversationLoadError('not_found', conversationId);
+    }
+    // Network or other errors
+    throw new ConversationLoadError('network_error', conversationId);
+  }
+
   if (!conv) {
     throw new ConversationLoadError('not_found', conversationId);
   }
@@ -110,8 +126,8 @@ export async function loadConversation(conversationId: string): Promise<Conversa
 }
 
 /**
- * Route-level loader for /dock/conversation/<id>. Tries to load the conversation
- * but doesn't throw on not-found — the component handles that gracefully.
+ * Route-level loader for /dock/conversation/<id>. Owns route error policy.
+ * Delegates the actual work to `loadConversation`.
  */
 export async function loadConversationRoute(pointer: string | undefined): Promise<void> {
   if (!pointer) {
@@ -129,8 +145,35 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
   try {
     await loadConversation(conversationId);
   } catch (e) {
-    // Don't throw — let the component handle not-found gracefully by showing
-    // a not-found view within the tab instead of a full-page error
-    if (!(e instanceof ConversationLoadError)) throw e;
+    if (e instanceof ConversationLoadError) {
+      if (e.kind === 'not_found') {
+        throw new DockLoadError(
+          'conversation_not_found',
+          'hard',
+          {
+            action: 'render_error',
+            title: 'Conversation not found',
+            message: 'This conversation no longer exists or is unavailable.',
+          },
+          'conversation',
+          e,
+        );
+      }
+      if (e.kind === 'network_error') {
+        throw new DockLoadError(
+          'conversation_network_error',
+          'soft',
+          {
+            action: 'render_error',
+            title: 'Conversation unavailable',
+            message: 'Could not load this conversation. Try again in a moment.',
+            retryable: true,
+          },
+          'conversation',
+          e,
+        );
+      }
+    }
+    throw e;
   }
 }

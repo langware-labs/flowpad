@@ -190,8 +190,14 @@ async def _finalize_login(login_data: LoginData) -> None:
     from flow_sdk.cli.auth.secrets import enable_secrets
     enable_secrets()
     save_credentials(UserHubCredentials.from_login_data(login_data))
-    # Read-back verification: confirms the sod write decrypts cleanly.
-    stored = load_credentials()
+    # Read-back verification: confirms the sod write decrypts cleanly. Pass the
+    # just-logged-in user id explicitly — the config.json active-user pointer
+    # (set_user below) isn't committed yet, so a zero-arg load here would
+    # resolve the PREVIOUS active user's scoped entries, not this login's.
+    login_user_id = (
+        str(user_info["id"]) if isinstance(user_info, dict) and user_info.get("id") else None
+    )
+    stored = load_credentials(login_user_id)
     stored_ok = stored is not None and stored.api_key == login_data.token
     sodot_path = get_instance_settings().sodot_path
     logger.info(
@@ -259,6 +265,9 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
     except Exception:
         pass
 
+    # Ordering is load-bearing: clear_credentials() resolves the active user
+    # from the config.json pointer to delete that user's SCOPED sod entries,
+    # so it must run BEFORE set_user({}) wipes the pointer. Do not reorder.
     clear_credentials()
     set_user({})
     state.login_result = None

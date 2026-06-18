@@ -63,6 +63,7 @@ import { useTimeGutter } from './use-time-gutter';
 import { useTraceGutter } from './use-trace-gutter';
 import { EntityContextPanel } from '@src/components/entity-context';
 import { imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
+import { AnalysisSidePanel, useAnalysisControls } from '@src/components/lens-viewer/shared/transcript-features/AnalysisControls';
 
 export interface TraceFilters {
   events: boolean;
@@ -470,6 +471,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       .reduce<string | null>((max, e) => (max === null || e.timestamp > max ? e.timestamp : max), null);
     return last;
   }, [allTraceEvents]);
+  const analysisControls = useAnalysisControls(process?.session_id ?? null, lastMessageTime, {
+    analysisTargetOverride: process?.typeId.toString() ?? null,
+  });
 
   const showGutter = !!process && traceFilters.events && colVis.trace;
   // Reserve gutter space based on user settings even before process resolves,
@@ -1441,6 +1445,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           embedded={embedded}
           onClose={onClose}
           shell={shell}
+          analysisControls={analysisControls}
         />
       )}
       {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
@@ -1631,6 +1636,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               <SidecarShellTerminal shellId={sidecarShellId} active={true} className="min-h-0 flex-1" />
             </PaneView>
           )}
+
+          {process && <AnalysisSidePanel controls={analysisControls} />}
         </div>
       </PtySyncProvider>
 

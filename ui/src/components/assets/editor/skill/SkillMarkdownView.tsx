@@ -1,7 +1,6 @@
 import { SkillMetadata, SkillParser } from '@sdk';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SkillMetadataHeader } from './SkillMetadataHeader';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 
 interface SkillMarkdownViewProps {
@@ -77,14 +76,10 @@ export function SkillMarkdownView({ content, onChange }: SkillMarkdownViewProps)
   );
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden">
-      <SkillMetadataHeader metadata={metadata} onMetadataChange={onChange ? handleMetadataChange : undefined} />
-
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="h-full w-full p-4">
-          <MilkdownEditor content={parsed.body} onChange={handleBodyChange} />
-        </div>
-      </ScrollArea>
-    </div>
+    <ScrollArea className="h-full w-full">
+      <div className="h-full w-full p-4">
+        <MilkdownEditor content={parsed.body} onChange={handleBodyChange} />
+      </div>
+    </ScrollArea>
   );
 }

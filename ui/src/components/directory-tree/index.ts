@@ -1,4 +1,6 @@
 export { DirectoryTree } from './DirectoryTree';
+export { EditableFileTree, buildRootFolder } from './EditableFileTree';
+export type { EditableFileTreeProps } from './EditableFileTree';
 export { FilterDropdown } from './FilterDropdown';
 export { ProjectsDirectoryTree } from './ProjectsDirectoryTree';
 export { useDirectoryTree } from './useDirectoryTree';

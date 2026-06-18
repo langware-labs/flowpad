@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react';
-import { AgentTrace, FSRef } from '@sdk';
+import { AgentTrace, AgenticProcess, FSRef, TypeId } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
+import { WorkerIcon } from '@src/components/entity-execution-panel/history-row';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@src/components/ui/tabs';
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { cn } from '@src/lib/utils';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { notify } from '@src/notifications';
 import { CallTreeView } from './CallTreeView';
 import { TraceDetailPanel } from './TraceDetailPanel';
 import { TraceTimeline } from './TraceTimeline';
@@ -30,6 +34,20 @@ function verdictStyle(verdict?: string | null): string {
   }
 }
 
+function workerLabel(workerType?: string | null): string {
+  switch (workerType) {
+    case 'codex':
+      return 'Codex';
+    case 'copilot':
+      return 'Copilot';
+    case 'claude':
+    case 'claude_code':
+      return 'Claude';
+    default:
+      return workerType || 'Worker';
+  }
+}
+
 /**
  * AgentTrace viewer: verdict banner (rendered from entity summary fields, so
  * "did it go well" shows before the multi-MB trace JSON loads), detail panel
@@ -37,10 +55,21 @@ function verdictStyle(verdict?: string | null): string {
  */
 export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorProps) {
   const { doc, error, loading } = useAgentTraceDoc(fsRef);
+  const { navigation } = useDockNavigation();
   const [cursorMs, setCursorMs] = useState<number | null>(null);
   const [selectedLaneId, setSelectedLaneId] = useState<string | null>(null);
   const [selectedFrame, setSelectedFrame] = useState<CallFrame | null>(null);
   const [tab, setTab] = useAgentTraceTab();
+  const analyzedProcessTypeId = useMemo(() => {
+    return trace.analyzed_process_id
+      ? new TypeId(AgenticProcess.type, trace.analyzed_process_id)
+      : null;
+  }, [trace.analyzed_process_id]);
+  const { data: analyzedProcess } = useEntity<AgenticProcess>(analyzedProcessTypeId, {
+    enabled: !!analyzedProcessTypeId,
+    watch: true,
+  });
+  const workerName = workerLabel(trace.worker_type);
 
   const startMs = useMemo(() => {
     if (!doc) return null;
@@ -65,12 +94,51 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
     setSelectedFrame(null);
   };
 
+  const handleOpenAnalyzedProcess = async () => {
+    let process = analyzedProcess ?? null;
+
+    if (!process && trace.analyzed_process_id) {
+      process = await AgenticProcess.getById(trace.analyzed_process_id).catch(() => null);
+    }
+    if (!process && trace.session_id) {
+      process = await AgenticProcess.getByWorkerId(trace.session_id, trace.worker_type).catch(() => null);
+    }
+
+    if (!process) {
+      notify.error({
+        title: 'Process not found',
+        message: trace.session_id
+          ? `No terminal process was found for session ${trace.session_id}.`
+          : 'This trace is not linked to a worker session.',
+      });
+      return;
+    }
+
+    navigation.openDockPointer(process.terminalDockPointer);
+  };
+
   const fileName = fsRef.path.split('/').pop() ?? 'trace.json';
   const dirPath = fsRef.path.slice(0, -fileName.length - 1);
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="agent-trace-editor">
-      <AssetEditorHeader fileName={trace.name || fileName} dirPath={dirPath} />
+      <AssetEditorHeader
+        fileName={trace.name || fileName}
+        dirPath={dirPath}
+        actions={
+          <button
+            type="button"
+            title={`Open ${workerName} terminal`}
+            aria-label={`Open ${workerName} terminal`}
+            data-testid="agent-trace-open-process"
+            className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => void handleOpenAnalyzedProcess()}
+          >
+            <WorkerIcon workerType={trace.worker_type} className="h-3.5 w-3.5 shrink-0" />
+            <span>Open process</span>
+          </button>
+        }
+      />
 
       <div
         className={cn('flex flex-shrink-0 items-baseline gap-2 px-3 py-2', verdictStyle(trace.verdict))}

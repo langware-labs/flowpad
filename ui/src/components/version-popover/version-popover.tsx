@@ -6,6 +6,8 @@ import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { sdkConfig } from '@sdk/config/index';
 import { connectionManager } from '@sdk/websocket';
+import { useIsDev } from '@src/components/view-mode';
+import { useContext } from '@sdk/react/hooks';
 import {
   Check,
   ChevronDown,
@@ -167,11 +169,10 @@ function TimestampRow({ label, timestamp }: TimestampRowProps) {
 interface ReleaseNotesProps {
   title: string;
   release: ReleaseInfo | null;
-  defaultOpen?: boolean;
 }
 
-function ReleaseNotes({ title, release, defaultOpen = false }: ReleaseNotesProps) {
-  const [open, setOpen] = useState(defaultOpen);
+function ReleaseNotes({ title, release }: ReleaseNotesProps) {
+  const [open, setOpen] = useState(false);
   if (!release || !release.body) return null;
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="mt-1">
@@ -254,6 +255,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     conversationId?: string;
     flowMessageId?: string;
   } | null>(null);
+
+  const isDev = useIsDev();
+  const context = useContext();
+  const instanceName = context?.instanceName;
 
   const electronApi = getElectronApi();
   const mode: 'Desktop' | 'Browser' = electronApi ? 'Desktop' : 'Browser';
@@ -355,6 +360,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {mode}
               </span>
+              {isDev && instanceName && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {instanceName}
+                </span>
+              )}
             </div>
             <button
               type="button"
@@ -399,10 +409,9 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             <ReleaseNotes
               title={`Notes for v${currentVersion}`}
               release={pypiCurrentRelease}
-              defaultOpen={!pypi?.update_available}
             />
             {pypi?.update_available && pypiLatestRelease && (
-              <ReleaseNotes title={`Notes for v${pypi.latest}`} release={pypiLatestRelease} defaultOpen={true} />
+              <ReleaseNotes title={`Notes for v${pypi.latest}`} release={pypiLatestRelease} />
             )}
             {pypi?.update_available && (
               <div className="pt-1">
@@ -463,14 +472,12 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               <ReleaseNotes
                 title={`Notes for v${electronVersion}`}
                 release={electronCurrentRelease}
-                defaultOpen={false}
               />
             )}
             {githubLatest && (
               <ReleaseNotes
                 title={`Notes for v${githubLatest.tag}`}
                 release={githubLatest}
-                defaultOpen={githubUpdateAvailable || mode === 'Browser'}
               />
             )}
             {mode === 'Desktop' && !githubUpdateAvailable && !data?.github_error && (

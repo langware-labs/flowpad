@@ -15,8 +15,12 @@ import { useSessionAnalyses } from './useSessionAnalyses';
  * keyed to the analyzed process (child + mutual private context, paired
  * server-side at create).
  */
-export function useAnalysisControls(sessionId: string | null, lastEntryTs: string | null) {
-  const { traces, analysisTarget, analysisProcesses } = useSessionAnalyses(sessionId);
+export function useAnalysisControls(
+  sessionId: string | null,
+  lastEntryTs: string | null,
+  options: { analysisTargetOverride?: string | null } = {},
+) {
+  const { traces, analysisTarget, analysisProcesses } = useSessionAnalyses(sessionId, options);
   const [panelOpen, setPanelOpen] = useState(false);
   const [autoPrompt, setAutoPrompt] = useState<{ text: string; nonce: number; newSession?: boolean } | null>(null);
 
@@ -42,10 +46,12 @@ export function useAnalysisControls(sessionId: string | null, lastEntryTs: strin
   return { action, panelOpen, setPanelOpen, autoPrompt, analysisTarget, startAnalysis };
 }
 
+export type AnalysisControls = ReturnType<typeof useAnalysisControls>;
+
 export function AnalysisToolbarButtons({
   controls,
 }: {
-  controls: ReturnType<typeof useAnalysisControls>;
+  controls: AnalysisControls;
 }) {
   const { navigation } = useDockNavigation();
   const { action, startAnalysis, setPanelOpen } = controls;
@@ -140,7 +146,7 @@ export function AnalysisToolbarButtons({
 export function AnalysisSidePanel({
   controls,
 }: {
-  controls: ReturnType<typeof useAnalysisControls>;
+  controls: AnalysisControls;
 }) {
   const { panelOpen, setPanelOpen, analysisTarget, autoPrompt } = controls;
 

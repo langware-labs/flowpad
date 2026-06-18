@@ -64,6 +64,24 @@ def _build_header(transcript: AgentTranscriptFile) -> dict:
     return out
 
 
+async def _post_agent_trace_feed_entry(trace_entity) -> str | None:
+    """Best-effort Home Feed entry for a completed session analysis."""
+    try:
+        from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+
+        user = await get_or_create_local_user()
+        feed = FeedEntry(
+            feed_status=FeedStatus.NEW.value,
+            data={"type_id": str(trace_entity.typeid)},
+        )
+        feed = await feed.save(user.typeid)
+        return feed.id
+    except Exception:
+        logger.exception("transcripts: failed to post AgentTrace feed entry")
+        return None
+
+
 @router.get("/api/v1/transcripts/{worker_type}")
 async def get_transcript(worker_type: str, path: str = ""):
     """Return parsed entries for a transcript JSONL.
@@ -136,6 +154,7 @@ async def create_agent_trace(worker_type: str, session_id: str, request: Request
     import asyncio
     from datetime import datetime, timezone
 
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.agent_trace import AgentTrace
     from flow_sdk.transcript_analyzer.synthesizers.agent_trace import (
         merge_annotations,
@@ -160,11 +179,25 @@ async def create_agent_trace(worker_type: str, session_id: str, request: Request
         return _error(400, "INVALID_ARG", str(exc))
 
     trace = merge_annotations(skeleton, annotations)
+    try:
+        analyzed_process = await AgenticProcess.get_by_session_id(session_id)
+    except Exception:
+        logger.exception("transcripts: failed to resolve analyzed process for %s", session_id)
+        analyzed_process = None
+    if analyzed_process:
+        trace["analyzed_process_id"] = analyzed_process.id
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     trace["name"] = f"trace-{session_id[:8]}-{stamp}"
     entity = AgentTrace.from_trace(trace)
     await entity.save()
-    return {"ok": True, "id": entity.id, "asset_ref": entity.asset_ref, "summary": trace["summary"]}
+    feed_entry_id = await _post_agent_trace_feed_entry(entity)
+    return {
+        "ok": True,
+        "id": entity.id,
+        "asset_ref": entity.asset_ref,
+        "summary": trace["summary"],
+        "feed_entry_id": feed_entry_id,
+    }
 
 
 @router.get("/api/v1/workers/{worker_type}/{session_id}/transcript")

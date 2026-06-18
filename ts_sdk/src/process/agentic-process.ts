@@ -549,14 +549,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * follow-up `getById` needed.
    *
    * @param workerId - Claude session id, Codex thread id, or any future worker id.
+   * @param workerType - Optional resolver hint when the caller already knows the worker vendor.
    * @returns The AgenticProcess entity, or `null` if no on-disk session matches.
    */
-  static async getByWorkerId(workerId: string): Promise<AgenticProcess | null> {
+  static async getByWorkerId(workerId: string, workerType?: string | null): Promise<AgenticProcess | null> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.getByWorkerId] No compute node');
 
     const action = new ActionInfo('terminals', 'compute_node', computeNode.id, 'GET');
     action.subpath = `get_by_worker_id/${workerId}`;
+    const normalizedWorkerType = workerType?.toLowerCase() ?? null;
+    const hint = normalizedWorkerType === 'claude_code' ? 'claude' : normalizedWorkerType;
+    if (hint === 'claude' || hint === 'codex' || hint === 'copilot') {
+      action.queryParameters = { worker_type: hint };
+    }
     try {
       const data = await dataManager.callAction<void, IAgenticProcess | null>(action);
       if (!data) return null;
