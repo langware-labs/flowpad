@@ -24,6 +24,10 @@ class AgentTrace(Entity):
     name: str = APIField("")
     session_id: str = APIField("", description="Worker session id the trace was built from")
     worker_type: str = APIField("claude", description="Worker kind: claude | codex | copilot")
+    analyzed_process_id: Optional[str] = APIField(
+        None,
+        description="AgenticProcess id whose worker session this trace analyzes",
+    )
     verdict: Optional[str] = APIField(None, description="Overall outcome: ok | mixed | bad")
     verdict_reason: Optional[str] = APIField(None, description="One-line justification of the verdict")
     duration_ms: Optional[int] = APIField(None)
@@ -47,6 +51,7 @@ class AgentTrace(Entity):
             name=name or trace.get("name") or f"trace-{(trace.get('session_id') or '')[:8]}",
             session_id=trace.get("session_id") or "",
             worker_type=trace.get("worker_type") or "claude",
+            analyzed_process_id=trace.get("analyzed_process_id"),
             verdict=summary.get("verdict"),
             verdict_reason=summary.get("verdict_reason"),
             duration_ms=summary.get("duration_ms"),

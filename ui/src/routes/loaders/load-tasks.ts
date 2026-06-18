@@ -26,33 +26,25 @@ import {
   Task,
   TypeId,
 } from '@sdk';
-import { notify } from '@src/notifications';
-import { redirect } from 'react-router';
+import { DockLoadError } from './dock-load-error';
 import { loadConversation } from './load-conversation';
 
 export class TaskLoadError extends Error {
   constructor(
-    readonly kind: 'not_found',
+    readonly kind: 'not_found' | 'network_error',
     readonly taskId: string,
+    readonly cause?: unknown,
   ) {
     super(`task-load:${kind}`);
   }
 }
 
-/**
- * Pure primitive — fetch the Task and set dataContext bits the page needs.
- * Throws `TaskLoadError` on a hard failure. Best-effort for the Project
- * prefetch (a missing project doesn't fail the task load — the footer just
- * shows the red "Select Project" pill until the user picks).
- */
-export async function loadTask(taskId: string): Promise<Task> {
-  const task = await dataManager
-    .getByTypeId<Task>(new TypeId(Task.type, taskId))
-    .catch(() => null);
-  if (!task) {
-    throw new TaskLoadError('not_found', taskId);
-  }
+function taskLoadStatus(error: unknown): number | undefined {
+  return (error as { response?: { status?: number }; status?: number } | null)?.response?.status
+    ?? (error as { status?: number } | null)?.status;
+}
 
+async function applyTaskContext(taskId: string, task: Task): Promise<void> {
   const projectId = task.project_id ?? undefined;
   const projectRoot = task.project_root ?? undefined;
 
@@ -67,9 +59,10 @@ export async function loadTask(taskId: string): Promise<Task> {
       new TypeId(Project.type, projectId),
     );
     // Warm the cache so any `useEntity(Project, …)` consumer hits immediately.
-    await dataManager
+    const project = await dataManager
       .getByTypeId<Project>(new TypeId(Project.type, projectId))
       .catch(() => null);
+    dataContext.setWorkdir(projectRoot ?? project?.fs_storage_mount_path ?? null);
   } else {
     // Task has no mapped project (receiver pre-mapping). Drop the global
     // active project to null — the StatusBar will render the red
@@ -79,18 +72,39 @@ export async function loadTask(taskId: string): Promise<Task> {
       ContextEntitiesEnum.CurrentProjectTypeId,
       null,
     );
+    dataContext.setWorkdir(projectRoot ?? null);
+  }
+}
+
+/**
+ * Pure primitive — fetch the Task and set dataContext bits the page needs.
+ * Throws `TaskLoadError` on a hard failure. Best-effort for the Project
+ * prefetch (a missing project doesn't fail the task load — the footer just
+ * shows the red "Select Project" pill until the user picks).
+ */
+export async function loadTask(taskId: string): Promise<Task> {
+  let task: Task | null = null;
+  try {
+    task = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
+  } catch (cause) {
+    const status = taskLoadStatus(cause);
+    if (status === 404 || status === 403) {
+      throw new TaskLoadError('not_found', taskId, cause);
+    }
+    throw new TaskLoadError('network_error', taskId, cause);
+  }
+  if (!task) {
+    throw new TaskLoadError('not_found', taskId);
   }
 
-  if (projectRoot) {
-    dataContext.setWorkdir(projectRoot);
-  }
+  await applyTaskContext(taskId, task);
 
   return task;
 }
 
 /**
  * Route-level loader for /dock/tasks/<taskId>[/conversation/<convId>]. Owns
- * redirect policy. Delegates to `loadTask` and `loadConversation`.
+ * route error policy. Delegates to `loadTask` and `loadConversation`.
  */
 export async function loadTasksRoute(pointer: string | undefined): Promise<void> {
   if (!pointer) {
@@ -107,16 +121,36 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
     parts.length >= 3 && parts[1] === 'conversation' ? parts[2] : null;
   if (!taskId) return;
 
+  let task: Task;
   try {
-    await loadTask(taskId);
+    task = await loadTask(taskId);
   } catch (e) {
     if (!(e instanceof TaskLoadError)) throw e;
-    notify.error({
-      title: 'Task not found',
-      message: 'This task no longer exists.',
-    });
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect('/dock/tasks');
+    if (e.kind === 'network_error') {
+      throw new DockLoadError(
+        'task_network_error',
+        'soft',
+        {
+          action: 'render_error',
+          title: 'Task unavailable',
+          message: 'Could not load this task. Try again in a moment.',
+          retryable: true,
+        },
+        'tasks',
+        e,
+      );
+    }
+    throw new DockLoadError(
+      'task_not_found',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Task not found',
+        message: 'This task no longer exists or is unavailable.',
+      },
+      'tasks',
+      e,
+    );
   }
 
   // /dock/tasks/<taskId>/conversation/<convId> — warm-load the conversation
@@ -128,6 +162,6 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
     } catch {
       // Soft-fail: page renders its own "Loading conversation…" state.
     }
-    await dataContext.setActiveEntityTypeId(new TypeId(Task.type, taskId));
+    await applyTaskContext(taskId, task);
   }
 }

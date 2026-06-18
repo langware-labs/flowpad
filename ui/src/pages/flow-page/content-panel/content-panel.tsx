@@ -48,6 +48,8 @@ import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { useSendMessageStore } from '@src/store/use-send-message-store';
 import { useSurveyStore } from '@src/store/use-survey-store';
 import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
+import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
+import { useDockLoadError } from '@src/routes/loaders/dock-load-error-store';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 import { AlertTriangle, LogIn } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
@@ -68,6 +70,7 @@ export function ContentPanel() {
   // Get navigation instance for URL-first architecture
   const { navigation, currentDock, isDockUrl, windowMode } = useDockNavigation();
   const activeLifecycle = useTabLifecycle(currentDock?.tabHash);
+  const dockLoadError = useDockLoadError(currentDock);
 
   const { user } = useAuth();
 
@@ -181,6 +184,10 @@ export function ContentPanel() {
   // the active body is mounted (matches the old radix Tabs, which did not
   // forceMount). `null`/unknown → the Home landing.
   const renderBody = (vt: ViewType | null) => {
+    if (dockLoadError) {
+      return <DockLoadErrorView error={dockLoadError} />;
+    }
+
     if (activeOpenFailed) {
       return (
         <div

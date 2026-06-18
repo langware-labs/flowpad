@@ -67,6 +67,7 @@ export function useContext() {
     cloudLoginAvailable: typeof dataContext.cloudLoginAvailable;
     desktopInfo: typeof dataContext.desktopInfo;
     isDesktop: typeof dataContext.isDesktop;
+    instanceName: typeof dataContext.instanceName;
     warnings: typeof dataContext.warnings;
     workflow: typeof dataContext.workflow;
     workflowTypeId: typeof dataContext.workflowTypeId;
@@ -101,6 +102,7 @@ export function useContext() {
     cloudLoginAvailable: dataContext.cloudLoginAvailable,
     desktopInfo: dataContext.desktopInfo,
     isDesktop: dataContext.isDesktop,
+    instanceName: dataContext.instanceName,
     warnings: dataContext.warnings,
     workflow: dataContext.workflow,
     workflowTypeId: dataContext.workflowTypeId,
@@ -145,6 +147,7 @@ export function useContext() {
       cloudLoginAvailable: dataContext.cloudLoginAvailable,
       desktopInfo: dataContext.desktopInfo,
       isDesktop: dataContext.isDesktop,
+      instanceName: dataContext.instanceName,
       warnings: dataContext.warnings,
       workflow: dataContext.workflow,
       workflowTypeId: dataContext.workflowTypeId,
@@ -189,6 +192,7 @@ export function useContext() {
       prev.cloudLoginAvailable !== current.cloudLoginAvailable ||
       prev.desktopInfo !== current.desktopInfo ||
       prev.isDesktop !== current.isDesktop ||
+      prev.instanceName !== current.instanceName ||
       prev.warnings !== current.warnings ||
       prev.workflow !== current.workflow ||
       typeIdChanged(prev.workflowTypeId, current.workflowTypeId) ||

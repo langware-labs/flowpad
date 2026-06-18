@@ -33,6 +33,7 @@ class EnvInfo(BaseModel):
     env_name: str
     cloud_api_url: Optional[str] = None
     version: Optional[str] = None
+    instance_name: Optional[str] = None
 
 
 class LmInfo(BaseModel):

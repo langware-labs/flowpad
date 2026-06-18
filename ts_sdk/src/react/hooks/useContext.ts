@@ -71,6 +71,7 @@ export function useContext() {
     desktopInfo: typeof dataContext.desktopInfo;
     isDesktop: typeof dataContext.isDesktop;
     version: typeof dataContext.version;
+    instanceName: typeof dataContext.instanceName;
     warnings: typeof dataContext.warnings;
     workflow: typeof dataContext.workflow;
     workflowTypeId: typeof dataContext.workflowTypeId;
@@ -110,6 +111,7 @@ export function useContext() {
     desktopInfo: dataContext.desktopInfo,
     isDesktop: dataContext.isDesktop,
     version: dataContext.version,
+    instanceName: dataContext.instanceName,
     warnings: dataContext.warnings,
     workflow: dataContext.workflow,
     workflowTypeId: dataContext.workflowTypeId,
@@ -159,6 +161,7 @@ export function useContext() {
       desktopInfo: dataContext.desktopInfo,
       isDesktop: dataContext.isDesktop,
       version: dataContext.version,
+      instanceName: dataContext.instanceName,
       warnings: dataContext.warnings,
       workflow: dataContext.workflow,
       workflowTypeId: dataContext.workflowTypeId,
@@ -208,6 +211,7 @@ export function useContext() {
       prev.desktopInfo !== current.desktopInfo ||
       prev.isDesktop !== current.isDesktop ||
       prev.version !== current.version ||
+      prev.instanceName !== current.instanceName ||
       prev.warnings !== current.warnings ||
       prev.workflow !== current.workflow ||
       typeIdChanged(prev.workflowTypeId, current.workflowTypeId) ||
