@@ -1,11 +1,10 @@
-import { AgenticProcess, Shell, type TabRow, Tab, TypeId } from '@sdk';
+import { AgenticProcess, Shell, Tab, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { Button } from '@src/components/ui/button';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useTerminalTabRows } from '@src/tabs/useTabs';
+import { useTerminalTabs } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { History, Loader2, SquareTerminal } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
@@ -25,7 +24,7 @@ interface TabbedTerminalProps {
 }
 
 /**
- * One warm-mounted terminal panel. Renders from a `TabRow` plus its OWN live
+ * One warm-mounted terminal panel. Renders from a `Tab` plus its OWN live
  * entity (URL-first corollary: the view hydrates + attaches on mount, not via a
  * list-wide join). A process panel resolves its transport shell from the live
  * `AgenticProcess.shell_id` (so a worker restart reconnects the PTY); a plain
@@ -33,13 +32,13 @@ interface TabbedTerminalProps {
  * entity and mirrors the label onto the Tab via `set_name` (no `auto_rename` pin).
  */
 const TerminalPanel: React.FC<{
-  row: TabRow;
+  tab: Tab;
   isActive: boolean;
   isMounted: boolean;
   flow: AgenticProcess | null;
-}> = ({ row, isActive, isMounted, flow }) => {
-  const isProcess = row.target_type === AgenticProcess.type;
-  const targetId = row.target_id ?? '';
+}> = ({ tab, isActive, isMounted, flow }) => {
+  const isProcess = tab.target_type === AgenticProcess.type;
+  const targetId = tab.target_id ?? '';
   const { data: process } = useEntity<AgenticProcess>(
     isProcess && targetId ? new TypeId(AgenticProcess.type, targetId) : null,
   );
@@ -50,21 +49,21 @@ const TerminalPanel: React.FC<{
   const source = isProcess ? process : shell;
 
   const handleTitleChange = (title: string): void => {
-    if (row.is_disabled) return;
-    if (!shouldAutoSaveTitleForTarget(row.target_type, isProcess ? process : null)) return;
+    if (tab.is_disabled) return;
+    if (!shouldAutoSaveTitleForTarget(tab.target_type, isProcess ? process : null)) return;
     if (!source || !source.auto_rename) return; // user pinned this tab
     if (!allowRename(title) || source.name === title) return;
     source.name = title;
     void source.save().catch(() => {});
     // Mirror onto the durable Tab label so the chip stays right once inactive —
     // set_name, NOT rename (which would pin auto_rename off).
-    void Tab.setNameById(row.id, title).catch(() => {});
+    void Tab.setNameById(tab.id, title).catch(() => {});
   };
 
   return (
     <div
       data-testid="terminal-panel"
-      data-session-id={row.pointer}
+      data-session-id={tab.pointer}
       data-active={isActive ? 'true' : 'false'}
       className="absolute inset-0 min-h-0 overflow-hidden"
       style={isActive ? { zIndex: 1 } : { visibility: 'hidden', zIndex: 0 }}
@@ -91,8 +90,8 @@ const TerminalPanel: React.FC<{
 /**
  * TabbedTerminal — the terminal BODY (docs/tab-management.md). It renders only the
  * warm-mounted terminal panels; the chip strip is the shared `UnifiedTabStrip` the
- * host renders above it. Rows come from the one backend-authoritative source
- * (`useTerminalTabRows` → `tab` action), the active panel is URL-derived, and each
+ * host renders above it. Tabs come from the one backend-authoritative source
+ * (`useTerminalTabs` → `tab` action), the active panel is URL-derived, and each
  * panel hydrates its own entity on mount. The empty state offers the spawn openers
  * (via the chrome controller).
  */
@@ -103,10 +102,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
 }) => {
   const { flow } = useAgentContext();
   const { currentDock } = useDockNavigation();
-  const rows = useTerminalTabRows(scope, spawnProjectId);
+  const tabs = useTerminalTabs(scope, spawnProjectId);
 
-  // Active panel = the URL (every row is keyed by its `pointer` == tabHash). A
-  // non-terminal dock's tabHash never matches a terminal row, so no special-case.
+  // Active panel = the URL (every tab is keyed by its dockPointer.tabHash).
+  // A non-terminal dock's tabHash never matches a terminal tab, so no special-case.
   const activeKey = currentDock?.tabHash ?? '';
 
   // Lazy-mount: mount the active panel on first visit; keep mounted ones warm
@@ -138,7 +137,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     <div className={`flex h-full ${className}`}>
       <div className="flex h-full w-full flex-col">
         <div className="relative flex-1 overflow-hidden" data-testid="terminal-panels">
-          {rows.length === 0 ? (
+          {tabs.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
               <p className="text-sm">No terminal sessions</p>
               <div className="flex gap-2">
@@ -185,15 +184,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
               </div>
             </div>
           ) : (
-            rows.map((row) => {
-              // Derive tabHash from pointer; used as React key and active comparison.
-              const rowTabHash = DockPointer.fromJSON(row.pointer)?.tabHash ?? row.id;
+            tabs.map((tab) => {
+              const tabHash = tab.dockPointer?.tabHash ?? tab.id;
               return (
                 <TerminalPanel
-                  key={rowTabHash}
-                  row={row}
-                  isActive={rowTabHash === activeKey}
-                  isMounted={mounted.has(rowTabHash)}
+                  key={tabHash}
+                  tab={tab}
+                  isActive={tabHash === activeKey}
+                  isMounted={mounted.has(tabHash)}
                   flow={flow ?? null}
                 />
               );

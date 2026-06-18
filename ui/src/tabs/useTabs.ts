@@ -1,81 +1,89 @@
-import { AgenticProcess, dataContext, Project, Shell, Tab, type TabRow, TypeId } from '@sdk';
-import { getAllTabRowsSnapshot, refreshAllTabRows, useAllTabRows } from '@src/tabs/all-tabs-store';
-import { tabRowInProject } from '@src/tabs/tab-candidates';
+import { AgenticProcess, dataContext, Project, Shell, Tab, TypeId } from '@sdk';
+import { useContext } from '@sdk/react/hooks';
+import { getAllTabsSnapshot, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
+import { tabInProject } from '@src/tabs/tab-candidates';
 import { useEffect, useMemo, useState } from 'react';
 
-// ─── Terminal rows (docs/tab-management.md) ─────────────────────────────────
-// Terminal tabs are driven entirely by the backend `Tab` (the `tab` action). The
-// strip + body render straight off `TabRow`; the only client-side join is each
-// mounted panel hydrating its own live entity. There is no `TerminalTab`
-// view-model and no reactive entity query.
+// ─── Tab filtering and access ─────────────────────────────────────────────────
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
 
-/** Terminal-target `TabRow`s for a scope, in backend global order. `'all'` = every
- *  project (the developer sessions view); `'project'` = the active project +
- *  projectless (the `filter_for_project` view). */
-export function terminalRowsForScope(
-  rows: TabRow[],
+/** Terminal tabs (Shell + AgenticProcess targets) for a scope, in backend global order.
+ *  `'all'` = every project (the developer sessions view); `'project'` = the active
+ *  project + projectless. */
+export function terminalTabsForScope(
+  tabs: Tab[],
   scope: 'project' | 'all',
   projectId: string | null,
-): TabRow[] {
-  const terminals = rows.filter((r) => TERMINAL_TARGET_TYPES.has(r.target_type ?? ''));
+): Tab[] {
+  const terminals = tabs.filter((t) => TERMINAL_TARGET_TYPES.has(t.target_type ?? ''));
   if (scope === 'all') return terminals;
-  return terminals.filter((r) => tabRowInProject(r, projectId));
+  return terminals.filter((t) => tabInProject(t, projectId));
 }
 
-/** React binding for {@link terminalRowsForScope}, reading the one global store. */
-export function useTerminalTabRows(
+/** Tabs for the current active project + projectless (the render view for the
+ *  unified tab strip). */
+export function useCurrentTabs(): Tab[] {
+  const all = useAllTabs();
+  const { project } = useContext();
+  return useMemo(
+    () => all.filter((t) => tabInProject(t, project?.id ?? null)),
+    [all, project?.id]
+  );
+}
+
+/** React binding for terminal tabs, reading the global store. */
+export function useTerminalTabs(
   scope: 'project' | 'all' = 'project',
   projectId?: string | null,
-): TabRow[] {
-  const rows = useAllTabRows();
+): Tab[] {
+  const tabs = useAllTabs();
   const pid = projectId ?? dataContext.project?.id ?? null;
-  return useMemo(() => terminalRowsForScope(rows, scope, pid), [rows, scope, pid]);
+  return useMemo(() => terminalTabsForScope(tabs, scope, pid), [tabs, scope, pid]);
 }
 
-/** Imperative snapshot of terminal `TabRow`s for route loaders (outside React).
+/** Imperative snapshot of terminal tabs for route loaders (outside React).
  *  Fetches the canonical global list, then scopes it. */
-export async function getTerminalTabRowsSnapshot(
+export async function getTerminalTabsSnapshot(
   scope: 'project' | 'all' = 'all',
   projectId?: string | null,
-): Promise<TabRow[]> {
-  const rows = await refreshAllTabRows();
-  return terminalRowsForScope(rows, scope, projectId ?? dataContext.project?.id ?? null);
+): Promise<Tab[]> {
+  const tabs = await refreshAllTabs();
+  return terminalTabsForScope(tabs, scope, projectId ?? dataContext.project?.id ?? null);
 }
 
-/** Resolve the visible Tab row backing a terminal target TypeId (shell-<id> /
- *  agentic_process-<id>), or null. Reads the global store (loading it once if the
- *  snapshot is empty) and matches by denormalized `target_id`. */
-async function tabRowForTarget(target: TypeId | string): Promise<TabRow | null> {
+/** Resolve the visible Tab backing a terminal target TypeId (shell-<id> /
+ *  agentic_process-<id>), or null. Reads the global store (loading it once if
+ *  the snapshot is empty) and matches by denormalized `target_id`. */
+async function tabForTarget(target: TypeId | string): Promise<Tab | null> {
   let targetId = '';
   try {
     targetId = new TypeId(typeof target === 'string' ? target : target.toString()).id;
   } catch {
     return null;
   }
-  let rows = getAllTabRowsSnapshot();
-  if (rows.length === 0) rows = await refreshAllTabRows();
-  return rows.find((t) => t.target_id === targetId) ?? null;
+  let tabs = getAllTabsSnapshot();
+  if (tabs.length === 0) tabs = await refreshAllTabs();
+  return tabs.find((t) => t.target_id === targetId) ?? null;
 }
 
 /** Soft-close the terminal tab backing a target TypeId (shell-<id> /
- *  agentic_process-<id>) — resolves its visible Tab row and closes it by id
+ *  agentic_process-<id>) — resolves its visible Tab and closes it by id
  *  through the `tab` close action (backend dispatches PTY/worker teardown). */
 export async function closeTerminalTab(target: TypeId | string): Promise<void> {
-  const row = await tabRowForTarget(target);
-  if (row) await Tab.closeById(row.id);
+  const tab = await tabForTarget(target);
+  if (tab) await Tab.closeById(tab.id);
 }
 
 /**
- * User-initiated terminal rename — resolves the Tab row by target and renames it
+ * User-initiated terminal rename — resolves the Tab by target and renames it
  * by id. The backend `rename` action sets `Tab.name` (fixing the inactive chip
  * label) and reflects onto the target entity via the generic `Entity.rename`
  * (mirrors `name`; shell/AP also pin `auto_rename=false`).
  */
 export async function renameTerminalTab(target: TypeId | string, name: string): Promise<void> {
-  const row = await tabRowForTarget(target);
-  if (row) await Tab.renameById(row.id, name);
+  const tab = await tabForTarget(target);
+  if (tab) await Tab.renameById(tab.id, name);
 }
 
 /**
@@ -84,8 +92,8 @@ export async function renameTerminalTab(target: TypeId | string, name: string): 
  * inactive chip's label correct after the active tab auto-renames.
  */
 export async function syncTerminalTabName(target: TypeId | string, name: string): Promise<void> {
-  const row = await tabRowForTarget(target);
-  if (row && row.name !== name) await Tab.setNameById(row.id, name);
+  const tab = await tabForTarget(target);
+  if (tab && tab.name !== name) await Tab.setNameById(tab.id, name);
 }
 
 // ─── Project-bucketed view (chip consumes this) ─────────────────────────────
@@ -94,7 +102,7 @@ export type BucketState = 'loading' | 'live' | 'missing';
 
 export interface TabProjectBucket {
   /** Stable bucket identity. For stranded buckets this is still the dangling
-   *  project_id — the row exists, the Project entity just doesn't. */
+   *  project_id — the tab exists, the Project entity just doesn't. */
   projectId: string;
   /** Resolved Project entity. Non-null iff ``state === 'live'``. */
   project: Project | null;
@@ -115,14 +123,14 @@ export interface UseTabProjectBucketsResult {
 /**
  * Bucket the global tab list by ``project_id`` and resolve each bucket's Project.
  * Single owner of the "which projects own which tabs" question — consumers (e.g.
- * ProjectsCounterChip) render rows straight from this hook.
+ * ProjectsCounterChip) render tabs straight from this hook.
  *
  * Membership is KIND-AGNOSTIC: every visible `Tab` counts (terminal, agent,
  * markdown, skill, …). Reads the same `all-tabs-store` projection the terminal
- * rows use — no separate query. Global tabs (`project_id == null`) never bucket.
+ * tabs use — no separate query. Global tabs (`project_id == null`) never bucket.
  */
 export function useTabProjectBuckets(): UseTabProjectBucketsResult {
-  const allTabs = useAllTabRows();
+  const allTabs = useAllTabs();
 
   const grouped = useMemo(() => {
     const counts = new Map<string, number>();
@@ -199,3 +207,8 @@ export function useTabProjectBuckets(): UseTabProjectBucketsResult {
 
   return { buckets };
 }
+
+// Backward-compat aliases for migration
+export const useTerminalTabRows = useTerminalTabs;
+export const getTerminalTabRowsSnapshot = getTerminalTabsSnapshot;
+export const terminalRowsForScope = terminalTabsForScope;

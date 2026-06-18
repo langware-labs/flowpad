@@ -20,14 +20,17 @@ client store, and ONE strip component.
 
 ## The `Tab` entity (backend)
 
-Keyed by a hash of the DockPointer: `Tab.id = tab_id_for(pointer) =
-uuid5("tab:" + pointer)` where `pointer == DockPointer.tabHash` (`viewType|sub`,
-excluding layout and transient options — so `/win` and `/dock` of one surface
-are ONE tab). Canonicalization lives ONLY in `DockPointer.tabHash` (and its
-inverse `DockPointer.fromTabHash`); the backend stores the string verbatim, so
-there is no cross-language canonicalizer to keep in agreement. Fields: `pointer`,
-`target_type`/`target_id` (denormalized off the pointer for reverse lookup),
-`visible` (membership — non-null so a close broadcasts), `name` (label),
+Keyed by a hash of the DockPointer identity: `Tab.id = tab_id_for(pointer) =
+uuid5("tab:" + viewType|sub)`. `Tab.pointer` stores the serialized
+`DockPointer.toJSON()` value (`{"viewType": "...", "pointer": "..."}`); the UUID
+hash is derived from the canonical `viewType|sub` identity extracted from that
+JSON, with legacy `viewType|sub` strings still accepted during migration. Layout
+and transient options are excluded — so `/win` and `/dock` of one surface are ONE
+tab. Canonicalization lives ONLY in `DockPointer.tabHash`,
+`DockPointer.toJSON()`, and `DockPointer.fromJSON()`; the backend stores the
+serialized pointer verbatim and only normalizes it for id stability. Fields:
+`pointer`, `target_type`/`target_id` (denormalized off the pointer for reverse
+lookup), `visible` (membership — non-null so a close broadcasts), `name` (label),
 `icon_key` + `worktree` (CREATE-only display primitives so a chip draws without
 fetching its backing entity), `tab_order`, `last_active_at`, `project_id`.
 
@@ -49,11 +52,17 @@ By-id: `close` (soft `visible=false` + per-`target_type` teardown via
 `teardown_for_tab`), `rename` (sets `Tab.name` THEN reflects onto the target via
 the generic `Entity.rename`; shell/AP also pin `auto_rename=false`), `set_name`
 (sets ONLY `Tab.name` — the PTY auto-title mirror; never touches the target or
-`auto_rename`, unlike `rename`), `activate` (stamps `last_active_at`, the recency
-seed). Every mutation broadcasts a `tabs_changed` ping. Orphan cleanup:
-`Entity.delete` soft-closes any Tab pointing at a deleted target;
-`AgenticProcess.close` calls `hide_tabs_for_target` (the process row persists as
-`stopped`, so delete-cleanup never fires for it).
+`auto_rename`, unlike `rename`). List/display mutations broadcast a
+`tabs_changed` ping. Orphan cleanup: `Entity.delete` soft-closes any Tab pointing
+at a deleted target; `AgenticProcess.close` calls `hide_tabs_for_target` (the
+process row persists as `stopped`, so delete-cleanup never fires for it).
+
+There is also a generic by-id `activate` action available through
+`Tab.activateById(id)`, but the current terminal loader path still stamps
+`Shell.activate()` / `AgenticProcess.activate()` rather than the Tab row. Until
+that path is wired to `Tab.activateById`, `Tab.last_active_at` can remain null and
+default-tab resolution falls back to pending intent and `tab_order` instead of
+true tab recency.
 
 ## A tab's project follows its target, never the ambient active project
 
@@ -114,9 +123,9 @@ consumer reads this one source and derives its view client-side:
   `iconForType` / the backend TypeInfo registry — never a hardcoded per-call-site
   glyph). Active = `currentDock.tabHash` (URL-first; never a `Tab` field).
   Mutations go through the `tab` actions by id (`closeById` / `renameById` /
-  `reorder` / `activateById`). Drag-reorder paints an optimistic
-  `applyPredictedOrder` (the parity-tested `computeReorder`) and commits
-  `Tab.reorder`; the `tabs_changed` refresh adopts the canonical order.
+  `reorder`). Drag-reorder paints an optimistic `applyPredictedOrder` (the
+  parity-tested `computeReorder`) and commits `Tab.reorder`; the `tabs_changed`
+  refresh adopts the canonical order.
 - **`TabbedTerminal`** is the terminal **body only** — it maps the terminal
   `TabRow`s and renders one warm-mounted `TerminalPanel` per row; each panel
   hydrates its OWN live entity (`useEntity`) for the transport `shell_id` + PTY
@@ -160,20 +169,22 @@ the radix `<Tabs>` ladder are deleted. Agent stream focus is URL-first:
 ```
 click → navigation.openDock(pointer)            # click handlers do ONLY this
       → react-router loader runs
-      → Tab.getFromDockPointer(dock)             # the loader is the single writer
+      → void Tab.getFromDockPointer(dock)        # the loader is the single writer
            → resolve target + project_id from the dock (see above)
-           → Tab.newTab(tabHash, {project_id, name, icon_key, worktree, …})  (get-or-create)
-           → refreshAllTabRows() + Tab.activateById(id)
+           → Tab.newTab(dock.toJSON(), {project_id, name, icon_key, worktree, …})
+           → backend broadcasts tabs_changed
       → all-tabs-store refreshes → strip + body re-render from the one source
 ```
 
 Default-tab pick (pointer-less `/dock/shell`, recovery): the loaders read a
 `Tab.listAll()` snapshot and choose via `resolveNextTabRow` (the pure
 `resolveActive` precedence — pending intent → recency `last_active_at` →
-`tab_order`). Recency lives on the Tab (stamped by `activate`), so the loaders no
-longer stamp entities. Close/rename/sync for a target (loaders, notifications,
-PTY auto-title) resolve the Tab row by `target_id` then call the by-id action
-(`closeById` / `renameById` / `setNameById`).
+`tab_order`). The resolver reads recency from `Tab.last_active_at`; currently the
+terminal loaders still stamp the backing Shell/AP entity, so tab recency is a
+known drift and `tab_order` is the effective fallback when no Tab row has
+recency. Close/rename/sync for a target (loaders, notifications, PTY auto-title)
+resolve the Tab row by `target_id` then call the by-id action (`closeById` /
+`renameById` / `setNameById`).
 
 ## Deleted by the cutover
 

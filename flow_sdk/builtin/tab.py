@@ -103,6 +103,11 @@ class Tab(Entity):
     # propagate cross-client. Never model close as delete or ``visible=None``.
     visible: bool = APIField(default=True)
 
+    # Runtime-computed fields: populated at query time from the backing entity.
+    # Never persisted — re-resolved on every list/close/rename action.
+    status: str | None = APIField(default=None, persist=Persist.FALSE)
+    is_disabled: bool = APIField(default=False, persist=Persist.FALSE)
+
     # ``name`` and ``project_id`` are inherited from the base Entity. ``name`` is
     # the generic source of truth for the tab label; ``rename`` reflects it onto
     # the backing entity via the generic ``Entity.rename`` (shell/AP override to
@@ -358,26 +363,6 @@ async def _resolve_status(tab: Tab) -> str | None:
     return str(status) if status is not None else None
 
 
-async def _serialize_row(tab: Tab) -> dict:
-    """One fully-resolved strip row — the chip renders straight off this (no FE
-    entity-cache overlay anymore)."""
-    status = await _resolve_status(tab)
-    return {
-        "id": tab.id,
-        "pointer": tab.pointer,
-        "target_type": tab.target_type,
-        "target_id": tab.target_id,
-        "project_id": tab.project_id,
-        "name": tab.name,
-        "icon_key": tab.icon_key,
-        "worktree": bool(tab.worktree),
-        "tab_order": tab.tab_order,
-        "last_active_at": tab.last_active_at,
-        "status": status,
-        "is_disabled": status == "closing",
-    }
-
-
 def _normalize_project(project: str | None) -> str | None:
     """Treat empty/``"null"`` as the no-active-project (projectless) view."""
     if project in (None, "", "null"):
@@ -385,15 +370,27 @@ def _normalize_project(project: str | None) -> str | None:
     return project
 
 
-async def _build_list(project: str | None) -> list[dict]:
-    """The ordered, project-filtered strip payload: global order filtered to
-    ``{project OR projectless}`` (decision 3), each row fully resolved."""
+async def _populate_tab_statuses(tabs: list[Tab]) -> None:
+    """Populate status and is_disabled fields on a list of Tabs (in-place mutation).
+    Called before serialization to ensure every Tab carries current status from its backing entity."""
+    for tab in tabs:
+        tab.status = await _resolve_status(tab)
+        tab.is_disabled = tab.status == "closing"
+
+
+async def _build_tab_list(project: str | None) -> list[Tab]:
+    """The ordered, project-filtered list of Tabs with runtime status resolved.
+    Global order filtered to ``{project OR projectless}`` (decision 3), each Tab
+    fully populated with status/is_disabled. The Tab objects are serialized
+    directly for API responses — no separate projection."""
     tabs = await _visible_tabs_sorted()
     order_ids = [t.id for t in tabs]
     project_of: dict[str, str | None] = {t.id: t.project_id for t in tabs}
     filtered = filter_for_project(order_ids, project_of, _normalize_project(project))
     by_id = {t.id: t for t in tabs}
-    return [await _serialize_row(by_id[i]) for i in filtered]
+    result = [by_id[tab_id] for tab_id in filtered]
+    await _populate_tab_statuses(result)
+    return result
 
 
 # Stable sentinel TypeId for the global ping. ``flow_data_msg`` is dropped client-
@@ -417,7 +414,8 @@ async def broadcast_tabs_changed() -> None:
 async def _list_response(project: str | None):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
-    return ApiSuccessResponse(data={"tabs": await _build_list(project)})
+    tabs = await _build_tab_list(project)
+    return ApiSuccessResponse(data={"tabs": [t.model_dump(mode="json") for t in tabs]})
 
 
 async def _http_new_tab(
@@ -484,7 +482,8 @@ async def _http_list_all(cls):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs = await _visible_tabs_sorted()
-    return ApiSuccessResponse(data={"tabs": [await _serialize_row(t) for t in tabs]})
+    await _populate_tab_statuses(tabs)
+    return ApiSuccessResponse(data={"tabs": [t.model_dump(mode="json") for t in tabs]})
 
 
 _action_registry.register(
