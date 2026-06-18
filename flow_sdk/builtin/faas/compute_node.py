@@ -487,10 +487,21 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return await self._scan_get_by_worker_id(worker_id)
         return ApiFailResponse(message=f"unknown terminals sub-path: {sub_path!r}", status_code=400)
 
-    # NOTE: the old ``tabs/close`` batch action was retired with the Tab-entity
-    # cutover — every tab now closes by id through ``Tab.close`` (the strip posts
-    # ``tab/<id>/close``, which dispatches per-target PTY/worker teardown). The
-    # underlying ``_terminal_close`` stays for the ``terminals`` action below.
+    @action.post(action_name="tabs")
+    async def _tabs(self, background_tasks: BackgroundTasks) -> ApiResponse:
+        """Compatibility router for ``/compute_node/<id>/tabs/close``.
+
+        The frontend closes concrete chips by ``Tab.close`` now, but older
+        callers and backend tests still use the batch target-close endpoint.
+        Keep it as a thin wrapper over the same terminal teardown helper so
+        shell/process cleanup semantics remain centralized.
+        """
+        request_info = get_current_request_info()
+        sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
+        if sub_path != "close":
+            return ApiFailResponse(message=f"unknown tabs sub-path: {sub_path!r}", status_code=400)
+        body = await request_info.get_post_data() if request_info else {}
+        return await self._terminal_close(body or {}, background_tasks)
 
     def _parse_terminal_target(self, raw: Any) -> tuple[str, str] | None:
         """Parse a tab target (``type-id`` or ``type:id``) restricted to the

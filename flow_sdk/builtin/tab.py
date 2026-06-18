@@ -393,6 +393,37 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     return result
 
 
+def _serialize_row(tab: Tab) -> dict:
+    """Serialize the strip-facing Tab projection without base Entity computed fields."""
+    return {
+        "id": tab.id,
+        "type": tab.type,
+        "pointer": tab.pointer,
+        "target_type": tab.target_type,
+        "target_id": tab.target_id,
+        "project_id": tab.project_id,
+        "name": tab.name,
+        "icon_key": tab.icon_key,
+        "worktree": tab.worktree,
+        "tab_order": tab.tab_order,
+        "last_active_at": tab.last_active_at,
+        "visible": tab.visible,
+        "status": tab.status,
+        "is_disabled": tab.is_disabled,
+    }
+
+
+async def _build_list(project: str | None) -> list[dict]:
+    """Compatibility projection for older tests/callers.
+
+    The canonical implementation returns ``Tab`` objects via ``_build_tab_list``;
+    this helper preserves the previous dict-row contract without introducing a
+    second ordering or filtering path.
+    """
+    tabs = await _build_tab_list(project)
+    return [_serialize_row(t) for t in tabs]
+
+
 # Stable sentinel TypeId for the global ping. ``flow_data_msg`` is dropped client-
 # side unless ``to_entity`` parses as ``<type>-<uuid>`` (websocket.parseTypeId), so
 # we ride a fixed Tab id; the frontend keys on ``element_type``, never this id.
@@ -415,7 +446,7 @@ async def _list_response(project: str | None):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs = await _build_tab_list(project)
-    return ApiSuccessResponse(data={"tabs": [t.model_dump(mode="json") for t in tabs]})
+    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 
 async def _http_new_tab(
@@ -483,7 +514,7 @@ async def _http_list_all(cls):
 
     tabs = await _visible_tabs_sorted()
     await _populate_tab_statuses(tabs)
-    return ApiSuccessResponse(data={"tabs": [t.model_dump(mode="json") for t in tabs]})
+    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 
 _action_registry.register(

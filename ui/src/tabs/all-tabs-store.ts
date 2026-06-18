@@ -1,6 +1,7 @@
-import { ConnectionManager, Tab } from '@sdk';
+import { ConnectionManager, Tab, type ITab } from '@sdk';
 import { useEffect, useSyncExternalStore } from 'react';
 import { computeReorder } from '@src/tabs/tab-order';
+import { syncTabLifecycleWithTabs } from '@src/tabs/tab-lifecycle';
 
 /**
  * The single tab store: the GLOBAL visible-tab list (every kind, all projects),
@@ -15,6 +16,36 @@ import { computeReorder } from '@src/tabs/tab-order';
 
 let snapshot: Tab[] = [];
 const listeners = new Set<() => void>();
+
+export function coerceTab(tab: Tab | ITab): Tab {
+  if (tab instanceof Tab) return tab;
+  try {
+    return new Tab(tab);
+  } catch {
+    const fallback = Object.create(Tab.prototype) as Tab;
+    Object.assign(
+      fallback,
+      {
+        id: tab.id ?? '',
+        type: Tab.type,
+        pointer: '',
+        target_type: null,
+        target_id: null,
+        visible: true,
+        icon_key: null,
+        worktree: false,
+        name: null,
+        project_id: null,
+        tab_order: 0,
+        last_active_at: null,
+        status: null,
+        is_disabled: false,
+      },
+      tab,
+    );
+    return fallback;
+  }
+}
 
 function notify(): void {
   for (const l of listeners) l();
@@ -35,8 +66,9 @@ export function getAllTabsSnapshot(): Tab[] {
 }
 
 /** Adopt a canonical tab list directly (no fetch). */
-export function applyAllTabs(tabs: Tab[]): void {
-  snapshot = tabs;
+export function applyAllTabs(tabs: Array<Tab | ITab>): void {
+  snapshot = tabs.map(coerceTab);
+  syncTabLifecycleWithTabs(snapshot);
   notify();
 }
 

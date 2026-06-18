@@ -1,6 +1,6 @@
-import { AgenticProcess, dataContext, Project, Shell, Tab, TypeId } from '@sdk';
+import { AgenticProcess, dataContext, Project, Shell, Tab, TypeId, type ITab } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
-import { getAllTabsSnapshot, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
+import { coerceTab, getAllTabsSnapshot, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
 import { tabInProject } from '@src/tabs/tab-candidates';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -8,17 +8,31 @@ import { useEffect, useMemo, useState } from 'react';
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
 
+function tabKey(tab: Tab): string {
+  return tab.dockPointer?.tabHash ?? tab.id;
+}
+
+export function uniqueTabsByDockKey(tabs: Tab[]): Tab[] {
+  const seen = new Set<string>();
+  return tabs.filter((tab) => {
+    const key = tabKey(tab);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Terminal tabs (Shell + AgenticProcess targets) for a scope, in backend global order.
  *  `'all'` = every project (the developer sessions view); `'project'` = the active
  *  project + projectless. */
 export function terminalTabsForScope(
-  tabs: Tab[],
+  tabs: Array<Tab | ITab>,
   scope: 'project' | 'all',
   projectId: string | null,
 ): Tab[] {
-  const terminals = tabs.filter((t) => TERMINAL_TARGET_TYPES.has(t.target_type ?? ''));
-  if (scope === 'all') return terminals;
-  return terminals.filter((t) => tabInProject(t, projectId));
+  const terminals = tabs.map(coerceTab).filter((t) => TERMINAL_TARGET_TYPES.has(t.target_type ?? ''));
+  if (scope === 'all') return uniqueTabsByDockKey(terminals);
+  return uniqueTabsByDockKey(terminals.filter((t) => tabInProject(t, projectId)));
 }
 
 /** Tabs for the current active project + projectless (the render view for the
@@ -27,16 +41,13 @@ export function useCurrentTabs(): Tab[] {
   const all = useAllTabs();
   const { project } = useContext();
   return useMemo(
-    () => all.filter((t) => tabInProject(t, project?.id ?? null)),
-    [all, project?.id]
+    () => uniqueTabsByDockKey(all.filter((t) => tabInProject(t, project?.id ?? null))),
+    [all, project?.id],
   );
 }
 
 /** React binding for terminal tabs, reading the global store. */
-export function useTerminalTabs(
-  scope: 'project' | 'all' = 'project',
-  projectId?: string | null,
-): Tab[] {
+export function useTerminalTabs(scope: 'project' | 'all' = 'project', projectId?: string | null): Tab[] {
   const tabs = useAllTabs();
   const pid = projectId ?? dataContext.project?.id ?? null;
   return useMemo(() => terminalTabsForScope(tabs, scope, pid), [tabs, scope, pid]);

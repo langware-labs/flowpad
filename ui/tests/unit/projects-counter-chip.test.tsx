@@ -5,6 +5,16 @@ import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const navMocks = vi.hoisted(() => ({
+  openDock: vi.fn(),
+}));
+
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({
+    navigation: navMocks,
+  }),
+}));
+
 vi.mock('@src/tabs/useTabs', () => ({
   useTabProjectBuckets: vi.fn(),
 }));
@@ -37,6 +47,7 @@ function makeBucket(id: string, displayName: string, tabCount: number): TabProje
 
 describe('ProjectsCounterChip', () => {
   beforeEach(() => {
+    navMocks.openDock.mockReset();
     mockUseTabProjectBuckets.mockReset();
     mockUseAllProjects.mockReset();
     mockUseAllProjects.mockReturnValue({ projects: [], isLoading: false });
@@ -148,11 +159,7 @@ describe('ProjectsCounterChip', () => {
     const onOpenHistory = vi.fn();
 
     render(
-      <ProjectsCounterChip
-        currentProjectId={projectA}
-        onLaunchProjectPath={vi.fn()}
-        onOpenHistory={onOpenHistory}
-      />,
+      <ProjectsCounterChip currentProjectId={projectA} onLaunchProjectPath={vi.fn()} onOpenHistory={onOpenHistory} />,
     );
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
 

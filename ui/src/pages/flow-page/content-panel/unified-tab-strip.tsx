@@ -18,12 +18,12 @@
  */
 import { Tab } from '@sdk';
 import { TabStrip } from '@src/components/tabs/TabStrip';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { resolveNextTab } from '@src/tabs/tab-candidates';
 import { applyPredictedOrder, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
-import { useCurrentTabs } from '@src/tabs/useTabs';
+import { closeTabWithLifecycle } from '@src/tabs/tab-lifecycle';
+import { uniqueTabsByDockKey, useCurrentTabs } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
@@ -43,7 +43,8 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   // rule), in the backend's global order (preserved by the filter).
   const allTabs = useAllTabs();
   const currentTabs = useCurrentTabs();
-  const tabs = scope === 'all' ? allTabs : currentTabs;
+  const globalTabs = useMemo(() => uniqueTabsByDockKey(allTabs), [allTabs]);
+  const tabs = scope === 'all' ? globalTabs : currentTabs;
   const items = useTabStripItems(tabs);
   const tabByKey = useMemo(() => {
     const m = new Map<string, Tab>();
@@ -96,7 +97,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       const tab = tabByKey.get(key);
       if (!tab) return;
       if (key === activeKey) navigateAfterClose([tab]);
-      void Tab.closeById(tab.id).then(() => void refreshAllTabs());
+      void closeTabWithLifecycle(tab).finally(() => void refreshAllTabs());
     },
     [tabByKey, activeKey, navigateAfterClose],
   );
@@ -105,7 +106,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (keys: string[]) => {
       const closing = keys.map((k) => tabByKey.get(k)).filter((t): t is Tab => t != null);
       if (keys.includes(activeKey)) navigateAfterClose(closing);
-      void Promise.all(closing.map((t) => Tab.closeById(t.id))).finally(() => void refreshAllTabs());
+      void Promise.allSettled(closing.map((t) => closeTabWithLifecycle(t))).finally(() => void refreshAllTabs());
     },
     [tabByKey, activeKey, navigateAfterClose],
   );
@@ -125,7 +126,11 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (reorderKey: string, afterKey: string | null, beforeKey: string | null) => {
       const id = tabByKey.get(reorderKey)?.id;
       if (!id) return;
-      applyPredictedOrder(id, afterKey ? tabByKey.get(afterKey)?.id ?? null : null, beforeKey ? tabByKey.get(beforeKey)?.id ?? null : null);
+      applyPredictedOrder(
+        id,
+        afterKey ? (tabByKey.get(afterKey)?.id ?? null) : null,
+        beforeKey ? (tabByKey.get(beforeKey)?.id ?? null) : null,
+      );
     },
     [tabByKey],
   );
@@ -134,8 +139,8 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (reorderKey: string, afterKey: string | null, beforeKey: string | null) => {
       const id = tabByKey.get(reorderKey)?.id;
       if (!id) return;
-      const afterId = afterKey ? tabByKey.get(afterKey)?.id ?? null : null;
-      const beforeId = beforeKey ? tabByKey.get(beforeKey)?.id ?? null : null;
+      const afterId = afterKey ? (tabByKey.get(afterKey)?.id ?? null) : null;
+      const beforeId = beforeKey ? (tabByKey.get(beforeKey)?.id ?? null) : null;
       void Tab.reorder(id, afterId, beforeId, projectId).finally(() => void refreshAllTabs());
     },
     [tabByKey, projectId],
@@ -145,7 +150,8 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   // mod+PgUp/PgDn cycle. Mac=Ctrl, Windows=Meta, Linux=Alt.
   useEffect(() => {
     const osPlatform: string =
-      (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ?? navigator.userAgent;
+      (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ??
+      navigator.userAgent;
     const modKey = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Meta' : 'Alt';
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
@@ -184,7 +190,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
         onPopout={handlePopout}
         onReorderPreview={handleReorderPreview}
         onReorderCommit={handleReorderCommit}
-        onReorderCancel={() => void refreshAllTabRows()}
+        onReorderCancel={() => void refreshAllTabs()}
         newTabMenuItems={controller.newTabMenuItems}
         closeShortcutLabel={controller.closeShortcutLabel}
         leading={controller.leading}
