@@ -2545,11 +2545,14 @@ def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -
     return int(raw_hub_count) != local_count
 
 
-async def _local_only_conversation_list(*, auth_required: bool) -> ApiSuccessResponse:
+async def _local_only_conversation_list(*, auth_required: bool, user_id: str | None = None) -> ApiSuccessResponse:
     """Local-only conversation-list response: render whatever's in SQLite and
     flag the hub unreachable. Used when the hub isn't configured
-    (``auth_required=False``) or there's no cloud session (``auth_required=True``)."""
-    local = await Conversation.get_all({})
+    (``auth_required=False``) or there's no cloud session (``auth_required=True``).
+
+    If user_id is provided, only conversations created by that user are returned."""
+    filter_dict = {"created_by": user_id} if user_id else {}
+    local = await Conversation.get_all(filter_dict)
     return ApiSuccessResponse(data={
         "conversations": [c.model_dump(mode="json") for c in local],
         "bg_fetch_dispatched": [],
@@ -2558,7 +2561,7 @@ async def _local_only_conversation_list(*, auth_required: bool) -> ApiSuccessRes
     })
 
 
-async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
+async def handle_conversation_list(someone_typeid) -> ApiResponse:
     """Unified conversation list: local SQLite + hub catch-up + background message fetch.
 
     Pipeline (all stages run inside the request handler unless noted):
@@ -2575,9 +2578,13 @@ async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
     5. Return the freshly-merged local list. Background fetches run after the
        HTTP response is sent; their results stream in via WS data_op_msg.
     """
+    # Extract user ID from someone_typeid (could be TypeId object or string)
+    user_id = someone_typeid.id if hasattr(someone_typeid, 'id') else str(someone_typeid).split('-', 1)[-1]
+    logger.info(f"[conversation-list] Filtering for user_id: {user_id}")
+
     if not hub_base_url():
         # Local-only mode: still return whatever's in SQLite so the UI renders.
-        return await _local_only_conversation_list(auth_required=False)
+        return await _local_only_conversation_list(auth_required=False, user_id=user_id)
 
     # Logged out → every hub conversation/invitation call would 401 and surface
     # a "Cloud Request Failed" warning (and feed the hub-error suppression
@@ -2585,9 +2592,10 @@ async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
     # _start_inbox_catchup skips the same calls at startup.
     from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
     if not hub_auth_available():
-        return await _local_only_conversation_list(auth_required=True)
+        return await _local_only_conversation_list(auth_required=True, user_id=user_id)
 
-    local_list = await Conversation.get_all({})
+    # Filter local conversations to only those created by or involving the current user
+    local_list = await Conversation.get_all({"created_by": user_id})
     local_index = {c.id: c for c in local_list if c.id}
 
     hub_convs_result, hub_invs_result = await asyncio.gather(
