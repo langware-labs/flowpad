@@ -184,9 +184,6 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const tabTotal = buckets.reduce((sum, b) => sum + b.tabCount, 0);
   const projectTotal = buckets.length;
   const isEmpty = projectTotal === 0;
-  // With an action callback the chip stays clickable even with zero buckets —
-  // the popover then offers only the action rows.
-  const isChipDisabled = isEmpty && !onLaunchProjectPath && !onOpenHistory;
 
   // Name of the current project, shown as a label segment on the chip.
   const projectName = useMemo(
@@ -220,7 +217,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     hasProject
       ? 'border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10'
       : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
-  } ${isChipDisabled ? 'cursor-default opacity-50 hover:bg-primary/5' : ''}`;
+  }`;
 
   // Per-type icon from the backend TypeInfo registry (CLAUDE.md: never hardcode
   // a glyph for an entity type) — the same project icon every other surface shows.
@@ -244,26 +241,11 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     </>
   );
 
-  if (isChipDisabled) {
-    return (
-      <TooltipProvider delayDuration={400}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              disabled
-              data-testid="projects-counter-chip"
-              className={chipClass}
-              aria-label={tooltipText}
-            >
-              {triggerContent}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{tooltipText}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  }
+  // No project owns any open tab (buckets empty ⇒ both counts are 0). Even when
+  // an ambient active project still resolves a name, a "<project> · 0 / 0" chip
+  // represents nothing — a strip whose only tabs are global has no project tab
+  // to count — so the chip stays hidden rather than advertising "0,0".
+  if (isEmpty) return null;
 
   const handleRecover = async (bucket: TabProjectBucket) => {
     setRecoveringId(bucket.projectId);

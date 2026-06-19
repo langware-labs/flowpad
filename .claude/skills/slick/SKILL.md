@@ -1,7 +1,8 @@
-| <br /> | <br /> | <br /> |
-| :----- | :----- | :----- |
-| <br /> | <br /> | <br /> |
-| <br /> | <br /> | <br /> |
+---
+id: e7d69e47-4ca0-5d06-aa52-ea46e2974787
+---
+
+---
 
 id: e7d69e47-4ca0-5d06-aa52-ea46e2974787
 name: slick
@@ -14,7 +15,7 @@ branch on a string, hand-roll a parallel code path, or add a package, run this l
 first. It tells you the right layer, the right seam, and the test that proves the
 code is slick. Supports two explicit modes: "slick check" (concise diagnosis of
 real violations) and "slick suggest" (the concrete changes to reach slick design).'
------------------------------------------------------------------------------------
+---
 
 # Slick — flowpad code design
 
