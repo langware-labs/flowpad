@@ -168,6 +168,9 @@ class EntityType(StrEnum):
     ARTIFACT_RELATION = "artifact_relation"
     FS_ITEM = "fs_item"
     KNOWLEDGE_BASE = "knowledge_base"
+    # A frozen snapshot of the global context (a list of typeids) — the saved
+    # "context" half of an automation (agentic process = prompt + context).
+    GRAPH_CONTEXT = "graph_context"
 
     # ── Skillit ──────────────────────────────────────────────────────────────
     SKILLIT_SESSION = "skillit_session"

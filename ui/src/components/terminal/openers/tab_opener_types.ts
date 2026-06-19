@@ -10,7 +10,8 @@ export type OpenerId =
   | 'terminal'
   | 'sandbox'
   | 'docker'
-  | 'history';
+  | 'history'
+  | 'open-context';
 
 export type OpenerIcon = LucideIcon | ComponentType<SVGProps<SVGSVGElement> & { className?: string }>;
 

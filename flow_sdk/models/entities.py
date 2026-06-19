@@ -66,6 +66,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Bookmark: {e}")
 
 try:
+    from flow_sdk.builtin.graph_context import GraphContext  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import GraphContext: {e}")
+
+try:
     from flow_sdk.builtin.contact_permission import ContactPermission  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import ContactPermission: {e}")

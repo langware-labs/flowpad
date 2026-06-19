@@ -24,7 +24,7 @@ import {
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, X, type LucideIcon } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 /** One chip in the strip. Kind-agnostic: terminals, entity tabs, and the
@@ -60,6 +60,8 @@ export interface TabStripContextMenuItem {
   label: string;
   shortcut?: string;
   onSelect: () => void;
+  /** Optional leading icon (e.g. graph glyph for "Open Context"). */
+  Icon?: LucideIcon;
 }
 
 export interface TabStripProps {
@@ -270,6 +272,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <>
         {entries.map((entry) => (
           <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
+            {entry.Icon && <entry.Icon className="mr-2 h-4 w-4" />}
             {entry.label}
             {entry.shortcut && <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
           </ContextMenuItem>
