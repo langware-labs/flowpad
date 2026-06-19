@@ -2387,7 +2387,6 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
 
 async def _upsert_hub_conversation_metadata(
     hub_conv: dict, someone_typeid: str, *, notify: bool = True,
-    local_conv: Optional[Conversation] = None,
 ) -> Optional[Conversation]:
     """Upsert a hub-side Conversation into the local SQLite table.
 
@@ -2419,9 +2418,7 @@ async def _upsert_hub_conversation_metadata(
             except Exception as e:  # noqa: BLE001
                 logger.warning("[conv-upsert] deleted_at hub row, local cleanup failed: %s", e)
         return None
-    # Reuse the caller's already-loaded local row when provided (the list
-    # pipeline holds the full local set), avoiding a redundant per-conv read.
-    existing = local_conv if local_conv is not None else await Conversation.get_one({"id": conv_id})
+    existing = await Conversation.get_one({"id": conv_id})
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
         for k in ("title", "participants", "remote_project_id", "remote_project_name",
@@ -2597,15 +2594,9 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     if not hub_auth_available():
         return await _local_only_conversation_list(auth_required=True, user_id=user_id)
 
-    # Baseline of ALL local conversations, keyed by id — the comparison set for
-    # the staleness gate and message-fetch decision in the loop below. It must
-    # include remote (shared-to-user) convs, NOT just `created_by == user`:
-    # a materialized remote conv lives in the local table but is owned by its
-    # remote creator, so a `created_by` filter would miss it and make every
-    # remote conv look brand-new on every list (forcing a redundant upsert +
-    # fetch for the whole shared inbox each call). The render set below is the
-    # same full `get_all({})`.
-    local_index = {c.id: c for c in await Conversation.get_all({}) if c.id}
+    # Filter local conversations to only those created by or involving the current user
+    local_list = await Conversation.get_all({"created_by": user_id})
+    local_index = {c.id: c for c in local_list if c.id}
 
     hub_convs_result, hub_invs_result = await asyncio.gather(
         hub_get(BuiltinEntityType.CONVERSATION),
@@ -2631,28 +2622,25 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     hub_convs = _coerce_list(hub_convs_result) or []
     hub_invs = _coerce_list(hub_invs_result) or []
 
-
     # (c) upsert hub conversation metadata; dispatch per-conv message fetch
-    # when the hub has more messages than we do locally. The upsert runs on
-    # every conv (it is the repair point for hub-owned fields like
-    # ``created_date``, not just an updated_date refresh, so it cannot be
-    # skipped on a non-stale row). ``local_index`` holds the PRE-upsert local
-    # copies — the correct baseline for the message-fetch decision.
+    # when the hub has more messages than we do locally.
     bg_fetch_dispatched: list[str] = []
     for hub_conv in hub_convs:
-        local_conv = local_index.get(hub_conv.get("id"))
         try:
-            await _upsert_hub_conversation_metadata(hub_conv, someone_typeid, local_conv=local_conv)
+            await _upsert_hub_conversation_metadata(hub_conv, someone_typeid)
         except Exception as e:  # noqa: BLE001
             logger.warning("[conv-list] upsert conv=%s failed: %s",
                            (hub_conv.get("id") or "?")[:8], e)
             continue
-        if _should_fetch_messages(local_conv, hub_conv):
+        # ``local_index`` holds the PRE-upsert local copies (built before this
+        # loop from local_list; _upsert_hub_conversation_metadata mutates a
+        # freshly-fetched row, not this object), so they are the correct
+        # comparison baseline.
+        if _should_fetch_messages(local_index.get(hub_conv.get("id")), hub_conv):
             conv_id = hub_conv.get("id")
             if conv_id:
                 _dispatch_conversation_message_fetch(conv_id, someone_typeid)
                 bg_fetch_dispatched.append(conv_id)
-
 
     # (d) invitations through the new materializer: the hub embeds the
     # target Conversation + first FlowMessage in each invitation, so the
@@ -2671,17 +2659,13 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     # a pending invitation) means it was deleted hub-side (or the local
     # user lost access). Reconcile by hard-deleting locally so the next
     # render reflects reality.
-
-    # One post-loop read of the full local set, reused for BOTH the prune scan
-    # and the final render — the upsert + invitation steps may have added rows
-    # since the pre-loop snapshot, so this is the authoritative current state.
-    refreshed_local = await Conversation.get_all({})
-
     pruned_ids: list[str] = []
     if hub_reachable:
         seen_ids = {c.get("id") for c in hub_convs if c.get("id")}
         seen_ids.update(invitation_conv_ids)
-        pruned = []
+        # Re-read local state because the upsert + invitation steps may have
+        # added rows that didn't exist when we snapshotted earlier.
+        refreshed_local = await Conversation.get_all({})
         for c in refreshed_local:
             if c.remote and c.id and c.id not in seen_ids:
                 try:
@@ -2690,19 +2674,15 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
                 except Exception as e:  # noqa: BLE001
                     logger.warning("[conv-list] prune %s failed: %s",
                                    (c.id or "?")[:8], e)
-            else:
-                pruned.append(c)
-        # Drop the hard-deleted rows from the render set without another DB read.
-        refreshed_local = pruned
 
-    # (f) return the freshly-merged list (the post-loop read above, minus any
-    # pruned rows). Background tasks finish after the response, fanning out
-    # their writes via data_op_msg WS frames. Bare or drifted rows were
-    # dispatched above (count_mismatch / stale_by_date) and heal through the
-    # authoritative reconcile in _fetch_conversation_messages; their
-    # projections stream in via WS data_op as those fetches land.
+    # (f) return the freshly-merged list. Background tasks finish after the
+    # response, fanning out their writes via data_op_msg WS frames. Bare or
+    # drifted rows were dispatched above (count_mismatch / stale_by_date) and
+    # heal through the authoritative reconcile in _fetch_conversation_messages;
+    # their projections stream in via WS data_op as those fetches land.
+    merged = await Conversation.get_all({})
     return ApiSuccessResponse(data={
-        "conversations": [c.model_dump(mode="json") for c in refreshed_local],
+        "conversations": [c.model_dump(mode="json") for c in merged],
         "bg_fetch_dispatched": bg_fetch_dispatched,
         "pruned_ids": pruned_ids,
         "hub_reachable": hub_reachable,
