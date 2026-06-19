@@ -32,9 +32,15 @@ async function renameViaTab(
   name: string,
 ): Promise<void> {
   const pointer = `dock/${targetType}-${targetId}`;
-  const tab = await Tab.ensureFor(pointer, { targetType, targetId });
-  await tab.rename(name);
-  expect(tab.name).toBe(name); // Tab.name is the source of truth
+  // Get-or-create the Tab for this pointer (returns the updated list), then
+  // rename it through the exact backend action the strip uses
+  // (POST /graph/tab/<id>/rename), which reflects onto the backing entity.
+  const created = await Tab.newTab(pointer, { targetType, targetId });
+  const tab = created.find((t) => t.target_id === targetId);
+  expect(tab).toBeTruthy();
+  const updated = await Tab.renameById(tab!.id, name);
+  const renamed = updated.find((t) => t.id === tab!.id);
+  expect(renamed?.name).toBe(name); // Tab.name is the source of truth
 }
 
 describe('api: tab rename flows into the backing entity', () => {

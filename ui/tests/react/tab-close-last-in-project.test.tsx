@@ -16,9 +16,9 @@
  * guard: close now resolves over the GLOBAL list (preferring the current
  * project), so the project's last tab skips to project B instead of Home.
  */
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Tab, type TabRow } from '@sdk';
+import { ContextEntitiesEnum, dataContext, dataManager, Project, Tab, type TabRow, TypeId } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { applyAllTabRows } from '@src/tabs/all-tabs-store';
 
@@ -77,16 +77,27 @@ function shellTab(shellId: string, projectId: string, lastActive: number, name: 
   };
 }
 
-afterEach(() => {
+afterEach(async () => {
   vi.clearAllMocks();
   applyAllTabRows([]);
+  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
 });
 
 describe('closing the last tab in a project', () => {
-  it('switches to the most-recently-active tab in another project (not home)', () => {
+  it('switches to the most-recently-active tab in another project (not home)', async () => {
     const tabA = shellTab(SHELL_A, PROJ_A, 1000, 'Tab A');
     const tabB = shellTab(SHELL_B, PROJ_B, 2000, 'Tab B'); // other project, more recent
     applyAllTabRows([tabA, tabB]);
+
+    // The strip scopes its rendered tabs via useCurrentTabs() → the SDK context
+    // project (NOT the controller's tabsProjectId). Without a current project,
+    // tabA wouldn't appear in the strip and the close shortcut would no-op.
+    // Establish project A as current (the same real-context path the app uses).
+    dataManager.updateEntityFromJson<Project>(new Project({ id: PROJ_A, name: 'Project A' }) as never);
+    await dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProjectTypeId,
+      new TypeId(Project.type, PROJ_A),
+    );
 
     // Active tab (URL) is project A's only tab.
     h.currentDock = DockPointer.fromTabHash(tabA.pointer);
