@@ -775,6 +775,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       const kw = lastSegment(pointer.replace(/^wiki\//, ''));
       if (kw) return kw;
     }
+    // 4. lens transcript — the ClaudeSession entity (id = sessionId), fetched
+    //    into cache by the tab mint via `dock.targetTypeId`.
+    if (dock?.viewType === 'lens') {
+      const segs = pointer.split('/').filter(Boolean);
+      if (segs[0] === 'claude' && segs[1] === 'transcript' && segs[2] && !segs[3]) {
+        const n = nameFromCache('claude_session', segs[2]);
+        if (n) return n;
+      }
+    }
     return null;
   }
 
