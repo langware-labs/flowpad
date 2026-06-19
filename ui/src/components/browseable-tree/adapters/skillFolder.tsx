@@ -3,6 +3,7 @@ import { FilePlus, FolderPlus, Trash2 } from 'lucide-react';
 import { fsManager, fsStore, TypeId } from '@sdk';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import type { Browseable, ToolbarAction } from '@src/components/browseable-tree/types';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { showInputPrompt } from '@src/components/ui/input-prompt-modal';
@@ -16,15 +17,21 @@ import { refreshNode } from '@src/components/browseable-tree/refresh-store';
  * all routed through `fsManager` against the local compute node.
  */
 
-const LOCAL_COMPUTE_NODE = 'compute_node-@local';
 const DEFAULT_PAGE_SIZE = 500;
+// Single shared TypeId for the local compute node (built from the canonical
+// space constant, mirroring AssetDocPointer). Hoisted so every create/delete/
+// list action reuses one instance instead of allocating per call.
+const COMPUTE_NODE_ID = new TypeId('compute_node', DEFAULT_WIKI_SPACE);
+
+// Extension → lucide icon name. Module-level so it isn't rebuilt per file row.
+const FILE_EXT_ICONS: Record<string, string> = {
+  py: 'FileCode', js: 'FileCode', ts: 'FileCode', tsx: 'FileCode', jsx: 'FileCode',
+  json: 'FileJson', md: 'FileText', txt: 'FileText', yaml: 'FileText', yml: 'FileText',
+  png: 'FileImage', jpg: 'FileImage', jpeg: 'FileImage', gif: 'FileImage', svg: 'FileImage',
+};
 
 export function skillFolderNodeId(absPath: string): string {
   return `skill-folder:${absPath || '/'}`;
-}
-
-function computeNode(): TypeId {
-  return new TypeId(LOCAL_COMPUTE_NODE);
 }
 
 /** Compute-node-relative path = absolute disk path with the leading slash stripped. */
@@ -34,12 +41,7 @@ function relFromAbs(absPath: string): string {
 
 function fileIcon(name: string): React.ReactNode {
   const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
-  const byExt: Record<string, string> = {
-    py: 'FileCode', js: 'FileCode', ts: 'FileCode', tsx: 'FileCode', jsx: 'FileCode',
-    json: 'FileJson', md: 'FileText', txt: 'FileText', yaml: 'FileText', yml: 'FileText',
-    png: 'FileImage', jpg: 'FileImage', jpeg: 'FileImage', gif: 'FileImage', svg: 'FileImage',
-  };
-  const Icon = lucideByName(byExt[ext] ?? 'File');
+  const Icon = lucideByName(FILE_EXT_ICONS[ext] ?? 'File');
   return <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />;
 }
 
@@ -57,7 +59,7 @@ export function skillCreateActions(absPath: string, selfId: string): ToolbarActi
           title: 'Create File',
           placeholder: 'Enter file name',
           onConfirm: async (name) => {
-            await fsManager.writeFile(computeNode(), `${rel}/${name}`.replace(/\/+/g, '/'), '');
+            await fsManager.writeFile(COMPUTE_NODE_ID, `${rel}/${name}`.replace(/\/+/g, '/'), '');
             refreshNode(selfId);
           },
         }),
@@ -72,7 +74,7 @@ export function skillCreateActions(absPath: string, selfId: string): ToolbarActi
           title: 'Create Folder',
           placeholder: 'Enter folder name',
           onConfirm: async (name) => {
-            await fsManager.mkdir(computeNode(), `${rel}/${name}`.replace(/\/+/g, '/'));
+            await fsManager.mkdir(COMPUTE_NODE_ID, `${rel}/${name}`.replace(/\/+/g, '/'));
             refreshNode(selfId);
           },
         }),
@@ -92,7 +94,7 @@ function deleteAction(absPath: string, label: string, parentRefreshId: string): 
       showDeleteAssetModal({
         name: label,
         onConfirm: async () => {
-          await fsManager.delete(computeNode(), relFromAbs(absPath));
+          await fsManager.delete(COMPUTE_NODE_ID, relFromAbs(absPath));
         },
         onAfterDelete: () => refreshNode(parentRefreshId),
       }),
@@ -126,12 +128,11 @@ export function skillFolderListChildren(
   pageSize: number = DEFAULT_PAGE_SIZE,
 ): (opts?: { refresh?: boolean }) => Promise<Browseable[]> {
   return async (opts) => {
-    const typeid = computeNode();
     const rel = relFromAbs(absPath) || '/';
     if (opts?.refresh) {
-      fsStore.getState().invalidate(typeid, rel, 'browse');
+      fsStore.getState().invalidate(COMPUTE_NODE_ID, rel, 'browse');
     }
-    const entries = await fsStore.getState().listDirectory(typeid, rel);
+    const entries = await fsStore.getState().listDirectory(COMPUTE_NODE_ID, rel);
     const items = [...(entries.items ?? [])]
       .filter((item) => !(item.name ?? '').startsWith('.'))
       .slice(0, pageSize);
