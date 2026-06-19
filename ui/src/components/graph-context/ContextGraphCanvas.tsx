@@ -84,6 +84,8 @@ export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
   const [model, setModel] = useState<ContextModel | null>(null);
   const [loading, setLoading] = useState(true);
   const [hover, setHover] = useState<string | null>(null);
+  // User-dragged node positions (world coords), overriding the radial layout.
+  const [overrides, setOverrides] = useState<Map<string, XY>>(new Map());
 
   // Pan/zoom transform of the world layer.
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
@@ -95,6 +97,7 @@ export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
       const m = await buildContextModel(root, distance);
       if (cancelled) return;
       setModel(m);
+      setOverrides(new Map()); // fresh layout ⇒ drop manual placements
       setLoading(false);
     })();
     return () => {
@@ -103,14 +106,31 @@ export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root.id, distance]);
 
-  const positions = useMemo(() => (model ? layout(model.nodes) : new Map<string, XY>()), [model]);
+  const basePositions = useMemo(
+    () => (model ? layout(model.nodes) : new Map<string, XY>()),
+    [model],
+  );
+  // Effective positions = radial layout with any manual drags applied.
+  const positions = useMemo(() => {
+    if (overrides.size === 0) return basePositions;
+    const m = new Map(basePositions);
+    for (const [k, v] of overrides) m.set(k, v);
+    return m;
+  }, [basePositions, overrides]);
 
-  // Fit content to the viewport whenever the layout changes.
+  // Refs the window-level drag handlers read without re-subscribing.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const basePositionsRef = useRef(basePositions);
+  basePositionsRef.current = basePositions;
+
+  // Fit content to the viewport on (re)layout — keyed on the radial base, not
+  // on drag overrides, so dragging a node never recentres the whole graph.
   useLayoutEffect(() => {
     const el = containerRef.current;
-    if (!el || positions.size === 0) return;
+    if (!el || basePositions.size === 0) return;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const p of positions.values()) {
+    for (const p of basePositions.values()) {
       minX = Math.min(minX, p.x);
       maxX = Math.max(maxX, p.x);
       minY = Math.min(minY, p.y);
@@ -124,7 +144,7 @@ export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
     setView({ tx: cw / 2 - cx * scale, ty: ch / 2 - cy * scale, scale });
-  }, [positions]);
+  }, [basePositions]);
 
   // Wheel zoom around the cursor (native listener so we can preventDefault).
   useEffect(() => {
@@ -146,21 +166,40 @@ export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
-  // Background drag to pan.
-  const drag = useRef<{ x: number; y: number } | null>(null);
+  // Drag: background → pan the world; a node (`node` set) → move that node.
+  const drag = useRef<{ x: number; y: number; node?: string } | null>(null);
   const [panning, setPanning] = useState(false);
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     drag.current = { x: e.clientX, y: e.clientY };
     setPanning(true);
   }, []);
+  // Node grab — starts a per-node drag and stops the background pan from firing.
+  const onNodeDown = useCallback((e: React.MouseEvent, key: string) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    drag.current = { x: e.clientX, y: e.clientY, node: key };
+  }, []);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (!drag.current) return;
-      const dx = e.clientX - drag.current.x;
-      const dy = e.clientY - drag.current.y;
-      drag.current = { x: e.clientX, y: e.clientY };
-      setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
+      const d = drag.current;
+      if (!d) return;
+      const dx = e.clientX - d.x;
+      const dy = e.clientY - d.y;
+      d.x = e.clientX;
+      d.y = e.clientY;
+      if (d.node) {
+        const s = viewRef.current.scale || 1;
+        const key = d.node;
+        setOverrides((prev) => {
+          const cur = prev.get(key) ?? basePositionsRef.current.get(key) ?? { x: 0, y: 0 };
+          const m = new Map(prev);
+          m.set(key, { x: cur.x + dx / s, y: cur.y + dy / s });
+          return m;
+        });
+      } else {
+        setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
+      }
     };
     const onUp = () => {
       drag.current = null;
@@ -234,6 +273,7 @@ export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
             key={n.key}
             className={cn('ctx-node', n.isRoot && 'root', !n.resolved && 'unresolved', faded && 'faded')}
             style={{ left: p.x, top: p.y }}
+            onMouseDown={(e) => onNodeDown(e, n.key)}
             onMouseEnter={() => setHover(n.key)}
             onMouseLeave={() => setHover((h) => (h === n.key ? null : h))}
           >
@@ -249,7 +289,7 @@ export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
           </div>
         );
       }),
-    [model, positions, neighbors],
+    [model, positions, neighbors, onNodeDown],
   );
 
   return (

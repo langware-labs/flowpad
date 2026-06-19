@@ -23,7 +23,7 @@ import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { resolveNextTab } from '@src/tabs/tab-candidates';
 import { applyPredictedOrder, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
 import { closeTabWithLifecycle } from '@src/tabs/tab-lifecycle';
-import { uniqueTabsByDockKey, useCurrentTabs } from '@src/tabs/useTabs';
+import { uniqueTabsByDockKey, useCurrentTabs, useSyncContentTabNames } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
@@ -42,6 +42,9 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   // = the active project + projectless tabs (the backend `filter_for_project`
   // rule), in the backend's global order (preserved by the filter).
   const allTabs = useAllTabs();
+  // Keep content-tab chip labels in step with their backing entities (generic
+  // entity → tab name mirror; terminals keep their own auto-rename path).
+  useSyncContentTabNames();
   const currentTabs = useCurrentTabs();
   const globalTabs = useMemo(() => uniqueTabsByDockKey(allTabs), [allTabs]);
   const tabs = scope === 'all' ? globalTabs : currentTabs;

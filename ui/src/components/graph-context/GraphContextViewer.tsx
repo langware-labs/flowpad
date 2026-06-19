@@ -16,7 +16,7 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
-import { List, MoreVertical, Network, Trash2 } from 'lucide-react';
+import { List, MoreVertical, Network, Pencil, Trash2 } from 'lucide-react';
 
 import { RunAutomationPanel } from './RunAutomationPanel';
 
@@ -61,6 +61,32 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
   // ── Selection + delete state ──────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
+
+  // ── Inline rename. Renaming the entity's `name` propagates to the tab chip
+  // via the generic entity→tab mirror (useSyncContentTabNames). ───────────────
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const startRename = useCallback((c: GraphContext) => {
+    setRenamingId(c.id);
+    setDraft(c.displayName);
+  }, []);
+  const commitRename = useCallback(
+    async (c: GraphContext) => {
+      const name = draft.trim();
+      setRenamingId(null);
+      if (!name || name === c.displayName) return;
+      try {
+        c.name = name;
+        await c.save();
+      } catch (e) {
+        notify.error({
+          title: 'Could not rename context',
+          message: e instanceof Error ? e.message : 'Rename failed.',
+        });
+      }
+    },
+    [draft],
+  );
 
   const allSelected = contexts.length > 0 && selected.size === contexts.length;
 
@@ -195,16 +221,46 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                     aria-label={`Select ${c.displayName}`}
                     onClick={(e) => e.stopPropagation()}
                   />
-                  <button
-                    onClick={() => navigation.openDock(DockPointer.forGraphContext(c.id))}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  >
-                    <ContextIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{c.displayName}</span>
-                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                      {c.context_typeids?.length ?? 0}
-                    </span>
-                  </button>
+                  {renamingId === c.id ? (
+                    <input
+                      autoFocus
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={() => void commitRename(c)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void commitRename(c);
+                        } else if (e.key === 'Escape') {
+                          setRenamingId(null);
+                        }
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+                      data-testid={`context-rename-input-${c.id}`}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => navigation.openDock(DockPointer.forGraphContext(c.id))}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <ContextIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{c.displayName}</span>
+                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                        {c.context_typeids?.length ?? 0}
+                      </span>
+                    </button>
+                  )}
+                  {renamingId !== c.id && (
+                    <button
+                      onClick={() => startRename(c)}
+                      className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                      aria-label={`Rename ${c.displayName}`}
+                      title="Rename context"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <button
                     onClick={() => setPendingDelete([c.id])}
                     className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
