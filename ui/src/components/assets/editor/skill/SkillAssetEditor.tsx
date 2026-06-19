@@ -1,11 +1,9 @@
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
-import { EditableFileTree } from '@src/components/directory-tree';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { dataContext, FSRef, Skill } from '@sdk';
+import { FSRef, Skill } from '@sdk';
 import { useCallback } from 'react';
-import './SkillAssetEditor.css';
 
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
@@ -19,10 +17,11 @@ interface SkillAssetEditorProps {
 }
 
 /**
- * Skill assets render a two-pane surface — an editable file tree on the left
- * (browse + add/delete files in the skill folder), SKILL.md editor on the right.
- * The file tree reuses the canonical `DirectoryTree` via `EditableFileTree`,
- * rooted at the skill folder on the local compute node.
+ * Skill asset editor — the SKILL.md editor with its Chat + Backlinks side
+ * window (keyed on the skill entity's typeId). The skill's other files are
+ * browsed/created/deleted from the Assets sidebar, where the skill row expands
+ * into its folder tree (see the `skillFolder` adapter) — there is no second
+ * tree here.
  */
 export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEditorProps) {
   const { entity: discoveredSkill } = useEntityByPath<Skill>(
@@ -34,8 +33,6 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
   const chatTarget = skill ? skill.typeId.toString() : null;
   const { navigation } = useDockNavigation();
 
-  const computeNodeTypeId = dataContext.computeNodeTypeId;
-
   const onDelete = useCallback(async () => {
     if (!skill) return;
     await skill.delete();
@@ -43,25 +40,13 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
   }, [skill, navigation]);
 
   return (
-    <div className="skill-editor-container">
-      {computeNodeTypeId && skill?.asset_ref && (
-        <div className="skill-editor-sidebar">
-          <EditableFileTree
-            rootTypeId={computeNodeTypeId}
-            rootPath={skill.asset_ref}
-            rootLabel={skill.name}
-            className="h-full"
-          />
-        </div>
-      )}
-      <div className="skill-editor-main">
-        <MarkdownEditor
-          fsRef={editorRef}
-          chatTarget={chatTarget}
-          onDelete={skill ? onDelete : undefined}
-          deleteLabel={skill?.name ?? undefined}
-        />
-      </div>
+    <div className="h-full min-h-0">
+      <MarkdownEditor
+        fsRef={editorRef}
+        chatTarget={chatTarget}
+        onDelete={skill ? onDelete : undefined}
+        deleteLabel={skill?.name ?? undefined}
+      />
     </div>
   );
 }

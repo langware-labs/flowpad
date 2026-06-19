@@ -9,6 +9,7 @@ import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest }
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
 import { useEffect, useRef } from 'react';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
@@ -86,6 +87,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <NotificationCommandBridge />
         <CleanupModal />
         <DeleteAssetModal />
+        <InputPromptModal />
         <Spotlight />
         <ActivityProgressModalRoot />
         <GlobalEvents />
