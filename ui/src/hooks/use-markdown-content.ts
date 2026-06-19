@@ -40,6 +40,11 @@ function parseFrontmatter(
 }
 
 function serializeFrontmatter(fields: Record<string, string>, body: string): string {
+  // No parsed fields → the file had no readable frontmatter. Emitting a fence
+  // here would inject a hollow `---\n\n---` block and strand the body's real
+  // content deeper on every save, so leave the content untouched.
+  if (Object.keys(fields).length === 0) return body;
+
   const lines = Object.entries(fields).map(([key, value]) => {
     const quoted = value.includes('"') ? `'${value}'` : `"${value}"`;
     return `${key}: ${quoted}`;
