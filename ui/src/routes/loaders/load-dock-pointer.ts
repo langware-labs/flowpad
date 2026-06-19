@@ -2,6 +2,7 @@ import {
   AgenticProcess,
   ContextEntitiesEnum,
   dataContext,
+  Project,
   QueryRequest,
   systemTools,
   Trigger,
@@ -34,7 +35,7 @@ async function loadPlanRoute(pointer: string | undefined): Promise<void> {
   );
   const process = await AgenticProcess.getById(parsed.agenticProcessTypeId.id).catch(() => null);
   if (process?.project_id) {
-    await loadProject(process.project_id).catch(() =>
+    await loadProject(new TypeId(Project.type, process.project_id)).catch(() =>
       systemTools.resolveProjectContext(process.workdir, process),
     );
   } else {

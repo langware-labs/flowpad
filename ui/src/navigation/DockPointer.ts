@@ -1,4 +1,4 @@
-import { AgenticProcess, Layout, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
+import { AgenticProcess, Layout, Project, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
@@ -413,10 +413,14 @@ export class DockPointer implements IDockPointer {
    */
   static parseProjectPointer(
     pointer: string | undefined | null,
-  ): { projectId: string | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
-    if (!pointer) return { projectId: null, roomId: null, tabTypeId: null, conversationId: null };
+  ): { projectTypeId: TypeId | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
+    if (!pointer) return { projectTypeId: null, roomId: null, tabTypeId: null, conversationId: null };
     const parts = pointer.split('/').filter(Boolean);
-    const projectId = parts[0] ?? null;
+    // parts[0] identifies the project. It may arrive bare (`<id>`) or as a
+    // serialized `<type>-<id>` typeid — route it through TypeId so the type
+    // token is parsed by the one object that owns that grammar, never
+    // string-matched / prefix-stripped here.
+    const projectTypeId = parts[0] ? DockPointer.projectSegmentToTypeId(parts[0]) : null;
     let roomId: string | null = null;
     let tabTypeId: TypeId | null = null;
     let conversationId: string | null = null;
@@ -432,7 +436,31 @@ export class DockPointer implements IDockPointer {
         }
       }
     }
-    return { projectId, roomId, tabTypeId, conversationId };
+    return { projectTypeId, roomId, tabTypeId, conversationId };
+  }
+
+  /**
+   * Construct a TypeId, or return null instead of throwing — the shared
+   * non-throwing coercion used by the pointer parsers (`targetTypeId`,
+   * `projectSegmentToTypeId`) that turn a `<type>-<id>`-or-bare-id segment into
+   * a TypeId.
+   */
+  private static tryTypeId(type: string, id?: string): TypeId | null {
+    try {
+      return id !== undefined ? new TypeId(type, id) : new TypeId(type);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Coerce a project-pointer segment into a `project` TypeId. The segment is a
+   * serialized `<type>-<id>` (e.g. `project-<uuid>`) or a bare id; TypeId parses
+   * the type token when present, and the project view supplies the type for a
+   * bare id. The grammar lives entirely in TypeId — no literal prefixing here.
+   */
+  private static projectSegmentToTypeId(segment: string): TypeId | null {
+    return DockPointer.tryTypeId(Project.type, DockPointer.tryTypeId(segment)?.id ?? segment);
   }
 
   /**
@@ -943,16 +971,9 @@ export class DockPointer implements IDockPointer {
     const pointer = this.pointer;
     if (!pointer) return null;
     const candidate = pointer.includes('/typeid/') ? pointer.split('/typeid/').pop() ?? '' : pointer;
-    const tryTypeId = (type: string, id?: string): TypeId | null => {
-      try {
-        return id !== undefined ? new TypeId(type, id) : new TypeId(type);
-      } catch {
-        return null;
-      }
-    };
     return (
-      tryTypeId(candidate) ??
-      (this.viewType && !pointer.includes('/') ? tryTypeId(this.viewType, pointer) : null)
+      DockPointer.tryTypeId(candidate) ??
+      (this.viewType && !pointer.includes('/') ? DockPointer.tryTypeId(this.viewType, pointer) : null)
     );
   }
 
