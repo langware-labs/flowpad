@@ -38,6 +38,7 @@ import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { SimpleChatPane } from './SimpleChatPane';
 import { useChatUiMode } from '@src/contexts/chat-ui-mode-context';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
@@ -191,6 +192,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // layout, mirroring the ProcessToolbar decision.
   const chatUiMode = useChatUiMode();
   const showSimpleChat = chatUiMode && !embedded && !!process;
+  // Skin layer: the trace/annotation/PTY-timing column header is terminal
+  // debug chrome — power-user only, hidden in Standard view. See docs/viewmodes.md.
+  const isAdvanced = useIsAdvanced();
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
@@ -1456,9 +1460,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       <TerminalRuntimeErrorBanner />
 
       <PtySyncProvider session={ptySyncRef.current}>
-        {/* Column header — only for Claude pane; terminal chrome, hidden in
-            Standard view where the simple chat replaces the xterm. */}
-        {process && activePane === 'claude' && !showSimpleChat ? (
+        {/* Column header — only for Claude pane; terminal debug chrome
+            (trace/annotation/PTY-timing), hidden in Standard view and when the
+            simple chat replaces the xterm. */}
+        {process && activePane === 'claude' && !showSimpleChat && isAdvanced ? (
           <ColumnHeaderBar
             showTrace={showGutter}
             traceWidth={48}
