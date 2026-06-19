@@ -2385,10 +2385,18 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
             )
 
 
+_UNSET = object()  # sentinel: distinguishes "existing not provided" from "known absent (None)"
+
+
 async def _upsert_hub_conversation_metadata(
-    hub_conv: dict, someone_typeid: str, *, notify: bool = True,
+    hub_conv: dict, someone_typeid: str, *, notify: bool = True, existing=_UNSET,
 ) -> Optional[Conversation]:
     """Upsert a hub-side Conversation into the local SQLite table.
+
+    ``existing`` lets a caller that already holds the local row (e.g. the
+    conversation-list bulk-read cache) pass it in to skip the per-row
+    ``get_one``. Pass ``None`` for "known absent" (→ create path); omit it
+    entirely to have this function load the row itself.
 
     Copies the user-visible metadata (``title``, ``participants``,
     ``remote_project_id`` / ``remote_project_name``, ``message_status_visible``)
@@ -2418,7 +2426,8 @@ async def _upsert_hub_conversation_metadata(
             except Exception as e:  # noqa: BLE001
                 logger.warning("[conv-upsert] deleted_at hub row, local cleanup failed: %s", e)
         return None
-    existing = await Conversation.get_one({"id": conv_id})
+    if existing is _UNSET:
+        existing = await Conversation.get_one({"id": conv_id})
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
         for k in ("title", "participants", "remote_project_id", "remote_project_name",
@@ -2594,8 +2603,13 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     if not hub_auth_available():
         return await _local_only_conversation_list(auth_required=True, user_id=user_id)
 
-    # Filter local conversations to only those created by or involving the current user
-    local_list = await Conversation.get_all({"created_by": user_id})
+    # Bulk-read the entire local mirror ONCE as the reconcile cache. This is the
+    # only consumer of ``local_index`` — the returned list is the separate,
+    # unfiltered ``merged`` below, so output is unaffected. (Must NOT filter by
+    # ``created_by``: remote conversations carry the hub owner's id, not the local
+    # user's, so a ``created_by`` filter returns nothing — emptying the cache and
+    # forcing a per-row get_one + a spurious "stale" verdict for every conv.)
+    local_list = await Conversation.get_all({})
     local_index = {c.id: c for c in local_list if c.id}
 
     hub_convs_result, hub_invs_result = await asyncio.gather(
@@ -2622,25 +2636,47 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     hub_convs = _coerce_list(hub_convs_result) or []
     hub_invs = _coerce_list(hub_invs_result) or []
 
-    # (c) upsert hub conversation metadata; dispatch per-conv message fetch
-    # when the hub has more messages than we do locally.
+    # (c) Reconcile hub conversation metadata into the local mirror, then dispatch
+    # a per-conv message fetch when the hub has drifted from our local copy.
+    #
+    # Upsert ONLY conversations that actually changed: a row that's already local,
+    # already remote, and not hub-stale needs no write. The hub bumps the parent
+    # ``updated_date`` on every conversation change (message add/edit/delete,
+    # delivery/body status, membership), so ``is_stale`` is a complete change
+    # signal — see _should_fetch_messages. Skipping the unchanged majority avoids
+    # a per-row get_one + save for every conversation on every list call.
     bg_fetch_dispatched: list[str] = []
     for hub_conv in hub_convs:
-        try:
-            await _upsert_hub_conversation_metadata(hub_conv, someone_typeid)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[conv-list] upsert conv=%s failed: %s",
-                           (hub_conv.get("id") or "?")[:8], e)
+        conv_id = (hub_conv.get("id") or "").strip()
+        if not conv_id:
             continue
-        # ``local_index`` holds the PRE-upsert local copies (built before this
-        # loop from local_list; _upsert_hub_conversation_metadata mutates a
-        # freshly-fetched row, not this object), so they are the correct
-        # comparison baseline.
-        if _should_fetch_messages(local_index.get(hub_conv.get("id")), hub_conv):
-            conv_id = hub_conv.get("id")
-            if conv_id:
-                _dispatch_conversation_message_fetch(conv_id, someone_typeid)
-                bg_fetch_dispatched.append(conv_id)
+        # ``existing`` is the PRE-upsert local copy from the bulk cache — the
+        # correct comparison baseline. Capture the fetch decision BEFORE the
+        # upsert mutates ``existing.updated_date``.
+        existing = local_index.get(conv_id)
+        should_fetch = _should_fetch_messages(existing, hub_conv)
+        # ``created_date`` is hub-authoritative and corruptible locally (a DB
+        # rebuild re-stamps it) without ever moving ``updated_date`` — so it can't
+        # ride is_stale. Compare it here against the cache (free, in-memory) so the
+        # repair branch in _upsert still runs; converged rows match and skip.
+        _hub_created = Conversation._as_datetime(hub_conv.get("created_date"))
+        _created_drift = (
+            existing is not None
+            and _hub_created is not None
+            and Conversation._as_datetime(existing.created_date) != _hub_created
+        )
+        if (existing is None or not existing.remote
+                or Conversation.is_stale(existing, hub_conv) or _created_drift):
+            try:
+                await _upsert_hub_conversation_metadata(
+                    hub_conv, someone_typeid, existing=existing,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[conv-list] upsert conv=%s failed: %s", conv_id[:8], e)
+                continue
+        if should_fetch:
+            _dispatch_conversation_message_fetch(conv_id, someone_typeid)
+            bg_fetch_dispatched.append(conv_id)
 
     # (d) invitations through the new materializer: the hub embeds the
     # target Conversation + first FlowMessage in each invitation, so the
