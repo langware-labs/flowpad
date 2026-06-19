@@ -4,41 +4,55 @@
  * Verifies that when POSTing to /api/v1/agent/navigate/entity with a
  * connection_id parameter, the navigation message is routed to the specific
  * WS connection, not the "active" one.
+ *
+ * NOTE: /api/v1/agent/navigate/entity is an AGENT/CLI route (`flow navigate
+ * entity`). It deliberately returns a FLAT `{ok, connection_id, type, id}` /
+ * `{ok:false, error_code, error}` shape (NOT the standard `{status,data}`
+ * envelope) so the CLI can map it straight to exit codes — see
+ * flow_sdk/cli/commands/navigate_cmd.py, which calls it with `requests.post`.
+ * So this test drives it the same way the agent does: a RAW axios client that
+ * does not unwrap the envelope (the default `apiClient` interceptor returns
+ * `response.data.data`, which is undefined for this flat route).
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { ConnectionManager, dataManager, Project, TypeId } from '@sdk';
+import { ConnectionManager, Project, TypeId } from '@sdk';
 import apiClient from '@sdk/client';
+import axios, { type AxiosInstance } from 'axios';
+import { v4 as uuidv4 } from 'uuid';
+
+import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
 describe('navigate entity with explicit connection_id', () => {
   let connectionManager: ConnectionManager;
   let testProject: Project;
+  // Raw client (no envelope unwrap) — the agent route returns a flat body.
+  let raw: AxiosInstance;
 
   beforeAll(async () => {
+    // Bootstrap + establish the websocket connection (the strip/agent path the
+    // navigate route targets). apiTestSetup calls connectionManager.connect();
+    // the bare ConnectionManager.getInstance() does NOT auto-connect.
+    await apiTestSetup(getTestSignupInfo(), 'navigate-connection-id');
     connectionManager = ConnectionManager.getInstance();
+    expect(connectionManager.connected).toBe(true);
 
-    // Wait for connection to establish
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Connection timeout')), 5000);
-      if (connectionManager.connected) {
-        clearTimeout(timeout);
-        resolve();
-      } else {
-        const checkConnection = setInterval(() => {
-          if (connectionManager.connected) {
-            clearTimeout(timeout);
-            clearInterval(checkConnection);
-            resolve();
-          }
-        }, 100);
-      }
+    // Same backend base URL as apiClient (already includes /api/v1), but without
+    // the unwrapping interceptor and accepting all statuses so we can assert on
+    // the flat agent contract directly.
+    raw = axios.create({
+      baseURL: apiClient.defaults.baseURL,
+      withCredentials: true,
+      validateStatus: () => true,
     });
 
-    // Create a test project for navigation
+    // Create a test project for navigation. id must be a valid identifier
+    // (UUID); uname is stored WITHOUT a leading '@' — the `identifier` getter
+    // adds it (a '@nav-test' uname would derive a '@@nav-test' typeId).
     testProject = new Project({
-      id: 'test-project-nav',
+      id: uuidv4(),
       name: 'Navigation Test Project',
-      uname: '@nav-test',
+      uname: 'nav-test',
       visitor_role: 'owner',
     });
 
@@ -52,17 +66,15 @@ describe('navigate entity with explicit connection_id', () => {
   it('should route navigation to the specified connection_id', async () => {
     const typeid = new TypeId('project', testProject.id);
 
-    // POST to navigate with explicit connection_id
-    const response = await apiClient.post('/api/v1/agent/navigate/entity', {
+    const response = await raw.post('/agent/navigate/entity', {
       typeid: typeid.toString(),
-      connection_id: connectionManager.connection_id, // Target this connection
+      connection_id: connectionManager.id, // Target this connection
     });
 
-    // Verify successful response
     expect(response.status).toBe(200);
     const body = response.data;
     expect(body.ok).toBe(true);
-    expect(body.connection_id).toBe(connectionManager.connection_id);
+    expect(body.connection_id).toBe(connectionManager.id);
     expect(body.type).toBe('project');
     expect(body.id).toBe(testProject.id);
   });
@@ -71,32 +83,25 @@ describe('navigate entity with explicit connection_id', () => {
     const typeid = new TypeId('project', testProject.id);
     const invalidConnectionId = 'conn-invalid-xyz-does-not-exist';
 
-    // POST with an invalid connection_id
-    try {
-      await apiClient.post('/api/v1/agent/navigate/entity', {
-        typeid: typeid.toString(),
-        connection_id: invalidConnectionId,
-      });
-      // Should not reach here
-      expect.fail('Expected request to fail with CONNECTION_NOT_FOUND');
-    } catch (error: any) {
-      // Expect a 404 response
-      expect(error.response.status).toBe(404);
-      const body = error.response.data;
-      expect(body.ok).toBe(false);
-      expect(body.error_code).toBe('CONNECTION_NOT_FOUND');
-    }
+    const response = await raw.post('/agent/navigate/entity', {
+      typeid: typeid.toString(),
+      connection_id: invalidConnectionId,
+    });
+
+    expect(response.status).toBe(404);
+    const body = response.data;
+    expect(body.ok).toBe(false);
+    expect(body.error_code).toBe('CONNECTION_NOT_FOUND');
   });
 
   it('should navigate to active tab when connection_id is omitted', async () => {
     const typeid = new TypeId('project', testProject.id);
 
     // POST without connection_id — should use active tab
-    const response = await apiClient.post('/api/v1/agent/navigate/entity', {
+    const response = await raw.post('/agent/navigate/entity', {
       typeid: typeid.toString(),
     });
 
-    // Verify successful response
     expect(response.status).toBe(200);
     const body = response.data;
     expect(body.ok).toBe(true);

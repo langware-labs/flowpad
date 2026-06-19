@@ -5,40 +5,18 @@
  * connection_id is captured and exposed on the TypeScript entity.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { AgenticProcess, ConnectionManager, dataManager } from '@sdk';
+import { describe, it, expect } from 'vitest';
+import { AgenticProcess } from '@sdk';
+import { v4 as uuidv4 } from 'uuid';
 
+// These are pure field/construction checks on the AgenticProcess entity — they
+// neither hit the backend nor need a live websocket, so there is no connection
+// setup (the old passive connection-wait never called connect() and timed out).
 describe('AgenticProcess connection_id field', () => {
-  let connectionManager: ConnectionManager;
-
-  beforeAll(async () => {
-    connectionManager = ConnectionManager.getInstance();
-    // Wait for the connection to establish
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Connection timeout')), 5000);
-      if (connectionManager.connected) {
-        clearTimeout(timeout);
-        resolve();
-      } else {
-        const checkConnection = setInterval(() => {
-          if (connectionManager.connected) {
-            clearTimeout(timeout);
-            clearInterval(checkConnection);
-            resolve();
-          }
-        }, 100);
-      }
-    });
-  });
-
-  afterAll(() => {
-    // Cleanup if needed
-  });
-
   it('should expose connection_id field on AgenticProcess', async () => {
     // Create a new AgenticProcess
     const process = new AgenticProcess({
-      id: 'test-process-123',
+      id: uuidv4(),
       name: 'Test Process',
       connection_id: 'conn-test-abc123',
     });
@@ -48,7 +26,7 @@ describe('AgenticProcess connection_id field', () => {
 
   it('should handle null connection_id', async () => {
     const process = new AgenticProcess({
-      id: 'test-process-456',
+      id: uuidv4(),
       name: 'Test Process No Connection',
       connection_id: null,
     });
@@ -58,7 +36,7 @@ describe('AgenticProcess connection_id field', () => {
 
   it('should handle undefined connection_id', async () => {
     const process = new AgenticProcess({
-      id: 'test-process-789',
+      id: uuidv4(),
       name: 'Test Process Undefined Connection',
     });
 
@@ -67,7 +45,7 @@ describe('AgenticProcess connection_id field', () => {
 
   it('should preserve connection_id through entity updates', async () => {
     const process = new AgenticProcess({
-      id: 'test-process-update',
+      id: uuidv4(),
       name: 'Test Process Update',
       connection_id: 'conn-update-xyz',
     });
