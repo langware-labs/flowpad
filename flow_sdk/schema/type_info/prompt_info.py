@@ -4,6 +4,7 @@ from typing import Optional
 from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 from flow_sdk.fs_store.indexer.functions.prompt import (
     extract_prompt,
     prompt_gen_id,
@@ -48,7 +49,7 @@ PROMPT = TypeMetadata(
     from_disk_fn=extract_prompt,
     gen_id_fn=prompt_gen_id,
     indexed_by_default=True,
-    browseable=True,
+    browseable_by=ViewMode.ADVANCED,
     # v1: creation lives in the Prompt Library menu (PromptEditDialog with the
     # generic pickers); the AssetsPage quick-create path needs a descriptor in
     # quick-create/registry.ts before this flips on.

@@ -5,6 +5,7 @@ from typing import Optional
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 from flow_sdk.fs_store.indexer.functions.agent_trace import (
     agent_trace_gen_id,
     extract_agent_trace,
@@ -48,7 +49,7 @@ AGENT_TRACE = TypeMetadata(
     from_disk_fn=extract_agent_trace,
     gen_id_fn=agent_trace_gen_id,
     indexed_by_default=True,
-    browseable=True,
+    browseable_by=ViewMode.ADVANCED,
     creatable=False,
     icon="Route",
     api_visible=True,

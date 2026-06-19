@@ -11,7 +11,6 @@ MARKDOWN_INDEX = TypeMetadata(
     from_disk_fn=extract_markdown_index,
     gen_id_fn=markdown_index_gen_id,
     indexed_by_default=False,
-    browseable=False,
     creatable=True,
     api_visible=True,
     icon="ListTree",
