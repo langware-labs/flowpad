@@ -634,6 +634,14 @@ export class DockPointer implements IDockPointer {
     return new DockPointer(ViewType.GRAPH, pointer, Object.keys(queryOptions).length ? queryOptions : undefined, layout);
   }
 
+  /**
+   * Create a DockPointer for the frozen-context viewer at
+   * `/dock/graph_context/<id>`. `id` is the GraphContext entity's UUID.
+   */
+  static forGraphContext(id: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.GRAPH_CONTEXT, id, undefined, layout);
+  }
+
   /** Split a GRAPH pointer into its `{ type, id }` parts. */
   static parseGraphPointer(pointer: string | undefined): { type: string; id: string } | null {
     if (!pointer) return null;

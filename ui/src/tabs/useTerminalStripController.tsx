@@ -19,11 +19,15 @@ import {
   AgenticProcess,
   capabilityManager,
   CapabilityKinds,
+  ContextEntitiesEnum,
   dataContext,
+  GraphContext,
   HARNESS_CAPABILITY_KINDS,
   type ComputeNode,
 } from '@sdk';
 import { type UseCapabilityResult } from '@sdk/react/hooks';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { useEnsureProject } from '@src/components/project-selector';
@@ -34,6 +38,7 @@ import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Cloud, Container, History, SquareTerminal } from 'lucide-react';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { ProjectsCounterChip, type ProjectWorkerType } from '@src/components/terminal/ProjectsCounterChip';
@@ -85,6 +90,11 @@ export function useTerminalStripController({
   spawnProjectId,
 }: TerminalStripControllerOptions = {}): TerminalStripController {
   const { navigation } = useDockNavigation();
+  const isAdvanced = useIsAdvanced();
+  // Per-type icon from the backend TypeInfo registry (never hardcode a glyph).
+  // Memoized so it stays referentially stable and doesn't churn the openers /
+  // newTabMenuItems memos on every render.
+  const ContextIcon = useMemo(() => iconForType(GraphContext.type), []);
   const tabsProjectId = spawnProjectId ?? dataContext.project?.id ?? null;
   const currentProjectName = spawnProjectId
     ? null
@@ -196,6 +206,39 @@ export function useTerminalStripController({
   );
 
   const handleStartTerminal = useCallback(() => startTerminalTab(), [startTerminalTab]);
+
+  // "Open Context" — freeze the current global context (the ContextEntitiesEnum
+  // slots) into a new GraphContext entity and open it in a tab. URL-first: we
+  // create the entity then navigate; no optimistic context writes.
+  const handleOpenContext = useCallback(async () => {
+    const slotMap: Record<string, string> = {};
+    const typeids: string[] = [];
+    for (const key of Object.values(ContextEntitiesEnum)) {
+      const tid = dataContext.getContextEntityTypeId(key);
+      if (!tid) continue;
+      const s = tid.toString();
+      slotMap[key] = s;
+      typeids.push(s);
+    }
+    const scope = dataContext.project?.typeId ? [dataContext.project.typeId] : [];
+    const gc = new GraphContext({});
+    gc.context_typeids = typeids;
+    gc.slot_map = slotMap;
+    gc.name = `Context ${gc.id.slice(0, 8)}`;
+    try {
+      await gc.save(scope);
+    } catch (e) {
+      // Surface the failure instead of silently doing nothing — the most common
+      // cause is a backend that predates the graph_context type (needs restart).
+      notify.error({
+        title: 'Could not freeze context',
+        message: e instanceof Error ? e.message : 'Failed to save the context snapshot.',
+      });
+      return;
+    }
+    navigation.openDock(DockPointer.forGraphContext(gc.typeId.id));
+  }, [navigation]);
+
   const handleStartSandbox = useCallback(() => {
     const sandboxNode = dataContext.sandboxComputeNode;
     if (!sandboxNode) return;
@@ -302,6 +345,15 @@ export function useTerminalStripController({
         onActivate: () => setHistoryModalOpen(true),
         available: true,
       },
+      {
+        // Advanced-only: freeze the current global context into a GraphContext.
+        id: 'open-context',
+        label: 'Open Context',
+        Icon: ContextIcon,
+        onActivate: () => void handleOpenContext(),
+        available: isAdvanced,
+        disabled: isTabCreationPending,
+      },
     ],
     [
       modLabel,
@@ -311,6 +363,9 @@ export function useTerminalStripController({
       handleStartTerminal,
       handleStartSandbox,
       handleStartDocker,
+      handleOpenContext,
+      isAdvanced,
+      ContextIcon,
       sandboxAvailable,
       dockerNodes,
       claudeWarning,
@@ -333,8 +388,12 @@ export function useTerminalStripController({
     () => [
       { label: 'New Claude Session', shortcut: `${modLabel}+C`, onSelect: () => void handleStartClaude() },
       { label: 'New Terminal', shortcut: `${modLabel}+T`, onSelect: () => void handleStartTerminal() },
+      // Advanced-only: freeze the current context into a GraphContext and open it.
+      ...(isAdvanced
+        ? [{ label: 'Open Context', Icon: ContextIcon, onSelect: () => void handleOpenContext() }]
+        : []),
     ],
-    [modLabel, handleStartClaude, handleStartTerminal],
+    [modLabel, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
   );
 
   const leading = useMemo(
