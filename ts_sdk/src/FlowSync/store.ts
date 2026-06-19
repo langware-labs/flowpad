@@ -87,7 +87,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * Frontend SchemaRegistry — complete reflection of the backend type registry
    * (TypeInfo + nested JSON schema), populated once from the bootstrap ``types``
    * payload via {@link loadTypes}. Single source of truth for type metadata
-   * (icon/browseable/creatable/fields) and validation schemas.
+   * (icon/browseable_by/creatable/fields) and validation schemas.
    */
   typeInfos: { [type: string]: TypeInfo } = {};
   streams: WSStream[] = [];
@@ -137,7 +137,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return this.schemas[type.toLowerCase()];
   }
 
-  /** TypeInfo for a type (icon/browseable/creatable/fields/schema). */
+  /** TypeInfo for a type (icon/browseable_by/creatable/fields/schema). */
   public getTypeInfo(type: string): TypeInfo | undefined {
     if (typeof type !== 'string') return undefined;
     return this.typeInfos[type.toLowerCase()];

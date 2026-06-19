@@ -1,6 +1,7 @@
 """Type metadata for WHITEBOARD."""
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 from flow_sdk.fs_store.indexer.functions.whiteboard import (
     extract_whiteboard,
     whiteboard_asset_hash,
@@ -10,7 +11,7 @@ from flow_sdk.fs_store.indexer.functions.whiteboard import (
 WHITEBOARD = TypeMetadata(
     type=EntityType.WHITEBOARD,
     icon="Palette",
-    browseable=True,
+    browseable_by=ViewMode.ADVANCED,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,

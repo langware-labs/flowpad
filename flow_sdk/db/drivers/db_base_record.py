@@ -66,7 +66,7 @@ class DBBaseRecord(BaseModel):
                 type_name=type_name,
                 locations=["index"],
                 entity_cls=cls,
-                browseable=bool(getattr(cls, "_browseable", False)),
+                browseable_by=getattr(cls, "_browseable_by", None),
                 creatable=bool(getattr(cls, "_creatable", False)),
                 indexed_by_default=bool(getattr(cls, "_indexed_by_default", False)),
                 api_visible=bool(getattr(cls, "_api_visible", False)),

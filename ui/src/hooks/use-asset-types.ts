@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@sdk/client';
 import { dataManager } from '@sdk';
+import { isBrowseableIn, type ViewMode } from '@sdk/FlowSync/schema';
+import { useViewMode } from '@src/contexts/view-mode-context';
 
 export interface AssetTypeVault {
   typeid: string;
@@ -16,7 +18,7 @@ export interface AssetTypeInfo {
   label: string;
   icon: string | null;
   creatable: boolean;
-  browseable: boolean;
+  browseable_by: ViewMode | null;
   vaults?: AssetTypeVault[];
 }
 
@@ -28,46 +30,44 @@ function humanize(typeName: string): string {
     .join(' ');
 }
 
-/** Static asset-type metadata sourced from the frontend SchemaRegistry.
+/** Static asset-type metadata sourced from the frontend SchemaRegistry,
+ *  filtered to types browseable in the current view ``mode`` (cumulative).
  *  Guarded so it degrades to [] if the registry isn't ready yet (e.g. a
  *  component test that mounts before bootstrap/loadTypes ran). */
-function staticAssetTypes(): AssetTypeInfo[] {
+function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
   return (dataManager?.getAllTypeInfos?.() ?? [])
-    .filter((t) => t.browseable)
+    .filter((t) => isBrowseableIn(t.browseable_by, mode))
     .map((t) => ({
       type_name: t.type_name,
       label: humanize(t.type_name),
       icon: t.icon,
       creatable: t.creatable,
-      browseable: t.browseable,
+      browseable_by: t.browseable_by,
     }));
 }
 
 /**
  * Asset-type catalog for the asset browser.
  *
- * Static metadata (type_name/label/icon/creatable/browseable) comes from the
- * frontend SchemaRegistry — no per-type fetch. The only runtime piece is
- * markdown ``vaults`` (per-project doc roots): we still fetch ``/assets/types``
- * but consume ONLY its vaults, merging them onto the markdown entry.
+ * Static metadata (type_name/label/icon/creatable/browseable_by) comes from the
+ * frontend SchemaRegistry — no per-type fetch — and is filtered by the current
+ * view mode, so toggling the footer pill live-updates the catalog. The only
+ * runtime piece is markdown ``vaults`` (per-project doc roots): we still fetch
+ * ``/assets/types`` but consume ONLY its vaults, merging them onto markdown.
  */
 export function useAssetTypes(): { types: AssetTypeInfo[]; isLoading: boolean } {
-  const [types, setTypes] = useState<AssetTypeInfo[]>(() => staticAssetTypes());
+  const mode = useViewMode();
+  const [vaults, setVaults] = useState<AssetTypeVault[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    // `types` is already seeded from staticAssetTypes() by the useState
-    // initializer; the effect only fetches the runtime markdown vaults and
-    // merges them onto that base (no second static recompute).
     apiClient
       .get<{ types: AssetTypeInfo[] }>('/assets/types')
       .then((res) => {
         if (cancelled) return;
-        const vaults =
-          (res?.types || []).find((t) => t.type_name === 'markdown')?.vaults || [];
-        setTypes((prev) =>
-          prev.map((t) => (t.type_name === 'markdown' ? { ...t, vaults } : t)),
+        setVaults(
+          (res?.types || []).find((t) => t.type_name === 'markdown')?.vaults || [],
         );
         setIsLoading(false);
       })
@@ -78,6 +78,16 @@ export function useAssetTypes(): { types: AssetTypeInfo[]; isLoading: boolean } 
       cancelled = true;
     };
   }, []);
+
+  // Re-derive the catalog whenever the view mode changes (live filtering) or the
+  // runtime markdown vaults arrive; merge the vaults onto the markdown entry.
+  const types = useMemo(
+    () =>
+      staticAssetTypes(mode).map((t) =>
+        t.type_name === 'markdown' ? { ...t, vaults } : t,
+      ),
+    [mode, vaults],
+  );
 
   return { types, isLoading };
 }

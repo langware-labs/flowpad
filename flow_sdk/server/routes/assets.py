@@ -102,18 +102,27 @@ def _classify_vault(p: Path, home: Path, project_by_cwd: dict[str, object]) -> t
 
 @router.get("/api/v1/assets/types")
 async def get_asset_types():
-    """Return all record types marked as browseable=True."""
+    """Return all record types with a non-null ``browseable_by`` view mode.
+
+    The server can't know the client's current view mode, so it returns every
+    browseable type along with its ``browseable_by`` level; the client filters
+    by the active mode (cumulative — see ``use-asset-types.ts``).
+    """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    types = [{"type_name": "project", "label": "Projects", "icon": None, "creatable": False}]
+    types = [
+        {"type_name": "project", "label": "Projects", "icon": None, "creatable": False,
+         "browseable_by": "standard"}
+    ]
     for type_name in SchemaRegistry.get_all_types():
         ti = SchemaRegistry.get(type_name)
-        if ti and ti.browseable:
+        if ti and ti.browseable_by is not None:
             entry: dict = {
                 "type_name": ti.type_name,
                 "label": ti.type_name.replace("_", " ").title(),
                 "icon": ti.icon,
                 "creatable": ti.creatable,
+                "browseable_by": ti.browseable_by.value,
             }
             if ti.type_name == "markdown":
                 entry["vaults"] = await _markdown_vaults()

@@ -12,6 +12,7 @@ from pydantic import Field
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 
 
 class FlowpadDiagnosisMetadata(BaseMeta):
@@ -50,7 +51,7 @@ class FlowpadDiagnosisMetadata(BaseMeta):
 FLOWPAD_DIAGNOSIS = TypeMetadata(
     type=EntityType.FLOWPAD_DIAGNOSIS,
     icon="Stethoscope",
-    browseable=True,
+    browseable_by=ViewMode.DEV,
     creatable=True,
     api_visible=True,
     index_fields=["title", "symptoms"],
