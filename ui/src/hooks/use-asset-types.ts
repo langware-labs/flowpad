@@ -19,6 +19,10 @@ export interface AssetTypeInfo {
   icon: string | null;
   creatable: boolean;
   browseable_by: ViewMode | null;
+  /** Folder-layout type whose asset_ref is the bare folder (e.g. skill): its
+   *  sidebar row expands into the on-disk file tree. Sourced from
+   *  ``/assets/types`` (``folder_backed``), like vaults. */
+  folder_backed?: boolean;
   vaults?: AssetTypeVault[];
 }
 
@@ -58,6 +62,7 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
 export function useAssetTypes(): { types: AssetTypeInfo[]; isLoading: boolean } {
   const mode = useViewMode();
   const [vaults, setVaults] = useState<AssetTypeVault[]>([]);
+  const [folderBacked, setFolderBacked] = useState<Set<string>>(() => new Set());
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -66,9 +71,9 @@ export function useAssetTypes(): { types: AssetTypeInfo[]; isLoading: boolean } 
       .get<{ types: AssetTypeInfo[] }>('/assets/types')
       .then((res) => {
         if (cancelled) return;
-        setVaults(
-          (res?.types || []).find((t) => t.type_name === 'markdown')?.vaults || [],
-        );
+        const list = res?.types || [];
+        setVaults(list.find((t) => t.type_name === 'markdown')?.vaults || []);
+        setFolderBacked(new Set(list.filter((t) => t.folder_backed).map((t) => t.type_name)));
         setIsLoading(false);
       })
       .catch(() => {
@@ -80,13 +85,16 @@ export function useAssetTypes(): { types: AssetTypeInfo[]; isLoading: boolean } 
   }, []);
 
   // Re-derive the catalog whenever the view mode changes (live filtering) or the
-  // runtime markdown vaults arrive; merge the vaults onto the markdown entry.
+  // runtime fetch resolves; merge folder_backed onto every entry and the
+  // markdown vaults onto the markdown entry.
   const types = useMemo(
     () =>
-      staticAssetTypes(mode).map((t) =>
-        t.type_name === 'markdown' ? { ...t, vaults } : t,
-      ),
-    [mode, vaults],
+      staticAssetTypes(mode).map((t) => ({
+        ...t,
+        folder_backed: folderBacked.has(t.type_name),
+        ...(t.type_name === 'markdown' ? { vaults } : {}),
+      })),
+    [mode, vaults, folderBacked],
   );
 
   return { types, isLoading };

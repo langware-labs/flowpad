@@ -123,7 +123,7 @@ function assetNodeId(typeName: string, path: string): string {
 /**
  * Build a child Browseable from a SearchResult.
  */
-function assetChild(typeName: string, iconName: string | null, result: SearchResult, onAfterDelete?: () => void): Browseable {
+function assetChild(typeName: string, iconName: string | null, result: SearchResult, folderBacked: boolean, onAfterDelete?: () => void): Browseable {
   const label = result.name || basename(result.asset_ref) || '(untitled)';
   // Projects open in their collaboration space rather than the asset editor.
   const pointer = typeName === 'project'
@@ -160,10 +160,11 @@ function assetChild(typeName: string, iconName: string | null, result: SearchRes
     toolbar: toolbar.length > 0 ? toolbar : undefined,
   };
 
-  // Skills are folder-backed: expand the row to browse/create/delete the
-  // skill's files inline (one unified tree — no second panel). asset_ref is the
-  // skill folder's absolute path; children are listed via the local compute node.
-  if (typeName === 'skill' && result.asset_ref) {
+  // Folder-backed types (asset_ref is a bare folder, e.g. skill) expand the row
+  // to browse/create/delete their files inline — one unified tree, no second
+  // panel. The flag comes from TypeInfo.folder_backed (derived from the folder
+  // layout), so any such type gets this without a per-type string branch.
+  if (folderBacked && result.asset_ref) {
     return {
       ...node,
       hasChildren: 'unknown',
@@ -256,7 +257,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   };
   const listChildren = async (): Promise<Browseable[]> => {
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
-    return results.map((r) => assetChild(type.type_name, type.icon, r, onAfterDelete));
+    return results.map((r) => assetChild(type.type_name, type.icon, r, !!type.folder_backed, onAfterDelete));
   };
 
   const root: BrowseableRoot = {
