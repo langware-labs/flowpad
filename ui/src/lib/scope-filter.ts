@@ -142,3 +142,48 @@ export function parseScopeFilterFromParams(params: URLSearchParams): ScopeFilter
     projects: projectsRaw.split(',').map((s) => s.trim()).filter((s) => s.length > 0),
   };
 }
+
+/**
+ * Dock-URL round-trip for a ScopeFilter. This is the ONE place that knows which
+ * option keys carry a scope filter in a dock URL; every dock goes through
+ * `DockPointer.scopeFilter` / `DockPointer.withScopeFilter`, which delegate here
+ * — no `scope`/`user`/`projects` literals are constructed or parsed anywhere
+ * else. Grammar reuses the canonical `user`/`projects` serialization above, plus
+ * an explicit `all=true` so an intentional "All" round-trips (distinct from
+ * "unspecified" = no keys, which lets each view apply its own default).
+ */
+const SCOPE_OPTION_KEYS = ['all', 'user', 'projects'] as const;
+
+export function scopeFilterToDockOptions(scope: ScopeFilter): Record<string, string> {
+  if (scope.all) return { all: 'true' };
+  // Reuse the canonical user/projects encoder so the wire format has one home.
+  const params = new URLSearchParams();
+  applyScopeToParams(params, scope);
+  return Object.fromEntries(params);
+}
+
+/**
+ * Merge `scope` into existing dock options, REPLACING any prior scope keys so
+ * stale `all`/`user`/`projects` can't linger and shadow the new value. Non-scope
+ * options pass through untouched. The single mutator used by
+ * `DockPointer.withScopeFilter`.
+ */
+export function withScopeFilterOptions(
+  options: Record<string, string> | undefined,
+  scope: ScopeFilter,
+): Record<string, string> {
+  const next: Record<string, string> = { ...options };
+  for (const k of SCOPE_OPTION_KEYS) delete next[k];
+  return { ...next, ...scopeFilterToDockOptions(scope) };
+}
+
+export function dockOptionsToScopeFilter(
+  options: Record<string, string> | undefined,
+): ScopeFilter | null {
+  if (!options || !SCOPE_OPTION_KEYS.some((k) => k in options)) return null;
+  if (options.all === 'true') return { ...ALL_SCOPE_FILTER };
+  const params = new URLSearchParams();
+  if (options.user !== undefined) params.set('user', options.user);
+  if (options.projects !== undefined) params.set('projects', options.projects);
+  return parseScopeFilterFromParams(params);
+}

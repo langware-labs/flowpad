@@ -24,10 +24,10 @@ import {
   BreadcrumbSeparator,
 } from '@src/components/ui/breadcrumb';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
-import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, unionAssetBucket } from '@src/lib/scope-filter';
+import { ALL_SCOPE_FILTER, applyScopeToParams, assetScopeBucket, defaultScopeFilter, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { useEntity } from '@sdk/react/hooks';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
@@ -310,23 +310,20 @@ export function AssetsPage() {
     [urlProjectId],
   );
   const effectivePointer = isProjectView ? assetSubPointer : (currentDock?.pointer ?? '');
-  // Initial scope seeded from the current project so the Project mode's count
-  // is accurate from the first render. Seeding lives in `defaultScopeFilter`
-  // (lib/scope-filter.ts) so every surface gets the same context-aware default.
+  // Scope is URL-first: it lives in the dock options (read generically via
+  // `DockPointer.scopeFilter`). An explicit option wins; on a project page we
+  // default to that project; the bare `/dock/assets` (no option) defaults to
+  // All — which is what clicking Assets in the left rail lands on.
+  const urlScope = useMemo<ScopeFilter>(
+    () => currentDock?.scopeFilter ?? projectSeedScope ?? ALL_SCOPE_FILTER,
+    [currentDock, projectSeedScope],
+  );
+  // Non-scope filter state (query / tags / per-type filters / folder path).
+  // The `scope` field is vestigial here — `effectiveFilter` always derives it
+  // from `urlScope`, keeping scope URL-authoritative.
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
     ...DEFAULT_ASSET_FILTER,
-    scope: projectSeedScope ?? defaultScopeFilter(currentProjectId),
   }));
-  // Preselect the project's scope when navigating to a *different* project page.
-  // Not a lock — the filter stays switchable. The initial scope is already
-  // seeded in useState, so the ref guard skips the redundant set on first mount.
-  const seededProjectRef = useRef(urlProjectId);
-  useEffect(() => {
-    if (urlProjectId && urlProjectId !== seededProjectRef.current) {
-      setAssetFilter((prev) => ({ ...prev, scope: defaultScopeFilter(urlProjectId) }));
-    }
-    seededProjectRef.current = urlProjectId;
-  }, [urlProjectId]);
 
   // --- Side menu follows the open asset ---------------------------------
   // The asset open in the editor may live in a different project (or in the
@@ -358,12 +355,10 @@ export function AssetsPage() {
   const [suppressedAssetId, setSuppressedAssetId] = useState<string | null>(null);
 
   const effectiveFilter = useMemo<AssetFilter>(() => {
-    if (!openAssetBucket || openAssetId === suppressedAssetId) {
-      return assetFilter;
-    }
-    const scope = unionAssetBucket(assetFilter.scope, openAssetBucket);
-    return scope === assetFilter.scope ? assetFilter : { ...assetFilter, scope };
-  }, [assetFilter, openAssetBucket, openAssetId, suppressedAssetId]);
+    const useBucket = openAssetBucket && openAssetId !== suppressedAssetId;
+    const scope = useBucket ? unionAssetBucket(urlScope, openAssetBucket) : urlScope;
+    return { ...assetFilter, scope };
+  }, [assetFilter, urlScope, openAssetBucket, openAssetId, suppressedAssetId]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
@@ -485,12 +480,20 @@ export function AssetsPage() {
     window.addEventListener('mouseup', onUp);
   }, [sidebarWidth]);
 
+  // URL-first scope write: scope is a dock option (serialized once, in
+  // lib/scope-filter). Writing the URL is the single source of truth —
+  // `urlScope` re-derives it on the next render.
+  const openScoped = useCallback((scope: ScopeFilter) => {
+    const base = currentDock ?? DockPointer.forAssetList('all');
+    navigation.openDock(base.withScopeFilter(scope));
+  }, [currentDock, navigation]);
+
   const handleScopeChange = useCallback((scope: ScopeFilter) => {
-    setAssetFilter(prev => ({ ...prev, scope }));
+    openScoped(scope);
     // The user took control of the scope — stop auto-unioning the open asset's
     // bucket for this asset (rule honored only until they open a different one).
     setSuppressedAssetId(openAssetId);
-  }, [openAssetId]);
+  }, [openScoped, openAssetId]);
 
   // Asset-shaped pointers (`forAssetEditor`, `forAssetFolder`, `forAssetList`)
   // open at `/dock/assets/<sub>`. Under `/dock/project/<id>` we must rebase
@@ -761,12 +764,13 @@ export function AssetsPage() {
         return lastSeg === label || p.name === label;
       });
       if (match) {
-        setAssetFilter({ ...DEFAULT_ASSET_FILTER, scope: { user: false, projects: [match.record_id] } });
+        setAssetFilter({ ...DEFAULT_ASSET_FILTER });
+        openScoped({ user: false, projects: [match.record_id] });
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [openScoped]);
 
   return (
     <div className="flex h-full flex-col">
