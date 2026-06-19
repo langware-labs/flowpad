@@ -54,13 +54,14 @@ def _make_ws_url(hub_base_url: str) -> str:
 @pytest.mark.asyncio
 async def test_share_with_recipients(hub_base_url, hub_login_payload, isolated_hub_keyring):
     """Alice uses ``Conversation.share(recipients=[bob_email])`` → bob accepts → realtime fanout."""
-    from flow_sdk.cli.auth.credentials import UserHubCredentials, save_credentials
+    from tests.hub_tests._local_login import login_as
     from flow_sdk.builtin.conversation import Conversation
 
     # Alice's cloud creds come from the conftest fixture (env-mode login).
-    alice_token = hub_login_payload.get("api_key") or hub_login_payload["token"]
     alice_user = hub_login_payload.get("user") or {}
-    save_credentials(UserHubCredentials(api_key=alice_token, user=alice_user))
+    # login_as persists BOTH halves (token + user record); a token-only write is
+    # a half-logged-in state that share() rejects.
+    login_as(hub_login_payload)
     alice_id = alice_user["id"]
 
     # Bob's creds come from the sibling flowpad-app repo's .env.local — there's
