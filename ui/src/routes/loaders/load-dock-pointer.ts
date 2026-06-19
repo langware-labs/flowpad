@@ -14,6 +14,7 @@ import { clearDockLoadError } from './dock-load-error-store';
 import { DockLoadError, handleDockLoadError } from './dock-load-error';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
+import { loadLensRoute } from './load-lens';
 import { loadProject, loadProjectRoute } from './load-project';
 import { loadProcess, ProcessLoadError } from './load-process';
 import { loadShellRoute } from './load-shell';
@@ -103,6 +104,9 @@ export async function loadDockPointer(
         break;
       case ViewType.PLAN:
         await loadPlanRoute(dock.pointer);
+        break;
+      case ViewType.LENS:
+        await loadLensRoute(dock.pointer);
         break;
       default:
         break;

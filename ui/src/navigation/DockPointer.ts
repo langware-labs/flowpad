@@ -1,4 +1,4 @@
-import { AgenticProcess, Layout, Project, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
+import { AgenticProcess, ClaudeSession, Layout, Project, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
@@ -970,6 +970,16 @@ export class DockPointer implements IDockPointer {
   get targetTypeId(): TypeId | null {
     const pointer = this.pointer;
     if (!pointer) return null;
+    // A claude-transcript lens (`claude/transcript/<sessionId>`) targets its
+    // ClaudeSession entity (id = session id). Surfacing it here puts lens on the
+    // same entity rail as every other dock: the tab mint resolves the session's
+    // name and the loader its project — no lens-special naming/project logic.
+    if (this.viewType === ViewType.LENS) {
+      const lens = DockPointer.parseLensPointer(pointer);
+      if (lens?.category === 'claude' && lens.type === 'transcript' && lens.ref && !lens.ref.includes('/')) {
+        return DockPointer.tryTypeId(ClaudeSession.type, lens.ref);
+      }
+    }
     const candidate = pointer.includes('/typeid/') ? pointer.split('/typeid/').pop() ?? '' : pointer;
     return (
       DockPointer.tryTypeId(candidate) ??
