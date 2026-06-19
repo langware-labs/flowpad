@@ -74,9 +74,10 @@
   position: absolute;
   transform: translate(-50%, -50%);
   user-select: none;
-  cursor: pointer;
+  cursor: grab;
   transition: opacity 0.18s;
 }
+.ctx-graph .ctx-node:active { cursor: grabbing; }
 .ctx-graph .ctx-node.faded { opacity: 0.3; }
 
 .ctx-graph .ctx-card {

@@ -82,15 +82,10 @@ export function AssetPickerPopover({
     [isControlled, onOpenChange],
   );
   const [query, setQuery] = useState('');
-  // Independent per-type toggles. Empty set = no type filter (show all). Each
-  // icon toggles its own type on/off without affecting the others.
+  // The shown set of asset types. Empty = all types shown (every toggle lit) —
+  // EntityTypeBar owns the include/exclude logic. Toggling derives state from
+  // the lit set so the toggles always reflect what's actually visible.
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
-  const toggleType = useCallback(
-    (t: string) =>
-      setSelectedTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])),
-    [],
-  );
-  const clearTypes = useCallback(() => setSelectedTypes([]), []);
   const [scope, setScope, currentProjectId] = useDefaultScopeFilter();
   const { projects: allProjects } = useAllProjects({ enabled: open });
   const scopeProjectIds = useMemo(() => {
@@ -206,8 +201,7 @@ export function AssetPickerPopover({
         >
           <EntityTypeBar
             selected={selectedTypes}
-            onToggle={toggleType}
-            onClear={clearTypes}
+            onChange={setSelectedTypes}
             counts={typeCounts}
             allowed={allowedTypes}
             iconForType={iconForType}

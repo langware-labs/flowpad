@@ -13,18 +13,15 @@ const LABELS: Record<string, string> = {
 };
 
 interface EntityTypeBarProps {
-  /** Active types. Empty = no type filter (all types visible). */
+  /** The shown set of types. Empty = all types shown (every toggle lit). */
   selected: string[];
-  /** Toggle one type on/off — independent of the others. */
-  onToggle: (type: string) => void;
-  /** Clear every active type (back to "all visible"). */
-  onClear: () => void;
+  /** Emits the new shown set. Empty means "all". */
+  onChange: (next: string[]) => void;
   /** Optional per-type counts shown as a badge on each icon. */
   counts?: Partial<Record<string, number>>;
   /**
    * Types rendered as toggles. Limits the bar to the host's allowed/available
-   * asset types — e.g. `['agent','skill']` for the run-with picker — so it never
-   * overflows with types that can't appear.
+   * asset types — e.g. `['agent','skill']` for the run-with picker.
    */
   allowed: string[];
   /** Resolves the type-registry icon for a type name (e.g. `iconForType('skill')`). */
@@ -32,24 +29,35 @@ interface EntityTypeBarProps {
 }
 
 /**
- * Compact icon-toggle type filter for the asset picker. Each allowed type is an
- * **independent** square toggle (tooltip = type name, badge = count); any
- * combination can be active at once. A trailing clear-all (X) resets to the
- * default "all visible" state. Empty selection ⇒ no filtering.
+ * Compact icon-toggle type filter. Each allowed type is an independent toggle;
+ * its lit state always reflects what's actually visible. With nothing narrowed
+ * every toggle is lit ("all shown"), mirroring the scope filter's "All" — so the
+ * UI never looks disconnected from the result set. Clicking a lit toggle hides
+ * that type; re-lighting them all collapses back to "all". `X` resets to all.
  */
 export function EntityTypeBar({
   selected,
-  onToggle,
-  onClear,
+  onChange,
   counts,
   allowed,
   iconForType,
 }: EntityTypeBarProps): React.ReactElement {
+  const allShown = selected.length === 0;
+  const isActive = (t: string) => allShown || selected.includes(t);
+
+  const toggle = (t: string) => {
+    let next: string[];
+    if (allShown) next = allowed.filter((x) => x !== t); // all → all-but-t
+    else if (selected.includes(t)) next = selected.filter((x) => x !== t); // hide t
+    else next = [...selected, t]; // show t
+    onChange(next.length === allowed.length ? [] : next); // full set ⇒ "all"
+  };
+
   return (
     <div className="flex items-center gap-1">
       {allowed.map((t) => {
         const Icon = iconForType(t);
-        const isActive = selected.includes(t);
+        const active = isActive(t);
         const count = counts?.[t];
         const showCount = typeof count === 'number' && count > 0;
         const label = LABELS[t] ?? t;
@@ -57,12 +65,12 @@ export function EntityTypeBar({
           <button
             key={t}
             type="button"
-            onClick={() => onToggle(t)}
+            onClick={() => toggle(t)}
             title={showCount ? `${label} (${count})` : label}
-            aria-pressed={isActive}
+            aria-pressed={active}
             className={cn(
               'relative flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-              isActive
+              active
                 ? 'bg-accent text-accent-foreground'
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
             )}
@@ -73,7 +81,7 @@ export function EntityTypeBar({
               <span
                 className={cn(
                   'absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full px-0.5 text-[9px] font-bold leading-none',
-                  isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+                  active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
                 )}
               >
                 {count}
@@ -82,12 +90,12 @@ export function EntityTypeBar({
           </button>
         );
       })}
-      {selected.length > 0 && (
+      {!allShown && (
         <button
           type="button"
-          onClick={onClear}
-          title="Clear type filter"
-          aria-label="Clear type filter"
+          onClick={() => onChange([])}
+          title="Show all types"
+          aria-label="Show all types"
           className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
           data-testid="asset-picker-type-clear"
         >
