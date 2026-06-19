@@ -301,6 +301,16 @@ class TypeInfo:
         return asset_path
 
     @property
+    def folder_backed(self) -> bool:
+        """True when ``asset_ref`` points at a browsable folder — a folder-layout
+        type whose asset_ref is the bare folder (skill-style,
+        ``main_file_is_asset_ref=False``), not the inner ``main_file``
+        (spec-style). The Assets sidebar expands these rows into their on-disk
+        file tree. Derived from the existing folder-layout fields so no type
+        carries a redundant flag."""
+        return self.main_layout == "folder" and not self.main_file_is_asset_ref
+
+    @property
     def browseable_by_str(self) -> str | None:
         """``browseable_by`` as its serialized string value (or None) — the one
         wire form used by both ``schema_hash`` and ``to_dict``."""
