@@ -150,24 +150,7 @@ function assetChild(typeName: string, iconName: string | null, result: SearchRes
       showBusyIndicator: false,
     });
   }
-  // Skills are folder-backed: expand the row to browse/create/delete the
-  // skill's files inline (one unified tree — no second panel). asset_ref is the
-  // skill folder's absolute path; children are listed via the local compute node.
-  if (typeName === 'skill' && result.asset_ref) {
-    const selfId = assetNodeId(typeName, result.asset_ref);
-    return {
-      id: selfId,
-      kind: 'asset',
-      label,
-      icon: resolveAssetIcon(iconName, 'h-3.5 w-3.5 flex-shrink-0'),
-      hasChildren: 'unknown',
-      pointer,
-      toolbar: [...skillCreateActions(result.asset_ref, selfId), ...toolbar],
-      listChildren: skillFolderListChildren(result.asset_ref, selfId),
-    };
-  }
-
-  return {
+  const node: Browseable = {
     id: assetNodeId(typeName, result.asset_ref),
     kind: 'asset',
     label,
@@ -176,6 +159,20 @@ function assetChild(typeName: string, iconName: string | null, result: SearchRes
     pointer,
     toolbar: toolbar.length > 0 ? toolbar : undefined,
   };
+
+  // Skills are folder-backed: expand the row to browse/create/delete the
+  // skill's files inline (one unified tree — no second panel). asset_ref is the
+  // skill folder's absolute path; children are listed via the local compute node.
+  if (typeName === 'skill' && result.asset_ref) {
+    return {
+      ...node,
+      hasChildren: 'unknown',
+      toolbar: [...skillCreateActions(result.asset_ref, node.id), ...toolbar],
+      listChildren: skillFolderListChildren(result.asset_ref, node.id),
+    };
+  }
+
+  return node;
 }
 
 function basename(p: string): string {
