@@ -8,7 +8,7 @@ import { FSRef, ProcessKind, Skill } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { FlaskConical } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
@@ -34,15 +34,32 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
     providedSkill ? null : fsRef,
   );
   const skill = providedSkill ?? discoveredSkill;
-  const editorRef = skill?.doc ?? fsRef.child('SKILL.md');
-  const chatTarget = skill ? skill.typeId.toString() : null;
   const { navigation } = useDockNavigation();
 
+  // Everything below is keyed on the STABLE typeId string, never the `skill`
+  // object — so a metadata-only `save()` (which hands back a new `skill` ref via
+  // useEntity) does NOT rebuild the header/tabs/editorRef and remount the panels.
+  // That remount loop is what turned one eval-toggle PUT into ~30 refetches.
+  // The live entity is read through a ref so callbacks still act on the current
+  // object without depending on its identity.
+  const skillRef = useRef(skill);
+  skillRef.current = skill;
+  const skillKey = skill ? skill.typeId.toString() : null;
+
+  // Stable across metadata updates (same skillKey ⇒ same SKILL.md path) so the
+  // editor doesn't re-download the file on every eval flip.
+  const editorRef = useMemo(
+    () => skillRef.current?.doc ?? fsRef.child('SKILL.md'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [skillKey, fsRef],
+  );
+
   const onDelete = useCallback(async () => {
-    if (!skill) return;
-    await skill.delete();
+    const s = skillRef.current;
+    if (!s) return;
+    await s.delete();
     navigation.openDock(DockPointer.forAssetList(Skill.type));
-  }, [skill, navigation]);
+  }, [navigation]);
 
   // Header eval toggle. Flipping it writes to BOTH layers so the flag takes
   // effect immediately and durably:
@@ -59,9 +76,10 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
     const toggle = () => {
       const next = isEval ? 'false' : 'true';
       setField('eval', next);
-      if (skill) {
-        skill.metadata = { ...(skill.metadata ?? {}), eval: next };
-        void skill.save().catch((e) => {
+      const s = skillRef.current;
+      if (s) {
+        s.metadata = { ...(s.metadata ?? {}), eval: next };
+        void s.save().catch((e) => {
           notify.error({
             title: 'Could not update eval flag',
             message: e instanceof Error ? e.message : 'Save failed.',
@@ -77,16 +95,18 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
         title={isEval ? 'Under eval — click to stop evaluating' : 'Mark skill for eval'}
         data-testid="skill-eval-toggle"
         className={cn(
-          'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors',
+          'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors',
           isEval
             ? 'bg-accent text-accent-foreground'
             : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
         )}
       >
-        <FlaskConical className="h-4 w-4" />
+        <FlaskConical className="h-3.5 w-3.5" />
       </button>
     );
-  }, [skill]);
+    // Stable identity: reads the live skill via `skillRef`, so it never rebuilds
+    // on a skill ref change (only `fields`/`setField` from the editor drive it).
+  }, []);
 
   // Skill eval history rides as an extra tab inside the editor's single side
   // drawer (Chat | Backlinks | Eval) rather than a second sibling rail. The
@@ -96,7 +116,7 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
   // identity is stable across editor keystrokes (else MarkdownEditor's tab/
   // panel memos rebuild every render).
   const extraSideTabs = useMemo<ExtraSideTab[] | undefined>(() => {
-    if (!skill) return undefined;
+    if (!skillKey) return undefined;
     return [
       {
         id: 'eval',
@@ -105,7 +125,7 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
         description: 'Skill evaluations',
         panel: (
           <EntityExecutionPanel
-            target={skill.typeId.toString()}
+            target={skillKey}
             processType={ProcessKind.Execution}
             headerLabel="Skill eval"
             className="min-h-0 flex-1"
@@ -113,15 +133,15 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
         ),
       },
     ];
-  }, [skill]);
+  }, [skillKey]);
 
   return (
     <MarkdownEditor
       fsRef={editorRef}
-      chatTarget={chatTarget}
+      chatTarget={skillKey}
       headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}
-      onDelete={skill ? onDelete : undefined}
+      onDelete={skillKey ? onDelete : undefined}
       deleteLabel={skill?.name ?? undefined}
     />
   );

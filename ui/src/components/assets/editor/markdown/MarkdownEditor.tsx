@@ -439,12 +439,8 @@ function MarkdownEditorContent({
         onDownload={handleDownload}
         onDelete={handleDelete}
         leadingActions={shareButton}
-        actions={
-          <>
-            {toolbar}
-            {headerExtras?.({ fields, setField })}
-          </>
-        }
+        nameExtras={headerExtras?.({ fields, setField })}
+        actions={toolbar}
         showLearningMode={showLearningMode}
       />
       {shareSource && shareOpen && (
@@ -611,10 +607,12 @@ interface EditorHeaderProps {
   actions?: React.ReactNode;
   /** Slot rendered to the left of the review/edit mode chips. */
   leadingActions?: React.ReactNode;
+  /** Slot rendered inline next to the file name (e.g. the skill eval toggle). */
+  nameExtras?: React.ReactNode;
   showLearningMode?: boolean;
 }
 
-function EditorHeader({ fileName, dirPath, sourcePath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, showLearningMode }: EditorHeaderProps) {
+function EditorHeader({ fileName, dirPath, sourcePath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, nameExtras, showLearningMode }: EditorHeaderProps) {
   const visibleModes = EDITOR_MODES.filter((m) => m !== 'learning' || showLearningMode);
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
@@ -623,6 +621,7 @@ function EditorHeader({ fileName, dirPath, sourcePath, dirty, viewMode, onViewMo
           <span className="truncate text-sm font-medium" title={fileName}>{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
           {sourcePath && <ProjectNameChip sourcePath={sourcePath} />}
+          {nameExtras}
         </div>
         <div className="flex min-w-0 items-center gap-1">
           {dirPath && (

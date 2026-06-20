@@ -11,9 +11,10 @@ import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPop
 import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { SideDrawer } from '@src/components/ui/side-drawer';
+import { CollapsedSideRail } from '@src/components/ui/collapsed-side-rail';
 import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { notify } from '@src/notifications';
-import { Play, X } from 'lucide-react';
+import { Play } from 'lucide-react';
 
 /**
  * "Run Automation" surface for a GraphContext: pick an agent or a skill, launch
@@ -75,7 +76,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
   // Collapsed: a thin rail whose Play button opens the agent/skill picker.
   if (!open) {
     return (
-      <div className="flex w-10 shrink-0 flex-col items-center gap-1 border-l bg-background py-2">
+      <CollapsedSideRail data-testid="run-automation-rail">
         <AssetPickerPopover
           trigger={
             <button
@@ -90,39 +91,32 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
           }
           onPick={handlePick}
         />
-      </div>
+      </CollapsedSideRail>
     );
   }
 
   // Expanded: the standard side drawer hosting the standard execution panel.
   return (
-    <SideDrawer open width="w-96" data-testid="run-automation-drawer">
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="flex flex-shrink-0 items-center gap-2 border-b px-2 py-1.5">
-          <AssetPickerPopover
-            trigger={<RunButton idleLabel="Run automation" />}
-            onPick={handlePick}
-          />
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="ml-auto flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Collapse automation panel"
-            title="Collapse"
-            data-testid="run-automation-collapse"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <EntityExecutionPanel
-          target={ctx.typeId.toString()}
-          processType={ProcessKind.Execution}
-          headerLabel="Automation"
-          onProcessCreated={runOnContext}
-          autoPrompt={runNonce > 0 ? { text: instruction, nonce: runNonce, newSession: true } : null}
-          className="min-h-0 flex-1"
+    <SideDrawer
+      open
+      onOpenChange={setOpen}
+      width="w-96"
+      data-testid="run-automation-drawer"
+      headerActions={
+        <AssetPickerPopover
+          trigger={<RunButton idleLabel="Run automation" />}
+          onPick={handlePick}
         />
-      </div>
+      }
+    >
+      <EntityExecutionPanel
+        target={ctx.typeId.toString()}
+        processType={ProcessKind.Execution}
+        headerLabel="Automation"
+        onProcessCreated={runOnContext}
+        autoPrompt={runNonce > 0 ? { text: instruction, nonce: runNonce, newSession: true } : null}
+        className="h-full min-h-0"
+      />
     </SideDrawer>
   );
 }
