@@ -927,6 +927,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.all(action_name="fs-records", methods=["get", "post", "put", "delete"])
     async def fs_records_action(self): return await self._fs_records_action()
 
+    @action.get(action_name="asset-usage")
+    async def asset_usage_action(self) -> ApiResponse:
+        """GET /asset-usage?skill=<name> — sessions in which this asset was used
+        (FSIndexer scan of transcripts + analyzer). Powers the asset IDE usage tab."""
+        return await self._handle_asset_usage(get_current_request_info())
+
+    @action.post(action_name="commit-asset")
+    async def commit_asset_action(self) -> ApiResponse:
+        """POST /commit-asset {workdir, file} — version-bump + commit an asset
+        edited on disk (the cycle's commit step). Returns {committed, hash?, version?}."""
+        return await self._handle_commit_asset(get_current_request_info())
+
     # -- shell record actions ----------------------------------------------------
 
     @action.post(action_name="clear-debug-errors")

@@ -8,6 +8,7 @@ import {
 import { notify } from '@src/notifications';
 
 const SKILLIT_NAME = 'skillit';
+const AGENT_TRACE_NAME = 'agent-trace';
 
 /**
  * All skills indexed by name (non-React; the cache-first query makes repeat
@@ -22,6 +23,44 @@ export async function loadSkillsByName(): Promise<Map<string, Skill>> {
   return new Map(skills.map((s) => [s.name, s]));
 }
 
+/**
+ * Shared createProcess → attach-skill → prompt triad behind every launcher below.
+ * Resolves the skill to attach (surfacing a "not installed" error), spawns the
+ * process with the given options, attaches the skill, and seeds the prompt.
+ */
+async function runSkillWorker(
+  attachSkillName: string,
+  createOpts: Parameters<ComputeNode['createProcess']>[0],
+  prompt: string,
+  notInstalledTitle: string,
+): Promise<AgenticProcess | null> {
+  const skill = (await loadSkillsByName()).get(attachSkillName) ?? null;
+  if (!skill) {
+    notify.error({ title: notInstalledTitle, message: `The "${attachSkillName}" skill is not installed.` });
+    return null;
+  }
+  const computeNode = await ComputeNode.getById('@local');
+  if (!computeNode) throw new Error('No local compute node');
+
+  const proc: AgenticProcess = await computeNode.createProcess(createOpts);
+  try {
+    await proc.embeddedAssets.attach(skill.typeId.toString());
+  } catch (err) {
+    console.error(`[skillWorker] attach ${attachSkillName} failed`, err);
+  }
+  void proc.prompt(prompt);
+  return proc;
+}
+
+/** Process spawned per skill, keyed to its TypeId so it surfaces in that skill's
+ * `EntityExecutionPanel` history. */
+const skillProcessOpts = (targetSkill: Skill): Parameters<ComputeNode['createProcess']>[0] => ({
+  targetVfsPath: targetSkill.typeId.toString(),
+  processType: ProcessKind.Execution,
+  outputFormat: 'stream-json',
+  permissionMode: 'bypassPermissions',
+});
+
 export interface LaunchSkillEvalArgs {
   /** The skill being evaluated — the analysis process is keyed to its TypeId. */
   targetSkill: Skill;
@@ -34,50 +73,74 @@ export interface LaunchSkillEvalArgs {
 /**
  * Launch a skillit-analysis agentic process that evaluates how `targetSkill` was
  * used in a run. Hook-free so both the in-trace Evaluate button (React) and the
- * tab-close adapter (non-React) call it. Mirrors the createProcess → attach →
- * prompt triad of `useRunOnFile` / `RunAutomationPanel`.
- *
- * The process is keyed to the skill's TypeId (`target_typeid_str`), so every
- * analysis surfaces in that skill's `EntityExecutionPanel` history — one history
- * thread per evaluated skill (one analysis per flagged skill falls out naturally).
+ * tab-close adapter (non-React) call it.
  */
-export async function launchSkillEval({
+export function launchSkillEval({
   targetSkill,
   sourceProcessId,
   sessionId,
 }: LaunchSkillEvalArgs): Promise<AgenticProcess | null> {
-  const skillit = (await loadSkillsByName()).get(SKILLIT_NAME) ?? null;
-  if (!skillit) {
-    notify.error({
-      title: 'Cannot evaluate skill',
-      message: `The "${SKILLIT_NAME}" skill is not installed.`,
-    });
-    return null;
-  }
-
-  const computeNode = await ComputeNode.getById('@local');
-  if (!computeNode) throw new Error('No local compute node');
-
-  const proc: AgenticProcess = await computeNode.createProcess({
-    targetVfsPath: targetSkill.typeId.toString(),
-    processType: ProcessKind.Execution,
-    outputFormat: 'stream-json',
-    permissionMode: 'bypassPermissions',
-  });
-
-  try {
-    await proc.embeddedAssets.attach(skillit.typeId.toString());
-  } catch (err) {
-    console.error('[skillEval] attach skillit failed', err);
-  }
-
   const ctx = sourceProcessId
     ? ` Context: it was just used in the closed run ${sourceProcessId}${sessionId ? ` (session ${sessionId})` : ''}.`
     : '';
-  const instruction =
+  return runSkillWorker(
+    SKILLIT_NAME,
+    skillProcessOpts(targetSkill),
     `Use the skillit skill to evaluate the skill "${targetSkill.name}".${ctx} ` +
-    `Review how this skill is written and how it was used, against skill-writing best practices, and report findings.`;
+      `Review how this skill is written and how it was used, against skill-writing best practices, and report findings.`,
+    'Cannot evaluate skill',
+  );
+}
 
-  void proc.prompt(instruction);
-  return proc;
+/**
+ * Launch the **agent-trace** analyzer on a past session (the "analyze" step of
+ * the asset improvement cycle). Produces an `AgentTrace` record keyed to
+ * `sessionId` (with verified per-asset `by_skill` findings), surfaced by
+ * `useSessionAnalyses(sessionId)`.
+ */
+export function launchSessionAnalysis(
+  sessionId: string,
+  workerType: string = 'claude',
+): Promise<AgenticProcess | null> {
+  return runSkillWorker(
+    AGENT_TRACE_NAME,
+    { processType: ProcessKind.Analysis, outputFormat: 'stream-json', permissionMode: 'bypassPermissions' },
+    `Use the agent-trace skill to analyze session ${sessionId} (worker type: ${workerType}) ` +
+      `and produce the AgentTrace record.`,
+    'Cannot analyze session',
+  );
+}
+
+export interface LaunchSkillCorrectArgs {
+  /** The skill being corrected — the process is keyed to its TypeId. */
+  targetSkill: Skill;
+  /** The analyzed session (for the correction prompt context). */
+  sessionId?: string | null;
+  /** The verified per-asset findings (`AgentTrace.annotations.by_skill[<skill>].findings`). */
+  findings: unknown[];
+}
+
+/**
+ * Launch skillit in **correct mode** fed the analysis's verified per-asset
+ * findings (the "improve" step). The worker edits `SKILL.md` in place; the
+ * caller commits the result via the `commit-asset` action once it finishes.
+ */
+export function launchSkillCorrect({
+  targetSkill,
+  sessionId,
+  findings,
+}: LaunchSkillCorrectArgs): Promise<AgenticProcess | null> {
+  if (!findings.length) {
+    notify.error({ title: 'Nothing to improve', message: 'No substantiated findings to apply for this skill.' });
+    return Promise.resolve(null);
+  }
+  const ctx = sessionId ? ` (from analysis of session ${sessionId})` : '';
+  return runSkillWorker(
+    SKILLIT_NAME,
+    skillProcessOpts(targetSkill),
+    `Use the skillit skill in CORRECT mode on the skill "${targetSkill.name}".${ctx} ` +
+      `Apply these per-asset findings, mapping each fix to its issue, and edit the skill in place:\n\n` +
+      JSON.stringify(findings, null, 2),
+    'Cannot improve skill',
+  );
 }
