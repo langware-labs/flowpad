@@ -1,6 +1,18 @@
 import { ActionInfo, dataManager, Shell } from '@sdk';
 import { useGitPush } from '@src/hooks/use-git-push';
-import { GitBranch, RefreshCw, X } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  Eye,
+  GitBranch,
+  type LucideIcon,
+  PlusSquare,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+  Undo2,
+  X,
+} from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@src/components/ui/button';
@@ -51,6 +63,112 @@ function dirname(p: string): string {
   const idx = p.lastIndexOf('/');
   return idx > 0 ? p.slice(0, idx) : '';
 }
+
+// ---------------------------------------------------------------------------
+// Per-file action model — maps a file's status + the panel mode to an ordered
+// list of actions. Standard = plain, non-technical labels; Advanced = full git
+// ops. Every action carries a tooltip explaining what it does.
+// ---------------------------------------------------------------------------
+
+type GitMode = 'standard' | 'advanced';
+
+interface GitAction {
+  key: 'diff' | 'discard' | 'stage' | 'unstage' | 'copyPath';
+  label: string;
+  tooltip: string;
+  icon: LucideIcon;
+  destructive?: boolean;
+  // POST sub-path for backend mutations; absent for client-only actions.
+  subpath?: 'discard-file' | 'stage-file' | 'unstage-file';
+}
+
+// Per-status copy/icon for the state-aware discard action. `default` covers
+// every tracked-edit status (M/A/R/…) not given its own entry.
+const UNDO_VARIANTS: Record<string, { standard: string; advanced: string; tooltip: string; icon: LucideIcon }> = {
+  '?': { standard: 'Remove', advanced: 'Discard (delete)', tooltip: "Delete this new file — it isn't saved in git yet", icon: Trash2 },
+  D: { standard: 'Bring back', advanced: 'Restore', tooltip: 'Restore this deleted file from the last commit', icon: RotateCcw },
+  default: { standard: 'Undo changes', advanced: 'Discard', tooltip: 'Restore this file to the last saved version — your edits will be lost', icon: Undo2 },
+};
+
+function actionsFor(file: GitFile, mode: GitMode): GitAction[] {
+  const view: GitAction = {
+    key: 'diff',
+    label: 'View',
+    tooltip: 'View the changes in this file',
+    icon: Eye,
+  };
+
+  // The state-aware "undo" action — same backend op (discard-file), but its
+  // label/tooltip/icon read differently per status so it always says what it
+  // will actually do. Keyed by status; non-'?'/'D' (M/A/R/…) fall through to
+  // the generic "discard edits" variant.
+  const u = UNDO_VARIANTS[file.status] ?? UNDO_VARIANTS.default;
+  const undo: GitAction = {
+    key: 'discard',
+    label: mode === 'standard' ? u.standard : u.advanced,
+    tooltip: u.tooltip,
+    icon: u.icon,
+    destructive: true,
+    subpath: 'discard-file',
+  };
+
+  if (mode === 'standard') {
+    return [view, undo];
+  }
+
+  // Advanced — add stage/unstage and copy-path. 'A'/'R' only exist in the
+  // index, so they're definitively staged → offer Unstage. The single status
+  // char can't tell a staged 'M'/'D' from an unstaged one, so default to Stage
+  // (git add is idempotent, so staging an already-staged file is harmless).
+  const staged = file.status === 'A' || file.status === 'R';
+  const stageAction: GitAction = staged
+    ? {
+        key: 'unstage',
+        label: 'Unstage',
+        tooltip: 'Remove this file from the next commit (git restore --staged)',
+        icon: PlusSquare,
+        subpath: 'unstage-file',
+      }
+    : {
+        key: 'stage',
+        label: 'Stage',
+        tooltip: 'Include this file in the next commit (git add)',
+        icon: PlusSquare,
+        subpath: 'stage-file',
+      };
+  const copyPath: GitAction = {
+    key: 'copyPath',
+    label: 'Copy path',
+    tooltip: "Copy this file's path to the clipboard",
+    icon: Copy,
+  };
+  return [view, stageAction, undo, copyPath];
+}
+
+/** Path the backend operates on — renames display as "old → new"; act on new. */
+function rawPath(path: string): string {
+  return path.includes(' → ') ? path.split(' → ')[1]! : path;
+}
+
+/** A 5×5 ghost icon-button with a bottom tooltip — the one button shape every
+ *  row action (toolbar, confirm, cancel) uses. `tooltip` may be a node so the
+ *  toolbar can render its label + description. */
+const IconBtn: React.FC<{
+  icon: LucideIcon;
+  tooltip: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  className?: string;
+}> = ({ icon: Icon, tooltip, onClick, disabled, className }) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <Button variant="ghost" size="sm" disabled={disabled} onClick={onClick} className={`h-5 w-5 p-0 ${className ?? 'text-muted-foreground hover:text-foreground'}`}>
+        <Icon className="h-3.5 w-3.5" />
+      </Button>
+    </TooltipTrigger>
+    <TooltipContent side="bottom" className="text-xs">{tooltip}</TooltipContent>
+  </Tooltip>
+);
 
 // ---------------------------------------------------------------------------
 // Shiki singleton
@@ -268,6 +386,12 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
   const [initing, setIniting] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<GitFile | null>(null);
+  const [mode, setMode] = useState<GitMode>('standard');
+  // Row currently awaiting destructive confirmation, keyed by `${path}::${key}`.
+  const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
+  // Path of a row whose op is in flight, and a per-path inline error message.
+  const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<{ path: string; message: string } | null>(null);
   const mountedRef = useRef(true);
 
   const fetchStatus = useCallback(async () => {
@@ -287,6 +411,41 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
   }, [computeNodeId, workdir]);
 
   const { push, busy: pushing } = useGitPush(computeNodeId, workdir, () => { void fetchStatus(); onPushed?.(); });
+
+  // Run a per-file mutation (discard / stage / unstage), then refresh the list.
+  const runFileOp = useCallback(async (file: GitFile, subpath: NonNullable<GitAction['subpath']>) => {
+    setConfirmingKey(null);
+    setBusyPath(file.path);
+    setRowError(null);
+    try {
+      const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'POST');
+      action.subpath = subpath;
+      action.queryParameters = { workdir, file: rawPath(file.path), status: file.status };
+      const result = await dataManager.callAction<null, { ok: boolean; message: string }>(action);
+      if (!mountedRef.current) return;
+      if (result && result.ok === false) {
+        setRowError({ path: file.path, message: result.message || 'Operation failed' });
+      } else {
+        void fetchStatus();
+      }
+    } catch (e) {
+      if (mountedRef.current) setRowError({ path: file.path, message: String(e) });
+    } finally {
+      if (mountedRef.current) setBusyPath(null);
+    }
+  }, [computeNodeId, workdir, fetchStatus]);
+
+  const handleAction = useCallback((file: GitFile, action: GitAction) => {
+    if (action.key === 'diff') { setSelectedFile(file); return; }
+    if (action.key === 'copyPath') { void navigator.clipboard?.writeText(rawPath(file.path)); return; }
+    if (!action.subpath) return;
+    if (action.destructive) {
+      // First click arms the inline confirm; the confirm button calls runFileOp.
+      setConfirmingKey(`${file.path}::${action.key}`);
+      return;
+    }
+    void runFileOp(file, action.subpath);
+  }, [runFileOp]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -325,30 +484,75 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
   const renderFileRow = (f: GitFile, i: number) => {
     const name = basename(f.path);
     const dir = dirname(f.path);
+    const actions = actionsFor(f, mode);
+    const confirming = actions.find(a => confirmingKey === `${f.path}::${a.key}`);
+    const busy = busyPath === f.path;
+    const err = rowError?.path === f.path ? rowError.message : null;
     return (
-      <button
-        key={`${f.path}-${i}`}
-        className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-muted/50 cursor-pointer"
-        onClick={() => setSelectedFile(f)}
-      >
-        <span className={`shrink-0 text-[10px] font-bold ${statusColor(f.status)}`}>
-          {f.status}
-        </span>
-        <div className="min-w-0 flex-1">
-          <span className="text-xs font-medium">{name}</span>
-          {dir && (
-            <span className="ml-1 text-[10px] text-muted-foreground">{dir}</span>
+      <div key={`${f.path}-${i}`} className="group rounded hover:bg-muted/50">
+        <div className="flex w-full items-center gap-2 px-2 py-1">
+          <button
+            className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
+            onClick={() => setSelectedFile(f)}
+          >
+            <span className={`shrink-0 text-[10px] font-bold ${statusColor(f.status)}`}>
+              {f.status}
+            </span>
+            <div className="min-w-0 flex-1 truncate">
+              <span className="text-xs font-medium">{name}</span>
+              {dir && (
+                <span className="ml-1 text-[10px] text-muted-foreground">{dir}</span>
+              )}
+            </div>
+          </button>
+
+          {confirming ? (
+            // Inline confirm for a destructive action — replaces the toolbar.
+            <div className="flex shrink-0 items-center gap-1">
+              <span className="text-[10px] text-muted-foreground">{confirming.label}?</span>
+              <IconBtn
+                icon={Check}
+                tooltip="Confirm"
+                disabled={busy}
+                className="text-red-500 hover:text-red-600"
+                onClick={() => { if (confirming.subpath) void runFileOp(f, confirming.subpath); }}
+              />
+              <IconBtn icon={X} tooltip="Cancel" className="text-muted-foreground" onClick={() => setConfirmingKey(null)} />
+            </div>
+          ) : (
+            <>
+              {/* +/- stats (hidden while the toolbar is revealed) */}
+              <div className="shrink-0 flex items-center gap-0.5 text-[10px] group-hover:hidden">
+                {f.insertions != null && f.insertions > 0 && (
+                  <span className="text-green-500">+{f.insertions}</span>
+                )}
+                {f.deletions != null && f.deletions > 0 && (
+                  <span className="text-red-500">-{f.deletions}</span>
+                )}
+              </div>
+              {/* Action toolbar — revealed on hover */}
+              <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                {actions.map((a) => (
+                  <IconBtn
+                    key={a.key}
+                    icon={a.icon}
+                    disabled={busy}
+                    className={a.destructive ? 'text-muted-foreground hover:text-red-500' : 'text-muted-foreground hover:text-foreground'}
+                    onClick={() => handleAction(f, a)}
+                    tooltip={<>
+                      <span className="font-medium">{a.label}</span>
+                      <span className="block text-muted-foreground">{a.tooltip}</span>
+                    </>}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
-        <div className="shrink-0 flex items-center gap-0.5 text-[10px]">
-          {f.insertions != null && f.insertions > 0 && (
-            <span className="text-green-500">+{f.insertions}</span>
-          )}
-          {f.deletions != null && f.deletions > 0 && (
-            <span className="text-red-500">-{f.deletions}</span>
-          )}
-        </div>
-      </button>
+        {err && (
+          <p className="px-2 pb-1 text-[10px] text-red-500">{err}</p>
+        )}
+      </div>
     );
   };
 
@@ -356,6 +560,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
   const newFiles = data?.files.filter(f => f.status === '?') ?? [];
 
   return (
+    <TooltipProvider delayDuration={400}>
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-3 py-2">
@@ -376,6 +581,29 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
           )}
         </div>
         <div className="flex items-center gap-1">
+          {!data?.error && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setMode(m => (m === 'standard' ? 'advanced' : 'standard'))}
+                  className="h-6 px-1.5 text-[10px] capitalize"
+                  data-testid="git-panel-mode"
+                >
+                  {mode}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                <span className="font-medium">{mode === 'standard' ? 'Standard mode' : 'Advanced mode'}</span>
+                <span className="block text-muted-foreground">
+                  {mode === 'standard'
+                    ? 'Simple actions — click to show all git operations'
+                    : 'All git operations — click for simplified actions'}
+                </span>
+              </TooltipContent>
+            </Tooltip>
+          )}
           {!data?.error && (
             <Button
               variant="ghost"
@@ -477,5 +705,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
         />
       )}
     </div>
+    </TooltipProvider>
   );
 };
