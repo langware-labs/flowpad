@@ -1,4 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Check, Hand, ListPlus, Maximize2, MessageSquare, Puzzle } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Slider } from '@src/components/ui/slider';
 import { cn } from '@src/lib/utils';
 import type { AgentTraceDoc, TraceEvent, TraceLane, TraceMarker } from './trace-types';
@@ -7,9 +9,27 @@ import { bucketSegments, tsMs } from './trace-types';
 const LANE_ROW_H = 14; // px per lane row (compact Execution strip)
 const OUTLINE_ROW_H = 24; // taller rows for the readable Call-stack timeline
 const MAX_VISIBLE_LANES_PX = 168; // ~12 rows before the lane list scrolls
+// Outline-only: width of the fixed left name column. Lane labels live entirely
+// inside [0, GUTTER]; the time track maps into [GUTTER, width] so bars never sit
+// behind the names (kills the old label/trace overlap).
+const GUTTER = 200;
+const MIN_DRAG_PX = 8; // ignore accidental click-drags below this
+const CHIP_MIN_PX = 110; // event spacing above which a marker becomes a labelled chip
+
+/** Per-kind icon for the high-zoom event chips. */
+const EVENT_ICON: Record<string, LucideIcon> = {
+  user_prompt: MessageSquare,
+  interrupt: Hand,
+  skill_fail: AlertTriangle,
+  skill_load: Puzzle,
+  task_create: ListPlus,
+  task_update: Check,
+};
 
 // Outline-only event kinds surfaced on the timeline.
-const OUTLINE_EVENT_KINDS = new Set(['skill_load', 'skill_fail', 'interrupt', 'task_create', 'task_update']);
+const OUTLINE_EVENT_KINDS = new Set([
+  'user_prompt', 'interrupt', 'skill_load', 'skill_fail', 'task_create', 'task_update',
+]);
 
 /** Color for an outline lane's span bar (skills/plan/subagent). */
 function outlineSegmentColor(laneKind: string): string {
@@ -18,21 +38,30 @@ function outlineSegmentColor(laneKind: string): string {
   return 'bg-sky-500/45'; // subagent span
 }
 
-/** Color for an event diamond by kind (task completion bumps the shade). */
+/** Color for an event marker by kind (task completion bumps the shade). */
 function eventColor(kind: string, severity: string): string {
   switch (kind) {
+    case 'user_prompt':
+      return 'bg-blue-500';
+    case 'interrupt':
     case 'skill_fail':
       return 'bg-red-500';
-    case 'interrupt':
-      return 'bg-amber-500';
     case 'task_create':
-      return 'bg-emerald-400';
+      return 'bg-emerald-500';
     case 'task_update':
-      return severity === 'notable' ? 'bg-emerald-600' : 'bg-violet-500';
+      return severity === 'notable' ? 'bg-emerald-700' : 'bg-amber-500';
     default:
       return 'bg-sky-500';
   }
 }
+
+/** Legend entries shown above the Call-stack timeline so the markers read. */
+export const OUTLINE_LEGEND: { color: string; label: string }[] = [
+  { color: 'bg-blue-500', label: 'prompt' },
+  { color: 'bg-red-500', label: 'interrupt' },
+  { color: 'bg-emerald-500', label: 'task' },
+  { color: 'bg-amber-500/70', label: 'plan' },
+];
 
 function severityBar(severity: string): string {
   return severity === 'attention'
@@ -53,6 +82,9 @@ interface TraceTimelineProps {
   onCursorChange: (ms: number) => void;
   selectedLaneId: string | null;
   onSelectLane: (laneId: string | null) => void;
+  /** Open a lane's asset (the lane *name* is the link, not the whole row).
+   * Outline/Call-stack only — skill lanes resolve to their editor. */
+  onOpenLane?: (laneId: string) => void;
   /** Override the lane rows (e.g. the high-level `outline`). The time axis and
    * the cost strips always derive from the full `doc`, so they stay identical
    * to the Execution view. Each lane may carry its own `events`/`markers` and a
@@ -71,12 +103,14 @@ export function TraceTimeline({
   onCursorChange,
   selectedLaneId,
   onSelectLane,
+  onOpenLane,
   displayLanes,
 }: TraceTimelineProps) {
   // Memoized so the markers/events grouping memo doesn't bust on every cursor
   // tick (a bare `displayLanes ?? doc.lanes` is a fresh ref each render).
   const lanes = useMemo(() => displayLanes ?? doc.lanes, [displayLanes, doc]);
   const outlineMode = displayLanes != null;
+  const gutter = outlineMode ? GUTTER : 0;
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {
@@ -98,14 +132,58 @@ export function TraceTimeline({
     return { tMin: lo, span: Math.max(1, Math.max(...stamps) - lo) };
   }, [doc]);
 
-  // Stable across cursor moves so memoized LaneRows don't re-render per tick.
+  // Outline-only: drag-selected zoom window (ms). Lanes/events scale to it; the
+  // cost strips below stay full-range and just highlight this band.
+  const [zoom, setZoom] = useState<[number, number] | null>(null);
+  const viewMin = zoom ? zoom[0] : tMin;
+  const viewSpan = zoom ? Math.max(1, zoom[1] - zoom[0]) : span;
+
+  const trackW = Math.max(1, width - gutter);
+  // Lanes/events axis — honors the zoom window. Maps into [gutter, width].
   const x = useCallback(
     (ms: number | null): number | null =>
-      ms === null || width === 0 ? null : ((ms - tMin) / span) * width,
-    [width, tMin, span],
+      ms === null || width === 0 ? null : gutter + ((ms - viewMin) / viewSpan) * trackW,
+    [width, gutter, trackW, viewMin, viewSpan],
+  );
+  const cursorX = x(cursorMs);
+
+  // px (within the track, clamped) → ms in the *current* view, so dragging on an
+  // already-zoomed track narrows further.
+  const msFromPx = useCallback(
+    (px: number) => {
+      const frac = Math.min(1, Math.max(0, (px - gutter) / trackW));
+      return viewMin + frac * viewSpan;
+    },
+    [gutter, trackW, viewMin, viewSpan],
   );
 
-  const cursorX = x(cursorMs);
+  // Drag-to-select. dragRect holds the live [startPx, curPx] for the overlay.
+  const [dragRect, setDragRect] = useState<[number, number] | null>(null);
+  const dragStart = useRef<number | null>(null);
+  const onTrackMouseDown = (e: React.MouseEvent) => {
+    if (!outlineMode || width === 0) return;
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const startPx = e.clientX - rect.left;
+    dragStart.current = startPx;
+    setDragRect([startPx, startPx]);
+    const onMove = (ev: MouseEvent) => setDragRect([startPx, ev.clientX - rect.left]);
+    const onUp = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      const endPx = ev.clientX - rect.left;
+      setDragRect(null);
+      dragStart.current = null;
+      if (Math.abs(endPx - startPx) < MIN_DRAG_PX) return;
+      const a = msFromPx(Math.min(startPx, endPx));
+      const b = msFromPx(Math.max(startPx, endPx));
+      if (b - a > 0) setZoom([a, b]);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  // The strips/lanes mark where the current zoom sits on the full axis.
+  const band = zoom ? ([(zoom[0] - tMin) / span, (zoom[1] - tMin) / span] as const) : null;
 
   // Group once — per-lane .filter() inside the render loop would rescan all
   // markers/events for every lane on every render.
@@ -154,12 +232,15 @@ export function TraceTimeline({
   );
 
   const strips = (
-    <>
+    // In outline mode the strips start at the gutter so they line up under the
+    // time track (and the zoom band lands over the right window).
+    <div style={{ paddingLeft: gutter }}>
       <SeriesStrip
         label="time"
         values={timeSeries}
         color="rgb(14 165 233)"
         atCursor={`${(timeSeries[cursorBucket] / bucketMs || 0).toFixed(1)}× active`}
+        band={band}
         testId="trace-strip-time"
       />
       <SeriesStrip
@@ -167,6 +248,7 @@ export function TraceTimeline({
         values={costSeries}
         color="rgb(16 185 129)"
         atCursor={`$${((costSeries[cursorBucket] / bucketMs || 0) * 3_600_000).toFixed(2)}/h`}
+        band={band}
         testId="trace-strip-cost"
       />
       <SeriesStrip
@@ -174,13 +256,14 @@ export function TraceTimeline({
         values={totalCostSeries}
         color="rgb(168 85 247)"
         atCursor={`$${(totalCostSeries[cursorBucket] || 0).toFixed(2)} spent`}
+        band={band}
         testId="trace-strip-total-cost"
       />
-    </>
+    </div>
   );
   const laneRows = (
     <div
-      className={cn('overflow-y-auto overflow-x-hidden', outlineMode && 'min-h-0 flex-1')}
+      className={cn('relative overflow-y-auto overflow-x-hidden', outlineMode && 'min-h-0 flex-1')}
       style={outlineMode ? undefined : { maxHeight: MAX_VISIBLE_LANES_PX }}
       data-testid="trace-timeline-lanes"
     >
@@ -194,8 +277,49 @@ export function TraceTimeline({
           x={x}
           selected={selectedLaneId === lane.id}
           onSelect={onSelectLane}
+          onOpen={onOpenLane}
         />
       ))}
+      {outlineMode && (
+        <>
+          {/* Drag-to-zoom capture layer over the track (right of the gutter). The
+              skill-name links live in the gutter, so they stay clickable. */}
+          <div
+            className="absolute inset-y-0 z-20 cursor-crosshair"
+            style={{ left: gutter, right: 0 }}
+            onMouseDown={onTrackMouseDown}
+            onDoubleClick={() => setZoom(null)}
+            data-testid="trace-zoom-capture"
+          />
+          {dragRect && (
+            <div
+              className="pointer-events-none absolute inset-y-0 z-20 border-x border-primary/60 bg-primary/15"
+              style={{
+                left: Math.min(dragRect[0], dragRect[1]),
+                width: Math.abs(dragRect[1] - dragRect[0]),
+              }}
+            />
+          )}
+          {cursorX !== null && (
+            <div
+              className="pointer-events-none absolute inset-y-0 z-10 w-px bg-foreground/70"
+              style={{ left: cursorX }}
+              data-testid="trace-cursor-line"
+            />
+          )}
+          {zoom && (
+            <button
+              type="button"
+              className="absolute right-1 top-1 z-30 flex items-center gap-1 rounded-full border bg-background/90 px-2 py-0.5 text-[10px] text-muted-foreground shadow-sm hover:text-foreground"
+              onClick={() => setZoom(null)}
+              data-testid="trace-zoom-reset"
+            >
+              <Maximize2 className="h-3 w-3" />
+              reset zoom
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 
@@ -218,7 +342,7 @@ export function TraceTimeline({
             {laneRows}
           </>
         )}
-        {cursorX !== null && (
+        {!outlineMode && cursorX !== null && (
           <div
             className="pointer-events-none absolute bottom-0 top-0 z-10 w-px bg-foreground/70"
             style={{ left: cursorX }}
@@ -248,18 +372,22 @@ export function TraceTimeline({
 
 const STRIP_H = 22;
 
-/** Compact area sparkline sharing the timeline's x-axis — one per metric. */
+/** Compact area sparkline sharing the timeline's x-axis — one per metric. The
+ * optional `band` ([start, end] as 0–1 fractions of the full session) shades the
+ * currently zoomed window so the strips stay a stable "you are here" overview. */
 function SeriesStrip({
   label,
   values,
   color,
   atCursor,
+  band,
   testId,
 }: {
   label: string;
   values: number[];
   color: string;
   atCursor: string;
+  band?: readonly [number, number] | null;
   testId: string;
 }) {
   const max = Math.max(...values, 1e-9);
@@ -276,6 +404,17 @@ function SeriesStrip({
       >
         <polygon points={`0,${STRIP_H} ${points} 100,${STRIP_H}`} fill={color} fillOpacity={0.18} />
         <polyline points={points} fill="none" stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        {band && (
+          <rect
+            x={band[0] * 100}
+            y={0}
+            width={Math.max(0.5, (band[1] - band[0]) * 100)}
+            height={STRIP_H}
+            fill="currentColor"
+            fillOpacity={0.12}
+            className="text-foreground"
+          />
+        )}
       </svg>
       <span className="pointer-events-none absolute left-0.5 top-0 text-[9px] leading-none text-muted-foreground">
         {label}
@@ -304,6 +443,7 @@ const LaneRow = memo(function LaneRow({
   x,
   selected,
   onSelect,
+  onOpen,
 }: {
   lane: TraceLane;
   outline: boolean;
@@ -312,41 +452,51 @@ const LaneRow = memo(function LaneRow({
   x: (ms: number | null) => number | null;
   selected: boolean;
   onSelect: (laneId: string | null) => void;
+  onOpen?: (laneId: string) => void;
 }) {
   const label = laneLabel(lane, outline);
   // Outline lanes nest by depth (label indent) and need a wider, legible label
   // backdrop since skill/role names sit over their span bars.
   const indentPx = outline ? (lane.depth ?? 0) * 12 : 0;
-  // Skill lanes open their asset on click → render as links.
-  const isLink = outline && lane.kind === 'skill';
+  // Only the skill *name* opens its asset (a link) — NOT the whole row. In the
+  // Execution view the row stays clickable for lane selection.
+  const isLink = outline && lane.kind === 'skill' && !!onOpen;
   return (
     <div
       className={cn(
         'relative flex items-center',
-        outline && lane.kind === 'skill' ? 'cursor-pointer' : 'cursor-default',
-        !outline && 'cursor-pointer',
+        outline ? 'cursor-default overflow-hidden' : 'cursor-pointer',
         selected && 'rounded bg-accent/60',
       )}
       style={{ height: outline ? OUTLINE_ROW_H : LANE_ROW_H }}
-      onClick={() => onSelect(selected ? null : lane.id)}
+      onClick={outline ? undefined : () => onSelect(selected ? null : lane.id)}
       title={outline ? label : lane.kind === 'root' ? 'root' : `${lane.agent_type ?? 'subagent'}: ${lane.description ?? lane.id}`}
       data-testid={`trace-lane-${lane.id}`}
     >
       <span
         className={cn(
-          'pointer-events-none absolute left-0 z-10 truncate pl-0.5 leading-none',
+          'absolute left-0 z-30 truncate pl-0.5 leading-none',
           outline
             ? cn(
-                'inset-y-0 flex w-56 items-center rounded-sm bg-background/85 text-[13px]',
+                'inset-y-0 flex items-center bg-background text-[13px]',
                 isLink
-                  ? 'font-semibold text-primary'
+                  ? 'pointer-events-auto cursor-pointer font-semibold text-primary hover:underline'
                   : lane.kind === 'root'
-                    ? 'font-semibold text-foreground/80'
-                    : 'text-foreground/70',
+                    ? 'pointer-events-none font-semibold text-foreground/80'
+                    : 'pointer-events-none text-foreground/70',
               )
-            : 'top-0 w-20 text-[9px] text-muted-foreground',
+            : 'pointer-events-none top-0 w-20 text-[9px] text-muted-foreground',
         )}
-        style={{ paddingLeft: indentPx + 2 }}
+        style={outline ? { width: GUTTER, paddingLeft: indentPx + 2 } : { paddingLeft: indentPx + 2 }}
+        onClick={
+          isLink
+            ? (e) => {
+                e.stopPropagation();
+                onOpen?.(lane.id);
+              }
+            : undefined
+        }
+        title={isLink ? `Open ${label}` : undefined}
       >
         {label}
       </span>
@@ -366,23 +516,55 @@ const LaneRow = memo(function LaneRow({
           />
         );
       })}
-      {events.map((e, i) => {
-        const ex = x(tsMs(e.ts));
-        if (ex === null) return null;
-        return (
-          <div
-            key={`ev-${e.ts}-${i}`}
-            className={cn(
-              'absolute bottom-0 rotate-45',
-              outline ? 'h-2 w-2' : 'h-1.5 w-1.5',
-              eventColor(e.kind, e.severity),
-            )}
-            style={{ left: ex - 3 }}
-            title={`${e.kind.replace('_', ' ')}: ${e.label}`}
-            data-testid={`trace-event-${e.kind}`}
-          />
-        );
-      })}
+      {(() => {
+        const exs = events.map((e) => x(tsMs(e.ts)));
+        return events.map((e, i) => {
+          const ex = exs[i];
+          if (ex === null) return null;
+          // At high zoom (markers spaced out) render the event as a labelled
+          // chip with full info; otherwise keep the compact diamond.
+          let gap = Infinity;
+          for (let j = 0; j < exs.length; j++) {
+            const o = exs[j];
+            if (j === i || o === null) continue;
+            gap = Math.min(gap, Math.abs(o - ex));
+          }
+          const title = `${e.kind.replace('_', ' ')}: ${e.label}`;
+          if (outline && gap >= CHIP_MIN_PX) {
+            const Icon = EVENT_ICON[e.kind];
+            return (
+              <div
+                key={`ev-${e.ts}-${i}`}
+                className="absolute top-1/2 z-10 flex h-5 -translate-y-1/2 items-center gap-1 rounded-full border bg-background px-1.5 text-[10px] text-foreground/80 shadow-sm"
+                style={{ left: ex - 5, maxWidth: 220 }}
+                title={title}
+                data-testid={`trace-event-${e.kind}`}
+              >
+                <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', eventColor(e.kind, e.severity))} />
+                {Icon && <Icon className="h-3 w-3 shrink-0 opacity-70" />}
+                <span className="truncate">{e.label}</span>
+              </div>
+            );
+          }
+          return (
+            <div
+              key={`ev-${e.ts}-${i}`}
+              className={cn(
+                'absolute rotate-45 cursor-default',
+                // Outline: bigger, vertically centered, ringed dots so prompts /
+                // interrupts / tasks read clearly against the lane bars.
+                outline
+                  ? 'top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-[1px] ring-1 ring-background'
+                  : 'bottom-0 h-1.5 w-1.5',
+                eventColor(e.kind, e.severity),
+              )}
+              style={{ left: ex - (outline ? 5 : 3) }}
+              title={title}
+              data-testid={`trace-event-${e.kind}`}
+            />
+          );
+        });
+      })()}
       {markers.map((m, i) => {
         const mx = x(tsMs(m.ts));
         if (mx === null) return null;
