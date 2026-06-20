@@ -1,4 +1,4 @@
-import { AgenticProcess, ExecutionMode, Project, supportedExecutionModes, TypeId, WorkerStatus } from '@sdk';
+import { AgenticProcess, ExecutionMode, Project, Shell, supportedExecutionModes, TypeId, WorkerStatus } from '@sdk';
 import { EntityTypeBar } from '@src/components/asset-manager/EntityTypeBar';
 import { workerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -14,7 +14,7 @@ import {
   useWorkerList,
 } from '@src/store/pending-actions-store';
 import { cn } from '@src/lib/utils';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { executionModeLabel, iconForExecutionMode } from './execution-mode-icons';
 import { useNotificationPulse } from './useNotificationPulse';
 import { workerStatusLabel } from './worker-status-label';
@@ -62,13 +62,55 @@ export function PendingActionsChip() {
     [allRows, effective],
   );
 
+  // A worker's display name lives on its linked Shell (the same
+  // "Claude - <sid> (new)" / OSC-title the tab strip shows), not on the
+  // AgenticProcess — the lightweight status-op store carries neither, so an
+  // unresolved row falls back to an id fragment. Resolve it from the cache:
+  // AgenticProcess → shell_id → Shell.name.
+  const nameFromCache = (processId: string): string | null => {
+    const ap = AgenticProcess.getByIdFromCache<AgenticProcess>(processId) as
+      | (AgenticProcess & { shell_id?: string | null })
+      | null;
+    const shellId = ap?.shell_id;
+    return (shellId ? Shell.getByIdFromCache<Shell>(shellId)?.name : null) ?? null;
+  };
+
+  // When the popover opens, lazily fetch the details for each listed process
+  // (and its Shell) so the extracted names replace the id fragments.
+  const fetchedRef = useRef<Set<string>>(new Set());
+  const [nameTick, setNameTick] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    const missing = allRows
+      .map((e) => e.processId)
+      .filter((id) => !fetchedRef.current.has(id) && !nameFromCache(id));
+    if (missing.length === 0) return;
+    missing.forEach((id) => fetchedRef.current.add(id));
+    let cancelled = false;
+    const resolve = async (id: string): Promise<void> => {
+      const ap = (AgenticProcess.getByIdFromCache<AgenticProcess>(id)
+        ?? (await AgenticProcess.getById<AgenticProcess>(id))) as
+        | (AgenticProcess & { shell_id?: string | null })
+        | null;
+      const shellId = ap?.shell_id;
+      if (shellId && !Shell.getByIdFromCache<Shell>(shellId)) {
+        await Shell.getById<Shell>(shellId);
+      }
+    };
+    void Promise.allSettled(missing.map(resolve)).then(() => {
+      if (!cancelled) setNameTick((t) => t + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, allRows]);
+
   const rows = useMemo(
     () =>
       filtered.map((e) => ({
         processId: e.processId,
         mode: e.mode,
-        name: AgenticProcess.getByIdFromCache<AgenticProcess>(e.processId)?.name
-          ?? e.processId.slice(0, 8),
+        name: nameFromCache(e.processId) ?? e.processId.slice(0, 8),
         projectName: e.projectId
           ? Project.getByIdFromCache<Project>(e.projectId)?.name ?? null
           : null,
@@ -77,7 +119,10 @@ export function PendingActionsChip() {
         lastActive: formatTimeAgo(e.lastStatusChangedAt),
         pending: e.pending,
       })),
-    [filtered],
+    // nameTick forces a re-read of the entity cache after the lazy fetch above
+    // resolves (the fetched names aren't otherwise a render dependency).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, nameTick],
   );
 
   // Hide the chip only when there are no supported workers at all. When the user
