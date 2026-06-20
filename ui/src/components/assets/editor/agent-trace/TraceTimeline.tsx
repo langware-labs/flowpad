@@ -61,14 +61,14 @@ function eventColor(kind: string, severity: string): string {
 }
 
 /** Legend entries shown above the Call-stack timeline so the markers read. */
-export const OUTLINE_LEGEND: { color: string; label: string }[] = [
+export const OUTLINE_LEGEND: { color: string; label: string; advancedOnly?: boolean }[] = [
   { color: 'bg-blue-500', label: 'prompt' },
   { color: 'bg-red-500', label: 'interrupt' },
   { color: 'bg-emerald-500', label: 'task' },
   { color: 'bg-amber-500/70', label: 'plan' },
-  // Advanced-only — CallStackView filters this out outside advanced mode, where
-  // the errors lane is hidden.
-  { color: 'bg-red-600', label: 'error' },
+  // `advancedOnly` pairs with the advanced-gated errors lane — CallStackView
+  // hides both outside advanced mode.
+  { color: 'bg-red-600', label: 'error', advancedOnly: true },
 ];
 
 function severityBar(severity: string): string {
