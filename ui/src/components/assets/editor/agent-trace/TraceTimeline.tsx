@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, Hand, ListPlus, Maximize2, MessageSquare, Puzzle, SquareTerminal, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Slider } from '@src/components/ui/slider';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import type { AgentTraceDoc, TraceEvent, TraceLane, TraceMarker } from './trace-types';
@@ -214,6 +215,25 @@ export function TraceTimeline({
   const EMPTY_MARKERS: TraceMarker[] = useMemo(() => [], []);
   const EMPTY_EVENTS: TraceEvent[] = useMemo(() => [], []);
 
+  // Clicking an event zooms in around it until it's isolated enough to render as
+  // a labelled chip — window = 3× the gap to its nearest same-lane neighbour
+  // (so the neighbour lands a third of the track away, well past CHIP_MIN_PX).
+  const zoomToEvent = useCallback(
+    (laneId: string, ms: number) => {
+      const evs = eventsByLane.get(laneId) ?? [];
+      let dt = Infinity;
+      for (const ev of evs) {
+        const t = tsMs(ev.ts);
+        if (t === null || t === ms) continue;
+        dt = Math.min(dt, Math.abs(t - ms));
+      }
+      if (!Number.isFinite(dt)) dt = span * 0.04; // lone event → a small default window
+      const half = Math.max(dt * 1.5, 1000);
+      setZoom([ms - half, ms + half]);
+    },
+    [eventsByLane, span],
+  );
+
   // Bucketed activity (lane-time) and spend ($) series over the session.
   // Derived from segments: each segment spreads its duration and cost_usd
   // uniformly across the buckets it overlaps — view-only, no extra trace data.
@@ -279,6 +299,7 @@ export function TraceTimeline({
           selected={selectedLaneId === lane.id}
           onSelect={onSelectLane}
           onOpen={onOpenLane}
+          onZoomEvent={zoomToEvent}
         />
       ))}
       {outlineMode && (
@@ -286,7 +307,7 @@ export function TraceTimeline({
           {/* Drag-to-zoom capture layer over the track (right of the gutter). The
               skill-name links live in the gutter, so they stay clickable. */}
           <div
-            className="absolute inset-y-0 z-20 cursor-crosshair"
+            className="absolute inset-y-0 z-10 cursor-crosshair"
             style={{ left: gutter, right: 0 }}
             onMouseDown={onTrackMouseDown}
             onDoubleClick={() => setZoom(null)}
@@ -294,7 +315,7 @@ export function TraceTimeline({
           />
           {dragRect && (
             <div
-              className="pointer-events-none absolute inset-y-0 z-20 border-x border-primary/60 bg-primary/15"
+              className="pointer-events-none absolute inset-y-0 z-30 border-x border-primary/60 bg-primary/15"
               style={{
                 left: Math.min(dragRect[0], dragRect[1]),
                 width: Math.abs(dragRect[1] - dragRect[0]),
@@ -311,7 +332,7 @@ export function TraceTimeline({
           {zoom && (
             <button
               type="button"
-              className="absolute right-1 top-1 z-30 flex items-center gap-1 rounded-full border bg-background/90 px-2 py-0.5 text-[10px] text-muted-foreground shadow-sm hover:text-foreground"
+              className="absolute right-1 top-1 z-40 flex items-center gap-1 rounded-full border bg-background/90 px-2 py-0.5 text-[10px] text-muted-foreground shadow-sm hover:text-foreground"
               onClick={() => setZoom(null)}
               data-testid="trace-zoom-reset"
             >
@@ -325,6 +346,7 @@ export function TraceTimeline({
   );
 
   return (
+    <TooltipProvider delayDuration={500} skipDelayDuration={0}>
     <div
       className={cn('border-t px-3 pb-2 pt-1', outlineMode ? 'flex min-h-0 flex-1 flex-col' : 'flex-shrink-0')}
       data-testid="trace-timeline"
@@ -368,6 +390,7 @@ export function TraceTimeline({
         </span>
       </div>
     </div>
+    </TooltipProvider>
   );
 }
 
@@ -463,6 +486,7 @@ const LaneRow = memo(function LaneRow({
   selected,
   onSelect,
   onOpen,
+  onZoomEvent,
 }: {
   lane: TraceLane;
   outline: boolean;
@@ -472,6 +496,8 @@ const LaneRow = memo(function LaneRow({
   selected: boolean;
   onSelect: (laneId: string | null) => void;
   onOpen?: (laneId: string) => void;
+  /** Outline only: zoom the timeline in around a clicked event until it's a chip. */
+  onZoomEvent?: (laneId: string, ms: number) => void;
 }) {
   const label = laneLabel(lane, outline);
   // Outline lanes nest by depth (label indent) and need a wider, legible label
@@ -555,38 +581,59 @@ const LaneRow = memo(function LaneRow({
             gap = Math.min(gap, Math.abs(o - ex));
           }
           const title = `${e.kind.replace('_', ' ')}: ${e.label}`;
-          if (outline && gap >= CHIP_MIN_PX) {
-            const Icon = EVENT_ICON[e.kind];
+          const Icon = EVENT_ICON[e.kind];
+          const asChip = outline && gap >= CHIP_MIN_PX;
+
+          // Execution mode: plain diamond with a native tooltip (no zoom).
+          if (!outline) {
             return (
               <div
                 key={`ev-${e.ts}-${i}`}
-                className="absolute top-1/2 z-10 flex h-5 -translate-y-1/2 items-center gap-1 rounded-full border bg-background px-1.5 text-[10px] text-foreground/80 shadow-sm"
-                style={{ left: ex - 5, maxWidth: 220 }}
+                className={cn('absolute bottom-0 h-1.5 w-1.5 rotate-45 cursor-default', eventColor(e.kind, e.severity))}
+                style={{ left: ex - 3 }}
                 title={title}
                 data-testid={`trace-event-${e.kind}`}
-              >
-                <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', eventColor(e.kind, e.severity))} />
-                {Icon && <Icon className="h-3 w-3 shrink-0 opacity-70" />}
-                <span className="truncate">{e.label}</span>
-              </div>
+              />
             );
           }
-          return (
+
+          // Outline: clicking an event zooms in around it until it's a chip.
+          const ms = tsMs(e.ts);
+          const onClick = (ev: React.MouseEvent) => {
+            ev.stopPropagation();
+            if (ms !== null) onZoomEvent?.(lane.id, ms);
+          };
+          const marker = asChip ? (
             <div
-              key={`ev-${e.ts}-${i}`}
+              className="absolute top-1/2 z-20 flex h-5 -translate-y-1/2 cursor-pointer items-center gap-1 rounded-full border bg-background px-1.5 text-[10px] text-foreground/80 shadow-sm"
+              style={{ left: ex - 5, maxWidth: 220 }}
+              onClick={onClick}
+              data-testid={`trace-event-${e.kind}`}
+            >
+              <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', eventColor(e.kind, e.severity))} />
+              {Icon && <Icon className="h-3 w-3 shrink-0 opacity-70" />}
+              <span className="truncate">{e.label}</span>
+            </div>
+          ) : (
+            <div
+              // Bigger, vertically centered, ringed dots so prompts / interrupts
+              // / tasks read clearly against the lane bars.
               className={cn(
-                'absolute rotate-45 cursor-default',
-                // Outline: bigger, vertically centered, ringed dots so prompts /
-                // interrupts / tasks read clearly against the lane bars.
-                outline
-                  ? 'top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-[1px] ring-1 ring-background'
-                  : 'bottom-0 h-1.5 w-1.5',
+                'absolute top-1/2 z-20 h-2.5 w-2.5 -translate-y-1/2 rotate-45 cursor-pointer rounded-[1px] ring-1 ring-background',
                 eventColor(e.kind, e.severity),
               )}
-              style={{ left: ex - (outline ? 5 : 3) }}
-              title={title}
+              style={{ left: ex - 5 }}
+              onClick={onClick}
               data-testid={`trace-event-${e.kind}`}
             />
+          );
+          return (
+            <Tooltip key={`ev-${e.ts}-${i}`}>
+              <TooltipTrigger asChild>{marker}</TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                {title}
+              </TooltipContent>
+            </Tooltip>
           );
         });
       })()}
