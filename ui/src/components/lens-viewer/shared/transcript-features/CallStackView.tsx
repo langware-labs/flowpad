@@ -9,6 +9,7 @@ import { useTraceSkeleton } from '@src/components/assets/editor/agent-trace/useT
 import type { WorkerType } from '@src/hooks/use-transcript';
 import { useSkillsByName } from '@src/hooks/useSkillsByName';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useTranscriptZoom } from '../use-transcript-zoom';
 
 /**
@@ -33,12 +34,18 @@ export function CallStackView({
   const { skeleton, error, loading } = useTraceSkeleton(workerType, sessionId);
   const { navigation } = useDockNavigation();
   const { byName } = useSkillsByName();
+  const advanced = useIsAdvanced();
   const [zoom, setZoom] = useTranscriptZoom();
   const [cursorMs, setCursorMs] = useState<number | null>(null);
   const [selectedLaneId, setSelectedLaneId] = useState<string | null>(null);
 
   const doc = skeleton;
   const outline = doc?.outline ?? null;
+  // The errors lane (failed tool calls / stuck loops) is an advanced-only detail.
+  const displayOutline = useMemo(
+    () => (advanced ? outline : outline?.filter((l) => l.kind !== 'errors') ?? null),
+    [outline, advanced],
+  );
 
   const startMs = useMemo(() => {
     if (!doc) return null;
@@ -90,7 +97,7 @@ export function CallStackView({
       <div className="flex shrink-0 items-center gap-4 border-b border-border bg-card px-3 py-2 text-[11px] text-muted-foreground">
         <span className="font-medium">Session call stack</span>
         <span className="flex items-center gap-3">
-          {OUTLINE_LEGEND.map(({ color, label }) => (
+          {OUTLINE_LEGEND.filter(({ label }) => advanced || label !== 'error').map(({ color, label }) => (
             <span key={label} className="flex items-center gap-1">
               <span className={cn('h-2 w-2 rotate-45 rounded-[1px]', color)} />
               {label}
@@ -101,7 +108,7 @@ export function CallStackView({
       <VerdictBanner data={bannerData} />
       <TraceTimeline
         doc={doc}
-        displayLanes={outline}
+        displayLanes={displayOutline ?? undefined}
         cursorMs={effectiveCursor}
         onCursorChange={setCursorMs}
         selectedLaneId={selectedLaneId}

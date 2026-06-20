@@ -87,6 +87,11 @@ IDLE_GAP_CUT_S = 120
 # Same failing command this many times in a row → stuck marker.
 STUCK_REPEAT_THRESHOLD = 3
 
+# Idle gap that splits a skill's outline lane into separate active-burst bars
+# (so a skill that ran several times hours apart shows several short bars, not
+# one span from first-seen to last-seen).
+_SKILL_BURST_GAP_S = 300
+
 _PREVIEW_CHARS = 200
 _LABEL_CHARS = 120
 
@@ -652,7 +657,27 @@ def _outline_lane(
     }
 
 
-def _build_outline(root_entries: list[TranscriptEntry], sub_lane_by_tuid: dict[str, dict]) -> list[dict]:
+def _bursts(times: list[str], gap_s: float) -> list[tuple[str, str]]:
+    """Contiguous active windows over sorted timestamps — a new window starts
+    when the gap to the previous timestamp exceeds ``gap_s``."""
+    out: list[list[str]] = []
+    for ts in times:
+        ms = _ts_ms(ts)
+        if ms is None:
+            continue
+        prev_ms = _ts_ms(out[-1][1]) if out else None
+        if out and prev_ms is not None and (ms - prev_ms) <= gap_s * 1000:
+            out[-1][1] = ts
+        else:
+            out.append([ts, ts])
+    return [(a, b) for a, b in out]
+
+
+def _build_outline(
+    root_entries: list[TranscriptEntry],
+    sub_lane_by_tuid: dict[str, dict],
+    markers: list[dict],
+) -> list[dict]:
     """High-level, timeline-ready "session call stack": root → skills →
     subagents, nested by the authoritative ``attribution_skill`` (the real
     multi-turn owner — not the per-turn skill stack the call tree uses). The
@@ -664,34 +689,27 @@ def _build_outline(root_entries: list[TranscriptEntry], sub_lane_by_tuid: dict[s
     in pre-order (root, then each skill followed by its subagents) so the front
     end can indent by ``depth`` directly.
     """
-    # One ordered pass. Skill spans are GAP-FILLED: the active skill (last
-    # non-None attribution_skill) owns the entries that follow it — including
-    # un-attributed ones — until a different skill takes over. So a long
-    # umbrella skill (e2e-qa) shows its true window instead of collapsing to the
-    # few turns Claude tagged. permission-mode entries carry NO timestamp, so
-    # plan spans + tasks borrow the nearest preceding timestamp.
-    skill_span: dict[str, list[str]] = {}
+    # One ordered pass collecting each skill's attributed timestamps (raw, NOT
+    # gap-filled — see _bursts below: an intermittent skill must render as
+    # several short bars at its actual active windows, not one span from
+    # first-seen to last-seen, else a skill that ran 4× over 11h looks like a
+    # 12h run). permission-mode entries carry NO timestamp, so plan spans +
+    # tasks borrow the nearest preceding timestamp.
+    skill_ts: dict[str, list[str]] = {}
     plan_spans: list[tuple[str, str]] = []
-    interrupts: list[dict] = []
+    user_events: list[dict] = []  # prompts + interrupts (the "user" lane)
     task_events: list[dict] = []
-    active_skill: str | None = None
     last_ts: str | None = None
     plan_open: str | None = None
 
     for e in root_entries:
         sk = getattr(e, "attribution_skill", None)
-        if sk:
-            active_skill = sk
         if e.timestamp:
             last_ts = e.timestamp
         ts = e.timestamp or last_ts
 
-        if active_skill and ts:
-            cur = skill_span.get(active_skill)
-            if cur is None:
-                skill_span[active_skill] = [ts, ts]
-            else:
-                cur[1] = max(cur[1], ts)
+        if sk and ts:
+            skill_ts.setdefault(sk, []).append(ts)
 
         if isinstance(e, MetaEntry) and e.meta_kind == "permission-mode":
             mode = (e.payload or {}).get("permissionMode")
@@ -700,11 +718,18 @@ def _build_outline(root_entries: list[TranscriptEntry], sub_lane_by_tuid: dict[s
             elif mode != "plan" and plan_open is not None and ts:
                 plan_spans.append((plan_open, ts))
                 plan_open = None
-        elif isinstance(e, UserMessageEntry) and (e.text or "").strip().startswith(_INTERRUPT_PREFIX):
-            interrupts.append({
-                "ts": ts, "lane_id": "root", "kind": "interrupt",
-                "label": "user interrupt", "severity": SeverityTier.NOTABLE.value, "entry_id": e.id,
-            })
+        elif isinstance(e, UserMessageEntry) and ts:
+            text = (e.text or "").strip()
+            if text.startswith(_INTERRUPT_PREFIX):
+                user_events.append({
+                    "ts": ts, "lane_id": "user", "kind": "interrupt",
+                    "label": "user interrupt", "severity": SeverityTier.ATTENTION.value, "entry_id": e.id,
+                })
+            elif _is_prompt(e):
+                user_events.append({
+                    "ts": ts, "lane_id": "user", "kind": "user_prompt",
+                    "label": _clip(text, _LABEL_CHARS), "severity": SeverityTier.INFO.value, "entry_id": e.id,
+                })
         elif isinstance(e, ToolUseEntry) and getattr(e, "tool_name", "") in ("TaskCreate", "TaskUpdate") and ts:
             ti = getattr(e, "tool_input", None) or {}
             if e.tool_name == "TaskCreate":
@@ -722,9 +747,12 @@ def _build_outline(root_entries: list[TranscriptEntry], sub_lane_by_tuid: dict[s
                     "entry_id": e.id,
                 })
 
-    skill_order = sorted(skill_span, key=lambda s: skill_span[s][0])
+    for v in skill_ts.values():
+        v.sort()
+    skill_order = sorted(skill_ts, key=lambda s: skill_ts[s][0])
     skill_lane_id = {sk: f"skill-{i}" for i, sk in enumerate(skill_order)}
-    all_ts = [t for sp in skill_span.values() for t in sp] or [e.timestamp for e in root_entries if e.timestamp]
+    skill_bursts = {sk: _bursts(skill_ts[sk], _SKILL_BURST_GAP_S) for sk in skill_order}
+    all_ts = [t for v in skill_ts.values() for t in v] or [e.timestamp for e in root_entries if e.timestamp]
     session_start = min(all_ts) if all_ts else None
     session_end = max(all_ts) if all_ts else None
     if plan_open is not None and session_end:
@@ -734,7 +762,6 @@ def _build_outline(root_entries: list[TranscriptEntry], sub_lane_by_tuid: dict[s
         "root", "root", 0, description="session",
         start_ts=session_start, end_ts=session_end,
         segments=[_outline_span("root", s, en, "plan mode", SeverityTier.NOTABLE.value) for s, en in plan_spans],
-        events=interrupts,
     )
 
     # Subagent lanes, attributed to the skill that owned the spawn.
@@ -756,6 +783,14 @@ def _build_outline(root_entries: list[TranscriptEntry], sub_lane_by_tuid: dict[s
         ))
 
     out: list[dict] = [root_lane]
+    # User lane — the human's prompts and interrupts over the session.
+    if user_events:
+        u_ts = [u["ts"] for u in user_events if u["ts"]]
+        out.append(_outline_lane(
+            "user", "user", 1, description="user", parent_lane_id="root",
+            start_ts=min(u_ts) if u_ts else None, end_ts=max(u_ts) if u_ts else None,
+            events=user_events,
+        ))
     # Tasks lane — the TaskCreate/TaskUpdate todo list as create/update markers
     # over time (session-level progress, right under root).
     if task_events:
@@ -765,12 +800,39 @@ def _build_outline(root_entries: list[TranscriptEntry], sub_lane_by_tuid: dict[s
             start_ts=min(t_ts) if t_ts else None, end_ts=max(t_ts) if t_ts else None,
             events=task_events,
         ))
+    # Errors lane — every failed tool call / stuck loop (issue + stuck markers
+    # from the whole session incl. subagents, so it agrees with the header's
+    # issue count). Rendered as red, click-to-zoom events; the front end only
+    # shows this lane in advanced mode.
+    error_events = sorted(
+        (
+            {
+                "ts": m["ts"], "lane_id": "errors", "kind": "error",
+                "label": m.get("label") or "error",
+                "severity": SeverityTier.ATTENTION.value, "entry_id": "",
+            }
+            for m in markers
+            if m.get("kind") in ("issue", "stuck") and m.get("ts")
+        ),
+        key=lambda x: x["ts"] or "",
+    )
+    if error_events:
+        e_ts = [x["ts"] for x in error_events if x["ts"]]
+        out.append(_outline_lane(
+            "errors", "errors", 1, description="errors", parent_lane_id="root",
+            start_ts=min(e_ts), end_ts=max(e_ts),
+            events=error_events,
+        ))
     for sk in skill_order:
-        lo, hi = skill_span[sk]
+        bursts = skill_bursts[sk]
         lid = skill_lane_id[sk]
         out.append(_outline_lane(
             lid, "skill", 1, description=sk, skill_name=sk, parent_lane_id="root",
-            start_ts=lo, end_ts=hi, segments=[_outline_span(lid, lo, hi, sk)],
+            start_ts=bursts[0][0] if bursts else None,
+            end_ts=bursts[-1][1] if bursts else None,
+            # One bar per active burst — gaps between runs stay empty so an
+            # intermittent skill doesn't read as one long continuous run.
+            segments=[_outline_span(lid, b0, b1, sk) for b0, b1 in bursts],
         ))
         out.extend(sorted(agents_by_owner.get(sk, []), key=lambda x: x["start_ts"] or ""))
     out.extend(sorted(agents_by_owner.get(None, []), key=lambda x: x["start_ts"] or ""))
@@ -829,7 +891,7 @@ def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict
     # High-level "session call stack" lanes — built from the authoritative
     # attribution_skill (NOT call_tree), spanning all spawns incl. in-flight.
     sub_lane_by_tuid = {l["spawn_tool_use_id"]: l for l in lanes if l.get("spawn_tool_use_id")}
-    outline = _build_outline(root_entries, sub_lane_by_tuid)
+    outline = _build_outline(root_entries, sub_lane_by_tuid, markers)
 
     return {
         "version": 2,
