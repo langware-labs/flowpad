@@ -15,7 +15,7 @@ import { type TabStripItem } from '@src/components/tabs/TabStrip';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { usePendingSessionIds } from '@src/store/pending-actions-store';
 import { TabLifecycleState, type TabLifecycleEntry, useTabLifecycles } from '@src/tabs/tab-lifecycle';
-import { LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
+import { ContentTabTooltip, humanizeType, LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
@@ -92,6 +92,7 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
   const meta = VIEWER_REGISTRY[viewType as ViewType];
   if (tab.target_type && tab.target_id) {
     const Icon = iconForType(tab.target_type);
+    const typeLabel = meta?.title || humanizeType(tab.target_type);
     return {
       key,
       title: label || meta?.title || viewType,
@@ -100,12 +101,13 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
       isDisabled,
       hasError: lifecycleOverlay.hasError,
       statusReason,
-      tooltip: statusReason || undefined,
+      tooltip: <ContentTabTooltip tab={tab} typeLabel={typeLabel} statusReason={statusReason || undefined} />,
       testId: `tab-content-${key}`,
       dataAttributes: { 'data-tab-kind': tab.target_type },
     };
   }
   const Icon = (meta?.iconName && lucideByName(meta.iconName)) || FileText;
+  const typeLabel = meta?.title || humanizeType(viewType || 'Tab');
   return {
     key,
     title: label || meta?.title || viewType,
@@ -114,7 +116,7 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
     isDisabled,
     hasError: lifecycleOverlay.hasError,
     statusReason,
-    tooltip: statusReason || undefined,
+    tooltip: <ContentTabTooltip tab={tab} typeLabel={typeLabel} statusReason={statusReason || undefined} />,
     testId: `tab-content-${key}`,
   };
 }

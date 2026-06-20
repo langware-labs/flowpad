@@ -119,6 +119,30 @@ export async function syncTerminalTabName(target: TypeId | string, name: string)
 }
 
 /**
+ * Mirror a transcript lens's resolved session name onto its Tab label.
+ *
+ * Transcript tabs (`lens/<worker>/transcript/<id>`) can't rely on the content
+ * data-op mirror below: codex/copilot sessions have no entity to fire a data-op,
+ * and legacy claude tabs were minted with a null `target_id` (so the
+ * `target_id === id` match never hits). This resolves the tab by the current
+ * dock's `tabHash` instead and `set_name`-mirrors the generic worker-session
+ * name (from the transcript header) once known — `set_name`, not `rename`, so it
+ * never pins `auto_rename`. Guarded + no-op when unchanged, so it's safe to run
+ * from the read-only viewer on every load.
+ */
+export function useSyncTranscriptTabName(tabHash: string | null | undefined, name: string | null | undefined): void {
+  const tabs = useAllTabs();
+  useEffect(() => {
+    const trimmed = name?.trim();
+    if (!tabHash || !trimmed) return;
+    const tab = tabs.find((t) => tabKey(t) === tabHash);
+    if (tab && tab.name !== trimmed) {
+      void Tab.setNameById(tab.id, trimmed).then(() => void refreshAllTabs());
+    }
+  }, [tabs, tabHash, name]);
+}
+
+/**
  * Generic entity → tab name sync. Mount once (the tab strip). A single
  * `on_data_op` listener mirrors a CONTENT entity's renamed `name` onto its tab
  * label via the tab-only `set_name` action — the same guarded mirror terminals

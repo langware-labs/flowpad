@@ -64,6 +64,25 @@ def _build_header(transcript: AgentTranscriptFile) -> dict:
     return out
 
 
+async def _header_with_name(worker_type: str, transcript: AgentTranscriptFile) -> dict:
+    """``_build_header`` plus a generic worker-session display ``name`` (the same
+    title the ``history_entry`` list shows), so the transcript tab can label
+    itself for any worker (claude/codex/copilot). Best-effort: a name-resolve
+    failure never blocks the transcript response."""
+    header = _build_header(transcript)
+    try:
+        from flow_sdk.builtin.worker_history import get_worker_session_name
+
+        name = await get_worker_session_name(
+            worker_type, transcript.session_id, jsonl_path=transcript.path
+        )
+        if name:
+            header["name"] = name
+    except Exception:  # noqa: BLE001
+        logger.exception("transcripts: session name resolve failed for %s", transcript.session_id)
+    return header
+
+
 async def _post_agent_trace_feed_entry(trace_entity) -> str | None:
     """Best-effort Home Feed entry for a completed session analysis."""
     try:
@@ -114,7 +133,7 @@ async def get_transcript(worker_type: str, path: str = ""):
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
-        "header": _build_header(transcript),
+        "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
     }
 
@@ -235,6 +254,6 @@ async def get_worker_session_transcript(worker_type: str, session_id: str):
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
-        "header": _build_header(transcript),
+        "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
     }

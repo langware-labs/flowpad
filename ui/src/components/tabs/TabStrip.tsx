@@ -24,6 +24,7 @@ import {
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { ChevronLeft, ChevronRight, ExternalLink, X, type LucideIcon } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -116,6 +117,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
 }) => {
   // One ordered list (backend-owned) — projectless tabs are inline, no section.
   const allVisibleItems = items;
+  // The rich per-tab info card is an Advanced/Dev affordance; Standard mode keeps
+  // the calm minimal hover (statusReason / title only).
+  const isAdvanced = useIsAdvanced();
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
@@ -448,7 +452,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
             <TooltipTrigger asChild>
               <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
             </TooltipTrigger>
-            {item.tooltip ? (
+            {isAdvanced && item.tooltip ? (
               <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
                 {item.tooltip}
               </TooltipContent>
