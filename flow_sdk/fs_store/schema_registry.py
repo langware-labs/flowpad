@@ -365,6 +365,7 @@ class TypeInfo:
             "locations": self.locations,
             "main_subdir": self.main_subdir,
             "main_layout": self.main_layout,
+            "folder_backed": self.folder_backed,
             "schema_hash": self.schema_hash,
         }
 
