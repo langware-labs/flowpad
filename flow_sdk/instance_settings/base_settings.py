@@ -163,6 +163,12 @@ class BaseInstanceSettings:
     # bootstrap.sniffer_hook payload (null when disabled). ----
     sniffer_enabled: bool = False
 
+    # ---- External-worker scan: opt-in gate for the (deferred) OS-cmdline
+    # scanner that surfaces workers running outside the app in the footer's
+    # advanced "external" execution-mode bucket. Default off; the /workers
+    # action returns external=[] while disabled. ----
+    external_worker_scan_enabled: bool = False
+
     # ---- Process info (filled at boot, optional) ----
     server_pid: int | None = None
 

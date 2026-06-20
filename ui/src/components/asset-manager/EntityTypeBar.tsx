@@ -21,11 +21,16 @@ interface EntityTypeBarProps {
   counts?: Partial<Record<string, number>>;
   /**
    * Types rendered as toggles. Limits the bar to the host's allowed/available
-   * asset types — e.g. `['agent','skill']` for the run-with picker.
+   * asset types — e.g. `['agent','skill']` for the run-with picker. Accepts a
+   * readonly array so callers can pass a `readonly` enum list without copying.
    */
-  allowed: string[];
+  allowed: readonly string[];
   /** Resolves the type-registry icon for a type name (e.g. `iconForType('skill')`). */
   iconForType: (type: string) => LucideIcon;
+  /** Optional label resolver. Defaults to the built-in asset-type ``LABELS`` map. */
+  labelForType?: (type: string) => string;
+  /** Optional ``data-testid`` prefix. Defaults to ``asset-picker-type`` for back-compat. */
+  testIdPrefix?: string;
 }
 
 /**
@@ -41,6 +46,8 @@ export function EntityTypeBar({
   counts,
   allowed,
   iconForType,
+  labelForType,
+  testIdPrefix = 'asset-picker-type',
 }: EntityTypeBarProps): React.ReactElement {
   const allShown = selected.length === 0;
   const isActive = (t: string) => allShown || selected.includes(t);
@@ -60,7 +67,7 @@ export function EntityTypeBar({
         const active = isActive(t);
         const count = counts?.[t];
         const showCount = typeof count === 'number' && count > 0;
-        const label = LABELS[t] ?? t;
+        const label = labelForType ? labelForType(t) : LABELS[t] ?? t;
         return (
           <button
             key={t}
@@ -74,7 +81,7 @@ export function EntityTypeBar({
                 ? 'bg-accent text-accent-foreground'
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
             )}
-            data-testid={`asset-picker-type-${t}`}
+            data-testid={`${testIdPrefix}-${t}`}
           >
             <Icon className="h-4 w-4" />
             {showCount && (
@@ -97,7 +104,7 @@ export function EntityTypeBar({
           title="Show all types"
           aria-label="Show all types"
           className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-          data-testid="asset-picker-type-clear"
+          data-testid={`${testIdPrefix}-clear`}
         >
           <X className="h-3.5 w-3.5" />
         </button>
