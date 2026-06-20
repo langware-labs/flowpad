@@ -25,7 +25,7 @@ export interface TraceSegment {
 
 export interface TraceLane {
   id: string;
-  kind: 'root' | 'subagent' | 'skill' | 'tasks';
+  kind: 'root' | 'subagent' | 'skill' | 'tasks' | 'user';
   agent_type?: string | null;
   description?: string | null;
   parent_lane_id?: string | null;

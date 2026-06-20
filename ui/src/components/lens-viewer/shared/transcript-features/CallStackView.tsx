@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { VerdictBanner, type VerdictBannerData } from '@src/components/assets/editor/agent-trace/AgentTraceView';
-import { TraceTimeline } from '@src/components/assets/editor/agent-trace/TraceTimeline';
+import { TraceTimeline, OUTLINE_LEGEND } from '@src/components/assets/editor/agent-trace/TraceTimeline';
+import { cn } from '@src/lib/utils';
 import { peakCostPerHour, tsMs } from '@src/components/assets/editor/agent-trace/trace-types';
 import { useTraceSkeleton } from '@src/components/assets/editor/agent-trace/useTraceSkeleton';
 import type { WorkerType } from '@src/hooks/use-transcript';
@@ -44,17 +45,13 @@ export function CallStackView({
   }, [doc]);
   const maxCostPerHour = useMemo(() => (doc ? peakCostPerHour(doc) : 0), [doc]);
 
-  // Clicking a skill lane opens its asset; other lanes just highlight.
-  const handleSelectLane = (id: string | null) => {
-    const lane = id ? outline?.find((l) => l.id === id) : null;
+  // Clicking the skill *name* (not the row) opens its asset.
+  const handleOpenLane = (id: string) => {
+    const lane = outline?.find((l) => l.id === id);
     if (lane?.kind === 'skill' && lane.skill_name) {
       const skill = byName.get(lane.skill_name);
-      if (skill) {
-        navigation.openDock(skill.editorDockPointer);
-        return;
-      }
+      if (skill) navigation.openDock(skill.editorDockPointer);
     }
-    setSelectedLaneId(id);
   };
 
   if (error) {
@@ -86,9 +83,18 @@ export function CallStackView({
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="transcript-callstack-view">
       {/* Matches Execution's top control-row height so the cost header below it
-          lands at the same Y — toggling doesn't shift the layout. */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2 text-[11px] text-muted-foreground">
-        Session call stack — skills · subagents · plan &amp; interrupts on the timeline
+          lands at the same Y — toggling doesn't shift the layout. The legend
+          decodes the timeline markers. */}
+      <div className="flex shrink-0 items-center gap-4 border-b border-border bg-card px-3 py-2 text-[11px] text-muted-foreground">
+        <span className="font-medium">Session call stack</span>
+        <span className="flex items-center gap-3">
+          {OUTLINE_LEGEND.map(({ color, label }) => (
+            <span key={label} className="flex items-center gap-1">
+              <span className={cn('h-2 w-2 rotate-45 rounded-[1px]', color)} />
+              {label}
+            </span>
+          ))}
+        </span>
       </div>
       <VerdictBanner data={bannerData} />
       <TraceTimeline
@@ -97,7 +103,8 @@ export function CallStackView({
         cursorMs={effectiveCursor}
         onCursorChange={setCursorMs}
         selectedLaneId={selectedLaneId}
-        onSelectLane={handleSelectLane}
+        onSelectLane={setSelectedLaneId}
+        onOpenLane={handleOpenLane}
       />
     </div>
   );
