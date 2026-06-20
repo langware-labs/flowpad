@@ -2,20 +2,9 @@
 id: 53b95d46-2105-5827-9475-4ddf73060d57
 name: transcript-analyzer
 description: Analyze Claude Code / agentic session transcripts. Use this whenever
-  the user asks to analyze, review, audit, or classify a session or transcript, find
-  mistakes / inefficiencies / automation opportunities in a past session, or create
-  a skill that prevents an observed failure from recurring — even if they just say
-  "what went wrong in that session" or point at a .jsonl transcript file. Replaces
-  the former analyze / classify / fix-it / session-analyzer sub-agents.
-tags:
-- analysis
-- transcript
-- quality
-allowed-tools:
-- Read
-- Write
-- Grep
-- Glob
+tags: ''
+allowed-tools: ''
+version: 2
 ---
 
 # Transcript Analyzer
@@ -28,9 +17,11 @@ user asked for, produce the exact artifacts that mode defines, nothing else.
 
 The transcript to review may arrive as any of:
 
-- A file path to a JSONL transcript (e.g. `~/.claude/projects/<encoded-cwd>/<session_id>.jsonl`)
-- Raw transcript content pasted inline
-- A plain-text description of what happened in the session
+* A file path to a JSONL transcript (e.g. `~/.claude/projects/<encoded-cwd>/<session_id>.jsonl`)
+
+* Raw transcript content pasted inline
+
+* A plain-text description of what happened in the session
 
 For JSONL files: each line is an event (`user` / `assistant` / tool results).
 Read the whole file before judging — early context often explains late
@@ -38,17 +29,17 @@ Read the whole file before judging — early context often explains late
 
 ## Mode selection
 
-| User intent | Mode |
-|---|---|
+| User intent                                                                             | Mode         |
+| --------------------------------------------------------------------------------------- | ------------ |
 | "classify this session", "what kind of session was this", title/category/command needed | **classify** |
-| "analyze", "find issues/mistakes/inefficiencies", "what went wrong" | **analyze** |
-| "create a skill to prevent this", "make sure this never happens again", "fix-it" | **fix-it** |
-| "review", "report", "automation opportunities", no structured output implied | **report** |
+| "analyze", "find issues/mistakes/inefficiencies", "what went wrong"                     | **analyze**  |
+| "create a skill to prevent this", "make sure this never happens again", "fix-it"        | **fix-it**   |
+| "review", "report", "automation opportunities", no structured output implied            | **report**   |
 
 When several apply, prefer the most specific artifact the user asked for.
 Default to **analyze** when genuinely unclear.
 
----
+***
 
 ## Mode: classify
 
@@ -68,13 +59,16 @@ no extra keys, no alternative names:
 Downstream parsers consume this file mechanically, which is why the shape is
 rigid:
 
-- `category` MUST be a **top-level** key. Do NOT wrap the result in a
+* `category` MUST be a **top-level** key. Do NOT wrap the result in a
   `classification`, `result`, `data`, or any other outer key.
-- `category` MUST be exactly one of the five literal strings. Do NOT invent
+
+* `category` MUST be exactly one of the five literal strings. Do NOT invent
   categories like `script_generation`, `coding`, `programming`.
-- Do NOT add fields (`complexity`, `programming_language`, `subtasks`,
+
+* Do NOT add fields (`complexity`, `programming_language`, `subtasks`,
   `summary`, …) — they break the consumer.
-- Write ONLY valid JSON — no markdown fences, no commentary.
+
+* Write ONLY valid JSON — no markdown fences, no commentary.
 
 Categories: **code** (writing new code/scripts), **debug** (diagnosing or
 fixing bugs/test failures), **explain** (understanding/documenting code or
@@ -119,9 +113,11 @@ codebase the session ran in.
 
 Human-readable companion report:
 
-- **Summary** — 2-3 sentence overview of what the session accomplished
-- **Issues Found** — per issue: title, category, description, recommendation
-- **Automation Opportunities** — repeatable patterns that could be scripted
+* **Summary** — 2-3 sentence overview of what the session accomplished
+
+* **Issues Found** — per issue: title, category, description, recommendation
+
+* **Automation Opportunities** — repeatable patterns that could be scripted
 
 If nothing is wrong, say "No issues detected" rather than inventing filler
 findings.
@@ -158,14 +154,17 @@ recurrence would be most costly.
 Free-form quality review when no machine-readable artifact is needed. Write a
 concise markdown report to `analysis.md` in the current working directory:
 
-- **Summary** — 2-3 sentence overview of what the session accomplished
-- **Automation Opportunities** — repeatable patterns worth scripting, with
+* **Summary** — 2-3 sentence overview of what the session accomplished
+
+* **Automation Opportunities** — repeatable patterns worth scripting, with
   concrete suggestions (scripts, tools, workflows)
-- **Preventable Errors** — errors with likely cause and how to prevent recurrence
-- **Behavior Corrections** — unwanted behaviors (excessive retries, redundant
+
+* **Preventable Errors** — errors with likely cause and how to prevent recurrence
+
+* **Behavior Corrections** — unwanted behaviors (excessive retries, redundant
   steps) and suggested guardrails
 
----
+***
 
 ## Rules (all modes)
 
