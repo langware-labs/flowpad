@@ -38,6 +38,12 @@ class User(Entity):
     email: str | None = APIField(None)
     last_login: datetime | None = APIField(None)
     onboarded: bool = APIField(default=False)
+    # Optional cloud organization the user belongs to (one org, hub-authoritative).
+    # Set on cloud login from the hub login payload; the org itself is materialized
+    # locally as a remote=True Organization at this id. Role lives on the edge here,
+    # not on the shared Organization entity. Defaults to "member".
+    organization_id: str | None = APIField(None)
+    organization_role: str = APIField(default="member")
     salt_: str | None = None
     hashed_password_: str | None = None
     _unique: ClassVar[list[str]] = ["email"]

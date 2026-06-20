@@ -21,6 +21,8 @@ from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, DeliverySt
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.builtin.task import Task
+from flow_sdk.builtin.organization import Organization
+from flow_sdk.builtin.team import Team
 from flow_sdk.builtin.user import User
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.conversation import (
@@ -1847,6 +1849,63 @@ async def inbox_bulk_update() -> ApiResponse:
 # ---------------------------------------------------------------------------
 
 
+def _membership_cls(target_type: str | None):
+    """Entity class for a membership target type (organization → Organization, else Team)."""
+    return Organization if target_type == BuiltinEntityType.ORGANIZATION.value else Team
+
+
+async def _materialize_membership_invitation(
+    hub_inv: dict, target: dict, someone_typeid: str
+) -> Optional["Invitation"]:
+    """Upsert a hub organization/team Invitation locally (``remote=True``).
+
+    Unlike conversation invitations, membership invitations have no backing
+    conversation: the inbox renders a generic row straight off the Invitation's
+    ``target_*`` fields. We also mirror the target org/team locally so the row
+    can show its name/icon and so accept resolves a real entity.
+    """
+    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+    from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
+        materialize_remote_membership_entity,
+    )
+
+    inv_id = hub_inv["id"]
+    target_type = target.get("type")
+    target_id = target.get("id")
+    target_name = target.get("name")
+    target_role = target.get("role")
+
+    # Mirror the target org/team so name/icon resolve locally (best-effort —
+    # the invitation row still renders from target_* even if this fails).
+    try:
+        cls = _membership_cls(target_type)
+        await materialize_remote_membership_entity(
+            cls,
+            {"id": target_id, "name": target_name, "icon": target.get("icon")},
+            someone_typeid,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[inv-materialize] membership target mirror failed: %s", e)
+
+    fields = {
+        "recipient_email": hub_inv.get("recipient_email") or "",
+        "accepted": bool(hub_inv.get("accepted") or False),
+        "sent": bool(hub_inv.get("sent") or False),
+        "message": hub_inv.get("message"),
+        "target_type": target_type,
+        "target_id": target_id,
+        "target_name": target_name,
+        "target_role": target_role,
+        "remote": True,
+    }
+    existing_inv = await LocalInvitation.get_one({"id": inv_id})
+    if existing_inv:
+        for k, v in fields.items():
+            setattr(existing_inv, k, v)
+        return await existing_inv.save(someone_typeid)
+    return await LocalInvitation.model_validate({"id": inv_id, **fields}).save(someone_typeid)
+
+
 async def _materialize_invitation(
     hub_inv: dict, someone_typeid: str
 ) -> tuple[Optional["Invitation"], Optional[str]]:
@@ -1870,6 +1929,16 @@ async def _materialize_invitation(
     if not hub_inv or not hub_inv.get("id"):
         return None, None
     inv_id = hub_inv["id"]
+
+    # Membership invitations (organization / team) carry a ``target`` descriptor
+    # instead of a conversation. Materialize the Invitation with its target
+    # metadata (so the inbox renders a generic "Organization/Team invitation"
+    # row) and mirror the target org/team locally as remote=True — no
+    # conversation / preview FlowMessage is involved.
+    target = hub_inv.get("target")
+    if isinstance(target, dict) and target.get("type") and target.get("id"):
+        return await _materialize_membership_invitation(hub_inv, target, someone_typeid), None
+
     existing_inv = await LocalInvitation.get_one({"id": inv_id})
     # Persist the invitation→conversation linkage. The hub stamps
     # ``target_url_path`` null but embeds the target ``conversation``; without
@@ -3088,14 +3157,37 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             logger.warning("[invitation-accept] hub join+materialize failed: %s", e, exc_info=True)
 
     # Mark local invitation as accepted (best-effort).
+    membership_target: Optional["Invitation"] = None
     try:
         from flow_sdk.builtin.invitation import Invitation as LocalInvitation
         existing = await LocalInvitation.get_one({"id": inv_id})
         if existing:
             existing.accepted = True
             await existing.save(someone_typeid)
+            if existing.target_type and existing.target_id:
+                membership_target = existing
     except Exception as e:
         logger.warning("[invitation-accept] local update failed: %s", e)
+
+    # Membership invitation (organization / team): the hub accept granted the
+    # role — that IS the membership, no conversation/bundle to pull. Mirror the
+    # target locally as remote=True so the Organization tab / member list shows
+    # it immediately, and notify so the UI repaints.
+    if membership_target is not None:
+        try:
+            cls = _membership_cls(membership_target.target_type)
+            from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
+                materialize_remote_membership_entity,
+            )
+            ent = await materialize_remote_membership_entity(
+                cls,
+                {"id": membership_target.target_id, "name": membership_target.target_name},
+                someone_typeid,
+            )
+            if ent is not None:
+                await ent.notify_updated()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[invitation-accept] membership target materialize failed: %s", e)
 
     # The invitation now ships with the Conversation embedded, so the local
     # SDK already has the real conversation row pre-accept. Nothing to clean

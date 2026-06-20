@@ -62,5 +62,7 @@ export * from './claude-rules';
 export * from './claude-session';
 export * from './command';
 export * from './workspace';
+export * from './organization';
+export * from './team';
 export * from './members';
 export * from './git-workdir';

@@ -46,6 +46,14 @@ class Invitation(Entity):
     expiration_at: Optional[datetime] = APIField(None)
     sent: Optional[bool] = APIField(False)
     message: Optional[str] = APIField(None)
+    # Membership invitations (organization / team) carry a lightweight target
+    # descriptor instead of a backing conversation, so the inbox can render a
+    # generic "Organization/Team invitation" row and accept knows what was
+    # joined. None for conversation invitations.
+    target_type: Optional[str] = APIField(None)
+    target_id: Optional[str] = APIField(None)
+    target_name: Optional[str] = APIField(None)
+    target_role: Optional[str] = APIField(None)
 
     def __init__(self, **data):
         super().__init__(**data)
