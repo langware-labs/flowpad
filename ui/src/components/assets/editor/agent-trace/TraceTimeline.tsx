@@ -161,13 +161,11 @@ export function TraceTimeline({
 
   // Drag-to-select. dragRect holds the live [startPx, curPx] for the overlay.
   const [dragRect, setDragRect] = useState<[number, number] | null>(null);
-  const dragStart = useRef<number | null>(null);
   const onTrackMouseDown = (e: React.MouseEvent) => {
     if (!outlineMode || width === 0) return;
     const rect = trackRef.current?.getBoundingClientRect();
     if (!rect) return;
     const startPx = e.clientX - rect.left;
-    dragStart.current = startPx;
     setDragRect([startPx, startPx]);
     const onMove = (ev: MouseEvent) => setDragRect([startPx, ev.clientX - rect.left]);
     const onUp = (ev: MouseEvent) => {
@@ -175,7 +173,6 @@ export function TraceTimeline({
       window.removeEventListener('mouseup', onUp);
       const endPx = ev.clientX - rect.left;
       setDragRect(null);
-      dragStart.current = null;
       if (Math.abs(endPx - startPx) < MIN_DRAG_PX) return;
       const a = msFromPx(Math.min(startPx, endPx));
       const b = msFromPx(Math.max(startPx, endPx));
