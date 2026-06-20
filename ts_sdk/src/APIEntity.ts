@@ -750,6 +750,29 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   /**
+   * Invite a member by email — POST ``<type>/<id>/members`` with a
+   * ``MembershipRequest`` (``{recipient_email, invitation_targets:[{typeid, role}]}``).
+   * Reflected to the hub (``info.hubReflect``): for a ``remote`` entity (e.g. an
+   * organization or team) the hub creates the Invitation + emails the recipient.
+   * Unlike ``share([email])`` (which is Conversation-shaped and also creates the
+   * remote row), this targets an already-remote entity and only invites — the
+   * right call for inviting into an organization/team from the members UI.
+   *
+   * ``role`` defaults to ``member``. The reflection layer returns the refreshed
+   * roster; seed the cache from it when it comes back as an array.
+   */
+  public async inviteMember(email: string, role: string = 'member'): Promise<void> {
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
+    info.hubReflect = true; // membership change is hub-owned — reflect to the hub
+    info.bodyParameters = {
+      recipient_email: email,
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+    };
+    const res = await dataManager.callAction<unknown, EntityMember[]>(info);
+    this._membersCache = Array.isArray(res) ? res : undefined;
+  }
+
+  /**
    * Remove a member by user id — DELETE ``<type>/<id>/members``. OWNER ONLY:
    * the hub enforces the owner gate (``delete_membership`` → 403 for non-owners
    * / owner-self), so this surfaces that as a thrown error rather than

@@ -29,6 +29,16 @@ except ImportError as e:
     print(f"[WARN] Failed to import Workspace: {e}")
 
 try:
+    from flow_sdk.builtin.organization import Organization  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Organization: {e}")
+
+try:
+    from flow_sdk.builtin.team import Team  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Team: {e}")
+
+try:
     from flow_sdk.builtin.agent import Agent  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Agent: {e}")
