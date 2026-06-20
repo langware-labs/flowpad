@@ -8,8 +8,7 @@ import { firstUnapprovedPromptIdx } from './prompt-attachment';
  * MessageBubble/PromptApprovalRow logic; array order = render order.
  *
  * Adding a new attachment-action pair = appending a descriptor here — no
- * MessageBubble surgery. (TODO: git_repo.accept — GitRepoChip's modal is the
- * chip-side precedent and could migrate here as a row action.)
+ * MessageBubble surgery.
  */
 
 const approveVisible = (ctx: AttachmentActionContext): boolean =>
