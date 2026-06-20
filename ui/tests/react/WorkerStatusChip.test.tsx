@@ -20,8 +20,9 @@ vi.mock('@sdk/react/hooks', () => ({
 }));
 
 const openShellProcess = vi.fn(async () => true);
+const openLens = vi.fn();
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: { openShellProcess } }),
+  useDockNavigation: () => ({ navigation: { openShellProcess, openLens } }),
 }));
 
 import { AgenticProcess, ProcessStatus, WorkerStatus } from '@sdk';
@@ -52,6 +53,7 @@ afterEach(() => {
 beforeEach(() => {
   setViewMode(ViewMode.Standard);
   openShellProcess.mockClear();
+  openLens.mockClear();
 });
 
 describe('PendingActionsChip — worker status list', () => {
@@ -136,5 +138,33 @@ describe('PendingActionsChip — worker status list', () => {
     expect(await screen.findByTestId('worker-list-empty')).toHaveTextContent(
       'No external workers detected',
     );
+  });
+
+  it('clicking an interactive row attaches its terminal, not the transcript', async () => {
+    const id = uid();
+    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, visible: true });
+
+    render(<PendingActionsChip />);
+    await userEvent.click(await screen.findByTestId('pending-actions-chip'));
+    const popover = await screen.findByTestId('pending-actions-popover');
+    await userEvent.click(within(within(popover).getByRole('listitem')).getByRole('button'));
+
+    expect(openShellProcess).toHaveBeenCalledWith(id);
+    expect(openLens).not.toHaveBeenCalled();
+  });
+
+  it('clicking a background (headless) row does not start a terminal', async () => {
+    const id = uid();
+    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.IDLE, visible: false });
+
+    render(<PendingActionsChip />);
+    await userEvent.click(await screen.findByTestId('pending-actions-chip'));
+    const popover = await screen.findByTestId('pending-actions-popover');
+    await userEvent.click(within(within(popover).getByRole('listitem')).getByRole('button'));
+
+    // Background → transcript branch (openLens), never the terminal-attach path.
+    // (openLens resolution needs a cached session_id, exercised in the browser;
+    // here we assert the critical invariant: no PTY is started for a headless run.)
+    expect(openShellProcess).not.toHaveBeenCalled();
   });
 });
