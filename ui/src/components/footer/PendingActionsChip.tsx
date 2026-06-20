@@ -1,4 +1,4 @@
-import { AgenticProcess, ExecutionMode, Project, Shell, supportedExecutionModes, TypeId, WorkerStatus } from '@sdk';
+import { AgenticProcess, ClaudeSession, ExecutionMode, Project, Shell, supportedExecutionModes, TypeId, WorkerStatus } from '@sdk';
 import { EntityTypeBar } from '@src/components/asset-manager/EntityTypeBar';
 import { workerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -62,21 +62,31 @@ export function PendingActionsChip() {
     [allRows, effective],
   );
 
-  // A worker's display name lives on its linked Shell (the same
-  // "Claude - <sid> (new)" / OSC-title the tab strip shows), not on the
-  // AgenticProcess — the lightweight status-op store carries neither, so an
-  // unresolved row falls back to an id fragment. Resolve it from the cache:
-  // AgenticProcess → shell_id → Shell.name.
-  const nameFromCache = (processId: string): string | null => {
-    const ap = AgenticProcess.getByIdFromCache<AgenticProcess>(processId) as
-      | (AgenticProcess & { shell_id?: string | null })
+  // A worker's meaningful name is the session title (the ai-title the history
+  // and transcript views show), carried on its ClaudeSession (keyed by
+  // session_id). When the session has no title yet, fall back to the linked
+  // Shell's label ("Claude - <sid> (new)" / OSC title from the tab strip).
+  // The lightweight status-op store carries none of these, so resolve from
+  // the cache: AgenticProcess → session_id / shell_id → name.
+  const apOf = (processId: string) =>
+    AgenticProcess.getByIdFromCache<AgenticProcess>(processId) as
+      | (AgenticProcess & { session_id?: string | null; shell_id?: string | null })
       | null;
+  const nameFromCache = (processId: string): string | null => {
+    const ap = apOf(processId);
+    const sessionId = ap?.session_id;
+    const sessionName = sessionId
+      ? ClaudeSession.getByIdFromCache<ClaudeSession>(sessionId)?.name
+      : null;
+    // ClaudeSession.name is `custom_title || slug || session_id`; only use it
+    // when it's an actual title, not the raw id.
+    if (sessionName && sessionName !== sessionId) return sessionName;
     const shellId = ap?.shell_id;
     return (shellId ? Shell.getByIdFromCache<Shell>(shellId)?.name : null) ?? null;
   };
 
-  // When the popover opens, lazily fetch the details for each listed process
-  // (and its Shell) so the extracted names replace the id fragments.
+  // When the popover opens, lazily fetch each listed process and its
+  // ClaudeSession + Shell so the extracted names replace the id fragments.
   const fetchedRef = useRef<Set<string>>(new Set());
   const [nameTick, setNameTick] = useState(0);
   useEffect(() => {
@@ -88,14 +98,21 @@ export function PendingActionsChip() {
     missing.forEach((id) => fetchedRef.current.add(id));
     let cancelled = false;
     const resolve = async (id: string): Promise<void> => {
-      const ap = (AgenticProcess.getByIdFromCache<AgenticProcess>(id)
-        ?? (await AgenticProcess.getById<AgenticProcess>(id))) as
-        | (AgenticProcess & { shell_id?: string | null })
-        | null;
+      const ap = apOf(id) ?? ((await AgenticProcess.getById<AgenticProcess>(id)) as
+        | (AgenticProcess & { session_id?: string | null; shell_id?: string | null })
+        | null);
+      const sessionId = ap?.session_id;
       const shellId = ap?.shell_id;
-      if (shellId && !Shell.getByIdFromCache<Shell>(shellId)) {
-        await Shell.getById<Shell>(shellId);
-      }
+      await Promise.allSettled(
+        [
+          sessionId && !ClaudeSession.getByIdFromCache<ClaudeSession>(sessionId)
+            ? ClaudeSession.getById<ClaudeSession>(sessionId)
+            : null,
+          shellId && !Shell.getByIdFromCache<Shell>(shellId)
+            ? Shell.getById<Shell>(shellId)
+            : null,
+        ].filter(Boolean) as Promise<unknown>[],
+      );
     };
     void Promise.allSettled(missing.map(resolve)).then(() => {
       if (!cancelled) setNameTick((t) => t + 1);
