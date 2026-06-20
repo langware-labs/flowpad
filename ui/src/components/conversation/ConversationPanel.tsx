@@ -311,7 +311,7 @@ export function ConversationPanel({
               />
             </div>
           )}
-          <div className={`${bodyWrapper} min-h-0 flex-1 overflow-y-auto`}>
+          <div className={`${bodyWrapper} relative min-h-0 flex-1 overflow-y-auto`}>
             <ChipsExcludeProvider add={taskKeys}>
               <ConversationView
                 conversationId={conversationId}
