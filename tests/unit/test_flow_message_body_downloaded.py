@@ -6,7 +6,7 @@ Contract (docs/conversation/attachments.md §4.3 / §8):
     *renderable* body attachment is present locally — files have a resolved
     ``local_path``, TYPE_ID entity assets have a materialized record folder.
   * Structural / non-materializing TYPE_IDs (conversation/flow_message/task/
-    git_repo) never gate it.
+    git_branch) never gate it.
   * It is API-only: never emitted under ``skip_api_serializer``.
 """
 from __future__ import annotations
@@ -71,7 +71,7 @@ def test_one_unmaterialized_entity_pegs_message_not_downloaded(records_root):
     assert fm.model_dump()["body_downloaded"] is False
 
 
-@pytest.mark.parametrize("etype", ["task", "conversation", "flow_message", "git_repo"])
+@pytest.mark.parametrize("etype", ["task", "conversation", "flow_message", "git_branch"])
 def test_non_materializing_type_ids_do_not_gate(records_root, etype):
     """A message whose only TYPE_ID is plumbing / a remote ref is "downloaded"
     immediately — there is nothing to pull for those, so they must not peg it."""

@@ -155,8 +155,7 @@ class EntityType(StrEnum):
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
     RUN = "run"
-    GIT_REPO = "git_repo"
-    # Git identity split (git_repo is the legacy share-chip; see builtin/git_remote.py).
+    # Git identity split (see builtin/git_remote.py / builtin/git_branch.py).
     GIT_REMOTE = "git_remote"
     GIT_BRANCH = "git_branch"
     # A file on disk outside the record store (DB-only; SemanticLock targets).
