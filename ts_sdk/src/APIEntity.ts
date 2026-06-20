@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ActionInfo, ActionType, EntityExpansion, ExpansionType, JSONSchemaParser, Workspace } from '.';
 import { Record, RecordRefs } from './fs/Record';
+import { FrontMatterFsRef } from './fs/FrontMatterFsRef';
+import { Frontmatter } from './fs/Frontmatter';
 import { EntityFactory } from './schema/factory';
 import { ExpansionRequest, QueryRequest } from './FlowSync/query';
 import { DataManager, Manageable } from './FlowSync/store';
@@ -456,6 +458,18 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   public get dockPointer(): DockPointerData {
     return new DockPointerData(ViewType.HOME, this.typeId?.toString());
+  }
+
+  /**
+   * Generic read/write access to this asset's YAML frontmatter, or null when the
+   * entity has no FrontMatterFsRef-backed `doc` (resolved from the subclass `doc`
+   * getter). Unlike `doc.save()` (name+description only), the accessor preserves
+   * the body and all keys — the home of frontmatter-persisted fields like
+   * `version`. Caller must `await frontmatter.load()` before get/set.
+   */
+  public get frontmatter(): Frontmatter | null {
+    const doc = (this as unknown as { doc?: unknown }).doc;
+    return doc instanceof FrontMatterFsRef ? new Frontmatter(doc) : null;
   }
 
   /**

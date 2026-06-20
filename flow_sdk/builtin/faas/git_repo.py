@@ -6,6 +6,7 @@ instantiated per-request.
 from __future__ import annotations
 
 import logging
+import re
 import shlex
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -62,6 +63,25 @@ class GitHasCommitData(_CamelModel):
 
 class GitFileDiff(_CamelModel):
     diff: str
+
+
+class GitRevision(_CamelModel):
+    hash: str
+    version: int | None = None
+    message: str
+    date: str
+    author: str
+
+
+class GitRevisionList(_CamelModel):
+    revisions: list[GitRevision] = []
+    version: int | None = None  # current (HEAD) version parsed from the newest revision
+    unpushed: int = 0  # commits to this file ahead of @{u} (0 when no upstream)
+
+
+class GitRestoreResult(_CamelModel):
+    ok: bool
+    message: str
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +267,78 @@ class GitRepo:
         return GitFileDiff(diff=diff)
 
     # ------------------------------------------------------------------
+    # Per-file revision history (scoped to a single asset file)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _version_from_message(message: str) -> int | None:
+        """Parse the running version the auto-commit hook encodes as ``v{n}``."""
+        m = re.search(r"\bv(\d+)\b", message)
+        return int(m.group(1)) if m else None
+
+    async def get_file_revisions(self, file_path: str) -> GitRevisionList:
+        """Commit history for a single file, newest first.
+
+        Each record carries the running ``version`` parsed from its commit
+        message (encoded as ``v{n}`` by the auto-version hook). The list's
+        top-level ``version`` is the newest revision's.
+        """
+        fmt = "--format=%H%x1f%an%x1f%aI%x1f%s"
+        out, _ = await self._run_git("log", "--follow", fmt, "--", f"'{file_path}'")
+        revisions: list[GitRevision] = []
+        for line in out.splitlines():
+            if not line.strip():
+                continue
+            parts = line.split("\x1f")
+            if len(parts) < 4:
+                continue
+            hash_, author, date, message = parts[0], parts[1], parts[2], parts[3]
+            revisions.append(
+                GitRevision(
+                    hash=hash_,
+                    version=self._version_from_message(message),
+                    message=message,
+                    date=date,
+                    author=author,
+                )
+            )
+        current = revisions[0].version if revisions else None
+        # Unpushed commits to this file. `rev-list @{u}..HEAD` exits non-zero when
+        # there's no upstream — treat that (and any parse miss) as 0, so no extra
+        # `rev-parse @{u}` probe is needed.
+        unpushed = 0
+        cnt_out, cnt_rc = await self._run_git(
+            "rev-list", "--count", "@{u}..HEAD", "--", f"'{file_path}'"
+        )
+        if cnt_rc == 0:
+            try:
+                unpushed = int(cnt_out.strip() or "0")
+            except ValueError:
+                unpushed = 0
+        return GitRevisionList(revisions=revisions, version=current, unpushed=unpushed)
+
+    async def compare_file_revision(self, file_path: str, commit_hash: str) -> GitFileDiff:
+        """Unified diff of a file between a past revision and the working tree."""
+        diff, _ = await self._run_git(
+            "diff", shlex.quote(commit_hash), "HEAD", "--", f"'{file_path}'"
+        )
+        return GitFileDiff(diff=diff)
+
+    async def restore_file(self, file_path: str, commit_hash: str) -> GitRestoreResult:
+        """Check out a single file at a past revision (working-tree mutation).
+
+        Scoped to the one file (``git checkout <hash> -- <file>``); other files
+        in the shared working tree are untouched. The restore itself is a content
+        change, so the next save re-versions it as a fresh revision.
+        """
+        _, err, rc = await self._run_git_io(
+            "checkout", shlex.quote(commit_hash), "--", f"'{file_path}'"
+        )
+        if rc != 0:
+            return GitRestoreResult(ok=False, message=(err or "Restore failed").strip())
+        return GitRestoreResult(ok=True, message=f"Restored to {commit_hash[:8]}")
+
+    # ------------------------------------------------------------------
     # Greedy "non-tech" push: stage-all → commit → pull --rebase → push
     # ------------------------------------------------------------------
 
@@ -391,6 +483,25 @@ class GitRepo:
             if not file_path:
                 return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
             return ApiSuccessResponse(data=(await self.get_file_diff(file_path, status)).model_dump(by_alias=True))
+        if sub == "file-revisions":
+            file_path = params.get("file", "")
+            if not file_path:
+                return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
+            return ApiSuccessResponse(data=(await self.get_file_revisions(file_path)).model_dump(by_alias=True))
+        if sub == "revision-diff":
+            file_path = params.get("file", "")
+            commit_hash = params.get("hash", "")
+            if not file_path or not commit_hash:
+                return ApiFailResponse(message="Missing required query parameter: file and hash", status_code=400)
+            return ApiSuccessResponse(data=(await self.compare_file_revision(file_path, commit_hash)).model_dump(by_alias=True))
+        if sub == "restore-file":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/restore-file requires POST", status_code=405)
+            file_path = params.get("file", "")
+            commit_hash = params.get("hash", "")
+            if not file_path or not commit_hash:
+                return ApiFailResponse(message="Missing required parameter: file and hash", status_code=400)
+            return ApiSuccessResponse(data=(await self.restore_file(file_path, commit_hash)).model_dump(by_alias=True))
         return ApiFailResponse(message=f"Unknown git-ops sub-path: '{sub}'", status_code=404)
 
 
