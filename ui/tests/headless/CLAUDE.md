@@ -11,3 +11,42 @@ How it works with zero mocks: the SDK resolves its backend from `globalThis.__FL
 **Process isolation:** the project uses `pool: 'forks'` (not threads). Each full-app boot leaves a live SDK realm behind (open WebSocket + `initSdk` timers) that a reused worker can't reap and that starves the next file's boot; a fresh child process per file kills those OS handles.
 
 **jsdom ceiling:** jsdom has no layout engine or canvas/WebGL. So `getBoundingClientRect()` is all-zeros and canvas surfaces don't paint — **xterm terminals, the Excalidraw whiteboard, and timeline/DockPointer geometry are out of scope here** and stay in the Playwright/browser-MCP matrices. Headless covers routing, loaders, context, bootstrap/auth, data flow, panels, modals, and entity round-trips through the SDK.
+
+## Authoring a new headless test
+
+Add a `*.test.tsx` file in this directory. Reuse the shared harness (`_harness.ts`) — don't re-roll the realm/boot dance:
+
+```ts
+import { describe, expect, it, vi } from 'vitest';
+import { setupLiveBackend, bootApp } from './_harness';
+
+const backend = setupLiveBackend('[my-feature]'); // resolves a live backend once; registers cleanup()
+
+describe('my feature (no mocks)', () => {
+  it('does the thing', async () => {
+    if (!backend.current) return;                  // soft-skip when no backend is up — ALWAYS first
+
+    // Point the realm at the backend, then re-evaluate the module graph.
+    (globalThis as any).__FLOWPAD_API_URL__ = backend.current.apiUrl;
+    vi.resetModules();
+
+    // (Optional) need the SDK BEFORE the app mounts — e.g. to seed an entity?
+    // Import it AFTER resetModules so it binds to this realm; bootApp() then
+    // imports the router from the SAME realm (it does not reset again):
+    //   const sdk = await import('@sdk'); await sdk.initSdk();
+    //   const skill = await sdk.Skill.create('x');
+
+    const { container, router } = await bootApp();  // mounts the real app, waits for loadRoot
+    // await act(async () => { await router.navigate('/dock/...'); });  // drive the UI
+    // ...assert via @testing-library/react (screen/findByTestId/fireEvent)...
+  });
+});
+```
+
+Rules of the tier:
+- **Soft-skip first** (`if (!backend.current) return;`) so a missing backend never reds the suite.
+- **Order matters:** set `__FLOWPAD_API_URL__` → `vi.resetModules()` → (optional `import('@sdk')`) → `bootApp()`. A reset *between* the `@sdk` import and `bootApp` splits them into two realms (the entity you seed won't be the one the UI edits).
+- **Edit through real UI controls** (testids, `fireEvent`), then read back through the SDK — that's what makes it E2E. See `skill_edit_roundtrip.test.tsx`.
+- **Stay under the ceiling:** assert on DOM/state/data, not pixel geometry or canvas. If your feature needs real layout/canvas, it's a Playwright test, not a headless one.
+- **Never raise the per-test/`waitFor` timeouts** to pass — fix the slow path (project `CLAUDE.md` non-negotiable).
+- **Clean up** anything you create on the backend (e.g. `await created.delete()` in `finally`).

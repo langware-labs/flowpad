@@ -135,6 +135,9 @@ cd ui && npm run test:vitest:headless
 - Backend must be running (you own it — restart if needed). The suite self-skips if the
   backend is unreachable; a skip here is NOT a pass — bring the backend up and re-run
   (zero infra-skips in a clear pass).
+- To ADD coverage (e.g. a regression that needs the full app + a real backend but no
+  browser), author a `*.test.tsx` here using the `setupLiveBackend`/`bootApp` harness —
+  the recipe + tier rules are in `ui/tests/headless/CLAUDE.md` ("Authoring a new headless test").
 - **Gate**: all tests pass → proceed to Phase 9
 
 ## Phase 9 — pytest hub tests (hub + instances required)
