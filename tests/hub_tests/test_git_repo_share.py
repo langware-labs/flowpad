@@ -47,13 +47,13 @@ def _read_env_local(repo: Path) -> dict[str, str]:
 async def test_git_repo_share_carries_typeid_to_recipient(
     hub_base_url, hub_login_payload, isolated_hub_keyring
 ):
-    from flow_sdk.cli.auth.credentials import UserHubCredentials, save_credentials
+    from tests.hub_tests._local_login import login_as
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.git_repo import GitRepo
 
-    alice_token = hub_login_payload.get("api_key") or hub_login_payload["token"]
-    alice_user = hub_login_payload.get("user") or {}
-    save_credentials(UserHubCredentials(api_key=alice_token, user=alice_user))
+    # login_as persists BOTH halves (token + user record); a token-only write is
+    # a half-logged-in state that share() rejects.
+    login_as(hub_login_payload)
 
     app_env = _read_env_local(REPO_APP)
     bob_email = app_env.get("FLOWPAD_CLOUD_USER_EMAIL")

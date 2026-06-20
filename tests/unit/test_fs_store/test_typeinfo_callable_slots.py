@@ -7,6 +7,7 @@ These replaced the old per-entity ``from_disk``/``gen_id``/``asset_hash``
 classmethod shims (and the dead ``parser_fn`` slot).
 """
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+from flow_sdk.schema.view_mode import ViewMode
 
 
 def test_slots_excluded_from_schema_hash():
@@ -87,10 +88,16 @@ def test_registry_presentation_getters_read_through():
     """Registry getters are the single read path for presentation flags."""
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
-    # skill is api_visible + creatable + browseable + has an icon
+    # skill is api_visible + creatable + browseable (Standard) + has an icon
     assert SchemaRegistry.is_api_visible("skill") is True
     assert SchemaRegistry.get_icon("skill") == "Sparkles"
-    assert SchemaRegistry.is_browseable("skill") is True
+    assert SchemaRegistry.browseable_by("skill") is ViewMode.STANDARD
+    assert SchemaRegistry.is_browseable_in("skill", ViewMode.STANDARD) is True
+    # reclassified types: claude_memory is Advanced+ only, flowpad_diagnosis Dev only
+    assert SchemaRegistry.is_browseable_in("claude_memory", ViewMode.STANDARD) is False
+    assert SchemaRegistry.is_browseable_in("claude_memory", ViewMode.ADVANCED) is True
+    assert SchemaRegistry.is_browseable_in("flowpad_diagnosis", ViewMode.ADVANCED) is False
+    assert SchemaRegistry.is_browseable_in("flowpad_diagnosis", ViewMode.DEV) is True
     assert SchemaRegistry.is_creatable("skill") is True
     # public-entity list is derived from info.api_visible, not entity_cls deref
     assert "skill" in SchemaRegistry.get_public_entity_types()

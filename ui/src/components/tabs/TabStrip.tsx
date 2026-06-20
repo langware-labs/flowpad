@@ -24,7 +24,8 @@ import {
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { ChevronLeft, ChevronRight, ExternalLink, X, type LucideIcon } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 /** One chip in the strip. Kind-agnostic: terminals, entity tabs, and the
@@ -60,6 +61,8 @@ export interface TabStripContextMenuItem {
   label: string;
   shortcut?: string;
   onSelect: () => void;
+  /** Optional leading icon (e.g. graph glyph for "Open Context"). */
+  Icon?: LucideIcon;
 }
 
 export interface TabStripProps {
@@ -114,6 +117,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
 }) => {
   // One ordered list (backend-owned) — projectless tabs are inline, no section.
   const allVisibleItems = items;
+  // The rich per-tab info card is an Advanced/Dev affordance; Standard mode keeps
+  // the calm minimal hover (statusReason / title only).
+  const isAdvanced = useIsAdvanced();
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
@@ -270,6 +276,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <>
         {entries.map((entry) => (
           <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
+            {entry.Icon && <entry.Icon className="mr-2 h-4 w-4" />}
             {entry.label}
             {entry.shortcut && <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
           </ContextMenuItem>
@@ -445,7 +452,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
             <TooltipTrigger asChild>
               <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
             </TooltipTrigger>
-            {item.tooltip ? (
+            {isAdvanced && item.tooltip ? (
               <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
                 {item.tooltip}
               </TooltipContent>

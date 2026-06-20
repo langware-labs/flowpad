@@ -71,6 +71,7 @@ export enum ViewType {
   INBOX = 'inbox', // Inbox — received FlowMessages from hub
   CONVERSATION = 'conversation', // Single Conversation viewer (avatar bubbles + composer)
   SPEC = 'spec', // Single Spec viewer (shows spec metadata, plan link, generated tasks)
+  GRAPH_CONTEXT = 'graph_context', // Frozen-context viewer - /dock/graph_context/<id>
 }
 
 /**

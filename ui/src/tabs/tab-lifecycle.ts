@@ -121,12 +121,18 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
   const existingTab = findTabForDock(existing, dock);
   if (existingTab) return { tab: existingTab, tabs: existing };
 
+  // Create-or-resolve the dock's tab. `getFromDockPointer` → `new_tab` returns
+  // the PROJECT-SCOPED list ({that project} + projectless), which must NEVER be
+  // adopted into the GLOBAL all-tabs store (the caller applies `tabs` via
+  // `applyAllTabs`): doing so erases every other project's tabs, collapsing the
+  // footer projects-chip to a single project. Use the scoped list only to find
+  // the materialized tab, then re-read the UNSCOPED global list for adoption.
   const scoped = await Tab.getFromDockPointer(dock);
-  const tab = findTabForDock(scoped, dock);
-  if (tab) return { tab, tabs: scoped };
+  const scopedTab = findTabForDock(scoped, dock);
 
   const all = await Tab.listAll();
-  return { tab: findTabForDock(all, dock), tabs: all };
+  const tab = findTabForDock(all, dock) ?? scopedTab;
+  return { tab, tabs: all };
 }
 
 function adapterFor(dock: DockPointer, options: SetupTabOptions): TabContentAdapter {

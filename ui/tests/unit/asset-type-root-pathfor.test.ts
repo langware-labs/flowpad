@@ -21,7 +21,7 @@ const SKILL: AssetTypeInfo = {
   label: 'Skills',
   icon: null,
   creatable: true,
-  browseable: true,
+  browseable_by: 'standard',
 };
 
 const deps = { indexType: async () => undefined };

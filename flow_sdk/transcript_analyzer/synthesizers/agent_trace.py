@@ -45,6 +45,7 @@ from ..callable_taxonomy import classify_callable
 from ..entries import (
     AgentSpawnEntry,
     CompactionEntry,
+    MetaEntry,
     ShellCommandEntry,
     SkillCallEntry,
     ToolResultEntry,
@@ -612,6 +613,170 @@ def _build_call_tree(
     return build_lane_frame(root_lane, "session")
 
 
+def _outline_span(lane_id: str, start_ts: str | None, end_ts: str | None, label: str, severity: str = "info") -> dict:
+    """One full-width span segment for an outline lane (skill/subagent/plan)."""
+    return {
+        "id": f"{lane_id}:0",
+        "start_ts": start_ts,
+        "end_ts": end_ts or start_ts,
+        "label": _clip(label, _LABEL_CHARS),
+        "cost_usd": 0.0,
+        "severity": severity,
+        "tool_calls": [],
+    }
+
+
+def _outline_lane(
+    lane_id: str,
+    kind: str,
+    depth: int,
+    *,
+    start_ts: str | None = None,
+    end_ts: str | None = None,
+    segments: list[dict] | None = None,
+    events: list[dict] | None = None,
+    markers: list[dict] | None = None,
+    agent_type: str | None = None,
+    description: str | None = None,
+    skill_name: str | None = None,
+    parent_lane_id: str | None = None,
+    spawn_tool_use_id: str | None = None,
+) -> dict:
+    """One ``TraceLane``-shaped outline lane (root/tasks/skill/subagent)."""
+    return {
+        "id": lane_id, "kind": kind, "depth": depth,
+        "agent_type": agent_type, "description": description, "skill_name": skill_name,
+        "parent_lane_id": parent_lane_id, "spawn_tool_use_id": spawn_tool_use_id,
+        "start_ts": start_ts, "end_ts": end_ts,
+        "segments": segments or [], "events": events or [], "markers": markers or [],
+    }
+
+
+def _build_outline(root_entries: list[TranscriptEntry], sub_lane_by_tuid: dict[str, dict]) -> list[dict]:
+    """High-level, timeline-ready "session call stack": root → skills →
+    subagents, nested by the authoritative ``attribution_skill`` (the real
+    multi-turn owner — not the per-turn skill stack the call tree uses). The
+    un-nestable progress — plan-mode spans and user interrupts — rides the root
+    lane. No tool-level detail; this is the coarse "what ran, under whom" view.
+
+    Each lane is ``TraceLane``-shaped plus ``depth``/``kind`` and carries its own
+    ``events``/``markers`` so the timeline renders it standalone. Lanes come back
+    in pre-order (root, then each skill followed by its subagents) so the front
+    end can indent by ``depth`` directly.
+    """
+    # One ordered pass. Skill spans are GAP-FILLED: the active skill (last
+    # non-None attribution_skill) owns the entries that follow it — including
+    # un-attributed ones — until a different skill takes over. So a long
+    # umbrella skill (e2e-qa) shows its true window instead of collapsing to the
+    # few turns Claude tagged. permission-mode entries carry NO timestamp, so
+    # plan spans + tasks borrow the nearest preceding timestamp.
+    skill_span: dict[str, list[str]] = {}
+    plan_spans: list[tuple[str, str]] = []
+    interrupts: list[dict] = []
+    task_events: list[dict] = []
+    active_skill: str | None = None
+    last_ts: str | None = None
+    plan_open: str | None = None
+
+    for e in root_entries:
+        sk = getattr(e, "attribution_skill", None)
+        if sk:
+            active_skill = sk
+        if e.timestamp:
+            last_ts = e.timestamp
+        ts = e.timestamp or last_ts
+
+        if active_skill and ts:
+            cur = skill_span.get(active_skill)
+            if cur is None:
+                skill_span[active_skill] = [ts, ts]
+            else:
+                cur[1] = max(cur[1], ts)
+
+        if isinstance(e, MetaEntry) and e.meta_kind == "permission-mode":
+            mode = (e.payload or {}).get("permissionMode")
+            if mode == "plan" and plan_open is None:
+                plan_open = ts
+            elif mode != "plan" and plan_open is not None and ts:
+                plan_spans.append((plan_open, ts))
+                plan_open = None
+        elif isinstance(e, UserMessageEntry) and (e.text or "").strip().startswith(_INTERRUPT_PREFIX):
+            interrupts.append({
+                "ts": ts, "lane_id": "root", "kind": "interrupt",
+                "label": "user interrupt", "severity": SeverityTier.NOTABLE.value, "entry_id": e.id,
+            })
+        elif isinstance(e, ToolUseEntry) and getattr(e, "tool_name", "") in ("TaskCreate", "TaskUpdate") and ts:
+            ti = getattr(e, "tool_input", None) or {}
+            if e.tool_name == "TaskCreate":
+                task_events.append({
+                    "ts": ts, "lane_id": "tasks", "kind": "task_create",
+                    "label": _clip(str(ti.get("subject") or "task"), _LABEL_CHARS),
+                    "severity": SeverityTier.INFO.value, "entry_id": e.id,
+                })
+            else:
+                status = str(ti.get("status") or "updated")
+                task_events.append({
+                    "ts": ts, "lane_id": "tasks", "kind": "task_update",
+                    "label": _clip(f"{ti.get('subject') or 'task'} → {status}", _LABEL_CHARS),
+                    "severity": SeverityTier.NOTABLE.value if status == "completed" else SeverityTier.INFO.value,
+                    "entry_id": e.id,
+                })
+
+    skill_order = sorted(skill_span, key=lambda s: skill_span[s][0])
+    skill_lane_id = {sk: f"skill-{i}" for i, sk in enumerate(skill_order)}
+    all_ts = [t for sp in skill_span.values() for t in sp] or [e.timestamp for e in root_entries if e.timestamp]
+    session_start = min(all_ts) if all_ts else None
+    session_end = max(all_ts) if all_ts else None
+    if plan_open is not None and session_end:
+        plan_spans.append((plan_open, session_end))
+
+    root_lane = _outline_lane(
+        "root", "root", 0, description="session",
+        start_ts=session_start, end_ts=session_end,
+        segments=[_outline_span("root", s, en, "plan mode", SeverityTier.NOTABLE.value) for s, en in plan_spans],
+        events=interrupts,
+    )
+
+    # Subagent lanes, attributed to the skill that owned the spawn.
+    agents_by_owner: dict[str | None, list[dict]] = {}
+    for i, sp in enumerate(e for e in root_entries if isinstance(e, AgentSpawnEntry)):
+        owner = getattr(sp, "attribution_skill", None)
+        parent = skill_lane_id.get(owner, "root")
+        lid = f"agent-{i}"
+        sub = sub_lane_by_tuid.get(sp.tool_use_id or "")
+        start_ts = (sub.get("start_ts") if sub else None) or sp.timestamp
+        end_ts = (sub.get("end_ts") if sub else None) or sp.timestamp
+        label = sp.description or sp.agent_type or "agent"
+        agents_by_owner.setdefault(owner, []).append(_outline_lane(
+            lid, "subagent", 2 if parent != "root" else 1,
+            agent_type=sp.agent_type, description=sp.description,
+            parent_lane_id=parent, spawn_tool_use_id=sp.tool_use_id,
+            start_ts=start_ts, end_ts=end_ts,
+            segments=[_outline_span(lid, start_ts, end_ts, label)],
+        ))
+
+    out: list[dict] = [root_lane]
+    # Tasks lane — the TaskCreate/TaskUpdate todo list as create/update markers
+    # over time (session-level progress, right under root).
+    if task_events:
+        t_ts = [t["ts"] for t in task_events if t["ts"]]
+        out.append(_outline_lane(
+            "tasks", "tasks", 1, description="tasks", parent_lane_id="root",
+            start_ts=min(t_ts) if t_ts else None, end_ts=max(t_ts) if t_ts else None,
+            events=task_events,
+        ))
+    for sk in skill_order:
+        lo, hi = skill_span[sk]
+        lid = skill_lane_id[sk]
+        out.append(_outline_lane(
+            lid, "skill", 1, description=sk, skill_name=sk, parent_lane_id="root",
+            start_ts=lo, end_ts=hi, segments=[_outline_span(lid, lo, hi, sk)],
+        ))
+        out.extend(sorted(agents_by_owner.get(sk, []), key=lambda x: x["start_ts"] or ""))
+    out.extend(sorted(agents_by_owner.get(None, []), key=lambda x: x["start_ts"] or ""))
+    return out
+
+
 def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict:
     path = resolve_session_jsonl(worker_type, session_id)
     transcript = AgentTranscriptFile(worker_type, path, session_id=session_id)
@@ -661,6 +826,10 @@ def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict
     all_ms = [m for lane in lanes for m in (_ts_ms(lane["start_ts"] or ""), _ts_ms(lane["end_ts"] or "")) if m]
     tool_call_count = sum(len(s["tool_calls"]) for lane in lanes for s in lane["segments"])
     call_tree = _build_call_tree(lanes, entries_by_lane, transcripts_by_lane, markers)
+    # High-level "session call stack" lanes — built from the authoritative
+    # attribution_skill (NOT call_tree), spanning all spawns incl. in-flight.
+    sub_lane_by_tuid = {l["spawn_tool_use_id"]: l for l in lanes if l.get("spawn_tool_use_id")}
+    outline = _build_outline(root_entries, sub_lane_by_tuid)
 
     return {
         "version": 2,
@@ -681,6 +850,7 @@ def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict
         },
         "lanes": lanes,
         "call_tree": call_tree,
+        "outline": outline,
         "events": sorted(events, key=lambda e: e["ts"] or ""),
         "markers": sorted(markers, key=lambda m: m["ts"] or ""),
         "annotations": {"goals": [], "divergences": [], "verdict": None, "notes": []},

@@ -11,6 +11,7 @@ import {
   AgenticProcess,
   ContextEntitiesEnum,
   dataContext,
+  Project,
   Shell,
   systemTools,
   TypeId,
@@ -170,7 +171,9 @@ export async function loadProcess(
   // transcript. Doing the project write here makes every consumer URL-first.
   if (process.project_id) {
     try {
-      await perfTime('loadProject', () => loadProject(process!.project_id!));
+      await perfTime('loadProject', () =>
+        loadProject(new TypeId(Project.type, process!.project_id!)),
+      );
     } catch (cause) {
       // The stored project_id can dangle when the project was deleted under
       // us. Recover via the backend's 3-phase recover_by_path, then continue.
@@ -181,7 +184,7 @@ export async function loadProcess(
       if (!recovered) {
         throw new ProcessLoadError('project_missing', processId, process.shell_id ?? null, cause);
       }
-      await loadProject(recovered.id);
+      await loadProject(new TypeId(Project.type, recovered.id));
     }
   } else {
     await systemTools.resolveProjectContext(process.workdir, process);

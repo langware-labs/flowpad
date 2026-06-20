@@ -1,6 +1,7 @@
 """Type metadata for MARKDOWN."""
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 from flow_sdk.fs_store.indexer.functions.markdown import (
     extract_markdown,
     markdown_gen_id,
@@ -24,7 +25,7 @@ def _markdown_default_body(entity) -> str:
 MARKDOWN = TypeMetadata(
     type=EntityType.MARKDOWN,
     icon="BookOpen",
-    browseable=True,
+    browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,

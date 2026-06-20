@@ -11,6 +11,7 @@ import {
   ContextEntitiesEnum,
   dataContext,
   initSdk,
+  Project,
   systemTools,
   TypeId,
 } from '@sdk';
@@ -153,7 +154,7 @@ export async function loadAgentApp(args: LoaderArgs) {
       await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, sessionProcessId));
       const process = await AgenticProcess.getById(sessionProcessId).catch(() => null);
       if (process?.project_id) {
-        await loadProject(process.project_id).catch(() => systemTools.resolveProjectContext(process.workdir, process));
+        await loadProject(new TypeId(Project.type, process.project_id)).catch(() => systemTools.resolveProjectContext(process.workdir, process));
       } else {
         await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
       }

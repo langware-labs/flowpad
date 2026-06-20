@@ -65,7 +65,11 @@ export function getAllTabsSnapshot(): Tab[] {
   return snapshot;
 }
 
-/** Adopt a canonical tab list directly (no fetch). */
+/** Adopt a canonical tab list directly (no fetch). `tabs` MUST be the UNSCOPED
+ *  global list (every project) — the `Tab.listAll()` projection, never a
+ *  project-scoped `Tab.list`/`new_tab` result. Adopting a single-project slice
+ *  here erases every other project's tabs from the global snapshot (the footer
+ *  projects-chip then collapses to one project). */
 export function applyAllTabs(tabs: Array<Tab | ITab>): void {
   snapshot = tabs.map(coerceTab);
   syncTabLifecycleWithTabs(snapshot);

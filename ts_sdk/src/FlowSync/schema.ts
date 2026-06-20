@@ -10,6 +10,21 @@ export type ActionType =
   | 'get_related_workspace'
   | 'parents_path';
 
+/**
+ * View-mode visibility tier — mirrors the backend ``ViewMode`` StrEnum
+ * (flow_sdk/schema/view_mode.py) and the UI enum in view-mode-context.tsx.
+ * A type's ``browseable_by`` is the *minimum* mode at which it is browseable
+ * (cumulative: standard ⊂ advanced ⊂ dev). null ⇒ never browseable.
+ */
+export type ViewMode = 'standard' | 'advanced' | 'dev';
+
+const VIEW_MODE_ORDER: Record<ViewMode, number> = { standard: 0, advanced: 1, dev: 2 };
+
+/** True iff a type whose ``browseable_by`` is ``required`` shows in ``current`` (cumulative). */
+export function isBrowseableIn(required: ViewMode | null | undefined, current: ViewMode): boolean {
+  return required != null && VIEW_MODE_ORDER[current] >= VIEW_MODE_ORDER[required];
+}
+
 export interface JSONSchemaProperty {
   type?: JSONSchemaType;
   properties?: Record<string, JSONSchemaProperty>;
@@ -31,7 +46,7 @@ export interface TypeInfo {
   index_fields: string[];
   defaults: Record<string, unknown>;
   indexed_by_default: boolean;
-  browseable: boolean;
+  browseable_by: ViewMode | null;
   creatable: boolean;
   api_visible: boolean;
   icon: string | null;

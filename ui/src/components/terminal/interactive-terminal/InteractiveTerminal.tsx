@@ -38,6 +38,7 @@ import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { SimpleChatPane } from './SimpleChatPane';
 import { useChatUiMode } from '@src/contexts/chat-ui-mode-context';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
@@ -63,7 +64,6 @@ import { useTimeGutter } from './use-time-gutter';
 import { useTraceGutter } from './use-trace-gutter';
 import { EntityContextPanel } from '@src/components/entity-context';
 import { imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
-import { AnalysisSidePanel, useAnalysisControls } from '@src/components/lens-viewer/shared/transcript-features/AnalysisControls';
 
 export interface TraceFilters {
   events: boolean;
@@ -191,6 +191,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // layout, mirroring the ProcessToolbar decision.
   const chatUiMode = useChatUiMode();
   const showSimpleChat = chatUiMode && !embedded && !!process;
+  // Skin layer: the trace/annotation/PTY-timing column header is terminal
+  // debug chrome — power-user only, hidden in Standard view. See docs/viewmodes.md.
+  const isAdvanced = useIsAdvanced();
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
@@ -471,10 +474,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       .reduce<string | null>((max, e) => (max === null || e.timestamp > max ? e.timestamp : max), null);
     return last;
   }, [allTraceEvents]);
-  const analysisControls = useAnalysisControls(process?.session_id ?? null, lastMessageTime, {
-    analysisTargetOverride: process?.typeId.toString() ?? null,
-  });
-
   const showGutter = !!process && traceFilters.events && colVis.trace;
   // Reserve gutter space based on user settings even before process resolves,
   // so xterm fits at the correct width from the start (avoids layout shift).
@@ -1445,7 +1444,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           embedded={embedded}
           onClose={onClose}
           shell={shell}
-          analysisControls={analysisControls}
         />
       )}
       {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
@@ -1456,9 +1454,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       <TerminalRuntimeErrorBanner />
 
       <PtySyncProvider session={ptySyncRef.current}>
-        {/* Column header — only for Claude pane; terminal chrome, hidden in
-            Standard view where the simple chat replaces the xterm. */}
-        {process && activePane === 'claude' && !showSimpleChat ? (
+        {/* Column header — only for Claude pane; terminal debug chrome
+            (trace/annotation/PTY-timing), hidden in Standard view and when the
+            simple chat replaces the xterm. */}
+        {process && activePane === 'claude' && !showSimpleChat && isAdvanced ? (
           <ColumnHeaderBar
             showTrace={showGutter}
             traceWidth={48}
@@ -1637,7 +1636,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             </PaneView>
           )}
 
-          {process && <AnalysisSidePanel controls={analysisControls} />}
         </div>
       </PtySyncProvider>
 

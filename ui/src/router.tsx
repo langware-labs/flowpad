@@ -57,15 +57,21 @@ import { loadHomePage } from './routes/loaders/home-loader';
 import { loadAgentApp } from './routes/loaders/main-loader';
 import { loadRoot } from './routes/loaders/root-loader';
 
-function shouldRevalidateDockShell({
+function shouldRevalidateDock({
   currentUrl,
   nextUrl,
   defaultShouldRevalidate,
 }: ShouldRevalidateFunctionArgs): boolean {
   if (
-    // win/ mirrors dock/ (tab-management.md Part 3 §7): same loaders, so the
-    // shell-route revalidation rule applies to both layout keywords.
-    /\/(?:dock|win)\/shell(?:\/|$)/.test(nextUrl.pathname) &&
+    // The dock loader (`loadAgentApp` → `loadDockPointer`) is the single writer
+    // of URL-derived context — project, process, conversation, asset, … — and
+    // it lives on the PARENT `dock` route, which React-Router won't revalidate
+    // when only the child splat changes. So any change to the dock/win URL must
+    // force it to re-run, for EVERY view type (not just `shell`): otherwise a
+    // client-side switch (e.g. project→project via the chip) moves the URL but
+    // leaves `dataContext` pointing at the previously-loaded entity.
+    // win/ mirrors dock/ (tab-management.md Part 3 §7): same loaders.
+    /\/(?:dock|win)(?:\/|$)/.test(nextUrl.pathname) &&
     (currentUrl.pathname !== nextUrl.pathname || currentUrl.search !== nextUrl.search)
   ) {
     return true;
@@ -92,7 +98,7 @@ export const router = createBrowserRouter(
       <Route index element={<FlowPage />} loader={loadHomePage} />
       <Route path="agent" element={<AgentRedirect />} loader={loadAgentApp} />
       {/* Root dock routes - use default agent from bootstrap */}
-      <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDockShell} errorElement={<ErrorScreen />}>
+      <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDock} errorElement={<ErrorScreen />}>
         <Route index element={<Navigate to="/" replace />} />
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />
@@ -100,7 +106,7 @@ export const router = createBrowserRouter(
       {/* win/ focus-window routes (tab-management.md Part 3 §7): mirror the
           dock routes — same loaders — but render the chrome-less FocusLayout
           so the routed view content is the entire window. */}
-      <Route path="win" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDockShell}>
+      <Route path="win" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDock}>
         <Route index element={<Navigate to="/" replace />} />
         <Route path=":viewType" element={<FocusLayout />} />
         <Route path=":viewType/*" element={<FocusLayout />} />
@@ -109,7 +115,7 @@ export const router = createBrowserRouter(
         path="agent/:agentId"
         element={<AgentLayout />}
         loader={loadAgentApp}
-        shouldRevalidate={shouldRevalidateDockShell}
+        shouldRevalidate={shouldRevalidateDock}
       >
         {/* /agent/:agentId */}
         <Route index element={<LandingPage />} />

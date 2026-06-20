@@ -2,6 +2,7 @@ import {
   AgenticProcess,
   ContextEntitiesEnum,
   dataContext,
+  Project,
   QueryRequest,
   systemTools,
   Trigger,
@@ -13,6 +14,7 @@ import { clearDockLoadError } from './dock-load-error-store';
 import { DockLoadError, handleDockLoadError } from './dock-load-error';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
+import { loadLensRoute } from './load-lens';
 import { loadProject, loadProjectRoute } from './load-project';
 import { loadProcess, ProcessLoadError } from './load-process';
 import { loadShellRoute } from './load-shell';
@@ -34,7 +36,7 @@ async function loadPlanRoute(pointer: string | undefined): Promise<void> {
   );
   const process = await AgenticProcess.getById(parsed.agenticProcessTypeId.id).catch(() => null);
   if (process?.project_id) {
-    await loadProject(process.project_id).catch(() =>
+    await loadProject(new TypeId(Project.type, process.project_id)).catch(() =>
       systemTools.resolveProjectContext(process.workdir, process),
     );
   } else {
@@ -102,6 +104,9 @@ export async function loadDockPointer(
         break;
       case ViewType.PLAN:
         await loadPlanRoute(dock.pointer);
+        break;
+      case ViewType.LENS:
+        await loadLensRoute(dock.pointer);
         break;
       default:
         break;

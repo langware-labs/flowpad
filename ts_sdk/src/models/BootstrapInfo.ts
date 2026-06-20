@@ -103,7 +103,7 @@ export interface BootstrapNotice {
 }
 
 export interface BootstrapInfo {
-  // Complete type registry: TypeInfo (icon/browseable/creatable/fields) +
+  // Complete type registry: TypeInfo (icon/browseable_by/creatable/fields) +
   // nested JSON schema, one entry per registered type. Loaded into the
   // frontend SchemaRegistry (dataManager.typeInfos) at startup.
   types?: TypeInfo[];

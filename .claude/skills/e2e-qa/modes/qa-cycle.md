@@ -28,6 +28,7 @@ The loop keeps the cycle driving forward unattended; it naturally ends when the 
 - **Only ever kill/clear instances YOU launched.** You may freely `kill` + `launch` *your own* instance to recover it, and clear *its* DB. Track which instances the cycle started.
 - **At the end of every phase that launched an instance, and at the end of the cycle, kill the instances you launched** (`scripts/instance_ctl.sh kill <name>`). Leaving them running is what accumulates the stale-instance load that hurts the next run. Lifecycle is your responsibility.
 - **If the host is loaded by things you did NOT launch** — the user's main backend, their live `claude`/agentic sessions, GUI apps, OS daemons — that load is **not yours to kill.** Do not touch it. Record it as a host-load caveat on the affected timing verdicts (or `flag` the phase as host-bound), and proceed. A slow timing verdict caused by the user's own workload is reported honestly, never "fixed" by killing their processes.
+- **For browser-phase instances (Phases 10–11), verify authentication before running data-dependent scenarios.** A dedicated instance used for Phases 10/11 must be authenticated (hub up → cloud login succeeded) before its data-dependent browser failures can be trusted as regressions. Launch the instance, then verify: `B=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects (unauthenticated instance), the hub is either down or cloud login failed — coordinate with Phase 8's hub bring-up. Data-independent test categories may run on unauthenticated instances; data/session/auth-dependent failures are environmental artifacts, not real bugs, and Phase 11 must not chase them. Flag the phase instead (reason: instance unauthenticated, hub dependency unmet).
 
 ```bash
 # correct pattern: a dedicated instance you own, cleaned up after
@@ -124,8 +125,8 @@ cd ui && npm run test:vitest:long
 ## Phase 8 — pytest hub tests (hub + instances required)
 
 1. **Hub preflight**: `set -a; source .env.local; set +a` then check `curl -sf ${FLOWPAD_HUB_URL:-http://localhost:8093}/api/v1/health/status`.
-   - If down: start the hub autonomously from the FlowPad checkout at the sibling checkout `../test_flowpad/FlowPad/` (run via `flowpad/run.py`, detached, output to a log file), then seed test users via `ops/scripts/setup_test_users.sh` in that checkout, then re-check health.
-   - Still down (e.g., its Neo4j Desktop DB isn't running) → mark Phases 8 **and** 9 `flagged` (reason: hub infra unavailable, evidence: startup log excerpt) and continue to Phase 10.
+   - If down, bring the whole stack up (Neo4j → hub → seed users) by following the canonical runbook **`../test_flowpad/FlowPad/docs/hub_setup.md`** — the hub doc owns the exact commands and creds. The stack is fully CLI-startable (no GUI): start the Neo4j "local" DBMS headless via its bundled `bin/neo4j` (needs `JAVA_HOME` → openjdk@21), then start the hub with `uv run python flowpad/run.py` (its 3.12 venv), then `ops/scripts/setup_test_users.sh`. Re-check health after.
+   - Only `flag` Phases 8 **and** 9 if the stack is genuinely unrecoverable after working that runbook (e.g. the hub checkout, its venv, Neo4j install, or openjdk@21 are missing) — capture the failing step's log as evidence, then continue to Phase 10.
 2. **Instances**: check `scripts/instance_ctl.sh status` first — **reuse any instance that is already UP** (do not relaunch it; `launch` kills an existing instance before starting, so re-launching a healthy one is a needless restart). Launch only what's missing via `scripts/instance_ctl.sh launch <name>`; if an instance goes unhealthy mid-phase, restart it with `kill <name>` + `launch <name>`.
 3. **Run**:
    ```bash
@@ -213,6 +214,8 @@ A fast, deterministic pass/fail sweep of every `.md.ts` Playwright test. **No te
 ## Phase 11 — agentic remediation (full `.md` scenarios)
 
 Team-based agentic phase using the full methodology — Run Mode steps 1–12 (see `modes/run.md`), Debug Mode lifecycle (see `modes/debug.md`), up to 3 qa-testers with the per-test tab protocol.
+
+**PREREQUISITE: Instance authentication (see Step 0.4).** Before running any Phase 11 scenario against a dedicated instance, verify the instance is authenticated: `B=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects, the instance has no user-scoped data — hub is down or cloud login failed. Flag the entire phase (reason: cannot run data-dependent browser scenarios without authenticated user data; hub bring-up required). Do not run scenarios against an unauthenticated instance; failures will be environmental artifacts, not regressions.
 
 **Scope** (from `phase10-summary.json` + the test index):
 - (a) every scenario with a **failing `.md.ts`** in Phase 10

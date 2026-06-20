@@ -79,12 +79,16 @@ describe('ProjectsCounterChip buckets — one chip per project across all projec
     // Any other GET (entity loads/expansions) resolves to an empty list.
     vi.spyOn(apiClient, 'get').mockImplementation(async (endpoint: string) => {
       if (endpoint.includes('/tab')) {
-        return [
-          tabRow(TAB_A, 'shell', SHELL_A, PROJECT_A),
-          tabRow(TAB_B, 'shell', SHELL_B, PROJECT_B),
-          tabRow(TAB_C, 'markdown', DOC_C, PROJECT_C),
-          tabRow('a0000000-0000-4000-8000-000000000000', 'settings', 'settings', null),
-        ] as never;
+        // `Tab.listAll()` reads `res.tabs` — mirror the real list_all envelope
+        // ({ tabs: [...] }), not a bare array (which yields zero buckets).
+        return {
+          tabs: [
+            tabRow(TAB_A, 'shell', SHELL_A, PROJECT_A),
+            tabRow(TAB_B, 'shell', SHELL_B, PROJECT_B),
+            tabRow(TAB_C, 'markdown', DOC_C, PROJECT_C),
+            tabRow('a0000000-0000-4000-8000-000000000000', 'settings', 'settings', null),
+          ],
+        } as never;
       }
       return [] as never;
     });

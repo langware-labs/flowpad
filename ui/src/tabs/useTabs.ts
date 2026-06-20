@@ -1,4 +1,15 @@
-import { AgenticProcess, dataContext, Project, Shell, Tab, TypeId, type ITab } from '@sdk';
+import {
+  AgenticProcess,
+  ConnectionManager,
+  dataContext,
+  type DataOpType,
+  type IEntity,
+  Project,
+  Shell,
+  Tab,
+  TypeId,
+  type ITab,
+} from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { coerceTab, getAllTabsSnapshot, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
 import { tabInProject } from '@src/tabs/tab-candidates';
@@ -105,6 +116,65 @@ export async function renameTerminalTab(target: TypeId | string, name: string): 
 export async function syncTerminalTabName(target: TypeId | string, name: string): Promise<void> {
   const tab = await tabForTarget(target);
   if (tab && tab.name !== name) await Tab.setNameById(tab.id, name);
+}
+
+/**
+ * Mirror a transcript lens's resolved session name onto its Tab label.
+ *
+ * Transcript tabs (`lens/<worker>/transcript/<id>`) can't rely on the content
+ * data-op mirror below: codex/copilot sessions have no entity to fire a data-op,
+ * and legacy claude tabs were minted with a null `target_id` (so the
+ * `target_id === id` match never hits). This resolves the tab by the current
+ * dock's `tabHash` instead and `set_name`-mirrors the generic worker-session
+ * name (from the transcript header) once known — `set_name`, not `rename`, so it
+ * never pins `auto_rename`. Guarded + no-op when unchanged, so it's safe to run
+ * from the read-only viewer on every load.
+ */
+export function useSyncTranscriptTabName(tabHash: string | null | undefined, name: string | null | undefined): void {
+  const tabs = useAllTabs();
+  useEffect(() => {
+    const trimmed = name?.trim();
+    if (!tabHash || !trimmed) return;
+    const tab = tabs.find((t) => tabKey(t) === tabHash);
+    if (tab && tab.name !== trimmed) {
+      void Tab.setNameById(tab.id, trimmed).then(() => void refreshAllTabs());
+    }
+  }, [tabs, tabHash, name]);
+}
+
+/**
+ * Generic entity → tab name sync. Mount once (the tab strip). A single
+ * `on_data_op` listener mirrors a CONTENT entity's renamed `name` onto its tab
+ * label via the tab-only `set_name` action — the same guarded mirror terminals
+ * already use for PTY auto-titles, generalized so that renaming any backing
+ * entity (e.g. a GraphContext in its sidebar) keeps the tab chip in step.
+ *
+ * Leak-safe: ONE listener, registered on mount and removed on cleanup; reads the
+ * live tab snapshot at fire-time so it never re-subscribes. Terminals keep their
+ * own `auto_rename`-aware path and are skipped. No-op unless the name changed.
+ */
+export function useSyncContentTabNames(): void {
+  useEffect(() => {
+    const cm = ConnectionManager.getInstance();
+    const handler = (_typeIdStr: string, op: DataOpType, data: IEntity) => {
+      if (op === 'delete') return;
+      // Skip terminal-type ops before scanning tabs — shells/agentic-processes
+      // stream frequent status data-ops and keep their own auto-rename path.
+      const type = (data as { type?: string | null } | null)?.type;
+      if (type && TERMINAL_TARGET_TYPES.has(type)) return;
+      const id = data?.id;
+      const name = (data as { name?: string | null } | null)?.name;
+      if (!id || !name) return;
+      const tab = getAllTabsSnapshot().find((t) => t.target_id === id);
+      if (tab && tab.name !== name) {
+        void Tab.setNameById(tab.id, name).then(() => void refreshAllTabs());
+      }
+    };
+    cm.on('on_data_op', handler);
+    return () => {
+      cm.off('on_data_op', handler);
+    };
+  }, []);
 }
 
 // ─── Project-bucketed view (chip consumes this) ─────────────────────────────

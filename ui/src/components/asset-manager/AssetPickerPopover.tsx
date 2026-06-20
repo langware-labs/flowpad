@@ -10,8 +10,9 @@ import {
   parseTypeid,
 } from './asset-row-helpers';
 import { EntityTypeBar, type EntityTypeFilter } from './EntityTypeBar';
-import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
+import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
+import { ALL_SCOPE_FILTER } from '@src/lib/scope-filter';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { Boxes, Lock, Search, type LucideIcon } from 'lucide-react';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
@@ -81,7 +82,10 @@ export function AssetPickerPopover({
     [isControlled, onOpenChange],
   );
   const [query, setQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<EntityTypeFilter>('all');
+  // The shown set of asset types. Empty = all types shown (every toggle lit) —
+  // EntityTypeBar owns the include/exclude logic. Toggling derives state from
+  // the lit set so the toggles always reflect what's actually visible.
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [scope, setScope, currentProjectId] = useDefaultScopeFilter();
   const { projects: allProjects } = useAllProjects({ enabled: open });
   const scopeProjectIds = useMemo(() => {
@@ -98,16 +102,20 @@ export function AssetPickerPopover({
   const { types: assetTypes } = useAssetTypes();
   const iconForType = useMemo(() => makeIconForType(assetTypes), [assetTypes]);
 
-  // Refresh when opening so the list reflects newly-added agents/skills.
+  // On open: refresh the list and start from "All" so every agent/skill is
+  // visible by default (the project-scoped default would hide user assets).
   useEffect(() => {
-    if (open) void refresh();
-  }, [open, refresh]);
+    if (open) {
+      void refresh();
+      setScope({ ...ALL_SCOPE_FILTER });
+    }
+  }, [open, refresh, setScope]);
 
   const handleOpenChange = useCallback((next: boolean) => {
     setOpen(next);
     if (!next) {
       setQuery('');
-      setTypeFilter('all');
+      setSelectedTypes([]);
     }
   }, [setOpen]);
 
@@ -127,18 +135,29 @@ export function AssetPickerPopover({
     return counts;
   }, [descriptors, filter]);
 
+  // Only the asset types the host filter actually admits (those with candidates)
+  // become toggles — keeps the bar from overflowing with types that can't appear.
+  const allowedTypes = useMemo(
+    () =>
+      (['agent', 'skill', 'markdown', 'spec'] as const).filter((t) => (typeCounts[t] ?? 0) > 0),
+    [typeCounts],
+  );
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return descriptors.filter((d) => {
       if (!filter(d)) return false;
-      if (typeFilter !== 'all') {
+      if (selectedTypes.length > 0) {
         const { type } = parseTypeid(d.typeid);
-        if (type !== typeFilter) return false;
+        if (!selectedTypes.includes(type)) return false;
       }
-      if (d.project_id) {
-        if (!scopeProjectIds.has(d.project_id)) return false;
-      } else if (!scope.user) {
-        return false;
+      // Scope gate — skipped entirely when scope = "All" (show everything).
+      if (!scope.all) {
+        if (d.project_id) {
+          if (!scopeProjectIds.has(d.project_id)) return false;
+        } else if (!scope.user) {
+          return false;
+        }
       }
       if (q) {
         const label = displayLabelForTypeid(d.typeid).toLowerCase();
@@ -150,14 +169,14 @@ export function AssetPickerPopover({
       }
       return true;
     });
-  }, [descriptors, filter, query, typeFilter, scope, scopeProjectIds]);
+  }, [descriptors, filter, query, selectedTypes, scope, scopeProjectIds]);
 
   const handlePick = useCallback(
     (d: AssetDescriptor) => {
       onPick(d);
       setOpen(false);
       setQuery('');
-      setTypeFilter('all');
+      setSelectedTypes([]);
     },
     [onPick, setOpen],
   );
@@ -166,24 +185,29 @@ export function AssetPickerPopover({
     <>
       <div className="flex items-center gap-1.5 border-b px-3 py-2">
         <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium">Run with…</span>
+        <span className="text-xs font-medium">Select Asset</span>
+        <div className="ml-auto flex items-center" data-testid="asset-picker-scope-bar">
+          <ScopeFilterIconBar
+            scope={scope}
+            currentProjectId={currentProjectId}
+            onScopeChange={setScope}
+          />
+        </div>
       </div>
-      <div
-        className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-2"
-        data-testid="asset-picker-type-bar"
-      >
-        <EntityTypeBar value={typeFilter} onChange={setTypeFilter} counts={typeCounts} />
-      </div>
-      <div
-        className="flex items-center border-b px-3 py-2"
-        data-testid="asset-picker-scope-bar"
-      >
-        <ScopeFilterBar
-          scope={scope}
-          currentProjectId={currentProjectId}
-          onScopeChange={setScope}
-        />
-      </div>
+      {allowedTypes.length > 0 && (
+        <div
+          className="flex items-center border-b px-3 py-1.5"
+          data-testid="asset-picker-type-bar"
+        >
+          <EntityTypeBar
+            selected={selectedTypes}
+            onChange={setSelectedTypes}
+            counts={typeCounts}
+            allowed={allowedTypes}
+            iconForType={iconForType}
+          />
+        </div>
+      )}
       <div className="border-b px-3 py-2">
         <div className="flex items-center gap-1.5">
           <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />

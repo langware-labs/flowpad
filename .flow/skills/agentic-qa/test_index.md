@@ -1,25 +1,26 @@
 # Test Index
 
-> Last updated: 2026-06-09T19-22-23
-> Scope: manual_regression categories. Counts = .md scenarios (excl .md.ts) and paired .md.ts.
+> Last updated: 2026-06-19 (cycle 2026-06-19T11-12-37, branch 0.2.67-fixes)
+> Scope: .md scenarios under ui/tests/manual_regression and their paired .md.ts
 
-| Category | .md | .md.ts | playwright.config |
-|----------|-----|--------|-------------------|
-| agentic-process | 12 | 13 | yes |
-| assets | 3 | 3 | yes |
-| chat | 14 | 14 | yes |
-| cli-log | 1 | 1 | yes |
-| collaboration | 4 | 4 | yes |
-| conversation | 2 | 2 | yes |
-| editor | 13 | 13 | yes |
-| general | 7 | 7 | yes |
-| k_browser | 1 | 1 | yes |
-| markdown_index | 1 | 1 | yes |
-| search | 8 | 7 | yes |
-| setup | 1 | 1 | yes |
-| skills | 6 | 6 | yes |
-| sniffer | 4 | 4 | yes |
-| terminal | 26 | 30 | yes |
-| triggers | 1 | 5 | yes |
-| whiteboard | 8 | 8 | yes |
-| workflow | 2 | 2 | yes |
+| Category | .md | .md.ts |
+|----------|-----|--------|
+| agentic-process | 12 | 14 |
+| assets | 3 | 3 |
+| chat | 14 | 14 |
+| cli-log | 1 | 1 |
+| collaboration | 4 | 4 |
+| conversation | 2 | 2 |
+| editor | 13 | 13 |
+| general | 7 | 7 |
+| k_browser | 1 | 1 |
+| markdown_index | 1 | 1 |
+| search | 8 | 7 |
+| setup | 1 | 1 |
+| skills | 6 | 6 |
+| sniffer | 4 | 4 |
+| tab_management | 0 | 2 |
+| terminal | 26 | 30 |
+| triggers | 1 | 5 |
+| whiteboard | 8 | 8 |
+| workflow | 2 | 2 |

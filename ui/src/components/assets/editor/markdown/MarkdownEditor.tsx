@@ -50,6 +50,17 @@ const MODE_ICONS: Record<ViewMode, React.ComponentType<{ className?: string }>> 
   learning: GraduationCap,
 };
 
+/**
+ * Context handed to `headerExtras` — the live frontmatter buffer of the editor.
+ * A header control (e.g. the skill eval toggle) reads `fields` and writes via
+ * `setField`, going through the SAME content buffer as the body autosave, so
+ * there is a single writer to the file (no two-writer race).
+ */
+export interface MarkdownHeaderExtrasCtx {
+  fields: Record<string, string>;
+  setField: (key: string, value: string) => void;
+}
+
 interface MarkdownEditorProps {
   /** FSRef to the .md file — carries path + typeId + read/write. */
   fsRef: FSRef;
@@ -60,6 +71,12 @@ interface MarkdownEditorProps {
   chatTarget: string | null;
   /** Optional asset-specific toolbar actions rendered in the header */
   toolbar?: React.ReactNode;
+  /**
+   * Frontmatter-aware header slot. Rendered in the header (live state only) with
+   * the editor's own `fields`/`setField`, so a control can read+write a
+   * frontmatter key through the single content buffer.
+   */
+  headerExtras?: (ctx: MarkdownHeaderExtrasCtx) => React.ReactNode;
   /** Appended to the side drawer after Editor + Backlinks. */
   extraSideTabs?: ExtraSideTab[];
   /** Controlled active side-drawer tab id. */
@@ -96,6 +113,7 @@ export function MarkdownEditor({
   fsRef,
   chatTarget,
   toolbar,
+  headerExtras,
   extraSideTabs,
   activeSideTab,
   onActiveSideTabChange,
@@ -111,6 +129,7 @@ export function MarkdownEditor({
       sourcePath={fsRef.path}
       chatTarget={chatTarget}
       toolbar={toolbar}
+      headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}
       activeSideTab={activeSideTab}
       onActiveSideTabChange={onActiveSideTabChange}
@@ -159,6 +178,7 @@ function MarkdownEditorContent({
   sourcePath,
   chatTarget,
   toolbar,
+  headerExtras,
   extraSideTabs,
   activeSideTab,
   onActiveSideTabChange,
@@ -172,6 +192,7 @@ function MarkdownEditorContent({
   sourcePath: string;
   chatTarget: string | null;
   toolbar?: React.ReactNode;
+  headerExtras?: MarkdownEditorProps['headerExtras'];
   extraSideTabs?: ExtraSideTab[];
   activeSideTab?: string;
   onActiveSideTabChange?: (id: string) => void;
@@ -418,7 +439,12 @@ function MarkdownEditorContent({
         onDownload={handleDownload}
         onDelete={handleDelete}
         leadingActions={shareButton}
-        actions={toolbar}
+        actions={
+          <>
+            {toolbar}
+            {headerExtras?.({ fields, setField })}
+          </>
+        }
         showLearningMode={showLearningMode}
       />
       {shareSource && shareOpen && (

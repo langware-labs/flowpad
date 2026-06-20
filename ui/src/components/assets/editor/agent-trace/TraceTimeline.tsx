@@ -2,10 +2,37 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Slider } from '@src/components/ui/slider';
 import { cn } from '@src/lib/utils';
 import type { AgentTraceDoc, TraceEvent, TraceLane, TraceMarker } from './trace-types';
-import { tsMs } from './trace-types';
+import { bucketSegments, tsMs } from './trace-types';
 
-const LANE_ROW_H = 14; // px per lane row
+const LANE_ROW_H = 14; // px per lane row (compact Execution strip)
+const OUTLINE_ROW_H = 24; // taller rows for the readable Call-stack timeline
 const MAX_VISIBLE_LANES_PX = 168; // ~12 rows before the lane list scrolls
+
+// Outline-only event kinds surfaced on the timeline.
+const OUTLINE_EVENT_KINDS = new Set(['skill_load', 'skill_fail', 'interrupt', 'task_create', 'task_update']);
+
+/** Color for an outline lane's span bar (skills/plan/subagent). */
+function outlineSegmentColor(laneKind: string): string {
+  if (laneKind === 'skill') return 'bg-primary/60';
+  if (laneKind === 'root') return 'bg-amber-500/50'; // plan-mode spans
+  return 'bg-sky-500/45'; // subagent span
+}
+
+/** Color for an event diamond by kind (task completion bumps the shade). */
+function eventColor(kind: string, severity: string): string {
+  switch (kind) {
+    case 'skill_fail':
+      return 'bg-red-500';
+    case 'interrupt':
+      return 'bg-amber-500';
+    case 'task_create':
+      return 'bg-emerald-400';
+    case 'task_update':
+      return severity === 'notable' ? 'bg-emerald-600' : 'bg-violet-500';
+    default:
+      return 'bg-sky-500';
+  }
+}
 
 function severityBar(severity: string): string {
   return severity === 'attention'
@@ -26,6 +53,11 @@ interface TraceTimelineProps {
   onCursorChange: (ms: number) => void;
   selectedLaneId: string | null;
   onSelectLane: (laneId: string | null) => void;
+  /** Override the lane rows (e.g. the high-level `outline`). The time axis and
+   * the cost strips always derive from the full `doc`, so they stay identical
+   * to the Execution view. Each lane may carry its own `events`/`markers` and a
+   * `depth` for nested indentation. Defaults to `doc.lanes`. */
+  displayLanes?: TraceLane[];
 }
 
 /**
@@ -39,7 +71,12 @@ export function TraceTimeline({
   onCursorChange,
   selectedLaneId,
   onSelectLane,
+  displayLanes,
 }: TraceTimelineProps) {
+  // Memoized so the markers/events grouping memo doesn't bust on every cursor
+  // tick (a bare `displayLanes ?? doc.lanes` is a fresh ref each render).
+  const lanes = useMemo(() => displayLanes ?? doc.lanes, [displayLanes, doc]);
+  const outlineMode = displayLanes != null;
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {
@@ -75,15 +112,25 @@ export function TraceTimeline({
   const { markersByLane, eventsByLane } = useMemo(() => {
     const markers = new Map<string, TraceMarker[]>();
     const events = new Map<string, TraceEvent[]>();
-    for (const m of doc.markers) {
-      (markers.get(m.lane_id) ?? markers.set(m.lane_id, []).get(m.lane_id)!).push(m);
-    }
-    for (const e of doc.events) {
-      if (e.kind !== 'skill_load' && e.kind !== 'skill_fail' && e.kind !== 'interrupt') continue;
-      (events.get(e.lane_id) ?? events.set(e.lane_id, []).get(e.lane_id)!).push(e);
+    const keepEvent = (k: string) => OUTLINE_EVENT_KINDS.has(k);
+    if (outlineMode) {
+      // Outline lanes carry their own events/markers (plan spans / interrupts).
+      for (const lane of lanes) {
+        if (lane.markers?.length) markers.set(lane.id, lane.markers);
+        const evs = (lane.events ?? []).filter((e) => keepEvent(e.kind));
+        if (evs.length) events.set(lane.id, evs);
+      }
+    } else {
+      for (const m of doc.markers) {
+        (markers.get(m.lane_id) ?? markers.set(m.lane_id, []).get(m.lane_id)!).push(m);
+      }
+      for (const e of doc.events) {
+        if (!keepEvent(e.kind)) continue;
+        (events.get(e.lane_id) ?? events.set(e.lane_id, []).get(e.lane_id)!).push(e);
+      }
     }
     return { markersByLane: markers, eventsByLane: events };
-  }, [doc]);
+  }, [doc, lanes, outlineMode]);
 
   const EMPTY_MARKERS: TraceMarker[] = useMemo(() => [], []);
   const EMPTY_EVENTS: TraceEvent[] = useMemo(() => [], []);
@@ -94,24 +141,7 @@ export function TraceTimeline({
   const { timeSeries, costSeries, totalCostSeries, bucketMs } = useMemo(() => {
     const n = Math.max(60, Math.floor(width / 4) || 0);
     const bMs = span / n;
-    const time = new Array<number>(n).fill(0);
-    const cost = new Array<number>(n).fill(0);
-    for (const lane of doc.lanes) {
-      for (const seg of lane.segments) {
-        const s = tsMs(seg.start_ts);
-        const e = tsMs(seg.end_ts);
-        if (s === null || e === null || e <= s) continue;
-        const first = Math.max(0, Math.floor((s - tMin) / bMs));
-        const last = Math.min(n - 1, Math.floor((e - tMin) / bMs));
-        for (let b = first; b <= last; b++) {
-          const bStart = tMin + b * bMs;
-          const overlap = Math.min(e, bStart + bMs) - Math.max(s, bStart);
-          if (overlap <= 0) continue;
-          time[b] += overlap; // lane-ms of activity in this bucket
-          cost[b] += seg.cost_usd * (overlap / (e - s));
-        }
-      }
-    }
+    const { time, cost } = bucketSegments(doc.lanes, tMin, bMs, n);
     const cumulative: number[] = [];
     let running = 0;
     for (const c of cost) cumulative.push((running += c));
@@ -123,47 +153,71 @@ export function TraceTimeline({
     Math.max(0, Math.floor((cursorMs - tMin) / bucketMs)),
   );
 
+  const strips = (
+    <>
+      <SeriesStrip
+        label="time"
+        values={timeSeries}
+        color="rgb(14 165 233)"
+        atCursor={`${(timeSeries[cursorBucket] / bucketMs || 0).toFixed(1)}× active`}
+        testId="trace-strip-time"
+      />
+      <SeriesStrip
+        label="$/h"
+        values={costSeries}
+        color="rgb(16 185 129)"
+        atCursor={`$${((costSeries[cursorBucket] / bucketMs || 0) * 3_600_000).toFixed(2)}/h`}
+        testId="trace-strip-cost"
+      />
+      <SeriesStrip
+        label="Σ$"
+        values={totalCostSeries}
+        color="rgb(168 85 247)"
+        atCursor={`$${(totalCostSeries[cursorBucket] || 0).toFixed(2)} spent`}
+        testId="trace-strip-total-cost"
+      />
+    </>
+  );
+  const laneRows = (
+    <div
+      className={cn('overflow-y-auto overflow-x-hidden', outlineMode && 'min-h-0 flex-1')}
+      style={outlineMode ? undefined : { maxHeight: MAX_VISIBLE_LANES_PX }}
+      data-testid="trace-timeline-lanes"
+    >
+      {lanes.map((lane) => (
+        <LaneRow
+          key={lane.id}
+          lane={lane}
+          outline={outlineMode}
+          markers={markersByLane.get(lane.id) ?? EMPTY_MARKERS}
+          events={eventsByLane.get(lane.id) ?? EMPTY_EVENTS}
+          x={x}
+          selected={selectedLaneId === lane.id}
+          onSelect={onSelectLane}
+        />
+      ))}
+    </div>
+  );
+
   return (
-    <div className="flex-shrink-0 border-t px-3 pb-2 pt-1" data-testid="trace-timeline">
-      <div ref={trackRef} className="relative">
-        <SeriesStrip
-          label="time"
-          values={timeSeries}
-          color="rgb(14 165 233)"
-          atCursor={`${(timeSeries[cursorBucket] / bucketMs || 0).toFixed(1)}× active`}
-          testId="trace-strip-time"
-        />
-        <SeriesStrip
-          label="$/h"
-          values={costSeries}
-          color="rgb(16 185 129)"
-          atCursor={`$${((costSeries[cursorBucket] / bucketMs || 0) * 3_600_000).toFixed(2)}/h`}
-          testId="trace-strip-cost"
-        />
-        <SeriesStrip
-          label="Σ$"
-          values={totalCostSeries}
-          color="rgb(168 85 247)"
-          atCursor={`$${(totalCostSeries[cursorBucket] || 0).toFixed(2)} spent`}
-          testId="trace-strip-total-cost"
-        />
-        <div
-          className="overflow-y-auto"
-          style={{ maxHeight: MAX_VISIBLE_LANES_PX }}
-          data-testid="trace-timeline-lanes"
-        >
-          {doc.lanes.map((lane) => (
-            <LaneRow
-              key={lane.id}
-              lane={lane}
-              markers={markersByLane.get(lane.id) ?? EMPTY_MARKERS}
-              events={eventsByLane.get(lane.id) ?? EMPTY_EVENTS}
-              x={x}
-              selected={selectedLaneId === lane.id}
-              onSelect={onSelectLane}
-            />
-          ))}
-        </div>
+    <div
+      className={cn('border-t px-3 pb-2 pt-1', outlineMode ? 'flex min-h-0 flex-1 flex-col' : 'flex-shrink-0')}
+      data-testid="trace-timeline"
+    >
+      {/* Call-stack (outline) mode: lanes fill the top, cost graphs sit below —
+          Execution mode keeps the compact strips-on-top layout. */}
+      <div ref={trackRef} className={cn('relative', outlineMode && 'flex min-h-0 flex-1 flex-col')}>
+        {outlineMode ? (
+          <>
+            {laneRows}
+            {strips}
+          </>
+        ) : (
+          <>
+            {strips}
+            {laneRows}
+          </>
+        )}
         {cursorX !== null && (
           <div
             className="pointer-events-none absolute bottom-0 top-0 z-10 w-px bg-foreground/70"
@@ -235,8 +289,16 @@ function SeriesStrip({
 
 // Memoized: a cursor tick re-renders the parent ~dozens of times per drag;
 // lane rows (70+ lanes × thousands of segment divs) only depend on layout.
+function laneLabel(lane: TraceLane, outline: boolean): string {
+  if (!outline) return lane.kind === 'root' ? 'root' : (lane.agent_type ?? lane.id);
+  if (lane.kind === 'skill') return lane.skill_name ?? lane.description ?? lane.id;
+  if (lane.kind === 'root') return lane.description ?? 'session';
+  return lane.description ?? lane.agent_type ?? lane.id; // subagent → its role
+}
+
 const LaneRow = memo(function LaneRow({
   lane,
+  outline,
   markers,
   events,
   x,
@@ -244,25 +306,49 @@ const LaneRow = memo(function LaneRow({
   onSelect,
 }: {
   lane: TraceLane;
+  outline: boolean;
   markers: TraceMarker[];
   events: TraceEvent[];
   x: (ms: number | null) => number | null;
   selected: boolean;
   onSelect: (laneId: string | null) => void;
 }) {
+  const label = laneLabel(lane, outline);
+  // Outline lanes nest by depth (label indent) and need a wider, legible label
+  // backdrop since skill/role names sit over their span bars.
+  const indentPx = outline ? (lane.depth ?? 0) * 12 : 0;
+  // Skill lanes open their asset on click → render as links.
+  const isLink = outline && lane.kind === 'skill';
   return (
     <div
       className={cn(
-        'relative flex cursor-pointer items-center',
+        'relative flex items-center',
+        outline && lane.kind === 'skill' ? 'cursor-pointer' : 'cursor-default',
+        !outline && 'cursor-pointer',
         selected && 'rounded bg-accent/60',
       )}
-      style={{ height: LANE_ROW_H }}
+      style={{ height: outline ? OUTLINE_ROW_H : LANE_ROW_H }}
       onClick={() => onSelect(selected ? null : lane.id)}
-      title={lane.kind === 'root' ? 'root' : `${lane.agent_type ?? 'subagent'}: ${lane.description ?? lane.id}`}
+      title={outline ? label : lane.kind === 'root' ? 'root' : `${lane.agent_type ?? 'subagent'}: ${lane.description ?? lane.id}`}
       data-testid={`trace-lane-${lane.id}`}
     >
-      <span className="pointer-events-none absolute left-0 z-10 w-20 truncate pl-0.5 text-[9px] leading-none text-muted-foreground">
-        {lane.kind === 'root' ? 'root' : (lane.agent_type ?? lane.id)}
+      <span
+        className={cn(
+          'pointer-events-none absolute left-0 z-10 truncate pl-0.5 leading-none',
+          outline
+            ? cn(
+                'inset-y-0 flex w-56 items-center rounded-sm bg-background/85 text-[13px]',
+                isLink
+                  ? 'font-semibold text-primary'
+                  : lane.kind === 'root'
+                    ? 'font-semibold text-foreground/80'
+                    : 'text-foreground/70',
+              )
+            : 'top-0 w-20 text-[9px] text-muted-foreground',
+        )}
+        style={{ paddingLeft: indentPx + 2 }}
+      >
+        {label}
       </span>
       {lane.segments.map((seg) => {
         const x0 = x(tsMs(seg.start_ts));
@@ -271,7 +357,10 @@ const LaneRow = memo(function LaneRow({
         return (
           <div
             key={seg.id}
-            className={cn('absolute h-2 rounded-sm', severityBar(seg.severity))}
+            className={cn(
+              'absolute h-2 rounded-sm',
+              outline ? outlineSegmentColor(lane.kind) : severityBar(seg.severity),
+            )}
             style={{ left: x0, width: Math.max(2, x1 - x0) }}
             title={seg.label}
           />
@@ -284,11 +373,12 @@ const LaneRow = memo(function LaneRow({
           <div
             key={`ev-${e.ts}-${i}`}
             className={cn(
-              'absolute bottom-0 h-1.5 w-1.5 rotate-45',
-              e.kind === 'skill_fail' ? 'bg-red-500' : e.kind === 'interrupt' ? 'bg-amber-500' : 'bg-sky-500',
+              'absolute bottom-0 rotate-45',
+              outline ? 'h-2 w-2' : 'h-1.5 w-1.5',
+              eventColor(e.kind, e.severity),
             )}
             style={{ left: ex - 3 }}
-            title={`${e.kind}: ${e.label}`}
+            title={`${e.kind.replace('_', ' ')}: ${e.label}`}
             data-testid={`trace-event-${e.kind}`}
           />
         );
