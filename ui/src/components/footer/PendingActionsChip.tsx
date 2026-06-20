@@ -1,57 +1,92 @@
-import { AgenticProcess, Project, TypeId } from '@sdk';
+import { AgenticProcess, ExecutionMode, Project, supportedExecutionModes, TypeId, WorkerStatus } from '@sdk';
+import { EntityTypeBar } from '@src/components/asset-manager/EntityTypeBar';
+import { workerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { setPendingIntent } from '@src/tabs/pending-intent';
 import {
   acknowledgePending,
   formatTimeAgo,
-  useActiveProcesses,
+  useWorkerCountsByMode,
+  useWorkerList,
 } from '@src/store/pending-actions-store';
+import { cn } from '@src/lib/utils';
 import { useMemo, useState } from 'react';
+import { executionModeLabel, iconForExecutionMode } from './execution-mode-icons';
 import { useNotificationPulse } from './useNotificationPulse';
 import { workerStatusLabel } from './worker-status-label';
 
 /**
- * Footer chip — live "agents at work" surface.
+ * Footer chip — generic "agents at work" list, grouped by execution mode and
+ * gated by view mode.
  *
- * Count = active AgenticProcesses (burning tokens ∪ in pending-input
- * window). Per-row glow on processes in the pending set, identical to
- * the tab-strip glow (`animate-pending-glow`). A one-shot 3 s chip
- * pulse fires alongside the notification sound when a new id enters
- * pending — the pulse is decorative only, doesn't affect membership.
+ * The list shows EVERY live worker on the machine, classified into an
+ * ``ExecutionMode`` (interactive / background / error / external). The chip owns
+ * the per-view-mode *supported* set via ``supportedExecutionModes`` — Standard
+ * users only ever see interactive + background, so the error/external complexity
+ * is hidden from them entirely. A filter-toggle bar (the same ``EntityTypeBar``
+ * the asset picker uses) narrows the shown modes; the badge counter reflects the
+ * current filter (supported ∩ selected).
+ *
+ * Pulse + glow are preserved verbatim: a one-shot 3 s chip pulse fires alongside
+ * the notification sound when a new id enters pending, and per-row
+ * ``animate-pending-glow`` marks rows in the pending-input window.
  *
  * Known limitation: row name / project name come from
- * `*.getByIdFromCache(id)?.name` and are NOT reactive — a rename in
- * another surface won't update an open popover until the row's data
- * (status, last-active-time) changes for an unrelated reason.
+ * ``*.getByIdFromCache(id)?.name`` and are NOT reactive.
  */
 export function PendingActionsChip() {
-  const entries = useActiveProcesses();
+  const isAdvanced = useIsAdvanced();
+  const supported = useMemo(() => supportedExecutionModes(isAdvanced), [isAdvanced]);
+
+  const allRows = useWorkerList(supported);
+  const counts = useWorkerCountsByMode(supported);
   const [open, setOpen] = useState(false);
+  // Empty = all supported modes shown (mirrors AssetPickerPopover).
+  const [selected, setSelected] = useState<string[]>([]);
   const { navigation } = useDockNavigation();
   const pulsing = useNotificationPulse(3000);
 
+  // The shown set: the user's selection, or all supported modes when nothing
+  // is narrowed. Memoized so the `filtered` memo below stays stable across
+  // renders where neither input changed.
+  const effective: readonly string[] = useMemo(
+    () => (selected.length ? selected : supported),
+    [selected, supported],
+  );
+  const filtered = useMemo(
+    () => allRows.filter((e) => effective.includes(e.mode)),
+    [allRows, effective],
+  );
+
   const rows = useMemo(
     () =>
-      entries.map((e) => ({
+      filtered.map((e) => ({
         processId: e.processId,
+        mode: e.mode,
         name: AgenticProcess.getByIdFromCache<AgenticProcess>(e.processId)?.name
           ?? e.processId.slice(0, 8),
         projectName: e.projectId
           ? Project.getByIdFromCache<Project>(e.projectId)?.name ?? null
           : null,
         statusLabel: workerStatusLabel(e.workerStatus, e.pending),
+        statusIcon: workerStatusConfig[e.workerStatus as WorkerStatus],
         lastActive: formatTimeAgo(e.lastStatusChangedAt),
         pending: e.pending,
       })),
-    [entries],
+    [filtered],
   );
 
-  if (rows.length === 0) return null;
+  // Hide the chip only when there are no supported workers at all. When the user
+  // has narrowed to an empty mode (e.g. External in v1) the chip stays visible
+  // showing 0 so the popover remains reachable to reset the filter.
+  if (allRows.length === 0) return null;
 
-  const tooltipText = `${rows.length} active agent${rows.length === 1 ? '' : 's'}`;
+  const count = rows.length;
+  const tooltipText = `${count} active agent${count === 1 ? '' : 's'}`;
 
   const handlePick = async (processId: string) => {
     setOpen(false);
@@ -86,7 +121,7 @@ export function PendingActionsChip() {
   };
 
   const chipClass = [
-    'flex h-5 w-5 items-center justify-center rounded-md bg-primary text-[10px] font-semibold tabular-nums text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-1 focus:ring-ring',
+    'flex h-5 min-w-5 items-center justify-center rounded-md bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-1 focus:ring-ring',
     pulsing ? 'animate-pending-glow-once' : '',
   ]
     .filter(Boolean)
@@ -104,7 +139,7 @@ export function PendingActionsChip() {
                 aria-label={tooltipText}
                 className={chipClass}
               >
-                {rows.length}
+                {count}
               </button>
             </PopoverTrigger>
           </TooltipTrigger>
@@ -117,37 +152,83 @@ export function PendingActionsChip() {
           className="w-80 p-1"
           data-testid="pending-actions-popover"
         >
-          <ul className="flex flex-col">
-            {rows.map((row) => {
-              const rowClass = [
-                'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted',
-                row.pending ? 'animate-pending-glow' : '',
-              ]
-                .filter(Boolean)
-                .join(' ');
-              return (
-                <li key={row.processId}>
-                  <button
-                    type="button"
-                    onClick={() => void handlePick(row.processId)}
-                    className={rowClass}
-                    data-pending={row.pending ? 'true' : undefined}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{row.name}</div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {row.statusLabel}
-                        {row.projectName ? ` · ${row.projectName}` : ''}
+          {/* Execution-mode filter toggles — pinned at the top. ``shrink-0``
+              keeps the bar in place; only the scrollable body below it changes
+              when a filter is toggled, so the header never moves. */}
+          {supported.length > 1 && (
+            <div
+              className="flex shrink-0 items-center border-b px-2 py-1.5"
+              data-testid="worker-mode-bar"
+            >
+              <EntityTypeBar
+                selected={selected}
+                onChange={setSelected}
+                counts={counts}
+                allowed={supported}
+                iconForType={iconForExecutionMode}
+                labelForType={executionModeLabel}
+                testIdPrefix="worker-mode"
+              />
+            </div>
+          )}
+          {/* Fixed-height scroll body: a constant height means the popover
+              (which opens upward) never resizes when the filtered count
+              changes, so the pinned filter bar above stays put. */}
+          <div className="h-64 overflow-y-auto" data-testid="worker-list-body">
+          {rows.length === 0 ? (
+            <div
+              className="px-2 py-3 text-center text-xs text-muted-foreground"
+              data-testid="worker-list-empty"
+            >
+              {effective.length === 1 && effective[0] === ExecutionMode.External
+                ? 'No external workers detected'
+                : 'No agents match this filter'}
+            </div>
+          ) : (
+            <ul className="flex flex-col">
+              {rows.map((row) => {
+                const rowClass = [
+                  'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted',
+                  row.pending ? 'animate-pending-glow' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ');
+                const StatusIcon = row.statusIcon?.icon;
+                return (
+                  <li key={row.processId}>
+                    <button
+                      type="button"
+                      onClick={() => void handlePick(row.processId)}
+                      className={rowClass}
+                      data-pending={row.pending ? 'true' : undefined}
+                      data-mode={row.mode}
+                    >
+                      {StatusIcon && (
+                        <StatusIcon
+                          className={cn(
+                            'h-3.5 w-3.5 shrink-0',
+                            row.statusIcon?.color,
+                            row.statusIcon?.animate && 'animate-spin',
+                          )}
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium">{row.name}</div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {executionModeLabel(row.mode)} · {row.statusLabel}
+                          {row.projectName ? ` · ${row.projectName}` : ''}
+                        </div>
                       </div>
-                    </div>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {row.lastActive}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {row.lastActive}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          </div>
         </PopoverContent>
       </Popover>
     </TooltipProvider>

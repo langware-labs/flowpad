@@ -59,6 +59,58 @@ def test_terminal_set_matches_spec(status_fixture):
     assert _TERMINAL_STATUSES == expected
 
 
+def test_error_set_matches_spec(status_fixture):
+    """Python ``_ERROR_STATUSES`` must equal the shared fixture literal
+    (``worker_execution_error``), kept in parity with the TS ``ERROR_WORKER_STATUSES``."""
+    from flow_sdk.builtin.worker_status import _ERROR_STATUSES
+
+    expected = {WorkerStatus(v) for v in status_fixture["worker_execution_error"]}
+    assert _ERROR_STATUSES == expected
+
+
+# ── classify_execution_mode truth table ──────────────────────────────────────
+
+
+def test_classify_execution_mode_truth_table():
+    from flow_sdk.builtin.worker_status import ExecutionMode, classify_execution_mode
+
+    # Not live → None.
+    for s in ("new", "stopping", "stopped", "failed"):
+        assert classify_execution_mode(status=s, worker_status=None, visible=True) is None
+
+    # Live PTY / CLI split.
+    for s in ("running", "starting"):
+        assert (
+            classify_execution_mode(status=s, worker_status=None, visible=True)
+            == ExecutionMode.INTERACTIVE
+        )
+        assert (
+            classify_execution_mode(status=s, worker_status=None, visible=False)
+            == ExecutionMode.BACKGROUND
+        )
+
+    # Error worker_status wins over visible, for both PTY and CLI.
+    for w in ("error", "api_timeout", "inactive"):
+        assert (
+            classify_execution_mode(status="running", worker_status=w, visible=True)
+            == ExecutionMode.ERROR
+        )
+        assert (
+            classify_execution_mode(status="running", worker_status=w, visible=False)
+            == ExecutionMode.ERROR
+        )
+
+    # Dead PTY pid → Error; CLI without pid liveness stays Background.
+    assert (
+        classify_execution_mode(status="running", worker_status=None, visible=True, pid_alive=False)
+        == ExecutionMode.ERROR
+    )
+    assert (
+        classify_execution_mode(status="running", worker_status=None, visible=False)
+        == ExecutionMode.BACKGROUND
+    )
+
+
 # ── ProcessStatus enum shape ─────────────────────────────────────────────────
 
 

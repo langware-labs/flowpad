@@ -207,6 +207,90 @@ export function getWorkerMode(p: StatusBearingProcess): WorkerMode {
   return p.visible ? WorkerMode.Interactive : WorkerMode.CLI;
 }
 
+/**
+ * Coarse "kind of running worker" classification used by the footer worker-list
+ * chip. Unlike ``WorkerMode`` (which only splits PTY vs headless on ``visible``),
+ * this folds in error/liveness and an out-of-app ``External`` bucket so the chip
+ * can group + filter every worker on the machine by view mode.
+ *
+ * Derived, never stored. Mirrored on the backend by ``classify_execution_mode``
+ * in ``flow_sdk/builtin/worker_status.py`` (contract-tested via
+ * ``test_fixtures/status_sets.json`` → ``worker_execution_error``).
+ */
+export enum ExecutionMode {
+  /** PTY worker (xterm in the dock). Standard view. */
+  Interactive = 'interactive',
+  /** Headless ``claude -p`` worker. Standard view. */
+  Background = 'background',
+  /** Worker in an error/dead state (see ``ERROR_WORKER_STATUSES`` / dead PID). Advanced view. */
+  Error = 'error',
+  /** Worker running outside the app (OS-scanned). Advanced view; server-only. */
+  External = 'external',
+}
+
+/**
+ * Worker states that read as an *error* for execution-mode classification:
+ * abnormal end (ERROR), a stalled/timed-out turn (API_TIMEOUT), or a stale
+ * transcript with no clean termination (INACTIVE). Distinct from
+ * ``WORKER_TERMINAL_STATUSES`` — COMPLETE/INTERRUPTED are clean terminals, not
+ * errors. Kept byte-for-byte equal to the Python ``_ERROR_STATUSES`` via the
+ * shared ``status_sets.json`` fixture (key ``worker_execution_error``).
+ */
+export const ERROR_WORKER_STATUSES = new Set<WorkerStatus>([
+  WorkerStatus.ERROR,
+  WorkerStatus.API_TIMEOUT,
+  WorkerStatus.INACTIVE,
+]);
+
+const STANDARD_EXECUTION_MODES: readonly ExecutionMode[] = [
+  ExecutionMode.Interactive,
+  ExecutionMode.Background,
+];
+
+const ADVANCED_EXECUTION_MODES: readonly ExecutionMode[] = [
+  ...STANDARD_EXECUTION_MODES,
+  ExecutionMode.Error,
+  ExecutionMode.External,
+];
+
+/**
+ * Execution modes a given view mode is allowed to surface. Standard hides the
+ * error/external complexity entirely (so a Standard user never sees — or counts
+ * — those workers); Advanced/Dev add them.
+ */
+export function supportedExecutionModes(isAdvanced: boolean): readonly ExecutionMode[] {
+  return isAdvanced ? ADVANCED_EXECUTION_MODES : STANDARD_EXECUTION_MODES;
+}
+
+/**
+ * Classify a *live* worker into an ``ExecutionMode``. Returns ``null`` when the
+ * process is not live (``ProcessStatus ∉ {RUNNING, STARTING}``) — those are not
+ * listed. ``External`` is never returned here; external workers come only from
+ * the ``/workers`` backend snapshot.
+ *
+ * Truth table (first match wins):
+ *   1. worker_status ∈ ERROR_WORKER_STATUSES        → Error
+ *   2. visible===true && pidAlive===false (dead PTY) → Error
+ *   3. visible===true                                → Interactive
+ *   4. visible===false                               → Background
+ *
+ * ``pidAlive`` is only meaningful for PTY (``visible===true``); CLI workers have
+ * no PID, so dead-PID→error never applies to them — CLI error relies solely on
+ * rule 1. When ``pidAlive`` is undefined (the live WS payload has no PID
+ * liveness) rule 2 never fires; dead-PTY→error is then authoritative only via
+ * ``/workers``.
+ */
+export function classifyExecutionMode(
+  p: StatusBearingProcess & { pidAlive?: boolean },
+): ExecutionMode | null {
+  const status = resolveStatus(p);
+  if (status !== ProcessStatus.RUNNING && status !== ProcessStatus.STARTING) return null;
+  const worker = resolveWorkerStatus(p);
+  if (worker !== undefined && ERROR_WORKER_STATUSES.has(worker)) return ExecutionMode.Error;
+  if (p.visible === true && p.pidAlive === false) return ExecutionMode.Error;
+  return p.visible === true ? ExecutionMode.Interactive : ExecutionMode.Background;
+}
+
 function resolveStatus(p: StatusBearingProcess): ProcessStatus | undefined {
   return (p.status as ProcessStatus) ?? undefined;
 }
