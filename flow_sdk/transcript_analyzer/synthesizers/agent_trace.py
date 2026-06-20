@@ -23,8 +23,11 @@ Schema v1::
       "events":  [{ts, lane_id, kind: user_prompt|skill_load|skill_fail|
                    agent_spawn|interrupt, label, severity, entry_id}],
       "markers": [{ts, lane_id, kind: issue|divergence|stuck, severity,
-                   label, detail, source: synthesizer|skill}],
-      "annotations": {goals: [], divergences: [], verdict, notes: []}
+                   label, detail, skill, section_hint, source: synthesizer|skill}],
+      "annotations": {goals: [], divergences: [], issues: [], verdict, notes: [],
+                      by_skill: {<skill>: {skill, findings: [{kind, ts, label, detail,
+                        section_hint, evidence, severity, judged_against,
+                        unresolved_anchors}]}}, unattributed: []}
     }
 
 CLI (what the agent-trace skill runs)::
@@ -37,7 +40,9 @@ CLI (what the agent-trace skill runs)::
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -936,9 +941,172 @@ def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict
         "outline": outline,
         "events": sorted(events, key=lambda e: e["ts"] or ""),
         "markers": sorted(markers, key=lambda m: m["ts"] or ""),
-        "annotations": {"goals": [], "divergences": [], "verdict": None, "notes": []},
+        "annotations": {
+            "goals": [], "divergences": [], "issues": [], "verdict": None,
+            "notes": [], "by_skill": {}, "unattributed": [],
+        },
         "source_path": str(path),
     }
+
+
+def _injected_skill_name(text: str) -> str | None:
+    """The skill name from a `Base directory for this skill: <path>` injection —
+    the base directory's last path component is the skill folder name."""
+    first = text.splitlines()[0] if text else ""
+    path = first[len(_SKILL_INJECTION_PREFIX):].strip()
+    return Path(path).name or None if path else None
+
+
+def loaded_skill_bodies(transcript: AgentTranscriptFile) -> dict[str, str]:
+    """Recover the SKILL bodies **actually loaded at runtime**, keyed by skill name.
+
+    When a skill is invoked, Claude injects a synthetic user message carrying the
+    skill's text (prefixed ``Base directory for this skill:``). That body is what
+    the run actually followed — which can differ from the current on-disk SKILL.md.
+    Judging a finding against this (not on-disk) is what keeps finding and fix
+    referring to the same artifact. First load of each skill wins.
+    """
+    bodies: dict[str, str] = {}
+    for e in transcript.entries:
+        if not isinstance(e, UserMessageEntry):
+            continue
+        text = (e.text or "").lstrip()
+        if not text.startswith(_SKILL_INJECTION_PREFIX):
+            continue
+        name = _injected_skill_name(text)
+        if name and name not in bodies:
+            bodies[name] = text
+    return bodies
+
+
+def _skill_dir(skill: str) -> Path | None:
+    for base in (Path.cwd() / ".claude" / "skills", Path.home() / ".claude" / "skills"):
+        d = base / skill
+        if d.is_dir():
+            return d
+    return None
+
+
+def _read_disk_skill_entry(skill: str) -> str | None:
+    """Current on-disk SKILL.md (the entry file) — the basis for drift compare."""
+    d = _skill_dir(skill)
+    if not d:
+        return None
+    try:
+        return (d / "SKILL.md").read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _read_disk_skill_corpus(skill: str) -> str | None:
+    """The whole on-disk skill folder (SKILL.md + every routed `.md`) concatenated.
+    Anchor resolution checks this, since a `section_hint` may point at a routed file
+    (e.g. `modes/qa-cycle.md`), not just the entry SKILL.md."""
+    d = _skill_dir(skill)
+    if not d:
+        return None
+    parts = []
+    for f in sorted(d.rglob("*.md")):
+        try:
+            parts.append(f.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+    return "\n".join(parts) if parts else None
+
+
+def _norm_text(s: str | None) -> str:
+    return " ".join((s or "").split()).lower()
+
+
+def _quoted_tokens(s: str) -> list[str]:
+    """The 'quoted' / "quoted" anchor substrings inside a section_hint — the
+    resolvable bits we can mechanically check against the skill body."""
+    return [m.group(2) for m in re.finditer(r"(['\"])(.+?)\1", s or "") if m.group(2).strip()]
+
+
+def _hash(s: str) -> str:
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()
+
+
+def validate_findings(trace: dict) -> None:
+    """Deterministic, always-on checks on attributed findings (mutates ``trace``).
+
+    For each finding in ``annotations.by_skill``: stamp ``judged_against``
+    (``loaded`` when the run's SKILL body was recovered from the transcript, else
+    ``disk``) and ``unresolved_anchors`` — the section_hint quotes that resolve
+    NOWHERE in the skill text (loaded body ∪ the whole on-disk folder), i.e. a
+    stale anchor citing a string that no longer exists. Per-skill
+    ``summary.skill_drift`` flags where the loaded entry body differs from on-disk
+    SKILL.md. These FLAG findings (never drop) — the LLM verify step and skillit
+    decide what to do with the flag.
+    """
+    ann = trace.get("annotations") or {}
+    by_skill = ann.get("by_skill") or {}
+    if not by_skill:
+        return
+    bodies: dict[str, str] = {}
+    src = trace.get("source_path")
+    if src:
+        try:
+            t = AgentTranscriptFile(trace.get("worker_type", "claude"), Path(src))
+            bodies = loaded_skill_bodies(t)
+        except Exception:
+            bodies = {}
+    drift: dict[str, bool] = {}
+    for skill, bucket in by_skill.items():
+        loaded = bodies.get(skill)
+        disk_entry = _read_disk_skill_entry(skill)
+        findings = bucket.get("findings", [])
+        judged = "loaded" if loaded is not None else ("disk" if disk_entry is not None else "none")
+        if loaded is not None and disk_entry is not None:
+            drift[skill] = _hash(loaded) != _hash(disk_entry)
+        # Anchor resolution: a token must exist SOMEWHERE in the skill — the loaded
+        # body or any on-disk file — to count as resolvable. Only read the (whole-
+        # folder) corpus when some finding actually carries quoted anchors.
+        corpus = ""
+        if any(_quoted_tokens(f.get("section_hint", "")) for f in findings):
+            corpus = _norm_text("\n".join(p for p in (loaded, _read_disk_skill_corpus(skill)) if p))
+        for f in findings:
+            f["judged_against"] = judged
+            toks = _quoted_tokens(f.get("section_hint", ""))
+            if corpus and toks:
+                f["unresolved_anchors"] = [tk for tk in toks if _norm_text(tk) not in corpus]
+    if drift:
+        trace.setdefault("summary", {})["skill_drift"] = drift
+
+
+def project_findings_by_skill(
+    divergences: list[dict], issues: list[dict]
+) -> tuple[dict[str, dict], list[dict]]:
+    """Group skill-attributable findings by the skill (asset) they implicate.
+
+    Each finding may carry ``skill`` (the name of the loaded skill it's about)
+    and ``section_hint`` (where in that skill's files the fix likely belongs).
+    Findings that name a ``skill`` are bucketed under it — the **per-asset**
+    input skillit's correct mode consumes, one skill per run, already shaped
+    like its fixer's finding (label/detail + a section anchor). Findings with no
+    ``skill`` are session-level (goal drift, wrong conclusions) and stay in
+    ``unattributed`` for the human — they are nobody's skill defect.
+    """
+    by_skill: dict[str, dict] = {}
+    unattributed: list[dict] = []
+    for kind, items in (("divergence", divergences), ("issue", issues)):
+        for it in items:
+            finding = {
+                "kind": kind,
+                "ts": it.get("ts") or it.get("start_ts") or "",
+                "label": it.get("label") or "",
+                "detail": it.get("detail") or "",
+                "section_hint": it.get("section_hint") or "",
+                "evidence": it.get("evidence") or {},
+                "severity": it.get("severity") or SeverityTier.NOTABLE.value,
+            }
+            skill = it.get("skill")
+            if skill:
+                by_skill.setdefault(skill, {"skill": skill, "findings": []})["findings"].append(finding)
+            else:
+                unattributed.append(finding)
+    return by_skill, unattributed
 
 
 def merge_annotations(skeleton: dict, annotations: dict) -> dict:
@@ -946,19 +1114,26 @@ def merge_annotations(skeleton: dict, annotations: dict) -> dict:
 
     ``annotations`` carries: ``goals`` (each {label, lane_id?, start_ts,
     end_ts, subgoals?, verdict?}), ``divergences`` / ``issues`` (each {ts,
-    lane_id?, label, detail?, severity?}), ``verdict`` ("ok"|"mixed"|"bad"),
-    ``verdict_reason``, ``notes``. Skill-sourced markers are appended (never
-    replacing synthesizer ones) and the summary counts are recomputed.
+    lane_id?, label, detail?, severity?, skill?, section_hint?, evidence?}),
+    ``verdict`` ("ok"|"mixed"|"bad"), ``verdict_reason``, ``notes``. Skill-sourced
+    markers are appended (never replacing synthesizer ones), the per-asset
+    ``by_skill`` / ``unattributed`` projection is computed, the summary counts are
+    recomputed, and :func:`validate_findings` stamps ``judged_against`` /
+    ``unresolved_anchors`` / ``summary.skill_drift`` on the result.
     """
     trace = json.loads(json.dumps(skeleton))  # deep copy, JSON-safe
     goals = annotations.get("goals") or []
     divergences = annotations.get("divergences") or []
     issues = annotations.get("issues") or []
+    by_skill, unattributed = project_findings_by_skill(divergences, issues)
     trace["annotations"] = {
         "goals": goals,
         "divergences": divergences,
+        "issues": issues,
         "verdict": annotations.get("verdict"),
         "notes": annotations.get("notes") or [],
+        "by_skill": by_skill,
+        "unattributed": unattributed,
     }
     for kind, items in (("divergence", divergences), ("issue", issues)):
         for item in items:
@@ -969,6 +1144,8 @@ def merge_annotations(skeleton: dict, annotations: dict) -> dict:
                 "severity": item.get("severity") or SeverityTier.NOTABLE.value,
                 "label": item.get("label") or "",
                 "detail": item.get("detail") or "",
+                "skill": item.get("skill") or "",
+                "section_hint": item.get("section_hint") or "",
                 "source": "skill",
             })
     trace["markers"].sort(key=lambda m: m["ts"] or "")
@@ -977,6 +1154,7 @@ def merge_annotations(skeleton: dict, annotations: dict) -> dict:
     summary["verdict_reason"] = annotations.get("verdict_reason")
     summary["issue_count"] = sum(1 for m in trace["markers"] if m["kind"] in ("issue", "stuck"))
     summary["divergence_count"] = sum(1 for m in trace["markers"] if m["kind"] == "divergence")
+    validate_findings(trace)
     return trace
 
 
@@ -988,8 +1166,20 @@ def _main() -> None:
     ap.add_argument("--worker", default="claude")
     ap.add_argument("--merge", nargs=2, metavar=("SKELETON", "ANNOTATIONS"),
                     help="merge an annotations file into a skeleton file")
+    ap.add_argument("--loaded-skills", action="store_true",
+                    help="dump {skill_name: loaded SKILL body} recovered from the "
+                         "session transcript (the verify step grades against this)")
     ap.add_argument("--out", help="output path (default: stdout)")
     args = ap.parse_args()
+
+    if args.loaded_skills:
+        if not args.session_id:
+            ap.error("--loaded-skills needs a session_id")
+            return
+        path = resolve_session_jsonl(args.worker, args.session_id)
+        transcript = AgentTranscriptFile(args.worker, path, session_id=args.session_id)
+        print(json.dumps(loaded_skill_bodies(transcript), indent=2))
+        return
 
     if args.merge:
         skeleton = json.loads(Path(args.merge[0]).read_text(encoding="utf-8"))

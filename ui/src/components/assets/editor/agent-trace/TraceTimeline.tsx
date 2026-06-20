@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, Hand, ListPlus, Maximize2, MessageSquare, Puzzle, SquareTerminal, User } from 'lucide-react';
+import { AlertTriangle, Check, Flag, Hand, ListPlus, Maximize2, MessageSquare, Puzzle, SquareTerminal, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Slider } from '@src/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -27,11 +27,12 @@ const EVENT_ICON: Record<string, LucideIcon> = {
   task_create: ListPlus,
   task_update: Check,
   error: AlertTriangle,
+  skill_issue: Flag,
 };
 
 // Outline-only event kinds surfaced on the timeline.
 const OUTLINE_EVENT_KINDS = new Set([
-  'user_prompt', 'interrupt', 'skill_load', 'skill_fail', 'task_create', 'task_update', 'error',
+  'user_prompt', 'interrupt', 'skill_load', 'skill_fail', 'task_create', 'task_update', 'error', 'skill_issue',
 ]);
 
 /** Color for an outline lane's span bar (skills/plan/subagent). */
@@ -51,6 +52,8 @@ function eventColor(kind: string, severity: string): string {
       return 'bg-red-500';
     case 'error':
       return 'bg-red-600';
+    case 'skill_issue':
+      return 'bg-purple-500';
     case 'task_create':
       return 'bg-emerald-500';
     case 'task_update':
@@ -60,15 +63,24 @@ function eventColor(kind: string, severity: string): string {
   }
 }
 
-/** Legend entries shown above the Call-stack timeline so the markers read. */
-export const OUTLINE_LEGEND: { color: string; label: string; advancedOnly?: boolean }[] = [
+/** Legend entries shown above the Call-stack timeline so the markers read.
+ *  `advancedOnly`: shown only in advanced view. `requiresLane`: shown only when a
+ *  lane of that kind is present (e.g. the optional skill-issues overlay). */
+export const OUTLINE_LEGEND: {
+  color: string;
+  label: string;
+  advancedOnly?: boolean;
+  requiresLane?: TraceLane['kind'];
+}[] = [
   { color: 'bg-blue-500', label: 'prompt' },
   { color: 'bg-red-500', label: 'interrupt' },
   { color: 'bg-emerald-500', label: 'task' },
   { color: 'bg-amber-500/70', label: 'plan' },
-  // `advancedOnly` pairs with the advanced-gated errors lane — CallStackView
+  // Standard — analysis-sourced skill issues (the optional `skill_issues` overlay lane).
+  { color: 'bg-purple-500', label: 'skill issue', requiresLane: 'skill_issues' },
+  // `advancedOnly` pairs with the advanced-gated agent-errors lane — CallStackView
   // hides both outside advanced mode.
-  { color: 'bg-red-600', label: 'error', advancedOnly: true },
+  { color: 'bg-red-600', label: 'agent error', advancedOnly: true },
 ];
 
 function severityBar(severity: string): string {
@@ -469,6 +481,8 @@ function laneLabel(lane: TraceLane, outline: boolean): string {
   if (!outline) return lane.kind === 'root' ? 'root' : (lane.agent_type ?? lane.id);
   if (lane.kind === 'skill') return lane.skill_name ?? lane.description ?? lane.id;
   if (lane.kind === 'root') return lane.description ?? 'session';
+  if (lane.kind === 'errors') return 'agent errors';
+  if (lane.kind === 'skill_issues') return 'skill issues';
   return lane.description ?? lane.agent_type ?? lane.id; // subagent → its role
 }
 
@@ -487,6 +501,8 @@ function laneIcon(lane: TraceLane): LucideIcon {
       return User;
     case 'errors':
       return AlertTriangle;
+    case 'skill_issues':
+      return Flag;
     default:
       return SquareTerminal; // root / session
   }

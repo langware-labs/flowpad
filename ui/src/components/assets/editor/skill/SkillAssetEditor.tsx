@@ -7,8 +7,9 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { FSRef, ProcessKind, Skill } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
-import { FlaskConical } from 'lucide-react';
+import { FlaskConical, History } from 'lucide-react';
 import { useCallback, useMemo, useRef } from 'react';
+import { UsagePanel } from './UsagePanel';
 
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
@@ -115,9 +116,20 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
   // auto-lists by `target_typeid_str`. Memoized on `skill` so the array
   // identity is stable across editor keystrokes (else MarkdownEditor's tab/
   // panel memos rebuild every render).
+  // Keyed on the STABLE skillKey/editorRef only (never the `skill` object) so a
+  // metadata refetch handing back a new `skill` ref does NOT rebuild this array
+  // and remount the panels — that remount would wipe UsagePanel's scanned state.
+  // The panel reads the live skill via `skillRef`, snapshotted at first build.
   const extraSideTabs = useMemo<ExtraSideTab[] | undefined>(() => {
-    if (!skillKey) return undefined;
+    if (!skillKey || !skillRef.current) return undefined;
     return [
+      {
+        id: 'usage',
+        label: 'Usage',
+        icon: History,
+        description: 'Sessions that used this skill — analyze, improve, commit',
+        panel: <UsagePanel skill={skillRef.current} skillFile={editorRef} />,
+      },
       {
         id: 'eval',
         label: 'Eval',
@@ -133,6 +145,11 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
         ),
       },
     ];
+    // Depend on the stable skillKey ONLY (not editorRef/skill) — the host can
+    // hand a fresh fsRef each render, and including it here would rebuild the tab
+    // array and remount the panels on every render. skillRef/editorRef are
+    // snapshotted at first build; both are stable for a given SKILL.md.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skillKey]);
 
   return (

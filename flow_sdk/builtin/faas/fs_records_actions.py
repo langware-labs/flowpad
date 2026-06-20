@@ -187,6 +187,133 @@ class FsRecordsActionsMixin:
             pass
         return ""
 
+    async def _handle_asset_usage(self, request_info) -> ApiResponse:
+        """GET /asset-usage?skill=<name> — past sessions in which an asset was used.
+
+        Pure FSIndexer scan of session transcripts (claude/codex) + the transcript
+        analyzer: enumerate sessions, then for each, detect usage of the asset —
+        skill assets via ``SKILL_CALL`` ``skill_name`` (doc assets by file-op path
+        is a later follow-up). Returns rows newest-first. User-click only (no auto
+        walk), and reports ``scan`` progress so the footer/panel show
+        "Scanning <name> usage…".
+        """
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+        from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+            PROGRESS_TEXT_COMPLETE,
+            IndexerOptions,
+            IndexProgressTable,
+            TypeProgressRow,
+            get_shared_indexer,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+        from flow_sdk.transcript_analyzer.entry import EntryKind  # noqa: PLC0415
+        from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile  # noqa: PLC0415
+
+        qp = request_info.request.query_params
+        skill = (qp.get("skill") or "").strip()
+        if not skill:
+            return ApiFailResponse(message="asset-usage requires ?skill=<name>", status_code=400)
+
+        session_types = [RecordType.CLAUDE_SESSION, RecordType.CODEX_SESSION]
+        try:
+            activity = self._start_activity("scan", timeout_seconds=600)
+        except RuntimeError as e:
+            return ApiFailResponse(message=str(e), status_code=409)
+
+        def _table(done: int, total: int, text: str | None = None) -> IndexProgressTable:
+            return IndexProgressTable(
+                job_name="scan",
+                rows=(TypeProgressRow(type_name=f"{skill} usage", done=done, total=total),),
+                current=f"{skill} usage",
+                done=done,
+                total=total,
+                text=text,
+                ts=datetime.now(timezone.utc).isoformat(),
+            )
+
+        async def emit(done: int, total: int, text: str | None = None) -> None:
+            activity.latest_table = _table(done, total, text)
+            await broadcast_progress(to_entity=str(self.typeid), flow_data=activity.make_flow_data())
+
+        rows: list[dict] = []
+        def _scan_one(path: str, wk: str) -> dict | None:
+            # Cheap pre-filter: skip the (expensive) full parse unless the raw
+            # transcript even mentions the skill name. Most sessions never touched
+            # this asset, so this avoids ~1000 parses per scan.
+            try:
+                if skill not in Path(path).read_text(encoding="utf-8", errors="ignore"):
+                    return None
+            except OSError:
+                return None
+            t = AgentTranscriptFile(wk, path)
+            count = 0
+            last_ts = ""
+            for e in t.filter(kind=EntryKind.SKILL_CALL):
+                if getattr(e, "skill_name", "") == skill:
+                    count += 1
+                    ts = getattr(e, "ts", "") or ""
+                    if ts > last_ts:
+                        last_ts = ts
+            if not count:
+                return None
+            return {
+                "sessionId": t.session_id or Path(path).stem,
+                "workerType": wk,
+                "count": count,
+                "lastTs": last_ts,
+                "cwd": getattr(t, "cwd", None),
+            }
+
+        try:
+            nodes = await get_shared_indexer().scan(IndexerOptions(types=session_types, verbose=False))
+            sessions = [n for n in nodes if n.record_type in session_types]
+            total = len(sessions)
+            await emit(0, total)
+            for i, n in enumerate(sessions):
+                worker = "codex" if n.record_type == RecordType.CODEX_SESSION else "claude"
+                try:
+                    row = await asyncio.to_thread(_scan_one, n.path, worker)
+                    if row:
+                        rows.append(row)
+                except Exception:
+                    logging.getLogger(__name__).debug("asset-usage: failed to scan %s", n.path, exc_info=True)
+                if i % 5 == 0 or i == total - 1:
+                    await emit(i + 1, total)
+            await emit(total, total, text=PROGRESS_TEXT_COMPLETE)
+        finally:
+            self._complete_activity("scan")
+
+        rows.sort(key=lambda r: r.get("lastTs") or "", reverse=True)
+        return ApiSuccessResponse(data={"asset": skill, "sessions": rows})
+
+    async def _handle_commit_asset(self, request_info) -> ApiResponse:
+        """POST /commit-asset {workdir, file} — commit an asset edited on disk.
+
+        The "commit" step of the improvement cycle: a skill-fixer worker edits a
+        skill via its ``Edit`` tool (a raw disk write that bypasses the ``fs.write``
+        autoversion hook), so the version bump + file-scoped commit are triggered
+        here explicitly. Returns ``{hash, version}`` of the new revision, or
+        ``{committed: False}`` when nothing changed.
+        """
+        import os  # noqa: PLC0415
+
+        from flow_sdk.actions.fs.asset_versioning import commit_asset_change  # noqa: PLC0415
+
+        body = await request_info.get_post_data() if request_info else {}
+        params = {**(request_info.request_parameters or {}), **(body or {})} if request_info else {}
+        workdir = (params.get("workdir") or "").strip()
+        file_path = (params.get("file") or "").strip()
+        if not workdir or not file_path:
+            return ApiFailResponse(message="commit-asset requires workdir and file", status_code=400)
+        real = file_path if os.path.isabs(file_path) else os.path.join(workdir, file_path)
+        result = await commit_asset_change(real)
+        if result is None:
+            return ApiSuccessResponse(data={"committed": False})
+        return ApiSuccessResponse(data={"committed": True, **result})
+
     async def _handle_fs_records_history(self, request_info) -> ApiResponse:
         """GET /fs-records/history_entry?limit=N — unified worker history.
 
