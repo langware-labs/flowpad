@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, Hand, ListPlus, Maximize2, MessageSquare, Puzzle } from 'lucide-react';
+import { AlertTriangle, Check, Hand, ListPlus, Maximize2, MessageSquare, Puzzle, SquareTerminal, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Slider } from '@src/components/ui/slider';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import type { AgentTraceDoc, TraceEvent, TraceLane, TraceMarker } from './trace-types';
 import { bucketSegments, tsMs } from './trace-types';
@@ -435,6 +436,24 @@ function laneLabel(lane: TraceLane, outline: boolean): string {
   return lane.description ?? lane.agent_type ?? lane.id; // subagent → its role
 }
 
+/** Type icon for an outline lane. Entity-backed kinds (skill / subagent / tasks)
+ * resolve through the backend type registry; the structural session/user lanes
+ * use a fixed glyph. */
+function laneIcon(lane: TraceLane): LucideIcon {
+  switch (lane.kind) {
+    case 'skill':
+      return iconForType('skill');
+    case 'subagent':
+      return iconForType('agent');
+    case 'tasks':
+      return iconForType('task');
+    case 'user':
+      return User;
+    default:
+      return SquareTerminal; // root / session
+  }
+}
+
 const LaneRow = memo(function LaneRow({
   lane,
   outline,
@@ -461,6 +480,14 @@ const LaneRow = memo(function LaneRow({
   // Only the skill *name* opens its asset (a link) — NOT the whole row. In the
   // Execution view the row stays clickable for lane selection.
   const isLink = outline && lane.kind === 'skill' && !!onOpen;
+  const Icon = outline ? laneIcon(lane) : null;
+  // Skills and subagents share the same prominence (bold, full-size, type icon);
+  // skills are additionally a primary-colored link since they open their asset.
+  const labelTone = isLink
+    ? 'pointer-events-auto cursor-pointer font-semibold text-primary hover:underline'
+    : lane.kind === 'root' || lane.kind === 'subagent'
+      ? 'pointer-events-none font-semibold text-foreground/80'
+      : 'pointer-events-none font-medium text-foreground/60'; // user / tasks
   return (
     <div
       className={cn(
@@ -473,33 +500,31 @@ const LaneRow = memo(function LaneRow({
       title={outline ? label : lane.kind === 'root' ? 'root' : `${lane.agent_type ?? 'subagent'}: ${lane.description ?? lane.id}`}
       data-testid={`trace-lane-${lane.id}`}
     >
-      <span
-        className={cn(
-          'absolute left-0 z-30 truncate pl-0.5 leading-none',
-          outline
-            ? cn(
-                'inset-y-0 flex items-center bg-background text-[13px]',
-                isLink
-                  ? 'pointer-events-auto cursor-pointer font-semibold text-primary hover:underline'
-                  : lane.kind === 'root'
-                    ? 'pointer-events-none font-semibold text-foreground/80'
-                    : 'pointer-events-none text-foreground/70',
-              )
-            : 'pointer-events-none top-0 w-20 text-[9px] text-muted-foreground',
-        )}
-        style={outline ? { width: GUTTER, paddingLeft: indentPx + 2 } : { paddingLeft: indentPx + 2 }}
-        onClick={
-          isLink
-            ? (e) => {
-                e.stopPropagation();
-                onOpen?.(lane.id);
-              }
-            : undefined
-        }
-        title={isLink ? `Open ${label}` : undefined}
-      >
-        {label}
-      </span>
+      {outline ? (
+        <span
+          className={cn('absolute inset-y-0 left-0 z-30 flex items-center gap-1.5 bg-background text-[13px] leading-none', labelTone)}
+          style={{ width: GUTTER, paddingLeft: indentPx + 2 }}
+          onClick={
+            isLink
+              ? (e) => {
+                  e.stopPropagation();
+                  onOpen?.(lane.id);
+                }
+              : undefined
+          }
+          title={isLink ? `Open ${label}` : label}
+        >
+          {Icon && <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" />}
+          <span className="truncate">{label}</span>
+        </span>
+      ) : (
+        <span
+          className="pointer-events-none absolute left-0 top-0 z-30 w-20 truncate pl-0.5 text-[9px] leading-none text-muted-foreground"
+          style={{ paddingLeft: indentPx + 2 }}
+        >
+          {label}
+        </span>
+      )}
       {lane.segments.map((seg) => {
         const x0 = x(tsMs(seg.start_ts));
         const x1 = x(tsMs(seg.end_ts));
