@@ -4,7 +4,7 @@ name: transcript-analyzer
 description: Analyze Claude Code / agentic session transcripts. Use this whenever
 tags: ''
 allowed-tools: ''
-version: 2
+version: 3
 ---
 
 # Transcript Analyzer
