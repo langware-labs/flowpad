@@ -1,43 +1,58 @@
-import { GitBranch } from 'lucide-react';
 import React from 'react';
+import { useViewMode } from '@src/components/view-mode';
+import { PublishPill } from '@src/components/git/PublishPill';
+import { derivePublishState, publishCopy } from '@src/lib/publish-state';
+import { useGitPush } from '@src/hooks/use-git-push';
 
 interface AssetGitPillProps {
   /** Current asset version (from frontmatter via git history), or null. */
   version: number | null;
-  /** Local revisions of this file not yet pushed (mirrors the footer pill). */
+  /** Local revisions of this file not yet published (commits ahead of remote). */
   unpushed: number;
   /** True when the file is in a git repo with history. */
   hasRepo: boolean;
+  /** Compute node + working dir (the file's own repo) for the publish action. */
+  computeNodeId: string | null;
+  workdir: string | null;
   /** Open the Revisions side panel. */
-  onClick: () => void;
+  onOpenHistory: () => void;
+  /** Refresh the revision status after a publish (so the count clears). */
+  onAfterPublish?: () => void;
 }
 
 /**
- * Header pill for an asset's git revision history — the per-file analogue of the
- * footer ``GitStatusPill``. Shows the running ``v{n}`` version always (when the
- * file has history) and badges the count of unpushed local revisions. Clicking
- * opens the Revisions side panel. Hidden when the file isn't under git.
+ * Stateful container for the per-asset publish pill. Builds the publish state +
+ * push handler ONCE (unconditionally), then lets the view mode pick copy/arrangement
+ * only — Standard sees plain "Publish" with no git jargon or commit count; Advanced
+ * sees the count and richer messages. Renders the shared, presentational `PublishPill`
+ * so the project footer can reuse the same component later. Hidden when not in a repo.
  */
-export const AssetGitPill: React.FC<AssetGitPillProps> = ({ version, unpushed, hasRepo, onClick }) => {
-  if (!hasRepo) return null;
-  const pending = unpushed > 0;
+export const AssetGitPill: React.FC<AssetGitPillProps> = ({
+  version,
+  unpushed,
+  hasRepo,
+  computeNodeId,
+  workdir,
+  onOpenHistory,
+  onAfterPublish,
+}) => {
+  const mode = useViewMode();
+  const status = derivePublishState({ hasRepo, unpushed });
+  const labels = publishCopy(status.state, mode);
+  const { push, busy } = useGitPush(computeNodeId, workdir, onAfterPublish);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex h-6 flex-shrink-0 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 text-[11px] font-medium text-amber-700 transition-colors hover:border-amber-500/60 hover:bg-amber-500/20 dark:text-amber-300"
-      title={
-        pending
-          ? `${unpushed} unpushed revision${unpushed === 1 ? '' : 's'} — click to view history`
-          : 'View revision history'
-      }
-      data-testid="asset-git-pill"
-    >
-      <GitBranch className="h-3 w-3 shrink-0" />
-      {version != null && <span className="tabular-nums">v{version}</span>}
-      {pending && (
-        <span className="tabular-nums rounded-full bg-amber-500/30 px-1 text-[10px]">{unpushed}</span>
-      )}
-    </button>
+    <PublishPill
+      state={status.state}
+      versionLabel={version != null ? `v${version}` : undefined}
+      publishLabel={labels.publishLabel}
+      publishTitle={labels.publishTitle}
+      pendingCount={status.pendingCount}
+      showCount={labels.showCount}
+      busy={busy}
+      primaryTitle="View history"
+      onPrimary={onOpenHistory}
+      onPublish={() => void push()}
+    />
   );
 };
