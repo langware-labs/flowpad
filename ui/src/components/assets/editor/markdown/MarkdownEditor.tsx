@@ -5,6 +5,10 @@ import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurf
 import { Button } from '@src/components/ui/button';
 import { WikiToolbar } from '@src/components/wiki-toolbar';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
+import { useAssetRevisionStatus } from '@src/hooks/use-asset-revision-status';
+import { AssetGitPill } from './AssetGitPill';
+import { RevisionsPanel } from '@src/components/assets/editor/revisions/RevisionsPanel';
+import { History } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FSRef, TypeId } from '@sdk';
@@ -260,10 +264,59 @@ function MarkdownEditorContent({
     isMissing,
     recreate,
     reload,
+    lastSync,
   } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000 });
 
   const [propsExpanded, setPropsExpanded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+
+  // ── Per-asset git revisions (common to every asset editor) ──────────────────
+  // Self-contained from the file's own ref so history resolves against the file's
+  // OWN repo regardless of which project is active: run git from the file's
+  // directory (git walks up to the enclosing .git) with the bare filename as the
+  // pathspec. `lastSync` (set on every autosave) re-fetches after the backend
+  // auto-commits the file.
+  const gitComputeNodeId = fsRef.typeId.id;
+  const gitFileDir = fsRef.parent.path;
+  const gitFileName = fsRef.path.slice(fsRef.path.lastIndexOf('/') + 1);
+  const revisionStatus = useAssetRevisionStatus(
+    gitComputeNodeId,
+    gitFileDir,
+    gitFileName,
+    lastSync,
+  );
+
+  // Control the side-tab id locally so the header git pill can open "revisions".
+  // Falls back to the parent-controlled tab (PlainMarkdownAssetEditor's runs tab).
+  const [localSideTab, setLocalSideTab] = useState<string | undefined>(activeSideTab);
+  useEffect(() => { if (activeSideTab !== undefined) setLocalSideTab(activeSideTab); }, [activeSideTab]);
+  const handleSideTabChange = useCallback((id: string) => {
+    setLocalSideTab(id);
+    onActiveSideTabChange?.(id);
+  }, [onActiveSideTabChange]);
+
+  const revisionsTab = useMemo<ExtraSideTab>(() => ({
+    id: 'revisions',
+    label: revisionStatus.version != null ? `Revisions v${revisionStatus.version}` : 'Revisions',
+    icon: History,
+    description: 'Revision history of this file',
+    panel: (
+      <RevisionsPanel
+        computeNodeId={gitComputeNodeId}
+        workdir={gitFileDir}
+        file={gitFileName}
+        revisions={revisionStatus.revisions}
+        hasRepo={revisionStatus.hasRepo}
+        refresh={revisionStatus.refresh}
+        onRestored={reload}
+      />
+    ),
+  }), [revisionStatus, gitComputeNodeId, gitFileDir, gitFileName, reload]);
+
+  const allSideTabs = useMemo(
+    () => [revisionsTab, ...(extraSideTabs ?? [])],
+    [revisionsTab, extraSideTabs],
+  );
 
   const shareSource = useMemo(() => {
     if (!chatTarget) return null;
@@ -426,6 +479,18 @@ function MarkdownEditorContent({
     />
   ) : null;
 
+  const leadingActions = (
+    <>
+      <AssetGitPill
+        version={revisionStatus.version}
+        unpushed={revisionStatus.unpushed}
+        hasRepo={revisionStatus.hasRepo}
+        onClick={() => handleSideTabChange('revisions')}
+      />
+      {shareButton}
+    </>
+  );
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <EditorHeader
@@ -438,7 +503,7 @@ function MarkdownEditorContent({
         onOpenExternal={handleOpenExternal}
         onDownload={handleDownload}
         onDelete={handleDelete}
-        leadingActions={shareButton}
+        leadingActions={leadingActions}
         nameExtras={headerExtras?.({ fields, setField })}
         actions={toolbar}
         showLearningMode={showLearningMode}
@@ -488,9 +553,9 @@ function MarkdownEditorContent({
         ) : (
           <EditorWithSidePanel
             chatTarget={chatTarget}
-            extraTabs={extraSideTabs}
-            activeTab={activeSideTab}
-            onActiveTabChange={onActiveSideTabChange}
+            extraTabs={allSideTabs}
+            activeTab={localSideTab}
+            onActiveTabChange={handleSideTabChange}
             onChatProcessCreated={onChatProcessCreated}
             cursorLine={cursorLine}
           >
