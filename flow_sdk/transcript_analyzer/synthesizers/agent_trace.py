@@ -130,6 +130,8 @@ _SYNTHETIC_USER_PREFIXES = (
 # Read-only probe kinds (Read / Grep / Glob / search). A *failed* probe is
 # expected exploration noise — the agent looked something up that wasn't there —
 # not a real "issue", so it must not raise severity or mint an issue marker.
+# WEB_FETCH is deliberately NOT here: a fetch failure (network/site down) may be
+# a real problem, not a benign lookup miss.
 _PROBE_KINDS = frozenset({EntryKind.FILE_READ, EntryKind.SEARCH})
 
 
@@ -150,11 +152,10 @@ def _clip(text: str | None, limit: int) -> str:
 def _entry_severity(e: TranscriptEntry, error_ids: set[str]) -> str:
     # Failed if it has a non-zero exit, a folded-in result error flag (Claude
     # Bash results carry no exitCode), or a separate is_error result row.
-    tuid = getattr(e, "tool_use_id", "")
     failed = (
         getattr(e, "exit_code", None) not in (None, 0)
         or getattr(e, "is_error", False)
-        or (bool(tuid) and tuid in error_ids)
+        or getattr(e, "tool_use_id", "") in error_ids
     )
     if not failed:
         return SeverityTier.INFO.value
