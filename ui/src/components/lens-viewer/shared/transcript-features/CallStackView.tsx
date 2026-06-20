@@ -9,6 +9,7 @@ import { useTraceSkeleton } from '@src/components/assets/editor/agent-trace/useT
 import type { WorkerType } from '@src/hooks/use-transcript';
 import { useSkillsByName } from '@src/hooks/useSkillsByName';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useTranscriptZoom } from '../use-transcript-zoom';
 
 /**
  * "Call stack" view — a high-level, timeline-stacked session view: skills and
@@ -32,6 +33,7 @@ export function CallStackView({
   const { skeleton, error, loading } = useTraceSkeleton(workerType, sessionId);
   const { navigation } = useDockNavigation();
   const { byName } = useSkillsByName();
+  const [zoom, setZoom] = useTranscriptZoom();
   const [cursorMs, setCursorMs] = useState<number | null>(null);
   const [selectedLaneId, setSelectedLaneId] = useState<string | null>(null);
 
@@ -105,6 +107,8 @@ export function CallStackView({
         selectedLaneId={selectedLaneId}
         onSelectLane={setSelectedLaneId}
         onOpenLane={handleOpenLane}
+        zoom={zoom}
+        onZoomChange={setZoom}
       />
     </div>
   );

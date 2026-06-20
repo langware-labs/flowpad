@@ -92,6 +92,11 @@ interface TraceTimelineProps {
    * to the Execution view. Each lane may carry its own `events`/`markers` and a
    * `depth` for nested indentation. Defaults to `doc.lanes`. */
   displayLanes?: TraceLane[];
+  /** Controlled zoom window (ms). When `onZoomChange` is supplied the timeline
+   * is controlled — zoom lives in the parent (e.g. URL-backed) so it survives
+   * reloads and steps with browser back/forward. Omit both for internal state. */
+  zoom?: [number, number] | null;
+  onZoomChange?: (zoom: [number, number] | null) => void;
 }
 
 /**
@@ -107,6 +112,8 @@ export function TraceTimeline({
   onSelectLane,
   onOpenLane,
   displayLanes,
+  zoom: zoomProp,
+  onZoomChange,
 }: TraceTimelineProps) {
   // Memoized so the markers/events grouping memo doesn't bust on every cursor
   // tick (a bare `displayLanes ?? doc.lanes` is a fresh ref each render).
@@ -135,8 +142,11 @@ export function TraceTimeline({
   }, [doc]);
 
   // Outline-only: drag-selected zoom window (ms). Lanes/events scale to it; the
-  // cost strips below stay full-range and just highlight this band.
-  const [zoom, setZoom] = useState<[number, number] | null>(null);
+  // cost strips below stay full-range and just highlight this band. Controlled
+  // by the parent (URL-backed) when `onZoomChange` is given; internal otherwise.
+  const [internalZoom, setInternalZoom] = useState<[number, number] | null>(null);
+  const zoom = onZoomChange ? (zoomProp ?? null) : internalZoom;
+  const setZoom = onZoomChange ?? setInternalZoom;
   const viewMin = zoom ? zoom[0] : tMin;
   const viewSpan = zoom ? Math.max(1, zoom[1] - zoom[0]) : span;
 
@@ -228,7 +238,7 @@ export function TraceTimeline({
       const half = Math.max(dt * 1.5, 1000);
       setZoom([ms - half, ms + half]);
     },
-    [eventsByLane, span],
+    [eventsByLane, span, setZoom],
   );
 
   // Bucketed activity (lane-time) and spend ($) series over the session.

@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { patchTranscriptDockOptions } from './transcript-dock-options';
 
 export type TranscriptMode = 'chat' | 'trace' | 'callstack' | 'execution';
 
@@ -52,23 +52,7 @@ export function useTranscriptMode() {
       } catch {
         /* storage may be disabled */
       }
-      if (currentDock) {
-        const nextOptions = { ...(currentDock.options ?? {}), [URL_PARAM]: m };
-        // Re-encode the transcript ref so abs paths survive buildDockUrl's
-        // per-segment encoding. Without this, an absolute ref like "/var/..."
-        // joins with the route as "/dock/lens/<worker>/transcript//var/..." —
-        // react-router normalises the embedded "//" away, dropping the leading
-        // "/" and silently demoting the path to a relative slug that the
-        // legacy claude resolver then rewrites under ~/.claude/projects/.
-        const pointer = currentDock.pointer ?? '';
-        const m2 = /^([^/]+)\/transcript\/(.*)$/.exec(pointer);
-        const reencodedPointer = m2
-          ? `${m2[1]}/transcript/${encodeURIComponent(m2[2])}`
-          : pointer;
-        navigation.openDock(
-          new DockPointer(currentDock.viewType, reencodedPointer, nextOptions, currentDock.layout),
-        );
-      }
+      patchTranscriptDockOptions(navigation, currentDock, { [URL_PARAM]: m });
     },
     [currentDock, navigation],
   );
