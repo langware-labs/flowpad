@@ -357,11 +357,55 @@ class GitRepo:
         }
         return ", ".join(paths)
 
+    # Failure classes a publish can land in. `conflict` keeps its dedicated flag
+    # for the existing Resolve-agent path; the rest let the UI give state-specific,
+    # plain-language guidance instead of one generic "Push failed".
+    @staticmethod
+    def _classify_push_error(stderr: str) -> str:
+        """Map raw git/transport stderr to a publish failure kind.
+
+        One of: ``permission | no_remote | network | conflict | generic``.
+        """
+        s = (stderr or "").lower()
+        if any(k in s for k in (
+            "permission denied", "denied", "403", "forbidden", "authentication failed",
+            "access rights", "not authorized", "could not read from remote repository",
+        )):
+            return "permission"
+        if any(k in s for k in (
+            "does not appear to be a git repository", "no configured push destination",
+            "no such remote", "'origin' does not", "no upstream",
+        )):
+            return "no_remote"
+        if any(k in s for k in (
+            "could not resolve host", "connection refused", "connection timed out",
+            "timed out", "network is unreachable", "failed to connect", "ssl",
+        )):
+            return "network"
+        if any(k in s for k in ("non-fast-forward", "rejected", "fetch first", "behind", "unmerged")):
+            return "conflict"
+        return "generic"
+
     @staticmethod
     def _push_result(branch: str | None, message: str, *, ok: bool = False,
-                     conflict: bool = False, nothing: bool = False) -> dict:
-        """Build the dict the footer push button consumes."""
-        return {"ok": ok, "conflict": conflict, "nothing": nothing, "branch": branch, "message": message}
+                     conflict: bool = False, nothing: bool = False, kind: str | None = None) -> dict:
+        """Build the dict the publish UI consumes.
+
+        ``kind`` is the typed outcome (``pushed|nothing|conflict|permission|
+        no_remote|network|generic``). When omitted it's derived from the flags so
+        existing call sites stay correct; the back-compat ``ok/conflict/nothing``
+        keys are kept for the footer button.
+        """
+        if kind is None:
+            if nothing:
+                kind = "nothing"
+            elif conflict:
+                kind = "conflict"
+            elif ok:
+                kind = "pushed"
+            else:
+                kind = "generic"
+        return {"ok": ok, "conflict": conflict, "nothing": nothing, "kind": kind, "branch": branch, "message": message}
 
     async def push(self) -> dict:
         """Stage everything, auto-commit, sync with remote, and push.
@@ -375,7 +419,7 @@ class GitRepo:
         so the resolve agent can finish it) — never auto-aborted here.
         """
         if not await self.is_init():
-            return self._push_result(None, "Not a git repository")
+            return self._push_result(None, "Not a git repository", kind="no_repo")
 
         # 1. Stage everything.
         await self._run_git("add", "-A")
@@ -426,7 +470,11 @@ class GitRepo:
                             f"Merge conflict while syncing with the remote. Conflicted: {files or 'see git status'}",
                             conflict=True,
                         )
-                    return self._push_result(branch, combined.strip() or "Could not sync with the remote")
+                    return self._push_result(
+                        branch,
+                        combined.strip() or "Could not sync with the remote",
+                        kind=self._classify_push_error(combined),
+                    )
 
         # 6. Push (set upstream when the branch is new on the remote).
         push_args = ["push", "origin", shlex.quote(branch)] if has_upstream else ["push", "-u", "origin", shlex.quote(branch)]
@@ -434,11 +482,10 @@ class GitRepo:
         if ps_rc != 0:
             combined = (ps_err or ps_out or "").strip()
             unmerged, _ = await self._run_git("ls-files", "--unmerged")
-            lowered = combined.lower()
-            conflict = bool(unmerged.strip()) or any(
-                s in lowered for s in ("non-fast-forward", "rejected", "fetch first", "behind")
+            kind = "conflict" if unmerged.strip() else self._classify_push_error(combined)
+            return self._push_result(
+                branch, combined or "Push failed", conflict=(kind == "conflict"), kind=kind,
             )
-            return self._push_result(branch, combined or "Push failed", conflict=conflict)
 
         return self._push_result(branch, "Pushed", ok=True)
 

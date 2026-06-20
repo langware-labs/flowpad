@@ -485,7 +485,10 @@ function MarkdownEditorContent({
         version={revisionStatus.version}
         unpushed={revisionStatus.unpushed}
         hasRepo={revisionStatus.hasRepo}
-        onClick={() => handleSideTabChange('revisions')}
+        computeNodeId={gitComputeNodeId}
+        workdir={gitFileDir}
+        onOpenHistory={() => handleSideTabChange('revisions')}
+        onAfterPublish={revisionStatus.refresh}
       />
       {shareButton}
     </>

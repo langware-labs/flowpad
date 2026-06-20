@@ -9,6 +9,8 @@ import { render, renderHook, waitFor, screen, fireEvent } from '@testing-library
 import { dataManager, ComputeNode } from '@sdk';
 import { useAssetRevisionStatus } from '@src/hooks/use-asset-revision-status';
 import { RevisionsPanel } from '@src/components/assets/editor/revisions/RevisionsPanel';
+import { AssetGitPill } from '@src/components/assets/editor/markdown/AssetGitPill';
+import { setViewMode, ViewMode } from '@src/components/view-mode';
 import type { AssetRevision } from '@src/hooks/use-asset-revision-status';
 
 const NODE = '@local';
@@ -81,5 +83,41 @@ describe('RevisionsPanel restore', () => {
     expect(action.method).toBe('POST');
     expect(action.bodyParameters).toMatchObject({ workdir: WORKDIR, file: FILE, hash: 'bbbb222' });
     await waitFor(() => expect(onRestored).toHaveBeenCalled());
+  });
+});
+
+describe('AssetGitPill publish', () => {
+  beforeEach(() => { vi.restoreAllMocks(); setViewMode(ViewMode.Standard); });
+
+  it('unpublished → Publish posts git-ops/push for the file repo', async () => {
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ ok: true, kind: 'pushed', branch: 'main', message: 'Pushed' } as any);
+    render(
+      <AssetGitPill version={3} unpushed={2} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} onAfterPublish={vi.fn()} />,
+    );
+    const action = screen.getByTestId('publish-pill-action');
+    expect(action).toHaveTextContent('Publish');
+    fireEvent.click(action);
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    const a = spy.mock.calls[0][0];
+    expect(a.name).toBe('git-ops');
+    expect(a.subpath).toBe('push');
+    expect(a.method).toBe('POST');
+    expect(a.bodyParameters).toMatchObject({ workdir: WORKDIR });
+  });
+
+  it('Standard hides the count; Advanced shows it', () => {
+    const { rerender } = render(
+      <AssetGitPill version={3} unpushed={2} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} />,
+    );
+    expect(screen.getByTestId('publish-pill-action')).not.toHaveTextContent('2');
+    setViewMode(ViewMode.Advanced);
+    rerender(<AssetGitPill version={3} unpushed={2} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} />);
+    expect(screen.getByTestId('publish-pill-action')).toHaveTextContent('2');
+  });
+
+  it('aligned (no unpushed) shows version, no Publish', () => {
+    render(<AssetGitPill version={3} unpushed={0} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} />);
+    expect(screen.getByTestId('publish-pill-primary')).toHaveTextContent('v3');
+    expect(screen.queryByTestId('publish-pill-action')).toBeNull();
   });
 });
