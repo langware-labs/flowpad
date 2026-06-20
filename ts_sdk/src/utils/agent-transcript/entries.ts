@@ -269,6 +269,9 @@ export const isOperation = (e: GenericEntry): boolean =>
 // ── Header / response shape ─────────────────────────────────────────────────
 
 export interface TranscriptHeader {
+  /** Generic worker-session display title (same value the history list shows);
+   *  used to label the transcript tab. Absent when nothing names the session. */
+  name?: string;
   cwd?: string;
   cli_version?: string;
   originator?: string;

@@ -648,3 +648,62 @@ async def get_worker_history(limit: int = 10) -> list[WorkerHistoryEntry]:
     collected.extend(_agentic_process_only_entries(processes, seen))
     collected.sort(key=lambda e: e.last_active_time, reverse=True)
     return collected[:limit]
+
+
+def _claude_file_title_sync(jsonl_path: Path) -> tuple[Optional[str], Optional[str]]:
+    """``(custom_title, slug)`` for a Claude session file — the on-file title
+    fields ``_collect_claude_entries_sync`` feeds to ``_pick_name``. Returns
+    ``(None, None)`` on any parse failure."""
+    try:
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import (
+            extract_claude_session_from_path,
+        )
+
+        session = extract_claude_session_from_path(jsonl_path, include_content=False)
+        sd = object.__getattribute__(session, "__dict__")
+        return (sd.get("custom_title") or None, session.slug or None)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[worker_history] claude title read failed for %s: %s", jsonl_path, e)
+        return (None, None)
+
+
+async def get_worker_session_name(
+    worker_type: object,
+    session_id: str,
+    *,
+    jsonl_path: Optional[Path] = None,
+) -> Optional[str]:
+    """Generic display title for ONE worker session — the same value that
+    ``WorkerHistoryEntry.name`` (and therefore the ``history_entry`` list) carries,
+    resolved for a single session id.
+
+    Priority matches the history collectors: the owning ``AgenticProcess.name``
+    first, then — for Claude only — the session's own ``custom_title``/``slug``
+    (Codex/Copilot carry no on-file title, so they name only through an owning
+    process). Returns ``None`` when nothing names it, so the caller can leave the
+    existing label untouched. ``jsonl_path`` (when known) skips a path re-resolve.
+    """
+    if not session_id:
+        return None
+    wt = _normalize_worker_type(worker_type)
+    # One filtered lookup for the owning process — NOT the full ``get_all()`` +
+    # index the history list builds; this runs per single transcript open.
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+
+    proc = await AgenticProcess.get_by_session_id(session_id)
+    raw_name = getattr(proc, "name", None) if proc else None
+    ap_name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+
+    custom_title: Optional[str] = None
+    slug: Optional[str] = None
+    if wt is WorkerType.CLAUDE and jsonl_path is not None:
+        custom_title, slug = await asyncio.to_thread(_claude_file_title_sync, jsonl_path)
+
+    # Same arg→priority mapping as ``_collect_claude_entries_sync``:
+    # AgenticProcess.name > Claude custom_title > Claude slug.
+    return _pick_name(
+        custom_title=ap_name,
+        slug=custom_title,
+        display=slug,
+        session_id=session_id,
+    )
