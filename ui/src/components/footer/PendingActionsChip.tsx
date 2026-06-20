@@ -149,27 +149,44 @@ export function PendingActionsChip() {
   const count = rows.length;
   const tooltipText = `${count} active agent${count === 1 ? '' : 's'}`;
 
-  const handlePick = async (processId: string) => {
+  // Route per execution mode: an Interactive worker attaches its live terminal;
+  // a Background (headless) or Error worker opens the read-only transcript lens
+  // to *view* the run rather than forcing a PTY (which `openShellProcess` would
+  // by flipping visible=true). External rows are never produced, so they never
+  // reach here.
+  const handlePick = async (processId: string, mode: ExecutionMode) => {
     setOpen(false);
-    // Pin the explicit intent BEFORE navigating: the agent may live in another
-    // project, so the navigation triggers a strip rebuild. Without this, the
-    // self-heal resolver would re-pick the new project's default tab instead of
-    // the clicked agent (Bug 2). resolveActive case 2 honors this intent, then
-    // consumes it once the agent lands in the (now-switched) project's strip.
-    setPendingIntent(new TypeId(AgenticProcess.type, processId).toString());
     try {
-      const opened = await navigation.openShellProcess(processId);
-      if (!opened) {
+      if (mode === ExecutionMode.Interactive) {
+        // Pin the explicit intent BEFORE navigating: the agent may live in
+        // another project, so the navigation triggers a strip rebuild. Without
+        // this, the self-heal resolver would re-pick the new project's default
+        // tab instead of the clicked agent (Bug 2). resolveActive case 2 honors
+        // this intent, then consumes it once the agent lands in the strip.
+        setPendingIntent(new TypeId(AgenticProcess.type, processId).toString());
+        const opened = await navigation.openShellProcess(processId);
+        if (!opened) {
+          notify.error({
+            title: 'Process unavailable',
+            message: 'That agent is no longer in your workspace.',
+          });
+        }
+        return;
+      }
+      // Background / Error → view the run's transcript (read-only).
+      const ap = apOf(processId)
+        ?? ((await AgenticProcess.getById<AgenticProcess>(processId)) as APWithIds | null);
+      const sessionId = ap?.session_id;
+      if (sessionId) {
+        navigation.openLens('claude', 'transcript', sessionId);
+      } else {
         notify.error({
-          title: 'Process unavailable',
-          message: 'That agent is no longer in your workspace.',
+          title: 'No transcript',
+          message: 'This worker has no session to view yet.',
         });
       }
     } catch (err) {
-      // Server fetch threw (404, network error) — same UX as the
-      // null-return branch: tell the user, then ack so the dead row
-      // doesn't haunt the chip.
-      console.error('[PendingActionsChip] openShellProcess threw', err);
+      console.error('[PendingActionsChip] open failed', err);
       notify.error({
         title: 'Process unavailable',
         message: 'That agent is no longer in your workspace.',
@@ -259,7 +276,7 @@ export function PendingActionsChip() {
                   <li key={row.processId}>
                     <button
                       type="button"
-                      onClick={() => void handlePick(row.processId)}
+                      onClick={() => void handlePick(row.processId, row.mode)}
                       className={rowClass}
                       data-pending={row.pending ? 'true' : undefined}
                       data-mode={row.mode}
