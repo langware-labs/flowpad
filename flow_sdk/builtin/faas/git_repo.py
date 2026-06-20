@@ -65,6 +65,10 @@ class GitFileDiff(_CamelModel):
     diff: str
 
 
+class GitFileContent(_CamelModel):
+    content: str
+
+
 class GitRevision(_CamelModel):
     hash: str
     version: int | None = None
@@ -324,6 +328,24 @@ class GitRepo:
         )
         return GitFileDiff(diff=diff)
 
+    async def get_file_at(self, file_path: str, commit_hash: str) -> GitFileContent:
+        """Full file content at a revision (``git show <hash>:./<file>``).
+
+        Powers the Word-style review compare, which renders both versions as
+        formatted markdown. ``commit_hash`` may be ``HEAD`` for the current side.
+
+        The ``:./`` prefix makes git resolve ``file_path`` relative to the working
+        dir (``git -C work_dir``); plain ``<rev>:<path>`` is **repo-root**-relative,
+        so a basename for a file in a subdirectory would silently resolve to nothing.
+
+        Note: ``git show`` does not follow renames, so a revision from *before* the
+        file moved to its current path returns empty content (the review viewer then
+        shows it as all-new — acceptable; rename-aware history is out of scope).
+        """
+        rel = file_path[2:] if file_path.startswith("./") else file_path
+        content, _ = await self._run_git("show", shlex.quote(f"{commit_hash}:./{rel}"))
+        return GitFileContent(content=content)
+
     async def restore_file(self, file_path: str, commit_hash: str) -> GitRestoreResult:
         """Check out a single file at a past revision (working-tree mutation).
 
@@ -541,6 +563,12 @@ class GitRepo:
             if not file_path or not commit_hash:
                 return ApiFailResponse(message="Missing required query parameter: file and hash", status_code=400)
             return ApiSuccessResponse(data=(await self.compare_file_revision(file_path, commit_hash)).model_dump(by_alias=True))
+        if sub == "show":
+            file_path = params.get("file", "")
+            commit_hash = params.get("hash", "")
+            if not file_path or not commit_hash:
+                return ApiFailResponse(message="Missing required query parameter: file and hash", status_code=400)
+            return ApiSuccessResponse(data=(await self.get_file_at(file_path, commit_hash)).model_dump(by_alias=True))
         if sub == "restore-file":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/restore-file requires POST", status_code=405)
