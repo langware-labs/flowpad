@@ -25,7 +25,7 @@ export interface TraceSegment {
 
 export interface TraceLane {
   id: string;
-  kind: 'root' | 'subagent' | 'skill' | 'tasks' | 'user';
+  kind: 'root' | 'subagent' | 'skill' | 'tasks' | 'user' | 'errors';
   agent_type?: string | null;
   description?: string | null;
   parent_lane_id?: string | null;
@@ -44,7 +44,15 @@ export interface TraceLane {
 export interface TraceEvent {
   ts: string;
   lane_id: string;
-  kind: 'user_prompt' | 'skill_load' | 'skill_fail' | 'agent_spawn' | 'interrupt' | 'task_create' | 'task_update';
+  kind:
+    | 'user_prompt'
+    | 'skill_load'
+    | 'skill_fail'
+    | 'agent_spawn'
+    | 'interrupt'
+    | 'task_create'
+    | 'task_update'
+    | 'error';
   label: string;
   severity: string;
   entry_id: string;

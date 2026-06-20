@@ -26,11 +26,12 @@ const EVENT_ICON: Record<string, LucideIcon> = {
   skill_load: Puzzle,
   task_create: ListPlus,
   task_update: Check,
+  error: AlertTriangle,
 };
 
 // Outline-only event kinds surfaced on the timeline.
 const OUTLINE_EVENT_KINDS = new Set([
-  'user_prompt', 'interrupt', 'skill_load', 'skill_fail', 'task_create', 'task_update',
+  'user_prompt', 'interrupt', 'skill_load', 'skill_fail', 'task_create', 'task_update', 'error',
 ]);
 
 /** Color for an outline lane's span bar (skills/plan/subagent). */
@@ -48,6 +49,8 @@ function eventColor(kind: string, severity: string): string {
     case 'interrupt':
     case 'skill_fail':
       return 'bg-red-500';
+    case 'error':
+      return 'bg-red-600';
     case 'task_create':
       return 'bg-emerald-500';
     case 'task_update':
@@ -63,6 +66,9 @@ export const OUTLINE_LEGEND: { color: string; label: string }[] = [
   { color: 'bg-red-500', label: 'interrupt' },
   { color: 'bg-emerald-500', label: 'task' },
   { color: 'bg-amber-500/70', label: 'plan' },
+  // Advanced-only — CallStackView filters this out outside advanced mode, where
+  // the errors lane is hidden.
+  { color: 'bg-red-600', label: 'error' },
 ];
 
 function severityBar(severity: string): string {
@@ -479,6 +485,8 @@ function laneIcon(lane: TraceLane): LucideIcon {
       return iconForType('task');
     case 'user':
       return User;
+    case 'errors':
+      return AlertTriangle;
     default:
       return SquareTerminal; // root / session
   }
