@@ -66,7 +66,7 @@ async def test_connection_id_injected_into_env_when_set():
     with patch.object(proc, "_get_or_create_shell", new_callable=AsyncMock) as mock_shell:
         mock_shell.return_value = MagicMock(id="shell-123")
         # Mock start_pty to capture the spawn_env
-        with patch("flow_sdk.builtin.agentic_process.agentic_process.Shell.start_pty", new_callable=AsyncMock) as mock_pty:
+        with patch("flow_sdk.builtin.shell.Shell.start_pty", new_callable=AsyncMock) as mock_pty:
             mock_pty.return_value = MagicMock(pid=9999, name="claude")
             # Mock _make_pty_exit_callback
             with patch.object(proc, "_make_pty_exit_callback", return_value=lambda: None):
@@ -91,7 +91,7 @@ async def test_connection_id_not_injected_when_absent():
 
     with patch.object(proc, "_get_or_create_shell", new_callable=AsyncMock) as mock_shell:
         mock_shell.return_value = MagicMock(id="shell-123")
-        with patch("flow_sdk.builtin.agentic_process.agentic_process.Shell.start_pty", new_callable=AsyncMock) as mock_pty:
+        with patch("flow_sdk.builtin.shell.Shell.start_pty", new_callable=AsyncMock) as mock_pty:
             mock_pty.return_value = MagicMock(pid=9999, name="claude")
             with patch.object(proc, "_make_pty_exit_callback", return_value=lambda: None):
                 try:

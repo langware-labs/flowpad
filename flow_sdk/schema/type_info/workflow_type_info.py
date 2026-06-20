@@ -1,6 +1,7 @@
 """Type metadata for WORKFLOW."""
 from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 from flow_sdk.fs_store.indexer.functions.workflow import (
     extract_workflow,
     workflow_gen_id,
@@ -21,7 +22,7 @@ def _workflow_default_body(entity) -> str:
 WORKFLOW = TypeMetadata(
     type=EntityType.WORKFLOW,
     icon="Workflow",
-    browseable=True,
+    browseable_by=ViewMode.ADVANCED,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,

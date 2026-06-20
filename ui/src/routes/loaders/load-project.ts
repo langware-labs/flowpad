@@ -163,25 +163,23 @@ function throwShellTabLoadError(error: ShellLoadError): never {
  * Throws if the project can't be fetched. Callers decide how to recover
  * (e.g. process.recoverProject() for dangling project_id refs).
  */
-export async function loadProject(projectId: string): Promise<Project> {
+export async function loadProject(projectTypeId: TypeId): Promise<Project> {
   let project: Project | null = null;
   try {
-    project = await dataManager.getByTypeId<Project>(
-      new TypeId(Project.type, projectId),
-    );
+    project = await dataManager.getByTypeId<Project>(projectTypeId);
   } catch (cause) {
     const status = errorStatus(cause);
     if (status === 404 || status === 403) {
-      throw new ProjectLoadError('not_found', projectId, cause);
+      throw new ProjectLoadError('not_found', projectTypeId.id, cause);
     }
     throw cause;
   }
   if (!project) {
-    throw new ProjectLoadError('not_found', projectId);
+    throw new ProjectLoadError('not_found', projectTypeId.id);
   }
   await dataContext.setContextEntityTypeId(
     ContextEntitiesEnum.CurrentProjectTypeId,
-    new TypeId(Project.type, projectId),
+    projectTypeId,
   );
   return project;
 }
@@ -203,17 +201,11 @@ async function tagShellWithRoom(shell: Shell, roomId: string): Promise<void> {
 }
 
 export async function loadProjectRoute(pointer: string | undefined): Promise<void> {
-  const parsed = DockPointer.parseProjectPointer(pointer) as {
-    projectId: string | null;
-    roomId: string | null;
-    tabTypeId: TypeId | null;
-    conversationId?: string | null;
-  };
-  const { projectId, roomId, tabTypeId } = parsed;
-  const conversationId = parsed.conversationId ?? null;
+  const { projectTypeId, roomId, tabTypeId, conversationId } =
+    DockPointer.parseProjectPointer(pointer);
   const { assetSubPointer } = DockPointer.splitProjectPointer(pointer);
   const hasTabSegment = hasProjectTabSegment(pointer);
-  if (!projectId) {
+  if (!projectTypeId) {
     // No project id in URL — page renders its empty state; nothing to load.
     return;
   }
@@ -222,7 +214,7 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
   // calls hit immediately (no render blank → re-render).
   let project: Project | null = null;
   try {
-    project = await loadProject(projectId);
+    project = await loadProject(projectTypeId);
   } catch (cause) {
     throwProjectRouteError(cause);
   }
@@ -233,14 +225,14 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
 
   if (conversationId) {
     await loadConversation(conversationId).catch(() => null);
-    await dataContext.setActiveEntityTypeId(new TypeId(Project.type, projectId));
+    await dataContext.setActiveEntityTypeId(projectTypeId);
   }
 
   if (!conversationId && !roomId && assetSubPointer) {
     await loadAssetRoute(assetSubPointer);
     await dataContext.setContextEntityTypeId(
       ContextEntitiesEnum.CurrentProjectTypeId,
-      new TypeId(Project.type, projectId),
+      projectTypeId,
     );
   }
 
@@ -293,7 +285,7 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
         // agentic_process-<id>) — exactly `tabTargetKey`.
         const pointer = tabTargetKey(tab);
         // eslint-disable-next-line @typescript-eslint/only-throw-error
-        throw redirect(`/dock/project/${projectId}/collaboration_room/${roomId}/tab/${pointer}`);
+        throw redirect(`/dock/project/${projectTypeId.id}/collaboration_room/${roomId}/tab/${pointer}`);
       }
     }
     return;

@@ -29,7 +29,22 @@ function dismissModals(page: Page) {
 async function visibleTabs(page: Page): Promise<Array<{ pointer: string; visible: boolean }>> {
   return page.evaluate(async () => {
     const res = await fetch('/api/v1/graph/tab').then((r) => r.json());
-    return (res.data || []).map((t: any) => ({ pointer: t.pointer, visible: t.visible }));
+    // Tab.pointer is stored as the DockPointer JSON (`{"viewType","pointer"}`)
+    // for tabs minted post-refactor, or the legacy opaque `viewType|pointer`
+    // string for older rows. Normalize both to the `viewType|pointer` tabHash
+    // form the assertions match against.
+    const toHash = (p: string): string => {
+      if (p && p.startsWith('{')) {
+        try {
+          const o = JSON.parse(p);
+          return `${o.viewType ?? ''}|${o.pointer ?? ''}`;
+        } catch {
+          return p;
+        }
+      }
+      return p;
+    };
+    return (res.data || []).map((t: any) => ({ pointer: toHash(t.pointer), visible: t.visible }));
   });
 }
 

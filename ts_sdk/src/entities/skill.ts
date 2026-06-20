@@ -18,12 +18,24 @@ export class Skill extends APIEntity<Skill> {
   description: string = '';
   asset_ref?: string;
   scope?: string;
+  /** Raw SKILL.md frontmatter (the indexer slurps every yaml key in here). */
+  metadata?: Record<string, unknown>;
 
   constructor(entity: Partial<Skill> = {}) {
     super(entity);
     this.description = entity.description ?? '';
     this.asset_ref = entity.asset_ref;
     this.scope = entity.scope;
+    this.metadata = entity.metadata;
+  }
+
+  /**
+   * Whether the skill is flagged for usage evaluation (`eval: true` frontmatter).
+   * `serializeFrontmatter` quotes values, so this round-trips as the string
+   * `'true'`/`'false'` — compare as a string, never expect a yaml boolean.
+   */
+  get isEval(): boolean {
+    return String(this.metadata?.eval) === 'true';
   }
 
   /** Default open target: the asset editor (URL-first navigate target). */

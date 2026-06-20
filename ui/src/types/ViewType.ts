@@ -68,6 +68,8 @@ export interface ViewerMeta {
     | 'BadgeCheck'
     | 'SearchIcon'
     | 'Workflow'
+    | 'GitGraph'
+    | 'BrainCircuit'
     | 'Users'
     | 'Inbox';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
@@ -340,6 +342,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.SPEC]: {
     title: 'Spec',
     iconName: 'FileText',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.GRAPH_CONTEXT]: {
+    title: 'Context',
+    iconName: 'BrainCircuit',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },

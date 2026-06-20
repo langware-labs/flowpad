@@ -79,6 +79,8 @@ EXPECTED = {
     # Tab entity system + AgentTrace — additive members; the commits that added
     # them missed this freeze. New members are allowed; existing values stay frozen.
     "AGENT_TRACE": "agent_trace", "TAB": "tab",
+    # GraphContext entity (0.2.67-fixes) — additive member; existing values stay frozen.
+    "GRAPH_CONTEXT": "graph_context",
 }
 
 

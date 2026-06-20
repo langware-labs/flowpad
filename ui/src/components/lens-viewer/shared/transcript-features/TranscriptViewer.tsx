@@ -17,10 +17,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
+import { useSyncTranscriptTabName } from '@src/tabs/useTabs';
 
 import { ViewModeToggle } from '../ViewModeToggle';
-import { AnalysisSidePanel, AnalysisToolbarButtons, useAnalysisControls } from './AnalysisControls';
-import { useTranscriptMode } from '../use-transcript-mode';
+import { AnalysisSidePanel, useAnalysisControls } from './AnalysisControls';
+import { CallStackView } from './CallStackView';
+import { ExecutionView } from './ExecutionView';
+import { useTranscriptMode, type TranscriptMode } from '../use-transcript-mode';
 import { ChatEntryItem } from './ChatEntryItem';
 import { TranscriptEntryItem } from './TranscriptEntryItem';
 import { TranscriptStats } from './TranscriptStats';
@@ -54,13 +57,17 @@ interface Props {
  *   - Path bar with copy-to-clipboard.
  */
 export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, selectedEntryId, selectedTimestamp }: Props) {
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const [, setSearchParams] = useSearchParams();
   const { data, isLoading, error } = useTranscript({ workerType, path, sessionId: sessionIdProp });
 
   const entries = useMemo<UnifiedEntry[]>(() => (data ? groupEntriesByTurn(data.entries) : []), [data]);
   const sessionId = data?.session_id ?? null;
   const header = data?.header ?? {};
+
+  // Mirror the resolved generic worker-session name onto this transcript's Tab
+  // label (self-heals nameless/legacy tabs; works for codex/copilot too).
+  useSyncTranscriptTabName(currentDock?.tabHash, header.name);
 
   const [expandedEntries, setExpandedEntries] = useState<Set<string>>(new Set());
   const [chatExpandedEntries, setChatExpandedEntries] = useState<Set<string>>(new Set());
@@ -253,8 +260,13 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   }, [viewMode, isLoading]);
 
   // ── Mode switch with viewport preservation ────────────────────────────────
-  const switchMode = (newMode: 'chat' | 'trace') => {
+  const switchMode = (newMode: TranscriptMode) => {
     if (newMode === viewMode) return;
+    // The call-stack / execution views don't scroll the transcript — skip anchoring.
+    if (newMode === 'execution' || newMode === 'callstack') {
+      setViewMode(newMode);
+      return;
+    }
     isProgrammaticScrollRef.current = true;
     const anchorEntry = currentEntryId ? entries.find((e) => e.id === currentEntryId) ?? null : null;
     const anchorTs = anchorEntry ? resolveEntryTimestamp(anchorEntry) : internalTimestampRef.current;
@@ -518,7 +530,6 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
 
         {sessionId && (
           <div className="flex items-center gap-1" data-testid="transcript-viewer-toolbar">
-            <AnalysisToolbarButtons controls={analysisControls} />
             <button
               type="button"
               onClick={handleOpenInTerminal}
@@ -554,7 +565,11 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
         )}
       </div>
 
-      {viewMode === 'chat' ? (
+      {viewMode === 'callstack' ? (
+        <CallStackView workerType={workerType} sessionId={sessionId} />
+      ) : viewMode === 'execution' ? (
+        <ExecutionView controls={analysisControls} workerType={workerType} sessionId={sessionId} />
+      ) : viewMode === 'chat' ? (
         <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
           {chatEntries.map((entry, idx) => {
             const ts = resolveEntryTimestamp(entry);

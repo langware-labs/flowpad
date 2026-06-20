@@ -5,6 +5,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { BookMarked, FileText } from 'lucide-react';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { SideTabTooltipContent } from './LastPromptTooltip';
 import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
 
@@ -46,6 +47,11 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   onOpenLastPlan,
   process = null,
 }) => {
+  const isAdvanced = useIsAdvanced();
+  // Skin layer: in Standard view, power-user tabs (flagged advancedOnly on
+  // their SIDE_TABS descriptor) and the Prompt Library button are hidden,
+  // leaving Prompts + Files. See docs/viewmodes.md.
+  const ribbonTabs = isAdvanced ? RIBBON_TABS : RIBBON_TABS.filter((id) => !SIDE_TABS[id].advancedOnly);
   return (
     <div className="flex items-center border-t bg-muted/30 px-4 py-1.5">
       {/* Left: process status LED */}
@@ -78,7 +84,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
       {/* Right: side tab toggle buttons */}
       <div className="ml-auto flex items-center gap-1">
         <TooltipProvider delayDuration={400}>
-          {RIBBON_TABS.map((tabId) => {
+          {ribbonTabs.map((tabId) => {
             const descriptor = SIDE_TABS[tabId];
             const Icon = descriptor.icon;
             const isOpen = openTabs.includes(tabId);
@@ -131,7 +137,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
               browse the foldered prompt library; click a prompt to enqueue
               it (docs/prompt-library.md). Pure composition; all behavior
               lives in PromptLibraryMenu / the generic groups layer. */}
-          {process && (
+          {process && isAdvanced && (
             <PromptLibraryMenu
               process={process}
               projectId={process.project_id ?? null}

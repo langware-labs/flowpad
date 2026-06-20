@@ -4,6 +4,7 @@ from typing import Optional
 from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 from flow_sdk.fs_store.indexer.functions.spec import (
     extract_spec,
     spec_gen_id,
@@ -37,7 +38,7 @@ SPEC = TypeMetadata(
     from_disk_fn=extract_spec,
     gen_id_fn=spec_gen_id,
     indexed_by_default=True,
-    browseable=True,
+    browseable_by=ViewMode.STANDARD,
     icon="FileText",
     api_visible=True,
     index_fields=["name", "spec_type"],

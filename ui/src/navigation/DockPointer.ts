@@ -1,10 +1,15 @@
-import { AgenticProcess, Layout, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
+import { AgenticProcess, ClaudeSession, Layout, Project, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
 import { isValidView } from './validators';
 import { AssetDocPointer } from './AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType } from './asset-doc-types';
+import {
+  dockOptionsToScopeFilter,
+  withScopeFilterOptions,
+  type ScopeFilter,
+} from '@src/lib/scope-filter';
 
 /**
  * Lens pointer structure for sub-routing within lens viewer
@@ -72,6 +77,30 @@ export class DockPointer implements IDockPointer {
       this.options = options;
       this.layout = layout ?? Layout.DOCK;
     }
+  }
+
+  /**
+   * The scope filter carried by this dock's options, or null when none is set
+   * (so callers apply their own default). This is the single generic accessor
+   * for scope-in-URL across every dock — the option-key grammar lives entirely
+   * in `lib/scope-filter.ts` (`dockOptionsToScopeFilter`); no dock reads the raw
+   * `scope`/`user`/`projects` keys itself.
+   */
+  get scopeFilter(): ScopeFilter | null {
+    return dockOptionsToScopeFilter(this.options);
+  }
+
+  /**
+   * Clone this pointer with `scope` serialized into its options — the single
+   * generic builder for scope-in-URL. Pairs with the `scopeFilter` getter.
+   */
+  withScopeFilter(scope: ScopeFilter): DockPointer {
+    return new DockPointer(
+      this.viewType,
+      this.pointer,
+      withScopeFilterOptions(this.options, scope),
+      this.layout,
+    );
   }
 
   /**
@@ -279,15 +308,11 @@ export class DockPointer implements IDockPointer {
    */
   static forAssetList(
     typeName: string = 'all',
-    options?: { projectId?: string },
+    options?: { scope?: ScopeFilter },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
-    const opts: Record<string, string> = {};
-    if (options?.projectId) {
-      opts.scope = 'project';
-      opts.project_ids = options.projectId;
-    }
-    return new DockPointer(ViewType.ASSETS, `list/${typeName}`, Object.keys(opts).length ? opts : undefined, layout);
+    const base = new DockPointer(ViewType.ASSETS, `list/${typeName}`, undefined, layout);
+    return options?.scope ? base.withScopeFilter(options.scope) : base;
   }
 
   /**
@@ -388,10 +413,14 @@ export class DockPointer implements IDockPointer {
    */
   static parseProjectPointer(
     pointer: string | undefined | null,
-  ): { projectId: string | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
-    if (!pointer) return { projectId: null, roomId: null, tabTypeId: null, conversationId: null };
+  ): { projectTypeId: TypeId | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
+    if (!pointer) return { projectTypeId: null, roomId: null, tabTypeId: null, conversationId: null };
     const parts = pointer.split('/').filter(Boolean);
-    const projectId = parts[0] ?? null;
+    // parts[0] identifies the project. It may arrive bare (`<id>`) or as a
+    // serialized `<type>-<id>` typeid — route it through TypeId so the type
+    // token is parsed by the one object that owns that grammar, never
+    // string-matched / prefix-stripped here.
+    const projectTypeId = parts[0] ? DockPointer.projectSegmentToTypeId(parts[0]) : null;
     let roomId: string | null = null;
     let tabTypeId: TypeId | null = null;
     let conversationId: string | null = null;
@@ -407,7 +436,31 @@ export class DockPointer implements IDockPointer {
         }
       }
     }
-    return { projectId, roomId, tabTypeId, conversationId };
+    return { projectTypeId, roomId, tabTypeId, conversationId };
+  }
+
+  /**
+   * Construct a TypeId, or return null instead of throwing — the shared
+   * non-throwing coercion used by the pointer parsers (`targetTypeId`,
+   * `projectSegmentToTypeId`) that turn a `<type>-<id>`-or-bare-id segment into
+   * a TypeId.
+   */
+  private static tryTypeId(type: string, id?: string): TypeId | null {
+    try {
+      return id !== undefined ? new TypeId(type, id) : new TypeId(type);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Coerce a project-pointer segment into a `project` TypeId. The segment is a
+   * serialized `<type>-<id>` (e.g. `project-<uuid>`) or a bare id; TypeId parses
+   * the type token when present, and the project view supplies the type for a
+   * bare id. The grammar lives entirely in TypeId — no literal prefixing here.
+   */
+  private static projectSegmentToTypeId(segment: string): TypeId | null {
+    return DockPointer.tryTypeId(Project.type, DockPointer.tryTypeId(segment)?.id ?? segment);
   }
 
   /**
@@ -607,6 +660,14 @@ export class DockPointer implements IDockPointer {
     if (options?.depth) queryOptions.depth = String(options.depth);
     if (options?.selected) queryOptions.selected = options.selected;
     return new DockPointer(ViewType.GRAPH, pointer, Object.keys(queryOptions).length ? queryOptions : undefined, layout);
+  }
+
+  /**
+   * Create a DockPointer for the frozen-context viewer at
+   * `/dock/graph_context/<id>`. `id` is the GraphContext entity's UUID.
+   */
+  static forGraphContext(id: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.GRAPH_CONTEXT, id, undefined, layout);
   }
 
   /** Split a GRAPH pointer into its `{ type, id }` parts. */
@@ -909,17 +970,20 @@ export class DockPointer implements IDockPointer {
   get targetTypeId(): TypeId | null {
     const pointer = this.pointer;
     if (!pointer) return null;
-    const candidate = pointer.includes('/typeid/') ? pointer.split('/typeid/').pop() ?? '' : pointer;
-    const tryTypeId = (type: string, id?: string): TypeId | null => {
-      try {
-        return id !== undefined ? new TypeId(type, id) : new TypeId(type);
-      } catch {
-        return null;
+    // A claude-transcript lens (`claude/transcript/<sessionId>`) targets its
+    // ClaudeSession entity (id = session id). Surfacing it here puts lens on the
+    // same entity rail as every other dock: the tab mint resolves the session's
+    // name and the loader its project — no lens-special naming/project logic.
+    if (this.viewType === ViewType.LENS) {
+      const lens = DockPointer.parseLensPointer(pointer);
+      if (lens?.category === 'claude' && lens.type === 'transcript' && lens.ref && !lens.ref.includes('/')) {
+        return DockPointer.tryTypeId(ClaudeSession.type, lens.ref);
       }
-    };
+    }
+    const candidate = pointer.includes('/typeid/') ? pointer.split('/typeid/').pop() ?? '' : pointer;
     return (
-      tryTypeId(candidate) ??
-      (this.viewType && !pointer.includes('/') ? tryTypeId(this.viewType, pointer) : null)
+      DockPointer.tryTypeId(candidate) ??
+      (this.viewType && !pointer.includes('/') ? DockPointer.tryTypeId(this.viewType, pointer) : null)
     );
   }
 

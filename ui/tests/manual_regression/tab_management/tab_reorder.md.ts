@@ -23,9 +23,24 @@ const VISIBLE_Q =
 async function backendTabs(page: Page): Promise<Array<{ pointer: string; order: number }>> {
   return page.evaluate(async (q) => {
     const res = await fetch(q).then((r) => r.json());
+    // Tab.pointer is the DockPointer JSON (`{"viewType","pointer"}`) for tabs
+    // minted post-refactor, or the legacy opaque `viewType|pointer` string.
+    // Normalize both to the `viewType|pointer` tabHash form (what the chips'
+    // `data-terminal-target` carries) so DOM and backend compare on one key.
+    const toHash = (p: string): string => {
+      if (p && p.startsWith('{')) {
+        try {
+          const o = JSON.parse(p);
+          return `${o.viewType ?? ''}|${o.pointer ?? ''}`;
+        } catch {
+          return p;
+        }
+      }
+      return p;
+    };
     return (res.data || [])
       .filter((t: any) => t.visible)
-      .map((t: any) => ({ pointer: t.pointer, order: t.tab_order }));
+      .map((t: any) => ({ pointer: toHash(t.pointer), order: t.tab_order }));
   }, VISIBLE_Q);
 }
 
@@ -56,22 +71,24 @@ test.describe('Tab Management — drag reorder persists to the backend', () => {
       }
     }, VISIBLE_Q);
 
-    // Two co-rendering, project-scoped tabs: Assets (content) + Shell (terminal).
+    // Two co-rendering, content tabs: Assets + Search. (A bare `/dock/shell` is
+    // the terminal HOST, not a tab — only a session-pointer shell gets a chip —
+    // so two content surfaces give a deterministic, PTY-free two-chip strip.)
     await page.goto('/dock/assets');
     await expect(page.locator('[data-terminal-target="assets|"]')).toBeVisible({ timeout: 15_000 });
-    await page.goto('/dock/shell');
+    await page.goto('/dock/search');
     const assets = page.locator('[data-terminal-target="assets|"]');
-    const shell = page.locator('[data-terminal-target="shell|"]');
+    const search = page.locator('[data-terminal-target="search|"]');
     await expect(assets).toBeVisible({ timeout: 15_000 });
-    await expect(shell).toBeVisible({ timeout: 15_000 });
+    await expect(search).toBeVisible({ timeout: 15_000 });
 
     // Order-agnostic: read the rendered order, then drag the RIGHT chip to the
     // front and assert it lands before the (former) left chip — DOM and backend.
     const before = await domOrder(page);
     const ai = before.indexOf('assets|');
-    const si = before.indexOf('shell|');
-    const leftPtr = ai < si ? 'assets|' : 'shell|';
-    const rightPtr = ai < si ? 'shell|' : 'assets|';
+    const si = before.indexOf('search|');
+    const leftPtr = ai < si ? 'assets|' : 'search|';
+    const rightPtr = ai < si ? 'search|' : 'assets|';
     const left = page.locator(`[data-terminal-target="${leftPtr}"]`);
     const right = page.locator(`[data-terminal-target="${rightPtr}"]`);
 
@@ -105,7 +122,7 @@ test.describe('Tab Management — drag reorder persists to the backend', () => {
     }).toPass({ timeout: 5_000 });
 
     // Persistence survives a reload (the strip rebuilds from Tab.list, same order).
-    await page.goto('/dock/shell');
+    await page.goto('/dock/search');
     await expect(async () => {
       const after = await domOrder(page);
       expect(after.indexOf(rightPtr)).toBeLessThan(after.indexOf(leftPtr));

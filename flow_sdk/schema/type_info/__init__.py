@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+from flow_sdk.schema.view_mode import ViewMode
 
 
 @dataclass
@@ -30,7 +31,9 @@ class TypeMetadata:
 
     type: str
     icon: str | None = None
-    browseable: bool = False
+    # Minimum view mode at which this type appears in the Assets browser.
+    # None ⇒ never browseable; visibility is cumulative (Standard ⊂ Advanced ⊂ Dev).
+    browseable_by: ViewMode | None = None
     creatable: bool = False
     indexed_by_default: bool = False
     api_visible: bool = False
@@ -80,7 +83,7 @@ class TypeMetadata:
         return TypeInfo(
             type_name=str(self.type),
             icon=self.icon,
-            browseable=self.browseable,
+            browseable_by=self.browseable_by,
             creatable=self.creatable,
             indexed_by_default=self.indexed_by_default,
             api_visible=self.api_visible,

@@ -20,7 +20,6 @@ GROUP = TypeMetadata(
     icon="Folder",
     api_visible=True,
     indexed_by_default=False,
-    browseable=False,
     creatable=False,
     index_fields=["name", "group_namespace", "group_id"],
     meta_model=GroupMeta,

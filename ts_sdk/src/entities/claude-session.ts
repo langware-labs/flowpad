@@ -7,6 +7,10 @@ export interface IClaudeSession extends IEntity {
   name?: string;
   message_count?: number;
   slug?: string | null;
+  /** Working directory the session ran in — the cwd fallback for project resolution. */
+  cwd?: string | null;
+  /** Owning project, resolved from `cwd` by the indexer (the primary source). */
+  project_id?: string | null;
 }
 
 /**
@@ -23,12 +27,16 @@ export class ClaudeSession extends APIEntity<ClaudeSession> implements IClaudeSe
   name?: string;
   message_count?: number;
   slug?: string | null;
+  cwd?: string | null;
+  project_id?: string | null;
 
   constructor(entity: Partial<IClaudeSession> = {}) {
     super(entity);
     this.name = entity.name;
     this.message_count = entity.message_count;
     this.slug = entity.slug;
+    this.cwd = entity.cwd;
+    this.project_id = entity.project_id;
   }
 
   /** Default open target: the read-only transcript lens (`/dock/lens/claude/transcript/<id>`). */
