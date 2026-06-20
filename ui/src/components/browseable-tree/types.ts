@@ -61,6 +61,14 @@ export interface Browseable {
    *  (clicking just toggles the chevron). */
   pointer: DockPointer | null;
 
+  /** Optional stable alternate identity for *selection* matching, used when the
+   *  active pointer addresses this row by a different serialization than its
+   *  `pointer` (e.g. an `editor/<t>/typeid/<id>` URL vs a vfs-path leaf). The
+   *  tree compares it (as a string) against its `activeKey` prop, in addition to
+   *  the pointer-string match. Only set where a row has a stable id (asset
+   *  leaves set their `<type>-<uuid>` typeid); other rows leave it undefined. */
+  selectionKey?: string;
+
   /** Inline hover actions. Side effects only. */
   toolbar?: ToolbarAction[];
 
@@ -139,6 +147,13 @@ export interface BrowseableTreeProps {
   /** The currently-active pointer (from URL). Drives both row selection and
    *  ancestor auto-expand. */
   activePointer: DockPointer | null;
+
+  /** Optional URL-derived alternate selection key (e.g. the active entity's
+   *  `<type>-<uuid>` typeid when the URL addresses an asset by typeid). A row is
+   *  selected when its `selectionKey` equals this, in addition to the
+   *  pointer-string match — so a typeid URL selects a vfs-pointer leaf. Stays
+   *  URL-derived (not from context). Null/undefined ⇒ pointer-string match only. */
+  activeKey?: string | null;
 
   /** Optional header with title + base-menu toolbar. */
   header?: BrowseableTreeHeader;

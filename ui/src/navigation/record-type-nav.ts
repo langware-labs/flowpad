@@ -62,7 +62,11 @@ function codexThreadIdFromResult(result: SearchResult): string {
  * ``record_id`` may be a full ``<type>-<uuid>`` typeid (favorites store the full
  * form) or a bare uuid (search rows) — handle both.
  */
-function resultTypeId(r: SearchResult): TypeId | null {
+export function resultTypeId(
+  // Structural: accepts any search-row shape (use-record-search / use-asset-search)
+  // — only the stable id + type are read.
+  r: { record_id?: string | null; record_type?: string | null },
+): TypeId | null {
   const raw = (r.record_id ?? '').trim();
   if (!raw) return null;
   try {

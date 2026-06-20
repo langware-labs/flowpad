@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { resultTypeId } from '@src/navigation/record-type-nav';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { VFSPath } from '@sdk';
@@ -157,6 +158,10 @@ function assetChild(typeName: string, iconName: string | null, result: SearchRes
     icon: resolveAssetIcon(iconName, 'h-3.5 w-3.5 flex-shrink-0'),
     hasChildren: false,
     pointer,
+    // Stable typeid (`<type>-<uuid>`) so a typeid-form active pointer selects this
+    // row even though `pointer` is the vfs form. `resultTypeId` handles bare-uuid
+    // vs full-typeid `record_id`.
+    selectionKey: resultTypeId(result)?.toString(),
     toolbar: toolbar.length > 0 ? toolbar : undefined,
   };
 
