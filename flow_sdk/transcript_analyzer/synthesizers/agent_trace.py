@@ -114,6 +114,23 @@ _INTERRUPT_PREFIX = "[Request interrupted"
 # skill is invoked — it's a "user" line but NOT a human turn, so it must not cut
 # a segment or reset the call-tree skill stack (else nested skills look sibling).
 _SKILL_INJECTION_PREFIX = "Base directory for this skill:"
+# Other synthetic user rows Claude Code injects that are NOT human turns: slash-
+# command scaffolding and background task-completion notifications. A real prompt
+# never opens with one of these tags.
+_SYNTHETIC_USER_PREFIXES = (
+    _SKILL_INJECTION_PREFIX,
+    "<task-notification>",
+    "<command-name>",
+    "<command-message>",
+    "<command-args>",
+    "<local-command-stdout>",
+    "<local-command-caveat>",
+)
+
+# Read-only probe kinds (Read / Grep / Glob / search). A *failed* probe is
+# expected exploration noise — the agent looked something up that wasn't there —
+# not a real "issue", so it must not raise severity or mint an issue marker.
+_PROBE_KINDS = frozenset({EntryKind.FILE_READ, EntryKind.SEARCH})
 
 
 def _ts_ms(ts: str) -> int | None:
@@ -131,16 +148,21 @@ def _clip(text: str | None, limit: int) -> str:
 
 
 def _entry_severity(e: TranscriptEntry, error_ids: set[str]) -> str:
-    exit_code = getattr(e, "exit_code", None)
-    if exit_code not in (None, 0):
-        return SeverityTier.ATTENTION.value
-    # Folded-in result error flag (Claude Bash results carry no exitCode).
-    if getattr(e, "is_error", False):
-        return SeverityTier.ATTENTION.value
+    # Failed if it has a non-zero exit, a folded-in result error flag (Claude
+    # Bash results carry no exitCode), or a separate is_error result row.
     tuid = getattr(e, "tool_use_id", "")
-    if tuid and tuid in error_ids:
-        return SeverityTier.ATTENTION.value
-    return SeverityTier.INFO.value
+    failed = (
+        getattr(e, "exit_code", None) not in (None, 0)
+        or getattr(e, "is_error", False)
+        or (bool(tuid) and tuid in error_ids)
+    )
+    if not failed:
+        return SeverityTier.INFO.value
+    # A failed read-only probe (Read / Grep / Glob) is expected exploration noise
+    # — looking up something that wasn't there — not a real issue.
+    if e.kind in _PROBE_KINDS:
+        return SeverityTier.INFO.value
+    return SeverityTier.ATTENTION.value
 
 
 def _call_preview(e: TranscriptEntry) -> str:
@@ -188,8 +210,10 @@ def _is_prompt(e: TranscriptEntry) -> bool:
     text = (e.text or "").strip()
     if not text or text.startswith(_INTERRUPT_PREFIX):
         return False
-    if text.startswith(_SKILL_INJECTION_PREFIX):
-        return False  # skill-injection message, not a human turn
+    # Slash-command scaffolding, task-completion notifications, skill injections —
+    # injected by Claude Code, not human turns.
+    if text.startswith(_SYNTHETIC_USER_PREFIXES):
+        return False
     return True
 
 
