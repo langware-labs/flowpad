@@ -39,7 +39,22 @@ async function createProject(rq: APIRequestContext, name: string, mount: string)
 async function createShell(rq: APIRequestContext, projectId?: string): Promise<string> {
   const r = await rq.post(`${API}/api/v1/graph/shell`, { data: projectId ? { project_id: projectId } : {} });
   expect(r.status()).toBe(200);
-  return (await r.json()).data.id;
+  const shell = (await r.json()).data;
+  // Post-Tab-cutover a strip chip IS a `Tab` entity (created URL-first on
+  // navigation); a bare `POST /graph/shell` no longer produces one. Create the
+  // matching shell Tab so the chip renders without navigating to each shell —
+  // shape mirrors a navigation-created shell tab (pointer = DockPointer JSON,
+  // tabHash `shell|shell-<id>` → testid `tab-shell|shell-<id>`).
+  await rq.post(`${API}/api/v1/graph/tab`, {
+    data: {
+      pointer: JSON.stringify({ viewType: 'shell', pointer: `shell-${shell.id}` }),
+      target_type: 'shell',
+      target_id: shell.id,
+      project_id: shell.project_id ?? projectId,
+      visible: true,
+    },
+  });
+  return shell.id;
 }
 
 /**
