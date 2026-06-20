@@ -3,27 +3,28 @@ import { useCallback, useState } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
-export type TranscriptMode = 'chat' | 'trace';
+export type TranscriptMode = 'chat' | 'trace' | 'callstack' | 'execution';
 
 const STORAGE_KEY = 'transcript-viewer-mode';
 const URL_PARAM = 'transcriptMode';
 const DEFAULT_MODE: TranscriptMode = 'chat';
 
+/** Resolve a raw URL/stored value to a mode, mapping legacy aliases. */
+function normalizeMode(value: string | undefined | null): TranscriptMode | undefined {
+  // Legacy alias: 'transcript' → 'trace'.
+  if (value === 'transcript') return 'trace';
+  return value === 'chat' || value === 'trace' || value === 'callstack' || value === 'execution'
+    ? value
+    : undefined;
+}
+
 function readStored(): TranscriptMode {
   if (typeof window === 'undefined') return DEFAULT_MODE;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === 'chat' || raw === 'trace') return raw;
-    // Backward-compat: prior value 'transcript' maps to new 'trace' name.
-    if (raw === 'transcript') return 'trace';
-    return DEFAULT_MODE;
+    return normalizeMode(localStorage.getItem(STORAGE_KEY)) ?? DEFAULT_MODE;
   } catch {
     return DEFAULT_MODE;
   }
-}
-
-function isTranscriptMode(value: string | undefined | null): value is TranscriptMode {
-  return value === 'chat' || value === 'trace';
 }
 
 /**
@@ -39,9 +40,9 @@ function isTranscriptMode(value: string | undefined | null): value is Transcript
  */
 export function useTranscriptMode() {
   const { navigation, currentDock } = useDockNavigation();
-  const urlMode = currentDock?.options?.[URL_PARAM];
+  const urlMode = normalizeMode(currentDock?.options?.[URL_PARAM]);
   const [localMode, setLocalMode] = useState<TranscriptMode>(readStored);
-  const mode: TranscriptMode = isTranscriptMode(urlMode) ? urlMode : localMode;
+  const mode: TranscriptMode = urlMode ?? localMode;
 
   const setMode = useCallback(
     (m: TranscriptMode) => {

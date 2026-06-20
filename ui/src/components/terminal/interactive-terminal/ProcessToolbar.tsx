@@ -28,7 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@src/components/ui/dropdown-menu';
-import { Activity, BugPlay, Check, Copy, ExternalLink, Filter, GitFork, Info, Loader2, RefreshCw, RotateCcw, ScrollText, SlidersHorizontal, SquareTerminal, X } from 'lucide-react';
+import { BugPlay, Check, Copy, ExternalLink, Filter, GitFork, Info, RotateCcw, ScrollText, SlidersHorizontal, SquareTerminal, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -38,7 +38,6 @@ import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 import { setChatUiMode, useChatUiMode } from '@src/contexts/chat-ui-mode-context';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
-import type { AnalysisControls } from '@src/components/lens-viewer/shared/transcript-features/AnalysisControls';
 
 interface ProcessToolbarProps {
   process: AgenticProcess;
@@ -54,11 +53,9 @@ interface ProcessToolbarProps {
   onClose?: () => void;
   /** Shell entity for PTY Viewer (dev mode only). */
   shell?: Shell | null;
-  /** Session-analysis controls shared with the transcript lens. */
-  analysisControls?: AnalysisControls;
 }
 
-export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, embedded, onClose, shell, analysisControls }: ProcessToolbarProps) {
+export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, embedded, onClose, shell }: ProcessToolbarProps) {
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
   const chatUiMode = useChatUiMode();
@@ -424,9 +421,6 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         {/* Session Info */}
         {hasSession && <SessionInfoPopover process={process} sessionStartTime={sessionStartTime} lastMessageTime={lastMessageTime} />}
 
-        {/* Session Analysis */}
-        {hasSession && analysisControls && <TerminalAnalysisButton controls={analysisControls} />}
-
         {/* Open Transcript */}
         {hasSession && (
           <IconToggleButton
@@ -487,65 +481,6 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-
-function TerminalAnalysisButton({ controls }: { controls: AnalysisControls }) {
-  const { navigation } = useDockNavigation();
-  const { action, setPanelOpen, startAnalysis } = controls;
-
-  switch (action.kind) {
-    case 'run':
-      return (
-        <IconToggleButton
-          icon={<Activity className="h-3.5 w-3.5" />}
-          active={false}
-          tooltip="Analyze session"
-          disabled={false}
-          ariaLabel="Analyze session"
-          testId="terminal-analysis-run"
-          onClick={startAnalysis}
-        />
-      );
-    case 'analyzing':
-      return (
-        <IconToggleButton
-          icon={<Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          active
-          activeClassName="text-primary"
-          tooltip="Analysis is running — click to watch"
-          disabled={false}
-          ariaLabel="Open running analysis"
-          testId="terminal-analysis-running"
-          onClick={() => setPanelOpen(true)}
-        />
-      );
-    case 'refresh':
-      return (
-        <IconToggleButton
-          icon={<RefreshCw className="h-3.5 w-3.5" />}
-          active
-          activeClassName="text-amber-500 dark:text-amber-400"
-          tooltip="Refresh analysis — session has new activity"
-          disabled={false}
-          ariaLabel="Refresh session analysis"
-          testId="terminal-analysis-refresh"
-          onClick={startAnalysis}
-        />
-      );
-    case 'open':
-      return (
-        <IconToggleButton
-          icon={<ExternalLink className="h-3.5 w-3.5" />}
-          active
-          activeClassName="text-primary"
-          tooltip={`Open analysis (${action.runCount} run${action.runCount === 1 ? '' : 's'})`}
-          disabled={false}
-          ariaLabel="Open session analysis"
-          testId="terminal-analysis-open"
-          onClick={() => navigation.openDock(action.trace.editorDockPointer)}
-        />
-      );
-  }
-}
 
 function RichCheckboxItem({
   checked,

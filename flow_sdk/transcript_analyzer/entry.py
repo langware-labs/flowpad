@@ -66,12 +66,17 @@ class TranscriptEntry:
         raw_data: dict | None = None,
         entry_id: str | None = None,
         model: str | None = None,
+        attribution_skill: str | None = None,
     ) -> None:
         self.id = id
         self.session_id = session_id
         self.timestamp = timestamp
         self.worker = worker
         self.parent_id = parent_id
+        # The skill this line is attributed to (Claude's ``attributionSkill``),
+        # i.e. the authoritative multi-turn owner — survives turn boundaries,
+        # unlike a per-turn skill stack. None for un-skilled / session lines.
+        self.attribution_skill = attribution_skill
         # ``is_sidechain`` distinguishes sub-agent (Task tool) lines from
         # main-session lines. Defaults to False so workers without a
         # sidechain concept (codex stream-events) don't have to populate it.
@@ -115,6 +120,7 @@ class TranscriptEntry:
             "is_sidechain": self.is_sidechain,
             "entry_id": self.entry_id,
             "model": self.model,
+            "attribution_skill": self.attribution_skill,
         }
 
     # ── string rendering ─────────────────────────────────────────────────────
