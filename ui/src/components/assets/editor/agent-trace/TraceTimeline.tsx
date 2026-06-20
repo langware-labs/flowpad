@@ -615,17 +615,20 @@ const LaneRow = memo(function LaneRow({
               <span className="truncate">{e.label}</span>
             </div>
           ) : (
+            // Transparent 20px hit box so the small diamond is easy to click;
+            // the visual marker (ringed dot) is centered inside it.
             <div
-              // Bigger, vertically centered, ringed dots so prompts / interrupts
-              // / tasks read clearly against the lane bars.
-              className={cn(
-                'absolute top-1/2 z-20 h-2.5 w-2.5 -translate-y-1/2 rotate-45 cursor-pointer rounded-[1px] ring-1 ring-background',
-                eventColor(e.kind, e.severity),
-              )}
-              style={{ left: ex - 5 }}
+              className="absolute top-1/2 z-20 flex h-5 w-5 -translate-y-1/2 cursor-pointer items-center justify-center"
+              style={{ left: ex - 10 }}
               onClick={onClick}
               data-testid={`trace-event-${e.kind}`}
-            />
+            >
+              <span
+                // Bigger, ringed dots so prompts / interrupts / tasks read
+                // clearly against the lane bars.
+                className={cn('h-2.5 w-2.5 rotate-45 rounded-[1px] ring-1 ring-background', eventColor(e.kind, e.severity))}
+              />
+            </div>
           );
           return (
             <Tooltip key={`ev-${e.ts}-${i}`}>
