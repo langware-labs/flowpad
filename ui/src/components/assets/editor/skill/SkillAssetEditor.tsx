@@ -5,6 +5,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { FSRef, Skill } from '@sdk';
 import { cn } from '@src/lib/utils';
+import { notify } from '@src/notifications';
 import { FlaskConical } from 'lucide-react';
 import { useCallback } from 'react';
 
@@ -42,15 +43,35 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
     navigation.openDock(DockPointer.forAssetList(Skill.type));
   }, [skill, navigation]);
 
-  // Header eval toggle — flips the `eval` frontmatter flag through the editor's
-  // own content buffer (single writer; see MarkdownHeaderExtrasCtx). `eval`
-  // round-trips as the string 'true'/'false'.
+  // Header eval toggle. Flipping it writes to BOTH layers so the flag takes
+  // effect immediately and durably:
+  //   1. SKILL.md frontmatter via the editor's content buffer (the durable
+  //      source of truth; single writer — see MarkdownHeaderExtrasCtx).
+  //   2. the Skill entity's `metadata.eval` via `save()` (the projection the
+  //      rest of the app reads through `isEval`). Without (2) the flag wouldn't
+  //      surface until a re-index re-walked this file — which isn't guaranteed
+  //      (the file may live in a root the manual rescan doesn't re-walk), so
+  //      the badge/auto-eval would silently never fire.
+  // `eval` round-trips as the string 'true'/'false' (frontmatter is quoted).
   const headerExtras = useCallback(({ fields, setField }: MarkdownHeaderExtrasCtx) => {
     const isEval = fields.eval === 'true';
+    const toggle = () => {
+      const next = isEval ? 'false' : 'true';
+      setField('eval', next);
+      if (skill) {
+        skill.metadata = { ...(skill.metadata ?? {}), eval: next };
+        void skill.save().catch((e) => {
+          notify.error({
+            title: 'Could not update eval flag',
+            message: e instanceof Error ? e.message : 'Save failed.',
+          });
+        });
+      }
+    };
     return (
       <button
         type="button"
-        onClick={() => setField('eval', isEval ? 'false' : 'true')}
+        onClick={toggle}
         aria-pressed={isEval}
         title={isEval ? 'Under eval — click to stop evaluating' : 'Mark skill for eval'}
         data-testid="skill-eval-toggle"
@@ -64,7 +85,7 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
         <FlaskConical className="h-4 w-4" />
       </button>
     );
-  }, []);
+  }, [skill]);
 
   return (
     <div className="flex h-full min-h-0 w-full">
