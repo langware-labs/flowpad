@@ -2047,20 +2047,52 @@ async def _materialize_invitation(
 _conv_fetch_locks: dict[str, asyncio.Lock] = {}
 
 
-def _dispatch_conversation_message_fetch(conv_id: str, someone_typeid: str) -> None:
-    """Fire-and-forget kickoff for a per-conversation message catch-up.
+# Max parallel hub message-fetches per catch-up batch. Firing every drifted
+# conversation at once saturates the single event loop + the shared connection
+# pool and is end-to-end SLOWER (measured ~3.5x: 227 convs took 7.8s unbounded
+# vs 2.2s at 8) — classic concurrency thrash. A small pool flows smoothly.
+_BG_FETCH_CONCURRENCY = 8
 
-    Idempotent: if a fetch is already in-flight for this ``conv_id``, the new
-    dispatch is a no-op. The lock is held inside the spawned task, not by the
-    dispatcher, so callers never block.
+
+async def _drain_conversation_message_fetches(conv_ids: list[str], someone_typeid: str) -> None:
+    """Catch up message state for many conversations, bounded concurrency.
+
+    Runs as ONE detached task OFF the request path, so the list handler returns
+    before any fetch starts (no event-loop contention with the foreground
+    reconcile). Per-conv single-flight is preserved by the in-task lock.
     """
-    existing = _conv_fetch_locks.get(conv_id)
-    if existing is not None and existing.locked():
+    sem = asyncio.Semaphore(_BG_FETCH_CONCURRENCY)
+
+    async def _one(cid: str) -> None:
+        existing = _conv_fetch_locks.get(cid)
+        if existing is not None and existing.locked():
+            return  # a fetch for this conv is already in flight
+        async with sem:
+            try:
+                await _fetch_conversation_messages(cid, someone_typeid)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[conv-msg-drain] %s failed: %s", cid[:8], e)
+
+    await asyncio.gather(*[_one(c) for c in conv_ids], return_exceptions=True)
+
+
+def _dispatch_conversation_message_fetches(conv_ids: list[str], someone_typeid: str) -> None:
+    """Fire-and-forget a whole catch-up batch as one detached, bounded drain.
+
+    Deferred + bounded: the caller collects the drifted conv ids during its
+    foreground work and dispatches them all here at the very end, so the fetches
+    neither interleave with the reconcile loop nor flood the loop all at once.
+    """
+    if not conv_ids:
         return
-    asyncio.create_task(
-        _fetch_conversation_messages(conv_id, someone_typeid),
-        name=f"conv-msg-fetch-{conv_id[:8]}",
-    )
+    try:
+        asyncio.create_task(
+            _drain_conversation_message_fetches(conv_ids, someone_typeid),
+            name=f"conv-msg-drain-{len(conv_ids)}",
+        )
+    except RuntimeError:
+        # No running loop (e.g. a sync call context) — nothing to schedule.
+        pass
 
 
 # Hub-hosted child types pulled during the shared-context catch-up. Comments
@@ -2636,8 +2668,9 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     hub_convs = _coerce_list(hub_convs_result) or []
     hub_invs = _coerce_list(hub_invs_result) or []
 
-    # (c) Reconcile hub conversation metadata into the local mirror, then dispatch
-    # a per-conv message fetch when the hub has drifted from our local copy.
+    # (c) Reconcile hub conversation metadata into the local mirror, and COLLECT
+    # the conversations whose messages have drifted (dispatched as one bounded
+    # batch AFTER the response is built — see step (f)).
     #
     # Upsert ONLY conversations that actually changed: a row that's already local,
     # already remote, and not hub-stale needs no write. The hub bumps the parent
@@ -2675,7 +2708,8 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
                 logger.warning("[conv-list] upsert conv=%s failed: %s", conv_id[:8], e)
                 continue
         if should_fetch:
-            _dispatch_conversation_message_fetch(conv_id, someone_typeid)
+            # Collect now; dispatch the whole batch off-path at the end so these
+            # fetches don't steal event-loop time from the reconcile above.
             bg_fetch_dispatched.append(conv_id)
 
     # (d) invitations through the new materializer: the hub embeds the
@@ -2711,19 +2745,23 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
                     logger.warning("[conv-list] prune %s failed: %s",
                                    (c.id or "?")[:8], e)
 
-    # (f) return the freshly-merged list. Background tasks finish after the
-    # response, fanning out their writes via data_op_msg WS frames. Bare or
-    # drifted rows were dispatched above (count_mismatch / stale_by_date) and
-    # heal through the authoritative reconcile in _fetch_conversation_messages;
-    # their projections stream in via WS data_op as those fetches land.
+    # (f) return the freshly-merged list.
     merged = await Conversation.get_all({})
-    return ApiSuccessResponse(data={
+    response = ApiSuccessResponse(data={
         "conversations": [c.model_dump(mode="json") for c in merged],
         "bg_fetch_dispatched": bg_fetch_dispatched,
         "pruned_ids": pruned_ids,
         "hub_reachable": hub_reachable,
         "auth_required": auth_required,
     })
+
+    # (g) ONLY NOW — after the entire foreground reconcile — kick off the message
+    # catch-up for all drifted conversations as ONE bounded, detached batch. The
+    # fetches start as the response is sent (never contending with the loop above)
+    # and only a few run at once. Their writes heal through the authoritative
+    # reconcile in _fetch_conversation_messages and stream in via WS data_op.
+    _dispatch_conversation_message_fetches(bg_fetch_dispatched, someone_typeid)
+    return response
 
 
 @action.post(action_name="conversation-list", types=None)
