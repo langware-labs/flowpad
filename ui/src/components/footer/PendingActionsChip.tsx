@@ -35,8 +35,9 @@ import { workerStatusLabel } from './worker-status-label';
  * the notification sound when a new id enters pending, and per-row
  * ``animate-pending-glow`` marks rows in the pending-input window.
  *
- * Known limitation: row name / project name come from
- * ``*.getByIdFromCache(id)?.name`` and are NOT reactive.
+ * Row name and project name come from ``*.getByIdFromCache(id)`` and are NOT
+ * reactive; both the linked session/shell and the row's Project are lazily
+ * fetched into the cache when the popover opens so the names resolve.
  */
 /** The two related ids the name resolver reads off an AgenticProcess. */
 type APWithIds = AgenticProcess & { session_id?: string | null; shell_id?: string | null };
@@ -86,19 +87,40 @@ export function PendingActionsChip() {
     return (shellId ? Shell.getByIdFromCache<Shell>(shellId)?.name : null) ?? null;
   };
 
-  // When the popover opens, lazily fetch each listed process and its
-  // ClaudeSession + Shell so the extracted names replace the id fragments.
+  // A row's project label (shown on the meta subline, like the history modal).
+  // Reads the warmed Project entity (see the lazy fetch below).
+  const projectNameFromCache = (projectId: string): string | null => {
+    const p = Project.getByIdFromCache<Project>(projectId);
+    return p?.getDisplayName() ?? p?.name ?? null;
+  };
+
+  // When the popover opens, lazily fetch each row's process (+ its ClaudeSession
+  // / Shell) and its Project so the cached names replace the id fragments. Both
+  // the row name and the project name come from `*.getByIdFromCache`, which is
+  // almost never warm without this; a single `nameTick` bump re-reads the cache
+  // once everything lands.
   const fetchedRef = useRef<Set<string>>(new Set());
+  const fetchedProjectsRef = useRef<Set<string>>(new Set());
   const [nameTick, setNameTick] = useState(0);
   useEffect(() => {
     if (!open) return;
-    const missing = allRows
+    const missingProcesses = allRows
       .map((e) => e.processId)
       .filter((id) => !fetchedRef.current.has(id) && !nameFromCache(id));
-    if (missing.length === 0) return;
-    missing.forEach((id) => fetchedRef.current.add(id));
+    // Many rows can share one project, so dedup before fetching.
+    const missingProjects = Array.from(
+      new Set(
+        allRows
+          .map((e) => e.projectId)
+          .filter((id): id is string => !!id)
+          .filter((id) => !fetchedProjectsRef.current.has(id) && !Project.getByIdFromCache<Project>(id)),
+      ),
+    );
+    if (missingProcesses.length === 0 && missingProjects.length === 0) return;
+    missingProcesses.forEach((id) => fetchedRef.current.add(id));
+    missingProjects.forEach((id) => fetchedProjectsRef.current.add(id));
     let cancelled = false;
-    const resolve = async (id: string): Promise<void> => {
+    const resolveProcess = async (id: string): Promise<void> => {
       const ap = apOf(id) ?? ((await AgenticProcess.getById<AgenticProcess>(id)) as APWithIds | null);
       const sessionId = ap?.session_id;
       const shellId = ap?.shell_id;
@@ -113,7 +135,10 @@ export function PendingActionsChip() {
         ].filter(Boolean) as Promise<unknown>[],
       );
     };
-    void Promise.allSettled(missing.map(resolve)).then(() => {
+    void Promise.allSettled([
+      ...missingProcesses.map(resolveProcess),
+      ...missingProjects.map((id) => Project.getById<Project>(id)),
+    ]).then(() => {
       if (!cancelled) setNameTick((t) => t + 1);
     });
     return () => {
@@ -127,9 +152,7 @@ export function PendingActionsChip() {
         processId: e.processId,
         mode: e.mode,
         name: nameFromCache(e.processId) ?? e.processId.slice(0, 8),
-        projectName: e.projectId
-          ? Project.getByIdFromCache<Project>(e.projectId)?.name ?? null
-          : null,
+        projectName: e.projectId ? projectNameFromCache(e.projectId) : null,
         statusLabel: workerStatusLabel(e.workerStatus, e.pending),
         statusIcon: workerStatusConfig[e.workerStatus as WorkerStatus],
         lastActive: formatTimeAgo(e.lastStatusChangedAt),
