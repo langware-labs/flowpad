@@ -22,12 +22,20 @@ export interface SideDrawerProps {
   open: boolean;
   /** Omit to render as always-on (X close button hidden). */
   onOpenChange?: (open: boolean) => void;
-  title?: string;
+  /** Header title. A node (not just a string) so callers can prefix an icon. */
+  title?: ReactNode;
   /** Right-aligned header badge — e.g. run count. */
   count?: number;
   /** Tailwind width token. Default `w-80`. */
   width?: string;
   className?: string;
+  /**
+   * Caller-owned controls rendered right-aligned in the header, before the
+   * close X (e.g. a Refresh button, a Run button + asset picker). Lets a panel
+   * keep its header actions without hand-rolling the drawer chrome. Only shows
+   * when a header is present (title, count, onOpenChange, or headerActions).
+   */
+  headerActions?: ReactNode;
   children: ReactNode;
   'data-testid'?: string;
 }
@@ -39,12 +47,13 @@ export function SideDrawer({
   count,
   width = 'w-80',
   className,
+  headerActions,
   children,
   'data-testid': dataTestId,
 }: SideDrawerProps) {
   if (!open) return null;
 
-  const hasHeader = !!title || count !== undefined || !!onOpenChange;
+  const hasHeader = !!title || count !== undefined || !!onOpenChange || !!headerActions;
 
   return (
     <div
@@ -59,13 +68,16 @@ export function SideDrawer({
               {count}
             </span>
           )}
+          {headerActions && (
+            <div className="ml-auto flex items-center gap-1">{headerActions}</div>
+          )}
           {onOpenChange && (
             <Button
               variant="ghost"
               size="icon"
-              className="ml-auto h-6 w-6"
+              className={cn('h-6 w-6', !headerActions && 'ml-auto')}
               onClick={() => onOpenChange(false)}
-              aria-label={title ? `Close ${title.toLowerCase()}` : 'Close'}
+              aria-label={typeof title === 'string' ? `Close ${title.toLowerCase()}` : 'Close'}
               data-testid={dataTestId ? `${dataTestId}-close` : undefined}
             >
               <X className="h-3.5 w-3.5" />
