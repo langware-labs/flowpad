@@ -12,7 +12,7 @@
  * resting URL. Best-effort: a miss/parse-failure is non-fatal (the view renders
  * its own missing/error state); never throws into the parent dock loader.
  */
-import { TypeId, apiClient, dataContext, dataManager } from '@sdk';
+import { TypeId, VFSPath, apiClient, dataContext, dataManager } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod, isBrowseListPointer } from '@src/navigation/asset-doc-types';
 
@@ -76,14 +76,21 @@ export async function loadAssetRoute(pointer: string | undefined): Promise<void>
       return;
     }
 
-    // VFS: do NOT resolve here. Discovery by path can trigger a slow backend
-    // recovery scan, and a route loader blocks the URL commit until it returns
-    // (URL-first rule #4: "loaders must be fast"). The editor view self-resolves
-    // the entity on mount — `AssetEditorRouter` → `EntityResolutionGate` →
-    // `useEntityByPath` (cached bulk list + lazy single-type discover, with its
-    // own "Discovering…" state). Returning immediately lets navigation commit
-    // instantly; rendering is identical. Prefer the typeid form upstream
-    // (record-type-nav) so most clicks never hit this path at all.
+    // VFS: resolve via the CHEAP exact path→entity lookup (`/assets/entity`,
+    // `getEntityByPath`) — a pure indexed DB match, NOT the heavy
+    // `/fs-records/discover` recovery scan (same cost class as the typeid
+    // `getByTypeId` above, so "loaders must be fast" holds). This warms the
+    // cache AND sets active context so vfs behaves like typeid/wiki.
+    // `machinePath` (not `absVfsPath`) is the form `asset_ref` is stored in.
+    // On a miss (not-yet-indexed) the view still self-resolves via
+    // `AssetEditorRouter` → `EntityResolutionGate` → `useEntityByPath` (lazy
+    // discover). `getEntityByPath` already caches the hit, so this is the only
+    // network round-trip.
+    const machine = VFSPath.parse(ptr.value).machinePath;
+    if (machine) {
+      const e = await dataManager.getEntityByPath(machine).catch(() => null);
+      if (e) await dataContext.setActiveEntityTypeId(e.typeId);
+    }
   } catch (e) {
     console.warn('[load-asset] resolve failed (view will handle):', pointer, e);
   }

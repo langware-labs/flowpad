@@ -223,6 +223,26 @@ export class VFSPath {
   }
 
   /**
+   * The absolute MACHINE path (the form stored as an entity's `asset_ref`) — the
+   * inverse of `fromMachinePath`, which drops the leading `/` (POSIX) or the
+   * drive (Windows) to build `entitySubPath`. POSIX: `/{entitySubPath}`.
+   *
+   * Use this — NOT `absVfsPath`/`toString()` — when matching against a stored
+   * `asset_ref` (e.g. `dataManager.getEntityByPath`), which is an exact string
+   * match on the machine path. Returns '' when there is no sub-path.
+   *
+   * Windows note: `entitySubPath` no longer carries the drive letter, so the
+   * machine path can't be losslessly reconstructed there; callers fall back to
+   * path-discovery on a miss.
+   */
+  get machinePath(): string {
+    if (!this.entitySubPath) return '';
+    return isAbsoluteMachinePath(this.entitySubPath)
+      ? this.entitySubPath
+      : `/${this.entitySubPath}`;
+  }
+
+  /**
    * Get just the filename from the path
    *
    * @returns The filename or empty string if path ends with /
