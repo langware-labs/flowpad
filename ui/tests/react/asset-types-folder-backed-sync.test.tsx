@@ -20,33 +20,22 @@ import { renderHook } from '@testing-library/react';
 import { dataManager } from '@sdk';
 import apiClient from '@sdk/client';
 
-// View mode is an external context, not the unit under test — pin it to
-// 'standard' so the skill type (browseable_by='standard') passes the filter.
+// View mode is an external context, not the unit under test — pin it so the
+// skill type (browseable_by='standard') passes the filter.
 vi.mock('@src/contexts/view-mode-context', () => ({
   useViewMode: () => 'standard',
 }));
 
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 
-/** Minimal frontend TypeInfo, folder-backed (the property the fix reads sync). */
+/** Minimal registry TypeInfo carrying only the fields useAssetTypes reads.
+ *  folder_backed=true is the property the fix sources synchronously. */
 function skillTypeInfo() {
   return {
     type_name: 'skill',
-    uid_field: 'id',
-    index_fields: ['description'],
-    defaults: {},
-    indexed_by_default: true,
     browseable_by: 'standard',
     creatable: true,
-    api_visible: true,
     icon: 'Sparkles',
-    parent_type: null,
-    locations: ['index'],
-    schema_hash: 'test',
-    schema: null,
-    // The registry already knows skill is folder-backed (asset_ref is a bare
-    // folder). The fix exposes this synchronously; today the sidebar instead
-    // waits for the async /assets/types fetch.
     folder_backed: true,
   };
 }

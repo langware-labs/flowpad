@@ -20,8 +20,8 @@ export interface AssetTypeInfo {
   creatable: boolean;
   browseable_by: ViewMode | null;
   /** Folder-layout type whose asset_ref is the bare folder (e.g. skill): its
-   *  sidebar row expands into the on-disk file tree. Sourced from
-   *  ``/assets/types`` (``folder_backed``), like vaults. */
+   *  sidebar row expands into the on-disk file tree. Sourced synchronously from
+   *  the registry (TypeInfo.folder_backed), so it's set on the first render. */
   folder_backed?: boolean;
   vaults?: AssetTypeVault[];
 }
