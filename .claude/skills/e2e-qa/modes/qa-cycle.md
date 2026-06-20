@@ -2,7 +2,7 @@
 
 When invoked with `run qa cycle` / `full qa` / `qa cycle`:
 
-Runs all test suites in sequence across 11 phases. **You never advance to the next phase unless the current phase achieves a clear pass.** All failures in a phase must be debugged and fixed — or flagged — before moving on.
+Runs all test suites in sequence across 12 phases. **You never advance to the next phase unless the current phase achieves a clear pass.** All failures in a phase must be debugged and fixed — or flagged — before moving on.
 
 **Step 0.0 — INSTANCE-LEVEL OWNERSHIP (non-negotiable). You own what you launch — and ONLY what you launch.** The scope of your authority is the test instances the cycle starts via `scripts/instance_ctl.sh launch <name>` (and any backend/frontend/DB the cycle itself spawned). Within that scope you have full freedom, no confirmation needed:
 - **Restart, clear/wipe/re-index the DB, kill, and relaunch instances YOU launched** — freely, as the phases require.
@@ -28,7 +28,7 @@ The loop keeps the cycle driving forward unattended; it naturally ends when the 
 - **Only ever kill/clear instances YOU launched.** You may freely `kill` + `launch` *your own* instance to recover it, and clear *its* DB. Track which instances the cycle started.
 - **At the end of every phase that launched an instance, and at the end of the cycle, kill the instances you launched** (`scripts/instance_ctl.sh kill <name>`). Leaving them running is what accumulates the stale-instance load that hurts the next run. Lifecycle is your responsibility.
 - **If the host is loaded by things you did NOT launch** — the user's main backend, their live `claude`/agentic sessions, GUI apps, OS daemons — that load is **not yours to kill.** Do not touch it. Record it as a host-load caveat on the affected timing verdicts (or `flag` the phase as host-bound), and proceed. A slow timing verdict caused by the user's own workload is reported honestly, never "fixed" by killing their processes.
-- **For browser-phase instances (Phases 10–11), verify authentication before running data-dependent scenarios.** A dedicated instance used for Phases 10/11 must be authenticated (hub up → cloud login succeeded) before its data-dependent browser failures can be trusted as regressions. Launch the instance, then verify: `B=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects (unauthenticated instance), the hub is either down or cloud login failed — coordinate with Phase 8's hub bring-up. Data-independent test categories may run on unauthenticated instances; data/session/auth-dependent failures are environmental artifacts, not real bugs, and Phase 11 must not chase them. Flag the phase instead (reason: instance unauthenticated, hub dependency unmet).
+- **For browser-phase instances (Phases 11–12), verify authentication before running data-dependent scenarios.** A dedicated instance used for Phases 11/12 must be authenticated (hub up → cloud login succeeded) before its data-dependent browser failures can be trusted as regressions. Launch the instance, then verify: `B=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects (unauthenticated instance), the hub is either down or cloud login failed — coordinate with Phase 9's hub bring-up. Data-independent test categories may run on unauthenticated instances; data/session/auth-dependent failures are environmental artifacts, not real bugs, and Phase 12 must not chase them. Flag the phase instead (reason: instance unauthenticated, hub dependency unmet).
 
 ```bash
 # correct pattern: a dedicated instance you own, cleaned up after
@@ -48,7 +48,7 @@ Never raise a timeout to mask host-load slowness, and never kill a process you d
 - **Clear pass** = all tests in the phase exit with 0 failures, OR every residual failure has been worked to a `flagged` terminal state per SKILL.md, "Autonomous Run Policy". Flagged is a tracked, evidence-backed state — never a silent skip. No skipped failures allowed unless the user pre-approved skipping a specific test in the invocation. **Before reporting a phase complete, record an individual disposition for every failure** (fixed with evidence, flagged with reason, or test-issue diagnosed) — a cluster-level classification ("N failures are all <class>") is never a verdict. Grouping by signature orders the work; it never substitutes for examining each member, because deterministic bugs hide behind plausible cluster narratives.
 - **On failure**: debug the failing test(s) one by one using the Debug Mode flow (see `modes/debug.md`). Do NOT re-run the full suite after every individual fix — fix all failures first, then re-run the phase once as a final verification.
 - **Never skip** a failing test without explicit user instruction given at invocation time. "It was already failing" is not a reason to move on. Mid-cycle, the only alternative to fixing is flagging.
-- **Backend/infra ownership**: For phases 2, 3, 5, and 7–11, you own the machine. You may restart the backend server (`uv run -m flow_sdk.server.run`), the frontend, named instances (`scripts/instance_ctl.sh`), and the local hub as needed between runs. **Before each backend-owning phase starts**, verify the backend's health by polling `/api/v1/graph/bootstrap` — confirm it returns a valid, non-empty payload with populated `projects` (same machine-readable check used in Phase 10/11 DB clears). If bootstrap returns empty, errors, or indicates the DB is implausibly small vs. recent backups, stop immediately, restore from the most recent backup, and re-verify bootstrap before proceeding — corruption undetected between phases poisons every verdict recorded against it.
+- **Backend/infra ownership**: For phases 2, 3, 5, and 7–12, you own the machine. You may restart the backend server (`uv run -m flow_sdk.server.run`), the frontend, named instances (`scripts/instance_ctl.sh`), and the local hub as needed between runs. **Before each backend-owning phase starts**, verify the backend's health by polling `/api/v1/graph/bootstrap` — confirm it returns a valid, non-empty payload with populated `projects` (same machine-readable check used in Phase 11/12 DB clears). If bootstrap returns empty, errors, or indicates the DB is implausibly small vs. recent backups, stop immediately, restore from the most recent backup, and re-verify bootstrap before proceeding — corruption undetected between phases poisons every verdict recorded against it.
 - **No flaky tolerance**: `retries` stays 0 everywhere. A test that passes on re-run with no code change is not green — it is evidence of a real race and is flag-worthy. Never add retries, reruns, or `@flaky` markers, and never raise any timeout (see CLAUDE.md non-negotiables).
 - **Integrity & resilience**: every verdict, destructive op, infra launch, and anomaly response is governed by SKILL.md, "Run Integrity & Resilience" — machine-read verdicts, one writer per instance, daemonized services, durable cycle state, circuit breaker.
 
@@ -122,11 +122,26 @@ cd ui && npm run test:vitest:long
 - Backend must be running (you own it — restart if needed).
 - **Gate**: all tests pass → proceed to Phase 8
 
-## Phase 8 — pytest hub tests (hub + instances required)
+## Phase 8 — vitest headless tests (backend required)
+
+```bash
+# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
+cd ui && npm run test:vitest:headless
+```
+
+- Headless = the full app booted in jsdom + RTL against the LIVE backend, no mocks
+  (the in-process E2E tier; see `ui/tests/headless/CLAUDE.md`). Single backend only — no
+  hub/instances needed.
+- Backend must be running (you own it — restart if needed). The suite self-skips if the
+  backend is unreachable; a skip here is NOT a pass — bring the backend up and re-run
+  (zero infra-skips in a clear pass).
+- **Gate**: all tests pass → proceed to Phase 9
+
+## Phase 9 — pytest hub tests (hub + instances required)
 
 1. **Hub preflight**: `set -a; source .env.local; set +a` then check `curl -sf ${FLOWPAD_HUB_URL:-http://localhost:8093}/api/v1/health/status`.
    - If down, bring the whole stack up (Neo4j → hub → seed users) by following the canonical runbook **`../test_flowpad/FlowPad/docs/hub_setup.md`** — the hub doc owns the exact commands and creds. The stack is fully CLI-startable (no GUI): start the Neo4j "local" DBMS headless via its bundled `bin/neo4j` (needs `JAVA_HOME` → openjdk@21), then start the hub with `uv run python flowpad/run.py` (its 3.12 venv), then `ops/scripts/setup_test_users.sh`. Re-check health after.
-   - Only `flag` Phases 8 **and** 9 if the stack is genuinely unrecoverable after working that runbook (e.g. the hub checkout, its venv, Neo4j install, or openjdk@21 are missing) — capture the failing step's log as evidence, then continue to Phase 10.
+   - Only `flag` Phases 9 **and** 10 if the stack is genuinely unrecoverable after working that runbook (e.g. the hub checkout, its venv, Neo4j install, or openjdk@21 are missing) — capture the failing step's log as evidence, then continue to Phase 11.
 2. **Instances**: check `scripts/instance_ctl.sh status` first — **reuse any instance that is already UP** (do not relaunch it; `launch` kills an existing instance before starting, so re-launching a healthy one is a needless restart). Launch only what's missing via `scripts/instance_ctl.sh launch <name>`; if an instance goes unhealthy mid-phase, restart it with `kill <name>` + `launch <name>`.
 3. **Run**:
    ```bash
@@ -134,12 +149,12 @@ cd ui && npm run test:vitest:long
    ```
 4. **Auto-skips count as failures.** `tests/hub_tests/conftest.py` silently skips when the hub is unreachable or credentials are invalid. A skipped-for-infra test is NOT a pass — remediate (restart hub, re-seed users via `setup_test_users.sh`) and re-run. Zero hub-infra skips allowed in a clear pass.
 5. **On failure**: existing Debug Mode flow (see `modes/debug.md`); unresolvable → `flagged`.
-6. **Cleanup (always, even when flagging)**: `scripts/instance_ctl.sh kill <name>` for every instance THIS phase launched. Do not kill instances you didn't launch; leave the hub running for Phase 9.
-- **Gate**: all tests pass (or flagged) → proceed to Phase 9.
+6. **Cleanup (always, even when flagging)**: `scripts/instance_ctl.sh kill <name>` for every instance THIS phase launched. Do not kill instances you didn't launch; leave the hub running for Phase 10.
+- **Gate**: all tests pass (or flagged) → proceed to Phase 10.
 
-## Phase 9 — vitest hub tests (hub + dev-1/dev-2 required)
+## Phase 10 — vitest hub tests (hub + dev-1/dev-2 required)
 
-1. **Hub preflight**: same as Phase 8 (reuse its result if the hub is already up and healthy).
+1. **Hub preflight**: same as Phase 9 (reuse its result if the hub is already up and healthy).
 2. **Instances**: the suite expects the fixed names **dev-1** and **dev-2** (`ui/tests/hub/_instances.ts`). Check first, reuse if already UP — launch only what's missing (`launch` restarts an existing instance, so don't run it against a healthy one):
    ```bash
    scripts/instance_ctl.sh status            # see what's already UP
@@ -154,13 +169,13 @@ cd ui && npm run test:vitest:long
 4. **On failure**: Debug Mode flow (see `modes/debug.md`). Restart instances between re-runs as needed (`kill` + `launch`). The suite's 30s test timeouts are a hard cap — never raise them. Unresolvable → `flagged`.
 5. **Cleanup (always, even when flagging)**: kill only the instances THIS phase launched:
    ```bash
-   scripts/instance_ctl.sh kill dev-1   # only if Phase 9 launched it
-   scripts/instance_ctl.sh kill dev-2   # only if Phase 9 launched it
+   scripts/instance_ctl.sh kill dev-1   # only if Phase 10 launched it
+   scripts/instance_ctl.sh kill dev-2   # only if Phase 10 launched it
    ```
    Instances that were already running before the phase started belong to the user's setup — leave them up, and leave the hub running.
-- **Gate**: all tests pass (or flagged) → proceed to Phase 10.
+- **Gate**: all tests pass (or flagged) → proceed to Phase 11.
 
-## Phase 10 — Playwright `.md.ts` sweep
+## Phase 11 — Playwright `.md.ts` sweep
 
 A fast, deterministic pass/fail sweep of every `.md.ts` Playwright test. **No team, no debugging, no fixes** — the manager runs it directly and records results. That's it.
 
@@ -195,30 +210,30 @@ A fast, deterministic pass/fail sweep of every `.md.ts` Playwright test. **No te
    fi
 
    cd ui && VITE_PORT=${VITE_PORT} \
-     PLAYWRIGHT_JSON_OUTPUT_NAME=<abs-results-dir>/<timestamp>/phase10--<category>.json \
+     PLAYWRIGHT_JSON_OUTPUT_NAME=<abs-results-dir>/<timestamp>/phase11--<category>.json \
      npx playwright test --config tests/manual_regression/<category>/playwright.config.ts --reporter=json
    ```
-3. Parse each `phase10--<category>.json` and aggregate into `<output-dir>/<timestamp>/phase10-summary.json`:
+3. Parse each `phase11--<category>.json` and aggregate into `<output-dir>/<timestamp>/phase11-summary.json`:
    - one entry per test: `{ category, file, test_title, status, duration_ms, error_excerpt }`
 4. Print the per-test pass/fail table:
    ```
-   Phase 10 — Playwright sweep
+   Phase 11 — Playwright sweep
    ───────────────────────────
    <category>/<file> :: <test title>   PASS|FAIL  (Xs)
    ...
    Total: N tests — N passed, N failed
    ```
-- **Do not debug or fix anything in this phase.** Failures are recorded and become Phase 11's work list.
-- **Gate**: Phase 10 never blocks — it always proceeds to Phase 11 with its failure list. (If Phase 10 has zero failures AND the test index shows no `.md`-only scenarios, Phase 11 is a no-op.)
+- **Do not debug or fix anything in this phase.** Failures are recorded and become Phase 12's work list.
+- **Gate**: Phase 11 never blocks — it always proceeds to Phase 12 with its failure list. (If Phase 11 has zero failures AND the test index shows no `.md`-only scenarios, Phase 12 is a no-op.)
 
-## Phase 11 — agentic remediation (full `.md` scenarios)
+## Phase 12 — agentic remediation (full `.md` scenarios)
 
 Team-based agentic phase using the full methodology — Run Mode steps 1–12 (see `modes/run.md`), Debug Mode lifecycle (see `modes/debug.md`), up to 3 qa-testers with the per-test tab protocol.
 
-**PREREQUISITE: Instance authentication (see Step 0.4).** Before running any Phase 11 scenario against a dedicated instance, verify the instance is authenticated: `B=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects, the instance has no user-scoped data — hub is down or cloud login failed. Flag the entire phase (reason: cannot run data-dependent browser scenarios without authenticated user data; hub bring-up required). Do not run scenarios against an unauthenticated instance; failures will be environmental artifacts, not regressions.
+**PREREQUISITE: Instance authentication (see Step 0.4).** Before running any Phase 12 scenario against a dedicated instance, verify the instance is authenticated: `B=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects, the instance has no user-scoped data — hub is down or cloud login failed. Flag the entire phase (reason: cannot run data-dependent browser scenarios without authenticated user data; hub bring-up required). Do not run scenarios against an unauthenticated instance; failures will be environmental artifacts, not regressions.
 
-**Scope** (from `phase10-summary.json` + the test index):
-- (a) every scenario with a **failing `.md.ts`** in Phase 10
+**Scope** (from `phase11-summary.json` + the test index):
+- (a) every scenario with a **failing `.md.ts`** in Phase 11
 - (b) every `.md` scenario that has **no `.md.ts`** at all
 
 **Per scenario, three sub-goals — in order, all required:**
@@ -276,10 +291,11 @@ Phase 4  (vitest unit):       PASS — N tests
 Phase 5  (vitest api):        PASS — N tests
 Phase 6  (vitest react):      PASS — N tests
 Phase 7  (vitest long):       PASS — N tests
-Phase 8  (pytest hub):        PASS — N tests (N flagged)
-Phase 9  (vitest hub):        PASS — N tests (N flagged)
-Phase 10 (playwright md.ts):  N passed / N failed → Phase 11
-Phase 11 (agentic md+md.ts):  PASS — N scenarios (N flagged)
+Phase 8  (vitest headless):   PASS — N tests
+Phase 9  (pytest hub):        PASS — N tests (N flagged)
+Phase 10 (vitest hub):        PASS — N tests (N flagged)
+Phase 11 (playwright md.ts):  N passed / N failed → Phase 12
+Phase 12 (agentic md+md.ts):  PASS — N scenarios (N flagged)
 
 Total fixes applied: N
 New .md.ts authored: N

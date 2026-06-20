@@ -36,7 +36,7 @@ You are a **teammate** managed by the QA Manager (team lead). Follow this workfl
 
 ## Your TODO List
 
-### 0. Reset the DB (Phase 11 / manual regression runs only)
+### 0. Reset the DB (Phase 12 / manual regression runs only)
 Before executing each scenario, reset the database to a clean state:
 ```bash
 curl -s -X POST {API_URL}/api/v1/graph/compute_node/@local/desktop-db/clear
@@ -180,7 +180,7 @@ Treat the `.md.ts` (and any `.fast.ts`) as a **cache** of the full `.md` run, no
 1. **Fast version passes** → trust it, move on.
 2. **Fast version fails** → do not rerun or patch it. Run the full `.md` instead (the source of truth).
 3. **Once the full `.md` is resolved** (passes after any fix, or is confirmed a real reported failure), fold the learnings back into the `.md.ts` — corrected selectors, timing, steps — so it matches reality, then re-run the updated `.md.ts` and confirm it now passes. Only then is the task done. Never edit a `.md.ts` just to make it green without going through the full `.md` first.
-4. **`.md`-only scenarios (Phase 11)**: if the task says no `.md.ts` exists, then once the full `.md` passes, **author a new `.md.ts`** in the same category directory — follow the category's existing `.md.ts` conventions (helpers, selectors, one `test('...')` per `test N:` block; the per-category `playwright.config.ts` picks it up via `testMatch: '*.md.ts'`). The new file must encode exactly what the `.md` validates — no extra assertions, no weakened ones.
+4. **`.md`-only scenarios (Phase 12)**: if the task says no `.md.ts` exists, then once the full `.md` passes, **author a new `.md.ts`** in the same category directory — follow the category's existing `.md.ts` conventions (helpers, selectors, one `test('...')` per `test N:` block; the per-category `playwright.config.ts` picks it up via `testMatch: '*.md.ts'`). The new file must encode exactly what the `.md` validates — no extra assertions, no weakened ones.
 5. **Stability check (after any update or authoring)**: prove the changed `.md.ts` is solid, not luckily green:
    ```bash
    cd ui && VITE_PORT=<frontend-port-from-APP_URL> npx playwright test \
