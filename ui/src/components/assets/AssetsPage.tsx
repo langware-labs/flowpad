@@ -888,6 +888,7 @@ export function AssetsPage() {
                 <BrowseableTree
                   roots={wikiRoots}
                   activePointer={treeActivePointer}
+                  activeKey={openAssetId}
                   isLoading={typesLoading && wikiRoots.length === 0}
                   onNavigate={navigateAsset}
                 />
