@@ -88,7 +88,9 @@ You must inspect **all** of the following:
 |----------|------|-------------|
 | `tests/unit/` | pytest-unit | Python SDK unit tests |
 | `tests/api/` | pytest-api | Python API integration tests |
-| `ui/tests/` | vitest-unit / vitest-api | TypeScript unit and API tests |
+| `ui/tests/` (unit, api, react, long) | vitest | TypeScript unit / API / component (jsdom+RTL) tests |
+| `ui/tests/headless/` | vitest-headless | Full app in jsdom+RTL vs a LIVE backend, no mocks (in-process E2E; routing/loaders/context/data round-trips) |
+| `ui/tests/hub/` | vitest-hub | Two-client hub/conversation tests (real instances) |
 | `ui/tests/manual_regression/` | manual (.md) | Browser-based manual regression scenarios |
 | `ui/tests/manual_regression/_fast_paths/` | fast-path (.ts) | Lightweight fast-path scripts |
 
@@ -125,7 +127,7 @@ Status values: `keep` | `modify` | `remove`
 | chat | manual (.md) | validate_empty_message_rejection | send button disabled when input is empty | button is enabled, empty message sent |
 | fs_store | vitest-api | record_create_conflict | 409 status + error message on duplicate key | 200 or 500 returned |
 
-Type values: `pytest-unit` | `pytest-api` | `vitest-unit` | `vitest-api` | `manual (.md)` | `fast-path (.ts)`
+Type values: `pytest-unit` | `pytest-api` | `vitest-unit` | `vitest-api` | `vitest-headless` | `vitest-hub` | `manual (.md)` | `fast-path (.ts)`
 
 ## Summary
 
