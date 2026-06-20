@@ -38,6 +38,9 @@ import { workerStatusLabel } from './worker-status-label';
  * Known limitation: row name / project name come from
  * ``*.getByIdFromCache(id)?.name`` and are NOT reactive.
  */
+/** The two related ids the name resolver reads off an AgenticProcess. */
+type APWithIds = AgenticProcess & { session_id?: string | null; shell_id?: string | null };
+
 export function PendingActionsChip() {
   const isAdvanced = useIsAdvanced();
   const supported = useMemo(() => supportedExecutionModes(isAdvanced), [isAdvanced]);
@@ -69,9 +72,7 @@ export function PendingActionsChip() {
   // The lightweight status-op store carries none of these, so resolve from
   // the cache: AgenticProcess → session_id / shell_id → name.
   const apOf = (processId: string) =>
-    AgenticProcess.getByIdFromCache<AgenticProcess>(processId) as
-      | (AgenticProcess & { session_id?: string | null; shell_id?: string | null })
-      | null;
+    AgenticProcess.getByIdFromCache<AgenticProcess>(processId) as APWithIds | null;
   const nameFromCache = (processId: string): string | null => {
     const ap = apOf(processId);
     const sessionId = ap?.session_id;
@@ -98,9 +99,7 @@ export function PendingActionsChip() {
     missing.forEach((id) => fetchedRef.current.add(id));
     let cancelled = false;
     const resolve = async (id: string): Promise<void> => {
-      const ap = apOf(id) ?? ((await AgenticProcess.getById<AgenticProcess>(id)) as
-        | (AgenticProcess & { session_id?: string | null; shell_id?: string | null })
-        | null);
+      const ap = apOf(id) ?? ((await AgenticProcess.getById<AgenticProcess>(id)) as APWithIds | null);
       const sessionId = ap?.session_id;
       const shellId = ap?.shell_id;
       await Promise.allSettled(
