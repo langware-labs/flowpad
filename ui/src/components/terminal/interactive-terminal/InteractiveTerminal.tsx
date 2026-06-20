@@ -46,14 +46,16 @@ import {
   InputFilesPanel,
   PromptIndexPanel,
   QueuePanel,
+  SIDE_TABS,
   SideTabId,
-  SideWindow,
   SimpleDirTree,
   parseSideTabIdList,
   parseSideTabId,
   usePromptsForProcess,
   type PromptEntry,
 } from './side-windows';
+import { SideTabTooltipContent } from './LastPromptTooltip';
+import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
 import { SidecarShellTerminal } from './SidecarShellTerminal';
 import { TerminalBottomRibbon } from './TerminalBottomRibbon';
 import { TerminalSearchBar } from './TerminalSearchBar';
@@ -1429,6 +1431,76 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
   const ribbonActiveSideTab = activePane === 'shell' && sidecarShellId ? SideTabId.Shell : activeSideTab;
 
+  // Side-window panels keyed by tab id — only the active one is mounted by the
+  // drawer. Null-guards mirror the prior inline conditionals.
+  const sidePanels = useMemo<Partial<Record<SideTabId, React.ReactNode>>>(() => {
+    const panels: Partial<Record<SideTabId, React.ReactNode>> = {
+      [SideTabId.Git]: (
+        <GitPanel
+          computeNodeId={shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? ''}
+          workdir={shellRef.current?.workdir ?? process?.workdir ?? ''}
+          sidecarShellId={sidecarShellId}
+        />
+      ),
+      [SideTabId.Prompts]: (
+        <PromptIndexPanel
+          prompts={mergedPrompts}
+          onScrollToLine={scrollAnnotationToLine}
+          process={process ?? null}
+          projectId={process?.project_id ?? null}
+        />
+      ),
+    };
+    if (process) {
+      panels[SideTabId.Queue] = <QueuePanel process={process} />;
+      panels[SideTabId.Context] = (
+        <div className="h-full overflow-y-auto p-3">
+          <EntityContextPanel entity={process} />
+        </div>
+      );
+    }
+    if (inputDirInfo) {
+      panels[SideTabId.Files] = (
+        <InputFilesPanel
+          computeNodeTypeId={inputDirInfo.computeNodeTypeId}
+          inputDirAbsPath={inputDirInfo.absPath}
+        />
+      );
+      if (process?.workdir || shellRef.current?.workdir) {
+        panels[SideTabId.Dir] = (
+          <SimpleDirTree
+            computeNodeTypeId={inputDirInfo.computeNodeTypeId}
+            topLevel={process?.workdir ?? shellRef.current?.workdir ?? ''}
+          />
+        );
+      }
+    }
+    return panels;
+  }, [process, inputDirInfo, sidecarShellId, mergedPrompts, scrollAnnotationToLine, dataContext.computeNode?.id]);
+
+  const sideTabs = useMemo<TabDescriptor<SideTabId>[]>(
+    () =>
+      sideWindowTabs.map((id) => {
+        const d = SIDE_TABS[id];
+        return {
+          id,
+          label: d.label,
+          icon: d.icon,
+          closable: true,
+          tooltip: (
+            <SideTabTooltipContent
+              side="bottom"
+              isPrompts={id === SideTabId.Prompts}
+              lastPromptText={lastPromptText}
+              promptCount={mergedPrompts.length}
+              fallback={d.description}
+            />
+          ),
+        };
+      }),
+    [sideWindowTabs, lastPromptText, mergedPrompts.length],
+  );
+
   return (
     <div className={`relative flex h-full flex-col ${className}`} onDragOver={(e) => e.preventDefault()}>
       {/* Top bar — ProcessToolbar (Claude pane) or PaneBar (Shell pane) */}
@@ -1584,48 +1656,18 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
             {/* Side window (non-Shell tabs) */}
             {sideWindowTabs.length > 0 && activeSideTab && (
-              <SideWindow
-                tabs={sideWindowTabs}
+              <TabbedSideDrawer<SideTabId>
+                open
+                width="w-80"
+                tabs={sideTabs}
                 activeTab={activeSideTab}
-                onSelect={selectSideTab}
-                onClose={closeSideTab}
-                lastPromptText={lastPromptText}
-                promptCount={mergedPrompts.length}
+                onActiveTabChange={selectSideTab}
+                onCloseTab={closeSideTab}
+                truncateLabels
+                scrollableTabs
               >
-                {activeSideTab === SideTabId.Git && (
-                  <GitPanel
-                    computeNodeId={shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? ''}
-                    workdir={shellRef.current?.workdir ?? process?.workdir ?? ''}
-                    sidecarShellId={sidecarShellId}
-                  />
-                )}
-                {activeSideTab === SideTabId.Prompts && (
-                  <PromptIndexPanel
-                    prompts={mergedPrompts}
-                    onScrollToLine={scrollAnnotationToLine}
-                    process={process ?? null}
-                    projectId={process?.project_id ?? null}
-                  />
-                )}
-                {activeSideTab === SideTabId.Queue && process && <QueuePanel process={process} />}
-                {activeSideTab === SideTabId.Files && inputDirInfo && (
-                  <InputFilesPanel
-                    computeNodeTypeId={inputDirInfo.computeNodeTypeId}
-                    inputDirAbsPath={inputDirInfo.absPath}
-                  />
-                )}
-                {activeSideTab === SideTabId.Dir && inputDirInfo && (process?.workdir || shellRef.current?.workdir) && (
-                  <SimpleDirTree
-                    computeNodeTypeId={inputDirInfo.computeNodeTypeId}
-                    topLevel={process?.workdir ?? shellRef.current?.workdir ?? ''}
-                  />
-                )}
-                {activeSideTab === SideTabId.Context && process && (
-                  <div className="h-full overflow-y-auto p-3">
-                    <EntityContextPanel entity={process} />
-                  </div>
-                )}
-              </SideWindow>
+                {sidePanels}
+              </TabbedSideDrawer>
             )}
           </div>
 

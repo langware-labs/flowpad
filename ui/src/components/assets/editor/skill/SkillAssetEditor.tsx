@@ -1,13 +1,14 @@
 import { MarkdownEditor, type MarkdownHeaderExtrasCtx } from '@src/components/assets/editor/markdown/MarkdownEditor';
-import { SkillEvalPanel } from '@src/components/assets/editor/skill/SkillEvalPanel';
+import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
+import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { FSRef, Skill } from '@sdk';
+import { FSRef, ProcessKind, Skill } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { FlaskConical } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
@@ -87,18 +88,41 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
     );
   }, [skill]);
 
+  // Skill eval history rides as an extra tab inside the editor's single side
+  // drawer (Chat | Backlinks | Eval) rather than a second sibling rail. The
+  // analysis processes are launched elsewhere (in-trace Evaluate button, the
+  // tab-close adapter) keyed to this skill's TypeId; `EntityExecutionPanel`
+  // auto-lists by `target_typeid_str`. Memoized on `skill` so the array
+  // identity is stable across editor keystrokes (else MarkdownEditor's tab/
+  // panel memos rebuild every render).
+  const extraSideTabs = useMemo<ExtraSideTab[] | undefined>(() => {
+    if (!skill) return undefined;
+    return [
+      {
+        id: 'eval',
+        label: 'Eval',
+        icon: FlaskConical,
+        description: 'Skill evaluations',
+        panel: (
+          <EntityExecutionPanel
+            target={skill.typeId.toString()}
+            processType={ProcessKind.Execution}
+            headerLabel="Skill eval"
+            className="min-h-0 flex-1"
+          />
+        ),
+      },
+    ];
+  }, [skill]);
+
   return (
-    <div className="flex h-full min-h-0 w-full">
-      <div className="min-w-0 flex-1">
-        <MarkdownEditor
-          fsRef={editorRef}
-          chatTarget={chatTarget}
-          headerExtras={headerExtras}
-          onDelete={skill ? onDelete : undefined}
-          deleteLabel={skill?.name ?? undefined}
-        />
-      </div>
-      {skill && <SkillEvalPanel skill={skill} />}
-    </div>
+    <MarkdownEditor
+      fsRef={editorRef}
+      chatTarget={chatTarget}
+      headerExtras={headerExtras}
+      extraSideTabs={extraSideTabs}
+      onDelete={skill ? onDelete : undefined}
+      deleteLabel={skill?.name ?? undefined}
+    />
   );
 }
