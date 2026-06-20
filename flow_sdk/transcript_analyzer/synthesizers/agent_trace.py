@@ -673,6 +673,21 @@ def _bursts(times: list[str], gap_s: float) -> list[tuple[str, str]]:
     return [(a, b) for a, b in out]
 
 
+def _event_lane(name: str, events: list[dict]) -> dict | None:
+    """A session-level outline lane that is just a list of point events
+    (``user`` / ``tasks`` / ``errors``), spanning its first→last event timestamp.
+    Events are sorted by ``ts``; returns ``None`` when empty. ``name`` is the
+    lane id, kind, and label (all three coincide for these structural lanes)."""
+    evs = sorted(events, key=lambda e: e.get("ts") or "")
+    ts = [e["ts"] for e in evs if e.get("ts")]
+    if not ts:
+        return None
+    return _outline_lane(
+        name, name, 1, description=name, parent_lane_id="root",
+        start_ts=ts[0], end_ts=ts[-1], events=evs,
+    )
+
+
 def _build_outline(
     root_entries: list[TranscriptEntry],
     sub_lane_by_tuid: dict[str, dict],
@@ -782,47 +797,28 @@ def _build_outline(
             segments=[_outline_span(lid, start_ts, end_ts, label)],
         ))
 
+    # Session-level event lanes under root, in order: the human's prompts +
+    # interrupts; the TaskCreate/TaskUpdate todo list; and the errors lane —
+    # every failed tool call / stuck loop (issue + stuck markers from the whole
+    # session incl. subagents, so it agrees with the header's issue count;
+    # rendered red, and only shown by the front end in advanced mode).
+    error_events = [
+        {
+            "ts": m["ts"], "lane_id": "errors", "kind": "error",
+            "label": m.get("label") or "error",
+            "severity": SeverityTier.ATTENTION.value, "entry_id": "",
+        }
+        for m in markers
+        if m.get("kind") in ("issue", "stuck") and m.get("ts")
+    ]
     out: list[dict] = [root_lane]
-    # User lane — the human's prompts and interrupts over the session.
-    if user_events:
-        u_ts = [u["ts"] for u in user_events if u["ts"]]
-        out.append(_outline_lane(
-            "user", "user", 1, description="user", parent_lane_id="root",
-            start_ts=min(u_ts) if u_ts else None, end_ts=max(u_ts) if u_ts else None,
-            events=user_events,
-        ))
-    # Tasks lane — the TaskCreate/TaskUpdate todo list as create/update markers
-    # over time (session-level progress, right under root).
-    if task_events:
-        t_ts = [t["ts"] for t in task_events if t["ts"]]
-        out.append(_outline_lane(
-            "tasks", "tasks", 1, description="tasks", parent_lane_id="root",
-            start_ts=min(t_ts) if t_ts else None, end_ts=max(t_ts) if t_ts else None,
-            events=task_events,
-        ))
-    # Errors lane — every failed tool call / stuck loop (issue + stuck markers
-    # from the whole session incl. subagents, so it agrees with the header's
-    # issue count). Rendered as red, click-to-zoom events; the front end only
-    # shows this lane in advanced mode.
-    error_events = sorted(
-        (
-            {
-                "ts": m["ts"], "lane_id": "errors", "kind": "error",
-                "label": m.get("label") or "error",
-                "severity": SeverityTier.ATTENTION.value, "entry_id": "",
-            }
-            for m in markers
-            if m.get("kind") in ("issue", "stuck") and m.get("ts")
-        ),
-        key=lambda x: x["ts"] or "",
-    )
-    if error_events:
-        e_ts = [x["ts"] for x in error_events if x["ts"]]
-        out.append(_outline_lane(
-            "errors", "errors", 1, description="errors", parent_lane_id="root",
-            start_ts=min(e_ts), end_ts=max(e_ts),
-            events=error_events,
-        ))
+    for lane in (
+        _event_lane("user", user_events),
+        _event_lane("tasks", task_events),
+        _event_lane("errors", error_events),
+    ):
+        if lane:
+            out.append(lane)
     for sk in skill_order:
         bursts = skill_bursts[sk]
         lid = skill_lane_id[sk]

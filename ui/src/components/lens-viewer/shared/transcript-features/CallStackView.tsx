@@ -43,7 +43,7 @@ export function CallStackView({
   const outline = doc?.outline ?? null;
   // The errors lane (failed tool calls / stuck loops) is an advanced-only detail.
   const displayOutline = useMemo(
-    () => (advanced ? outline : outline?.filter((l) => l.kind !== 'errors') ?? null),
+    () => (advanced ? outline : outline?.filter((l) => l.kind !== 'errors')),
     [outline, advanced],
   );
 
@@ -97,7 +97,7 @@ export function CallStackView({
       <div className="flex shrink-0 items-center gap-4 border-b border-border bg-card px-3 py-2 text-[11px] text-muted-foreground">
         <span className="font-medium">Session call stack</span>
         <span className="flex items-center gap-3">
-          {OUTLINE_LEGEND.filter(({ label }) => advanced || label !== 'error').map(({ color, label }) => (
+          {OUTLINE_LEGEND.filter(({ advancedOnly }) => advanced || !advancedOnly).map(({ color, label }) => (
             <span key={label} className="flex items-center gap-1">
               <span className={cn('h-2 w-2 rotate-45 rounded-[1px]', color)} />
               {label}
