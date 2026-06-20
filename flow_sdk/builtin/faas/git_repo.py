@@ -361,6 +361,50 @@ class GitRepo:
         return GitRestoreResult(ok=True, message=f"Restored to {commit_hash[:8]}")
 
     # ------------------------------------------------------------------
+    # Per-file working-tree actions (discard / stage / unstage)
+    # ------------------------------------------------------------------
+
+    async def discard_file(self, file_path: str, status: str) -> GitRestoreResult:
+        """Undo a single file's pending change, chosen by its status char.
+
+        * ``?`` untracked → delete the file (``git clean -f``); it isn't tracked,
+          so there's nothing to restore it to.
+        * everything else (``M`` modified, ``D`` deleted, ``A`` added, ``R``
+          renamed, …) → revert both the index and the working tree to HEAD
+          (``git restore --staged --worktree``), bringing a deleted file back and
+          dropping edits/staging in one shot.
+
+        For a rename the panel hands us the **new** path (the caller strips the
+        ``old → new`` display form); v1 reverts that path only — the old name may
+        linger as a separate deletion until the next refresh.
+        """
+        if status == "?":
+            _, err, rc = await self._run_git_io("clean", "-f", "--", f"'{file_path}'")
+            verb = "Deleted"
+        else:
+            _, err, rc = await self._run_git_io(
+                "restore", "--staged", "--worktree", "--", f"'{file_path}'"
+            )
+            verb = "Discarded changes to"
+        if rc != 0:
+            return GitRestoreResult(ok=False, message=(err or "Discard failed").strip())
+        return GitRestoreResult(ok=True, message=f"{verb} {file_path}")
+
+    async def stage_file(self, file_path: str) -> GitRestoreResult:
+        """Stage just this file (``git add -- <file>``)."""
+        _, err, rc = await self._run_git_io("add", "--", f"'{file_path}'")
+        if rc != 0:
+            return GitRestoreResult(ok=False, message=(err or "Stage failed").strip())
+        return GitRestoreResult(ok=True, message=f"Staged {file_path}")
+
+    async def unstage_file(self, file_path: str) -> GitRestoreResult:
+        """Unstage just this file (``git restore --staged -- <file>``)."""
+        _, err, rc = await self._run_git_io("restore", "--staged", "--", f"'{file_path}'")
+        if rc != 0:
+            return GitRestoreResult(ok=False, message=(err or "Unstage failed").strip())
+        return GitRestoreResult(ok=True, message=f"Unstaged {file_path}")
+
+    # ------------------------------------------------------------------
     # Greedy "non-tech" push: stage-all → commit → pull --rebase → push
     # ------------------------------------------------------------------
 
@@ -527,6 +571,9 @@ class GitRepo:
             has-commit          → has_commit()           → {hasCommit}
             diff                → get_file_diff()        → {diff}  (requires ?file=&status=)
             push  (POST)        → push()                 → {ok, conflict, nothing, branch, message}
+            discard-file (POST) → discard_file()         → {ok, message}  (requires ?file=&status=)
+            stage-file   (POST) → stage_file()           → {ok, message}  (requires ?file=)
+            unstage-file (POST) → unstage_file()         → {ok, message}  (requires ?file=)
         """
         from flow_sdk.responses.response import ApiSuccessResponse, ApiFailResponse  # noqa: PLC0415
 
@@ -577,6 +624,21 @@ class GitRepo:
             if not file_path or not commit_hash:
                 return ApiFailResponse(message="Missing required parameter: file and hash", status_code=400)
             return ApiSuccessResponse(data=(await self.restore_file(file_path, commit_hash)).model_dump(by_alias=True))
+        # Per-file working-tree mutations share the same shape: POST-only, a
+        # required ``file`` param, and a GitRestoreResult-returning coroutine.
+        # ``discard-file`` additionally passes the status char.
+        post_file_ops = {
+            "discard-file": lambda fp: self.discard_file(fp, params.get("status", "M")),
+            "stage-file": lambda fp: self.stage_file(fp),
+            "unstage-file": lambda fp: self.unstage_file(fp),
+        }
+        if sub in post_file_ops:
+            if method.upper() != "POST":
+                return ApiFailResponse(message=f"git-ops/{sub} requires POST", status_code=405)
+            file_path = params.get("file", "")
+            if not file_path:
+                return ApiFailResponse(message="Missing required parameter: file", status_code=400)
+            return ApiSuccessResponse(data=(await post_file_ops[sub](file_path)).model_dump(by_alias=True))
         return ApiFailResponse(message=f"Unknown git-ops sub-path: '{sub}'", status_code=404)
 
 

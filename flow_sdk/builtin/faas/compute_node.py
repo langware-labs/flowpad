@@ -1084,7 +1084,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         """Mutating git operations (e.g. ``push``). Delegates to GitRepo.dispatch().
 
         Routing (via sub_path):
-            POST /git-ops/push   body { workdir } → commit-all + pull --rebase + push
+            POST /git-ops/push          body { workdir } → commit-all + pull --rebase + push
+            POST /git-ops/restore-file  { workdir, file, hash } → checkout file at revision
+            POST /git-ops/discard-file  { workdir, file, status } → undo a file's pending change
+            POST /git-ops/stage-file    { workdir, file } → stage just this file
+            POST /git-ops/unstage-file  { workdir, file } → unstage just this file
         """
         return await self._git_ops_dispatch(method="POST")
 
