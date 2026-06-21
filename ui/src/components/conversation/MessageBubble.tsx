@@ -1,6 +1,7 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Pencil, Check, CheckCheck, Clock, Forward, Trash2 } from 'lucide-react';
-import type { FlowMessage } from '@sdk';
+import type { FlowMessage, TypeId } from '@sdk';
+import { SharedRepoDialog } from './SharedRepoDialog';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
@@ -178,6 +179,8 @@ export function MessageBubble({
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Set to the shared GitBranch TypeId while the open-shared-repo dialog is up.
+  const [sharedRepoTypeId, setSharedRepoTypeId] = useState<TypeId | null>(null);
   const { localUser } = useLocalUser();
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
@@ -200,6 +203,7 @@ export function MessageBubble({
       implementPlan: onImplementPlan,
       openPlanSession: onOpenPlanSession,
       viewPlan: onViewPlan,
+      openSharedRepo: setSharedRepoTypeId,
     },
   });
   const showPromptRow = promptAttachments.length > 0 || actions.length > 0;
@@ -345,6 +349,12 @@ export function MessageBubble({
           confirmLabel="Delete"
           variant="destructive"
           onConfirm={onDeleteMessage}
+        />
+      )}
+      {sharedRepoTypeId && (
+        <SharedRepoDialog
+          gitBranchTypeId={sharedRepoTypeId}
+          onClose={() => setSharedRepoTypeId(null)}
         />
       )}
     </div>

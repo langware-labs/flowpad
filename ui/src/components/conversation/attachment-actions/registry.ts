@@ -1,4 +1,4 @@
-import { ExternalLink, Eye, Pencil, Play } from 'lucide-react';
+import { ExternalLink, Eye, GitBranch, Pencil, Play } from 'lucide-react';
 import type { AttachmentActionContext, AttachmentActionDescriptor } from './types';
 import { firstUnapprovedPromptIdx } from './prompt-attachment';
 
@@ -65,6 +65,19 @@ export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
       title: 'Start a Claude Code session pre-loaded with this plan and the conversation context',
       testId: 'message-bubble-implement-plan',
       run: () => ctx.handlers.implementPlan?.(),
+    }),
+  },
+  {
+    key: 'git_branch',
+    visible: (ctx) => ctx.isFromOther && !!ctx.gitBranchTypeId && !!ctx.handlers.openSharedRepo,
+    build: (ctx) => ({
+      id: 'git_branch.open-in-git',
+      label: 'Open in Git…',
+      icon: GitBranch,
+      variant: 'primary',
+      title: 'Clone this repo, or attach it to a local copy you already have',
+      testId: 'message-bubble-open-shared-repo',
+      run: () => ctx.handlers.openSharedRepo?.(ctx.gitBranchTypeId!),
     }),
   },
   {
