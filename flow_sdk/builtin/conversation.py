@@ -8,6 +8,7 @@ from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import TypeId
+from flow_sdk.schema.types import EntityType
 
 
 class ConversationKind(StrEnum):
@@ -62,6 +63,34 @@ def _get_hub_client(api_key: str) -> "FlowpadClient":
     client = FlowpadClient(ApiConfig.from_env(), api_key=api_key)
     _HUB_CLIENT_BY_KEY[api_key] = client
     return client
+
+
+# Shared-context asset types the hub hosts as first-class nodes, so a share can
+# grant a DURABLE ``reader`` role edge on the asset ITSELF (minted on accept
+# alongside the conversation ``member`` grant) instead of access living only in
+# the thread. Extend as more asset types gain a hub model (see the hub's
+# ``BuiltinEntityType`` / ``builtin/`` registrations). Doc types (``markdown`` …)
+# are intentionally absent: the hub doesn't host them; they keep riding the
+# message bundle and stay local. (Ideally this becomes a ``hub_hostable`` flag on
+# the type's ``TypeInfo`` so a new type lights up without editing this tuple.)
+_HUB_SHAREABLE_ASSET_TYPES = (EntityType.SKILL.value, EntityType.AGENT.value)
+
+
+def _coerce_context_typeid(ref) -> Optional[TypeId]:
+    """Best-effort ``TypeId`` from a ``shared_context_entities`` entry.
+
+    Entries arrive as a ``TypeId``, a ``"<type>-<id>"`` string, or a
+    ``{"type", "id"}`` dict. Returns ``None`` for anything unparseable."""
+    try:
+        if isinstance(ref, TypeId):
+            return ref
+        if isinstance(ref, str):
+            return TypeId(ref)
+        if isinstance(ref, dict) and ref.get("type") and ref.get("id"):
+            return TypeId(f"{ref['type']}-{ref['id']}")
+    except Exception:  # noqa: BLE001
+        return None
+    return None
 
 
 class Conversation(Entity):
@@ -174,6 +203,14 @@ class Conversation(Entity):
         # conversation has no messages yet.
         callback_override = self._first_message_landing_path()
 
+        # Push hub-shareable assets (skill/agent) to the hub so each becomes a
+        # first-class node owned by the sharer, and collect one ``reader`` target
+        # per asset. These ride the SAME invitation as the conversation
+        # ``member`` grant: on accept the recipient gets a direct, durable role
+        # edge on the asset itself, so access survives the conversation being
+        # left or deleted (the conversation is the channel, not the access).
+        asset_targets = await self._share_hostable_assets()
+
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             # Caller joins so the creator enters ``participants``.
             await client.post(f"/graph/conversation/{self.id}/join", {})
@@ -185,6 +222,7 @@ class Conversation(Entity):
                     "recipient_email": email,
                     "invitation_targets": [
                         {"typeid": f"conversation-{self.id}", "role": "member"},
+                        *asset_targets,
                     ],
                 }
                 if callback_override:
@@ -218,13 +256,8 @@ class Conversation(Entity):
             targets = [targets]
         for ref in targets:
             try:
-                if isinstance(ref, TypeId):
-                    tid = ref
-                elif isinstance(ref, str):
-                    tid = TypeId(ref)
-                elif isinstance(ref, dict) and ref.get("type") and ref.get("id"):
-                    tid = TypeId(f"{ref['type']}-{ref['id']}")
-                else:
+                tid = _coerce_context_typeid(ref)
+                if tid is None:
                     continue
                 cls = SchemaRegistry.get_entity_cls(tid.type)
                 if cls is None or not tid.id or "parent_type_id" not in cls.model_fields:
@@ -243,6 +276,48 @@ class Conversation(Entity):
                     logging.warning("[conv.share] link context %s failed (non-fatal): %s", tid, e)
             except Exception as e:  # noqa: BLE001
                 logging.warning("[conv.share] link context entity %r failed (non-fatal): %s", ref, e)
+
+    async def _share_hostable_assets(self) -> list[dict]:
+        """Ensure each hub-shareable shared-context asset has a hub node and
+        return one ``reader`` ``invitation_target`` per asset.
+
+        For every entry in ``shared_context_entities`` whose type the hub hosts
+        (``_HUB_SHAREABLE_ASSET_TYPES`` — skill/agent), push it to the hub via
+        ``Entity.share()`` when it isn't already remote. The hub mints
+        ``sharer ─[ROLE owner]→ asset`` automatically on create, so the asset
+        becomes a first-class, owned node. The returned targets are appended to
+        each recipient's ``MembershipRequest`` so accept grants a direct
+        ``reader`` edge on the asset — durable, independent of the conversation.
+
+        Doc types the hub doesn't host (markdown …) are skipped: they keep
+        riding the message bundle as before. Best-effort per asset; a failed
+        push is logged and that asset simply isn't granted (no membership
+        breakage)."""
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        targets: list[dict] = []
+        for ref in (self.shared_context_entities or []):
+            tid = _coerce_context_typeid(ref)
+            if tid is None or tid.type not in _HUB_SHAREABLE_ASSET_TYPES or not tid.id:
+                continue
+            try:
+                cls = SchemaRegistry.get_entity_cls(tid.type)
+                if cls is None:
+                    continue
+                ent = await cls.get_one({"id": tid.id})
+                if ent is None:
+                    continue
+                if not getattr(ent, "remote", False):
+                    await ent.share()  # hub create → owner edge auto-minted
+                    # Persist remote=True locally so a re-share skips the push.
+                    try:
+                        await ent.save(None)
+                    except Exception as e:  # noqa: BLE001
+                        logging.warning("[conv.share] persist remote %s failed (non-fatal): %s", tid, e)
+                targets.append({"typeid": str(tid), "role": "reader"})
+            except Exception as e:  # noqa: BLE001
+                logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
+        return targets
 
     async def _deliver_pending_messages(self) -> None:
         """Push messages that were composed before this conversation was remote.

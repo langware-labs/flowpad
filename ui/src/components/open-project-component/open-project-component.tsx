@@ -524,6 +524,10 @@ interface OpenProjectComponentProps {
   /** Called after the project has been picked + side-effects applied. The
    *  gate uses this to resume the action that opened the dialog. */
   onPicked?: (project: Project) => void | Promise<void>;
+  /** Plain switch only: change the active-project CONTEXT without navigating
+   *  (no project tab/dock is opened). Used by the footer "Switch Project" so
+   *  switching projects doesn't pull focus into a project view. */
+  contextOnly?: boolean;
 }
 
 export function OpenProjectComponent({
@@ -535,6 +539,7 @@ export function OpenProjectComponent({
   remoteProjectName,
   trigger,
   onPicked,
+  contextOnly,
 }: OpenProjectComponentProps) {
   const { project: currentProject } = useProject();
   const { computeNode } = useAgentContext();
@@ -588,16 +593,22 @@ export function OpenProjectComponent({
         } catch {
           // continuation errors shouldn't break the picker
         }
-      } else {
+      } else if (!contextOnly) {
         // Plain switch: select the project by navigating to its tab — the same
         // path as clicking that tab (dockForProjectEntry → fromTabHash →
         // openDock). Resumes the last-active tab, or the project landing when it
         // has no open tab. Without this the active project changed but the URL
         // stayed on the old project's tab, so nothing was selected.
+        //
+        // `contextOnly` (footer Switch Project) deliberately skips this: it only
+        // changes the active-project context — no navigation, no project tab.
+        // Note: this context switch is ephemeral by design — the URL-first
+        // loader re-derives the active project from the URL on the next
+        // navigation, so the switch sticks only until you navigate.
         navigation.openDock(await dockForProjectEntry(project.id));
       }
     },
-    [onProjectChanged, onPicked, navigation],
+    [onProjectChanged, onPicked, navigation, contextOnly],
   );
 
   const ensureProjectAndSetContext = useCallback(

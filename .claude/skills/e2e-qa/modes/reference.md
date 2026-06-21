@@ -80,8 +80,8 @@ Inject at `<!-- REPORT_DATA -->`:
 _results/
   2026-03-04T10-30-00/
     cycle-state.md                 ← durable orchestration ledger (phase, dispositions, owners, locks)
-    phase10--chat.json             ← raw Playwright JSON reporter output, per category
-    phase10-summary.json           ← aggregated per-test pass/fail list (Phase 11's work list)
+    phase11--chat.json             ← raw Playwright JSON reporter output, per category
+    phase11-summary.json           ← aggregated per-test pass/fail list (Phase 12's work list)
     chat--chat_input_controls.json
     terminal--run_basic_command.json
     flagged.md                     ← senior-dev-review queue (Autonomous Run Policy)

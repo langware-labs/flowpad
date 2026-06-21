@@ -10,8 +10,7 @@ import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
 
 /** TYPE_ID attachment types the send path injects as structural self-refs
  *  (parent conversation, the message, the bound task). Plumbing — never
- *  rendered as chips. Mirrors the backend ``_NON_MATERIALIZING_TYPE_IDS``
- *  (minus git_repo, which DOES render — as a GitRepoChip). */
+ *  rendered as chips. Mirrors the backend ``_NON_MATERIALIZING_TYPE_IDS``. */
 const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message', 'task']);
 
 /** One downloadable attachment, resolved into everything a chip needs to render
@@ -43,7 +42,7 @@ export interface UseAttachments {
   /** FILE attachments (the conversation.jsonl transcript is filtered out). */
   items: AttachmentView[];
   /** Non-structural TYPE_ID (entity) attachments — skill / markdown / agent /
-   *  spec / git_repo — as TypeIds. Rendered as entity chips once the body is
+   *  spec — as TypeIds. Rendered as entity chips once the body is
    *  downloaded; until then they ride inside the single Download button. */
   entities: TypeId[];
   /** Message-level download state, straight from the backend-derived

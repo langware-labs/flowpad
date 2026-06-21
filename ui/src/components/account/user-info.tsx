@@ -11,6 +11,7 @@ import { AlertCircle, Check, CheckCircle2, Cloud, CloudOff, Copy, Loader2 } from
 import { useState } from 'react';
 import { notify } from '@src/notifications';
 import { Chip } from '../label-chip';
+import { OrganizationChip } from './organization-chip';
 
 interface UserInfoProps {
   user: User;
@@ -220,6 +221,15 @@ export function UserInfo({ user }: UserInfoProps) {
           <div className="text-xs text-destructive">Login: {login.reason}</div>
         )}
       </div>
+
+      {user.organization_id && (
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-semibold text-muted-foreground">Organization:</label>
+          <div className="flex flex-wrap gap-2">
+            <OrganizationChip orgId={user.organization_id} role={user.organization_role} />
+          </div>
+        </div>
+      )}
 
       {user.picture && (
         <div className="flex flex-col gap-1">

@@ -16,7 +16,7 @@ import { test, expect, request as pwRequest, type APIRequestContext, type Page }
 import { dismissSetupModal } from './helpers';
 
 const API = process.env.QA_API_URL || '';
-const tabSel = '[data-testid^="tab-shell-"]';
+const tabSel = '[data-testid^="tab-shell|"]';
 
 async function api(): Promise<APIRequestContext> {
   return pwRequest.newContext({
@@ -39,7 +39,38 @@ async function createProject(rq: APIRequestContext, name: string, mount: string)
 async function createShell(rq: APIRequestContext, projectId?: string): Promise<string> {
   const r = await rq.post(`${API}/api/v1/graph/shell`, { data: projectId ? { project_id: projectId } : {} });
   expect(r.status()).toBe(200);
-  return (await r.json()).data.id;
+  const shell = (await r.json()).data;
+  // Post-Tab-cutover a strip chip IS a `Tab` entity (created URL-first on
+  // navigation); a bare `POST /graph/shell` no longer produces one. Create the
+  // matching shell Tab so the chip renders without navigating to each shell —
+  // shape mirrors a navigation-created shell tab (pointer = DockPointer JSON,
+  // tabHash `shell|shell-<id>` → testid `tab-shell|shell-<id>`).
+  await rq.post(`${API}/api/v1/graph/tab`, {
+    data: {
+      pointer: JSON.stringify({ viewType: 'shell', pointer: `shell-${shell.id}` }),
+      target_type: 'shell',
+      target_id: shell.id,
+      project_id: shell.project_id ?? projectId,
+      visible: true,
+    },
+  });
+  return shell.id;
+}
+
+/**
+ * Active "pure" shells — plain terminals, NOT shells backing an agentic process.
+ * Replaces the removed `terminals/list` → `.data.pure_shells` shape (deleted at
+ * the Tab cutover). The live `list-shells` endpoint returns a flat shell list
+ * and tags agent-backed shells with `agentic_process_id`; "pure" filters those
+ * out, matching the old backend-computed `pure_shells`.
+ */
+async function pureShells(
+  rq: APIRequestContext,
+): Promise<Array<{ id: string; project_id: string; agentic_process_id?: string }>> {
+  const r = await rq.get(`${API}/api/v1/graph/compute_node/@local/list-shells`);
+  expect(r.status()).toBe(200);
+  const data = (await r.json()).data ?? [];
+  return data.filter((s: { agentic_process_id?: string }) => !s.agentic_process_id);
 }
 
 async function createProcess(rq: APIRequestContext, projectId: string, worker: 'claude_code' | 'codex'): Promise<{ id: string; shellId: string }> {
@@ -188,10 +219,10 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { id } = await createProcess(rq, projectId, 'claude_code');
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
     await commonValidation(page);
     await rq.dispose();
@@ -204,10 +235,10 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { id } = await createProcess(rq, projectId, 'codex');
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
     await commonValidation(page);
     await rq.dispose();
@@ -254,8 +285,8 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const ids = [await createShell(rq, projectId), await createShell(rq, projectId)];
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(2);
-    const secondTab = page.locator(`[data-testid="tab-shell-shell-${ids[1]}"]`);
-    await renameTab(page, `tab-shell-shell-${ids[1]}`, 'build-server');
+    const secondTab = page.locator(`[data-testid="tab-shell|shell-${ids[1]}"]`);
+    await renameTab(page, `tab-shell|shell-${ids[1]}`, 'build-server');
     await expect(secondTab).toContainText('build-server', { timeout: 10_000 });
     // PTY-driven title update via the update-display action (is_pty=true) — must
     // NOT override the user rename (user_renamed guard).
@@ -264,7 +295,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await expect(secondTab).toContainText('build-server');
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator(`[data-testid="tab-shell-shell-${ids[1]}"]`)).toContainText('build-server', { timeout: 15_000 });
+    await expect(page.locator(`[data-testid="tab-shell|shell-${ids[1]}"]`)).toContainText('build-server', { timeout: 15_000 });
     await commonValidation(page);
     await rq.dispose();
   });
@@ -296,7 +327,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { id } = await createProcess(rq, projectId, 'claude_code');
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     await commonValidation(page);
     await rq.dispose();
   });
@@ -342,7 +373,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(2);
     const staleUrl = `/dock/shell/shell-${ids[1]}`;
-    const secondTab = page.locator(`[data-testid="tab-shell-shell-${ids[1]}"]`);
+    const secondTab = page.locator(`[data-testid="tab-shell|shell-${ids[1]}"]`);
     await secondTab.hover();
     await secondTab.locator('button[aria-label="Close tab"]').click();
     await expect(secondTab).toHaveCount(0, { timeout: 15_000 });
@@ -363,7 +394,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const pb = await createProject(rq, 'Proj-B', '/tmp/regression/proj-b');
     for (let i = 0; i < 3; i++) await createShell(rq, pa);
     for (let i = 0; i < 2; i++) await createShell(rq, pb);
-    await gotoUrl(page, `/dock/shell/shell-${(await (await rq.get(`${API}/api/v1/graph/compute_node/@local/terminals/list`)).json()).data.pure_shells.find((s: { project_id: string }) => s.project_id === pa).id}`);
+    await gotoUrl(page, `/dock/shell/shell-${(await pureShells(rq)).find((s: { project_id: string }) => s.project_id === pa).id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     await expect(page.locator('[data-testid="close-all-tabs-button"]')).toContainText('3', { timeout: 10_000 });
@@ -457,7 +488,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await secondTab.locator('button[aria-label="Close tab"]').click();
     await expect(secondTab).toHaveCount(0, { timeout: 15_000 });
     // Active self-heals to the first tab (lowest tab_order).
-    const firstTargetKey = before[0].replace('tab-shell-', '');
+    const firstTargetKey = before[0].replace('tab-shell|', '');
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(firstTargetKey);
     await expect(page.locator('[data-testid="close-all-tabs-button"]')).toContainText('3', { timeout: 10_000 });
     await rq.dispose();
@@ -550,7 +581,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 5; i++) await createShell(rq, c);
     await createShell(rq, d);
     // current = Proj-B
-    const bShell = (await (await rq.get(`${API}/api/v1/graph/compute_node/@local/terminals/list`)).json()).data.pure_shells.find((s: { project_id: string }) => s.project_id === b).id;
+    const bShell = (await pureShells(rq)).find((s: { project_id: string }) => s.project_id === b).id;
     await gotoUrl(page, `/dock/shell/shell-${bShell}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await page.locator('[data-testid="projects-counter-chip"]').first().click();
@@ -568,7 +599,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const b = await createProject(rq, 'Proj-B', '/tmp/regression/proj-b');
     for (let i = 0; i < 3; i++) await createShell(rq, a);
     for (let i = 0; i < 2; i++) await createShell(rq, b);
-    const aShell = (await (await rq.get(`${API}/api/v1/graph/compute_node/@local/terminals/list`)).json()).data.pure_shells.find((s: { project_id: string }) => s.project_id === a).id;
+    const aShell = (await pureShells(rq)).find((s: { project_id: string }) => s.project_id === a).id;
     await gotoUrl(page, `/dock/shell/shell-${aShell}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
@@ -586,7 +617,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const b = await createProject(rq, 'Proj-B', '/tmp/regression/proj-b');
     for (let i = 0; i < 3; i++) await createShell(rq, a);
     for (let i = 0; i < 2; i++) await createShell(rq, b);
-    const list = (await (await rq.get(`${API}/api/v1/graph/compute_node/@local/terminals/list`)).json()).data.pure_shells;
+    const list = (await pureShells(rq));
     const bShells = list.filter((s: { project_id: string }) => s.project_id === b).sort((x: { tab_order: number }, y: { tab_order: number }) => (x.tab_order ?? 0) - (y.tab_order ?? 0));
     const aShells = list.filter((s: { project_id: string }) => s.project_id === a);
     await gotoUrl(page, `/dock/shell/shell-${aShells[1].id}`);
@@ -683,7 +714,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     });
     // If the artifact endpoint/shape differs, this test surfaces it; record status.
     expect([200, 201]).toContain(artRes.status());
-    const bShell = (await (await rq.get(`${API}/api/v1/graph/compute_node/@local/terminals/list`)).json()).data.pure_shells.find((s: { project_id: string }) => s.project_id === b).id;
+    const bShell = (await pureShells(rq)).find((s: { project_id: string }) => s.project_id === b).id;
     await gotoUrl(page, `/dock/shell/shell-${bShell}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await expect(page.locator('[data-testid="footer"]')).toContainText(/feat\/x/, { timeout: 15_000 });
@@ -810,7 +841,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { id } = await createProcess(rq, projectId, 'claude_code');
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    const tab = page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`);
+    const tab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
     await expect(tab).toBeVisible({ timeout: 15_000 });
     await tab.hover();
     await tab.locator('button[aria-label="Close tab"]').click();
@@ -827,8 +858,8 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await createShell(rq, projectId); // a 2nd tab to switch to
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    const tab = page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`);
-    await renameTab(page, `tab-shell-agentic_process-${id}`, 'claude-fix');
+    const tab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
+    await renameTab(page, `tab-shell|agentic_process-${id}`, 'claude-fix');
     await expect(tab).toContainText('claude-fix', { timeout: 10_000 });
     // switch away and back
     const others = (await tabIds(page)).filter((t) => !t.includes(id));
@@ -839,11 +870,11 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // refresh
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`)).toContainText('claude-fix', { timeout: 15_000 });
+    await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toContainText('claude-fix', { timeout: 15_000 });
     // PTY title update must not override user rename
     await rq.post(`${API}/api/v1/graph/shell/${shellId}/update-display`, { data: { name: 'pty-title', is_pty: true } });
     await page.waitForTimeout(1_000);
-    await expect(page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`)).toContainText('claude-fix');
+    await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toContainText('claude-fix');
     await rq.dispose();
   });
 
@@ -854,9 +885,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const sid = await createShell(rq, projectId);
     await gotoUrl(page, `/dock/shell/shell-${sid}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    const tab = page.locator(`[data-testid="tab-shell-shell-${sid}"]`);
+    const tab = page.locator(`[data-testid="tab-shell|shell-${sid}"]`);
     const nameBefore = (await tab.textContent())?.trim() ?? '';
-    await renameTab(page, `tab-shell-shell-${sid}`, 'shell-abcd1234-ef56-4789-9abc-567890abcdef');
+    await renameTab(page, `tab-shell|shell-${sid}`, 'shell-abcd1234-ef56-4789-9abc-567890abcdef');
     await page.waitForTimeout(1_000);
     // Guard early-returns on TypeId match → name unchanged (no TypeId-looking name).
     await expect(tab).not.toContainText('abcd1234-ef56-4789');
@@ -896,7 +927,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     const ids = await tabIds(page);
-    const keys = ids.map((t) => t.replace('tab-shell-', ''));
+    const keys = ids.map((t) => t.replace('tab-shell|', ''));
     for (const id of ids) {
       await page.locator(`[data-testid="${id}"]`).click();
       await page.waitForTimeout(400);
@@ -954,13 +985,13 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { id } = await createProcess(rq, projectId, 'claude_code');
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
     await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)').click();
     await page.waitForURL(/\/$/, { timeout: 15_000 });
     await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-terminal)').click();
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
-    await page.locator(`[data-testid="tab-shell-agentic_process-${id}"]`).click();
+    await page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`).click();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(`agentic_process-${id}`);
     await commonValidation(page);
     await rq.dispose();
@@ -1014,7 +1045,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 2; i++) await createShell(rq, a);
     await createContentTab(rq, c);
     // Land in Proj-A explicitly so the switch is observable.
-    const aShell = (await (await rq.get(`${API}/api/v1/graph/compute_node/@local/terminals/list`)).json()).data.pure_shells.find((s: { project_id: string }) => s.project_id === a).id;
+    const aShell = (await pureShells(rq)).find((s: { project_id: string }) => s.project_id === a).id;
     await gotoUrl(page, `/dock/shell/shell-${aShell}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(2);

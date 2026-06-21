@@ -8,6 +8,14 @@ guideline doc, or spec the skill is judged against in addition to the rubric.
 Review judges the skill as written — it does not run it, and it does not edit
 anything; the report is the deliverable.
 
+A finding sourced from a run (a transcript, or an analyzer's per-asset findings
+fed into correct mode) is an **alleged hypothesis, not ground truth** — the
+analyzer can misread a trace, and a cited skill line can be stale. The same bar
+applies as to any review finding: it must cite a rubric rule or a verbatim
+run-evidence quote (see Stopping, below), and the cited skill location must
+actually resolve. A finding without resolvable evidence is not actionable — it is
+reported back, not fixed.
+
 ## Procedure — fan out, then aggregate
 
 1. Read the target's entry file, then traverse its routing: every file an

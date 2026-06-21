@@ -22,12 +22,20 @@ export interface SideDrawerProps {
   open: boolean;
   /** Omit to render as always-on (X close button hidden). */
   onOpenChange?: (open: boolean) => void;
-  title?: string;
+  /** Header title. A node (not just a string) so callers can prefix an icon. */
+  title?: ReactNode;
   /** Right-aligned header badge — e.g. run count. */
   count?: number;
   /** Tailwind width token. Default `w-80`. */
   width?: string;
   className?: string;
+  /**
+   * Caller-owned controls rendered right-aligned in the header, before the
+   * close X (e.g. a Refresh button, a Run button + asset picker). Lets a panel
+   * keep its header actions without hand-rolling the drawer chrome. Only shows
+   * when a header is present (title, count, onOpenChange, or headerActions).
+   */
+  headerActions?: ReactNode;
   children: ReactNode;
   'data-testid'?: string;
 }
@@ -39,12 +47,13 @@ export function SideDrawer({
   count,
   width = 'w-80',
   className,
+  headerActions,
   children,
   'data-testid': dataTestId,
 }: SideDrawerProps) {
   if (!open) return null;
 
-  const hasHeader = !!title || count !== undefined || !!onOpenChange;
+  const hasHeader = !!title || count !== undefined || !!onOpenChange || !!headerActions;
 
   return (
     <div
@@ -59,13 +68,16 @@ export function SideDrawer({
               {count}
             </span>
           )}
+          {headerActions && (
+            <div className="ml-auto flex items-center gap-1">{headerActions}</div>
+          )}
           {onOpenChange && (
             <Button
               variant="ghost"
               size="icon"
-              className="ml-auto h-6 w-6"
+              className={cn('h-6 w-6', !headerActions && 'ml-auto')}
               onClick={() => onOpenChange(false)}
-              aria-label={title ? `Close ${title.toLowerCase()}` : 'Close'}
+              aria-label={typeof title === 'string' ? `Close ${title.toLowerCase()}` : 'Close'}
               data-testid={dataTestId ? `${dataTestId}-close` : undefined}
             >
               <X className="h-3.5 w-3.5" />
@@ -87,8 +99,16 @@ export interface TabDescriptor<TabId extends string = string> {
   id: TabId;
   label: string;
   icon: LucideIcon;
-  /** Optional hover tooltip under the tab. */
+  /** Optional hover tooltip under the tab (simple string). */
   description?: string;
+  /**
+   * Rich hover tooltip node — overrides `description` when present. The host
+   * builds the whole `<TooltipContent>` (so any domain logic stays host-side);
+   * the primitive only decides whether a tooltip renders.
+   */
+  tooltip?: ReactNode;
+  /** Render a per-tab close X (workspace model). Requires `onCloseTab`. */
+  closable?: boolean;
 }
 
 /**
@@ -112,6 +132,15 @@ export interface TabbedSideDrawerProps<TabId extends string = string>
   closeIcon?: ComponentType<SVGProps<SVGSVGElement>>;
   /** Tooltip / aria-label for the close button. Defaults to "Close". */
   closeLabel?: string;
+  /** Per-tab close handler. A close X renders on a tab only when this is set
+   *  AND the tab's descriptor has `closable`. Used by the workspace model
+   *  (terminal side windows) where tabs are individually openable/closable. */
+  onCloseTab?: (tab: TabId) => void;
+  /** Truncate tab labels longer than two words to "first two…". The full
+   *  label is preserved in `title`/`aria-label` (and the close-button label). */
+  truncateLabels?: boolean;
+  /** Allow the tab strip to scroll horizontally when it overflows. */
+  scrollableTabs?: boolean;
 }
 
 export function TabbedSideDrawer<TabId extends string>({
@@ -126,6 +155,9 @@ export function TabbedSideDrawer<TabId extends string>({
   tabTestIdPrefix,
   closeIcon: CloseIcon = X,
   closeLabel = 'Close',
+  onCloseTab,
+  truncateLabels = false,
+  scrollableTabs = false,
   'data-testid': dataTestId,
 }: TabbedSideDrawerProps<TabId>) {
   if (!open) return null;
@@ -137,45 +169,84 @@ export function TabbedSideDrawer<TabId extends string>({
       className={cn('flex shrink-0 flex-col border-l bg-background', width, className)}
       data-testid={dataTestId}
     >
-      {/* Tab strip — uses the drawer header row. Close button (if provided) is right-aligned. */}
+      {/* Tab strip — the drawer header row. The tabs live in their own
+          (optionally horizontally-scrolling) track; the close button is a
+          shrink-0 sibling OUTSIDE that track so overflowing tabs can never push
+          it off-screen or scroll it out of view. */}
       <div className="flex items-center gap-0.5 border-b px-2 py-1">
+        <div
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-0.5',
+            scrollableTabs && 'overflow-x-auto',
+          )}
+        >
         <TooltipProvider delayDuration={400}>
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = tab.id === activeTab;
+            const words = tab.label.split(' ');
+            const display =
+              truncateLabels && words.length > 2 ? words.slice(0, 2).join(' ') + '…' : tab.label;
+            // Rich `tooltip` node wins; else fall back to the simple `description` string.
+            const tip =
+              tab.tooltip ??
+              (tab.description && (
+                <TooltipContent side="bottom" className="text-xs">
+                  {tab.description}
+                </TooltipContent>
+              ));
+            // Close X renders as a SIBLING of the trigger button (never nested —
+            // invalid HTML) and only in the workspace model.
+            const showClose = !!onCloseTab && !!tab.closable;
             return (
-              <Tooltip key={tab.id}>
-                <TooltipTrigger asChild>
+              <div
+                key={tab.id}
+                className={cn(
+                  'flex shrink-0 items-center gap-0.5 rounded',
+                  isActive
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => onActiveTabChange(tab.id)}
+                      data-testid={triggerPrefix ? `${triggerPrefix}-${tab.id}` : undefined}
+                      data-active={isActive ? 'true' : 'false'}
+                      title={display !== tab.label ? tab.label : undefined}
+                      className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5"
+                    >
+                      <Icon className="h-3 w-3" />
+                      <span className="text-[11px]">{display}</span>
+                    </button>
+                  </TooltipTrigger>
+                  {tip}
+                </Tooltip>
+                {showClose && (
                   <button
                     type="button"
-                    onClick={() => onActiveTabChange(tab.id)}
-                    data-testid={triggerPrefix ? `${triggerPrefix}-${tab.id}` : undefined}
-                    data-active={isActive ? 'true' : 'false'}
-                    className={cn(
-                      'flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5',
-                      isActive
-                        ? 'bg-muted text-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCloseTab(tab.id);
+                    }}
+                    aria-label={`Close ${tab.label}`}
+                    className="mr-0.5 rounded hover:text-foreground"
                   >
-                    <Icon className="h-3 w-3" />
-                    <span className="text-[11px]">{tab.label}</span>
+                    <X className="h-2.5 w-2.5" />
                   </button>
-                </TooltipTrigger>
-                {tab.description && (
-                  <TooltipContent side="bottom" className="text-xs">
-                    {tab.description}
-                  </TooltipContent>
                 )}
-              </Tooltip>
+              </div>
             );
           })}
         </TooltipProvider>
+        </div>
         {onOpenChange && (
           <Button
             variant="ghost"
             size="icon"
-            className="ml-auto h-6 w-6"
+            className="ml-1 h-6 w-6 shrink-0"
             onClick={() => onOpenChange(false)}
             aria-label={closeLabel}
             title={closeLabel}

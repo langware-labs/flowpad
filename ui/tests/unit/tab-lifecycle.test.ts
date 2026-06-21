@@ -79,7 +79,12 @@ describe('tab lifecycle registry', () => {
   it('emits materialized tabs before content setup resolves', async () => {
     const d = dock();
     const tab = tabFor(d);
-    mockNoExistingTabs();
+    // materializeTab calls Tab.listAll() twice: first as the existence check
+    // (must be empty so the tab is created), then re-reads the UNSCOPED global
+    // list for adoption AFTER getFromDockPointer persists the new tab. In
+    // production that re-read includes the new tab; simulate it so onMaterialized
+    // carries the materialized global list (not an empty one).
+    vi.spyOn(Tab, 'listAll').mockResolvedValueOnce([]).mockResolvedValue([tab]);
     vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
 
     let markSetupStarted: () => void = () => {};

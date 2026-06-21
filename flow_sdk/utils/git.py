@@ -269,3 +269,37 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
     except Exception as e:
         logger.warning("[git] push error (non-fatal): %s", e)
         return GitPushResult(ok=False, message=str(e))
+
+
+# ── Per-file revision history (local, no push) ────────────────────────────────
+
+_LOG_SEP = "\x1f"
+
+
+def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.CompletedProcess:
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+
+
+async def git_commit_file(repo_path: str, rel_file: str, message: str) -> bool:
+    """Stage and commit a SINGLE file (no push). Returns True if a commit was made.
+
+    File-scoped: ``git add -- <file>`` then ``git commit -- <file>`` so concurrent
+    edits to other files are never swept in. No-ops (returns False) when the file
+    has no staged delta. Best-effort; never raises.
+    """
+    try:
+        if not Path(repo_path, rel_file).exists():
+            return False
+        await asyncio.to_thread(_run_git, ["git", "add", "--", rel_file], repo_path)
+        staged = await asyncio.to_thread(
+            _run_git, ["git", "diff", "--cached", "--quiet", "--", rel_file], repo_path
+        )
+        if staged.returncode == 0:
+            return False  # nothing staged for this file
+        result = await asyncio.to_thread(
+            _run_git, ["git", "commit", "-m", message, "--", rel_file], repo_path
+        )
+        return result.returncode == 0
+    except Exception as e:  # noqa: BLE001 — auto-commit must never break a save
+        logger.warning("[git] commit_file error (non-fatal): %s", e)
+        return False

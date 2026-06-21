@@ -52,6 +52,9 @@ export interface TypeInfo {
   icon: string | null;
   parent_type: string | null;
   locations: string[];
+  /** True when asset_ref is a bare folder (e.g. skill): the Assets sidebar
+   *  expands the row into its on-disk file tree. Derived from the folder layout. */
+  folder_backed: boolean;
   schema_hash: string;
   schema: JSONSchemaProperty | null;
 }

@@ -123,9 +123,6 @@ async def get_asset_types():
                 "icon": ti.icon,
                 "creatable": ti.creatable,
                 "browseable_by": ti.browseable_by.value,
-                # Folder-layout types whose asset_ref is the bare folder expand
-                # into their on-disk file tree in the sidebar (e.g. skill).
-                "folder_backed": ti.folder_backed,
             }
             if ti.type_name == "markdown":
                 entry["vaults"] = await _markdown_vaults()

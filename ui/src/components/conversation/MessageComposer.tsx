@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Boxes, File as FileIcon, GitBranch, MessageSquarePlus, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
+import { Boxes, File as FileIcon, MessageSquarePlus, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
@@ -9,18 +9,12 @@ import { cn } from '@src/lib/utils';
 import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips } from './AttachMenu';
-import { AttachRepoButton } from './AttachRepoButton';
 import { EmojiPicker } from './EmojiPicker';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
 import { discardDraftFlowMessage } from './flow-message-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
-
-interface AttachedRepo {
-  typeId: string;
-  label: string;
-}
 
 interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
@@ -137,7 +131,6 @@ export function MessageComposer({
   const [text, setText] = useState(draft?.text ?? '');
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
-  const [repoRefs, setRepoRefs] = useState<AttachedRepo[]>([]);
   const [localPrompt, setLocalPrompt] = useState<QueuedPrompt | null>(null);
   const [showPromptDialog, setShowPromptDialog] = useState(false);
   const [sending, setSending] = useState(false);
@@ -246,19 +239,14 @@ export function MessageComposer({
   const addAssetRef = (d: AssetDescriptor) =>
     setAssetRefs((prev) => (prev.some((a) => a.typeid === d.typeid && a.source === d.source) ? prev : [...prev, d]));
 
-  const addRepo = (typeId: string, label: string) =>
-    setRepoRefs((prev) => (prev.some((r) => r.typeId === typeId) ? prev : [...prev, { typeId, label }]));
-
-  const removeRepo = (typeId: string) => setRepoRefs((prev) => prev.filter((r) => r.typeId !== typeId));
-
   const buildExtras = (effectivePrompt: QueuedPrompt | null): Parameters<typeof sendReply>[3] | undefined => {
     const extras: NonNullable<Parameters<typeof sendReply>[3]> = {};
     if (effectivePrompt) {
       if (effectivePrompt.text) extras.promptText = effectivePrompt.text;
       if (effectivePrompt.files.length > 0) extras.promptFiles = effectivePrompt.files;
     }
-    // Assets (skill/agent/markdown/spec) + repos both ride as assetReferences.
-    const refs = [...assetRefs.map((a) => a.typeid), ...repoRefs.map((r) => r.typeId)];
+    // Assets (skill/agent/markdown/spec) ride as assetReferences.
+    const refs = assetRefs.map((a) => a.typeid);
     if (refs.length > 0) extras.assetReferences = refs;
     return Object.keys(extras).length > 0 ? extras : undefined;
   };
@@ -266,7 +254,7 @@ export function MessageComposer({
   const send = async (effectivePrompt: QueuedPrompt | null) => {
     if (isBusy) return;
     const trimmed = text.trim();
-    if (!trimmed && !effectivePrompt && files.length === 0 && assetRefs.length === 0 && repoRefs.length === 0) {
+    if (!trimmed && !effectivePrompt && files.length === 0 && assetRefs.length === 0) {
       return;
     }
     setSending(true);
@@ -294,7 +282,6 @@ export function MessageComposer({
         setText('');
         setFiles([]);
         setAssetRefs([]);
-        setRepoRefs([]);
         setActivePrompt(null);
       }
       onSent?.();
@@ -365,7 +352,7 @@ export function MessageComposer({
   };
 
   const canSend =
-    (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0 || repoRefs.length > 0) && !isDisabled;
+    (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0) && !isDisabled;
 
   // ── Shared building blocks (identical in both modes) ────────────────────
 
@@ -414,7 +401,6 @@ export function MessageComposer({
         side="top"
         searchPlaceholder="Search assets…"
       />
-      <AttachRepoButton disabled={isDisabled} onAttach={addRepo} />
       <EmojiPicker
         side="top"
         onPick={insertEmoji}
@@ -478,29 +464,6 @@ export function MessageComposer({
         </ul>
       )}
       <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={isDisabled} />
-      {repoRefs.length > 0 && (
-        <ul className="space-y-1" data-testid="attached-repos">
-          {repoRefs.map((r) => (
-            <li
-              key={r.typeId}
-              className="flex items-center gap-2 rounded border border-slate-500/40 bg-slate-500/10 px-2 py-1 text-xs"
-            >
-              <GitBranch className="h-3 w-3 shrink-0 text-slate-600 dark:text-slate-300" />
-              <span className="flex-1 truncate text-foreground" title={r.label}>
-                {r.label}
-              </span>
-              <button
-                type="button"
-                onClick={() => removeRepo(r.typeId)}
-                disabled={isDisabled}
-                className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:pointer-events-none"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
     </>
   );
 

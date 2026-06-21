@@ -6,6 +6,7 @@ import { NotificationsSection } from './notifications-section';
 import { SecretsSection } from './secrets-section';
 import { SettingsSection } from './settings-section';
 import { UserInfo } from './user-info';
+import { OrganizationPanel } from './organization-panel';
 
 interface AccountInfoProps {
   user: User;
@@ -15,10 +16,10 @@ export function AccountInfo({ user }: AccountInfoProps) {
   const isDesktop = dataContext.bootstrapInfo?.desktop_info != null;
 
   return (
-    <Tabs defaultValue="account" className="flex min-h-0 flex-1 flex-col">
+    <Tabs defaultValue="organization" className="flex min-h-0 flex-1 flex-col">
       <TabsList className="w-full shrink-0">
-        <TabsTrigger value="account" className="flex-1">
-          Account
+        <TabsTrigger value="organization" className="flex-1">
+          Organization
         </TabsTrigger>
         <TabsTrigger value="settings" className="flex-1">
           General
@@ -34,7 +35,8 @@ export function AccountInfo({ user }: AccountInfoProps) {
         </TabsTrigger>
       </TabsList>
 
-      <TabsContent value="account" className="min-h-0 flex-1 overflow-y-auto">
+      <TabsContent value="organization" className="min-h-0 flex-1 overflow-y-auto">
+        <OrganizationPanel user={user} />
         <UserInfo user={user} />
       </TabsContent>
 

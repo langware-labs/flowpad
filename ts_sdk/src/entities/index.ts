@@ -8,7 +8,6 @@ export * from './agent-hook';
 export * from './agent-hook-enums';
 export * from './comment';
 export * from './compute-node';
-export * from './git-repo';
 // Legacy exports for backwards compatibility
 export * from './compute_enum';
 export * from './compute_node';
@@ -63,6 +62,7 @@ export * from './claude-rules';
 export * from './claude-session';
 export * from './command';
 export * from './workspace';
+export * from './organization';
+export * from './team';
 export * from './members';
-export * from './git-repo';
 export * from './git-workdir';
