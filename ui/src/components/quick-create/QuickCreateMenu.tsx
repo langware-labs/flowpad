@@ -210,7 +210,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             }}
           >
             <GitBranch className="mr-2 h-4 w-4" />
-            Project (git)
+            From git
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>Create new…</DropdownMenuLabel>
