@@ -85,7 +85,7 @@ export function SideDrawer({
           )}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
     </div>
   );
 }
@@ -256,8 +256,13 @@ export function TabbedSideDrawer<TabId extends string>({
           </Button>
         )}
       </div>
-      {/* Only the active panel is mounted — keeps state isolated per tab. */}
-      <div className="min-h-0 flex-1 overflow-hidden">{children[activeTab]}</div>
+      {/* Only the active panel is mounted — keeps state isolated per tab.
+          `flex flex-col` (not a bare block) is REQUIRED: panels make their own
+          root `flex-1` and rely on this wrapper being a flex column to get a
+          bounded height. As a plain block, `flex-1` is inert, the panel grows to
+          its content height, and the surplus is clipped by `overflow-hidden`
+          with no scrollbar (see dir_panel_scroll.md.ts). */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children[activeTab]}</div>
     </div>
   );
 }

@@ -87,6 +87,7 @@ If ambiguous, ask the user to clarify before continuing. **This is the ONLY mome
 - Format: category heading, then one line per scenario with path, test count, and whether a `.md.ts` or fast-path exists
 - **This file must exist and be up-to-date before any tester is launched**
 - Skip this step for job types iv (Analyze) and v (Report) if the index already exists
+- **The `index` is a convenience view, not the source of truth for coverage.** The authoritative set of specs-without-a-test (Phase 12's scope) is derived directly from the filesystem via the `comm -23` diff in `modes/qa-cycle.md` (Phase 12 → Coverage detection), so a stale index can never hide an un-executed `.md`.
 
 ### 4. Execute (job-type-specific)
 - **i. QA Cycle**: read `modes/qa-cycle.md`
@@ -169,7 +170,7 @@ Hard rules learned from cycle post-mortems. They bind every role, the manager mo
 
 **You do not stop to ask questions — no matter what. No one is on the other side to answer during e2e.** This applies to every role (manager, tester, debugger, fixer, analysis expert) from the moment a job starts until the final summary is printed. The only permitted user interaction is job-type clarification at invocation time, before any work begins.
 
-Every decision is made from the documented defaults in this skill. When something genuinely requires human judgment, it does not pause the cycle — it becomes **`flagged`** and the cycle moves on.
+Every decision is made from the documented defaults in this skill. When something genuinely requires human judgment, it does not pause the cycle — in **phases 1–10** it becomes **`flagged`** and the cycle moves on; in the **Playwright phases 11–12** there is no flag (see the `flagged` carve-out below) — an unresolved failure makes the phase **BLOCKED**, which is itself the reported, non-paused outcome.
 
 "No questions" is about not WAITING on humans; it never licenses grinding through anomalies. The circuit breaker (see above) is part of this policy: repeated same-class anomalies stop forward execution for a self-directed meta-RCA — still autonomous, still no questions.
 
@@ -187,6 +188,8 @@ When the user issues a decree mid-run — a config change, a policy like a timeo
 > Flagged means this test exposes a significant gap, hence senior dev review is required to decide on next step.
 
 `flagged` is a terminal state for a test within this cycle. It is a quarantine lane: **non-blocking** for cycle completion, but always **visible, evidence-attached, and owned**. It is never a silent skip and never counts as a pass.
+
+> **`flagged` applies only to phases 1–10 (pytest/vitest).** The Playwright phases — **Phase 11 (`.md.ts` green gate)** and **Phase 12 (`.md`→`.md.ts` authoring)** — admit **no `flagged` pass-through.** There, a file is green only on a machine-read `npx playwright test` exit 0; the sole permitted non-green is a real in-code `test.skip(...)` for one of the three documented environment reasons (clipboard / live-Claude actively responding / wrong-platform). Anything else is a hard **BLOCKED** phase — a loud, unmasked failure — not a quarantined flag. This is deliberate: a tested regression once escaped because Phase 11 was advisory and Phase 12 allowed a flag.
 
 ### When to flag (and only then)
 
@@ -227,7 +230,7 @@ Anywhere this skill or an agent doc previously said "wait for user guidance" / "
 - An entry in `debug_log.md` does NOT mean the issue is resolved. If a scenario is still failing, it gets debugged again.
 - "This was broken before my changes" is not a valid reason to skip. If it failed during this run, it gets a Fix task.
 - The only valid reason to skip working an issue is an explicit user instruction given at invocation time.
-- `flagged` is the **only** alternate terminal state, and it is itself "worked": it requires a real RCA attempt and the full evidence package described in the Autonomous Run Policy. Flagging without evidence is dismissal by another name.
+- `flagged` is the **only** alternate terminal state in phases 1–10, and it is itself "worked": it requires a real RCA attempt and the full evidence package described in the Autonomous Run Policy. Flagging without evidence is dismissal by another name. (In the Playwright phases 11–12 there is no flag at all — the alternate terminal state is a **BLOCKED** phase, equally "worked": a proven RCA, but surfaced loudly instead of quarantined.)
 
 This applies to all roles — manager, tester, debugger, and fixer. No team member may declare an issue out of scope without user authorization given before the run started.
 
