@@ -68,6 +68,12 @@ def load_actions():
     except ImportError:
         pass  # Hooks sniffer action not available
 
+    # Import workers action to register it
+    try:
+        from flow_sdk.app.actions import workers  # noqa: F401
+    except ImportError:
+        pass  # Workers action not available
+
     # Import api-keys action to register it
     try:
         from flow_sdk.builtin import api_key  # noqa: F401

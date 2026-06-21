@@ -927,6 +927,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.all(action_name="fs-records", methods=["get", "post", "put", "delete"])
     async def fs_records_action(self): return await self._fs_records_action()
 
+    @action.get(action_name="asset-usage")
+    async def asset_usage_action(self) -> ApiResponse:
+        """GET /asset-usage?skill=<name> — sessions in which this asset was used
+        (FSIndexer scan of transcripts + analyzer). Powers the asset IDE usage tab."""
+        return await self._handle_asset_usage(get_current_request_info())
+
+    @action.post(action_name="commit-asset")
+    async def commit_asset_action(self) -> ApiResponse:
+        """POST /commit-asset {workdir, file} — version-bump + commit an asset
+        edited on disk (the cycle's commit step). Returns {committed, hash?, version?}."""
+        return await self._handle_commit_asset(get_current_request_info())
+
     # -- shell record actions ----------------------------------------------------
 
     @action.post(action_name="clear-debug-errors")
@@ -1065,33 +1077,46 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             GET /git-ops/is-init             ?workdir=...  → is git repo
             GET /git-ops/is-linked-worktree  ?workdir=...  → is linked worktree
         """
-        request_info = get_current_request_info()
-        segments = [s for s in (request_info.sub_path or "").strip("/").split("/") if s]
-        workdir = request_info.get_param("workdir") if request_info else None
-        if not workdir:
-            return ApiFailResponse(message="workdir parameter is required")
-
-        query_params = {k: v for k, v in (request_info.request_parameters or {}).items() if k != "workdir"}
-        from flow_sdk.builtin.faas.git_repo import GitRepo
-        return await GitRepo(workdir, self).dispatch(segments[0] if segments else "", query_params)
+        return await self._git_ops_dispatch(method="GET")
 
     @action.post(action_name="git-ops")
     async def git_ops_post_action(self) -> ApiResponse:
         """Mutating git operations (e.g. ``push``). Delegates to GitRepo.dispatch().
 
         Routing (via sub_path):
-            POST /git-ops/push   body { workdir } → commit-all + pull --rebase + push
+            POST /git-ops/push          body { workdir } → commit-all + pull --rebase + push
+            POST /git-ops/restore-file  { workdir, file, hash } → checkout file at revision
+            POST /git-ops/discard-file  { workdir, file, status } → undo a file's pending change
+            POST /git-ops/stage-file    { workdir, file } → stage just this file
+            POST /git-ops/unstage-file  { workdir, file } → unstage just this file
+        """
+        return await self._git_ops_dispatch(method="POST")
+
+    async def _git_ops_dispatch(self, method: str) -> ApiResponse:
+        """Shared git-ops gateway. Reads params from BOTH the query string and the
+        request body, because the action registry routes every git-ops request
+        (GET and POST) through a single handler — params like ``file``/``hash``
+        arrive on the query string for reads and in the body for mutations, and
+        either must reach ``GitRepo.dispatch``. The real HTTP method (not the
+        decorator's) gates mutating sub-paths.
         """
         request_info = get_current_request_info()
         segments = [s for s in (request_info.sub_path or "").strip("/").split("/") if s]
-        body = (await request_info.get_post_data()) or {} if request_info else {}
-        workdir = body.get("workdir") or (request_info.get_param("workdir") if request_info else None)
+        body = {}
+        if request_info:
+            try:
+                body = (await request_info.get_post_data()) or {}
+            except Exception:  # noqa: BLE001 — GET requests have no JSON body
+                body = {}
+        # query ∪ body (body wins on conflict); covers reads and mutations alike.
+        params = {**(request_info.request_parameters or {}), **(body or {})} if request_info else {}
+        workdir = params.get("workdir")
         if not workdir:
             return ApiFailResponse(message="workdir parameter is required")
-
-        query_params = {k: v for k, v in (body or {}).items() if k != "workdir"}
+        real_method = (request_info.request.method if request_info and request_info.request else method)
+        query_params = {k: v for k, v in params.items() if k != "workdir"}
         from flow_sdk.builtin.faas.git_repo import GitRepo
-        return await GitRepo(workdir, self).dispatch(segments[0] if segments else "", query_params, method="POST")
+        return await GitRepo(workdir, self).dispatch(segments[0] if segments else "", query_params, method=real_method)
 
     @asynccontextmanager
     async def ready_session(self):

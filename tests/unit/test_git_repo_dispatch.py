@@ -13,10 +13,11 @@ from flow_sdk.flowpad_types.compute_types import CLICommand
 # Helpers
 # ---------------------------------------------------------------------------
 
-def make_cmd(stdout: str, exit_code: int = 0) -> CLICommand:
-    """Create a mock CLICommand with predefined stdout and exit code."""
+def make_cmd(stdout: str, exit_code: int = 0, stderr: str = "") -> CLICommand:
+    """Create a mock CLICommand with predefined stdout/stderr and exit code."""
     cmd = MagicMock(spec=CLICommand)
     cmd.all_stdout = stdout
+    cmd.all_stderr = stderr
     cmd.exit_code = exit_code
 
     async def wait(timeout=None):
@@ -138,6 +139,74 @@ async def test_dispatch_has_commit_false_non_repo():
     result = await make_repo([make_cmd("", exit_code=128)]).dispatch("has-commit")
     assert result.status == "SUCCESS"
     assert result.data["hasCommit"] is False
+
+
+# ---------------------------------------------------------------------------
+# dispatch("discard-file") / "stage-file" / "unstage-file" — per-file ops (POST)
+# ---------------------------------------------------------------------------
+
+async def test_dispatch_discard_modified():
+    """Modified file → git restore --staged --worktree, ok=True."""
+    result = await make_repo([make_cmd("")]).dispatch(
+        "discard-file", {"file": "a.txt", "status": "M"}, method="POST"
+    )
+    assert result.status == "SUCCESS"
+    assert result.data["ok"] is True
+
+
+async def test_dispatch_discard_untracked_deletes():
+    """Untracked file (status ?) → git clean, ok=True."""
+    result = await make_repo([make_cmd("")]).dispatch(
+        "discard-file", {"file": "new.txt", "status": "?"}, method="POST"
+    )
+    assert result.status == "SUCCESS"
+    assert result.data["ok"] is True
+
+
+async def test_dispatch_discard_failure_surfaces_stderr():
+    """Non-zero rc → ok=False with the git stderr in the message."""
+    result = await make_repo([make_cmd("", exit_code=1, stderr="fatal: bad path")]).dispatch(
+        "discard-file", {"file": "a.txt", "status": "M"}, method="POST"
+    )
+    assert result.status == "SUCCESS"
+    assert result.data["ok"] is False
+    assert "fatal: bad path" in result.data["message"]
+
+
+async def test_dispatch_discard_requires_post():
+    result = await make_repo([]).dispatch(
+        "discard-file", {"file": "a.txt", "status": "M"}, method="GET"
+    )
+    assert result.status == "FAIL"
+    assert result.status_code == 405
+
+
+async def test_dispatch_discard_missing_file():
+    result = await make_repo([]).dispatch("discard-file", {"status": "M"}, method="POST")
+    assert result.status == "FAIL"
+    assert result.status_code == 400
+
+
+async def test_dispatch_stage_file():
+    result = await make_repo([make_cmd("")]).dispatch(
+        "stage-file", {"file": "a.txt"}, method="POST"
+    )
+    assert result.status == "SUCCESS"
+    assert result.data["ok"] is True
+
+
+async def test_dispatch_unstage_file():
+    result = await make_repo([make_cmd("")]).dispatch(
+        "unstage-file", {"file": "a.txt"}, method="POST"
+    )
+    assert result.status == "SUCCESS"
+    assert result.data["ok"] is True
+
+
+async def test_dispatch_stage_requires_post():
+    result = await make_repo([]).dispatch("stage-file", {"file": "a.txt"}, method="GET")
+    assert result.status == "FAIL"
+    assert result.status_code == 405
 
 
 # ---------------------------------------------------------------------------

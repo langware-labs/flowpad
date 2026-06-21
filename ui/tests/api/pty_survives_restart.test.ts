@@ -36,6 +36,22 @@ const PORT = (() => {
   return m ? m[1] : null;
 })();
 
+// "Skips unless dev-1 is launched": the env file alone is not enough — dev-1 may
+// be registered but its backend down (the launcher leaves .env.dev-1.local behind
+// after a kill). Probe liveness so a down dev-1 SKIPS cleanly instead of failing
+// beforeAll's bootstrap. The test genuinely needs a running dev-1 to restart.
+const DEV1_LIVE = (() => {
+  if (!PORT) return false;
+  try {
+    execFileSync('curl', ['-sf', '--max-time', '2', `http://localhost:${PORT}/api/v1/graph/bootstrap`], {
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
 function decodePtyData(b64: string): string {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
@@ -63,7 +79,7 @@ function waitForEcho(manager: any, shellId: string, keyword: string, timeoutMs: 
   });
 }
 
-const suite = PORT ? describe : describe.skip;
+const suite = DEV1_LIVE ? describe : describe.skip;
 
 suite('Bare PTY recovered by backend watchdog after server restart (dev-1)', () => {
   let sdk: any;

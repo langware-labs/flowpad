@@ -1,19 +1,19 @@
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
 
-export const MarkdownView = ({ value, compact = false }: { value: string; compact?: boolean }) => {
+/**
+ * The app's canonical markdown element styling. Shared so any markdown surface
+ * (the standard view, the review-diff viewer) renders prose identically.
+ */
+export function markdownComponents({ compact = false }: { compact?: boolean } = {}): Components {
   const paragraphClass = compact
     ? 'mb-2 leading-6 last:mb-0 [&:not(:first-child)]:mt-2'
     : 'mb-4 leading-7 last:mb-0 [&:not(:first-child)]:mt-6';
 
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeHighlight]}
-      components={{
+  return {
         code: ({ children }) => (
           <code className="rounded-md bg-muted px-1.5 py-1 font-mono text-sm text-muted-foreground">{children}</code>
         ),
@@ -59,9 +59,15 @@ export const MarkdownView = ({ value, compact = false }: { value: string; compac
         th: ({ children }) => <th className="px-4 py-2 text-left font-semibold">{children}</th>,
         td: ({ children }) => <td className="px-4 py-2 align-top">{children}</td>,
         hr: () => <hr className="my-4 border-muted" />,
-      }}
-    >
-      {value}
-    </ReactMarkdown>
-  );
-};
+  };
+}
+
+export const MarkdownView = ({ value, compact = false }: { value: string; compact?: boolean }) => (
+  <ReactMarkdown
+    remarkPlugins={[remarkGfm]}
+    rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeHighlight]}
+    components={markdownComponents({ compact })}
+  >
+    {value}
+  </ReactMarkdown>
+);

@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ActionInfo, ActionType, EntityExpansion, ExpansionType, JSONSchemaParser, Workspace } from '.';
 import { Record, RecordRefs } from './fs/Record';
+import { FrontMatterFsRef } from './fs/FrontMatterFsRef';
+import { Frontmatter } from './fs/Frontmatter';
 import { EntityFactory } from './schema/factory';
 import { ExpansionRequest, QueryRequest } from './FlowSync/query';
 import { DataManager, Manageable } from './FlowSync/store';
@@ -459,6 +461,18 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   /**
+   * Generic read/write access to this asset's YAML frontmatter, or null when the
+   * entity has no FrontMatterFsRef-backed `doc` (resolved from the subclass `doc`
+   * getter). Unlike `doc.save()` (name+description only), the accessor preserves
+   * the body and all keys — the home of frontmatter-persisted fields like
+   * `version`. Caller must `await frontmatter.load()` before get/set.
+   */
+  public get frontmatter(): Frontmatter | null {
+    const doc = (this as unknown as { doc?: unknown }).doc;
+    return doc instanceof FrontMatterFsRef ? new Frontmatter(doc) : null;
+  }
+
+  /**
    * Asset-editor dock pointer for a file-backed asset entity, or null when it
    * has no asset file yet. Asset subclasses return this from `dockPointer`
    * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
@@ -747,6 +761,29 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // (`resp.json().get('data') or {}`); treat any non-array as "no members".
     this._membersCache = Array.isArray(res) ? res : [];
     return this._membersCache;
+  }
+
+  /**
+   * Invite a member by email — POST ``<type>/<id>/members`` with a
+   * ``MembershipRequest`` (``{recipient_email, invitation_targets:[{typeid, role}]}``).
+   * Reflected to the hub (``info.hubReflect``): for a ``remote`` entity (e.g. an
+   * organization or team) the hub creates the Invitation + emails the recipient.
+   * Unlike ``share([email])`` (which is Conversation-shaped and also creates the
+   * remote row), this targets an already-remote entity and only invites — the
+   * right call for inviting into an organization/team from the members UI.
+   *
+   * ``role`` defaults to ``member``. The reflection layer returns the refreshed
+   * roster; seed the cache from it when it comes back as an array.
+   */
+  public async inviteMember(email: string, role: string = 'member'): Promise<void> {
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
+    info.hubReflect = true; // membership change is hub-owned — reflect to the hub
+    info.bodyParameters = {
+      recipient_email: email,
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+    };
+    const res = await dataManager.callAction<unknown, EntityMember[]>(info);
+    this._membersCache = Array.isArray(res) ? res : undefined;
   }
 
   /**

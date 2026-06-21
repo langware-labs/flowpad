@@ -1,6 +1,7 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useDevMode } from '@src/contexts/dev-mode-context';
+import { DevOnly } from '@src/components/view-mode';
 import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
@@ -16,6 +17,7 @@ import {
   BookOpen,
   Bug,
   ChevronDown,
+  Compass,
   // Cloud,
   // CloudOff,
   // Code,
@@ -37,7 +39,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 
 const mainNavItems = [
   { title: 'Home', icon: Home, viewType: null },
@@ -65,6 +67,8 @@ export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
   // const context = useContext();
   const navigate = useNavigate();
+  const location = useLocation();
+  const onDiscover = location.pathname === '/discover';
   const { goBack, canGoBack } = useNavigationState();
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const devMode = useDevMode();
@@ -142,6 +146,22 @@ export function CollapsedSidebar() {
             {mainNavItems.map((item) =>
               renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined),
             )}
+
+            {/* Discover — full-page marketplace; a top-level route, not a dock tab,
+                so it navigates directly rather than via navigation.openTab.
+                Dev-only affordance. */}
+            <DevOnly reserve={false}>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Discover"
+                  isActive={onDiscover}
+                  onClick={() => void navigate('/discover')}
+                  className="relative w-full justify-center px-2"
+                >
+                  <Compass className="h-5 w-5" />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </DevOnly>
 
             <div onMouseEnter={() => setSecondaryExpanded(true)} onMouseLeave={() => setSecondaryExpanded(false)}>
               <div className="flex justify-center py-1">

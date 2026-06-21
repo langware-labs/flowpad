@@ -1,14 +1,13 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { AgentTrace, AgenticProcess, FSRef, TypeId } from '@sdk';
-import { Loader2 } from 'lucide-react';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { WorkerIcon } from '@src/components/entity-execution-panel/history-row';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useSkillsByName } from '@src/hooks/useSkillsByName';
-import { launchSkillEval } from '@src/components/assets/editor/skill/skill-eval-analysis';
 import { notify } from '@src/notifications';
-import { AgentTraceView, VerdictBanner, type VerdictBannerData } from './AgentTraceView';
+import { CallStackView } from '@src/components/lens-viewer/shared/transcript-features/CallStackView';
+import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import type { WorkerType } from '@src/hooks/use-transcript';
 import { useAgentTraceDoc } from './useAgentTraceDoc';
 
 interface AgentTraceAssetEditorProps {
@@ -16,28 +15,20 @@ interface AgentTraceAssetEditorProps {
   trace: AgentTrace;
 }
 
-function workerLabel(workerType?: string | null): string {
-  switch (workerType) {
-    case 'codex':
-      return 'Codex';
-    case 'copilot':
-      return 'Copilot';
-    case 'claude':
-    case 'claude_code':
-      return 'Claude';
-    default:
-      return workerType || 'Worker';
-  }
+/** The trace-skeleton endpoint keys on the bare worker name. */
+function normalizeWorker(workerType?: string | null): WorkerType {
+  return (workerType === 'claude_code' ? 'claude' : workerType || 'claude') as WorkerType;
 }
 
 /**
- * AgentTrace viewer: verdict banner (rendered from entity summary fields, so
- * "did it go well" shows before the multi-MB trace JSON loads), call-stack /
- * details tabs, and a scrubbing timeline. The body is shared with the
- * transcript lens's "Call stack" view via {@link AgentTraceView}.
+ * AgentTrace viewer: shows **only** the Call-stack view, via component-level
+ * reuse of {@link CallStackView} (the same outline timeline as the transcript
+ * lens — legend, zoom, chips, the advanced `agent errors` lane). The saved
+ * trace's analysis findings are overlaid as the standard `skill issues` lane
+ * (optional input). The structural base is the fresh skeleton for the session.
  */
 export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorProps) {
-  const { doc, error, loading } = useAgentTraceDoc(fsRef);
+  const { doc } = useAgentTraceDoc(fsRef);
   const { navigation } = useDockNavigation();
   const analyzedProcessTypeId = useMemo(() => {
     return trace.analyzed_process_id
@@ -49,36 +40,17 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
     watch: true,
   });
   const workerName = workerLabel(trace.worker_type);
-  const { byName } = useSkillsByName();
 
-  // In-trace "Eval" on a skill frame → launch a skillit analysis keyed to that
-  // skill, with this run as context. The analysis surfaces in the skill editor's
-  // eval side panel (both key to the skill's TypeId).
-  const handleEvaluateSkill = (skillName: string) => {
-    const targetSkill = byName.get(skillName);
-    if (!targetSkill) {
-      notify.error({ title: 'Skill not found', message: `No skill named "${skillName}".` });
-      return;
-    }
-    void launchSkillEval({
-      targetSkill,
-      sourceProcessId: trace.analyzed_process_id,
-      sessionId: trace.session_id,
-    });
-    notify.success({ title: `Evaluating "${skillName}"…` });
-  };
+  // Asset-editor host owns zoom (the transcript-dock zoom hook can't safely
+  // patch this dock's pointer). Local state: drag/chips/reset work per session.
+  const [zoom, setZoom] = useState<[number, number] | null>(null);
 
-  // Entity summary drives the banner before (and during) the JSON load, so the
-  // verdict is visible immediately and doesn't flicker when the doc resolves.
-  const bannerData: VerdictBannerData = {
-    verdict: trace.verdict,
-    verdict_reason: trace.verdict_reason,
-    issue_count: trace.issue_count,
-    divergence_count: trace.divergence_count,
-    lane_count: trace.lane_count,
-    duration_ms: trace.duration_ms,
-    cost_usd: trace.cost_usd,
-  };
+  // Skill issues = the saved analysis's divergences + issues, overlaid as the
+  // standard lane. Optional — absent until the (possibly large) JSON resolves.
+  const skillIssues = useMemo(
+    () => (doc ? [...(doc.annotations?.divergences ?? []), ...(doc.annotations?.issues ?? [])] : undefined),
+    [doc],
+  );
 
   const handleOpenAnalyzedProcess = async () => {
     let process = analyzedProcess ?? null;
@@ -126,24 +98,13 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
         }
       />
 
-      {error ? (
-        <>
-          <VerdictBanner data={bannerData} />
-          <div className="flex flex-1 items-center justify-center text-sm text-destructive">
-            Failed to load trace: {error}
-          </div>
-        </>
-      ) : loading || !doc ? (
-        <>
-          <VerdictBanner data={bannerData} />
-          <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading trace…
-          </div>
-        </>
-      ) : (
-        <AgentTraceView doc={doc} banner={bannerData} onEvaluateSkill={handleEvaluateSkill} />
-      )}
+      <CallStackView
+        workerType={normalizeWorker(trace.worker_type)}
+        sessionId={trace.session_id}
+        skillIssues={skillIssues}
+        zoom={zoom}
+        onZoomChange={setZoom}
+      />
     </div>
   );
 }

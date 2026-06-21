@@ -25,7 +25,7 @@ export interface TraceSegment {
 
 export interface TraceLane {
   id: string;
-  kind: 'root' | 'subagent' | 'skill' | 'tasks';
+  kind: 'root' | 'subagent' | 'skill' | 'tasks' | 'user' | 'errors' | 'skill_issues';
   agent_type?: string | null;
   description?: string | null;
   parent_lane_id?: string | null;
@@ -44,7 +44,16 @@ export interface TraceLane {
 export interface TraceEvent {
   ts: string;
   lane_id: string;
-  kind: 'user_prompt' | 'skill_load' | 'skill_fail' | 'agent_spawn' | 'interrupt' | 'task_create' | 'task_update';
+  kind:
+    | 'user_prompt'
+    | 'skill_load'
+    | 'skill_fail'
+    | 'agent_spawn'
+    | 'interrupt'
+    | 'task_create'
+    | 'task_update'
+    | 'error'
+    | 'skill_issue';
   label: string;
   severity: string;
   entry_id: string;
@@ -69,11 +78,43 @@ export interface TraceGoal {
   subgoals?: { label: string; start_ts?: string; end_ts?: string }[];
 }
 
+/** An analysis-sourced "skill issue" (a divergence/issue from the LLM analysis
+ * layer in `annotations`). Overlaid on the Call-stack timeline as the standard
+ * `skill_issues` lane — see CallStackView. */
+export interface SkillIssue {
+  ts?: string;
+  start_ts?: string;
+  lane_id?: string;
+  label: string;
+  detail?: string;
+  severity?: string;
+}
+
+/** A per-asset finding in `annotations.by_skill` — the verified bucket skillit
+ * correct mode consumes. Carries its run `evidence`, the `judged_against` skill
+ * version, and any `unresolved_anchors` the deterministic check flagged. */
+export interface TraceFinding {
+  kind: 'divergence' | 'issue';
+  ts?: string;
+  label: string;
+  detail?: string;
+  section_hint?: string;
+  evidence?: { quote?: string; ts?: string };
+  severity?: string;
+  judged_against?: 'loaded' | 'disk' | 'none';
+  unresolved_anchors?: string[];
+}
+
 export interface TraceAnnotations {
   goals: TraceGoal[];
-  divergences: unknown[];
+  divergences: SkillIssue[];
+  issues?: SkillIssue[];
   verdict?: string | null;
   notes: string[];
+  /** Per-asset findings keyed by skill name (the bucket skillit correct consumes). */
+  by_skill?: Record<string, { skill: string; findings: TraceFinding[] }>;
+  /** Session-level findings not attributable to a skill. */
+  unattributed?: TraceFinding[];
 }
 
 export interface TraceSummary {

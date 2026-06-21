@@ -1,4 +1,3 @@
-export { SideWindow } from './SideWindow';
 export { SideTabId, SIDE_TABS, parseSideTabId, parseSideTabIdList } from './SideWindowTypes';
 export type { SideTabDescriptor } from './SideWindowTypes';
 export { GitPanel } from './GitPanel';

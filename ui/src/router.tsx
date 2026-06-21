@@ -10,6 +10,7 @@ import { SessionsView } from '@src/components/sessions-view/sessions-view';
 // through the main /dock/assets/editor/workflow URL. Removed.
 import { BASE_PATH } from '@src/constants/basePath';
 import AgentRedirect from '@src/pages/agent-redirect';
+import DiscoverPage from '@src/pages/discover-page/discover-page';
 import FlowPage from '@src/pages/flow-page/flow-page';
 import FocusLayout from '@src/pages/flow-page/FocusLayout';
 import KeychainApproval from '@src/pages/keychain-approval';
@@ -96,6 +97,10 @@ export const router = createBrowserRouter(
       {/* Root and /main routes use DeveloperLayout */}
 
       <Route index element={<FlowPage />} loader={loadHomePage} />
+      {/* Discover — full-page asset marketplace. Sits inside RootLayout (so
+          loadRoot/auth/theme gate it) but OUTSIDE AgentLayout/FlowPage, so it
+          renders full-screen with its own chrome (no sidebar/tab strip). */}
+      <Route path="discover" element={<DiscoverPage />} />
       <Route path="agent" element={<AgentRedirect />} loader={loadAgentApp} />
       {/* Root dock routes - use default agent from bootstrap */}
       <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDock} errorElement={<ErrorScreen />}>

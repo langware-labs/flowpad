@@ -2,13 +2,8 @@ import type { AgenticProcess } from '@sdk';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@src/components/ui/tooltip';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
+import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
 import {
   BacklinksTab,
   ChatTab,
@@ -158,87 +153,40 @@ export function EditorWithSidePanel({
           tabs={tabs}
           activeTab={activeTab}
           onActiveTabChange={setActiveTab}
+          truncateLabels
+          scrollableTabs
         >
           {panels}
         </TabbedSideDrawer>
       ) : (
-        <CollapsedSideRail
-          tabs={tabs}
-          onOpenTab={(id) => {
-            setActiveTab(id);
-            setOpenPersisted(true);
-          }}
-        />
+        <CollapsedSideRail data-testid="md-side-window-collapsed">
+          {(() => {
+            const openTab = (id: string) => {
+              setActiveTab(id);
+              setOpenPersisted(true);
+            };
+            return (
+              <>
+                <SideRailButton
+                  icon={PanelRightOpen}
+                  label="Expand side window"
+                  onClick={() => openTab(tabs[0]?.id ?? MD_SIDE_TABS_DEFAULT)}
+                  testId="md-side-window-expand"
+                />
+                {tabs.map((tab) => (
+                  <SideRailButton
+                    key={tab.id}
+                    icon={tab.icon}
+                    label={tab.label}
+                    onClick={() => openTab(tab.id)}
+                    testId={`md-side-tab-collapsed-${tab.id}`}
+                  />
+                ))}
+              </>
+            );
+          })()}
+        </CollapsedSideRail>
       )}
-    </div>
-  );
-}
-
-/** One icon button + left-tooltip in the collapsed rail. */
-function SideRailButton({
-  icon: Icon,
-  label,
-  onClick,
-  testId,
-}: {
-  icon: TabDescriptor['icon'];
-  label: string;
-  onClick: () => void;
-  testId: string;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={onClick}
-          data-testid={testId}
-          aria-label={label}
-          className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <Icon className="h-3.5 w-3.5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="left" className="text-xs">
-        {label}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-/**
- * Thin vertical rail shown when the side window is collapsed. Clicking the
- * expand button (or any tab icon) reopens the drawer — to that tab.
- */
-function CollapsedSideRail({
-  tabs,
-  onOpenTab,
-}: {
-  tabs: TabDescriptor[];
-  onOpenTab: (id: string) => void;
-}) {
-  return (
-    <div
-      className="flex w-9 shrink-0 flex-col items-center gap-0.5 border-l bg-background py-1"
-      data-testid="md-side-window-collapsed"
-    >
-      <TooltipProvider delayDuration={400}>
-        <SideRailButton
-          icon={PanelRightOpen}
-          label="Expand side window"
-          onClick={() => onOpenTab(tabs[0]?.id ?? MD_SIDE_TABS_DEFAULT)}
-          testId="md-side-window-expand"
-        />
-        {tabs.map((tab) => (
-          <SideRailButton
-            key={tab.id}
-            icon={tab.icon}
-            label={tab.label}
-            onClick={() => onOpenTab(tab.id)}
-            testId={`md-side-tab-collapsed-${tab.id}`}
-          />
-        ))}
-      </TooltipProvider>
     </div>
   );
 }

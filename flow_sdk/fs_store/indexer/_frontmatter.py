@@ -116,6 +116,40 @@ def _extract_body(text: str) -> str:
     return text
 
 
+def merge_frontmatter(
+    text: str,
+    updates: dict[str, Any],
+    *,
+    drop_keys: tuple[str, ...] = (),
+    prepend: bool = False,
+) -> str:
+    """Merge ``updates`` into a file's frontmatter, preserving body + other keys.
+
+    Returns the full new file text (``---`` block + blank line + body). The body
+    is re-attached verbatim, so unrelated content is never disturbed. ``drop_keys``
+    removes keys from the existing frontmatter before merging (e.g. legacy
+    ``asset_id``). ``prepend=True`` places ``updates`` first in key order (used when
+    minting ``id`` so it stays at the top); otherwise existing key order is kept and
+    ``updates`` overwrite in place / append new keys at the end.
+    """
+    fm = _extract_frontmatter(text)
+    body = _extract_body(text)
+    fields: dict[str, Any] = {}
+    if fm:
+        parsed = _yaml_load(fm)
+        if isinstance(parsed, dict):
+            fields.update(parsed)
+    for k in drop_keys:
+        fields.pop(k, None)
+    if prepend:
+        merged = {**updates, **{k: v for k, v in fields.items() if k not in updates}}
+    else:
+        merged = dict(fields)
+        merged.update(updates)
+    tail = "\n" if body and not body.endswith("\n") else ""
+    return _render_frontmatter(merged) + "\n\n" + body + tail
+
+
 def _render_frontmatter(fields: dict[str, Any]) -> str:
     """Serialize a dict to a ``---\\n...\\n---`` YAML frontmatter block."""
     try:

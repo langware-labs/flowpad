@@ -1114,6 +1114,20 @@ class Entity(DBEntity):
         """
         return SchemaRegistry.get(self.get_type())
 
+    @property
+    def frontmatter(self):
+        """Read/write access to this asset's on-disk YAML frontmatter.
+
+        ``entity.frontmatter.get(key)`` / ``.set(key, val)`` / ``["k"] = v``.
+        Backed by the main-body file (resolved via ``type_info.body_path_for``),
+        which is the source of truth for frontmatter-persisted fields like
+        ``version``. Returns a fresh accessor each call; reads are read-through,
+        writes are merge-preserving.
+        """
+        from .frontmatter_accessor import FrontmatterAccessor  # noqa: PLC0415
+
+        return FrontmatterAccessor(self)
+
     @staticmethod
     def get_entity_model_by_type(entity_type: str) -> type[Entity]:
         return SchemaRegistry.get_entity_cls(entity_type)

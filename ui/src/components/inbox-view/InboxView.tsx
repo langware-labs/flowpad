@@ -39,6 +39,7 @@ import {
 } from './inbox-api';
 import { conversationFacets, actionsFor } from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
+import { MembershipInvitations } from './MembershipInvitations';
 import { RowActions } from '@src/components/conversation/RowActions';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from '@src/components/conversation/constants';
 
@@ -1157,6 +1158,10 @@ export function InboxView() {
               {selectedCount > 0 ? `${selectedCount} selected` : 'Select all'}
             </span>
           </div>
+        )}
+
+        {!inCommunityView && !initialLoading && (
+          <MembershipInvitations recipientEmail={cloudUser?.email ?? null} />
         )}
 
         {!inCommunityView && !initialLoading &&

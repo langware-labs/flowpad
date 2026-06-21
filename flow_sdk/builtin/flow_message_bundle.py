@@ -420,12 +420,22 @@ def _ensure_asset_dest_root(asset_dest_root: Path | None) -> Path:
     """Resolve the unpack destination for FS-rooted assets.
 
     Called lazily — only when an FS-rooted entry is actually encountered, so
-    bundles without skill/agent attachments never allocate a temp dir.
+    bundles without skill/agent attachments never touch the filesystem.
+
+    When the caller passes no destination (the AUTO-materialization path on
+    message receive, as opposed to a project-scoped chip download), fall back to
+    the user's personal library root (``~`` → ``~/.claude/skills`` /
+    ``~/.claude/agents``) rather than a throwaway temp dir. A received skill the
+    recipient still has hub access to must materialize DURABLY and get indexed
+    into their library — landing it in a temp dir made it vanish as soon as the
+    carrying conversation was left or deleted, even though the hub grant
+    persists. Home is the same root the app reads personal skills/agents from,
+    so the asset shows up in the library and survives independently.
     """
     if asset_dest_root is not None:
         return asset_dest_root
-    chosen = Path(tempfile.mkdtemp(prefix="flowmsg_assets_"))
-    logger.info("[bundle] asset_dest_root unset; restoring FS-rooted assets to %s", chosen)
+    chosen = Path.home()
+    logger.info("[bundle] asset_dest_root unset; restoring FS-rooted assets to personal library %s", chosen)
     return chosen
 
 
