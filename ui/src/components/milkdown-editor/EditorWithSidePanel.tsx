@@ -153,6 +153,8 @@ export function EditorWithSidePanel({
           tabs={tabs}
           activeTab={activeTab}
           onActiveTabChange={setActiveTab}
+          truncateLabels
+          scrollableTabs
         >
           {panels}
         </TabbedSideDrawer>

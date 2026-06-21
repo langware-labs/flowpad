@@ -60,7 +60,7 @@ Find why something fails, **prove it**, and stop. No guessing, no estimating, no
        <the change that removes the cause>
    ```
 
-   **Core (one-liner):** <logical cause → effect>.
+   **Core (one-liner):** \<logical cause → effect>.
 
 **Never mask the symptom.** A slow / locked / flaky / 5xx failure *is* the bug to root-cause.
 Do not raise or add any timeout, retry, sleep, backoff, or poll budget to ride past it — that

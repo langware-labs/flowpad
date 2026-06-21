@@ -1,3 +1,7 @@
+---
+id: 73d3d935-2a3c-579d-9f5b-7f26291bfda9
+---
+
 # Headless tests
 
 **Headless = the full app booted in jsdom + React Testing Library against a LIVE backend, with NO mocks.** This is the in-process E2E tier: it sits between the component-level `react` project (isolated components, no backend) and the Playwright/browser-MCP matrices (real browser). It mounts the production tree exactly like `main.tsx` — `<RouterProvider router={router}>` — so the real react-router root loader runs `initSdk()`, bootstraps over HTTP/WS, writes context, and the real views mount off it. Nothing is mocked; the only jsdom additions (`_setup.ts`) are browser primitives jsdom omits (a real `WebSocket`, `IntersectionObserver`, canvas, `scrollTo`).
