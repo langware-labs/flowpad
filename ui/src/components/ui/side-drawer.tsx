@@ -169,13 +169,17 @@ export function TabbedSideDrawer<TabId extends string>({
       className={cn('flex shrink-0 flex-col border-l bg-background', width, className)}
       data-testid={dataTestId}
     >
-      {/* Tab strip — uses the drawer header row. Close button (if provided) is right-aligned. */}
-      <div
-        className={cn(
-          'flex items-center gap-0.5 border-b px-2 py-1',
-          scrollableTabs && 'overflow-x-auto',
-        )}
-      >
+      {/* Tab strip — the drawer header row. The tabs live in their own
+          (optionally horizontally-scrolling) track; the close button is a
+          shrink-0 sibling OUTSIDE that track so overflowing tabs can never push
+          it off-screen or scroll it out of view. */}
+      <div className="flex items-center gap-0.5 border-b px-2 py-1">
+        <div
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-0.5',
+            scrollableTabs && 'overflow-x-auto',
+          )}
+        >
         <TooltipProvider delayDuration={400}>
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -237,11 +241,12 @@ export function TabbedSideDrawer<TabId extends string>({
             );
           })}
         </TooltipProvider>
+        </div>
         {onOpenChange && (
           <Button
             variant="ghost"
             size="icon"
-            className="ml-auto h-6 w-6"
+            className="ml-1 h-6 w-6 shrink-0"
             onClick={() => onOpenChange(false)}
             aria-label={closeLabel}
             title={closeLabel}
