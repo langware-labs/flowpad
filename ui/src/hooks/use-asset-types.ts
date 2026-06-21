@@ -7,6 +7,8 @@ import { useViewMode } from '@src/contexts/view-mode-context';
 export interface AssetTypeVault {
   typeid: string;
   relPath: string;
+  /** Absolute filesystem path of the vault root (backend ``_markdown_vaults``). */
+  absPath: string;
   label: string;
   scope: string;
   project_id?: string | null;
