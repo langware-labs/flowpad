@@ -1,4 +1,4 @@
-import { ActionInfo, dataManager, Shell } from '@sdk';
+import { ActionInfo, dataManager, Shell, TypeId } from '@sdk';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
   Check,
@@ -18,6 +18,10 @@ import { createPortal } from 'react-dom';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
+import { ShareButton } from '@src/components/entity-actions/ShareButton';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { genericEntityShareSource } from '@src/hooks/share-sources';
+import { notify } from '@src/notifications';
 import { GitFileDiffModal } from './GitFileDiffModal';
 
 interface GitFile {
@@ -392,6 +396,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
   // Path of a row whose op is in flight, and a per-path inline error message.
   const [busyPath, setBusyPath] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ path: string; message: string } | null>(null);
+  // Set (with a prepared GitBranch snapshot) when the share dialog is open.
+  const [shareSource, setShareSource] = useState<ReturnType<typeof genericEntityShareSource> | null>(null);
+  const [sharing, setSharing] = useState(false);
   const mountedRef = useRef(true);
 
   const fetchStatus = useCallback(async () => {
@@ -411,6 +418,33 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
   }, [computeNodeId, workdir]);
 
   const { push, busy: pushing } = useGitPush(computeNodeId, workdir, () => { void fetchStatus(); onPushed?.(); });
+
+  // Mint a point-in-time GitBranch snapshot for this workdir's origin remote,
+  // then open the unified share dialog on it. The receiver re-mints the
+  // deterministic GitRemote and can attach-to / clone the repo.
+  const handleShare = useCallback(async () => {
+    if (!computeNodeId || !workdir || sharing) return;
+    setSharing(true);
+    try {
+      const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'POST');
+      action.subpath = 'branch-snapshot';
+      action.queryParameters = { workdir };
+      const snap = await dataManager.callAction<
+        null,
+        { type: string; id: string; owner?: string; name?: string; branch?: string }
+      >(action);
+      if (!snap?.id) throw new Error('Could not prepare the repo for sharing');
+      const full = snap.owner && snap.name ? `${snap.owner}/${snap.name}` : snap.name || 'repo';
+      const label = snap.branch ? `${full} · ${snap.branch}` : full;
+      // Rides as a TYPE_ID attachment like any entity; the receiver re-mints the
+      // deterministic GitRemote (parent_share_on_default) to attach-to / clone.
+      setShareSource(genericEntityShareSource(new TypeId(snap.type, snap.id), { label, typeLabel: 'GIT' }));
+    } catch (e) {
+      notify.error({ title: e instanceof Error ? e.message : 'Failed to share repository' });
+    } finally {
+      if (mountedRef.current) setSharing(false);
+    }
+  }, [computeNodeId, workdir, sharing]);
 
   // Run a per-file mutation (discard / stage / unstage), then refresh the list.
   const runFileOp = useCallback(async (file: GitFile, subpath: NonNullable<GitAction['subpath']>) => {
@@ -618,6 +652,15 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
               Push
             </Button>
           )}
+          {!data?.error && (
+            <ShareButton
+              variant="compact"
+              onClick={() => void handleShare()}
+              disabled={sharing}
+              tooltip={sharing ? 'Preparing…' : 'Share this repo to a conversation'}
+              testId="git-panel-share"
+            />
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -692,6 +735,15 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
           </div>
         )}
       </div>
+
+      {/* Share-to-conversation dialog (prepared with a GitBranch snapshot) */}
+      {shareSource && (
+        <ShareToConversationDialog
+          open={!!shareSource}
+          onClose={() => setShareSource(null)}
+          source={shareSource}
+        />
+      )}
 
       {/* Diff modal — rendered via portal so it's always on top */}
       {selectedFile && (
