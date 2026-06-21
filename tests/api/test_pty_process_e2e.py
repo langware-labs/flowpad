@@ -7,12 +7,22 @@ Tests both directions:
 
 import asyncio
 import json
+import shutil
 import uuid
 from pathlib import Path
 
 import pytest
 
 from flow_sdk.responses.response import ApiResponse
+
+# Codex is an optional, separately-installed worker CLI (CapabilityKind.CODEX_CLI).
+# Tests that spawn a real codex PTY (and assert a shell_id) need the binary on PATH;
+# the spawn fails fast with "Command not found: 'codex'" otherwise. The claude
+# equivalents cover the shared code paths, so guard codex-spawn tests on availability.
+requires_codex = pytest.mark.skipif(
+    shutil.which("codex") is None,
+    reason="codex CLI not installed — optional worker; the claude sibling covers this path",
+)
 
 
 def _get_default_compute_node_id(bootstrap_payload: dict) -> str:
@@ -338,6 +348,7 @@ async def test_get_by_worker_id_claude(bootstrapped_client, tmp_path):
         jsonl_path.unlink(missing_ok=True)
 
 
+@requires_codex
 @pytest.mark.asyncio
 async def test_get_by_worker_id_codex(bootstrapped_client, tmp_path):
     """terminals/get_by_worker_id auto-discovers a Codex thread and upserts an AP."""
