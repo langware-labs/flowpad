@@ -52,6 +52,20 @@ _FALSEY_COLOR_ENV_VARS = (
 
 _FALSEY_ENV_VALUES = {"0", "false", "no", "off"}
 
+# Claude Code stamps every subprocess it spawns with session/IDE markers so the
+# nested invocation does not persist its own session. The legacy marker was a
+# bare ``CLAUDECODE``; modern Claude Code (2.x) uses underscored ``CLAUDE_CODE_*``
+# vars (CLAUDE_CODE_CHILD_SESSION, CLAUDE_CODE_SESSION_ID, CLAUDE_CODE_SSE_PORT…)
+# plus ``ENABLE_IDE_INTEGRATION``. When the Flowpad server is itself started from
+# inside a Claude Code session these leak through and make the PTY's ``claude``
+# run as a *child* of the parent session — critically, ``CLAUDE_CODE_CHILD_SESSION``
+# makes interactive ``claude`` skip writing its ``~/.claude/projects/<cwd>/<id>.jsonl``
+# transcript, so Flowpad's transcript-derived ``worker_status`` is stuck at
+# INITIALIZING forever (Fork / Open-Transcript never enable). Scrub the whole
+# family so each PTY worker is a clean top-level session.
+_CLAUDE_INHERITED_ENV_PREFIXES = ("CLAUDECODE", "CLAUDE_CODE_")
+_CLAUDE_INHERITED_ENV_VARS = ("ENABLE_IDE_INTEGRATION",)
+
 
 def _build_interactive_pty_env(
     session_id: str,
@@ -65,7 +79,13 @@ def _build_interactive_pty_env(
     Claude/Codex/plain shells by default. Explicit per-worker env still wins
     through ``extra_env``.
     """
-    env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(_CLAUDE_INHERITED_ENV_PREFIXES)
+    }
+    for key in _CLAUDE_INHERITED_ENV_VARS:
+        env.pop(key, None)
 
     for key in _INHERITED_NO_COLOR_ENV_VARS:
         env.pop(key, None)
