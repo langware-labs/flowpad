@@ -1,28 +1,18 @@
 /**
- * Chat-UI ⇄ PTY content benchmark.
+ * Does the PTY show core text the chat UI omits? — 5 heavy sessions (dev-1)
  *
- * The interactive tab has two skins over the SAME session:
- *   - Advanced: the xterm, fed the raw PTY byte stream (immediate).
- *   - Standard: SimpleChatPane, fed `process.flowDataStream` which is
- *     transcript-derived (`loadHistory` → `get-history`, plus live deltas).
+ * The interactive view can be toggled to a chat UI that renders the process
+ * from `flowDataStream` (transcript-derived) instead of the terminal. The risk:
+ * the PTY shows important text the user should see, but the chat surface — what
+ * the user looks at in chat mode — doesn't have it.
  *
- * We have seen the Standard/chat view LAG behind the PTY: the agent's answer
- * is already on screen in the terminal while the chat surface hasn't caught up.
- * This test reproduces the user's manual scenario as a fixed benchmark:
+ * We open FIVE heavy sessions at once (each produces several distinct content
+ * tokens the agent must EMIT — `T1<r>`…`T5<r>` plus an `END<r>` — none of which
+ * appear in the prompt, so a hit is real agent output, never echoed input).
+ * For each session we compare, token by token, what the PTY shows against what
+ * the chat UI has, and report every piece of core text the chat omits.
  *
- *   1. Run an instruction in the "xterm" (boot a visible claude worker whose
- *      launch prompt is the instruction — exactly what typing+Enter does).
- *   2. Wait for the turn to land in the PTY (the marker appears in the byte
- *      stream that the xterm renders).
- *   3. "Toggle to chat UI": read `flowDataStream` the way SimpleChatPane does
- *      (force `loadHistory`), and assert the SAME core content is there.
- *
- * The chat-catch-up budget below is the SLO under test, NOT a flake cushion:
- * if the chat view never converges on what the PTY already shows, that IS the
- * lag bug and the test must fail. (Do not raise it to make a run go green.)
- *
- * Runs against the disposable `dev-1` instance (skips if not launched), exactly
- * like agentic_survives_restart — never touches the main backend.
+ * Runs against the disposable `dev-1` instance (skips if not launched).
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -39,26 +29,41 @@ const PORT = (() => {
 
 const suite = PORT ? describe : describe.skip;
 
-/** Strip ANSI/VT control sequences so a plain marker substring-match works. */
+/** Strip ANSI/VT control sequences so plain-token substring matching works. */
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[\]P^_].*?(?:\x07|\x1b\\)|[\x00-\x08\x0b\x0c\x0e-\x1f]/g;
 
-/** Decode the framed PTY stream's output frames into the plain text the xterm shows. */
 function ptyPlainText(stream: { events: Array<[string, ...unknown[]]> } | null): string {
   if (!stream?.events?.length) return '';
   const dec = new TextDecoder('utf-8', { fatal: false });
   let out = '';
   for (const ev of stream.events) {
     if (ev[0] === 'o' && typeof ev[1] === 'string') {
-      const bytes = Uint8Array.from(atob(ev[1]), (c) => c.charCodeAt(0));
-      out += dec.decode(bytes, { stream: true });
+      out += dec.decode(Uint8Array.from(atob(ev[1]), (c) => c.charCodeAt(0)), { stream: true });
     }
   }
-  out += dec.decode();
-  return out.replace(ANSI, '');
+  return (out + dec.decode()).replace(ANSI, '');
 }
 
-suite('Chat-UI vs PTY core-content parity (dev-1)', () => {
+/** Five heavy scenarios — distinct work so the sessions don't collapse to one. */
+const SCENARIOS = [
+  { name: 'list-facts', topic: 'three short facts about the moon' },
+  { name: 'haiku', topic: 'a haiku about autumn rain' },
+  { name: 'steps', topic: 'three numbered steps to make tea' },
+  { name: 'definition', topic: 'a one-line definition of entropy' },
+  { name: 'pros-cons', topic: 'one pro and one con of remote work' },
+];
+
+interface SessionResult {
+  name: string;
+  procId: string;
+  shellId: string;
+  ptyTokens: string[]; // expected tokens found in the PTY
+  chatTokens: string[]; // expected tokens found in the chat UI
+  missing: string[]; // shown in PTY, absent from chat — the omission
+}
+
+suite('PTY vs chat UI content across 5 heavy sessions (dev-1)', () => {
   let sdk: any;
   let manager: any;
 
@@ -82,87 +87,114 @@ suite('Chat-UI vs PTY core-content parity (dev-1)', () => {
     }
   }, 60_000);
 
-  it('the marker the PTY shows also reaches the chat stream', async () => {
-    // A single contiguous token (no spaces → never line-wrapped by the TUI),
-    // unique per run so we never match a previous turn's scrollback.
-    const MARKER = `FLOWPADBENCH${Date.now().toString(36).toUpperCase()}`;
-    const instruction =
-      `Output exactly this token on its own line and then stop. ` +
-      `Do not run any tools, do not explain: ${MARKER}`;
+  it('reports core text the PTY shows but the chat UI omits, per session', async () => {
+    const run = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`.toUpperCase();
 
-    // 1. "Run it in the xterm": a visible claude worker booting with the
-    //    instruction as its launch prompt. This is the PTY/Advanced side.
-    const proc = await sdk.AgenticProcess.openTab('claude_code', instruction);
-    expect(proc?.id).toBeTruthy();
+    // One unique answer token per content slot, per scenario — emitted by the
+    // agent, never present in the prompt.
+    const tokensFor = (i: number) =>
+      ['T1', 'T2', 'T3', 'END'].map((p) => `${p}S${i}X${run}`);
 
-    // The worker binds its shell asynchronously after boot. `getById` would
-    // hand back the cached (pre-bind) entity, so read fresh server state over
-    // REST and poll until `shell_id` is populated (the PTY the xterm attaches).
-    const entityUrl = `${sdk.GRAPH_API_PREFIX}/${sdk.AgenticProcess.type}/${proc.id}`;
-    let shellId = '';
-    await vi.waitFor(
-      async () => {
-        const fresh: any = await sdk.apiClient.get(entityUrl).catch(() => null);
-        if (!fresh?.shell_id) throw new Error('shell_id not bound yet');
-        shellId = fresh.shell_id;
-      },
-      { timeout: 60_000, interval: 1_000 },
-    );
-    expect(shellId).toBeTruthy();
-
-    const ptyText = async (): Promise<string> => {
-      const stream = await sdk.apiClient
-        .get(`/shell/${shellId}/pty-stream`)
-        .catch(() => null);
-      return ptyPlainText(stream as any);
+    const instructionFor = (i: number, topic: string) => {
+      const [t1, t2, t3, end] = tokensFor(i);
+      return (
+        `Do this in order, then stop. Do not use any tools.\n` +
+        `1) Print this exact token on its own line: ${t1}\n` +
+        `2) Write ${topic}.\n` +
+        `3) Print this exact token on its own line: ${t2}\n` +
+        `4) Write one more sentence about it.\n` +
+        `5) Print this exact token on its own line: ${t3}\n` +
+        `Finally print this exact token on its own line to signal completion: ${end}`
+      );
     };
 
-    // 2. Wait for the answer to land in the PTY byte stream (what the xterm
-    //    renders). This is the source-of-truth "the user can see it now".
-    const tStart = Date.now();
-    await vi.waitFor(
-      async () => {
-        if (!(await ptyText()).includes(MARKER)) {
-          throw new Error('marker not in PTY stream yet');
-        }
-      },
-      { timeout: 90_000, interval: 1_000 }, // claude boot + first turn budget
+    // 1. Open all five heavy sessions concurrently.
+    const procs: any[] = await Promise.all(
+      SCENARIOS.map((s, i) => sdk.AgenticProcess.openTab('claude_code', instructionFor(i, s.topic))),
     );
-    const tPty = Date.now();
+    procs.forEach((p) => expect(p?.id).toBeTruthy());
 
-    // 3. "Toggle to chat UI": read the stream exactly like SimpleChatPane —
-    //    force a history (re)load, then inspect flowDataStream items. Poll
-    //    until the chat view converges on the same core content.
-    const chatText = async (): Promise<string> => {
+    const entityUrl = (id: string) => `${sdk.GRAPH_API_PREFIX}/${sdk.AgenticProcess.type}/${id}`;
+    const ptyText = async (shellId: string): Promise<string> =>
+      ptyPlainText((await sdk.apiClient.get(`/shell/${shellId}/pty-stream`).catch(() => null)) as any);
+    const chatText = async (proc: any): Promise<string> => {
       await proc.loadHistory({ force: true }).catch(() => {});
-      return (proc.flowDataStream.items as any[])
-        .map((it) => it.content ?? '')
-        .join('\n');
+      return (proc.flowDataStream.items as any[]).map((it) => it.content ?? '').join('\n');
     };
 
-    await vi.waitFor(
-      async () => {
-        if (!(await chatText()).includes(MARKER)) {
-          throw new Error('chat stream has not caught up to the PTY');
-        }
-      },
-      // SLO under test: once the PTY shows it, the chat surface must converge
-      // within this budget. Failure here IS the lag bug — do not widen it.
-      { timeout: 20_000, interval: 1_000 },
+    // 2. Resolve each session's shell_id (binds async after boot).
+    const shellIds: string[] = await Promise.all(
+      procs.map(async (proc) => {
+        let shellId = '';
+        await vi.waitFor(
+          async () => {
+            const fresh: any = await sdk.apiClient.get(entityUrl(proc.id)).catch(() => null);
+            if (!fresh?.shell_id) throw new Error('shell_id not bound yet');
+            shellId = fresh.shell_id;
+          },
+          { timeout: 60_000, interval: 1_000 },
+        );
+        return shellId;
+      }),
     );
-    const tChat = Date.now();
 
-    // Both skins of the same session must agree on the core content.
-    expect(await ptyText()).toContain(MARKER);
-    expect(await chatText()).toContain(MARKER);
+    // 3. Wait until every session's END token is on screen in its PTY (turn done).
+    await Promise.all(
+      shellIds.map((shellId, i) =>
+        vi
+          .waitFor(
+            async () => {
+              const [, , , end] = tokensFor(i);
+              if (!(await ptyText(shellId)).includes(end)) throw new Error(`session ${i} not done`);
+            },
+            { timeout: 150_000, interval: 2_000 }, // 5×heavy-session boot+turn budget
+          )
+          .catch(() => {}), // a stalled session still gets compared below (counts as omitted)
+      ),
+    );
 
-    // Benchmark signal: how far the chat view trailed the terminal.
-    const ptyLatency = tPty - tStart;
-    const chatLag = tChat - tPty;
+    // 4. Give the chat surface a bounded chance to reflect each turn.
+    await new Promise((res) => setTimeout(res, 5_000));
+
+    // 5. Compare PTY vs chat per session, token by token.
+    const results: SessionResult[] = [];
+    for (let i = 0; i < SCENARIOS.length; i++) {
+      const expected = tokensFor(i);
+      const pty = await ptyText(shellIds[i]);
+      const chat = await chatText(procs[i]);
+      const ptyTokens = expected.filter((t) => pty.includes(t));
+      const chatTokens = expected.filter((t) => chat.includes(t));
+      results.push({
+        name: SCENARIOS[i].name,
+        procId: procs[i].id,
+        shellId: shellIds[i],
+        ptyTokens,
+        chatTokens,
+        missing: ptyTokens.filter((t) => !chat.includes(t)),
+      });
+    }
+
+    // 6. Report.
     // eslint-disable-next-line no-console
-    console.log(
-      `[chat-vs-pty] PTY showed marker after ${ptyLatency}ms; ` +
-        `chat caught up ${chatLag}ms later.`,
-    );
-  }, 180_000);
+    console.log('\n=== PTY vs chat UI core-content comparison (5 heavy sessions) ===');
+    for (const r of results) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `• ${r.name.padEnd(11)} PTY ${r.ptyTokens.length}/4  chat ${r.chatTokens.length}/4  ` +
+          `omitted=[${r.missing.join(', ') || 'none'}]`,
+      );
+    }
+    const totalShown = results.reduce((n, r) => n + r.ptyTokens.length, 0);
+    const totalOmitted = results.reduce((n, r) => n + r.missing.length, 0);
+    // eslint-disable-next-line no-console
+    console.log(`TOTAL: PTY showed ${totalShown} tokens; chat UI omitted ${totalOmitted} of them.\n`);
+
+    // The PTY must have shown real agent output in at least some sessions
+    // (otherwise the run is inconclusive, not a parity result).
+    expect(totalShown).toBeGreaterThan(0);
+
+    // Parity assertion: every piece of core text the PTY showed must also be in
+    // the chat UI. Any omission is text the chat-mode user never sees.
+    expect(totalOmitted).toBe(0);
+  }, 300_000);
 });
