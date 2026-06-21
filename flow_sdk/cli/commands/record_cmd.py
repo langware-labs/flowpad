@@ -82,9 +82,14 @@ def index_record(
     # requested subset (preserving "only parse named types"); with no --types,
     # a single unfiltered call indexes everything.
     url = f"http://127.0.0.1:{port}/api/v1/graph/compute_node/@local/fs-records/index"
-    calls: list[dict] = [{"type": t} for t in type_list] or [{}]
+    # Pass the path so the server scopes the walk to this one file/dir (and
+    # returns its TypeId) instead of walking every known root — the difference
+    # between a sub-second index and a full-workspace hang.
+    abs_path = os.path.abspath(os.path.expanduser(path))
+    calls: list[dict] = [{"type": t, "path": abs_path} for t in type_list] or [{"path": abs_path}]
 
     per_type: dict[str, Any] = {}
+    typeids: list[str] = []
     total_indexed = 0
     total_errors = 0
     duration_ms = 0.0
@@ -128,14 +133,21 @@ def index_record(
         total_indexed += int(data.get("new", data.get("indexed", 0)) or 0)
         total_errors += int(data.get("errors", 0) or 0)
         duration_ms += float(data.get("duration_ms", 0.0) or 0.0)
+        for tid in data.get("typeids") or []:
+            if tid and tid not in typeids:
+                typeids.append(tid)
 
     _ok(
         {
-            "path": os.path.expanduser(path),
+            "path": abs_path,
             "total_indexed": total_indexed,
             "total_errors": total_errors,
             "duration_ms": duration_ms,
             "per_type": per_type,
+            # The TypeId(s) the indexer minted for this path — navigate straight
+            # to typeids[0] (no fuzzy search needed).
+            "typeid": typeids[0] if typeids else None,
+            "typeids": typeids,
         }
     )
 

@@ -1013,6 +1013,13 @@ class FsRecordsActionsMixin:
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
+        # Single-path scoping: when the caller points at one file/dir it just
+        # wrote ("open it" after a Write), index ONLY that subtree instead of
+        # the full known-root set. Without this the walk fans out over every
+        # root and hangs on a large workspace (proven RCA: 120s read timeout),
+        # so the agent never gets a TypeId to navigate to. An explicit path is
+        # explicit intent, so it also overrides the temp-path skip below.
+        index_path = qp.get("path", "").strip()
         # Unified ScopeFilter from canonical wire format `?user=…&projects=A,B`.
         from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
         # Surface stale callers still using the legacy `?project_id=<id>` shim
@@ -1064,7 +1071,26 @@ class FsRecordsActionsMixin:
         # and acted on. Without this, a record physically inside project A
         # but referenced from project B would be falsely flagged as orphan
         # when the user picks scope=A.
-        if orphan_action != OrphanAction.INDEX:
+        # Path-scoped run: a single explicit path short-circuits all root
+        # resolution — walk just that file's directory. Cheap and bounded.
+        if index_path:
+            from pathlib import Path as _Path  # noqa: PLC0415
+
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+            from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
+
+            _p = _Path(index_path).expanduser().resolve()
+            _root_dir = _p.parent if _p.is_file() else _p
+            custom_roots = (
+                FSRef(
+                    _root_dir,
+                    record_type=RecordType.CWD_ROOT,
+                    scope=Scope.PROJECT.value,
+                    project_id=Project.derive_id_for_path(_root_dir),
+                ),
+            )
+        elif orphan_action != OrphanAction.INDEX:
             custom_roots = None
         else:
             custom_roots = await self._resolve_scoped_roots(scope_filter)
@@ -1121,6 +1147,9 @@ class FsRecordsActionsMixin:
                 verbose=False,
                 roots=custom_roots,
                 force=force,
+                # An explicit path is explicit intent — index it even under a
+                # temp root (/tmp, /var/folders), which the default walk skips.
+                include_temp=bool(index_path),
                 project_id=effective_project_id,
                 orphan_action=orphan_action,
                 scope_filter=scope_filter,
@@ -1142,6 +1171,25 @@ class FsRecordsActionsMixin:
             }
             for rt, pt in result.per_type.items()
         ]
+
+        # For a path-scoped run, mint the TypeId(s) for the named file so the
+        # caller (CLI / agent) can navigate straight to it — the whole point of
+        # "index then open". Deterministic (v5 gen_id from the path), so it
+        # matches what the indexer just stored.
+        indexed_typeids: list[str] = []
+        indexed_typeid: str | None = None
+        if index_path and _p.is_file():
+            from flow_sdk.fs_store.type_id import type_id_str  # noqa: PLC0415
+
+            _rtypes = types_filter or [RecordType(str(rt)) for rt in result.per_type.keys()]
+            for _rt in _rtypes:
+                try:
+                    _id = self._ref_gen_id(FSRef(_p, record_type=_rt))
+                except Exception:
+                    _id = None
+                if _id:
+                    indexed_typeids.append(type_id_str(str(_rt), _id))
+            indexed_typeid = indexed_typeids[0] if indexed_typeids else None
 
         SchemaRegistry.append_index(
             trigger=trigger,
@@ -1183,6 +1231,8 @@ class FsRecordsActionsMixin:
                     "orphans_found": 0,
                     "orphans_db_removed": 0,
                     "orphans_disk_removed": 0,
+                    "typeid": indexed_typeid,
+                    "typeids": indexed_typeids,
                 })
             one = types_out[0]
             return ApiSuccessResponse(data={
@@ -1192,6 +1242,8 @@ class FsRecordsActionsMixin:
                 "orphans_found": one["orphans_found"],
                 "orphans_db_removed": one["orphans_db_removed"],
                 "orphans_disk_removed": one["orphans_disk_removed"],
+                "typeid": indexed_typeid,
+                "typeids": indexed_typeids,
             })
 
         return ApiSuccessResponse(data={
@@ -1204,6 +1256,8 @@ class FsRecordsActionsMixin:
             "orphans_disk_removed": result.total_orphans_disk_removed,
             "types": types_out,
             "duration_ms": result.duration_ms,
+            "typeid": indexed_typeid,
+            "typeids": indexed_typeids,
         })
 
     async def _index_system_assets(self) -> None:
