@@ -17,11 +17,13 @@ Public helpers used outside the indexer:
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -127,16 +129,20 @@ def agent_id(ref: FSRef) -> str:
 
 
 def agent_gen_id(ref: FSRef) -> str:
-    """Mint+write id into agent .md frontmatter (idempotent).
+    """Mint+write id into agent .md frontmatter (idempotent), returning a
+    stable, filesystem-safe **UUID**.
 
-    Same shape as the deleted ``AgentRecord.genId``. Preserves the derived id
-    (frontmatter name or filename stem) so DB rows keyed by that value stay
-    valid.
+    The frontmatter still stores the raw derived key (frontmatter name or
+    filename stem); the returned id hashes that key into a uuid5 with the same
+    ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so the probe's
+    shadow-home id matches the DB id. An already-conforming adopted id is kept
+    as-is.
     """
     try:
         text = ref._path.read_text(encoding="utf-8")
     except OSError:
-        return agent_id(ref)
+        key = agent_id(ref)
+        return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.AGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
     fm = _extract_frontmatter(text)
     fields: dict = {}
     if fm:
@@ -145,7 +151,7 @@ def agent_gen_id(ref: FSRef) -> str:
             fields.update(parsed)
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
     adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
-    if adopted:  # validate-on-adopt — same gate as the read path
+    if adopted:  # validate-on-adopt — already a conforming UUID, keep it
         return adopted
     name = fields.get("name")
     if isinstance(name, str) and name.strip():
@@ -161,7 +167,7 @@ def agent_gen_id(ref: FSRef) -> str:
         )
     except OSError:
         pass
-    return new_id
+    return mint_uuid(f"{RecordType.AGENT}:{new_id}", namespace=uuid.NAMESPACE_DNS)
 
 
 # ── Parse + extract ──────────────────────────────────────────────────────────
