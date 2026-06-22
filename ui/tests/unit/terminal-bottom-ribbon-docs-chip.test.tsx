@@ -1,6 +1,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AgenticProcess, dataManager, type MarkdownDoc } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { ViewType } from '@src/types/ViewType';
 import { TerminalBottomRibbon } from '@src/components/terminal/interactive-terminal/TerminalBottomRibbon';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -66,6 +68,21 @@ describe('AgenticProcess — markdown.create wire update reaches the model + chi
       ],
     });
     expect(process.markdown_docs.map((d) => d.name)).toEqual(['hello.md', 'notes.md']);
+  });
+});
+
+describe('docs chip open target', () => {
+  // Regression: the chip first used navigation.openDocs(path), which routes to
+  // ViewType.DOCS and parses its arg as a typeId — crashing ("Invalid typeId")
+  // on a raw absolute path (caught only in the browser). The correct opener is
+  // the markdown asset editor addressed by VFS path, which renders the .md and
+  // tolerates an absolute machine path.
+  it('routes an absolute .md path to the markdown asset editor (vfs), not DOCS', () => {
+    const dp = DockPointer.forAssetEditor('markdown', '/tmp/mdchip_hello.md');
+    expect(dp.viewType).toBe(ViewType.ASSETS);
+    expect(dp.viewType).not.toBe(ViewType.DOCS);
+    expect(dp.pointer).toContain('editor/markdown/vfs');
+    expect(dp.vfsPath).not.toBeNull(); // the file path resolved, no typeId crash
   });
 });
 

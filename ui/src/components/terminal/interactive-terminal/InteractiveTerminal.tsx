@@ -20,7 +20,7 @@ import { useContext } from '@src/hooks/useContext';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
-import { useDockNavigation, useSideWindows } from '@src/navigation';
+import { DockPointer, useDockNavigation, useSideWindows } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
@@ -487,8 +487,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // the "Open Doc" affordance, mirroring ``plan_path`` / Open Plan. The list is
   // a persisted entity field, so it restores after a reload via ``useEntity``.
   const markdownDocs = process?.markdown_docs ?? EMPTY_DOCS;
+  // Open via the markdown asset editor (renders the .md), addressing the file by
+  // its absolute path through the canonical VFS grammar — the same opener the
+  // collaboration Docs sidebar uses (DockPointer.forAssetEditor('markdown', …)).
+  // navigation.openDocs() is wrong here: the DOCS view parses its arg as a
+  // typeId/docs-space id and crashes ("Invalid typeId") on a raw fs path.
   const handleOpenMarkdown = useCallback(
-    (path: string) => navigation.openDocs(path),
+    (path: string) => navigation.openDock(DockPointer.forAssetEditor('markdown', path)),
     [navigation],
   );
 
