@@ -14,8 +14,11 @@ import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
 import type { Project } from '@sdk';
+import { FSRef } from '@sdk';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { ProjectChip } from '@src/components/project/ProjectChip';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { EDITOR_TYPES } from '@src/navigation/asset-doc-types';
 import apiClient from '@sdk/client';
 import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, Trash2, X } from 'lucide-react';
 import {
@@ -311,8 +314,6 @@ export function AssetsPage() {
     [isProjectView, scopeProjectId],
   );
   const { data: projectEntity } = useEntity<Project>(projectTypeId);
-  // Per-type icon comes from the backend type registry, never hardcoded.
-  const ProjectIcon = iconForType('project');
   const handleDeleteProject = useCallback(() => {
     const proj = projectEntity;
     if (!proj) return;
@@ -381,6 +382,32 @@ export function AssetsPage() {
     () => assetScopeBucket(openAsset as { scope?: string | null; project_id?: string | null } | null),
     [openAsset],
   );
+  // The open asset may be addressed by a VFS path (not a TypeId), in which case
+  // `openAsset` above is null. Resolve that entity by path too so the header
+  // can show its owning-project chip. (Same 30s-cached lookup the editor uses.)
+  const openVfsRef = useMemo<{ type: string; fsRef: FSRef } | null>(() => {
+    if (!effectivePointer.startsWith('editor/')) return null;
+    try {
+      const p = AssetDocPointer.parse(effectivePointer);
+      if (!p.editor || p.editor === AssetEditor.CODE || p.method !== AssetRoutingMethod.VFS) return null;
+      const vfs = VFSPath.parse(p.value);
+      if (!vfs.typeId) return null;
+      return {
+        type: (EDITOR_TYPES[p.editor][0] as string | undefined) ?? p.editor,
+        fsRef: new FSRef(vfs.entitySubPath, vfs.typeId),
+      };
+    } catch {
+      return null;
+    }
+  }, [effectivePointer]);
+  const { entity: openVfsEntity } = useEntityByPath(openVfsRef?.type ?? null, openVfsRef?.fsRef ?? null);
+  // The project whose chip the header shows: the URL project on a project page,
+  // else the owning project of the open asset (TypeId- or VFS-addressed).
+  const openEntityProjectId =
+    (openAsset as { project_id?: string | null } | null)?.project_id ??
+    (openVfsEntity as { project_id?: string | null } | null)?.project_id ??
+    null;
+  const chipProjectId = urlProjectId ?? openEntityProjectId;
   // Manual scope edits suppress the auto-union for the *current* asset only;
   // opening a different asset re-enables it (the guard is keyed to the id).
   const [suppressedAssetId, setSuppressedAssetId] = useState<string | null>(null);
@@ -826,16 +853,7 @@ export function AssetsPage() {
         </button>
         <BookOpen className="h-4 w-4 text-muted-foreground" />
         <span className="ml-1 text-sm font-medium">{isProjectView ? 'Project assets' : 'Assets'}</span>
-        {isProjectView && projectEntity && (
-          <div
-            className="ml-1.5 flex h-7 max-w-[260px] items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 text-xs font-medium text-foreground"
-            title={projectEntity.displayName ?? undefined}
-            data-testid="project-name-chip"
-          >
-            <ProjectIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate">{projectEntity.displayName}</span>
-          </div>
-        )}
+        <ProjectChip projectId={chipProjectId} className="ml-1.5" />
         <div className="ml-auto flex items-center gap-2">
           <div className="relative w-96 shrink-0">
             <RecordSearchBar
