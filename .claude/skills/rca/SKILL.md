@@ -2,10 +2,9 @@
 id: ccaf9012-abc8-4413-9c81-38d5d31018d3
 name: rca
 description: Root Cause Analyzer — prove the real cause of a failure by finding its
-  on/off switch, then optionally capture it as a fast failing test
 tags: ''
 eval: 'false'
-version: 2
+version: 3
 ---
 
 # RCA — Root Cause Analyzer
