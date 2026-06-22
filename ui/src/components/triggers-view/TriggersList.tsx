@@ -2,11 +2,11 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
-import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
+import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
+import { type ScopeFilter } from '@src/lib/scope-filter';
 import { ActionInfo, dataManager, type ITrigger } from '@sdk';
 import { HelpCircle, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { TriggerListItem } from './TriggerListItem';
 import { SCOPE_LABELS } from './scope-colors';
 
@@ -17,9 +17,15 @@ interface Props {
   onOpenLog: (trigger: ITrigger) => void;
   onNewSchedule: () => void;
   isCreatingSchedule: boolean;
-  /** Used to seed the ScopeFilterBar's project chip and pre-select the
-   *  current project in the picker. */
+  /** Seeds the ScopeFilterIconBar's Project chip and pre-selects the current
+   *  project in the picker. */
   currentProjectId: string | null;
+  /** Current project display name — shown in the Project icon's tooltip. */
+  currentProjectName?: string | null;
+  /** URL-first scope filter (read from the dock options by the host) plus its
+   *  writer. The scope lives in the URL — this component is fully controlled. */
+  scope: ScopeFilter;
+  onScopeChange: (scope: ScopeFilter) => void;
 }
 
 const SCOPE_ORDER = ['system', 'user', 'project'] as const;
@@ -50,6 +56,9 @@ function filterTriggers(
   return triggers.filter((t) => {
     const s = t.scope || 'user';
     if (s === 'system') return includeSystem;
+    // "All" shows everything (user + every project); system still rides the
+    // separate `includeSystem` toggle (handled above).
+    if (scope.all) return true;
     if (s === 'project') {
       // Project-scoped triggers without a project_id are unreachable via the
       // chip picker — hide them rather than leaking into the list.
@@ -69,24 +78,11 @@ export function TriggersList({
   onNewSchedule,
   isCreatingSchedule,
   currentProjectId,
+  currentProjectName,
+  scope,
+  onScopeChange,
 }: Props) {
-  const [scope, setScope] = useState<ScopeFilter>(() => defaultScopeFilter(currentProjectId));
   const [includeSystem, setIncludeSystem] = useState(false);
-
-  // Re-seed `scope` when the user switches project — but only when the picker
-  // is still in its default (singleton) shape pinned to the previous project.
-  // If the user has explicitly customized `scope.projects` (e.g. via the funnel
-  // picker), preserve their selection.
-  useEffect(() => {
-    setScope((prev) => {
-      const isDefaultSingleton = prev.projects.length === 1 && prev.projects[0] !== currentProjectId;
-      const isEmptyProjects = prev.projects.length === 0 && currentProjectId !== null;
-      if (isDefaultSingleton || isEmptyProjects) {
-        return defaultScopeFilter(currentProjectId);
-      }
-      return prev;
-    });
-  }, [currentProjectId]);
 
   const visibleTriggers = useMemo(
     () => filterTriggers(triggers, scope, includeSystem),
@@ -107,13 +103,15 @@ export function TriggersList({
 
   return (
     <div>
-      {/* Top filter row: canonical ScopeFilterBar (user/project/both chips +
-          project-picker funnel) plus a separate "Include system" checkbox. */}
+      {/* Top filter row: canonical icon scope bar (All/User/Project/Selected,
+          same as the Assets sidebar) plus a separate "Include system" checkbox.
+          Scope is URL-first — `scope`/`onScopeChange` come from the dock URL. */}
       <div className="flex flex-col gap-1.5 border-b px-3 py-2">
-        <ScopeFilterBar
+        <ScopeFilterIconBar
           scope={scope}
           currentProjectId={currentProjectId}
-          onScopeChange={setScope}
+          currentProjectName={currentProjectName}
+          onScopeChange={onScopeChange}
         />
         <div className="flex items-center gap-1.5">
           <Checkbox
