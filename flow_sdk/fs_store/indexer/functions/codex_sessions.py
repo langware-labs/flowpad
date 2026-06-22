@@ -22,6 +22,7 @@ Public helpers used outside the indexer:
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Iterator
 
@@ -30,6 +31,7 @@ from flow_sdk.fs_store.indexer.functions._codex_session_stats import (
 )
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
@@ -103,21 +105,26 @@ def _extract_thread_id(filename: str) -> str | None:
 
 
 def codex_session_id(ref: FSRef) -> str:
-    """Stable id = session_meta payload.id (the thread_id)."""
+    """Stable, filesystem-safe **UUID** id = session_meta payload.id (the
+    thread_id). The thread_id is already a UUID so it's kept as-is; any
+    non-conforming fallback is hashed with the same ``f"{type}:{key}"`` formula
+    ``Entity.allocate_id`` uses, so it matches the DB id."""
+    key = None
     try:
         for raw in _iter_head_json(ref._path):
             if raw.get("type") == "session_meta":
                 payload = raw.get("payload") or {}
                 if payload.get("id"):
-                    return str(payload["id"])
+                    key = str(payload["id"])
+                    break
             if raw.get("type") == "thread.started" and raw.get("thread_id"):
-                return str(raw["thread_id"])
+                key = str(raw["thread_id"])
+                break
     except OSError:
         pass
-    tid = _extract_thread_id(ref._path.name)
-    if tid:
-        return tid
-    return ref._path.stem
+    if key is None:
+        key = _extract_thread_id(ref._path.name) or ref._path.stem
+    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.CODEX_SESSION}:{key}", namespace=uuid.NAMESPACE_DNS)
 
 
 def extract_codex_session(ref: FSRef) -> list[FSRecord]:
