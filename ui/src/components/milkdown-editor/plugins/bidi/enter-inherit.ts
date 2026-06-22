@@ -45,6 +45,12 @@ const bidiInheritOnEnter: Command = (state, dispatch) => {
 
   if (parentType !== 'paragraph' && parentType !== 'heading') return false;
 
+  // A list item's content is a `paragraph`, so the parent-type check above
+  // passes inside list items too. Defer those to Milkdown's listItemKeymap
+  // (NextListItem → splitListItem), which renumbers the list; our generic
+  // depth-1 split would instead nest a second paragraph in the same item.
+  if ($from.node(-1)?.type.name === 'list_item') return false;
+
   // NodeSelection on a block — defer to default splitBlock semantics (rare path).
   if (selection instanceof NodeSelection && selection.node.isBlock) return false;
   if (!parent.isBlock) return false;

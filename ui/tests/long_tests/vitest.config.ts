@@ -3,9 +3,14 @@ import { defineConfig, mergeConfig } from 'vitest/config';
 import { loadEnv } from 'vite';
 import viteConfig from '../../vite.config';
 
-const env = loadEnv('test', path.resolve(__dirname, '../../..'), '');
+// Instance-aligned target: FLOW_INSTANCE (e.g. a dedicated instance_ctl
+// instance) selects the vite mode so loadEnv picks up `.env.<instance>.local`
+// and the SDK __API_URL__, jsdom url, and worker FLOW_INSTANCE all resolve to
+// the SAME backend. Unset → 'test' mode → `.env.local` (default dev backend).
+const mode = process.env.FLOW_INSTANCE || 'test';
+const env = loadEnv(mode, path.resolve(__dirname, '../../..'), '');
 const port = env.LOCAL_SERVER_PORT || '9007';
-const resolvedViteConfig = typeof viteConfig === 'function' ? viteConfig({ mode: 'test', command: 'serve' } as any) : viteConfig;
+const resolvedViteConfig = typeof viteConfig === 'function' ? viteConfig({ mode, command: 'serve' } as any) : viteConfig;
 
 // Worker selection: tests construct ``new AgenticProcess({ workdir })`` with
 // no explicit worker_type, so the backend's default applies. Two npm scripts

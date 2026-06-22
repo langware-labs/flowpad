@@ -12,7 +12,7 @@
  * resting URL. Best-effort: a miss/parse-failure is non-fatal (the view renders
  * its own missing/error state); never throws into the parent dock loader.
  */
-import { TypeId, VFSPath, apiClient, dataContext, dataManager } from '@sdk';
+import { ContextEntitiesEnum, Project, TypeId, VFSPath, apiClient, dataContext, dataManager } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod, isBrowseListPointer } from '@src/navigation/asset-doc-types';
 
@@ -36,10 +36,35 @@ async function wikiResolve(name: string, space: string): Promise<WikiResolveResu
   }
 }
 
-/** Put a resolved entity into context: warm the cache + mark it active. */
+// The two fields the loader derives context from. `project_id` is a backend
+// projection, not a typed field on the base entity, so resolved entities are
+// narrowed to this shape rather than carried as their full type.
+type ContextEntity = { typeId: TypeId; project_id?: string };
+
+/**
+ * Mark a resolved entity active AND load its owning project into context, so the
+ * editor renders inside the right project (the loader is the single writer of
+ * context — derive project from the entity, never optimistically elsewhere).
+ * Project is best-effort: an entity without `project_id` (user/system-scoped)
+ * leaves the current project untouched.
+ */
+async function setEntityContext(entity: ContextEntity | null): Promise<void> {
+  if (!entity) return;
+  await dataContext.setActiveEntityTypeId(entity.typeId);
+  if (entity.project_id) {
+    await dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProjectTypeId,
+      new TypeId(Project.type, entity.project_id),
+    );
+  }
+}
+
+/** Warm the cache by typeid, then push the resolved entity into context. */
 async function ensureInContext(typeId: TypeId): Promise<void> {
-  await dataManager.getByTypeId(typeId).catch(() => null);
-  await dataContext.setActiveEntityTypeId(typeId);
+  const entity = await dataManager.getByTypeId(typeId).catch(() => null);
+  // Fall back to a typeId-only context set if the fetch missed, so active state
+  // is still derived from the URL even when the entity isn't cacheable.
+  await setEntityContext((entity as ContextEntity | null) ?? { typeId });
 }
 
 export async function loadAssetRoute(pointer: string | undefined): Promise<void> {
@@ -89,7 +114,7 @@ export async function loadAssetRoute(pointer: string | undefined): Promise<void>
     const machine = VFSPath.parse(ptr.value).machinePath;
     if (machine) {
       const e = await dataManager.getEntityByPath(machine).catch(() => null);
-      if (e) await dataContext.setActiveEntityTypeId(e.typeId);
+      await setEntityContext(e as ContextEntity | null);
     }
   } catch (e) {
     console.warn('[load-asset] resolve failed (view will handle):', pointer, e);

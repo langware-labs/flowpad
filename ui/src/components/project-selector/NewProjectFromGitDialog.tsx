@@ -18,6 +18,11 @@ import { useCallback, useEffect, useState } from 'react';
 export interface NewProjectFromGitDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Pre-fill the URL field on open (e.g. opening a repo shared into a
+   *  conversation). The user can still edit it before submitting. */
+  initialUrl?: string;
+  /** Pre-fill the branch chip on open. */
+  initialBranch?: string;
   /**
    * Async callback invoked on submit.
    *
@@ -62,9 +67,9 @@ async function fetchGithubStatus(): Promise<boolean | null> {
   }
 }
 
-export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewProjectFromGitDialogProps) {
-  const [url, setUrl] = useState('');
-  const [branch, setBranch] = useState<string | null>(null);
+export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialUrl, initialBranch }: NewProjectFromGitDialogProps) {
+  const [url, setUrl] = useState(initialUrl ?? '');
+  const [branch, setBranch] = useState<string | null>(initialBranch ?? null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [suggestion, setSuggestion] = useState<{ suggestedName: string; attemptedName: string } | null>(null);
   const [githubConnected, setGithubConnected] = useState<boolean>(false);
@@ -76,8 +81,8 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
   // populated (fetchGithubStatus returns null in that case).
   useEffect(() => {
     if (!open) return;
-    setUrl('');
-    setBranch(null);
+    setUrl(initialUrl ?? '');
+    setBranch(initialBranch ?? null);
     setPickedRepo(null);
     setIsSubmitting(false);
     setSuggestion(null);
@@ -100,7 +105,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, initialUrl, initialBranch]);
 
   // Refresh status on a successful GitHub connect broadcast.
   useEffect(() => {

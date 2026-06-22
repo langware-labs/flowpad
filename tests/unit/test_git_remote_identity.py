@@ -13,6 +13,7 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.git_remote import GitRemote
 from flow_sdk.utils.git_identity import (
     canonical_git_remote_key,
+    git_remote_https_url,
     mint_git_remote_id,
     parse_git_remote_url,
 )
@@ -63,6 +64,35 @@ def test_parse_unknown_host_uses_hostname_as_provider():
 @pytest.mark.parametrize("url", ["", "   ", "not-a-url", "https://github.com/"])
 def test_parse_rejects_unusable(url):
     assert parse_git_remote_url(url) is None
+
+
+# ── URL builder (receiver reconstructs the clone URL from coords) ──────────────
+
+
+@pytest.mark.parametrize(
+    "provider, expected_host",
+    [("github", "github.com"), ("gitlab", "gitlab.com"), ("bitbucket", "bitbucket.org")],
+)
+def test_https_url_known_providers(provider, expected_host):
+    assert git_remote_https_url(provider, "Org", "Repo") == f"https://{expected_host}/Org/Repo.git"
+
+
+def test_https_url_unknown_provider_is_host():
+    assert git_remote_https_url("git.corp.io", "team", "proj") == "https://git.corp.io/team/proj.git"
+
+
+def test_https_url_strips_redundant_git_suffix():
+    assert git_remote_https_url("github", "Org", "Repo.git") == "https://github.com/Org/Repo.git"
+
+
+@pytest.mark.parametrize(
+    "provider, owner, name",
+    [("github", "Org", "Repo"), ("gitlab", "Team", "Proj"), ("git.corp.io", "team", "proj")],
+)
+def test_https_url_roundtrips_through_parser(provider, owner, name):
+    # The URL a receiver rebuilds from a GitBranch's coords must parse back to
+    # the same (provider, owner, name) the sender minted the GitRemote from.
+    assert parse_git_remote_url(git_remote_https_url(provider, owner, name)) == (provider, owner, name)
 
 
 # ── ensure(): deterministic get-or-create ─────────────────────────────────────
