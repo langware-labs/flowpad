@@ -44,6 +44,44 @@ interface RowItem {
   modifiedMs: number;
 }
 
+function renderRow(
+  r: RowItem,
+  checked: boolean,
+  toggle: (pid: string) => void,
+): React.ReactElement {
+  return (
+    <label
+      key={r.pid}
+      className={`flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50 ${
+        checked ? 'bg-accent/30' : ''
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => toggle(r.pid)}
+        className="h-4 w-4 shrink-0 rounded border-input"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium">{r.label}</div>
+        {r.cwd && (
+          <div className="truncate font-mono text-xs text-muted-foreground">{r.cwd}</div>
+        )}
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-0.5">
+        {r.raw.session_count > 0 && (
+          <span className="text-xs text-muted-foreground">
+            {r.raw.session_count} session{r.raw.session_count !== 1 ? 's' : ''}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground/70">
+          {relativeTime(r.raw.modified_at)}
+        </span>
+      </div>
+    </label>
+  );
+}
+
 export function ProjectPickerModal({
   open,
   onOpenChange,
@@ -53,10 +91,15 @@ export function ProjectPickerModal({
   const { projects, isLoading } = useProjectList({ enabled: open });
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set(selectedIds));
   const [search, setSearch] = useState('');
+  // Snapshot of the selection taken when the modal opens. Drives the
+  // selected-first ordering so rows stay put as the user toggles checkboxes
+  // (live `checkedIds` would make rows jump between the two groups mid-click).
+  const [initialSelected, setInitialSelected] = useState<Set<string>>(new Set(selectedIds));
 
   useEffect(() => {
     if (!open) return;
     setCheckedIds(new Set(selectedIds));
+    setInitialSelected(new Set(selectedIds));
     setSearch('');
   }, [open, selectedIds]);
 
@@ -84,6 +127,18 @@ export function ProjectPickerModal({
       r.label.toLowerCase().includes(q) || r.cwd.toLowerCase().includes(q),
     );
   }, [rows, search]);
+
+  // Selected projects (as of when the modal opened) float to the top, followed
+  // by a separator and the rest. Order within each group keeps the latest-activity sort.
+  const { selectedRows, otherRows } = useMemo(() => {
+    const sel: RowItem[] = [];
+    const other: RowItem[] = [];
+    for (const r of filtered) {
+      if (initialSelected.has(r.pid)) sel.push(r);
+      else other.push(r);
+    }
+    return { selectedRows: sel, otherRows: other };
+  }, [filtered, initialSelected]);
 
   const toggle = (pid: string) => {
     setCheckedIds((prev) => {
@@ -160,40 +215,13 @@ export function ProjectPickerModal({
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {filtered.map((r) => {
-                const checked = checkedIds.has(r.pid);
-                return (
-                  <label
-                    key={r.pid}
-                    className={`flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50 ${
-                      checked ? 'bg-accent/30' : ''
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggle(r.pid)}
-                      className="h-4 w-4 shrink-0 rounded border-input"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{r.label}</div>
-                      {r.cwd && (
-                        <div className="truncate font-mono text-xs text-muted-foreground">{r.cwd}</div>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-0.5">
-                      {r.raw.session_count > 0 && (
-                        <span className="text-xs text-muted-foreground">
-                          {r.raw.session_count} session{r.raw.session_count !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                      <span className="text-xs text-muted-foreground/70">
-                        {relativeTime(r.raw.modified_at)}
-                      </span>
-                    </div>
-                  </label>
-                );
-              })}
+              {selectedRows.map((r) => renderRow(r, checkedIds.has(r.pid), toggle))}
+              {selectedRows.length > 0 && otherRows.length > 0 && (
+                <div className="bg-muted/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Other projects
+                </div>
+              )}
+              {otherRows.map((r) => renderRow(r, checkedIds.has(r.pid), toggle))}
             </div>
           )}
         </div>
