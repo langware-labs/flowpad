@@ -1,8 +1,11 @@
 ---
-id: "ccaf9012-abc8-4413-9c81-38d5d31018d3"
-name: "rca"
-description: "Root Cause Analyzer — prove the real cause of a failure by finding its on/off switch, then optionally capture it as a fast failing test"
-tags: ""
+id: ccaf9012-abc8-4413-9c81-38d5d31018d3
+name: rca
+description: Root Cause Analyzer — prove the real cause of a failure by finding its
+  on/off switch, then optionally capture it as a fast failing test
+tags: ''
+eval: 'true'
+version: 2
 ---
 
 # RCA — Root Cause Analyzer
@@ -111,4 +114,3 @@ no clarifying questions, no progress check-ins.** Just write the test, run it, a
 * **`IMPOSSIBLE`** — no proven root cause exists this session, or the bug genuinely cannot be
   captured without a slower/heavier (e.g. e2e) harness than is warranted. Report why, and what
   layer it *would* take.
-
