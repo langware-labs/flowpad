@@ -13,8 +13,10 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
+import type { Project } from '@sdk';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import apiClient from '@sdk/client';
-import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
+import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, Trash2, X } from 'lucide-react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -301,6 +303,31 @@ export function AssetsPage() {
   // else the context project. Drives the Project mode + its tooltip name.
   const scopeProjectId = urlProjectId ?? currentProjectId;
   const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
+  // The project entity backing the project view — drives the "Delete project"
+  // header action. Only resolved on a project page.
+  const projectTypeId = useMemo<TypeId | null>(
+    () => (isProjectView && scopeProjectId ? new TypeId('project', scopeProjectId) : null),
+    [isProjectView, scopeProjectId],
+  );
+  const { data: projectEntity } = useEntity<Project>(projectTypeId);
+  const handleDeleteProject = useCallback(() => {
+    const proj = projectEntity;
+    if (!proj) return;
+    const name = proj.displayName ?? 'this project';
+    showDeleteAssetModal({
+      name,
+      description:
+        'This permanently deletes the project and everything in it — all indexed ' +
+        'records and their children, and the project folder on disk. This cannot be undone.',
+      onConfirm: async () => {
+        await proj.deleteWithChildren();
+      },
+      onAfterDelete: () => {
+        notify.success({ title: 'Project deleted', message: name });
+        navigation.closeDock();
+      },
+    });
+  }, [projectEntity, navigation]);
   // On a project page, scope is *preselected* to that project (not locked) — the
   // user can still switch to All/User/Selected. `projectSeedScope` is that
   // preselection: it seeds the initial scope, scopes the project index status,
@@ -866,6 +893,18 @@ export function AssetsPage() {
                   : 'Refresh search data'}
               </TooltipContent>
             </Tooltip>
+          )}
+          {isProjectView && projectEntity && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 shrink-0 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={handleDeleteProject}
+              data-testid="project-delete"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete project
+            </Button>
           )}
         </div>
       </div>
