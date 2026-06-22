@@ -15,6 +15,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
 import type { Project } from '@sdk';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import apiClient from '@sdk/client';
 import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, Trash2, X } from 'lucide-react';
 import {
@@ -310,6 +311,8 @@ export function AssetsPage() {
     [isProjectView, scopeProjectId],
   );
   const { data: projectEntity } = useEntity<Project>(projectTypeId);
+  // Per-type icon comes from the backend type registry, never hardcoded.
+  const ProjectIcon = iconForType('project');
   const handleDeleteProject = useCallback(() => {
     const proj = projectEntity;
     if (!proj) return;
@@ -823,6 +826,16 @@ export function AssetsPage() {
         </button>
         <BookOpen className="h-4 w-4 text-muted-foreground" />
         <span className="ml-1 text-sm font-medium">Assets</span>
+        {isProjectView && projectEntity && (
+          <div
+            className="ml-1.5 flex h-7 max-w-[260px] items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 text-xs font-medium text-foreground"
+            title={projectEntity.displayName ?? undefined}
+            data-testid="project-name-chip"
+          >
+            <ProjectIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate">{projectEntity.displayName}</span>
+          </div>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <div className="relative w-96 shrink-0">
             <RecordSearchBar
