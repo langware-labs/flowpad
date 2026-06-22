@@ -11,9 +11,12 @@ import {
   Terminal,
 } from 'lucide-react';
 
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, TypeId, type StatusBearingProcess } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
+import { useDerivedWorkerStatus } from '@src/components/entity-execution-panel/hooks/useDerivedWorkerStatus';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
@@ -64,6 +67,35 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   const entries = useMemo<UnifiedEntry[]>(() => (data ? groupEntriesByTurn(data.entries) : []), [data]);
   const sessionId = data?.session_id ?? null;
   const header = data?.header ?? {};
+
+  // ── Live process / worker status for the session backing this transcript ──
+  // Resolve the AgenticProcess by worker id, watch it for live ProcessStatus
+  // patches, and derive the mid-turn WorkerStatus off its FlowData stream. The
+  // busy spinner is the canonical `config.animate` flag inside
+  // ProcessStatusIndicator (same source EntityExecutionPanel uses) — no
+  // separate spinner here.
+  const [statusProcessId, setStatusProcessId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sessionId) { setStatusProcessId(null); return; }
+    let cancelled = false;
+    void AgenticProcess.getByWorkerId(sessionId)
+      .then((p) => { if (!cancelled) setStatusProcessId(p?.id ?? null); })
+      .catch(() => { if (!cancelled) setStatusProcessId(null); });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  const { data: statusProcess } = useEntity<AgenticProcess>(
+    statusProcessId ? new TypeId(AgenticProcess.type, statusProcessId) : null,
+    { watch: true, enabled: !!statusProcessId },
+  );
+  const derivedWorkerStatus = useDerivedWorkerStatus(statusProcess ?? null);
+  const indicatorProcess: StatusBearingProcess | null = statusProcess
+    ? {
+        status: statusProcess.status,
+        workerStatus: derivedWorkerStatus ?? statusProcess.workerStatus,
+        session_id: statusProcess.session_id,
+      }
+    : null;
 
   // Mirror the resolved generic worker-session name onto this transcript's Tab
   // label (self-heals nameless/legacy tabs; works for codex/copilot too).
@@ -484,6 +516,21 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
       {/* Top bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2">
         <ViewModeToggle mode={viewMode} onChange={switchMode} />
+
+        {indicatorProcess && (
+          <span
+            title={getStatusLabel(indicatorProcess)}
+            className="flex shrink-0 items-center"
+            data-testid="transcript-process-status"
+          >
+            <ProcessStatusIndicator
+              process={indicatorProcess}
+              showLabel
+              size="sm"
+              className="px-1 text-muted-foreground"
+            />
+          </span>
+        )}
 
         {/* Scroll-position clock */}
         <div className="flex flex-1 items-center justify-center gap-0 text-[11px] tabular-nums">
