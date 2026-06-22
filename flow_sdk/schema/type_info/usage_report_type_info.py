@@ -54,7 +54,7 @@ def _usage_report_default_body(entity) -> Optional[str]:
 USAGE_REPORT = TypeMetadata(
     type=EntityType.USAGE_REPORT,
     from_disk_fn=extract_usage_report,
-    gen_id_fn=usage_report_gen_id,
+    gen_uuid_fn=usage_report_gen_id,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     creatable=False,

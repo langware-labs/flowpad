@@ -253,6 +253,11 @@ class FlowMessage(Entity):
         "body_status", "is_read", "is_archived", "received_at", "is_draft",
         "prompt_auto_handled",
     })
+    # Fields ignored when deciding real-change-vs-touch in ``is_stale``: the
+    # local-only state plus the clocks themselves.
+    _STALE_IGNORE_FIELDS: ClassVar[frozenset[str]] = LOCAL_ONLY_FIELDS | frozenset({
+        "updated_date", "updated_by",
+    })
 
     type: str = APIField(default="flow_message")
     text: str = APIField(...)
@@ -331,6 +336,36 @@ class FlowMessage(Entity):
                     if data in local_approved and not att.get("approved_by"):
                         att["approved_by"] = local_approved[data]
         return merged
+
+    @classmethod
+    def is_stale(cls, local, hub_payload):  # type: ignore[override]
+        """LWW staleness, with a *touch* guard on top of the base date compare.
+
+        The base rule (``hub.updated_date > local.updated_date``) treats any
+        newer hub clock as a real change. But the hub re-stamps a message's
+        ``updated_date`` on bare touches too — re-materializing / re-downloading
+        the body, re-emitting an otherwise-unchanged row — which would drag the
+        local message clock (and, via projection, the conversation's inbox
+        recency) forward for no real change. So when the base says "newer",
+        confirm an actual content/state delta before adopting: serialize the
+        local row and the merged candidate, ignoring ``updated_date`` and the
+        local-only state, and treat byte-identical payloads as NOT stale.
+
+        A real edit (text, delivery_status, attachment, …) still differs and
+        stays stale; only the pure touch is filtered out.
+        """
+        if not super().is_stale(local, hub_payload):
+            return False
+        # super() already handled: no local row / no hub updated_date → here the
+        # hub clock is strictly newer. Decide real-change vs. touch by content.
+        try:
+            candidate = cls.model_validate(cls.merge_hub_payload(local, hub_payload))
+        except Exception:  # noqa: BLE001
+            return True  # can't prove it's a touch → fail safe to "stale"
+        ctx = {"skip_api_serializer": True}
+        before = local.model_dump(mode="json", exclude=cls._STALE_IGNORE_FIELDS, context=ctx)
+        after = candidate.model_dump(mode="json", exclude=cls._STALE_IGNORE_FIELDS, context=ctx)
+        return before != after
 
     @model_serializer(mode="wrap")
     def _serialize_with_local_paths(
