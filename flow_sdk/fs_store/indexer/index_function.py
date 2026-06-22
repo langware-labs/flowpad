@@ -566,7 +566,8 @@ class FSIndexer:
         # rename-stable. Types without a custom gen_id_fn get the default
         # mint: stable uuid5 of the path, via the single minter
         # (policy-conforming).
-        from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+        import uuid  # noqa: PLC0415
+        from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
 
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
@@ -580,7 +581,12 @@ class FSIndexer:
                 # the per-type ``errors`` accounting instead of raising out.
                 try:
                     if info.gen_id_fn is not None:
-                        ref_id = info.gen_id_fn(ref)
+                        # Match Entity.allocate_id: a raw natural-key id (e.g.
+                        # ``<file>:<json_path>``) carries a ``:`` that is illegal
+                        # in a Windows folder name and crashes the shadow-home
+                        # write — derive the same stable uuid5 instead.
+                        raw = info.gen_id_fn(ref)
+                        ref_id = raw if is_valid_entity_id(raw) else mint_uuid(f"{ref.record_type}:{raw}", namespace=uuid.NAMESPACE_DNS)
                     else:
                         ref_id = mint_uuid(str(ref._path))
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
