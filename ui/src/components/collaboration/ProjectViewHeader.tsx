@@ -1,4 +1,4 @@
-import { Copy, Menu, PackageSearch, RotateCcw, Trash2, Users } from 'lucide-react';
+import { Copy, Menu, PackageSearch, RotateCcw, Users } from 'lucide-react';
 import { notify } from '@src/notifications';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { Button } from '@src/components/ui/button';
@@ -9,8 +9,6 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { Project, ProjectMember } from '@sdk';
 import { systemTools } from '@sdk';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
@@ -29,7 +27,6 @@ function onlineWithin(member: ProjectMember, windowMs: number): boolean {
 
 export function ProjectViewHeader({ project, localMemberId }: Props) {
   const { busy } = useSystemTools();
-  const { navigation } = useDockNavigation();
   const members = project.members ?? [];
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(project.displayName);
@@ -66,22 +63,6 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
       console.error('[ProjectViewHeader] rename failed', err);
       notify.info({ title: 'Rename failed', message: String((err as Error).message ?? err) });
     }
-  };
-
-  const confirmDelete = () => {
-    showDeleteAssetModal({
-      name: project.displayName,
-      description:
-        'This permanently deletes the project and everything in it — all indexed ' +
-        'records and their children, and the project folder on disk. This cannot be undone.',
-      onConfirm: async () => {
-        await project.deleteWithChildren();
-      },
-      onAfterDelete: () => {
-        notify.success({ title: 'Project deleted', message: project.displayName });
-        navigation.closeDock();
-      },
-    });
   };
 
   const handleKey = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -182,16 +163,6 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={confirmDelete}
-          className="h-9 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-          data-testid="project-actions-delete"
-        >
-          <Trash2 className="h-4 w-4" />
-          Delete project
-        </Button>
       </div>
     </div>
   );
