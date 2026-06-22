@@ -1,6 +1,7 @@
 import '@src/styles/highlightjs.css';
 import { trackEvent } from '@src/utils/analytics';
-import { config, navigator } from '@sdk';
+import { config, dataContext, navigator } from '@sdk';
+import { useLocation } from 'react-router';
 import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
@@ -50,6 +51,14 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     usePresenceReporter();
     useUiCommandListener();
     useSpotlightHotkey();
+    // Re-report browser_context (incl. the current URL) on every navigation.
+    // The reporter's mobx autorun only fires on context-slot changes, so a
+    // pure-URL move (e.g. leaving a conversation for Home) wouldn't otherwise
+    // refresh the pathname the backend reads to tell what page is open.
+    const { pathname } = useLocation();
+    useEffect(() => {
+      dataContext.resendBrowserContext();
+    }, [pathname]);
     return null;
   };
 
