@@ -19,7 +19,7 @@ import { useContext } from '@src/hooks/useContext';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
-import { DockPointer, useDockNavigation } from '@src/navigation';
+import { useDockNavigation, useSideWindows } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
@@ -49,7 +49,6 @@ import {
   SIDE_TABS,
   SideTabId,
   SimpleDirTree,
-  parseSideTabIdList,
   parseSideTabId,
   usePromptsForProcess,
   type PromptEntry,
@@ -134,15 +133,6 @@ function saveTraceFilters(f: TraceFilters): void {
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 import { FONT_FAMILY, FONT_SIZE_PX, openTerminalLink } from './terminalConfig';
 
-// ── Side-window state lives in the URL (?sideWindows=…&activeSideWindow=…) ──
-// Source of truth: `currentDock.options`. Same shape as ?editorMode in
-// MarkdownEditor — URL-first, shareable, back/forward-restorable, per-dock.
-
-const SIDE_WINDOWS_PARAM = 'sideWindows';
-const ACTIVE_SIDE_WINDOW_PARAM = 'activeSideWindow';
-
-// ─────────────────────────────────────────────────────────────────────────────
-
 interface InteractiveTerminalProps {
   sessionId: string;
   flow?: AgenticProcess | null;
@@ -184,7 +174,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // For TabbedTerminal, no prop is passed — fall back to the context process
   // set by the loader, which is always authoritative for the active tab.
   const process = propProcess ?? contextProcess ?? undefined;
-  const { navigation, currentDock } = useDockNavigation();
+  const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
   // Chat-UI mode: the experimental SimpleChatPane overlays the xterm area
   // (same session, same PTY — see SimpleChatPane). The terminal is the default
@@ -278,81 +268,33 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [traceFilters, setTraceFiltersState] = useState<TraceFilters>(() => loadTraceFilters());
   const [gutterExpanded, setGutterExpanded] = useState(false);
   const [colVis, setColVisState] = useState<ColVisibility>(() => loadColVis());
+  // Open side windows + active are dock state (URL: ?sideWindows&activeSideWindow),
+  // read/written through the shared useSideWindows() hook. We narrow the generic
+  // string ids back to this surface's SideTabId registry (dropping any stale or
+  // foreign id) so the descriptor lookups below are total.
+  const sideWindows = useSideWindows();
   const sideWindowTabs = useMemo(
-    () => parseSideTabIdList(currentDock?.options?.[SIDE_WINDOWS_PARAM]),
-    [currentDock?.options?.[SIDE_WINDOWS_PARAM]],
+    () => sideWindows.windows.filter((w): w is SideTabId => parseSideTabId(w) !== null),
+    [sideWindows.windows],
   );
   const activeSideTab = useMemo<SideTabId | null>(() => {
-    const parsed = parseSideTabId(currentDock?.options?.[ACTIVE_SIDE_WINDOW_PARAM]);
-    if (parsed && sideWindowTabs.includes(parsed)) return parsed;
-    return sideWindowTabs[sideWindowTabs.length - 1] ?? null;
-  }, [currentDock?.options?.[ACTIVE_SIDE_WINDOW_PARAM], sideWindowTabs]);
+    const parsed = parseSideTabId(sideWindows.active);
+    return parsed && sideWindowTabs.includes(parsed)
+      ? parsed
+      : (sideWindowTabs[sideWindowTabs.length - 1] ?? null);
+  }, [sideWindows.active, sideWindowTabs]);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [activePane, setActivePane] = useState<'claude' | 'shell'>('claude');
   const handlePasteRef = useRef<() => Promise<void>>(async () => {});
 
-  // Push a new {tabs, active} to the URL by merging into currentDock.options.
-  // Mirrors setViewMode in MarkdownEditor — single writer is the URL.
-  const pushSideTabs = useCallback(
-    (next: { tabs: SideTabId[]; active: SideTabId | null }) => {
-      if (!currentDock) return;
-      const nextOptions = { ...(currentDock.options ?? {}) };
-      if (next.tabs.length > 0) {
-        nextOptions[SIDE_WINDOWS_PARAM] = next.tabs.join(',');
-      } else {
-        delete nextOptions[SIDE_WINDOWS_PARAM];
-      }
-      // Only stamp activeSideWindow when it differs from the natural last-in-list
-      // default — keeps the URL clean for the common single/last-active case.
-      const defaultActive = next.tabs[next.tabs.length - 1] ?? null;
-      if (next.active && next.active !== defaultActive && next.tabs.includes(next.active)) {
-        nextOptions[ACTIVE_SIDE_WINDOW_PARAM] = next.active;
-      } else {
-        delete nextOptions[ACTIVE_SIDE_WINDOW_PARAM];
-      }
-      navigation.openDock(new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout));
-    },
-    [currentDock, navigation],
-  );
-
-  const openSideTab = useCallback(
-    (tab: SideTabId) => {
-      const tabs = sideWindowTabs.includes(tab) ? sideWindowTabs : [...sideWindowTabs, tab];
-      pushSideTabs({ tabs, active: tab });
-    },
-    [sideWindowTabs, pushSideTabs],
-  );
-
-  const closeSideTab = useCallback(
-    (tab: SideTabId) => {
-      const tabs = sideWindowTabs.filter((t) => t !== tab);
-      const active = activeSideTab === tab ? (tabs[tabs.length - 1] ?? null) : activeSideTab;
-      pushSideTabs({ tabs, active });
-    },
-    [sideWindowTabs, activeSideTab, pushSideTabs],
-  );
-
-  const selectSideTab = useCallback(
-    (tab: SideTabId) => {
-      if (!sideWindowTabs.includes(tab)) return;
-      pushSideTabs({ tabs: sideWindowTabs, active: tab });
-    },
-    [sideWindowTabs, pushSideTabs],
-  );
-
-  const toggleSideTab = useCallback(
-    (tab: SideTabId) => {
-      if (activeSideTab === tab && sideWindowTabs.includes(tab)) {
-        const tabs = sideWindowTabs.filter((t) => t !== tab);
-        pushSideTabs({ tabs, active: tabs[tabs.length - 1] ?? null });
-        return;
-      }
-      const tabs = sideWindowTabs.includes(tab) ? sideWindowTabs : [...sideWindowTabs, tab];
-      pushSideTabs({ tabs, active: tab });
-    },
-    [sideWindowTabs, activeSideTab, pushSideTabs],
-  );
+  // Open/close/select/toggle delegate to the shared hook (single URL writer).
+  // Re-exposed under this surface's SideTabId-typed names so the JSX below is
+  // unchanged; the hook itself is id-agnostic.
+  const openSideTab = sideWindows.open;
+  const closeSideTab = sideWindows.close;
+  const selectSideTab = sideWindows.select;
+  const toggleSideTab = sideWindows.toggle;
 
   // Input dir info for file attachment workflow.
   // Only fetch for the active tab — inactive pre-mounted terminals share the

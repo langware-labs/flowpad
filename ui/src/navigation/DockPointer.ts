@@ -13,6 +13,11 @@ import {
   withScopeFilterOptions,
   type ScopeFilter,
 } from '@src/lib/scope-filter';
+import {
+  dockOptionsToSideWindows,
+  withSideWindowsOptions,
+  type SideWindowsState,
+} from '@src/lib/side-windows';
 
 /**
  * Lens pointer structure for sub-routing within lens viewer
@@ -102,6 +107,31 @@ export class DockPointer implements IDockPointer {
       this.viewType,
       this.pointer,
       withScopeFilterOptions(this.options, scope),
+      this.layout,
+    );
+  }
+
+  /**
+   * The set of open side windows + the active one carried by this dock's
+   * options, or null when none is set. The single generic accessor for
+   * side-windows-in-URL across every dock — the option-key grammar lives
+   * entirely in `lib/side-windows.ts`; no surface reads the raw
+   * `sideWindows`/`activeSideWindow` keys itself. Consumed via `useSideWindows`.
+   */
+  get sideWindows(): SideWindowsState | null {
+    return dockOptionsToSideWindows(this.options);
+  }
+
+  /**
+   * Clone this pointer with the side-windows state serialized into its options —
+   * the single generic builder for side-windows-in-URL. Pairs with the
+   * `sideWindows` getter.
+   */
+  withSideWindows(state: SideWindowsState): DockPointer {
+    return new DockPointer(
+      this.viewType,
+      this.pointer,
+      withSideWindowsOptions(this.options, state),
       this.layout,
     );
   }
