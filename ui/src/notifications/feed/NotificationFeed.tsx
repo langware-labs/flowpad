@@ -3,6 +3,8 @@ import { Bell } from 'lucide-react';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { useBadgeStore } from '../store';
 import { NotificationGlyph } from '../NotificationOutlet';
+import { NotificationProcessLine } from '../NotificationProcessLine';
+import { DiagnoseIconButton } from '../diagnose/DiagnoseIconButton';
 import { runAction } from '../commands';
 import type { NotificationData } from '../types';
 
@@ -25,6 +27,7 @@ function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismi
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{data.title}</span>
         <span className="text-xs text-muted-foreground">{formatTimeAgo(new Date(data.timestamp).toISOString()) ?? 'just now'}</span>
+        <NotificationProcessLine data={data} />
       </div>
       {primary && (
         <button
@@ -37,6 +40,10 @@ function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismi
           {primary.label}
         </button>
       )}
+      <DiagnoseIconButton
+        data={data}
+        className="flex-shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary group-hover:opacity-100"
+      />
       <button
         onClick={(e) => {
           e.stopPropagation();
