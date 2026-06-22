@@ -412,6 +412,37 @@ export interface WorkerListEntry extends ActiveProcessEntry {
   mode: ExecutionMode;
 }
 
+/**
+ * Worker statuses that mean a *headless* (CLI) turn has finished and the worker
+ * is sitting idle / waiting for the next user message.
+ *
+ * A headless ``claude -p`` worker has no persistent process between turns: the
+ * subprocess exits when the turn ends, and only the RUNNING lifecycle
+ * placeholder survives (kept on purpose so ``isReadyForInput`` stays true and
+ * the next prompt can resume the session). Without this, the chip keeps
+ * counting that finished worker until a full page reload flushes the stale row
+ * — the lifecycle ``status`` never drops, so ``classifyExecutionMode`` (which
+ * keys on ``status``) can't tell the turn is over.
+ *
+ * Deliberately scoped to the footer and to headless workers only:
+ * - interactive PTY workers own a live xterm even while idle, so they stay
+ *   listed (unaffected here);
+ * - the shared ``classifyExecutionMode`` and its byte-for-byte Python mirror
+ *   (``classify_execution_mode``) intentionally still treat idle-but-running
+ *   workers as live, so we do NOT touch them.
+ *
+ * ``PENDING_USER`` is the value the backend projection emits right after a
+ * clean turn end (``_discover_status_from_transcript``); the clean-terminal
+ * (COMPLETE/INTERRUPTED) and never-prompted (IDLE) values are folded in so the
+ * row drops whether we catch the completion broadcast or a later seed.
+ */
+const HEADLESS_DONE_WORKER_STATUSES = new Set<WorkerStatus>([
+  WorkerStatus.IDLE,
+  WorkerStatus.COMPLETE,
+  WorkerStatus.INTERRUPTED,
+  WorkerStatus.PENDING_USER,
+]);
+
 export function buildWorkerEntries(now: number): WorkerListEntry[] {
   const out: WorkerListEntry[] = [];
   for (const t of trackers.values()) {
@@ -421,6 +452,17 @@ export function buildWorkerEntries(now: number): WorkerListEntry[] {
       visible: t.visible,
     });
     if (mode === null) continue; // not live → not listed
+    // Headless worker whose turn has ended → drop it now instead of letting it
+    // linger as a stale "active" row until the next page reload. See
+    // HEADLESS_DONE_WORKER_STATUSES. Interactive (PTY) workers are never dropped
+    // here — they keep a live terminal even when idle.
+    if (
+      mode === ExecutionMode.Background &&
+      t.workerStatus !== undefined &&
+      HEADLESS_DONE_WORKER_STATUSES.has(t.workerStatus as WorkerStatus)
+    ) {
+      continue;
+    }
     const pending = isCurrentlyPending(t, now);
     const burning = isBurningTracker(t);
     out.push({
