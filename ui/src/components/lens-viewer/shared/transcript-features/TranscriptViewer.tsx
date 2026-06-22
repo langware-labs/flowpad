@@ -22,8 +22,10 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
 import { useSyncTranscriptTabName } from '@src/tabs/useTabs';
 
+import { WorkerLaunchToolbar } from '@src/components/conversation/WorkerLaunchToolbar';
 import { ViewModeToggle } from '../ViewModeToggle';
 import { AnalysisSidePanel, useAnalysisControls } from './AnalysisControls';
+import { useTranscriptSession } from './useTranscriptSession';
 import { CallStackView } from './CallStackView';
 import { ExecutionView } from './ExecutionView';
 import { useTranscriptMode, type TranscriptMode } from '../use-transcript-mode';
@@ -67,6 +69,12 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   const entries = useMemo<UnifiedEntry[]>(() => (data ? groupEntriesByTurn(data.entries) : []), [data]);
   const sessionId = data?.session_id ?? null;
   const header = data?.header ?? {};
+
+  // A received transcript (shared from another machine) never ran here and is
+  // not resumable: hide the "open in terminal" affordance and instead offer a
+  // worker that loads + summarises it via transcript_analyzer.
+  const received = data?.received ?? false;
+  const transcriptSession = useTranscriptSession(workerType, received ? sessionId : null);
 
   // ── Live process / worker status for the session backing this transcript ──
   // Resolve the AgenticProcess by worker id, watch it for live ProcessStatus
@@ -576,17 +584,31 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
         </div>
 
         {sessionId && (
-          <div className="flex items-center gap-1" data-testid="transcript-viewer-toolbar">
-            <button
-              type="button"
-              onClick={handleOpenInTerminal}
-              className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-              title="Open in terminal"
-              data-testid="transcript-open-in-terminal"
-            >
-              <Terminal className="h-3 w-3" />
-              Open in terminal
-            </button>
+          <div
+            className="flex items-center gap-1"
+            data-testid={received ? 'transcript-analyze-toolbar' : 'transcript-viewer-toolbar'}
+          >
+            {received ? (
+              <WorkerLaunchToolbar
+                hasProcess={!!transcriptSession.process}
+                starting={transcriptSession.starting}
+                onOpen={transcriptSession.open}
+                onLaunch={transcriptSession.launch}
+                openTitle="Open the transcript analysis session"
+                testIdPrefix="transcript-analyze"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={handleOpenInTerminal}
+                className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                title="Open in terminal"
+                data-testid="transcript-open-in-terminal"
+              >
+                <Terminal className="h-3 w-3" />
+                Open in terminal
+              </button>
+            )}
           </div>
         )}
 

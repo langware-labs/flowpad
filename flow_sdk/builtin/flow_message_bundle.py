@@ -1095,7 +1095,11 @@ async def unpack_bundle(
                     if sess_data is not None:
                         from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
                         sess_id = sess_data.get("id") or entry_id
-                        sess_payload = {**sess_data, "id": sess_id, "remote": False}
+                        # ``received=True``: the transcript rode in with the share
+                        # and lives only under received_transcripts/ — it never ran
+                        # here and is not resumable. Drives the viewer's resume-hide
+                        # + analyze-transcript toolbar.
+                        sess_payload = {**sess_data, "id": sess_id, "remote": False, "received": True}
                         existing_sess = await ClaudeSession.get_one({"id": sess_id})
                         if existing_sess is None or overwrite:
                             sess = ClaudeSession.model_validate(sess_payload)
