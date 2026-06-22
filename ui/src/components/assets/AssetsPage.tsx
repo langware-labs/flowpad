@@ -825,7 +825,7 @@ export function AssetsPage() {
           )}
         </button>
         <BookOpen className="h-4 w-4 text-muted-foreground" />
-        <span className="ml-1 text-sm font-medium">Assets</span>
+        <span className="ml-1 text-sm font-medium">{isProjectView ? 'Project assets' : 'Assets'}</span>
         {isProjectView && projectEntity && (
           <div
             className="ml-1.5 flex h-7 max-w-[260px] items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 text-xs font-medium text-foreground"
