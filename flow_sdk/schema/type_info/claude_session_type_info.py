@@ -10,5 +10,5 @@ CLAUDE_SESSION = TypeMetadata(
     type=EntityType.CLAUDE_SESSION,
     indexed_by_default=True,
     from_disk_fn=extract_claude_session,
-    gen_id_fn=claude_session_id,
+    gen_uuid_fn=claude_session_id,
 )

@@ -242,11 +242,22 @@ def test_extract_remote_url_server(tmp_path: Path) -> None:
     assert d["description"] == "https://mcp.sentry.dev/mcp"
 
 
-def test_gen_id_matches_extracted_record_id(tmp_path: Path) -> None:
+def test_gen_uuid_matches_extracted_record_id(tmp_path: Path) -> None:
+    """The probe's ``gen_uuid_fn`` id must equal the id the extracted record
+    ends up with after ``Entity.allocate_id`` normalizes its natural key — so
+    the probe's shadow home and the DB row address the same record — and it must
+    be a filesystem-safe UUID (no ``:`` that would crash the Windows write).
+    """
+    from flow_sdk.core.entity.entity_model import Entity
+    from flow_sdk.fs_store.identifier import is_valid_entity_id
+
     home = _make_home(tmp_path)
     for ref in _scan(_home_root(home)):
         (rec,) = extract_mcp_server(ref)
-        assert mcp_server_id(ref) == rec.to_dict()["id"]
+        gen = mcp_server_id(ref)
+        assert is_valid_entity_id(gen)
+        assert not any(ch in gen for ch in ":/\\")
+        assert gen == Entity.allocate_id(rec.to_dict())
 
 
 def test_extract_vanished_entry_returns_empty(tmp_path: Path) -> None:

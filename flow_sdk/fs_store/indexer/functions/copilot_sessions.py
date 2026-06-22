@@ -16,10 +16,12 @@ Public helpers:
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -45,8 +47,12 @@ def copilot_sessions_fn(
 
 
 def copilot_session_id(ref: FSRef) -> str:
-    """Stable id = the session-state directory name (the session UUID)."""
-    return ref._path.parent.name
+    """Stable, filesystem-safe **UUID** id from the session-state directory name
+    (already the session UUID in practice — kept as-is when conforming, else
+    hashed with the same ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses
+    so it matches the DB id)."""
+    key = ref._path.parent.name
+    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.COPILOT_SESSION}:{key}", namespace=uuid.NAMESPACE_DNS)
 
 
 def extract_copilot_session(ref: FSRef) -> list[FSRecord]:

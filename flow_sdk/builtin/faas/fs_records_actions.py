@@ -479,19 +479,19 @@ class FsRecordsActionsMixin:
 
     @staticmethod
     def _ref_gen_id(ref) -> "str | None":
-        """Mint the deterministic id for an FSRef via its type's gen_id_fn.
+        """Mint the deterministic id for an FSRef via its type's gen_uuid_fn.
 
-        Returns None when the type has no gen_id_fn or minting raises —
+        Returns None when the type has no gen_uuid_fn or minting raises —
         callers decide the fallback (the scan list falls back to the path; the
         diff loop skips). Single source of truth for the gen_id dispatch dance.
         """
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         info = SchemaRegistry.get(str(ref.record_type)) if ref.record_type is not None else None
-        gen_id_fn = getattr(info, "gen_id_fn", None) if info else None
-        if gen_id_fn is None:
+        gen_uuid_fn = getattr(info, "gen_uuid_fn", None) if info else None
+        if gen_uuid_fn is None:
             return None
         try:
-            return gen_id_fn(ref) or None
+            return gen_uuid_fn(ref) or None
         except Exception:
             return None
 
