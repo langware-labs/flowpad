@@ -51,7 +51,7 @@ _PROGRESS_THROTTLE_S = 0.2
 _SCAN_CHUNK_NODES = 256
 
 # Per chunk ref budget for FSIndexer.index()'s skip-fresh probe. The probe
-# (gen_id_fn frontmatter read/write-back + on-disk hash equality) is pure
+# (gen_uuid_fn frontmatter read/write-back + on-disk hash equality) is pure
 # sync file I/O; batching it through one asyncio.to_thread call per chunk
 # keeps that I/O off the event loop — previously thousands of fresh-skip
 # iterations ran it inline with no real suspension point (the throttled
@@ -557,17 +557,16 @@ class FSIndexer:
             _pending_hashes.clear()
 
         # Probe worker — runs in a thread, one call per _PROBE_CHUNK_REFS
-        # chunk. Everything here is sync file I/O: gen_id_fn reads (and on
+        # chunk. Everything here is sync file I/O: gen_uuid_fn reads (and on
         # first encounter rewrites) frontmatter; index_required compares the
         # source's current hash against the on-disk ``.hash`` sentinel.
         # genId is the mint-on-first-encounter variant: idempotent if the
         # file already carries an id in frontmatter, else writes the
         # currently derived id back so future scans and lookups are
-        # rename-stable. Types without a custom gen_id_fn get the default
+        # rename-stable. Types without a custom gen_uuid_fn get the default
         # mint: stable uuid5 of the path, via the single minter
         # (policy-conforming).
-        import uuid  # noqa: PLC0415
-        from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
+        from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
 
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
@@ -580,13 +579,11 @@ class FSIndexer:
                 # stale — the parse path's own try/except then counts it in
                 # the per-type ``errors`` accounting instead of raising out.
                 try:
-                    if info.gen_id_fn is not None:
-                        # Match Entity.allocate_id: a raw natural-key id (e.g.
-                        # ``<file>:<json_path>``) carries a ``:`` that is illegal
-                        # in a Windows folder name and crashes the shadow-home
-                        # write — derive the same stable uuid5 instead.
-                        raw = info.gen_id_fn(ref)
-                        ref_id = raw if is_valid_entity_id(raw) else mint_uuid(f"{ref.record_type}:{raw}", namespace=uuid.NAMESPACE_DNS)
+                    if info.gen_uuid_fn is not None:
+                        # gen_uuid_fn guarantees a filesystem-safe UUID (never a
+                        # raw natural key with a ``:`` that would crash the
+                        # Windows shadow-home write), identical to the DB id.
+                        ref_id = info.gen_uuid_fn(ref)
                     else:
                         ref_id = mint_uuid(str(ref._path))
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)

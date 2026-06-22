@@ -15,5 +15,5 @@ CLAUDE_MEMORY = TypeMetadata(
     api_visible=True,
     index_fields=["name"],
     from_disk_fn=extract_claude_memory,
-    gen_id_fn=claude_memory_gen_id,
+    gen_uuid_fn=claude_memory_gen_id,
 )

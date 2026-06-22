@@ -47,7 +47,7 @@ def _agent_trace_default_body(entity) -> Optional[str]:
 AGENT_TRACE = TypeMetadata(
     type=EntityType.AGENT_TRACE,
     from_disk_fn=extract_agent_trace,
-    gen_id_fn=agent_trace_gen_id,
+    gen_uuid_fn=agent_trace_gen_id,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     creatable=False,

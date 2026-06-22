@@ -34,7 +34,7 @@ DATASET = TypeMetadata(
     main_subdir="assets/datasets",
     main_layout="folder",
     from_disk_fn=extract_dataset,
-    gen_id_fn=dataset_gen_id,
+    gen_uuid_fn=dataset_gen_id,
     asset_hash_fn=dataset_asset_hash,
     meta_model=DatasetMeta,
 )

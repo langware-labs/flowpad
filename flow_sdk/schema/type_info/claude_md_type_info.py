@@ -8,5 +8,5 @@ CLAUDE_MD = TypeMetadata(
     icon="BookOpen",
     api_visible=True,
     from_disk_fn=extract_markdown,
-    gen_id_fn=markdown_gen_id,
+    gen_uuid_fn=markdown_gen_id,
 )

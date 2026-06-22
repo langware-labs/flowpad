@@ -30,6 +30,6 @@ PROJECT = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_claude_project,
-    gen_id_fn=claude_project_id,
+    gen_uuid_fn=claude_project_id,
     meta_model=ProjectMeta,
 )

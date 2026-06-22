@@ -38,14 +38,14 @@ class TypeInfo:
 
     # --- Runtime refs (NOT in hash, NOT persisted) ---
     entity_cls: type | None = ...     # the Entity subclass (db_base_record)
-    post_sync_fn / from_disk_fn / gen_id_fn / asset_hash_fn / default_body_fn: Any
+    post_sync_fn / from_disk_fn / gen_uuid_fn / asset_hash_fn / default_body_fn: Any
     metadata: Any                     # the TypeMetadata instance it was built from
     meta_model: Any                   # per-type pydantic FS↔DB schema model
     main_subdir: str | None = None    # scope-relative asset subdir
     main_layout: str = "file"         # "file" | "folder"
 ```
 
-There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions (`from_disk_fn`, `gen_id_fn`, etc.) attached to the `TypeInfo`, not on a subclass.
+There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions (`from_disk_fn`, `gen_uuid_fn`, etc.) attached to the `TypeInfo`, not on a subclass.
 
 ### Dynamic properties
 
@@ -78,7 +78,7 @@ SKILL = TypeMetadata(
     main_subdir=".claude/skills",
     main_layout="folder",
     from_disk_fn=extract_skill,
-    gen_id_fn=skill_gen_id,
+    gen_uuid_fn=skill_gen_id,
     asset_hash_fn=skill_asset_hash,
 )
 ```
@@ -99,7 +99,7 @@ This is the **only** remaining `__init_subclass__` auto-registration. There is n
 
 `register()` is idempotent and **merges on re-register** (`schema_registry.py:357`). The declarative `TypeMetadata` and the Entity `__init_subclass__` typically both register the same `type_name`; the merge:
 - unions `locations`,
-- fills `entity_cls`, `metadata`, `meta_model`, and the per-type function refs (`post_sync_fn`, `from_disk_fn`, `gen_id_fn`, `asset_hash_fn`, `default_body_fn`) on first non-None,
+- fills `entity_cls`, `metadata`, `meta_model`, and the per-type function refs (`post_sync_fn`, `from_disk_fn`, `gen_uuid_fn`, `asset_hash_fn`, `default_body_fn`) on first non-None,
 - OR-merges the boolean flags (`browseable`, `creatable`, `indexed_by_default`, `api_visible`),
 - overwrites `icon`, `main_subdir`, `main_layout`, `index_fields` when the new value is set.
 

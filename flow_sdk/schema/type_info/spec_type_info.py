@@ -36,7 +36,7 @@ def _spec_default_body(entity) -> str:
 SPEC = TypeMetadata(
     type=EntityType.SPEC,
     from_disk_fn=extract_spec,
-    gen_id_fn=spec_gen_id,
+    gen_uuid_fn=spec_gen_id,
     indexed_by_default=True,
     browseable_by=ViewMode.STANDARD,
     icon="FileText",
