@@ -1,8 +1,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { MarkdownDoc } from '@sdk';
+import { AgenticProcess, dataManager, type MarkdownDoc } from '@sdk';
 import { TerminalBottomRibbon } from '@src/components/terminal/interactive-terminal/TerminalBottomRibbon';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Keep the ribbon light: stub the view-mode hook + Prompt Library so the test
 // renders just the ribbon chrome and our docs chip.
@@ -23,6 +23,51 @@ const baseProps = {
 };
 
 afterEach(() => cleanup());
+
+describe('AgenticProcess — markdown.create wire update reaches the model + chip', () => {
+  beforeEach(async () => {
+    await dataManager.clearCache();
+  });
+  afterEach(async () => {
+    await dataManager.clearCache();
+  });
+
+  it('applies a backend markdown_docs update over the wire and the chip then shows it', () => {
+    const process = new AgenticProcess({ id: '00000000-0000-4000-8000-0000000000aa' });
+    expect(process.markdown_docs).toEqual([]);
+
+    // Simulate the entity-update the backend save() broadcasts after writing
+    // hello.md — the same deepAssign path the FlowSync store drives on every WS
+    // entity-op. This is the real receive path, not a hand-set prop.
+    dataManager.deepAssign(process, {
+      markdown_docs: [{ path: '/repo/hello.md', name: 'hello.md', change: 'create' }],
+    });
+    expect(process.markdown_docs).toEqual([
+      { path: '/repo/hello.md', name: 'hello.md', change: 'create' },
+    ]);
+
+    // The ribbon, driven by the received field, surfaces the doc.
+    render(
+      <TerminalBottomRibbon {...baseProps} markdownDocs={process.markdown_docs} onOpenMarkdown={vi.fn()} />,
+    );
+    expect(screen.getByText('hello.md')).toBeTruthy();
+  });
+
+  it('a second write arrives as a grown list (deepAssign never corrupts order)', () => {
+    const process = new AgenticProcess({ id: '00000000-0000-4000-8000-0000000000bb' });
+    dataManager.deepAssign(process, {
+      markdown_docs: [{ path: '/repo/hello.md', name: 'hello.md', change: 'create' }],
+    });
+    // Backend sends the full list (tail = latest) on the next save.
+    dataManager.deepAssign(process, {
+      markdown_docs: [
+        { path: '/repo/hello.md', name: 'hello.md', change: 'create' },
+        { path: '/repo/notes.md', name: 'notes.md', change: 'create' },
+      ],
+    });
+    expect(process.markdown_docs.map((d) => d.name)).toEqual(['hello.md', 'notes.md']);
+  });
+});
 
 describe('TerminalBottomRibbon — markdown docs chip', () => {
   it('renders no docs chip when the process authored nothing', () => {

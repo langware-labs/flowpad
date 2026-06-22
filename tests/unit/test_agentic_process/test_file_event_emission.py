@@ -142,6 +142,51 @@ async def test_tracks_markdown_create_for_hello_md(initialize_test_db, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_markdown_create_event_reaches_ws_sink(initialize_test_db, monkeypatch) -> None:
+    """End-to-end-ish: the event reaches the real WS broadcast sink.
+
+    Unlike the other cases, this does NOT stub ``emit_entity_event``. It lets the
+    real ``emit_entity_event`` -> ``emit_flow_data`` path run and captures the
+    actual ``send_flow_data_to_entity`` call (the last hop before the socket),
+    proving a ``markdown.create`` entity_event with the right payload is what
+    would be delivered to WS watchers.
+    """
+    from flow_sdk.core.entity.entity_model import Entity
+
+    ap = _make_ap()
+    await _stub_save(ap, monkeypatch)
+
+    # Keep cross-linking off the DB but let emit run for real.
+    async def _fake_get_by_asset_ref(path):
+        return None
+    monkeypatch.setattr(Entity, "get_by_asset_ref", staticmethod(_fake_get_by_asset_ref), raising=False)
+
+    captured: list[tuple[object, dict]] = []
+
+    async def _capture_send(typeid, flow_data):
+        captured.append((typeid, flow_data))
+
+    monkeypatch.setattr(
+        "flow_sdk.core.network.resource_tracker.send_flow_data_to_entity",
+        _capture_send,
+    )
+
+    await ap._process_transcript_entries(
+        [FileWriteEntry(path="/tmp/hello.md", tool_name="Write", **_entry_base("e1"))],
+    )
+
+    md_events = [
+        fd for _, fd in captured
+        if fd.get("attributes", {}).get("event") == "markdown.create"
+    ]
+    assert md_events, f"markdown.create never reached the WS sink; got {captured}"
+    attrs = md_events[0]["attributes"]
+    assert attrs["element-type"] == "entity_event"
+    assert attrs["payload"]["path"] == "/tmp/hello.md"
+    assert attrs["payload"]["name"] == "hello.md"
+
+
+@pytest.mark.asyncio
 async def test_markdown_rewrite_upserts_to_update(initialize_test_db, monkeypatch) -> None:
     """A later write/edit to the same doc upgrades it to 'update' in place."""
     ap = _make_ap()
