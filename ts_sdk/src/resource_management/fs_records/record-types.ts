@@ -83,4 +83,5 @@ export enum RecordType {
   TODO_FILE = 'todo_file',
   WHITEBOARD = 'whiteboard',
   AGENT_TRACE = 'agent_trace',
+  USAGE_REPORT = 'usage_report',
 }
