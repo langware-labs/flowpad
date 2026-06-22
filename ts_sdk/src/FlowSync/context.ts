@@ -142,6 +142,14 @@ class DataContext extends EventEmitter {
   stateItem = 'flowpad-state';
   persistedState: { [key: string]: TypeId } = {};
 
+  /**
+   * Force an immediate re-report of ``browser_context`` (incl. the current
+   * URL). The reporter's mobx autorun only fires on context-slot changes, so a
+   * pure-URL navigation (e.g. → Home) wouldn't otherwise re-send the pathname.
+   * Wired by ``startBrowserContextReporter``; a no-op until then.
+   */
+  resendBrowserContext: () => void = () => {};
+
   /** Mirror of cloudManager.isLoggedIn — only cloudManager should call setCloudLoggedIn. */
   _cloudLoggedIn = false;
   setCloudLoggedIn(v: boolean) {
@@ -620,6 +628,11 @@ class DataContext extends EventEmitter {
         const typeId = this.getContextEntityTypeId(key);
         out[key] = typeId ? typeId.toString() : null;
       }
+      // The current route — the source of truth for "what the user is looking
+      // at". Entity-context slots above go stale on non-entity pages (Home,
+      // shells, lenses), so the backend matches against this pathname instead
+      // (e.g. to tell whether a conversation is the open page).
+      out.CurrentPathname = typeof window !== 'undefined' ? window.location.pathname : null;
       return out;
     };
 
@@ -663,6 +676,7 @@ class DataContext extends EventEmitter {
       lastSerialized = null;
       sendNow(true);
     };
+    this.resendBrowserContext = resend;
     cm.on('on_open', resend);
     cm.on('on_reconnected', resend);
 
