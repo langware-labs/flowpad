@@ -11,6 +11,7 @@ import {
   ProcessStatus,
   Shell,
   type AgenticProcess,
+  type MarkdownDoc,
 } from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
@@ -95,6 +96,9 @@ export interface ColVisibility {
   annotations: boolean;
 }
 
+// Stable empty-array identity so a doc-less process doesn't hand the ribbon a
+// fresh `[]` every render.
+const EMPTY_DOCS: MarkdownDoc[] = [];
 const DEFAULT_COL_VIS: ColVisibility = { trace: true, time: true, annotations: true };
 const COL_VIS_LS_KEY = 'colVisibility';
 
@@ -478,6 +482,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!agenticProcessTypeId || !process?.plan_path) return;
     navigation.openPlan(agenticProcessTypeId, process.plan_path);
   }, [process, agenticProcessTypeId, navigation]);
+
+  // Docs chip: persisted ``markdown_docs`` (oldest-first; tail = latest) drives
+  // the "Open Doc" affordance, mirroring ``plan_path`` / Open Plan. The list is
+  // a persisted entity field, so it restores after a reload via ``useEntity``.
+  const markdownDocs = process?.markdown_docs ?? EMPTY_DOCS;
+  const handleOpenMarkdown = useCallback(
+    (path: string) => navigation.openDocs(path),
+    [navigation],
+  );
 
   // On mount (and whenever the process identity changes), proactively call
   // getPlan() once so the button restores after a reload — the line trigger
@@ -1641,6 +1654,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           }}
           hasLastPlan={hasPlan}
           onOpenLastPlan={handleOpenLastPlan}
+          markdownDocs={markdownDocs}
+          onOpenMarkdown={handleOpenMarkdown}
         />
       )}
     </div>
