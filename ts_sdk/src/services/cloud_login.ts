@@ -143,14 +143,20 @@ class CloudManager extends EventEmitter {
 
     const dm = await _dataManager();
     dm.on('on_oauth_msg', (msg: OAuthMessage) => this._onOAuthMessage(msg));
-    dm.on('on_cloud_login_status_msg', (msg: CloudLoginStatusMessage) => {
-      void this._onCloudLoginStatusMsg(msg);
-    });
-    dm.on('on_cloud_connection_status_msg', (msg: CloudConnectionStatusMessage) => {
-      this._onCloudConnectionStatusMsg(msg);
-    });
     const { ConnectionManager } = await import('../websocket');
     const cm = ConnectionManager.getInstance();
+    // The cloud login/connection status pushes are emitted on the
+    // ConnectionManager — NOT re-emitted by the dataManager (which only
+    // forwards on_oauth_msg & friends, see store.ts attach_connection_manager).
+    // Subscribing on `dm` here left these handlers dead, so the connection slot
+    // never updated from a push and the avatar dot sat orange until a manual
+    // refresh pulled /cloud/status. Listen on `cm`, where they actually fire.
+    cm.on('on_cloud_login_status_msg', (msg: CloudLoginStatusMessage) => {
+      void this._onCloudLoginStatusMsg(msg);
+    });
+    cm.on('on_cloud_connection_status_msg', (msg: CloudConnectionStatusMessage) => {
+      this._onCloudConnectionStatusMsg(msg);
+    });
     // Legacy fallback — back-compat for one release.
     cm.on('on_auth_expired_msg', (msg: { reason?: string }) => {
       void this._onCloudLoginStatusMsg({
