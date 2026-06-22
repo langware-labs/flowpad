@@ -421,11 +421,21 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     sz = stat.st_size
 
     # Expanding tail read: start at 4 KB and widen (×16, clamped to
-    # ``_TAIL_MAX_BYTES``) only while the window holds nothing but ignored
+    # ``_TAIL_MAX_BYTES``) while the window holds nothing but ignored
     # session-envelope lines (``last_type is None``), so a long trailing meta run
     # can't bury the real last chat entry and force a spurious UNKNOWN. Healthy
     # sessions find a meaningful entry in the first 4 KB and never expand; the
     # read never exceeds ``_TAIL_MAX_BYTES``.
+    #
+    # ALSO widen when the tail ends in a ``last-prompt`` idle marker but the
+    # window doesn't yet contain a completed assistant turn: the ``last-prompt``
+    # branch below classifies COMPLETE vs WAITING from the ``end_turn`` of the
+    # last assistant entry, and a single oversized tool_use line just ahead of
+    # the trailing ``last-prompt``/``system``/envelope run can strand that
+    # ``end_turn`` past the 4 KB window — making ``_has_completed_assistant``
+    # falsely return False and pinning a genuinely-finished worker at WAITING
+    # forever (never projected to PENDING_USER). Widen until the assistant turn
+    # is in-window (or we hit the file start / ``_TAIL_MAX_BYTES``).
     last_type: str | None = None
     last_subtype: str | None = None
     last_stop_reason: str | None = None
@@ -441,7 +451,12 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         except OSError:
             return WorkerStatus.INITIALIZING
         last_type, last_subtype, last_stop_reason, last_user_ts = _scan_reversed(chunk)
-        if last_type is not None or window >= sz or read_bytes >= _TAIL_MAX_BYTES:
+        if window >= sz or read_bytes >= _TAIL_MAX_BYTES:
+            break
+        need_wider = last_type is None or (
+            last_type == "last-prompt" and not _has_completed_assistant(chunk)
+        )
+        if not need_wider:
             break
         read_bytes = min(read_bytes * 16, _TAIL_MAX_BYTES)
 

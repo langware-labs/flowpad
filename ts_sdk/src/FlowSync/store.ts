@@ -7,6 +7,7 @@ import config from '../config';
 import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
+import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -732,9 +733,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * Returns null when nothing distinguished resolves (the chip then falls back
    * to the ViewType title).
    */
-  public getTabName(dock: { viewType?: string; pointer?: string } | null | undefined): string | null {
-    const pointer = dock?.pointer ?? '';
-    if (!pointer) return null;
+  public getTabName(
+    dock: { viewType?: string; pointer?: string; options?: Record<string, string> } | null | undefined,
+  ): string | null {
     // Resolve a cached entity's name by typeid — either a raw `<type>-<id>`
     // string, or a (viewType, bare-id) pair when the dock's type lives in the
     // viewType segment (e.g. /dock/conversation/<uuid>).
@@ -754,6 +755,24 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         return null;
       }
     };
+    // Assets is a single scope-keyed tab — its title follows the SCOPE, not the
+    // (in-tab) sub-pointer: single project → "<project>'s Assets"; user → "My
+    // Assets"; global / all / multi-select → null (chip falls back to the
+    // registry "Assets" title). Runs before the empty-pointer guard because a
+    // scoped assets dock normalizes its pointer to ''.
+    if (dock?.viewType === 'assets') {
+      const scope = dockOptionsToScopeFilter(dock.options);
+      if (scope && !scope.all) {
+        if (!scope.user && scope.projects.length === 1) {
+          const name = nameFromCache('project', scope.projects[0]);
+          return name ? `${name}'s Assets` : 'Assets';
+        }
+        if (scope.user && scope.projects.length === 0) return 'My Assets';
+      }
+      return null;
+    }
+    const pointer = dock?.pointer ?? '';
+    if (!pointer) return null;
     const lastSegment = (path: string): string | null =>
       decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
     // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a

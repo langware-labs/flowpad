@@ -2845,6 +2845,33 @@ async def conversation_list() -> ApiResponse:
         return ApiFailResponse(message=f"Failed: {e}")
 
 
+@action.post(action_name="conversation-summary", types=None)
+async def conversation_summary() -> ApiResponse:
+    """Plain-text summary of one conversation (header + one line per message).
+
+    Thin wrapper over ``Conversation.summary()`` — no LLM, no hub calls. Same
+    auth gate as ``conversation-message-sync``: require a local Conversation
+    row for the id so an authenticated caller can't summarize an arbitrary id.
+    """
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        if not conv_id:
+            return ApiFailResponse(message="conversation_id required")
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is None:
+            return ApiFailResponse(message="conversation not found", status_code=404)
+        return ApiSuccessResponse(
+            data={"conversation_id": conv_id, "summary": await conv.summary()}
+        )
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-summary error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
 async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     """**Deprecated** — delegates to ``handle_conversation_list``.
 

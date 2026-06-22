@@ -3,9 +3,10 @@ import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { type ITrigger } from '@sdk';
+import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import { useTriggers } from '@src/hooks/useTriggers';
 import { useProject } from '@src/hooks/useProject';
 import { TriggersList } from './TriggersList';
@@ -22,7 +23,21 @@ export function TriggersView() {
   // full set + the current project id down.
   const [selectedTrigger, setSelectedTrigger] = useState<ITrigger | null>(null);
   const [isCreatingSchedule, setIsCreatingSchedule] = useState(false);
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
+
+  // Scope filter is URL-first (same as the Assets sidebar): read it from the
+  // dock options, fall back to the context-aware default. Writing the URL is the
+  // single source of truth — `urlScope` re-derives on the next render. The scope
+  // is excluded from the Triggers tabHash, so changing it stays in ONE tab
+  // (unlike Assets, where each scope is its own tab).
+  const urlScope = useMemo<ScopeFilter>(
+    () => currentDock?.scopeFilter ?? defaultScopeFilter(project?.id ?? null),
+    [currentDock, project?.id],
+  );
+  const handleScopeChange = useCallback((scope: ScopeFilter) => {
+    const base = currentDock ?? DockPointer.forTab(ViewType.TRIGGERS);
+    navigation.openDock(base.withScopeFilter(scope));
+  }, [currentDock, navigation]);
 
   // Reset selection when the user switches project — the previously-selected
   // trigger may no longer match the new project's scope filter, and keeping
@@ -139,6 +154,9 @@ export function TriggersView() {
             onNewSchedule={handleNewSchedule}
             isCreatingSchedule={isCreatingSchedule}
             currentProjectId={project?.id ?? null}
+            currentProjectName={project?.getDisplayName() ?? project?.name ?? null}
+            scope={urlScope}
+            onScopeChange={handleScopeChange}
           />
         </div>
       </div>

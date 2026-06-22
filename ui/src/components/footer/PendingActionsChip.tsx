@@ -1,12 +1,11 @@
-import { AgenticProcess, ClaudeSession, ExecutionMode, Project, Shell, supportedExecutionModes, TypeId, WorkerStatus } from '@sdk';
+import { ExecutionMode, Project, supportedExecutionModes, WorkerStatus } from '@sdk';
 import { EntityTypeBar } from '@src/components/asset-manager/EntityTypeBar';
 import { workerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
-import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { setPendingIntent } from '@src/tabs/pending-intent';
+import { agenticProcessName, openAgenticProcess, resolveAgenticProcessName } from '@src/navigation/agentic-process-open';
 import {
   acknowledgePending,
   formatTimeAgo,
@@ -39,9 +38,6 @@ import { workerStatusLabel } from './worker-status-label';
  * reactive; both the linked session/shell and the row's Project are lazily
  * fetched into the cache when the popover opens so the names resolve.
  */
-/** The two related ids the name resolver reads off an AgenticProcess. */
-type APWithIds = AgenticProcess & { session_id?: string | null; shell_id?: string | null };
-
 export function PendingActionsChip() {
   const isAdvanced = useIsAdvanced();
   const supported = useMemo(() => supportedExecutionModes(isAdvanced), [isAdvanced]);
@@ -66,27 +62,9 @@ export function PendingActionsChip() {
     [allRows, effective],
   );
 
-  // A worker's meaningful name is the session title (the ai-title the history
-  // and transcript views show), carried on its ClaudeSession (keyed by
-  // session_id). When the session has no title yet, fall back to the linked
-  // Shell's label ("Claude - <sid> (new)" / OSC title from the tab strip).
-  // The lightweight status-op store carries none of these, so resolve from
-  // the cache: AgenticProcess → session_id / shell_id → name.
-  const apOf = (processId: string) =>
-    AgenticProcess.getByIdFromCache<AgenticProcess>(processId) as APWithIds | null;
-  const nameFromCache = (processId: string): string | null => {
-    const ap = apOf(processId);
-    const sessionId = ap?.session_id;
-    const sessionName = sessionId
-      ? ClaudeSession.getByIdFromCache<ClaudeSession>(sessionId)?.name
-      : null;
-    // ClaudeSession.name is `custom_title || slug || session_id`; only use it
-    // when it's an actual title, not the raw id.
-    if (sessionName && sessionName !== sessionId) return sessionName;
-    const shellId = ap?.shell_id;
-    return (shellId ? Shell.getByIdFromCache<Shell>(shellId)?.name : null) ?? null;
-  };
-
+  // A worker's meaningful name (session title → shell label) and the lazy
+  // cache-warm both live in the shared `agentic-process-open` module, reused by
+  // the process line on notifications.
   // A row's project label (shown on the meta subline, like the history modal).
   // Reads the warmed Project entity (see the lazy fetch below).
   const projectNameFromCache = (projectId: string): string | null => {
@@ -106,7 +84,7 @@ export function PendingActionsChip() {
     if (!open) return;
     const missingProcesses = allRows
       .map((e) => e.processId)
-      .filter((id) => !fetchedRef.current.has(id) && !nameFromCache(id));
+      .filter((id) => !fetchedRef.current.has(id) && !agenticProcessName(id));
     // Many rows can share one project, so dedup before fetching.
     const missingProjects = Array.from(
       new Set(
@@ -120,23 +98,8 @@ export function PendingActionsChip() {
     missingProcesses.forEach((id) => fetchedRef.current.add(id));
     missingProjects.forEach((id) => fetchedProjectsRef.current.add(id));
     let cancelled = false;
-    const resolveProcess = async (id: string): Promise<void> => {
-      const ap = apOf(id) ?? ((await AgenticProcess.getById<AgenticProcess>(id)) as APWithIds | null);
-      const sessionId = ap?.session_id;
-      const shellId = ap?.shell_id;
-      await Promise.allSettled(
-        [
-          sessionId && !ClaudeSession.getByIdFromCache<ClaudeSession>(sessionId)
-            ? ClaudeSession.getById<ClaudeSession>(sessionId)
-            : null,
-          shellId && !Shell.getByIdFromCache<Shell>(shellId)
-            ? Shell.getById<Shell>(shellId)
-            : null,
-        ].filter(Boolean) as Promise<unknown>[],
-      );
-    };
     void Promise.allSettled([
-      ...missingProcesses.map(resolveProcess),
+      ...missingProcesses.map(resolveAgenticProcessName),
       ...missingProjects.map((id) => Project.getById<Project>(id)),
     ]).then(() => {
       if (!cancelled) setNameTick((t) => t + 1);
@@ -151,7 +114,7 @@ export function PendingActionsChip() {
       filtered.map((e) => ({
         processId: e.processId,
         mode: e.mode,
-        name: nameFromCache(e.processId) ?? e.processId.slice(0, 8),
+        name: agenticProcessName(e.processId) ?? e.processId.slice(0, 8),
         projectName: e.projectId ? projectNameFromCache(e.projectId) : null,
         statusLabel: workerStatusLabel(e.workerStatus, e.pending),
         statusIcon: workerStatusConfig[e.workerStatus as WorkerStatus],
@@ -172,48 +135,13 @@ export function PendingActionsChip() {
   const count = rows.length;
   const tooltipText = `${count} active agent${count === 1 ? '' : 's'}`;
 
-  // Route per execution mode: an Interactive worker attaches its live terminal;
-  // a Background (headless) or Error worker opens the read-only transcript lens
-  // to *view* the run rather than forcing a PTY (which `openShellProcess` would
-  // by flipping visible=true). External rows are never produced, so they never
-  // reach here.
+  // Route per execution mode (shared with the process line on notifications): an
+  // Interactive worker attaches its live terminal; a Background / Error worker
+  // opens the read-only transcript lens. External rows are never produced.
   const handlePick = async (processId: string, mode: ExecutionMode) => {
     setOpen(false);
     try {
-      if (mode === ExecutionMode.Interactive) {
-        // Pin the explicit intent BEFORE navigating: the agent may live in
-        // another project, so the navigation triggers a strip rebuild. Without
-        // this, the self-heal resolver would re-pick the new project's default
-        // tab instead of the clicked agent (Bug 2). resolveActive case 2 honors
-        // this intent, then consumes it once the agent lands in the strip.
-        setPendingIntent(new TypeId(AgenticProcess.type, processId).toString());
-        const opened = await navigation.openShellProcess(processId);
-        if (!opened) {
-          notify.error({
-            title: 'Process unavailable',
-            message: 'That agent is no longer in your workspace.',
-          });
-        }
-        return;
-      }
-      // Background / Error → view the run's transcript (read-only).
-      const ap = apOf(processId)
-        ?? ((await AgenticProcess.getById<AgenticProcess>(processId)) as APWithIds | null);
-      const sessionId = ap?.session_id;
-      if (sessionId) {
-        navigation.openLens('claude', 'transcript', sessionId);
-      } else {
-        notify.error({
-          title: 'No transcript',
-          message: 'This worker has no session to view yet.',
-        });
-      }
-    } catch (err) {
-      console.error('[PendingActionsChip] open failed', err);
-      notify.error({
-        title: 'Process unavailable',
-        message: 'That agent is no longer in your workspace.',
-      });
+      await openAgenticProcess(processId, navigation, mode === ExecutionMode.Interactive);
     } finally {
       // Ack either way — clears the row's glow if the process was in the
       // pending set. No-op if it was only burning (no readyAt to mark).

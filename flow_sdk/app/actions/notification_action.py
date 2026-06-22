@@ -77,6 +77,7 @@ def _fm_response_fields(fm: "FlowMessage", conv: "Conversation") -> dict:
     return {
         "id": fm.id,
         "body_status": dumped.get("body_status"),
+        "delivery_status": dumped.get("delivery_status"),
         "sender_id": dumped.get("sender_id"),
         "sender_name": dumped.get("sender_name"),
         "attachment": dumped.get("attachment") or [],
@@ -672,13 +673,22 @@ def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> N
         pass
 
 
-async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
+async def handle_add_message(
+    body: dict, someone_typeid: str, *, pending_send: bool = False,
+) -> ApiResponse:
     """Append a message to a Conversation — the single message-send handler.
 
     Exposed as the `conversation/<id>/add_message` action. Handles text-only
     sends and attachment sends (files, images, prompts, asset references)
     alike. Requires `conversation_id` (project-scoped conversation path); any
     Task is attached via context_entities, not a separate code path.
+
+    ``pending_send``: the caller (the add_message gate) determined the message
+    cannot reach the cloud right now — cloud login is required but unavailable.
+    Instead of refusing, persist the message locally stamped
+    ``delivery_status=pending_send`` with NO hub push; it stays in the
+    conversation.jsonl outbox and is flushed by ``_deliver_pending_messages``
+    when the conversation next becomes remote (manual re-send for v1).
     """
     conversation_id = (body.get("conversation_id") or "").strip()
     # ``text`` is the field the SDK's ``Conversation.addMessage(text)`` sends;
@@ -771,9 +781,11 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
         raw_attachments = [raw_attachments]
 
     # Text-only WS fast path. The hub handles fan-out + delivery receipts, then
-    # we materialize the hub-confirmed FM locally for the sender's UI.
+    # we materialize the hub-confirmed FM locally for the sender's UI. Skipped
+    # for a pending_send (no cloud login → never touch the hub; save local).
     if (
         not is_draft
+        and not pending_send
         and not uploaded_files
         and not prompt_text
         and not prompt_files
@@ -826,10 +838,18 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
     # A conversation reply goes to the hub whenever it's hub-mirrored
     # (``conv.remote`` is the load-bearing signal). Local-only conversations
     # keep body_status=NA — the attachment is served off local VFS.
-    is_remote_send = is_logged_in() and bool(getattr(conv, "remote", False))
+    is_remote_send = (
+        not pending_send and is_logged_in() and bool(getattr(conv, "remote", False))
+    )
     if is_remote_send and reply_fm.has_body():
         from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
         reply_fm.body_status = BodyStatus.UPLOADING
+
+    if pending_send:
+        # Composed offline — stamp the local-only pre-accept status so the UI /
+        # CLI can show it as queued. It rides the jsonl outbox for a later flush.
+        from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
+        reply_fm.delivery_status = DeliveryStatus.PENDING_SEND.value
 
     reply_fm = await reply_fm.save(someone_typeid)
 

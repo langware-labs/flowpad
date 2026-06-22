@@ -18,6 +18,7 @@ import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useSideWindows } from '@src/navigation/useSideWindows';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -68,7 +69,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   );
   const resolvedWorkflow = providedWorkflow ?? discoveredWorkflow;
 
-  const [activeSideTab, setActiveSideTab] = useState<string>('editor');
+  const { open: openSideWindow } = useSideWindows();
   const [processEntry, setProcessEntry] = useState<ProcessEntry | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
@@ -137,9 +138,9 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     const process = await spawnRunner({ workflow: resolvedWorkflow });
     if (process) {
       setProcessEntry({ process });
-      setActiveSideTab('runs');
+      openSideWindow('runs');
     }
-  }, [resolvedWorkflow, spawnRunner]);
+  }, [resolvedWorkflow, spawnRunner, openSideWindow]);
 
   const handleRun = useCallback(async () => {
     if (!resolvedWorkflow?.asset_ref) return;
@@ -246,8 +247,6 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
         chatTarget={resolvedWorkflow.typeId.toString()}
         toolbar={toolbar}
         extraSideTabs={[runsTab]}
-        activeSideTab={activeSideTab}
-        onActiveSideTabChange={setActiveSideTab}
         showLearningMode={showLearningMode}
         learningPanel={learningPanel}
         onDelete={async () => {

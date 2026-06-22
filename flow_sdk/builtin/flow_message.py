@@ -55,13 +55,21 @@ class DeliveryStatus(str, Enum):
     """Delivery-receipt lifecycle of a FlowMessage. Monotonic. Single source of
     truth — imported by both the client (here) and the hub.
 
+    PENDING_SEND — composed locally while cloud login was unavailable; the user
+                  asked to send but we could not even attempt the hub push, so
+                  it is queued for a later (manual) re-send. Strictly more local
+                  than CREATED and below it in rank (deliberately NOT in
+                  ``DELIVERY_ORDER`` — see below — so any real hub status
+                  advances over it and it can never downgrade a sent message).
     CREATED   — local only; the hub has NOT accepted it (🕐 Pending).
     SENT      — accepted/stored on the hub (✓).
     DELIVERED — recipient's client pulled it (✓✓).
     RECEIVED  — recipient read it (✓✓ blue).
 
-    The hub never stores CREATED — that is a purely client-local pre-accept state.
+    The hub never stores PENDING_SEND / CREATED — those are purely client-local
+    pre-accept states.
     """
+    PENDING_SEND = "pending_send"
     CREATED = "created"
     SENT = "sent"
     DELIVERED = "delivered"
@@ -450,6 +458,25 @@ class FlowMessage(Entity):
         local_path hydration) without changing the call sites.
         """
         return self.attachment
+
+    def summary(self) -> str:
+        """One-line human summary: ``[<status>] <sender>: <text preview> (+N attachments)``.
+
+        Pure render (no I/O). The attachment count excludes the two structural
+        self-pointers every message carries (``conversation-<id>`` /
+        ``flow_message-<id>``) so it reflects only user-meaningful attachments.
+        """
+        text = " ".join((self.text or "").split())
+        preview = text if len(text) <= 80 else text[:77] + "..."
+        sender = self.sender_name or self.sender_id or "unknown"
+        structural = {f"conversation-{self.conversation_id}", f"flow_message-{self.id}"}
+        n = sum(
+            1
+            for a in (self.attachment or [])
+            if not (a.attachment_type == AttachmentType.TYPE_ID and a.data in structural)
+        )
+        suffix = f" (+{n} attachment{'s' if n != 1 else ''})" if n else ""
+        return f"[{self.delivery_status}] {sender}: {preview}{suffix}"
 
     def clone_for_forward(
         self,

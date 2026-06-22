@@ -501,8 +501,12 @@ export function AssetsPage() {
   // them onto the project URL or every tree click, breadcrumb, or row click
   // would jump out of the project shell.
   const navigateAsset = useCallback((p: DockPointer) => {
-    navigation.openDock(DockPointer.rebaseAssetsOntoProject(p, urlProjectId));
-  }, [navigation, urlProjectId]);
+    // Every in-assets navigation (type click, folder, breadcrumb, row→editor)
+    // stays in the SAME scope-keyed tab: re-stamp the current scope onto the
+    // freshly-built (scope-less) pointer so the assets tabHash is unchanged and
+    // the scope isn't dropped from the URL.
+    navigation.openDock(p.withScopeFilter(urlScope));
+  }, [navigation, urlScope]);
 
   // BrowseableTree's adapters key selection off `ViewType.ASSETS` pointers,
   // so in project view we synthesize one from the sub-pointer. Memoized so

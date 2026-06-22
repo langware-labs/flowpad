@@ -17,10 +17,12 @@ describe('DockPointer.tabHash', () => {
   });
 
   it('differs when viewType or pointer differ', () => {
+    // ASSETS is scope-keyed (see assets-tab-scope-hash.test.ts); use a
+    // pointer-keyed content viewType to exercise the generic identity rule.
     const assets = new DockPointer(ViewType.ASSETS).tabHash;
     const shell = new DockPointer(ViewType.SHELL, 'shell-1').tabHash;
-    const doc1 = new DockPointer(ViewType.ASSETS, 'doc-1').tabHash;
-    const doc2 = new DockPointer(ViewType.ASSETS, 'doc-2').tabHash;
+    const doc1 = new DockPointer(ViewType.CONVERSATION, 'doc-1').tabHash;
+    const doc2 = new DockPointer(ViewType.CONVERSATION, 'doc-2').tabHash;
     expect(assets).not.toBe(shell);
     expect(doc1).not.toBe(doc2);
   });
@@ -51,11 +53,13 @@ describe('DockPointer.tabHash', () => {
   });
 
   it('round-trips through the strip split: `viewType|pointer`', () => {
-    const p = new DockPointer(ViewType.ASSETS, 'editor/markdown/typeid/markdown-1');
+    // Generic (pointer-keyed) viewType — ASSETS folds its sub-pointer into a
+    // scope key instead (covered in assets-tab-scope-hash.test.ts).
+    const p = new DockPointer(ViewType.CONVERSATION, 'abc123');
     const hash = p.tabHash;
     const i = hash.indexOf('|');
-    expect(hash.slice(0, i)).toBe(ViewType.ASSETS);
-    expect(hash.slice(i + 1)).toBe('editor/markdown/typeid/markdown-1');
+    expect(hash.slice(0, i)).toBe(ViewType.CONVERSATION);
+    expect(hash.slice(i + 1)).toBe('abc123');
   });
 });
 

@@ -1,5 +1,6 @@
-import { Agent, AgentTrace, FSRef, Skill, TypeId, VFSPath, Whiteboard, Workflow } from '@sdk';
+import { Agent, AgentTrace, FSRef, Skill, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import { useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
@@ -10,6 +11,7 @@ import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
 import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
+import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
 
@@ -59,6 +61,39 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
   const { data: typeIdEntity } = useEntity(typeId);
   const { computeNode } = useAgentContext();
 
+  // Derive the FSRef + the record type for this asset in ONE unconditional memo
+  // (must run before the early returns to keep hook order stable). The FSRef is
+  // keyed on its STABLE string inputs (the pointer + resolved asset_ref + compute
+  // -node id) rather than rebuilt every render — a fresh object each render would
+  // churn the identity of every downstream hook keyed on it (useEntityByPath via
+  // EntityResolutionGate, useAssetRevisionStatus, the editors' content load),
+  // which a backend-scan WS flood turns into a per-frame reload (the "flicker").
+  const assetRef = (typeIdEntity as { asset_ref?: string } | null)?.asset_ref ?? null;
+  const computeNodeKey = computeNode?.typeId?.toString() ?? null;
+  const derived = useMemo<{ fsRef: FSRef; assetType: string } | null>(() => {
+    if (!ptr || !ptr.editor || ptr.editor === AssetEditor.CODE) return null;
+    if (ptr.method === AssetRoutingMethod.TYPEID) {
+      // Build the FSRef from the entity's canonical asset_ref (the path the
+      // editors' EntityResolutionGate matches on — the folder for skill/whiteboard,
+      // the .md for agent/markdown). Editors derive their own inner doc.
+      if (!assetRef || !computeNode?.typeId) return null;
+      return {
+        fsRef: new FSRef(assetRef.replace(/^\//, ''), computeNode.typeId),
+        assetType: typeId!.type,
+      };
+    }
+    const vfs = VFSPath.parse(ptr.value);
+    if (!vfs.typeId) return null;
+    return {
+      fsRef: new FSRef(vfs.entitySubPath, vfs.typeId),
+      // vfs lost the precise record type; fall back to the editor's primary type.
+      assetType: (EDITOR_TYPES[ptr.editor][0] as string | undefined) ?? ptr.editor,
+    };
+    // ptr/typeId are derived deterministically from `pointer`; keying on the
+    // stable strings keeps the memo from re-minting the FSRef every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointer, assetRef, computeNodeKey]);
+
   if (!ptr || !ptr.editor) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -72,29 +107,8 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     return <CodeEditor activePath={ptr.value} />;
   }
 
-  // Derive the FSRef + the record type for this asset.
-  let fsRef: FSRef | null = null;
-  let assetType: string;
-  if (ptr.method === AssetRoutingMethod.TYPEID) {
-    if (!typeIdEntity) return <ConnectingFallback />;
-    const e = typeIdEntity as { asset_ref?: string };
-    // Build the FSRef from the entity's canonical asset_ref (the path the
-    // editors' EntityResolutionGate matches on — the folder for skill/whiteboard,
-    // the .md for agent/markdown). Editors derive their own inner doc.
-    fsRef =
-      e.asset_ref && computeNode?.typeId
-        ? new FSRef(e.asset_ref.replace(/^\//, ''), computeNode.typeId)
-        : null;
-    assetType = typeId!.type;
-  } else {
-    const vfs = VFSPath.parse(ptr.value);
-    if (!vfs.typeId) return <ConnectingFallback />;
-    fsRef = new FSRef(vfs.entitySubPath, vfs.typeId);
-    // vfs lost the precise record type; fall back to the editor's primary type.
-    assetType = (EDITOR_TYPES[ptr.editor][0] as string | undefined) ?? ptr.editor;
-  }
-
-  if (!fsRef) return <ConnectingFallback />;
+  if (!derived) return <ConnectingFallback />;
+  const { fsRef, assetType } = derived;
 
   switch (ptr.editor) {
     case AssetEditor.SKILL:
@@ -131,6 +145,15 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           fsRef={fsRef}
           typeLabel="agent trace"
           render={(trace) => <AgentTraceAssetEditor fsRef={fsRef!} trace={trace} />}
+        />
+      );
+    case AssetEditor.USAGE_REPORT:
+      return (
+        <EntityResolutionGate<UsageReport>
+          type={UsageReport.type}
+          fsRef={fsRef}
+          typeLabel="usage report"
+          render={(report) => <UsageReportAssetEditor fsRef={fsRef!} report={report} />}
         />
       );
     case AssetEditor.WORKFLOW:

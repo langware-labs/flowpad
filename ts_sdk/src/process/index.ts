@@ -33,6 +33,7 @@ export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
 export type {
   AgenticProcessReportEventResult,
   IAgenticProcess,
+  MarkdownDoc,
   ProcessState,
   ExecuteOptions,
   SpawnResult,
