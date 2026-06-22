@@ -9,7 +9,7 @@ from flow_sdk.fs_store.indexer.functions.markdown_index import (
 MARKDOWN_INDEX = TypeMetadata(
     type=EntityType.MARKDOWN_INDEX,
     from_disk_fn=extract_markdown_index,
-    gen_id_fn=markdown_index_gen_id,
+    gen_uuid_fn=markdown_index_gen_id,
     indexed_by_default=False,
     creatable=True,
     api_visible=True,

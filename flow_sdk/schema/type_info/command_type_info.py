@@ -12,5 +12,5 @@ COMMAND = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_claude_command,
-    gen_id_fn=command_id,
+    gen_uuid_fn=command_id,
 )

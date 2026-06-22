@@ -234,10 +234,10 @@ class TypeInfo:
     # in ``fs_store/indexer/functions/<type>.py``. The indexer reads these
     # instead of duck-typing classmethods on the entity:
     #   from_disk_fn:  Callable[[FSRef], list[FSRecord]] — parse (cold path)
-    #   gen_id_fn:     Callable[[FSRef], str]           — mint/read id (hot path)
+    #   gen_uuid_fn:     Callable[[FSRef], str]           — mint/read id (hot path)
     #   asset_hash_fn: Callable[[FSRef], float]         — cheap freshness stat
     from_disk_fn: Any = field(default=None, compare=False, repr=False)
-    gen_id_fn: Any = field(default=None, compare=False, repr=False)
+    gen_uuid_fn: Any = field(default=None, compare=False, repr=False)
     asset_hash_fn: Any = field(default=None, compare=False, repr=False)
     # Per-type default-body writer: Callable[[entity], str]. Read by
     # FSRecord.default_body / upsert_main_ref to materialize the backing file on
@@ -472,8 +472,8 @@ class SchemaRegistry:
                 existing.post_sync_fn = info.post_sync_fn
             if info.from_disk_fn is not None:
                 existing.from_disk_fn = info.from_disk_fn
-            if info.gen_id_fn is not None:
-                existing.gen_id_fn = info.gen_id_fn
+            if info.gen_uuid_fn is not None:
+                existing.gen_uuid_fn = info.gen_uuid_fn
             if info.asset_hash_fn is not None:
                 existing.asset_hash_fn = info.asset_hash_fn
             if info.default_body_fn is not None:

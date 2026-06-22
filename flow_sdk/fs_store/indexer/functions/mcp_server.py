@@ -45,7 +45,10 @@ except ImportError:
 
 from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
 from flow_sdk.fs_store.fs_record import FSRecord
+import uuid
+
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.source_file_records import (
@@ -334,8 +337,16 @@ def _record_id(source_file: str, json_path: str) -> str:
 
 
 def mcp_server_id(ref: FSRef) -> str:
-    """Stable id — pure string work over the FSRef's pointer (no file read)."""
-    return _record_id(str(ref.path), ref.json_path or "")
+    """Stable, filesystem-safe **UUID** id — pure string work over the FSRef's
+    pointer (no file read). The natural key ``<source_file>:<pointer>`` carries a
+    ``:`` (illegal in a Windows folder name); hashing it into a uuid5 — with the
+    same ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses — yields a
+    path-safe id identical to the one the DB row gets.
+    """
+    return mint_uuid(
+        f"{RecordType.MCP_SERVER}:{_record_id(str(ref.path), ref.json_path or '')}",
+        namespace=uuid.NAMESPACE_DNS,
+    )
 
 
 def extract_mcp_server(ref: FSRef) -> list[FSRecord]:

@@ -12,5 +12,5 @@ CLAUDE_HOOK = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_claude_hook,
-    gen_id_fn=claude_hook_id,
+    gen_uuid_fn=claude_hook_id,
 )

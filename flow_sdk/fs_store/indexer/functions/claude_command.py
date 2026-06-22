@@ -11,10 +11,12 @@ deleted ``ClaudeCommandFsRecord`` subclass. Registration lives in
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -43,14 +45,17 @@ def command_fn(
 
 
 def command_id(ref: FSRef) -> str:
-    """Deterministic id: ``<scope>:<command_name>``.
-
-    Scope comes from the FSRef parent-chain stamping; command_name is the
-    .md filename stem. Same formula the deleted ``ClaudeCommandFsRecord``
-    used in both ``__init__`` and ``getId``.
+    """Deterministic, filesystem-safe **UUID** id derived from the natural key
+    ``<scope>:<command_name>`` (scope from the FSRef parent-chain stamping,
+    command_name from the ``.md`` filename stem). Hashed into a uuid5 with the
+    same ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches
+    the DB id and is free of any path-illegal character.
     """
     scope = ref.scope or "user"
-    return f"{scope}:{ref._path.stem}"
+    return mint_uuid(
+        f"{RecordType.COMMAND}:{scope}:{ref._path.stem}",
+        namespace=uuid.NAMESPACE_DNS,
+    )
 
 
 def extract_claude_command(ref: FSRef) -> list[FSRecord]:

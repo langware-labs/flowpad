@@ -10,5 +10,5 @@ CODEX_SESSION = TypeMetadata(
     type=EntityType.CODEX_SESSION,
     indexed_by_default=True,
     from_disk_fn=extract_codex_session,
-    gen_id_fn=codex_session_id,
+    gen_uuid_fn=codex_session_id,
 )

@@ -29,8 +29,11 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import uuid
+
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.source_file_records import (  # RFC-6901 (shared)
@@ -222,12 +225,18 @@ def _hook_id(scope: str, frag: dict) -> str:
 
 
 def claude_hook_id(ref: FSRef) -> str:
-    """Stable id for a single hook FSRef (json_path fragment)."""
+    """Stable, filesystem-safe **UUID** id for a single hook FSRef (json_path
+    fragment). The natural key carries a ``:`` (illegal in a Windows folder
+    name); hashing it into a uuid5 — with the same ``f"{type}:{key}"`` formula
+    ``Entity.allocate_id`` uses — yields a path-safe id identical to the DB id.
+    """
     frag = _read_hook_fragment(Path(ref.path), ref.json_path or "")
     if frag is None:
         # Fallback keeps the id stable+unique even if the fragment is unreadable.
-        return f"{_hook_scope(ref)}:{ref.json_path or Path(ref.path).name}"
-    return _hook_id(_hook_scope(ref), frag)
+        key = f"{_hook_scope(ref)}:{ref.json_path or Path(ref.path).name}"
+    else:
+        key = _hook_id(_hook_scope(ref), frag)
+    return mint_uuid(f"{RecordType.CLAUDE_HOOK}:{key}", namespace=uuid.NAMESPACE_DNS)
 
 
 def extract_claude_hook(ref: FSRef) -> list[FSRecord]:

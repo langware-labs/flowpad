@@ -7,7 +7,7 @@ collection of meta fields as direct instance attributes (default).
 Per-type typed metadata models are opt-in via ``TypeInfo.meta_model``.
 
 All per-type behavior lives in free functions registered on
-``TypeInfo`` (from_disk_fn, gen_id_fn, asset_hash_fn, post_sync_fn,
+``TypeInfo`` (from_disk_fn, gen_uuid_fn, asset_hash_fn, post_sync_fn,
 main_subdir, main_layout). FSRecord itself knows nothing about types.
 
 The class deliberately omits the following — every one of them was

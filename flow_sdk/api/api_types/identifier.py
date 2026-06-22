@@ -146,7 +146,7 @@ def mint_uuid(key: Optional[str] = None, *, namespace: uuid.UUID = uuid.NAMESPAC
 
     Deterministic ``uuid5(namespace, key)`` when a stable key is given (path or
     natural key), else a random ``uuid4``. Always returns a value that passes
-    ``is_valid_entity_id`` (v4/v5). All minting — indexer ``gen_id_fn``,
+    ``is_valid_entity_id`` (v4/v5). All minting — indexer ``gen_uuid_fn``,
     ``Entity.allocate_id``, the DB-record fallback — should route through here
     so the version policy lives in exactly one place.
     """
