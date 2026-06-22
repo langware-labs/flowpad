@@ -47,7 +47,7 @@ def _prompt_default_body(entity) -> str:
 PROMPT = TypeMetadata(
     type=EntityType.PROMPT,
     from_disk_fn=extract_prompt,
-    gen_id_fn=prompt_gen_id,
+    gen_uuid_fn=prompt_gen_id,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     # v1: creation lives in the Prompt Library menu (PromptEditDialog with the

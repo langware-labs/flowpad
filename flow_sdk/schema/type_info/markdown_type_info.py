@@ -32,7 +32,7 @@ MARKDOWN = TypeMetadata(
     index_fields=["title", "tags", "links"],
     main_subdir="docs",
     from_disk_fn=extract_markdown,
-    gen_id_fn=markdown_gen_id,
+    gen_uuid_fn=markdown_gen_id,
     post_sync_fn=reconcile_folder_doc_edges,
     default_body_fn=_markdown_default_body,
 )

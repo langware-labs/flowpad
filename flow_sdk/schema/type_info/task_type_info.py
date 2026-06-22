@@ -14,5 +14,5 @@ TASK = TypeMetadata(
     api_visible=True,
     index_fields=["description", "objective"],
     from_disk_fn=extract_task,
-    gen_id_fn=task_gen_id,
+    gen_uuid_fn=task_gen_id,
 )

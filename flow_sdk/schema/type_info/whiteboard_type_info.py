@@ -19,6 +19,6 @@ WHITEBOARD = TypeMetadata(
     main_subdir=".claude/whiteboards",
     main_layout="folder",
     from_disk_fn=extract_whiteboard,
-    gen_id_fn=whiteboard_gen_id,
+    gen_uuid_fn=whiteboard_gen_id,
     asset_hash_fn=whiteboard_asset_hash,
 )

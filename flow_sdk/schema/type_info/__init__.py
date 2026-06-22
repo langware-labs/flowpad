@@ -61,7 +61,7 @@ class TypeMetadata:
     parent_share_on_default: bool = False
     # Indexer dispatch callables (walked types only).
     from_disk_fn: Any = None
-    gen_id_fn: Any = None
+    gen_uuid_fn: Any = None
     asset_hash_fn: Any = None
     post_sync_fn: Any = None
     # Per-type default-body writer used by FSRecord.upsert_main_ref to materialize
@@ -95,7 +95,7 @@ class TypeMetadata:
             parent_type=self.parent_type,
             parent_share_on_default=self.parent_share_on_default,
             from_disk_fn=self.from_disk_fn,
-            gen_id_fn=self.gen_id_fn,
+            gen_uuid_fn=self.gen_uuid_fn,
             asset_hash_fn=self.asset_hash_fn,
             post_sync_fn=self.post_sync_fn,
             default_body_fn=self.default_body_fn,

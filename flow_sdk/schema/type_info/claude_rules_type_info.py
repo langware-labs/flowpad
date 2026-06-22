@@ -15,5 +15,5 @@ CLAUDE_RULES = TypeMetadata(
     api_visible=True,
     index_fields=["name"],
     from_disk_fn=extract_claude_rules,
-    gen_id_fn=claude_rules_gen_id,
+    gen_uuid_fn=claude_rules_gen_id,
 )

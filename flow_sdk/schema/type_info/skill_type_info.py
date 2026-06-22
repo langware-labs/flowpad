@@ -34,7 +34,7 @@ SKILL = TypeMetadata(
     main_layout="folder",
     main_file="SKILL.md",
     from_disk_fn=extract_skill,
-    gen_id_fn=skill_gen_id,
+    gen_uuid_fn=skill_gen_id,
     asset_hash_fn=skill_asset_hash,
     default_body_fn=_skill_default_body,
 )

@@ -29,6 +29,6 @@ WORKFLOW = TypeMetadata(
     index_fields=["name", "description"],
     main_subdir=".claude/workflows",
     from_disk_fn=extract_workflow,
-    gen_id_fn=workflow_gen_id,
+    gen_uuid_fn=workflow_gen_id,
     default_body_fn=_workflow_default_body,
 )
