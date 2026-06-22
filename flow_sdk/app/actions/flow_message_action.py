@@ -2606,13 +2606,12 @@ async def _upsert_hub_conversation_metadata(
     if hub_created is not None and Conversation._as_datetime(existing.created_date) != hub_created:
         existing.created_date = hub_created
         changed = True
-    # Carry the hub's updated_date so the local row tracks the hub timestamp
-    # (the LWW decision point — see the create branch). Compared via is_stale
-    # so an older/equal hub echo never moves the local clock backward. The
-    # driver preserves a preset updated_date on save (sqlite_driver.update).
-    if Conversation.is_stale(existing, hub_conv):
-        existing.updated_date = Conversation._as_datetime(hub_conv.get("updated_date"))
-        changed = True
+    # Deliberately NOT adopting the hub parent ``updated_date``: the hub re-stamps
+    # it on bare touches (a child's body re-download), which would surface a
+    # days-old conversation as "just now". Recency is owned by
+    # ``project_pointers_to_entity`` (derived from messages' real-change clocks).
+    # ``_should_fetch_messages`` still consults the hub clock transiently to gate
+    # the reconcile; it's just never persisted as local recency.
     if changed:
         # We just refreshed this row from a hub payload — stamp the boundary.
         existing.fetched_at = datetime.now(UTC)
