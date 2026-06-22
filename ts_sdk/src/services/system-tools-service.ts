@@ -589,6 +589,25 @@ export class SystemToolsService extends EventEmitter {
     }
   }
 
+  /**
+   * Fast, session-scoped re-index for one project — backs the "Recent Sessions"
+   * refresh button. Indexes Claude sessions precisely (the project's
+   * `~/.claude/projects/<encoded>` dir) plus Codex/Copilot sessions
+   * (user-global storage, skip-fresh keeps it cheap). Emits the same WS
+   * progress_report → footer-pill path as `fastScan`. Settle via `index_end`,
+   * with the `finally` as a request-failed safety net.
+   */
+  async indexProjectSessions(projectId: string): Promise<void> {
+    this._setActivity('index');
+    try {
+      const qs = new URLSearchParams({ project_id: projectId });
+      await apiClient.post(`${FS_RECORDS_BASE}/index-sessions?${qs.toString()}`);
+      void dataManager.refreshScanInfo();
+    } finally {
+      if (this.currentActivity === 'index') this._setActivity(null);
+    }
+  }
+
   // ---- DB path setting -----------------------------------------------------
 
   async setDbPath(dbPath: string): Promise<DbSettings> {

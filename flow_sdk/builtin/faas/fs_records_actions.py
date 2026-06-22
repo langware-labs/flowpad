@@ -200,6 +200,12 @@ class FsRecordsActionsMixin:
         from datetime import datetime, timezone  # noqa: PLC0415
 
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+        from flow_sdk.builtin.worker_history import (  # noqa: PLC0415
+            _build_agentic_process_index,
+            _load_agentic_processes,
+            _pick_last_prompt,
+            _pick_name,
+        )
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             PROGRESS_TEXT_COMPLETE,
@@ -207,6 +213,9 @@ class FsRecordsActionsMixin:
             IndexProgressTable,
             TypeProgressRow,
             get_shared_indexer,
+        )
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import (  # noqa: PLC0415
+            extract_claude_session_from_path,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
         from flow_sdk.transcript_analyzer.entry import EntryKind  # noqa: PLC0415
@@ -238,6 +247,16 @@ class FsRecordsActionsMixin:
             activity.latest_table = _table(done, total, text)
             await broadcast_progress(to_entity=str(self.typeid), flow_data=activity.make_flow_data())
 
+        # Friendly-name source, same priority history uses: AgenticProcess.name
+        # (user/upsert-set) wins, else the session's own custom_title / slug.
+        # One bulk fetch up front; the per-session title read is cheap (head+tail,
+        # include_content=False) and only runs for sessions that matched the skill.
+        try:
+            ap_index = _build_agentic_process_index(await _load_agentic_processes())
+        except Exception:
+            logging.getLogger(__name__).debug("asset-usage: AgenticProcess index failed", exc_info=True)
+            ap_index = {}
+
         rows: list[dict] = []
         def _scan_one(path: str, wk: str) -> dict | None:
             # Cheap pre-filter: skip the (expensive) full parse unless the raw
@@ -259,12 +278,35 @@ class FsRecordsActionsMixin:
                         last_ts = ts
             if not count:
                 return None
+            sid = t.session_id or Path(path).stem
+            # Resolve a human-readable title the same way the history dropdown does.
+            name: str | None = None
+            last_prompt: str | None = None
+            ap_name = ap_index.get(sid, (None, None))[1]
+            if wk == "claude":
+                try:
+                    sess = extract_claude_session_from_path(path, include_content=False)
+                    name = _pick_name(
+                        custom_title=getattr(sess, "custom_title", None) or None,
+                        slug=getattr(sess, "slug", None) or None,
+                        display=None,
+                        session_id=sid,
+                    )
+                    last_prompt = _pick_last_prompt(getattr(sess, "slug", None) or None)
+                except Exception:
+                    logging.getLogger(__name__).debug(
+                        "asset-usage: title extract failed %s", path, exc_info=True,
+                    )
+            # AgenticProcess name (user rename) takes top priority, matching history.
+            name = ap_name or name
             return {
-                "sessionId": t.session_id or Path(path).stem,
+                "sessionId": sid,
                 "workerType": wk,
                 "count": count,
                 "lastTs": last_ts,
                 "cwd": getattr(t, "cwd", None),
+                "name": name,
+                "lastPrompt": last_prompt,
             }
 
         try:
@@ -1260,6 +1302,132 @@ class FsRecordsActionsMixin:
             "typeids": indexed_typeids,
         })
 
+    async def _handle_fs_records_index_sessions(self, request_info) -> ApiResponse:
+        """POST /fs-records/index-sessions?project_id=<id>
+
+        Fast, scoped re-index of agent **sessions only**, for the "Recent
+        Sessions" refresh button. Two passes under one ``index`` activity so
+        the footer pill reports progress exactly like ``/fs-records/index``:
+
+          1. Claude — precise: walk only the project's
+             ``~/.claude/projects/<encoded-cwd>`` dir (skipped when the project
+             has no Claude history dir yet).
+          2. Codex + Copilot — their session storage is user-global (organized
+             by date, not cwd), so there's no per-project dir to scope to. We
+             walk the whole store; skip-fresh re-parses only changed files, so
+             repeat refreshes stay cheap. The ``types`` filter gates
+             ``claude_projects_fn`` out of this pass (its PROJECT output only
+             reaches CLAUDE_SESSION, absent here), so it never re-walks every
+             Claude project.
+
+        ``project_id`` stamps the produced records (claude pass) but does not
+        narrow Codex/Copilot — those surface in the list via the UI's own
+        project filter.
+        """
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — auto-register
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+            IndexerOptions,
+            IndexProgressTable,
+            get_shared_indexer,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+        from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        qp = request_info.request.query_params
+        project_id = qp.get("project_id", "").strip() or None
+
+        # Resolve the project's cwd → its ~/.claude/projects/<encoded> dir.
+        # The encoding is lossy, so match by decoded cwd rather than re-encoding.
+        claude_root: FSRef | None = None
+        if project_id:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+            proj = await Project.get_one(QueryFilter.parse({"id": project_id}))
+            if proj is None:
+                return ApiFailResponse(
+                    message=f"Project '{project_id}' not found", status_code=404
+                )
+            project_cwd = getattr(proj, "fs_storage_mount_path", None)
+            if project_cwd:
+                from flow_sdk.fs_store.indexer.functions._claude_projects import (  # noqa: PLC0415
+                    _claude_projects_dir,
+                    decode_claude_project_dir,
+                )
+
+                try:
+                    target = Path(project_cwd).resolve()
+                except OSError:
+                    target = None
+                projects_dir = _claude_projects_dir()
+                if target is not None and projects_dir.is_dir():
+                    for d in projects_dir.iterdir():
+                        if not d.is_dir():
+                            continue
+                        decoded = decode_claude_project_dir(d)
+                        try:
+                            if decoded is not None and decoded.resolve() == target:
+                                claude_root = FSRef(
+                                    d,
+                                    record_type=RecordType.PROJECT,
+                                    scope=Scope.USER.value,
+                                    project_id=project_id,
+                                )
+                                break
+                        except OSError:
+                            continue
+
+        home_root = FSRef(
+            get_instance_settings().user_home,
+            record_type=RecordType.USER_HOME_FOLDER,
+            scope=Scope.USER.value,
+        )
+
+        try:
+            activity = self._start_activity("index", timeout_seconds=300)
+        except RuntimeError as e:
+            return ApiFailResponse(message=str(e), status_code=409)
+
+        async def emit(table: IndexProgressTable) -> None:
+            activity.latest_table = table
+            await broadcast_progress(
+                to_entity=str(self.typeid),
+                flow_data=activity.make_flow_data(),
+            )
+
+        indexer = get_shared_indexer()
+        results = []
+        try:
+            if claude_root is not None:
+                results.append(await indexer.index(IndexerOptions(
+                    types=[RecordType.CLAUDE_SESSION],
+                    roots=(claude_root,),
+                    on_progress=emit,
+                    verbose=False,
+                    project_id=project_id,
+                )))
+            results.append(await indexer.index(IndexerOptions(
+                types=[RecordType.CODEX_SESSION, RecordType.COPILOT_SESSION],
+                roots=(home_root,),
+                on_progress=emit,
+                verbose=False,
+                project_id=project_id,
+            )))
+        finally:
+            self._complete_activity("index")
+
+        indexed = {
+            str(rt): pt.indexed
+            for result in results
+            for rt, pt in result.per_type.items()
+        }
+        return ApiSuccessResponse(data={"indexed": indexed})
+
     async def _index_system_assets(self) -> None:
         """Startup pass: index the SDK-shipped Flowpad Assistant system project
         (docs/markdown, skills, agents, whiteboards) at the **live install
@@ -1560,6 +1728,10 @@ class FsRecordsActionsMixin:
         # Index: POST /fs-records/index or /fs-records/index?type=X
         if segments and segments[0] == "index" and method == "post":
             return await self._handle_fs_records_index(request_info)
+
+        # Index sessions (scoped to a project): POST /fs-records/index-sessions
+        if segments and segments[0] == "index-sessions" and method == "post":
+            return await self._handle_fs_records_index_sessions(request_info)
 
         # Index status: GET /fs-records/index-status
         if segments and segments[0] == "index-status" and method == "get":
