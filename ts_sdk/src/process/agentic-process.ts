@@ -390,6 +390,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     sharedContextEntities?: string[];
     /** Discriminator stamped on the new process (e.g. ProcessKind.Conversation). */
     processType?: ProcessKind;
+    /** Attachment key stamped onto `target_typeid_str` — entity-scoped
+     *  (`TypeId#toString()`) or surface-scoped (`<typeid>/<sub_path>`). Lets
+     *  `useProcessesForTarget` find this process later (e.g. the analyzer for a
+     *  received transcript, keyed `claude_session/<sessionId>`). */
+    target?: string;
   }): Promise<AgenticProcess> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
@@ -401,6 +406,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         ...(opts.enableAssistant ? { loadFlowpadAssistant: true } : {}),
         ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
         ...(opts.processType ? { processType: opts.processType } : {}),
+        ...(opts.target ? { targetVfsPath: opts.target } : {}),
       },
       { visible: true, watchProcess: false, ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}) },
     );
