@@ -35,6 +35,8 @@ export interface TabStripItem {
   key: string;
   /** Display title. */
   title: string;
+  /** Extra classes for the title text (e.g. blue for projectless/global tabs). */
+  titleClassName?: string;
   /** Leading icon node (resolved by the owner — vendor override ?? type icon). */
   icon?: React.ReactNode;
   /** Extra inline markers after the icon (e.g. worktree badge). */
@@ -415,7 +417,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           />
         ) : (
           <span
-            className="max-w-[160px] truncate text-sm font-medium"
+            className={`max-w-[160px] truncate text-sm font-medium ${item.titleClassName ?? ''}`}
             onDoubleClick={(e) => {
               if (!item.renameable) return;
               e.stopPropagation();

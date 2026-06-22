@@ -6,6 +6,9 @@ import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { dataContext } from '@sdk';
+import { ALL_SCOPE_FILTER, defaultScopeFilter } from '@src/lib/scope-filter';
 import { ViewType } from '@src/types/ViewType';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@src/components/ui/sidebar';
 import { useInboxStore } from '@src/store/use-inbox-store';
@@ -86,6 +89,17 @@ export function CollapsedSidebar() {
         if (import.meta.env.DEV && viewType === ViewType.SHELL) {
           (window as Record<string, unknown>).__shellNavT0 = performance.now();
           console.log('[PERF] +0ms shell icon clicked');
+        }
+        // Assets is scope-aware: open the scope-keyed assets tab — the current
+        // project's scope when a project is active (tab "<project>'s Assets"),
+        // else global (the single "Assets" tab). Scope rides the navigation
+        // scope filter (URL options), so the tab identity is the scope.
+        if (viewType === ViewType.ASSETS) {
+          const scope = dataContext.project?.id
+            ? defaultScopeFilter(dataContext.project.id)
+            : ALL_SCOPE_FILTER;
+          navigation.openDock(DockPointer.forAssetList('all', { scope }));
+          return;
         }
         navigation.openTab(viewType);
       }

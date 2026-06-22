@@ -19,6 +19,19 @@ interface UsageSession {
   count: number;
   lastTs: string;
   cwd?: string | null;
+  /** Friendly title resolved by the backend (process name / custom title / slug). */
+  name?: string | null;
+  /** Opening-prompt-derived subline, when available. */
+  lastPrompt?: string | null;
+}
+
+/** Readable row label: backend title → cwd basename → short session id. */
+function sessionLabel(s: UsageSession): string {
+  const name = s.name?.trim();
+  if (name) return name;
+  const base = s.cwd?.split('/').filter(Boolean).pop();
+  if (base) return base;
+  return s.sessionId.slice(0, 8);
 }
 
 // Scan state cached by skill name at module scope. The editor host can hand the
@@ -252,13 +265,14 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
                 key={s.sessionId}
                 type="button"
                 onClick={() => setSelected(s.sessionId)}
+                title={s.sessionId}
                 className={cn(
                   'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted',
                   isSel && 'bg-muted',
                 )}
               >
                 <Activity className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{s.sessionId.slice(0, 8)}</span>
+                <span className="min-w-0 flex-1 truncate text-[11px]">{sessionLabel(s)}</span>
                 <span className="shrink-0 text-[10px] text-muted-foreground">{s.count}×</span>
                 <span className="shrink-0 text-[10px] text-muted-foreground">{formatTimeAgo(s.lastTs) ?? ''}</span>
               </button>

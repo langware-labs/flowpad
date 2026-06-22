@@ -6,7 +6,10 @@ import { isValidView } from './validators';
 import { AssetDocPointer } from './AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType } from './asset-doc-types';
 import {
+  ALL_SCOPE_FILTER,
   dockOptionsToScopeFilter,
+  scopeFilterKey,
+  scopeFilterToDockOptions,
   withScopeFilterOptions,
   type ScopeFilter,
 } from '@src/lib/scope-filter';
@@ -936,6 +939,12 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.chrome === 'fullbleed') return null;
     // A bare shell is the terminal host; only a session-pointer shell is a tab.
     if (this.viewType === ViewType.SHELL && !this.pointer) return null;
+    // Assets is a SINGLE tab per scope: every type/folder/editor sub-pointer of
+    // one scope folds into ONE tab. Identity = the scope filter (global when
+    // unset), NOT the sub-pointer. scopeFilterKey: 'all' | '1:p1,p2' | '0:p1'.
+    if (this.viewType === ViewType.ASSETS) {
+      return `${ViewType.ASSETS}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
+    }
     return `${this.viewType}|${this.pointer ?? ''}`;
   }
 
@@ -943,6 +952,20 @@ export class DockPointer implements IDockPointer {
    *  This is what Tab.pointer stores in the DB. Returns null if tabHash is null. */
   toJSON(): string | null {
     if (!this.tabHash) return null;
+    // Assets identity is the SCOPE, not the sub-pointer. Normalize the pointer to
+    // '' and persist the scope (options) + the computed tabHash so: (a) the stored
+    // JSON is constant for a given scope regardless of which type was last viewed
+    // → the backend mints ONE Tab row per scope; (b) `Tab.dockPointer` rebuilds the
+    // same tabHash directly from the stored field; (c) clicking the chip reopens the
+    // scoped browser root.
+    if (this.viewType === ViewType.ASSETS) {
+      return JSON.stringify({
+        viewType: ViewType.ASSETS,
+        pointer: '',
+        options: this.scopeFilter ? scopeFilterToDockOptions(this.scopeFilter) : undefined,
+        tabHash: this.tabHash,
+      });
+    }
     return JSON.stringify({ viewType: this.viewType ?? '', pointer: this.pointer ?? '' });
   }
 
@@ -950,10 +973,17 @@ export class DockPointer implements IDockPointer {
    *  Replaces fromTabHash — no opaque string parsing needed. Returns null on malformed input. */
   static fromJSON(json: string): DockPointer | null {
     try {
-      const parsed = JSON.parse(json) as { viewType?: string; pointer?: string };
-      const { viewType, pointer } = parsed;
+      const parsed = JSON.parse(json) as {
+        viewType?: string;
+        pointer?: string;
+        options?: Record<string, string>;
+      };
+      const { viewType, pointer, options } = parsed;
       if (!viewType) return null;
-      return DockPointer.fromUrl(viewType, pointer || undefined);
+      const dp = DockPointer.fromUrl(viewType, pointer || undefined);
+      // Restore scope options (assets identity) so the reconstructed dock's
+      // tabHash matches the live nav dock's.
+      return options ? new DockPointer(dp.viewType, dp.pointer, options, dp.layout) : dp;
     } catch {
       return null;
     }

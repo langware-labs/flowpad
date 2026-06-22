@@ -58,10 +58,14 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
 
   // Stable across metadata updates (same skillKey ⇒ same SKILL.md path) so the
   // editor doesn't re-download the file on every eval flip.
+  // Keyed on the STABLE skillKey only — `skill.doc` mints a fresh FrontMatterFsRef
+  // on every access, so including the (also per-render) `fsRef` here would churn
+  // editorRef's identity every render and reload the MarkdownEditor. skillRef
+  // holds the live skill; fsRef is stable for a given SKILL.md path anyway.
   const editorRef = useMemo(
     () => skillRef.current?.doc ?? fsRef.child('SKILL.md'),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [skillKey, fsRef],
+    [skillKey],
   );
 
   const onDelete = useCallback(async () => {
