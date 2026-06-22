@@ -16,6 +16,7 @@ import { NavigateFunction } from 'react-router';
 import { DockPointer } from './DockPointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
+import { allScope, projectScope } from '@src/lib/scope-filter';
 
 function toStringRecord(obj?: Record<string, unknown>): Record<string, string> | undefined {
   if (!obj) return undefined;
@@ -116,9 +117,21 @@ export class NavigationActions {
     }
 
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    const dock = extraOptions
+    let dock = extraOptions
       ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
       : base;
+
+    // URL-first default scope for assets: an assets dock opened WITHOUT an explicit
+    // scope (no `scope-*` keys → `scopeFilter === null`) adopts the current project's
+    // scope — project mode when a project is in context (so the minted Tab attaches
+    // to that project), else "all". This puts the scope on the URL where the loader
+    // and Tab.getFromDockPointer can read it, instead of leaving it to AssetsPage
+    // component state (which the tab can't see). An explicit scope (incl. `all`) is
+    // respected untouched.
+    if (dock.viewType === ViewType.ASSETS && dock.scopeFilter === null) {
+      const projectId = dataContext.project?.id ?? null;
+      dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
+    }
 
     if (this.currentDock?.equals(dock)) return; // already at this pointer, no-op
 

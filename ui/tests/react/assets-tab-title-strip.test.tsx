@@ -9,7 +9,12 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { dataManager, Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { ALL_SCOPE_FILTER, type ScopeFilter } from '@src/lib/scope-filter';
+import {
+  ALL_SCOPE_FILTER,
+  projectScope,
+  userScope,
+  type ScopeFilter,
+} from '@src/lib/scope-filter';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 
@@ -38,12 +43,12 @@ function tabFor(scope: ScopeFilter): Tab {
 describe('assets tab chip title follows scope', () => {
   it('project scope → "<project>\'s Assets"', () => {
     dataManager.updateEntityFromJson({ type: 'project', id: PROJECT_ID, name: 'Acme' });
-    render(<Strip tabs={[tabFor({ user: false, projects: [PROJECT_ID] })]} />);
+    render(<Strip tabs={[tabFor(projectScope(PROJECT_ID))]} />);
     expect(screen.getByText("Acme's Assets")).toBeInTheDocument();
   });
 
   it('user scope → "My Assets"', () => {
-    render(<Strip tabs={[tabFor({ user: true, projects: [] })]} />);
+    render(<Strip tabs={[tabFor(userScope())]} />);
     expect(screen.getByText('My Assets')).toBeInTheDocument();
   });
 

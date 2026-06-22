@@ -9,6 +9,7 @@ import { FlowpadDiagnosis } from '../entities/flowpad-diagnosis';
 import { QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import { connectionManager } from '../websocket';
+import { scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '../utils/scope-filter';
 
 const ACTION = 'desktop-db';
 const FS_RECORDS_BASE = '/graph/compute_node/@local/fs-records';
@@ -397,13 +398,13 @@ export class SystemToolsService extends EventEmitter {
    */
   async indexType(
     typeName: string,
-    scope?: { user: boolean; projects: string[] },
+    scope?: ScopeFilter,
     options?: IndexTypeOptions,
   ): Promise<IndexTypeResult> {
     const qs = new URLSearchParams({ type: typeName });
     if (scope) {
-      qs.set('user', scope.user ? 'true' : 'false');
-      qs.set('projects', scope.projects.join(','));
+      qs.set('user', scopeIncludesUser(scope) ? 'true' : 'false');
+      qs.set('projects', scopeProjectIds(scope).join(','));
     }
     if (options?.force) qs.set('force', 'true');
     if (options?.orphanAction) qs.set('orphan_action', options.orphanAction);
