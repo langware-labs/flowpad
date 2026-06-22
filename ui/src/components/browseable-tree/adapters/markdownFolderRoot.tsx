@@ -221,12 +221,6 @@ function fetchVaultFiles(vaultAbsPath: string, refresh = false): Promise<string[
   return p;
 }
 
-/**
- * Immediate children (subfolders + ``.md`` files) directly under ``prefixRel``
- * within a vault, derived from the flat walk ``files``. Folders sort before
- * files; both alphabetical. Subfolder nodes recurse over the SAME ``files``
- * array (no extra fetch); the whole subtree comes from the one walk.
- */
 /** Absolute path of ``prefixRel`` (vault-relative) under a vault root. */
 function vaultAbsForPrefix(vaultAbsPath: string, prefixRel: string): string {
   const p = normalizeRelPath(prefixRel);
@@ -240,6 +234,12 @@ function vaultRelForPrefix(vaultRelPath: string, prefixRel: string): string {
   return vaultRelPath ? `${vaultRelPath}/${p}` : p;
 }
 
+/**
+ * Immediate children (subfolders + ``.md`` files) directly under ``prefixRel``
+ * within a vault, derived from the flat walk ``files``. Folders sort before
+ * files; both alphabetical. Subfolder nodes recurse over the SAME ``files``
+ * array (no extra fetch); the whole subtree comes from the one walk.
+ */
 export function childrenForPrefix(args: {
   typeName: string;
   typeid: string;
