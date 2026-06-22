@@ -1,7 +1,8 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
-import { AgentTrace, MessageSuggest, UserNote, type FeedEntry } from '@sdk';
+import { AgentTrace, MessageSuggest, UsageReport, UserNote, type FeedEntry } from '@sdk';
+import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FeedData } from './feed-data';
@@ -90,6 +91,18 @@ export function FeedEntryCard({
       <AgentTraceFeedEntryCard
         entry={entry}
         trace={entity as AgentTrace}
+        busy={busy}
+        feedData={feedData}
+        onDismiss={onDismiss}
+      />
+    );
+  }
+
+  if (entity.getType() === UsageReport.type) {
+    return (
+      <UsageReportFeedEntryCard
+        entry={entry}
+        report={entity as UsageReport}
         busy={busy}
         feedData={feedData}
         onDismiss={onDismiss}
@@ -288,6 +301,38 @@ function AgentTraceFeedEntryCard({ entry, trace, busy, feedData, onDismiss }: Ag
         <p className="min-w-0 text-xs font-medium leading-snug text-foreground">Skill analysis</p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           Skill analysis ready for review and improvements
+        </p>
+      </button>
+    </FeedEntryFrame>
+  );
+}
+
+interface UsageReportFeedEntryCardProps {
+  entry: FeedEntry;
+  report: UsageReport;
+  busy: boolean;
+  feedData: FeedData;
+  onDismiss: (entry: FeedEntry) => void;
+}
+
+function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: UsageReportFeedEntryCardProps) {
+  const { navigation } = useDockNavigation();
+  const day = report.period_start ? report.period_start.slice(0, 10) : '';
+  const headline = report.period_kind === 'day' ? 'Yesterday' : `Last ${report.period_kind}`;
+
+  return (
+    <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
+      <button
+        type="button"
+        className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => navigation.openDock(report.editorDockPointer)}
+      >
+        <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
+          {headline} usage{day ? ` · ${day}` : ''}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          ${report.total_cost_usd.toFixed(2)} · {report.session_count} sessions ·{' '}
+          {formatDuration(report.total_duration_ms)} active · {report.prompt_count} prompts
         </p>
       </button>
     </FeedEntryFrame>

@@ -110,6 +110,7 @@ class EntityType(StrEnum):
     CONVERSATION = "conversation"
     WHITEBOARD = "whiteboard"
     AGENT_TRACE = "agent_trace"
+    USAGE_REPORT = "usage_report"
     DATASET = "dataset"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     COLLABORATION_ROOM = "collaboration_room"
