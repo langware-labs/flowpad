@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
-import { ALL_SCOPE_FILTER, applyScopeToParams, assetScopeBucket, defaultScopeFilter, unionAssetBucket } from '@src/lib/scope-filter';
+import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { useEntity } from '@sdk/react/hooks';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
@@ -312,11 +312,12 @@ export function AssetsPage() {
   const effectivePointer = isProjectView ? assetSubPointer : (currentDock?.pointer ?? '');
   // Scope is URL-first: it lives in the dock options (read generically via
   // `DockPointer.scopeFilter`). An explicit option wins; on a project page we
-  // default to that project; the bare `/dock/assets` (no option) defaults to
-  // All — which is what clicking Assets in the left rail lands on.
+  // default to that project; the bare `/dock/assets` (no option) falls back to
+  // the context-aware default (project chip when in a project, else user-only)
+  // — NOT a forced "All".
   const urlScope = useMemo<ScopeFilter>(
-    () => currentDock?.scopeFilter ?? projectSeedScope ?? ALL_SCOPE_FILTER,
-    [currentDock, projectSeedScope],
+    () => currentDock?.scopeFilter ?? projectSeedScope ?? defaultScopeFilter(currentProjectId),
+    [currentDock, projectSeedScope, currentProjectId],
   );
   // Non-scope filter state (query / tags / per-type filters / folder path).
   // The `scope` field is vestigial here — `effectiveFilter` always derives it
