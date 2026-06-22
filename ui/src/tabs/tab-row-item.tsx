@@ -55,6 +55,9 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
   const lifecycleOverlay = lifecycleStatus(lifecycle);
   const isDisabled = lifecycleOverlay.isClosing || tab.is_disabled;
   const statusReason = lifecycleOverlay.statusReason || (tab.is_disabled ? 'Closing...' : '');
+  // Projectless ("global") tabs surface in every project's strip; mark them in
+  // blue so it's clear they don't belong to the active project.
+  const titleClassName = tab.project_id == null ? 'text-blue-500' : undefined;
 
   if (TERMINAL_TARGET_TYPES.has(tab.target_type ?? '')) {
     const kind = (tab.icon_key && tab.icon_key in PROVIDER_META ? tab.icon_key : 'shell') as keyof typeof PROVIDER_META;
@@ -64,6 +67,7 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
     return {
       key,
       title: label || meta.label,
+      titleClassName,
       icon: (
         <Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`} data-provider={kind} aria-label={meta.label} />
       ),
@@ -96,6 +100,7 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
     return {
       key,
       title: label || meta?.title || viewType,
+      titleClassName,
       icon: <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={`${tab.target_type} tab`} />,
       renameable: true,
       isDisabled,
@@ -111,6 +116,7 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
   return {
     key,
     title: label || meta?.title || viewType,
+    titleClassName,
     icon: <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />,
     renameable: false,
     isDisabled,
