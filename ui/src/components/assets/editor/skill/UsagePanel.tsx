@@ -21,8 +21,6 @@ interface UsageSession {
   cwd?: string | null;
   /** Friendly title resolved by the backend (process name / custom title / slug). */
   name?: string | null;
-  /** Opening-prompt-derived subline, when available. */
-  lastPrompt?: string | null;
 }
 
 /** Readable row label: backend title → cwd basename → short session id. */
