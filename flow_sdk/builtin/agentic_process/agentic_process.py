@@ -511,6 +511,16 @@ class AgenticProcess(Entity):
             "affordance survives a refresh without re-running the line trigger."
         ),
     )
+    markdown_docs: list[dict] = APIField(
+        default_factory=list,
+        description=(
+            "User-facing markdown docs this process authored, oldest-first. Each "
+            "entry is {path, name, change} where change is 'create' (Write) or "
+            "'update' (Edit). The tail is the latest doc — what the ribbon's docs "
+            "chip shows by default. Plan files and agent-internal docs are excluded. "
+            "Persists across reloads so the 'Open Doc' affordance survives a refresh."
+        ),
+    )
     terminal_at: datetime | None = APIField(
         default=None,
         description=(
@@ -4016,6 +4026,15 @@ class AgenticProcess(Entity):
                     {"path": path, "tool_name": getattr(entry, "tool_name", "")},
                 )
 
+                # Docs chip: a user-facing markdown write produces a
+                # markdown.create (Write) / markdown.update (Edit) event and is
+                # tracked on the persisted ``markdown_docs`` list (parallel to
+                # ``plan_path`` + ``plan.create``). Plan files and agent-internal
+                # docs are excluded so they don't double up with the Open-Plan chip.
+                if isinstance(entry, (FileWriteEntry, FileEditEntry)) and self._is_user_doc(path):
+                    change = "create" if isinstance(entry, FileWriteEntry) else "update"
+                    await self._track_markdown_doc(path, change)
+
     async def _flush_transcript_change(self) -> None:
         """Run after the debounce window on this AP's transcript.
 
@@ -4109,6 +4128,64 @@ class AgenticProcess(Entity):
             entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
         )
         return procs[0] if procs else None
+
+    @staticmethod
+    def _is_user_doc(path: str) -> bool:
+        """True for a user-facing markdown doc the agent authored.
+
+        Excludes plan files (owned by the Open-Plan chip) and agent-internal
+        docs (``CLAUDE.md``/``AGENTS.md``, anything under ``~/.claude`` or
+        ``~/.codex``) so the docs chip only surfaces docs meant for the user.
+        """
+        if not path or not path.endswith(".md"):
+            return False
+        from pathlib import Path as _Path
+
+        from flow_sdk.instance_settings import get_instance_settings
+
+        p = _Path(path)
+        if p.name in ("CLAUDE.md", "AGENTS.md"):
+            return False
+        try:
+            plans_dir = get_instance_settings().claude_plans_dir
+            if plans_dir and plans_dir in p.parents:
+                return False
+        except Exception:
+            pass
+        home = _Path.home()
+        for internal in (home / ".claude", home / ".codex"):
+            if internal in p.parents:
+                return False
+        return True
+
+    async def _track_markdown_doc(self, path: str, change: str) -> None:
+        """Upsert ``path`` into ``markdown_docs`` (tail = latest) and broadcast.
+
+        Re-writing an existing path moves it to the tail and upgrades its change
+        to ``update``. Saves before the event so the entity-update WS precedes
+        the ``markdown.{change}`` broadcast (same ordering as ``plan.create``).
+        """
+        from os.path import basename
+
+        name = basename(path)
+        docs = list(self.markdown_docs or [])
+        existing = next((d for d in docs if d.get("path") == path), None)
+        if existing is not None:
+            docs.remove(existing)
+            # A path seen before is an update even if this entry was a Write.
+            change = "update"
+        docs.append({"path": path, "name": name, "change": change})
+        self.markdown_docs = docs
+        try:
+            await self.save()
+        except Exception:
+            logger.debug(
+                "AgenticProcess %s: markdown_docs save failed", self.id, exc_info=True,
+            )
+        await self.emit_entity_event(
+            f"markdown.{change}",
+            {"path": path, "name": name, "session_id": self.session_id},
+        )
 
     async def on_plan_created(self, entry) -> None:
         """T7: Connect a freshly-detected plan to this AgenticProcess.

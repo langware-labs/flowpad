@@ -152,6 +152,20 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability discovery: failed to start ({_e})")
 
+    # Reconcile orphaned headless workers BEFORE serving: a restart kills the
+    # previous backend's child workers, but their ``visible=false`` records keep
+    # status=RUNNING and would show as phantom "Background" agents in the footer
+    # chip. Stamp them STOPPED now (pure DB writes — no spawn — so the first
+    # bootstrap is already clean). Visible PTYs are handled by the recovery
+    # watchdog below, not here.
+    try:
+        from flow_sdk.server.pty_recovery import reconcile_orphaned_workers
+
+        await reconcile_orphaned_workers()
+        print("  Orphaned-worker reconcile: done")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Orphaned-worker reconcile: failed ({_e})")
+
     # PTY recovery watchdog: respawn visible sessions whose worker died — both at
     # startup (restart kills PTY children) AND periodically while running (a
     # worker that crashes mid-session). Background — startup never blocks;

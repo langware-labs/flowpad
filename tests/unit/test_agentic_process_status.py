@@ -255,6 +255,45 @@ def test_tail_status_last_prompt_after_end_turn_is_complete(tmp_path: Path):
     assert _tail_status(f) == WorkerStatus.COMPLETE
 
 
+def test_tail_status_last_prompt_with_end_turn_past_tail_window_is_complete(tmp_path: Path):
+    """``end_turn`` stranded past the 4 KB tail window must still read COMPLETE.
+
+    Regression for the "pinned at WAITING / never PENDING_USER" bug: the turn
+    genuinely ended (``stop_reason=end_turn``) and Claude appended trailing
+    ``last-prompt`` / ``system`` / envelope markers, but a large preceding
+    ``tool_use`` line pushed the ``end_turn`` entry just past the 4 KB
+    (``_TAIL_BYTES``) tail read. The ``last-prompt`` branch then saw no completed
+    assistant in-window and fell through to WAITING — leaving a finished, idle
+    worker stuck on the animated "Waiting" pill (``ready_for_input=False``,
+    never projected to PENDING_USER). The tail read must widen until the
+    completing assistant turn is in-window.
+    """
+    f = tmp_path / "session.jsonl"
+    # A large final assistant turn (a long summary message is routine), so the
+    # ``end_turn`` line's START lands > 4096 bytes from EOF once the trailing
+    # ack/envelope run is appended — exactly the on-disk shape that pinned a
+    # finished worker at WAITING.
+    big_blob = "x" * 6000
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {
+            "role": "assistant", "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": big_blob}]}},
+        {"type": "system", "subtype": "info"},
+        {"type": "last-prompt"},
+        {"type": "last-prompt"},
+        # Trailing ignored session-envelope run, exactly as Claude Code writes it.
+        {"type": "ai-title"},
+        {"type": "mode"},
+        {"type": "permission-mode"},
+    ])
+    os.utime(f, None)
+    # Sanity: the end_turn really is stranded past the 4 KB tail window.
+    raw = f.read_bytes()
+    assert len(raw) - raw.rindex(b'"end_turn"') > 4096
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
 def test_tail_status_last_prompt_between_tool_calls_is_not_complete(tmp_path: Path):
     """``last-prompt`` idle marker during an inter-tool pause must NOT be COMPLETE.
 

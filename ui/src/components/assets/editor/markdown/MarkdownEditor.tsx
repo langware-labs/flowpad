@@ -11,6 +11,7 @@ import { RevisionsPanel } from '@src/components/assets/editor/revisions/Revision
 import { History } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useSideWindows } from '@src/navigation/useSideWindows';
 import { FSRef, TypeId } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
@@ -83,10 +84,6 @@ interface MarkdownEditorProps {
   headerExtras?: (ctx: MarkdownHeaderExtrasCtx) => React.ReactNode;
   /** Appended to the side drawer after Editor + Backlinks. */
   extraSideTabs?: ExtraSideTab[];
-  /** Controlled active side-drawer tab id. */
-  activeSideTab?: string;
-  /** Fires when the active side-drawer tab changes (including internal clicks). */
-  onActiveSideTabChange?: (id: string) => void;
   /** Forwarded to the Editor tab — runs once after its backing process is created. */
   onChatProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
   /** When true, the "Learning" view-mode chip appears in the header strip. */
@@ -119,8 +116,6 @@ export function MarkdownEditor({
   toolbar,
   headerExtras,
   extraSideTabs,
-  activeSideTab,
-  onActiveSideTabChange,
   onChatProcessCreated,
   showLearningMode,
   learningPanel,
@@ -135,8 +130,6 @@ export function MarkdownEditor({
       toolbar={toolbar}
       headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}
-      activeSideTab={activeSideTab}
-      onActiveSideTabChange={onActiveSideTabChange}
       onChatProcessCreated={onChatProcessCreated}
       showLearningMode={showLearningMode}
       learningPanel={learningPanel}
@@ -184,8 +177,6 @@ function MarkdownEditorContent({
   toolbar,
   headerExtras,
   extraSideTabs,
-  activeSideTab,
-  onActiveSideTabChange,
   onChatProcessCreated,
   showLearningMode,
   learningPanel,
@@ -198,8 +189,6 @@ function MarkdownEditorContent({
   toolbar?: React.ReactNode;
   headerExtras?: MarkdownEditorProps['headerExtras'];
   extraSideTabs?: ExtraSideTab[];
-  activeSideTab?: string;
-  onActiveSideTabChange?: (id: string) => void;
   onChatProcessCreated?: MarkdownEditorProps['onChatProcessCreated'];
   showLearningMode?: boolean;
   learningPanel?: React.ReactNode;
@@ -286,14 +275,9 @@ function MarkdownEditorContent({
     lastSync,
   );
 
-  // Control the side-tab id locally so the header git pill can open "revisions".
-  // Falls back to the parent-controlled tab (PlainMarkdownAssetEditor's runs tab).
-  const [localSideTab, setLocalSideTab] = useState<string | undefined>(activeSideTab);
-  useEffect(() => { if (activeSideTab !== undefined) setLocalSideTab(activeSideTab); }, [activeSideTab]);
-  const handleSideTabChange = useCallback((id: string) => {
-    setLocalSideTab(id);
-    onActiveSideTabChange?.(id);
-  }, [onActiveSideTabChange]);
+  // Side windows are URL-first dock state (see useSideWindows). The header git
+  // pill opens the "revisions" window by navigating, not by lifting local state.
+  const { open: openSideWindow } = useSideWindows();
 
   const revisionsTab = useMemo<ExtraSideTab>(() => ({
     id: 'revisions',
@@ -487,7 +471,7 @@ function MarkdownEditorContent({
         hasRepo={revisionStatus.hasRepo}
         computeNodeId={gitComputeNodeId}
         workdir={gitFileDir}
-        onOpenHistory={() => handleSideTabChange('revisions')}
+        onOpenHistory={() => openSideWindow('revisions')}
         onAfterPublish={revisionStatus.refresh}
       />
       {shareButton}
@@ -557,8 +541,6 @@ function MarkdownEditorContent({
           <EditorWithSidePanel
             chatTarget={chatTarget}
             extraTabs={allSideTabs}
-            activeTab={localSideTab}
-            onActiveTabChange={handleSideTabChange}
             onChatProcessCreated={onChatProcessCreated}
             cursorLine={cursorLine}
           >

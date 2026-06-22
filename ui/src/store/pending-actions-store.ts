@@ -139,7 +139,13 @@ function ensureTimer(): void {
   }, TIMER_TICK_MS);
 }
 
-function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
+/**
+ * Single ingestion point for AgenticProcess WS ops (create / update / delete).
+ * Exported for unit tests so they can drive the real tracker pipeline with
+ * synthetic ops instead of standing up the WS bus; production code reaches it
+ * only via the `subscribeToEntityOps` wiring in `attachOnce`.
+ */
+export function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
   // Type filtering is handled by `subscribeToEntityOps` in `attachOnce()` —
   // this callback is only invoked for AgenticProcess events.
   const prefix = `${AgenticProcess.type}-`;
@@ -406,7 +412,7 @@ export interface WorkerListEntry extends ActiveProcessEntry {
   mode: ExecutionMode;
 }
 
-function buildWorkerEntries(now: number): WorkerListEntry[] {
+export function buildWorkerEntries(now: number): WorkerListEntry[] {
   const out: WorkerListEntry[] = [];
   for (const t of trackers.values()) {
     const mode = classifyExecutionMode({
@@ -473,6 +479,20 @@ export function useWorkerCountsByMode(
     return counts;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, key]);
+}
+
+/**
+ * Test-only: clear all tracker state (the module `trackers` map + the pending
+ * snapshot) so each unit test starts from an empty store. Not used in
+ * production — the store is module-scoped and never reset at runtime.
+ */
+export function __resetTrackersForTest(): void {
+  trackers.clear();
+  snapshot = [];
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
 }
 
 /** Format a millisecond timestamp as a short "ago" string. */

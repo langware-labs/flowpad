@@ -2,21 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgenticProcess, Conversation, ProcessKind, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { mostRecentProcess } from '@src/utils/process-recency';
 import { resolveWorkdir } from './apply-project-choice';
 import type { WorkerType } from './conversation-session-constants';
-
-/** Epoch-ms from an epoch number or an ISO string, else 0. */
-function toMs(value: number | string | null | undefined): number {
-  if (typeof value === 'number') return value;
-  const n = typeof value === 'string' ? Date.parse(value) : NaN;
-  return Number.isNaN(n) ? 0 : n;
-}
-
-/** Recency key for picking "the" conversation process when more than one is
- *  linked — most-recently-active wins, falling back to created_at, then 0. */
-function recencyOf(p: AgenticProcess): number {
-  return toMs(p.last_active_at) || toMs((p as { created_at?: string }).created_at);
-}
 
 /**
  * The single launch/open lifecycle for a conversation's owning worker session.
@@ -77,11 +65,10 @@ export function useConversationSession(opts: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sharedKey]);
 
-  const conversationProcess = useMemo<AgenticProcess | null>(() => {
-    const found = linkedProcesses.filter((p) => p.process_type === ProcessKind.Conversation);
-    if (found.length === 0) return null;
-    return found.reduce((a, b) => (recencyOf(b) > recencyOf(a) ? b : a));
-  }, [linkedProcesses]);
+  const conversationProcess = useMemo<AgenticProcess | null>(
+    () => mostRecentProcess(linkedProcesses.filter((p) => p.process_type === ProcessKind.Conversation)),
+    [linkedProcesses],
+  );
 
   const startSession = useCallback(
     async (workerType: WorkerType) => {

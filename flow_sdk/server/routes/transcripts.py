@@ -19,11 +19,22 @@ from fastapi.responses import JSONResponse
 from flow_sdk.transcript_analyzer.entries import MetaEntry
 from flow_sdk.transcript_analyzer.resolver import (
     TranscriptNotFoundError,
+    received_transcript_dest,
     resolve_session_jsonl,
 )
 from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
 
 logger = logging.getLogger(__name__)
+
+
+def _is_received(worker_type: str, session_id: str, resolved: Path) -> bool:
+    """True when ``resolved`` is the instance's received-transcripts copy for this
+    session — i.e. the transcript arrived via a shared message and never ran here,
+    so it is not resumable. Path-based (single source of truth: the same
+    ``received_transcript_dest`` the resolver falls back to). Both paths are
+    already absolute/canonical, so compare directly — no symlink-resolving I/O."""
+    dest = received_transcript_dest(worker_type, session_id)
+    return dest is not None and resolved == dest
 
 router = APIRouter()
 
@@ -133,6 +144,7 @@ async def get_transcript(worker_type: str, path: str = ""):
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
+        "received": _is_received(worker_type, transcript.session_id, p),
         "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
     }
@@ -254,6 +266,7 @@ async def get_worker_session_transcript(worker_type: str, session_id: str):
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
+        "received": _is_received(worker_type, transcript.session_id, path),
         "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
     }

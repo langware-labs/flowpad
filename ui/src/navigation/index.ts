@@ -32,6 +32,7 @@ export { NavigationActions } from './NavigationActions';
 
 // Hooks
 export { useDockNavigation } from './useDockNavigation';
+export { useSideWindows, type SideWindowsController } from './useSideWindows';
 
 // Types
 export type { FileOptions, TabOptions } from './types';
