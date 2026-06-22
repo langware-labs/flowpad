@@ -155,6 +155,11 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import AgentTrace: {e}")
 
+try:
+    from flow_sdk.builtin.usage_report import UsageReport  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import UsageReport: {e}")
+
 # These have more complex dependencies - skip for now
 # from builtin.page import Page  # noqa: F401
 # from builtin.task import Task  # noqa: F401

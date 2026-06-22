@@ -5,7 +5,7 @@ import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
+import { NotificationOutlet, NotificationCommandBridge, DiagnoseErrorModal, initNotificationIngest } from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -85,6 +85,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       <TooltipProvider>
         <NotificationOutlet />
         <NotificationCommandBridge />
+        <DiagnoseErrorModal />
         <CleanupModal />
         <DeleteAssetModal />
         <InputPromptModal />

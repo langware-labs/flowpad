@@ -272,7 +272,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       targetTypeId
         ? await dataManager.getByTypeId<APIEntity<any>>(targetTypeId).catch(() => null)
         : dock.vfsPath
-          ? await dataManager.getEntityByPath<APIEntity<any>>(dock.vfsPath.toString())
+          ? await dataManager.getEntityByPath<APIEntity<any>>(dock.vfsPath.machinePath)
           : null
     ) as (APIEntity<any> & TerminalTargetFields & { project_id?: string | null }) | null;
     if (!targetTypeId && target) targetTypeId = target.typeId;

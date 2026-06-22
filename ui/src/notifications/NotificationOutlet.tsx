@@ -13,6 +13,8 @@ import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import type { NotificationData, NotificationLevel } from './types';
 import { runAction } from './commands';
+import { DiagnoseIconButton } from './diagnose/DiagnoseIconButton';
+import { NotificationProcessLine } from './NotificationProcessLine';
 
 const LEVEL_ICON: Record<NotificationLevel, LucideIcon> = {
   info: Info,
@@ -65,6 +67,7 @@ export function renderToast(data: NotificationData, toastId: string) {
         {data.message && (
           <div className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{data.message}</div>
         )}
+        <NotificationProcessLine data={data} />
         {data.actions && data.actions.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {data.actions.map((action, i) => (
@@ -82,13 +85,16 @@ export function renderToast(data: NotificationData, toastId: string) {
           </div>
         )}
       </div>
-      <button
-        onClick={() => sonnerToast.dismiss(toastId)}
-        aria-label="Dismiss notification"
-        className="flex-shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
+      <div className="flex flex-shrink-0 items-center gap-0.5">
+        <DiagnoseIconButton data={data} />
+        <button
+          onClick={() => sonnerToast.dismiss(toastId)}
+          aria-label="Dismiss notification"
+          className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

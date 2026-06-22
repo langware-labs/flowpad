@@ -287,6 +287,11 @@ export interface ParsedTranscript {
   worker_type: string;
   session_id: string;
   path: string;
+  /** True when this transcript arrived via a shared message (lives only under
+   *  the instance's received_transcripts/ store) and therefore cannot be
+   *  resumed locally — the viewer hides the resume affordance and offers an
+   *  analyze-transcript worker instead. */
+  received: boolean;
   transcript_format: TranscriptFormat | null;
   transcript_source: TranscriptSource | null;
   header: TranscriptHeader;

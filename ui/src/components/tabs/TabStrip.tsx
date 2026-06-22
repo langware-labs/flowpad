@@ -35,6 +35,8 @@ export interface TabStripItem {
   key: string;
   /** Display title. */
   title: string;
+  /** Extra classes for the title text (e.g. blue for projectless/global tabs). */
+  titleClassName?: string;
   /** Leading icon node (resolved by the owner — vendor override ?? type icon). */
   icon?: React.ReactNode;
   /** Extra inline markers after the icon (e.g. worktree badge). */
@@ -121,6 +123,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
   // the calm minimal hover (statusReason / title only).
   const isAdvanced = useIsAdvanced();
   const tabContainerRef = useRef<HTMLDivElement>(null);
+  const trailingRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -147,10 +150,20 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // chevron rather than flush against it.
     const PAD = 8;
 
+    // The trailing toolbar is `sticky right-0` INSIDE the scroll container, so it
+    // paints on top of whatever scrolls under it. If we used the bare container
+    // right edge, a rightmost chip would land with its X/open controls tucked
+    // beneath the sticky toolbar — visible text, hidden controls. Treat the
+    // toolbar's left edge as the effective right boundary so the whole chip
+    // header (controls included) clears it.
+    const trailingRect = trailingRef.current?.getBoundingClientRect();
+    const effectiveRight =
+      trailingRect && trailingRect.width > 0 ? Math.min(containerRect.right, trailingRect.left) : containerRect.right;
+
     if (tabRect.left < containerRect.left + PAD) {
       container.scrollBy({ left: tabRect.left - containerRect.left - PAD, behavior });
-    } else if (tabRect.right > containerRect.right - PAD) {
-      container.scrollBy({ left: tabRect.right - containerRect.right + PAD, behavior });
+    } else if (tabRect.right > effectiveRight - PAD) {
+      container.scrollBy({ left: tabRect.right - effectiveRight + PAD, behavior });
     }
   }, []);
 
@@ -404,7 +417,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           />
         ) : (
           <span
-            className="max-w-[160px] truncate text-sm font-medium"
+            className={`max-w-[160px] truncate text-sm font-medium ${item.titleClassName ?? ''}`}
             onDoubleClick={(e) => {
               if (!item.renameable) return;
               e.stopPropagation();
@@ -530,7 +543,11 @@ export const TabStrip: React.FC<TabStripProps> = ({
         {/* Trailing toolbar flows after the last tab but sticks to the right
             edge when tabs overflow. Placement is unconditional, so it does
             not oscillate with hasTabOverflow. */}
-        {trailing && <div className="sticky right-0 z-10 flex items-center self-stretch bg-muted">{trailing}</div>}
+        {trailing && (
+          <div ref={trailingRef} className="sticky right-0 z-10 flex items-center self-stretch bg-muted">
+            {trailing}
+          </div>
+        )}
       </div>
 
       {/* Right Scroll Button */}

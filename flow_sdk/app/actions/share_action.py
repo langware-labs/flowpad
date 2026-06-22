@@ -148,14 +148,20 @@ async def conversation_add_message() -> ApiResponse:
     body["conversation_id"] = request_info.target_entity_typeid.id
 
     # Drafts are local-only (no hub push) and stay allowed; only real sends
-    # touch the cloud — those are blocked in Local mode and require login.
+    # touch the cloud — those are blocked in Local mode. When cloud login is
+    # unavailable we no longer refuse the send: the message is persisted locally
+    # as ``pending_send`` (queued, not delivered) so nothing is lost, and a
+    # later re-send (once logged in) flushes it. Local mode stays a hard block.
+    pending_send = False
     if not bool(body.get("is_draft")):
         if _local_mode_share_blocked():
             return ApiFailResponse(message=LOCAL_MODE_SHARE_MESSAGE)
         if not is_logged_in():
-            return ApiFailResponse(message="Cloud login required to send messages")
+            pending_send = True
 
-    return await handle_add_message(body, request_info.someone_typeid)
+    return await handle_add_message(
+        body, request_info.someone_typeid, pending_send=pending_send,
+    )
 
 
 @action.post(action_name="forward", types=["flow_message"])

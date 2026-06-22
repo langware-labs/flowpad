@@ -26,8 +26,8 @@ interface UseRunOnFileArgs {
   targetVfsPath: string | null;
   /** On-disk file path of the markdown file (used in the prompt text). */
   filePath: string | null;
-  /** Notified after a run starts so the host can flip to the Runs side tab. */
-  onActiveSideTabChange?: (id: string) => void;
+  /** Called after a run starts so the host opens the Runs side window (`useSideWindows().open`). */
+  onOpenSideWindow?: (id: string) => void;
 }
 
 interface UseRunOnFileResult {
@@ -60,7 +60,7 @@ const MCP_SERVER = 'flow-sdk-mcp';
 export function useRunOnFile({
   targetVfsPath,
   filePath,
-  onActiveSideTabChange,
+  onOpenSideWindow,
 }: UseRunOnFileArgs): UseRunOnFileResult {
   const { project } = useProject();
 
@@ -99,9 +99,9 @@ export function useRunOnFile({
 
       void proc.prompt(instruction);
       setProcessEntry({ process: proc });
-      onActiveSideTabChange?.('runs');
+      onOpenSideWindow?.('runs');
     },
-    [targetVfsPath, filePath, project, onActiveSideTabChange],
+    [targetVfsPath, filePath, project, onOpenSideWindow],
   );
 
   const runWithAsset = useCallback(
