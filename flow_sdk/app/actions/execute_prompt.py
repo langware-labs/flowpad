@@ -31,10 +31,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Max wall-clock to await a single headless prompt turn (production, not a test).
-EXECUTE_TURN_TIMEOUT = 300.0
-
-
 # ── prompt text assembly (port of buildMergedPrompt) ────────────────────────
 
 def _resolve_local_path(fm_id: str, vfs_subpath: str) -> Optional[str]:
@@ -219,7 +215,7 @@ async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
 
     turn: "OrderedDict[str, str]" = OrderedDict()
     noid = 0
-    async for entry in ap.stream_transcript(timeout=EXECUTE_TURN_TIMEOUT):
+    async for entry in ap.stream_transcript():
         msg = entry.get("message") if isinstance(entry, dict) else None
         if not isinstance(msg, dict):
             continue
@@ -236,6 +232,48 @@ async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
                 noid += 1
             turn[mid] = text  # last write wins for a repeated snapshot id
     return "\n\n".join(turn.values()).strip()
+
+
+# ── "is the conversation open" + draft-waiting notification ─────────────────
+
+def _conversation_is_open(conversation_target: str) -> bool:
+    """True when the active (focused/visible) UI tab currently has this
+    conversation open — i.e. its data-context active entity is this
+    conversation. Read from the in-process per-connection ``browser_context``
+    (the conversation loader writes ``CurrentActiveEntityTypeId``). Best-effort:
+    False when no UI is connected or the state can't be read."""
+    try:
+        from flow_sdk.server.routes.websocket import get_active_connection_info
+        info = get_active_connection_info()
+        if not info:
+            return False
+        _cid, conn = info
+        return conn.browser_context.get("CurrentActiveEntityTypeId") == conversation_target
+    except Exception:
+        return False
+
+
+async def _post_draft_waiting_feed_entry(reply: str) -> Optional[str]:
+    """Surface a Home-Feed card so the user knows a draft reply is waiting in a
+    conversation they don't currently have open. Reuses flow diagnose's
+    ``MessageSuggest`` + ``FeedEntry`` pattern, owned by the local user (only
+    users send messages, never visitors). Best-effort — never fails the run."""
+    try:
+        from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
+        from flow_sdk.builtin.message_suggest import MessageSuggest
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+        user = await get_or_create_local_user()
+        suggest = MessageSuggest(
+            text="A draft reply is ready to send:",
+            message_text=reply.strip(),
+        )
+        suggest = await suggest.save(user.typeid)
+        feed = FeedEntry(feed_status=FeedStatus.NEW.value, data={"type_id": str(suggest.typeid)})
+        feed = await feed.save(user.typeid)
+        return feed.id
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[execute_prompt] draft-waiting feed entry failed: %s", e)
+        return None
 
 
 # ── the convergence entrypoint ──────────────────────────────────────────────
@@ -296,11 +334,19 @@ async def execute_prompt_from_message(
             },
             someone_typeid,
         )
+        # New case: a draft saved while the user isn't looking at this
+        # conversation would sit unseen. Surface a Home-Feed card so they know a
+        # reply is waiting to send. (auto_reply already sent it; an open
+        # conversation already shows the draft inline — neither needs the card.)
+        feed_entry_id = None
+        if not auto_reply and not _conversation_is_open(target):
+            feed_entry_id = await _post_draft_waiting_feed_entry(reply)
         return ApiSuccessResponse(data={
             "executed": True,
             "auto_reply": auto_reply,
             "process_id": ap.id,
             "send_result": getattr(result, "data", None),
+            "feed_entry_id": feed_entry_id,
         })
     except Exception as e:  # noqa: BLE001
         logger.warning("[execute_prompt] failed: %s", e, exc_info=True)
