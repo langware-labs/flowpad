@@ -5,6 +5,7 @@ import {
   DEFAULT_ASSET_FILTER,
   applyFilterToParams,
 } from '@src/components/assets/assetFilter';
+import { userScope } from '@src/lib/scope-filter';
 
 describe('DockPointer.forAssetFolder', () => {
   it('builds a pointer with typeid and relPath', () => {
@@ -125,7 +126,7 @@ describe('applyFilterToParams — parentPath', () => {
     const p = new URLSearchParams();
     applyFilterToParams(p, {
       ...DEFAULT_ASSET_FILTER,
-      scope: { user: true, projects: [] },
+      scope: userScope(),
       tags: ['a', 'b'],
       parentPath: '/docs',
     });

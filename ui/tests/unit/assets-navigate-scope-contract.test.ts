@@ -10,11 +10,16 @@
  * preserves the scope; switching scope is the only thing that changes the tab.
  */
 import { DockPointer } from '@src/navigation/DockPointer';
-import { type ScopeFilter } from '@src/lib/scope-filter';
+import { projectScope, type ScopeFilter } from '@src/lib/scope-filter';
 import { describe, expect, it } from 'vitest';
 
-const A: ScopeFilter = { user: false, projects: ['A'] };
-const B: ScopeFilter = { user: false, projects: ['B'] };
+// project-scope ids must be valid entity ids (UUID v4/v5); the dock-URL codec
+// validates `activeProjectId` on decode (entity-id-policy) and falls back to
+// user scope for anything else. Two distinct projects, "A" and "B".
+const A_ID = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
+const B_ID = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
+const A: ScopeFilter = projectScope(A_ID);
+const B: ScopeFilter = projectScope(B_ID);
 
 const MENU_BUILDERS: Array<[string, () => DockPointer]> = [
   ['type list', () => DockPointer.forAssetList('agent')],
@@ -31,12 +36,12 @@ describe('navigateAsset scope contract', () => {
 
   it.each(MENU_BUILDERS)('%s: stamping the current scope keeps the same scope tab', (_label, build) => {
     const stamped = build().withScopeFilter(A);
-    expect(stamped.tabHash).toBe('assets|0:A'); // same tab as every other menu under scope A
+    expect(stamped.tabHash).toBe(`assets|project:${A_ID}`); // same tab as every other menu under scope A
     expect(stamped.scopeFilter).toEqual(A); // scope preserved in the URL
   });
 
   it('switching scope is the only action that changes the tab', () => {
-    expect(DockPointer.forAssetList('agent').withScopeFilter(B).tabHash).toBe('assets|0:B');
+    expect(DockPointer.forAssetList('agent').withScopeFilter(B).tabHash).toBe(`assets|project:${B_ID}`);
     expect(DockPointer.forAssetList('skill').withScopeFilter(A).tabHash).not.toBe(
       DockPointer.forAssetList('skill').withScopeFilter(B).tabHash,
     );

@@ -2,28 +2,36 @@
  * Dock-URL round-trip for a ScopeFilter.
  *
  * `scopeFilterToDockOptions` / `dockOptionsToScopeFilter` are the single home
- * for the scope-in-URL grammar; `DockPointer.scopeFilter` / `withScopeFilter`
- * are the generic accessors every dock uses. These tests pin the round-trip and
- * the "unspecified → null" contract.
+ * for the scope-in-URL grammar (`scope-<field>`); `DockPointer.scopeFilter` /
+ * `withScopeFilter` are the generic accessors every dock uses. These tests pin
+ * the round-trip and the "unspecified → null" contract.
  */
 
 import { describe, expect, it } from 'vitest';
 import {
-  ALL_SCOPE_FILTER,
+  allScope,
   dockOptionsToScopeFilter,
+  filterScope,
+  projectScope,
   scopeFilterEqual,
   scopeFilterToDockOptions,
+  userScope,
   type ScopeFilter,
 } from '@src/lib/scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 
+// A project scope's id must be a valid UUID v4/v5 — SCOPE_CODEC.decode validates
+// `activeProjectId` (entity-id policy) and drops a foreign id. Filter-mode
+// project ids are not validated, so plain 'p1'/'p2' are fine there.
+const PA = '11111111-1111-4111-8111-111111111111';
+
 const CASES: Array<[string, ScopeFilter]> = [
-  ['all', { ...ALL_SCOPE_FILTER }],
-  ['user only', { user: true, projects: [] }],
-  ['single project (no user)', { user: false, projects: ['p1'] }],
-  ['selected projects', { user: false, projects: ['p1', 'p2'] }],
-  ['user + project union', { user: true, projects: ['p1'] }],
+  ['all', allScope()],
+  ['user only', userScope()],
+  ['single project', projectScope(PA)],
+  ['selected projects', filterScope(false, ['p1', 'p2'])],
+  ['user + project union', filterScope(true, ['p1'])],
 ];
 
 describe('scope filter ⇄ dock options round-trip', () => {
@@ -34,8 +42,8 @@ describe('scope filter ⇄ dock options round-trip', () => {
     expect(scopeFilterEqual(back as ScopeFilter, scope)).toBe(true);
   });
 
-  it('encodes all explicitly so it is distinct from unspecified', () => {
-    expect(scopeFilterToDockOptions({ ...ALL_SCOPE_FILTER })).toEqual({ all: 'true' });
+  it('encodes the mode explicitly so "all" is distinct from unspecified', () => {
+    expect(scopeFilterToDockOptions(allScope())).toEqual({ 'scope-mode': 'all' });
   });
 
   it('returns null for options with no scope keys (unspecified → default)', () => {
@@ -47,7 +55,7 @@ describe('scope filter ⇄ dock options round-trip', () => {
 
 describe('DockPointer scope facility', () => {
   it('round-trips through withScopeFilter / scopeFilter', () => {
-    const scope: ScopeFilter = { user: false, projects: ['p1', 'p2'] };
+    const scope = filterScope(false, ['p1', 'p2']);
     const dp = DockPointer.forAssetList('all').withScopeFilter(scope);
     expect(scopeFilterEqual(dp.scopeFilter as ScopeFilter, scope)).toBe(true);
   });
@@ -57,30 +65,31 @@ describe('DockPointer scope facility', () => {
   });
 
   it('forAssetList seeds scope via the generic builder', () => {
-    const dp = DockPointer.forAssetList('skill', { scope: { ...ALL_SCOPE_FILTER } });
+    const dp = DockPointer.forAssetList('skill', { scope: allScope() });
     expect(dp.viewType).toBe(ViewType.ASSETS);
     expect(dp.pointer).toBe('list/skill');
-    expect(scopeFilterEqual(dp.scopeFilter as ScopeFilter, ALL_SCOPE_FILTER)).toBe(true);
+    expect(scopeFilterEqual(dp.scopeFilter as ScopeFilter, allScope())).toBe(true);
   });
 
   it('replaces stale scope keys instead of accumulating them', () => {
-    // project → all → user must end at user, with no lingering all/projects.
+    // project → all → user must end at user, with no lingering scope-* fields.
     const dp = DockPointer.forAssetList('all')
-      .withScopeFilter({ user: false, projects: ['p1'] })
-      .withScopeFilter({ ...ALL_SCOPE_FILTER })
-      .withScopeFilter({ user: true, projects: [] });
-    expect(dp.options?.all).toBeUndefined();
-    expect(scopeFilterEqual(dp.scopeFilter as ScopeFilter, { user: true, projects: [] })).toBe(true);
+      .withScopeFilter(projectScope(PA))
+      .withScopeFilter(allScope())
+      .withScopeFilter(userScope());
+    expect(dp.options?.['scope-activeProjectId']).toBeUndefined();
+    expect(dp.options?.['scope-projects']).toBeUndefined();
+    expect(scopeFilterEqual(dp.scopeFilter as ScopeFilter, userScope())).toBe(true);
   });
 
   it('preserves non-scope options across withScopeFilter', () => {
     const base = new DockPointer(ViewType.ASSETS, 'list/all', { pinned: 'true' });
-    const dp = base.withScopeFilter({ ...ALL_SCOPE_FILTER });
+    const dp = base.withScopeFilter(allScope());
     expect(dp.options?.pinned).toBe('true');
   });
 
   it('survives a URL serialize → parse cycle', () => {
-    const scope: ScopeFilter = { user: false, projects: ['abc'] };
+    const scope = projectScope(PA);
     const dp = DockPointer.forAssetList('markdown').withScopeFilter(scope);
     const parsed = DockPointer.fromUrl(dp.toUrl());
     expect(scopeFilterEqual(parsed.scopeFilter as ScopeFilter, scope)).toBe(true);

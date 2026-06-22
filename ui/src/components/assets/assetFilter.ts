@@ -7,7 +7,7 @@
  * the records-scanner page and any future surface that filters by user/
  * project scope.
  */
-import { applyScopeToParams, type ScopeFilter } from '@src/lib/scope-filter';
+import { applyScopeToParams, scopeProjectIds, userScope, type ScopeFilter } from '@src/lib/scope-filter';
 
 export interface AssetFilter {
   /** Free-text search query (debounced in the hook). */
@@ -25,7 +25,7 @@ export interface AssetFilter {
 
 export const DEFAULT_ASSET_FILTER: AssetFilter = {
   query: '',
-  scope: { user: true, projects: [] },
+  scope: userScope(),
   tags: [],
   filters: {},
 };
@@ -43,7 +43,7 @@ export function applyFilterToParams(params: URLSearchParams, filter: AssetFilter
   // search filter hides. Being explicitly inside the project IS the opt-in,
   // mirroring DocsCategory/SkillsCategory. Global (user) browse leaves it off
   // so SDK-shipped system content stays out of the unscoped view.
-  if (filter.scope.projects.length > 0) {
+  if (scopeProjectIds(filter.scope).length > 0) {
     params.set('include_system', 'true');
   }
   if (filter.tags.length > 0) {

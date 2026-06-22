@@ -7,19 +7,24 @@
  */
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { ALL_SCOPE_FILTER, type ScopeFilter } from '@src/lib/scope-filter';
+import { allScope, projectScope, userScope, type ScopeFilter } from '@src/lib/scope-filter';
 import { Tab } from '@sdk';
 import { describe, expect, it } from 'vitest';
 
-const A: ScopeFilter = { user: false, projects: ['A'] };
-const B: ScopeFilter = { user: false, projects: ['B'] };
-const USER: ScopeFilter = { user: true, projects: [] };
+// Project ids must be valid UUID v4/v5 — SCOPE_CODEC.decode validates
+// `activeProjectId` (entity-id policy) and drops a foreign id, so a non-UUID
+// here would silently decode to user scope and collapse the matrix.
+const PA = '11111111-1111-4111-8111-111111111111';
+const PB = '22222222-2222-4222-8222-222222222222';
+const A: ScopeFilter = projectScope(PA);
+const B: ScopeFilter = projectScope(PB);
+const USER: ScopeFilter = userScope();
 
 const SCOPES: Array<{ label: string; scope: ScopeFilter; key: string }> = [
-  { label: 'global', scope: ALL_SCOPE_FILTER, key: 'assets|all' },
-  { label: 'user', scope: USER, key: 'assets|1:' },
-  { label: 'projectA', scope: A, key: 'assets|0:A' },
-  { label: 'projectB', scope: B, key: 'assets|0:B' },
+  { label: 'global', scope: allScope(), key: 'assets|all' },
+  { label: 'user', scope: USER, key: 'assets|user' },
+  { label: 'projectA', scope: A, key: `assets|project:${PA}` },
+  { label: 'projectB', scope: B, key: `assets|project:${PB}` },
 ];
 
 describe('assets tabHash = scope (not sub-pointer)', () => {
@@ -38,7 +43,7 @@ describe('assets tabHash = scope (not sub-pointer)', () => {
     ['folder', DockPointer.forAssetFolder('markdown', 'compute_node-@local', 'x').withScopeFilter(A)],
     ['editor', DockPointer.forAssetEditor('skill', '/p/s.md').withScopeFilter(A)],
   ])('same scope, different sub-pointer (%s) ⇒ same tab', (_label, dock) => {
-    expect(dock.tabHash).toBe('assets|0:A');
+    expect(dock.tabHash).toBe(`assets|project:${PA}`);
   });
 
   it('different scopes ⇒ different tabs (pairwise)', () => {

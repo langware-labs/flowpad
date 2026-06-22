@@ -33,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
-import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, unionAssetBucket } from '@src/lib/scope-filter';
+import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, projectScope, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { useEntity } from '@sdk/react/hooks';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
@@ -827,7 +827,7 @@ export function AssetsPage() {
       });
       if (match) {
         setAssetFilter({ ...DEFAULT_ASSET_FILTER });
-        openScoped({ user: false, projects: [match.record_id] });
+        openScoped(projectScope(match.record_id));
       }
     } catch {
       // ignore
