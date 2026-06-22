@@ -125,6 +125,16 @@ export interface QueueState {
   entries: QueueEntry[];
 }
 
+/** A user-facing markdown doc authored by an AgenticProcess (docs chip). */
+export interface MarkdownDoc {
+  /** Absolute path to the .md file. */
+  path: string;
+  /** Basename of `path`, shown as the chip/row label. */
+  name: string;
+  /** `create` (written via Write) or `update` (written via Edit / re-write). */
+  change: 'create' | 'update';
+}
+
 /**
  * Interface for AgenticProcess entity data
  */
@@ -235,6 +245,12 @@ export interface IAgenticProcess extends IEntity {
    * the trigger to re-fire.
    */
   plan_path?: string | null;
+  /**
+   * User-facing markdown docs this process authored, oldest-first (tail =
+   * latest). Drives the ribbon's "Open Doc" chip. Plan files / agent-internal
+   * docs are excluded server-side. Persists across reloads.
+   */
+  markdown_docs?: MarkdownDoc[];
   /**
    * Reflected prompt-queue state. Computed server-side from the on-disk
    * `prompt_queue.json` and pushed via `data_op`; never persisted on the
@@ -1179,6 +1195,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;
     this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
     this.plan_path = entity.plan_path ?? null;
+    this.markdown_docs = entity.markdown_docs ?? [];
     this.queue = entity.queue ?? null;
   }
 
@@ -1191,6 +1208,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   // ── Field declarations (populated by constructor / wire data) ──────────────
 
   plan_path: string | null = null;
+
+  /**
+   * User-facing markdown docs authored by this process, oldest-first. Tail is
+   * the latest doc shown by the ribbon's docs chip; the chevron/popover lists
+   * the rest when there is more than one. Backend-owned (persisted field).
+   */
+  markdown_docs: MarkdownDoc[] = [];
 
   /**
    * Reflected prompt-queue state (backend-owned). Populated by `deepAssign`

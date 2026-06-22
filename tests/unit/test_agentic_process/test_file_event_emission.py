@@ -114,6 +114,77 @@ async def test_maps_file_edit_to_file_write_event(initialize_test_db, monkeypatc
     assert not any(n == "file.edit" for n, _ in events)
 
 
+async def _stub_save(ap: AgenticProcess, monkeypatch) -> None:
+    """Stub Entity.save so markdown_docs tracking doesn't hit the DB."""
+    async def _noop_save(self, *a, **k):
+        return self
+    monkeypatch.setattr(type(ap), "save", _noop_save, raising=False)
+
+
+@pytest.mark.asyncio
+async def test_tracks_markdown_create_for_hello_md(initialize_test_db, monkeypatch) -> None:
+    """Writing hello.md tracks a 'create' doc and emits markdown.create."""
+    ap = _make_ap()
+    events = _install_capture(ap, monkeypatch)
+    await _stub_save(ap, monkeypatch)
+
+    await ap._process_transcript_entries(
+        [FileWriteEntry(path="/tmp/hello.md", tool_name="Write", **_entry_base("e1"))],
+    )
+
+    assert ap.markdown_docs == [
+        {"path": "/tmp/hello.md", "name": "hello.md", "change": "create"}
+    ]
+    create_events = [(n, p) for n, p in events if n == "markdown.create"]
+    assert create_events, f"expected markdown.create, got {events}"
+    assert create_events[0][1]["path"] == "/tmp/hello.md"
+    assert create_events[0][1]["name"] == "hello.md"
+
+
+@pytest.mark.asyncio
+async def test_markdown_rewrite_upserts_to_update(initialize_test_db, monkeypatch) -> None:
+    """A later write/edit to the same doc upgrades it to 'update' in place."""
+    ap = _make_ap()
+    events = _install_capture(ap, monkeypatch)
+    await _stub_save(ap, monkeypatch)
+
+    await ap._process_transcript_entries(
+        [FileWriteEntry(path="/tmp/hello.md", tool_name="Write", **_entry_base("e1"))],
+    )
+    await ap._process_transcript_entries(
+        [FileEditEntry(path="/tmp/hello.md", tool_name="Edit", **_entry_base("e2"))],
+    )
+
+    assert ap.markdown_docs == [
+        {"path": "/tmp/hello.md", "name": "hello.md", "change": "update"}
+    ]
+    assert any(n == "markdown.update" for n, _ in events)
+
+
+@pytest.mark.asyncio
+async def test_excludes_plan_and_internal_docs(initialize_test_db, monkeypatch) -> None:
+    """Plan files and agent-internal docs never reach the docs chip."""
+    from flow_sdk.instance_settings import get_instance_settings
+
+    ap = _make_ap()
+    events = _install_capture(ap, monkeypatch)
+    await _stub_save(ap, monkeypatch)
+
+    plan_path = str(get_instance_settings().claude_plans_dir / "codex-abc.md")
+
+    await ap._process_transcript_entries(
+        [
+            FileWriteEntry(path=plan_path, tool_name="Write", **_entry_base("e1")),
+            FileWriteEntry(path="/repo/CLAUDE.md", tool_name="Write", **_entry_base("e2")),
+            FileWriteEntry(path="/repo/docs/guide.md", tool_name="Write", **_entry_base("e3")),
+        ],
+    )
+
+    assert [d["path"] for d in ap.markdown_docs] == ["/repo/docs/guide.md"]
+    md_events = [n for n, _ in events if n.startswith("markdown.")]
+    assert md_events == ["markdown.create"]
+
+
 @pytest.mark.asyncio
 async def test_filters_non_markdown_paths(initialize_test_db, monkeypatch) -> None:
     ap = _make_ap()

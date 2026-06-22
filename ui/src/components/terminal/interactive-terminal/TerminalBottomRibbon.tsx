@@ -1,9 +1,10 @@
 import React from 'react';
-import type { AgenticProcess } from '@sdk';
+import type { AgenticProcess, MarkdownDoc } from '@sdk';
 import { Button } from '@src/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, FileText } from 'lucide-react';
+import { BookMarked, ChevronDown, FileText } from 'lucide-react';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { SideTabTooltipContent } from './LastPromptTooltip';
@@ -20,6 +21,10 @@ interface TerminalBottomRibbonProps {
   onOpenSideTab: (tab: SideTabIdType) => void;
   hasLastPlan?: boolean;
   onOpenLastPlan?: () => void;
+  /** User-facing markdown docs this process authored, oldest-first (tail = latest). */
+  markdownDocs?: MarkdownDoc[];
+  /** Open a doc by path (docs viewer). */
+  onOpenMarkdown?: (path: string) => void;
   /** Enables the Prompt Library button (prompt → queue needs a process). */
   process?: AgenticProcess | null;
 }
@@ -45,6 +50,8 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   onOpenSideTab,
   hasLastPlan = false,
   onOpenLastPlan,
+  markdownDocs = [],
+  onOpenMarkdown,
   process = null,
 }) => {
   const isAdvanced = useIsAdvanced();
@@ -78,6 +85,9 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+        )}
+        {markdownDocs.length > 0 && onOpenMarkdown && (
+          <MarkdownDocsChip docs={markdownDocs} onOpen={onOpenMarkdown} />
         )}
       </div>
 
@@ -157,5 +167,79 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
         </TooltipProvider>
       </div>
     </div>
+  );
+};
+
+/**
+ * "Open Doc" chip — mirrors the Open-Plan chip. Shows the latest authored
+ * markdown doc (the list tail); when there is more than one, a subtle chevron
+ * opens a popover listing all docs newest-first so any can be opened.
+ */
+const DOC_CHIP_CLASSES =
+  'h-6 text-emerald-400 border-emerald-400/40 hover:border-emerald-400 hover:text-emerald-300';
+
+const MarkdownDocsChip: React.FC<{
+  docs: MarkdownDoc[];
+  onOpen: (path: string) => void;
+}> = ({ docs, onOpen }) => {
+  const latest = docs[docs.length - 1];
+  const hasMore = docs.length > 1;
+  return (
+    <TooltipProvider delayDuration={400}>
+      <div className="flex items-center">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onOpen(latest.path)}
+              className={cn(
+                DOC_CHIP_CLASSES,
+                'gap-1.5 px-2 text-[11px]',
+                hasMore && 'rounded-r-none border-r-0',
+              )}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span className="max-w-[10rem] truncate">{latest.name}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            Open the latest doc
+          </TooltipContent>
+        </Tooltip>
+        {hasMore && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Choose a doc to open"
+                className={cn(DOC_CHIP_CLASSES, 'rounded-l-none px-1')}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" side="top" className="w-64 p-1">
+              <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
+                {[...docs].reverse().map((doc) => (
+                  <button
+                    key={doc.path}
+                    type="button"
+                    onClick={() => onOpen(doc.path)}
+                    className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left hover:bg-accent"
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    <span className="min-w-0 flex-1 truncate text-xs text-foreground">{doc.name}</span>
+                    <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {doc.change === 'create' ? 'new' : 'edit'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+      </div>
+    </TooltipProvider>
   );
 };
