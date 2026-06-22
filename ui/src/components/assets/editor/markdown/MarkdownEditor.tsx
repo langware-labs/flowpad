@@ -17,7 +17,7 @@ import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
-import { ProjectNameChip } from '@src/components/assets/ProjectNameChip';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
@@ -345,6 +345,9 @@ function MarkdownEditorContent({
   const sourcePathStr = typeof sourcePath === 'string' ? sourcePath : '';
   const fileName = sourcePathStr.split('/').pop() || sourcePathStr;
   const dirPath = sourcePathStr.slice(0, sourcePathStr.lastIndexOf('/'));
+  // Asset's own entity type, for the registry type-icon shown before the name.
+  // Prefer the resolved entity TypeId; fall back to the URL's asset-editor segment.
+  const headerType = chatTarget ? new TypeId(chatTarget).type : (currentDock?.pointer?.split('/')?.[1] ?? '');
 
   const handleOpenExternal = useCallback(() => {
     void fsRef.open({ select: true });
@@ -395,8 +398,8 @@ function MarkdownEditorContent({
       <div className="flex h-full flex-col overflow-hidden">
         <EditorHeader
           fileName={fileName}
+          entityType={headerType}
           dirPath={dirPath}
-          sourcePath={sourcePathStr}
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -419,8 +422,8 @@ function MarkdownEditorContent({
       <div className="flex h-full flex-col overflow-hidden">
         <EditorHeader
           fileName={fileName}
+          entityType={headerType}
           dirPath={dirPath}
-          sourcePath={sourcePathStr}
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -448,8 +451,8 @@ function MarkdownEditorContent({
       <div className="flex h-full flex-col overflow-hidden">
         <EditorHeader
           fileName={fileName}
+          entityType={headerType}
           dirPath={dirPath}
-          sourcePath={sourcePathStr}
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -511,8 +514,8 @@ function MarkdownEditorContent({
     <div className="flex h-full flex-col overflow-hidden">
       <EditorHeader
         fileName={fileName}
+        entityType={headerType}
         dirPath={dirPath}
-        sourcePath={sourcePathStr}
         dirty={dirty}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -674,9 +677,9 @@ function MonacoMarkdownEditor({
 
 interface EditorHeaderProps {
   fileName: string;
+  /** Asset's entity type; resolves the registry icon shown before the name. */
+  entityType?: string;
   dirPath: string;
-  /** Absolute path of the asset; used to resolve the owning project chip. */
-  sourcePath?: string;
   dirty: boolean;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
@@ -691,11 +694,12 @@ interface EditorHeaderProps {
   showLearningMode?: boolean;
 }
 
-// Standard mode hides the project chip, the eval/worker `nameExtras`, the
-// secondary file toolbar (copy/open-external/download — Delete stays), and the
-// review/markdown editor-mode chips.
-function EditorHeader({ fileName, dirPath, sourcePath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, nameExtras, showLearningMode }: EditorHeaderProps) {
+// Standard mode hides the eval/worker `nameExtras`, the secondary file toolbar
+// (copy/open-external/download — Delete stays), and the review/markdown
+// editor-mode chips.
+function EditorHeader({ fileName, entityType, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, nameExtras, showLearningMode }: EditorHeaderProps) {
   const advanced = useIsAdvanced();
+  const TypeIcon = entityType ? iconForType(entityType) : null;
   const visibleModes = EDITOR_MODES.filter((m) => {
     if (m === 'learning') return !!showLearningMode;
     if (!advanced && isAdvancedOnlyMode(m)) return false;
@@ -705,9 +709,9 @@ function EditorHeader({ fileName, dirPath, sourcePath, dirty, viewMode, onViewMo
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 truncate">
+          {TypeIcon && <TypeIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
           <span className="truncate text-sm font-medium" title={fileName}>{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
-          {advanced && sourcePath && <ProjectNameChip sourcePath={sourcePath} />}
           {advanced && nameExtras}
         </div>
         <div className="flex min-w-0 items-center gap-1">
