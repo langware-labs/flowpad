@@ -39,11 +39,14 @@ export function SideRailButton({
   label,
   onClick,
   testId,
+  active = false,
 }: {
   icon: LucideIcon;
   label: string;
   onClick: () => void;
   testId?: string;
+  /** Highlight as the/an open window (workspace rail). */
+  active?: boolean;
 }) {
   return (
     <Tooltip>
@@ -52,8 +55,12 @@ export function SideRailButton({
           type="button"
           onClick={onClick}
           data-testid={testId}
+          data-active={active ? 'true' : 'false'}
           aria-label={label}
-          className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          className={cn(
+            'flex h-7 w-7 items-center justify-center rounded hover:bg-muted hover:text-foreground',
+            active ? 'bg-muted text-foreground' : 'text-muted-foreground',
+          )}
         >
           <Icon className="h-3.5 w-3.5" />
         </button>
