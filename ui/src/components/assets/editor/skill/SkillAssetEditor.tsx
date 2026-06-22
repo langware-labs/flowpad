@@ -10,6 +10,15 @@ import { notify } from '@src/notifications';
 import { FlaskConical, History } from 'lucide-react';
 import { useCallback, useMemo, useRef } from 'react';
 import { UsagePanel } from './UsagePanel';
+import { launchSkillTest, type TestWorkerKind } from './skill-eval-analysis';
+import { PROVIDER_META } from '@src/tabs/provider-meta';
+
+/** Vendors offered by the "quick start testing" toolbar next to the eval flag. */
+const TEST_WORKERS: { kind: TestWorkerKind; meta: 'claude' | 'codex' | 'copilot'; label: string }[] = [
+  { kind: 'claude_code', meta: 'claude', label: 'Claude' },
+  { kind: 'codex', meta: 'codex', label: 'Codex' },
+  { kind: 'copilot', meta: 'copilot', label: 'Copilot' },
+];
 
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
@@ -89,21 +98,42 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
       }
     };
     return (
-      <button
-        type="button"
-        onClick={toggle}
-        aria-pressed={isEval}
-        title={isEval ? 'Under eval — click to stop evaluating' : 'Mark skill for eval'}
-        data-testid="skill-eval-toggle"
-        className={cn(
-          'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors',
-          isEval
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-        )}
-      >
-        <FlaskConical className="h-3.5 w-3.5" />
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-pressed={isEval}
+          title={isEval ? 'Under eval — click to stop evaluating' : 'Mark skill for eval'}
+          data-testid="skill-eval-toggle"
+          className={cn(
+            'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors',
+            isEval
+              ? 'bg-accent text-accent-foreground'
+              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+          )}
+        >
+          <FlaskConical className="h-3.5 w-3.5" />
+        </button>
+        {/* Quick-start testing toolbar: spin up an interactive worker with this
+            skill, pre-filled (queue) but not auto-submitted. */}
+        <span className="mx-0.5 h-4 w-px flex-shrink-0 bg-border" aria-hidden />
+        {TEST_WORKERS.map(({ kind, meta, label }) => {
+          const { Icon, iconClassName } = PROVIDER_META[meta];
+          return (
+            <button
+              key={kind}
+              type="button"
+              disabled={!skillRef.current}
+              onClick={() => void launchSkillTest(skillRef.current!, kind)}
+              title={`Test this skill in a new ${label} worker`}
+              data-testid={`skill-test-${meta}`}
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40"
+            >
+              <Icon className={cn('h-3.5 w-3.5', iconClassName)} />
+            </button>
+          );
+        })}
+      </>
     );
     // Stable identity: reads the live skill via `skillRef`, so it never rebuilds
     // on a skill ref change (only `fields`/`setField` from the editor drive it).

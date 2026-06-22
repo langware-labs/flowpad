@@ -61,6 +61,44 @@ const skillProcessOpts = (targetSkill: Skill): Parameters<ComputeNode['createPro
   permissionMode: 'bypassPermissions',
 });
 
+/** Interactive worker vendors offered by the skill-test toolbar. */
+export type TestWorkerKind = 'claude_code' | 'codex' | 'copilot';
+
+/**
+ * Spin up an **interactive** worker so the author can test the skill by hand —
+ * the "quick start testing" toolbar next to the eval flag.
+ *
+ * Unlike {@link launchSkillEval} (which auto-prompts `skillit` in a stream-json
+ * execution process), this opens a real interactive terminal tab. The worker
+ * boots **idle** (no launch prompt — `launchPrompt` would run as the launch
+ * instruction, i.e. auto-submit), and a starter prompt is **staged on the
+ * prompt queue with draining disabled**: it sits ready for the author to send,
+ * never auto-injected. Disable-before-enqueue closes the drain window (the
+ * queue is empty until then, so nothing can fire). The skill is referenced by
+ * name so the harness discovers the installed skill on boot; we deliberately
+ * skip `embeddedAssets.attach`, whose action lands after the visible auto-start
+ * — too late for the driver's `--add-dir` set.
+ */
+export async function launchSkillTest(
+  targetSkill: Skill,
+  workerType: TestWorkerKind,
+): Promise<AgenticProcess | null> {
+  try {
+    const proc = await AgenticProcess.openTab(workerType);
+    // Stage (don't run) the starter on the queue: disable draining first so an
+    // idle worker can't inject it, then enqueue.
+    await proc.setQueueEnabled(false);
+    await proc.enqueue(`Let's test the "${targetSkill.name}" skill. `, 'skill-test');
+    return proc;
+  } catch (err) {
+    notify.error({
+      title: 'Could not start test worker',
+      message: err instanceof Error ? err.message : 'Failed to launch worker.',
+    });
+    return null;
+  }
+}
+
 export interface LaunchSkillEvalArgs {
   /** The skill being evaluated — the analysis process is keyed to its TypeId. */
   targetSkill: Skill;
