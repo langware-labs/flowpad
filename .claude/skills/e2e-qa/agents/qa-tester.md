@@ -171,9 +171,12 @@ cd ui && VITE_PORT=<frontend-port-from-APP_URL> npx playwright test \
 
 **Why `VITE_PORT`**: The `playwright.config.ts` sets `baseURL` from `VITE_PORT` with a stale fallback port. Without this env var, tests navigate to the wrong port and time out. Always derive it from the `APP_URL` in your task description.
 
-### Result mapping
-- Exit code 0 → all tests in the scenario passed
-- Non-zero → parse Playwright output for failure details. Each `test('...')` block maps to a test in the JSON result.
+### Result mapping — the exit code is authoritative
+
+- **A `.md.ts` is green ONLY when `npx playwright test` exits 0.** That exit code (and the JSON report) is the verdict. Your narrative, your belief that "the fix should work", a screenshot that looks right — none of these green a file. If you did not capture a real exit 0, the file is not passing; re-run it and capture the code (`run …; echo "exit=$?"` as the very next statement).
+- Exit code 0 → all tests in the file passed. Completion additionally requires the `--repeat-each=3` stability run (above) to exit 0 when you authored or changed the file.
+- Non-zero → parse the Playwright JSON for per-test failure details (each `test('...')` block maps to a test). A non-zero from a crashed/hung/interrupted run is still non-zero — it is NOT a pass and NOT a skip; it blocks until a real exit 0 is produced.
+- The only non-green that does not block is a real in-code `test.skip(...)` for one of the three documented environment reasons (Skip Detection), which appears as `skipped` in the JSON — never a verbal "I'm treating this as skipped".
 
 ### Updating or authoring a `.md.ts`
 Treat the `.md.ts` (and any `.fast.ts`) as a **cache** of the full `.md` run, not as an authority:

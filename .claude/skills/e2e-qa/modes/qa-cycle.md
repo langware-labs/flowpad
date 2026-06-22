@@ -2,7 +2,7 @@
 
 When invoked with `run qa cycle` / `full qa` / `qa cycle`:
 
-Runs all test suites in sequence across 12 phases. **You never advance to the next phase unless the current phase achieves a clear pass.** All failures in a phase must be debugged and fixed — or flagged — before moving on.
+Runs all test suites in sequence across 12 phases. **You never advance to the next phase unless the current phase achieves a clear pass** (see Phase Rules for the per-phase definition). All failures in a phase must be debugged and fixed — or, in phases 1–10, `flagged` — before moving on; in phases 11–12 an unresolved failure is a BLOCKED phase, not a flag.
 
 **Step 0.0 — INSTANCE-LEVEL OWNERSHIP (non-negotiable). You own what you launch — and ONLY what you launch.** The scope of your authority is the test instances the cycle starts via `scripts/instance_ctl.sh launch <name>` (and any backend/frontend/DB the cycle itself spawned). Within that scope you have full freedom, no confirmation needed:
 - **Restart, clear/wipe/re-index the DB, kill, and relaunch instances YOU launched** — freely, as the phases require.
@@ -18,10 +18,10 @@ Mid-cycle you still don't pause for questions about work *inside your own instan
 **Step 0 — verify and re-arm the watchdog loop.** Before every phase work session (including immediately after a session interruption, idle gap, /login recovery, or context reset), verify the cycle watchdog is still armed. Start it via the Skill tool if it is not running:
 
 ```
-Skill(skill="loop", args='30m "Do not stop until all passed or flagged. flagged means this test exposes significant gap hence senior dev review is required to decide on next step"')
+Skill(skill="loop", args='30m "Do not stop until every phase reaches a clear pass (phases 1–10: passed or flagged; phases 11–12: every .md.ts exits 0, else the phase is BLOCKED). flagged means a test exposes a significant gap needing senior-dev review; BLOCKED means a Playwright phase has a real, unmasked red .md.ts and the cycle cannot advance past it."')
 ```
 
-The loop keeps the cycle driving forward unattended; it naturally ends when the QA Cycle Summary is printed (every test passed or flagged). The loop never overrides the circuit breaker (see SKILL.md, Run Integrity): on repeated same-class anomalies, a loop tick performs the meta-RCA instead of more forward grinding. **An unwatched cycle silently stops being a cycle,** so verify and re-arm at every session resume — the watchdog's presence tells you unattended progress is still happening.
+The loop keeps the cycle driving forward unattended; it naturally ends when the QA Cycle Summary is printed (every phase reached a clear pass — or a Playwright phase is reported BLOCKED, which is itself the loud terminal outcome). The loop never overrides the circuit breaker (see SKILL.md, Run Integrity): on repeated same-class anomalies, a loop tick performs the meta-RCA instead of more forward grinding. **An unwatched cycle silently stops being a cycle,** so verify and re-arm at every session resume — the watchdog's presence tells you unattended progress is still happening.
 
 **Step 0.4 — run timing-sensitive work on your own instance; clean up the instances you launch.** Timing-sensitive phases (3, 7, 10) need an uncontended backend. The way to get one is to **launch a dedicated instance for the cycle** (`scripts/instance_ctl.sh launch <name>`) and run against it — NOT to "reclaim the machine" by killing things you didn't start.
 
@@ -45,9 +45,12 @@ Never raise a timeout to mask host-load slowness, and never kill a process you d
 
 ## Phase Rules
 
-- **Clear pass** = all tests in the phase exit with 0 failures, OR every residual failure has been worked to a `flagged` terminal state per SKILL.md, "Autonomous Run Policy". Flagged is a tracked, evidence-backed state — never a silent skip. No skipped failures allowed unless the user pre-approved skipping a specific test in the invocation. **Before reporting a phase complete, record an individual disposition for every failure** (fixed with evidence, flagged with reason, or test-issue diagnosed) — a cluster-level classification ("N failures are all <class>") is never a verdict. Grouping by signature orders the work; it never substitutes for examining each member, because deterministic bugs hide behind plausible cluster narratives.
+- **Clear pass** depends on the phase:
+  - **Phases 1–10 (pytest/vitest)** = all tests exit with 0 failures, OR every residual failure has been worked to a `flagged` terminal state per SKILL.md, "Autonomous Run Policy". Flagged is a tracked, evidence-backed state — never a silent skip.
+  - **Phases 11–12 (Playwright `.md.ts`)** = every `.md.ts` exits 0 under the manager's full-sweep re-run (machine-read), the only non-green being a documented env `test.skip(...)`. **`flagged` is not available here** — any residual red is a **BLOCKED** phase (the loud terminal state), not a quarantined flag.
+  - No skipped failures allowed unless the user pre-approved skipping a specific test in the invocation. **Before reporting a phase complete, record an individual disposition for every failure** (fixed with evidence; flagged-with-reason in 1–10; BLOCKED-with-red-file in 11–12; or test-issue diagnosed) — a cluster-level classification ("N failures are all <class>") is never a verdict. Grouping by signature orders the work; it never substitutes for examining each member, because deterministic bugs hide behind plausible cluster narratives.
 - **On failure**: debug the failing test(s) one by one using the Debug Mode flow (see `modes/debug.md`). Do NOT re-run the full suite after every individual fix — fix all failures first, then re-run the phase once as a final verification.
-- **Never skip** a failing test without explicit user instruction given at invocation time. "It was already failing" is not a reason to move on. Mid-cycle, the only alternative to fixing is flagging.
+- **Never skip** a failing test without explicit user instruction given at invocation time. "It was already failing" is not a reason to move on. Mid-cycle, the only alternative to fixing is `flagged` (phases 1–10) or a BLOCKED phase (phases 11–12) — never a silent move-on.
 - **Backend/infra ownership**: For phases 2, 3, 5, and 7–12, you own the machine. You may restart the backend server (`uv run -m flow_sdk.server.run`), the frontend, named instances (`scripts/instance_ctl.sh`), and the local hub as needed between runs. **Before each backend-owning phase starts**, verify the backend's health by polling `/api/v1/graph/bootstrap` — confirm it returns a valid, non-empty payload with populated `projects` (same machine-readable check used in Phase 11/12 DB clears). If bootstrap returns empty, errors, or indicates the DB is implausibly small vs. recent backups, stop immediately, restore from the most recent backup, and re-verify bootstrap before proceeding — corruption undetected between phases poisons every verdict recorded against it.
 - **No flaky tolerance**: `retries` stays 0 everywhere. A test that passes on re-run with no code change is not green — it is evidence of a real race and is flag-worthy. Never add retries, reruns, or `@flaky` markers, and never raise any timeout (see CLAUDE.md non-negotiables).
 - **Integrity & resilience**: every verdict, destructive op, infra launch, and anomaly response is governed by SKILL.md, "Run Integrity & Resilience" — machine-read verdicts, one writer per instance, daemonized services, durable cycle state, circuit breaker.
@@ -178,13 +181,15 @@ cd ui && npm run test:vitest:headless
    Instances that were already running before the phase started belong to the user's setup — leave them up, and leave the hub running.
 - **Gate**: all tests pass (or flagged) → proceed to Phase 11.
 
-## Phase 11 — Playwright `.md.ts` sweep
+## Phase 11 — Playwright `.md.ts` green gate (HARD GATE)
 
-A fast, deterministic pass/fail sweep of every `.md.ts` Playwright test. **No team, no debugging, no fixes** — the manager runs it directly and records results. That's it.
+A closed-loop gate over every `.md.ts` Playwright test. **The cycle cannot pass this phase until every `.md.ts` exits 0 under the manager's own re-run.** The machine verdict — the Playwright exit code / JSON report — is the sole source of truth; **no agent's self-report ever greens a file.** This is the phase that catches real regressions, so it must block, not merely record: a prior regression "had a test but still escaped" precisely because this phase used to be advisory.
 
 **Before launching the sweep, verify system load is low.** Check `uptime` and examine the 1-minute load average. If it exceeds approximately the machine's core count, defer the sweep (run lower-load work or wait) and re-check — timeout-bound Playwright verdicts collected on a saturated host are noise that will require re-running anyway, and raising timeouts is not permitted. A clean run under normal load is far more valuable than a timeout-saturated run under pressure.
 
 **Write integrity while the sweep runs:** The sweep clears the DB and mutates instances repeatedly across 18 categories in the background. While the sweep is running, those instances are exclusively owned by the sweep — **record no other verdicts against them, run no other suites, clear no DBs, restart nothing on them.** A verdict collected while another actor mutates the environment is not a verdict (reference SKILL.md "One writer per instance"); concurrent writes manufacture false failures. Schedule verification work that needs the same instances before the sweep starts or after it completes. The background sweep provides load isolation automatically — do serial verification work on a separate instance or interval, never during.
+
+### 11a. Sweep — machine verdict (authoritative)
 
 1. Build/refresh the test index. List every category dir under `scenarios-dir` that contains `.md.ts` files.
 2. For each such category, reset the DB then run the category with the JSON reporter (machine-readable per-test results — never scrape list output):
@@ -226,27 +231,52 @@ A fast, deterministic pass/fail sweep of every `.md.ts` Playwright test. **No te
    ...
    Total: N tests — N passed, N failed
    ```
-- **Do not debug or fix anything in this phase.** Failures are recorded and become Phase 12's work list.
-- **Gate**: Phase 11 never blocks — it always proceeds to Phase 12 with its failure list. (If Phase 11 has zero failures AND the test index shows no `.md`-only scenarios, Phase 12 is a no-op.)
 
-## Phase 12 — agentic remediation (full `.md` scenarios)
+### 11b. Per-failing-file RCA + fix — one agent per failing `.md.ts`
 
-Team-based agentic phase using the full methodology — Run Mode steps 1–12 (see `modes/run.md`), Debug Mode lifecycle (see `modes/debug.md`), up to 3 qa-testers with the per-test tab protocol.
+For each `.md.ts` file with ≥1 non-passing test (`failed`/`timedOut`/`interrupted`; a real in-code `test.skip(...)` is allowed — see the gate), spawn **one agent that owns that single file to green**:
 
-**PREREQUISITE: Instance authentication (see Step 0.4).** Before running any Phase 12 scenario against a dedicated instance, verify the instance is authenticated: `B=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects, the instance has no user-scoped data — hub is down or cloud login failed. Flag the entire phase (reason: cannot run data-dependent browser scenarios without authenticated user data; hub bring-up required). Do not run scenarios against an unauthenticated instance; failures will be environmental artifacts, not regressions.
+- The agent runs the file, and on failure **RCAs the full flow against the sibling `.md`** (the source of truth) using the `rca` skill's on/off-switch method: prove the cause with a toggle, then classify honestly — `fail` → fix the **app**; `test-issue` → fix the **`.md.ts`** (selectors/timing/steps; never weaken or delete an assertion to go green). If the failing `.md.ts` has **no** sibling `.md`, RCA from the test + app directly.
+- The agent re-runs until the file exits 0, then stability-checks with `--repeat-each=3` (a stability check on the just-changed file — `retries` stays 0; this is never a retry mask).
+- **Concurrency follows "one writer per instance":** failing-file agents run in parallel ONLY when each owns a separate instance (the manager grants ownership explicitly); on a single shared instance they run serially, each doing the DB-clear preflight first.
+- Bounded effort per file = the standard Run Mode attempts (2 fix→re-validate retries; fixer↔debugger 3 iterations). A file still red after that is **not flagged** — it remains a hard block (see gate).
 
-**Scope** (from `phase11-summary.json` + the test index):
-- (a) every scenario with a **failing `.md.ts`** in Phase 11
-- (b) every `.md` scenario that has **no `.md.ts`** at all
+### 11c. Gate — manager re-runs the FULL sweep
 
-**Per scenario, three sub-goals — in order, all required:**
-1. **Make the full `.md` scenario pass.** The `.md` is the source of truth. Classify honestly: `fail` → fix the app; `test-issue` → fix the scenario.
-2. **Fold learnings into the `.md.ts`.** Update the stale `.md.ts` with corrected selectors/timing/steps — or, for `.md`-only scenarios, **author a new `.md.ts`** following the category's existing conventions (`testMatch: '*.md.ts'`, same per-category `playwright.config.ts`). Playwright coverage grows every cycle.
-3. **Make the `.md.ts` pass.** Re-run it until green, then confirm stability:
+Re-run **11a** end to end. **Phase 11 passes only when the manager's own re-run of every category exits 0** (modulo documented env-skips below). An agent that crashed, hung, or misreported leaves its file red → the re-run is non-zero → the phase is **BLOCKED**. Green is established by the deterministic sweep, never by an agent's word — this is the exact hole through which a tested regression once escaped.
+
+- **No `flagged` in this phase.** The only non-green allowed is a real, in-code Playwright `test.skip(...)` for one of the three documented environment reasons (clipboard API / live-Claude actively responding / wrong-platform — see `agents/qa-tester.md`), and it must be visible in the JSON report, not a verbal disposition. Every other non-green blocks the gate until fixed.
+- **Gate**: full-sweep re-run all-green → proceed to Phase 12. Otherwise Phase 11 is **BLOCKED** and the cycle's headline result is that block — it does **not** advance with red `.md.ts` files quarantined. (BLOCKED is the intended, loud outcome: surfacing a real failure beats silently passing it.)
+
+## Phase 12 — `.md`-only → author `.md.ts` (coverage gate)
+
+Phase 11 now owns every failing `.md.ts`. Phase 12's sole remaining job is **specs with no executable test**: turn each `.md` that has no sibling `.md.ts` into a passing `.md.ts`, so Playwright coverage grows every cycle and a written spec can never sit un-executed. Team-based, full methodology — Run Mode steps 1–12 (see `modes/run.md`), Debug Mode lifecycle (see `modes/debug.md`), up to 3 qa-testers with the per-test tab protocol.
+
+**PREREQUISITE: Instance authentication (see Step 0.4).** Before running any Phase 12 scenario against a dedicated instance, verify the instance is authenticated: `B=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap); echo "$B" | grep -q '"projects"' && ! echo "$B" | grep -q '"projects":\[\]'`. If bootstrap returns empty projects, the instance has no user-scoped data — hub is down or cloud login failed. Halt the phase and bring the hub/auth up before proceeding (reason: cannot run data-dependent browser scenarios without authenticated user data). Do not run scenarios against an unauthenticated instance; failures will be environmental artifacts, not regressions.
+
+### Coverage detection — filesystem diff (the authoritative orphan source)
+
+The work set is every `.md` with no `<name>.md.ts` sibling. Derive it directly from the filesystem, not from the hand-maintained index:
+```bash
+# Robust under bash and zsh (no glob-expansion errors on empty dirs).
+for d in ${scenarios-dir}/*/; do
+  comm -23 \
+    <(find "$d" -maxdepth 1 -name '*.md'    -not -name '*.md.ts' | sed 's|.*/||; s/\.md$//'    | sort) \
+    <(find "$d" -maxdepth 1 -name '*.md.ts'                      | sed 's|.*/||; s/\.md\.ts$//' | sort) \
+  | sed "s|^|$(basename "$d")/|"
+done
+```
+That list IS Phase 12's complete scope. (A `.md.ts` with no `.md` is fine — Phase 11 already runs it. A failing `.md.ts` is **not** in scope here; it was resolved in Phase 11.)
+
+### Per orphan `.md` — three sub-goals, in order, all required
+
+1. **Make the full `.md` scenario pass.** The `.md` is the source of truth. Reset the DB first (preflight below). Classify honestly: `fail` → fix the app; `test-issue` → fix the scenario.
+2. **Author a new `.md.ts`** in the same category directory, following its existing conventions (shared helpers, one `test('...')` per `test N:` block; the per-category `playwright.config.ts` picks it up via `testMatch: '*.md.ts'`). It must encode exactly what the `.md` validates — no extra assertions, none weakened. Playwright coverage grows every cycle.
+3. **Make the `.md.ts` pass + prove stability.** Re-run it until green, then:
    ```bash
    cd ui && VITE_PORT=${VITE_PORT} npx playwright test --config tests/manual_regression/<category>/playwright.config.ts <scenario>.md.ts --repeat-each=3
    ```
-   (`--repeat-each=3` is a stability check on the just-changed test — it is NOT a retry mask; `retries` stays 0.)
+   (`--repeat-each=3` is a stability check on the just-authored test — it is NOT a retry mask; `retries` stays 0.)
 
 - **Before each scenario**, the tester must reset the DB to a clean state and verify restoration:
   ```bash
@@ -274,9 +304,8 @@ Team-based agentic phase using the full methodology — Run Mode steps 1–12 (s
   fi
   ```
   This backs up and wipes the DB + FTS index, verifies the backup succeeded and the re-index completed, then confirms records were restored before the scenario starts. A clear that leaves zero records means the re-index failed — the fixture catches that now, before burning test assertions against an empty DB.
-- A scenario's task is complete only when all three sub-goals hold (`.md` ✓ AND `.md.ts` ✓ stable).
-- Max 2 fix→re-validate retries per scenario (existing Run Mode rule), then `flagged`.
-- **Gate**: every in-scope scenario is `resolved` or `flagged` → print the QA Cycle Summary.
+- A scenario's task is complete only when all three sub-goals hold (`.md` ✓ AND a newly-authored `.md.ts` ✓ stable).
+- **Gate (hard, no `flagged`):** after authoring, the manager **re-runs the affected categories' full sweep** (11a mechanics); every newly-authored `.md.ts` must exit 0. The only non-green allowed is a documented env-SKIP expressed as a real `test.skip(...)`. A `.md` that cannot be made to pass — or whose authored `.md.ts` stays red after the bounded Run Mode attempts — is a hard **BLOCK** reported in the summary, never quarantined-and-passed. Then print the QA Cycle Summary.
 
 ---
 
@@ -297,15 +326,16 @@ Phase 7  (vitest long):       PASS — N tests
 Phase 8  (vitest headless):   PASS — N tests
 Phase 9  (pytest hub):        PASS — N tests (N flagged)
 Phase 10 (vitest hub):        PASS — N tests (N flagged)
-Phase 11 (playwright md.ts):  N passed / N failed → Phase 12
-Phase 12 (agentic md+md.ts):  PASS — N scenarios (N flagged)
+Phase 11 (playwright md.ts):  PASS — N green / N env-skip   (or BLOCKED — N red: <files>)
+Phase 12 (author md.ts):      PASS — N authored / N env-skip (or BLOCKED — N red: <files>)
 
 Total fixes applied: N
 New .md.ts authored: N
 Docs corrected: N
-Flagged: N (see _results/<timestamp>/flagged.md — senior dev review required)
+Flagged (phases 1–10): N (see _results/<timestamp>/flagged.md — senior dev review required)
+Blocked (phases 11–12): N (see red .md.ts list above — these are real, unmasked failures)
 ```
 
-A cycle is **complete** when every test is passed or flagged. Flagged items are listed individually below the table with their one-line reason.
+A cycle is **complete** for phases 1–10 when every test is passed or flagged. **Phases 11–12 admit no `flagged`**: they pass only when every `.md.ts` exits 0 (modulo documented env-skips); any residual red is a **BLOCKED** phase — a loud, unmasked failure, listed individually with its red file(s). Flagged items (phases 1–10) are listed individually below the table with their one-line reason.
 
 **Upon completion, open the HTML report in the default browser** (`open <report-path>` on macOS, `xdg-open <path>` on Linux) so the results are immediately visible — then print the summary and the report path.

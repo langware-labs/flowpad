@@ -873,6 +873,22 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       params: expansions?.toJSON(),
     });
 
+    // The backend signals "no such entity for this id" two ways: a bare 404, OR
+    // a 200 carrying a ``{status:'FAIL', data:null}`` envelope (the graph
+    // get-by-id route does the latter for an id it can't resolve — e.g. an
+    // optional ``@uname`` system-project lookup that isn't visible to the current
+    // user, or a since-removed entity still referenced by a stale id). The 404
+    // case is already treated as a quiet not-found in ``getByTypeId``; mirror that
+    // here for the FAIL-envelope case so an expected miss negative-caches and
+    // returns null instead of letting ``castAndDeepAssign`` throw — which would
+    // log a console error and reject for what is not an error. (An *optional*
+    // lookup spamming the console then trips every "no console errors" assertion.)
+    if (!entityJson || !DataManager.getTypeOfObject(entityJson)) {
+      ref.status = EntityStatus.ERROR;
+      ref.notFound = true;
+      return null;
+    }
+
     const entity = this.castAndDeepAssign<U>(entityJson);
     //Load entity if load flag is set in query
     if (expansions?.load && entity) {

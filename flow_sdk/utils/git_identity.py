@@ -30,6 +30,9 @@ _HOST_PROVIDERS = {
     "bitbucket.org": "bitbucket",
 }
 
+# Inverse of _HOST_PROVIDERS — short provider name back to its canonical host.
+_PROVIDER_HOSTS = {provider: host for host, provider in _HOST_PROVIDERS.items()}
+
 
 def _strip_git_suffix(name: str) -> str:
     return name[:-4] if name.endswith(".git") else name
@@ -51,6 +54,18 @@ def canonical_git_remote_key(provider: str, owner: str, name: str) -> str:
 def mint_git_remote_id(provider: str, owner: str, name: str) -> str:
     """Deterministic uuid5 entity id for a git remote (policy: mint_uuid only)."""
     return mint_uuid(key=canonical_git_remote_key(provider, owner, name), namespace=uuid.NAMESPACE_URL)
+
+
+def git_remote_https_url(provider: str, owner: str, name: str) -> str:
+    """Rebuild an https clone URL from a remote's ``(provider, owner, name)``.
+
+    The inverse of ``parse_git_remote_url`` for the known providers: a short
+    provider name maps back to its host; an unknown provider is itself the
+    host (``parse_git_remote_url`` returns the bare hostname for those). Used
+    by the receiver of a shared GitBranch to reconstruct the URL to clone.
+    """
+    host = _PROVIDER_HOSTS.get(provider.strip().lower(), provider.strip())
+    return f"https://{host}/{owner}/{_strip_git_suffix(name)}.git"
 
 
 def _host_of(url: str) -> str:

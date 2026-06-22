@@ -556,6 +556,50 @@ class GitRepo:
         return self._push_result(branch, "Pushed", ok=True)
 
     # ------------------------------------------------------------------
+    # Share — mint a point-in-time GitBranch snapshot of this workdir
+    # ------------------------------------------------------------------
+
+    async def branch_snapshot(self) -> dict:
+        """Mint a ``GitBranch`` snapshot for this workdir's ``origin`` remote.
+
+        Reads the origin URL + current branch + HEAD, ensures the deterministic
+        ``GitRemote`` registry row, and persists a fresh ``GitBranch`` (uuid4)
+        parented to it — the wire vehicle for sharing a repo into a
+        conversation. Returns the GitBranch json, or ``{"error": ...}`` when
+        there is no usable ``origin`` remote to share.
+        """
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.git_branch import GitBranch  # noqa: PLC0415
+        from flow_sdk.builtin.git_remote import GitRemote  # noqa: PLC0415
+        from flow_sdk.utils.git_identity import parse_git_remote_url  # noqa: PLC0415
+
+        # The three reads are independent — run them together (the share button
+        # only shows on a real repo, so a separate is_init() probe is redundant:
+        # a missing origin already surfaces below).
+        (url, url_rc), branch, (head, head_rc) = await asyncio.gather(
+            self._run_git("remote", "get-url", "origin"),
+            self.get_branch(),
+            self._run_git("rev-parse", "HEAD"),
+        )
+        parsed = parse_git_remote_url(url.strip()) if url_rc == 0 else None
+        if not parsed:
+            return {"error": "no git remote to share — add an 'origin' remote first"}
+        provider, owner, name = parsed
+        remote = await GitRemote.ensure(provider, owner, name)
+        snapshot = GitBranch(
+            branch=branch or "",
+            head_commit=(head.strip() or None) if head_rc == 0 else None,
+            taken_at=datetime.now().isoformat(),
+            provider=provider,
+            owner=owner,
+            name=name,
+            parent_type_id=str(remote.typeid),
+        )
+        await snapshot.save()
+        return snapshot.model_dump(mode="json")
+
+    # ------------------------------------------------------------------
     # Dispatch — routes git-ops sub-paths to the appropriate operation
     # ------------------------------------------------------------------
 
@@ -583,6 +627,13 @@ class GitRepo:
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/push requires POST", status_code=405)
             return ApiSuccessResponse(data=await self.push())
+        if sub == "branch-snapshot":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/branch-snapshot requires POST", status_code=405)
+            result = await self.branch_snapshot()
+            if "error" in result:
+                return ApiFailResponse(message=result["error"], status_code=400)
+            return ApiSuccessResponse(data=result)
         if sub == "status":
             return ApiSuccessResponse(data=(await self.get_status()).model_dump(by_alias=True))
         if sub == "branch":

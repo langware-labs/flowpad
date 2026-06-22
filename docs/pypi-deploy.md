@@ -17,12 +17,21 @@ id: 684208ee-360e-50e6-a71e-b642ca95ac57
 > release from a feature branch or `main` — the bump would diverge and the
 > branch/PyPI versions would drift apart (a real bug we've hit).
 
-This is the canonical release operation. It takes the current dev branch
-(`0.2.<N>-fixes`), lands it on the release branch, publishes the new patch to
-PyPI, and rolls the dev branch forward to the next `-fixes`. The release-branch
-steps run in an **isolated git worktree** so they never disturb the shared main
-checkout — concurrent sessions commit onto whatever branch is checked out there,
-so we must not `git checkout` the release branch in the main working tree.
+This is the canonical release operation. It takes the current dev branch, lands
+it on the release branch, publishes the new patch to PyPI, and names the dev
+branch after the version just deployed. The release-branch steps run in an
+**isolated git worktree** so they never disturb the shared main checkout —
+concurrent sessions commit onto whatever branch is checked out there, so we must
+not `git checkout` the release branch in the main working tree.
+
+> **Branch-naming invariant: the dev branch is named after the *most recently
+> deployed* version.** After publishing `0.2.<NEW>`, the dev branch is
+> `0.2.<NEW>-fixes` — it holds the fixes that will become the *next* release.
+> The next run bumps to `0.2.<NEW+1>` at deploy time and only **then** renames
+> the branch to `0.2.<NEW+1>-fixes`. So in the common steady state the dev branch
+> already equals `0.2.<NEW>-fixes` after the bump and step 4's rename is a no-op;
+> it only actually renames when the deploy crossed into a new patch number. Do
+> **not** pre-name the dev branch one ahead of what's on PyPI.
 
 ```bash
 DEV_BRANCH=$(git branch --show-current)          # e.g. 0.2.68-fixes
@@ -59,17 +68,21 @@ python3 -m twine upload "dist/flowpad-$NEW"*
 cd -                                               # back to the main checkout
 git worktree remove "$WT" --force
 
-# --- 4. BRANCH NEXT: roll the dev branch forward to the next -fixes.
+# --- 4. BRANCH NEXT: name the dev branch after the version JUST DEPLOYED ($NEW),
+#        NOT $NEW+1. This is a no-op when the branch is already named so.
 git fetch origin "$RELEASE_BRANCH"
-git branch -m "$DEV_BRANCH" 0.2.Y-fixes            # Y = N+1; rename in place
+git branch -m "$DEV_BRANCH" "$NEW-fixes"           # e.g. 0.2.68-fixes after deploying 0.2.68
 git merge "origin/$RELEASE_BRANCH"                 # pick up the version bump so dev == released
-git push -u origin 0.2.Y-fixes
+git push -u origin "$NEW-fixes"
+# If the rename changed the name, delete the now-stale remote dev branch:
+[ "$DEV_BRANCH" != "$NEW-fixes" ] && git push origin --delete "$DEV_BRANCH"
 ```
 
 The PR/merge in step 2 runs entirely on GitHub, and the deploy in step 3 runs in
 a throwaway worktree — so the main working tree stays on the dev branch the whole
 time. Only step 4 (`git branch -m`) touches it, renaming the branch in place to
-the next `-fixes` (same commit, new name) and merging in the release bump.
+`$NEW-fixes` (the version just deployed; same commit, new name) and merging in
+the release bump.
 
 ## Validate Before Publishing
 

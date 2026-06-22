@@ -774,6 +774,25 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
 
+    @action.post(action_name="find-local-repo")
+    async def _find_local_repo(self) -> ApiResponse:
+        """Locate a local clone whose ``origin`` matches a git URL.
+
+        Body: ``{ "project_url": "<url>" }``. Returns
+        ``{ found: bool, local_path: str | null }``. The url-only counterpart of
+        the task-scoped ``find-project`` endpoint — lets the receiver of a shared
+        repo attach to a clone they already have instead of re-cloning it.
+        """
+        from flow_sdk.utils.git import find_local_repo_for_url
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        project_url = (body or {}).get("project_url")
+        if not isinstance(project_url, str) or not project_url.strip():
+            return ApiFailResponse(message="project_url (str) is required", status_code=400)
+        local_path = find_local_repo_for_url(project_url.strip())
+        return ApiSuccessResponse(data={"found": bool(local_path), "local_path": local_path})
+
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
 
