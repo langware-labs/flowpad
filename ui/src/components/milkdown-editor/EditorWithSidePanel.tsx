@@ -1,9 +1,10 @@
 import type { AgenticProcess } from '@sdk';
 import type { ReactNode } from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
 import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
+import { useSideWindows } from '@src/navigation/useSideWindows';
 import {
   BacklinksTab,
   ChatTab,
@@ -14,34 +15,9 @@ import {
 } from './side-windows';
 
 /**
- * Side window collapse state is persisted across reloads and shared by every
- * markdown editor (skill, agent, plan, …). Default collapsed — the editor
- * gets maximum width until the user explicitly opens the drawer.
- */
-const SIDE_OPEN_STORAGE_KEY = 'mdSideWindow.open';
-
-function readStoredOpen(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return window.localStorage.getItem(SIDE_OPEN_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function writeStoredOpen(open: boolean): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(SIDE_OPEN_STORAGE_KEY, open ? 'true' : 'false');
-  } catch {
-    /* ignore quota / disabled storage */
-  }
-}
-
-/**
  * Extra tab a caller can inject alongside Chat + Backlinks. The `panel` is the
- * ReactNode rendered when the tab is active. Used by workflow assets to append
- * a "Runs" tab without forking this component.
+ * ReactNode rendered when the tab is active. Used by asset types (workflow
+ * Runs, revisions, …) to append a window without forking this component.
  */
 export interface ExtraSideTab {
   id: string;
@@ -62,10 +38,6 @@ interface EditorWithSidePanelProps {
   chatTarget: string | null;
   /** Appended after Chat + Backlinks. Use for asset-type-specific tabs (e.g. workflow Runs). */
   extraTabs?: ExtraSideTab[];
-  /** Controlled active tab id. If omitted, drawer manages its own state. */
-  activeTab?: string;
-  /** Emitted whenever the active tab changes (including programmatic + internal). */
-  onActiveTabChange?: (id: string) => void;
   /** Forwarded to the Chat tab — runs once after its backing chat process is created. */
   onChatProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
   /**
@@ -76,43 +48,29 @@ interface EditorWithSidePanelProps {
 }
 
 /**
- * Editor-agnostic shell: any markdown editor as `children`, plus a fixed-width
- * tabbed side window (Chat, Backlinks, extras). The side panel is always on
- * and stays mounted across editor swaps so its tab state, scroll position,
- * and chat process history persist when the parent toggles between editor backends.
+ * Editor-agnostic shell: any markdown editor as `children`, plus a tabbed side
+ * window (Chat, Backlinks, extras). The side window is URL-first dock state —
+ * the open set + active id live on the DockPointer (`?sideWindows=…`) and are
+ * driven through the shared `useSideWindows` hook, identical to the interactive
+ * terminal. Only opened windows show, each is closeable, and an empty set
+ * collapses to a rail of openable buttons (one per registered window).
  *
- * Callers must supply a real entity TypeId as `chatTarget`; files without a
- * backing entity cannot host a chat process.
+ * To open a window programmatically (e.g. a header pill, or a run-start), a
+ * caller calls `useSideWindows().open(id)` directly — there is no controlled
+ * active-tab prop, because the URL is the single source of truth.
  */
 export function EditorWithSidePanel({
   children,
   chatTarget,
   extraTabs,
-  activeTab: activeTabProp,
-  onActiveTabChange,
   onChatProcessCreated,
   cursorLine,
 }: EditorWithSidePanelProps) {
-  const [internalTab, setInternalTab] = useState<string>(MD_SIDE_TABS_DEFAULT);
-  const activeTab = activeTabProp ?? internalTab;
+  const { windows, active, open, close, closeAll, select } = useSideWindows();
 
-  // Collapse state is persisted (default collapsed) so the editor stays wide
-  // until the user opens the drawer; the choice is remembered across reloads.
-  const [open, setOpen] = useState<boolean>(readStoredOpen);
-  const setOpenPersisted = useCallback((next: boolean) => {
-    setOpen(next);
-    writeStoredOpen(next);
-  }, []);
-
-  const setActiveTab = useCallback(
-    (id: string) => {
-      if (activeTabProp === undefined) setInternalTab(id);
-      onActiveTabChange?.(id);
-    },
-    [activeTabProp, onActiveTabChange],
-  );
-
-  const tabs = useMemo<TabDescriptor[]>(() => {
+  // Full registry of openable windows (Chat + Backlinks + caller extras), in
+  // display order. Drives both the open-tab descriptors and the collapsed rail.
+  const registry = useMemo<TabDescriptor[]>(() => {
     const base = MD_SIDE_TABS_ORDER.map((id) => MD_SIDE_TABS[id] as TabDescriptor);
     const extras: TabDescriptor[] = (extraTabs ?? []).map(({ id, label, icon, description }) => ({
       id,
@@ -124,7 +82,7 @@ export function EditorWithSidePanel({
   }, [extraTabs]);
 
   const panels = useMemo<Record<string, ReactNode>>(() => {
-    const base: Record<string, ReactNode> = {
+    const map: Record<string, ReactNode> = {
       chat: (
         <ChatTab
           target={chatTarget}
@@ -134,59 +92,66 @@ export function EditorWithSidePanel({
       ),
       backlinks: <BacklinksTab target={chatTarget} />,
     };
-    for (const t of extraTabs ?? []) base[t.id] = t.panel;
-    return base;
+    for (const t of extraTabs ?? []) map[t.id] = t.panel;
+    return map;
   }, [chatTarget, extraTabs, onChatProcessCreated, cursorLine]);
+
+  // Open windows, in open order, narrowed to known registry ids (drops any
+  // stale/foreign id) and marked closeable.
+  const openTabs = useMemo<TabDescriptor[]>(
+    () =>
+      windows
+        .map((id) => registry.find((r) => r.id === id))
+        .filter((d): d is TabDescriptor => !!d)
+        .map((d) => ({ ...d, closable: true })),
+    [windows, registry],
+  );
 
   return (
     <div className="flex h-full w-full" data-testid="md-editor-with-side-panel">
       <div className="min-w-0 flex-1">{children}</div>
-      {open ? (
+      {openTabs.length > 0 && (
         <TabbedSideDrawer<string>
           open
-          onOpenChange={setOpenPersisted}
+          onOpenChange={closeAll}
           closeIcon={PanelRightClose}
           closeLabel="Collapse side window"
           width="w-80"
           data-testid="md-side-window"
           tabTestIdPrefix="md-side-tab"
-          tabs={tabs}
-          activeTab={activeTab}
-          onActiveTabChange={setActiveTab}
+          tabs={openTabs}
+          activeTab={active ?? openTabs[openTabs.length - 1].id}
+          onActiveTabChange={select}
+          onCloseTab={close}
           truncateLabels
           scrollableTabs
         >
           {panels}
         </TabbedSideDrawer>
-      ) : (
-        <CollapsedSideRail data-testid="md-side-window-collapsed">
-          {(() => {
-            const openTab = (id: string) => {
-              setActiveTab(id);
-              setOpenPersisted(true);
-            };
-            return (
-              <>
-                <SideRailButton
-                  icon={PanelRightOpen}
-                  label="Expand side window"
-                  onClick={() => openTab(tabs[0]?.id ?? MD_SIDE_TABS_DEFAULT)}
-                  testId="md-side-window-expand"
-                />
-                {tabs.map((tab) => (
-                  <SideRailButton
-                    key={tab.id}
-                    icon={tab.icon}
-                    label={tab.label}
-                    onClick={() => openTab(tab.id)}
-                    testId={`md-side-tab-collapsed-${tab.id}`}
-                  />
-                ))}
-              </>
-            );
-          })()}
-        </CollapsedSideRail>
       )}
+      {/* The rail is always present (like the terminal's ribbon): every
+          registered window can be opened — or re-activated, when already open —
+          at any time, whether the drawer is collapsed or showing other windows. */}
+      <CollapsedSideRail data-testid="md-side-window-collapsed">
+        {openTabs.length === 0 && (
+          <SideRailButton
+            icon={PanelRightOpen}
+            label="Expand side window"
+            onClick={() => open(registry[0]?.id ?? MD_SIDE_TABS_DEFAULT)}
+            testId="md-side-window-expand"
+          />
+        )}
+        {registry.map((tab) => (
+          <SideRailButton
+            key={tab.id}
+            icon={tab.icon}
+            label={tab.label}
+            active={windows.includes(tab.id)}
+            onClick={() => open(tab.id)}
+            testId={`md-side-tab-collapsed-${tab.id}`}
+          />
+        ))}
+      </CollapsedSideRail>
     </div>
   );
 }

@@ -78,6 +78,17 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
   const contentRef = useRef(content);
   contentRef.current = content;
 
+  // FsRef objects are cheap value wrappers re-minted on nearly every render
+  // (AssetEditorRouter rebuilds `new FSRef(...)`, entity `.doc` getters return a
+  // fresh FrontMatterFsRef each access). Keying the load effect on the object
+  // identity therefore re-fires it on every render — during a backend scan's WS
+  // progress flood that means a reload per frame, blanking the editor to a
+  // spinner ("flicker"). Key on the STABLE path string instead and read the live
+  // ref inside the effect (same pattern as useAgentTraceDoc).
+  const fsRefRef = useRef(fsRef);
+  fsRefRef.current = fsRef;
+  const path = fsRef?.path ?? null;
+
   const savingRef = useRef(false);       // authoritative saving flag (no closure staleness)
   const pendingSaveRef = useRef(false);  // another save was requested while one was in-flight
   const saveRef = useRef<() => Promise<void>>(() => Promise.resolve()); // always current save fn
@@ -85,7 +96,12 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
   const dirty = loaded && content !== remoteContent;
 
   // ── Load ──────────────────────────────────────────────────────────────────
+  // Keyed on `path` (stable string) + `reloadTrigger`, NOT the fsRef object —
+  // see fsRefRef note above. Reads the live `fsRefRef.current` so the closure
+  // always uses the current fsManager binding even though the effect didn't
+  // re-run for an identity-only change.
   useEffect(() => {
+    const fsRef = fsRefRef.current;
     if (!fsRef) return;
     let cancelled = false;
     setLoaded(false);
@@ -122,7 +138,8 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
 
     void load();
     return () => { cancelled = true; };
-  }, [fsRef, reloadTrigger]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, reloadTrigger]);
 
   // ── Re-create (missing-file recovery) ────────────────────────────────────
   const recreate = useCallback(async () => {

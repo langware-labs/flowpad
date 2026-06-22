@@ -14,6 +14,7 @@ export enum AssetEditor {
   WORKFLOW = 'workflow',
   WHITEBOARD = 'whiteboard',
   AGENT_TRACE = 'agent_trace',
+  USAGE_REPORT = 'usage_report',
 }
 
 /** editor → record types it edits. `code` is file-only (no record type). */
@@ -33,6 +34,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.WORKFLOW]: [RecordType.WORKFLOW],
   [AssetEditor.WHITEBOARD]: [RecordType.WHITEBOARD],
   [AssetEditor.AGENT_TRACE]: [RecordType.AGENT_TRACE],
+  [AssetEditor.USAGE_REPORT]: [RecordType.USAGE_REPORT],
 };
 
 /** Derived inverse: record type → the editor that edits it. */

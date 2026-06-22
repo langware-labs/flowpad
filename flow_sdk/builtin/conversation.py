@@ -390,6 +390,45 @@ class Conversation(Entity):
             return None
         return f"/flow_message/{msg_id}"
 
+    async def summary(self) -> str:
+        """Plain-text summary of this conversation: a header (title,
+        participants+roles, message count) followed by one line per message
+        (``FlowMessage.summary()``), oldest-first.
+
+        Cheap and synchronous-ish: reads the on-disk jsonl pointer index (the
+        source of truth, same idiom as ``_deliver_pending_messages``) and loads
+        each FlowMessage by id. No LLM, no hub calls.
+        """
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
+            default_jsonl_path,
+            from_jsonl,
+            message_pointers,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+        def _who(p: dict) -> str:
+            label = p.get("name") or p.get("email") or p.get("user_id") or "?"
+            role = p.get("role")
+            return f"{label} ({role})" if role else str(label)
+
+        participants = ", ".join(_who(p) for p in (self.participants or [])) or "(none)"
+        lines = [
+            f"Conversation: {self.title or '(untitled)'}",
+            f"Participants: {participants}",
+            f"Messages: {self.message_count}",
+            "",
+        ]
+        rec = from_jsonl(
+            default_jsonl_path(self.id), parent_id="", record_id=self.id,
+            parent_type=RecordType.PROJECT,
+        )
+        for ptr in message_pointers(rec):
+            fm = await FlowMessage.get_one({"id": ptr.id})
+            if fm is not None:
+                lines.append(fm.summary())
+        return "\n".join(lines)
+
     async def add_message(
         self,
         text: str,
