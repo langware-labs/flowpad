@@ -236,28 +236,33 @@ async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
 
 # ── "is the conversation open" + draft-waiting notification ─────────────────
 
-def _conversation_is_open(conversation_target: str) -> bool:
-    """True when the active (focused/visible) UI tab currently has this
-    conversation open — i.e. its data-context active entity is this
-    conversation. Read from the in-process per-connection ``browser_context``
-    (the conversation loader writes ``CurrentActiveEntityTypeId``). Best-effort:
-    False when no UI is connected or the state can't be read."""
+def _conversation_is_open(conversation_id: str) -> bool:
+    """True when the active (focused/visible) UI tab is currently on this
+    conversation's page. Matched against the reported current URL — the route
+    is the source of truth (``/dock/conversation/<id>``); the entity-context
+    slots go stale on non-entity pages (Home, shells, lenses), so we don't use
+    them here. Best-effort: False when no UI is connected or the route is
+    unknown."""
     try:
         from flow_sdk.server.routes.websocket import get_active_connection_info
         info = get_active_connection_info()
         if not info:
             return False
         _cid, conn = info
-        return conn.browser_context.get("CurrentActiveEntityTypeId") == conversation_target
+        pathname = conn.browser_context.get("CurrentPathname") or ""
+        return f"/conversation/{conversation_id}" in pathname
     except Exception:
         return False
 
 
-async def _post_draft_waiting_feed_entry(reply: str) -> Optional[str]:
+async def _post_draft_waiting_feed_entry(
+    reply: str, conversation_id: str, draft_id: Optional[str]
+) -> Optional[str]:
     """Surface a Home-Feed card so the user knows a draft reply is waiting in a
     conversation they don't currently have open. Reuses flow diagnose's
     ``MessageSuggest`` + ``FeedEntry`` pattern, owned by the local user (only
-    users send messages, never visitors). Best-effort — never fails the run."""
+    users send messages, never visitors). ``kind="draft_reply"`` makes the card
+    render Send/Open against the draft. Best-effort — never fails the run."""
     try:
         from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
         from flow_sdk.builtin.message_suggest import MessageSuggest
@@ -266,6 +271,9 @@ async def _post_draft_waiting_feed_entry(reply: str) -> Optional[str]:
         suggest = MessageSuggest(
             text="A draft reply is ready to send:",
             message_text=reply.strip(),
+            conversation_id=conversation_id,
+            flow_message_id=draft_id,
+            kind="draft_reply",
         )
         suggest = await suggest.save(user.typeid)
         feed = FeedEntry(feed_status=FeedStatus.NEW.value, data={"type_id": str(suggest.typeid)})
@@ -339,8 +347,9 @@ async def execute_prompt_from_message(
         # reply is waiting to send. (auto_reply already sent it; an open
         # conversation already shows the draft inline — neither needs the card.)
         feed_entry_id = None
-        if not auto_reply and not _conversation_is_open(target):
-            feed_entry_id = await _post_draft_waiting_feed_entry(reply)
+        if not auto_reply and not _conversation_is_open(conversation.id):
+            draft_id = (getattr(result, "data", None) or {}).get("id")
+            feed_entry_id = await _post_draft_waiting_feed_entry(reply, conversation.id, draft_id)
         return ApiSuccessResponse(data={
             "executed": True,
             "auto_reply": auto_reply,

@@ -1,9 +1,11 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
-import { AgentTrace, MessageSuggest, UserNote, type FeedEntry } from '@sdk';
+import { AgentTrace, FlowMessage, MessageSuggest, UserNote, type FeedEntry } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation';
+import { Button } from '@src/components/ui/button';
 import { FeedData } from './feed-data';
 import { formatRecorded } from './feed-utils';
 
@@ -180,7 +182,7 @@ function MessageSuggestFeedEntryCard({
 
       {body &&
         (expanded ? (
-          <div className="mt-1 flex min-h-0 flex-1 gap-1">
+          <div className="mt-1 flex gap-1">
             {expandable && (
               <button
                 type="button"
@@ -191,7 +193,10 @@ function MessageSuggestFeedEntryCard({
                 <ChevronDown className="h-3.5 w-3.5" />
               </button>
             )}
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {/* Bounded scroll so the FULL text is reachable and never spills out
+                of the card (a flex-1 height needs a flex parent, which the frame
+                doesn't give here — mirror UserNote's max-h scroll instead). */}
+            <div className="max-h-40 min-w-0 flex-1 overflow-y-auto overscroll-contain">
               <p
                 className="cursor-pointer whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground"
                 onClick={() => expandable && setExpanded(false)}
@@ -233,7 +238,13 @@ function MessageSuggestFeedEntryCard({
           </div>
         ))}
 
-      {suggest.conversation_id ? (
+      {suggest.kind === 'draft_reply' && suggest.conversation_id ? (
+        <DraftReplyActionButtons
+          conversationId={suggest.conversation_id}
+          draftFlowMessageId={suggest.flow_message_id}
+          onDone={() => onDismiss(entry)}
+        />
+      ) : suggest.conversation_id ? (
         <DiagnosisActionButtons
           suggestedConversationId={suggest.conversation_id}
           busy={busy}
@@ -244,6 +255,75 @@ function MessageSuggestFeedEntryCard({
         />
       ) : null}
     </FeedEntryFrame>
+  );
+}
+
+interface DraftReplyActionButtonsProps {
+  conversationId: string;
+  draftFlowMessageId?: string | null;
+  /** Hide the card once the user has acted (sent or opened). */
+  onDone: () => void;
+}
+
+/**
+ * Action row for an executed-prompt draft-reply feed card: "Send" (promote the
+ * draft to a real reply, then open the conversation) and "Open" (just open the
+ * conversation with the draft still pending). Mirrors the feed buttons' sizing.
+ */
+function DraftReplyActionButtons({ conversationId, draftFlowMessageId, onDone }: DraftReplyActionButtonsProps) {
+  const { navigation } = useDockNavigation();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const openConversation = () => navigation.openDock(DockPointer.forConversation(conversationId));
+
+  const handleSend = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      if (draftFlowMessageId) {
+        const fm = await FlowMessage.getById<FlowMessage>(draftFlowMessageId);
+        if (fm) await fm.sendDraft();
+      }
+      openConversation();
+      onDone();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Failed to send draft');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleOpen = () => {
+    openConversation();
+    onDone();
+  };
+
+  return (
+    <>
+      <div className="mt-2 flex shrink-0 items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy}
+          onClick={() => void handleSend()}
+          className="h-6 bg-green-600 px-2 text-xs text-white hover:bg-green-700"
+        >
+          Send
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={handleOpen}
+          className="h-6 px-2 text-xs"
+        >
+          Open
+        </Button>
+      </div>
+      {err && <p className="mt-1 text-xs text-destructive">{err}</p>}
+    </>
   );
 }
 

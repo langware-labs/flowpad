@@ -10,6 +10,9 @@ export interface IMessageSuggest extends IEntity {
   conversation_id?: string | null;
   /** The summary FlowMessage in that conversation; issue cards only. */
   flow_message_id?: string | null;
+  /** Card variant: "" = diagnosis (Report/Forward), "draft_reply" = a draft
+   *  reply waiting to send (Send/Open). */
+  kind?: string;
 }
 
 @registerEntity
@@ -19,6 +22,7 @@ export class MessageSuggest extends APIEntity<MessageSuggest> implements IMessag
   message_text?: string;
   conversation_id?: string | null;
   flow_message_id?: string | null;
+  kind?: string;
 
   constructor(entity: Partial<IMessageSuggest> = {}) {
     super(entity);
@@ -26,6 +30,7 @@ export class MessageSuggest extends APIEntity<MessageSuggest> implements IMessag
     this.message_text = entity.message_text;
     this.conversation_id = entity.conversation_id ?? null;
     this.flow_message_id = entity.flow_message_id ?? null;
+    this.kind = entity.kind;
   }
 
   override getDisplayName(): string | null {
