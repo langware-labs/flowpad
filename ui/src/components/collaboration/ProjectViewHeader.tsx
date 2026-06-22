@@ -6,7 +6,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -181,17 +180,18 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
               <RotateCcw className="mr-2 h-4 w-4" />
               Hard refresh
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={confirmDelete}
-              className="text-destructive focus:text-destructive"
-              data-testid="project-actions-delete"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete project
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={confirmDelete}
+          className="h-9 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          data-testid="project-actions-delete"
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete project
+        </Button>
       </div>
     </div>
   );
