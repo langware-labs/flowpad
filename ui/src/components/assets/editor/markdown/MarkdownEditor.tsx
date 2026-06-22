@@ -18,6 +18,8 @@ import Editor, { type OnMount } from '@monaco-editor/react';
 import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { ProjectNameChip } from '@src/components/assets/ProjectNameChip';
+import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { genericEntityShareSource } from '@src/hooks/share-sources';
@@ -35,6 +37,11 @@ const DEFAULT_MODE: ViewMode = 'view';
 
 function isEditorMode(value: string | undefined | null): value is ViewMode {
   return value != null && (EDITOR_MODES as readonly string[]).includes(value);
+}
+
+/** 'review' and 'markdown' are power-user surfaces — only shown in Advanced. */
+function isAdvancedOnlyMode(mode: ViewMode): boolean {
+  return mode === 'review' || mode === 'markdown';
 }
 
 function readStoredMode(): ViewMode {
@@ -197,12 +204,21 @@ function MarkdownEditorContent({
 }) {
   const { navigation, currentDock } = useDockNavigation();
 
+  // Standard vs Advanced (Advanced || Dev) skin gating. Standard hides the
+  // power-user affordances (eval/worker buttons, the secondary file toolbar,
+  // the project chip, the review/markdown editor modes, the side window).
+  const advanced = useIsAdvanced();
+
   // viewMode source of truth: URL `?editorMode=…` if present and valid; else
   // last-used value from localStorage; else DEFAULT_MODE. Updating viewMode
   // pushes a new DockPointer with the option merged in — the URL becomes
   // shareable + back-button-restorable, and per-tab independent.
   const urlMode = currentDock?.options?.[EDITOR_MODE_PARAM];
-  const viewMode: ViewMode = isEditorMode(urlMode) ? urlMode : readStoredMode();
+  const rawViewMode: ViewMode = isEditorMode(urlMode) ? urlMode : readStoredMode();
+  // In Standard, fall back to 'view' so the body never renders a surface whose
+  // chip is hidden (e.g. a share-link pinning ?editorMode=review opened by a
+  // Standard user).
+  const viewMode: ViewMode = !advanced && isAdvancedOnlyMode(rawViewMode) ? 'view' : rawViewMode;
 
   const setViewMode = useCallback((mode: ViewMode) => {
     if (!currentDock) return; // outside dock context — shouldn't happen for MarkdownEditor
@@ -463,6 +479,18 @@ function MarkdownEditorContent({
     />
   ) : null;
 
+  // Favorite toggle next to Share (both modes), mirroring the interactive tab.
+  // Keyed on the asset entity's TypeId (the same id chat/share use).
+  const favoriteTypeId = chatTarget ? new TypeId(chatTarget) : null;
+  const favoriteStar = favoriteTypeId ? (
+    <FavoriteStar
+      entityType={favoriteTypeId.type}
+      entityId={favoriteTypeId.id}
+      title={deleteLabel ?? fileName}
+      size={14}
+    />
+  ) : null;
+
   const leadingActions = (
     <>
       <AssetGitPill
@@ -475,6 +503,7 @@ function MarkdownEditorContent({
         onAfterPublish={revisionStatus.refresh}
       />
       {shareButton}
+      {favoriteStar}
     </>
   );
 
@@ -662,38 +691,50 @@ interface EditorHeaderProps {
   showLearningMode?: boolean;
 }
 
+// Standard mode hides the project chip, the eval/worker `nameExtras`, the
+// secondary file toolbar (copy/open-external/download — Delete stays), and the
+// review/markdown editor-mode chips.
 function EditorHeader({ fileName, dirPath, sourcePath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, nameExtras, showLearningMode }: EditorHeaderProps) {
-  const visibleModes = EDITOR_MODES.filter((m) => m !== 'learning' || showLearningMode);
+  const advanced = useIsAdvanced();
+  const visibleModes = EDITOR_MODES.filter((m) => {
+    if (m === 'learning') return !!showLearningMode;
+    if (!advanced && isAdvancedOnlyMode(m)) return false;
+    return true;
+  });
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 truncate">
           <span className="truncate text-sm font-medium" title={fileName}>{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
-          {sourcePath && <ProjectNameChip sourcePath={sourcePath} />}
-          {nameExtras}
+          {advanced && sourcePath && <ProjectNameChip sourcePath={sourcePath} />}
+          {advanced && nameExtras}
         </div>
         <div className="flex min-w-0 items-center gap-1">
           {dirPath && (
             <span className="min-w-0 truncate text-[11px] text-muted-foreground">{dirPath}</span>
           )}
-          <button
-            title="Copy path"
-            onClick={() => void navigator.clipboard.writeText(dirPath ? `${dirPath}/${fileName}` : fileName)}
-            data-testid="markdown-editor-copy-path"
-            className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Copy className="h-3 w-3" />
-          </button>
-          <button
-            title="Reveal in Finder"
-            onClick={onOpenExternal}
-            data-testid="markdown-editor-open-external"
-            className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <ExternalLink className="h-3 w-3" />
-          </button>
-          {onDownload && (
+          {advanced && (
+            <button
+              title="Copy path"
+              onClick={() => void navigator.clipboard.writeText(dirPath ? `${dirPath}/${fileName}` : fileName)}
+              data-testid="markdown-editor-copy-path"
+              className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Copy className="h-3 w-3" />
+            </button>
+          )}
+          {advanced && (
+            <button
+              title="Reveal in Finder"
+              onClick={onOpenExternal}
+              data-testid="markdown-editor-open-external"
+              className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </button>
+          )}
+          {advanced && onDownload && (
             <button
               title="Download file"
               onClick={onDownload}
