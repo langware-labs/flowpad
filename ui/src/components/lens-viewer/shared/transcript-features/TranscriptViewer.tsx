@@ -22,7 +22,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
 import { useSyncTranscriptTabName } from '@src/tabs/useTabs';
 
-import { WorkerLaunchToolbar } from '@src/components/conversation/WorkerLaunchToolbar';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { ViewModeToggle } from '../ViewModeToggle';
 import { AnalysisSidePanel, useAnalysisControls } from './AnalysisControls';
 import { useTranscriptSession } from './useTranscriptSession';
@@ -589,7 +589,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
             data-testid={received ? 'transcript-analyze-toolbar' : 'transcript-viewer-toolbar'}
           >
             {received ? (
-              <WorkerLaunchToolbar
+              <WorkerToolbar
                 hasProcess={!!transcriptSession.process}
                 starting={transcriptSession.starting}
                 onOpen={transcriptSession.open}
