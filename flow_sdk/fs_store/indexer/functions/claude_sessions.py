@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
@@ -43,6 +44,7 @@ from flow_sdk.fs_store.indexer.functions._claude_session_stats import (
 )
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
@@ -121,15 +123,21 @@ def _iter_head_json(path: str | Path) -> Iterator[dict]:
                 continue
 
 def claude_session_id(ref: FSRef) -> str:
-    """Id = sessionId from JSONL head envelope; fallback to filename stem."""
+    """Stable, filesystem-safe **UUID** id = sessionId from the JSONL head
+    envelope (fallback: filename stem). Claude session ids are already UUIDs so
+    they're kept as-is; anything non-conforming is hashed with the same
+    ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches the DB
+    id."""
+    key = ref._path.stem
     try:
         for raw in _iter_head_json(ref._path):
             sid = raw.get("sessionId")
             if sid:
-                return str(sid)
+                key = str(sid)
+                break
     except OSError:
         pass
-    return ref._path.stem
+    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.CLAUDE_SESSION}:{key}", namespace=uuid.NAMESPACE_DNS)
 
 # ── Extractor (head + tail read, no stat parse) ──────────────────────────────
 

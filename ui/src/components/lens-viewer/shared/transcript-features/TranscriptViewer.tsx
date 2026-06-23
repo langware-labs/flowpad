@@ -11,16 +11,24 @@ import {
   Terminal,
 } from 'lucide-react';
 
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, TypeId, type StatusBearingProcess } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
+import { useDerivedWorkerStatus } from '@src/components/entity-execution-panel/hooks/useDerivedWorkerStatus';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
+import { useSyncTranscriptTabName } from '@src/tabs/useTabs';
 
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { ViewModeToggle } from '../ViewModeToggle';
-import { AnalysisSidePanel, AnalysisToolbarButtons, useAnalysisControls } from './AnalysisControls';
-import { useTranscriptMode } from '../use-transcript-mode';
+import { AnalysisSidePanel, useAnalysisControls } from './AnalysisControls';
+import { useTranscriptSession } from './useTranscriptSession';
+import { CallStackView } from './CallStackView';
+import { ExecutionView } from './ExecutionView';
+import { useTranscriptMode, type TranscriptMode } from '../use-transcript-mode';
 import { ChatEntryItem } from './ChatEntryItem';
 import { TranscriptEntryItem } from './TranscriptEntryItem';
 import { TranscriptStats } from './TranscriptStats';
@@ -54,13 +62,52 @@ interface Props {
  *   - Path bar with copy-to-clipboard.
  */
 export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, selectedEntryId, selectedTimestamp }: Props) {
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const [, setSearchParams] = useSearchParams();
   const { data, isLoading, error } = useTranscript({ workerType, path, sessionId: sessionIdProp });
 
   const entries = useMemo<UnifiedEntry[]>(() => (data ? groupEntriesByTurn(data.entries) : []), [data]);
   const sessionId = data?.session_id ?? null;
   const header = data?.header ?? {};
+
+  // A received transcript (shared from another machine) never ran here and is
+  // not resumable: hide the "open in terminal" affordance and instead offer a
+  // worker that loads + summarises it via transcript_analyzer.
+  const received = data?.received ?? false;
+  const transcriptSession = useTranscriptSession(workerType, received ? sessionId : null);
+
+  // ── Live process / worker status for the session backing this transcript ──
+  // Resolve the AgenticProcess by worker id, watch it for live ProcessStatus
+  // patches, and derive the mid-turn WorkerStatus off its FlowData stream. The
+  // busy spinner is the canonical `config.animate` flag inside
+  // ProcessStatusIndicator (same source EntityExecutionPanel uses) — no
+  // separate spinner here.
+  const [statusProcessId, setStatusProcessId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sessionId) { setStatusProcessId(null); return; }
+    let cancelled = false;
+    void AgenticProcess.getByWorkerId(sessionId)
+      .then((p) => { if (!cancelled) setStatusProcessId(p?.id ?? null); })
+      .catch(() => { if (!cancelled) setStatusProcessId(null); });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  const { data: statusProcess } = useEntity<AgenticProcess>(
+    statusProcessId ? new TypeId(AgenticProcess.type, statusProcessId) : null,
+    { watch: true, enabled: !!statusProcessId },
+  );
+  const derivedWorkerStatus = useDerivedWorkerStatus(statusProcess ?? null);
+  const indicatorProcess: StatusBearingProcess | null = statusProcess
+    ? {
+        status: statusProcess.status,
+        workerStatus: derivedWorkerStatus ?? statusProcess.workerStatus,
+        session_id: statusProcess.session_id,
+      }
+    : null;
+
+  // Mirror the resolved generic worker-session name onto this transcript's Tab
+  // label (self-heals nameless/legacy tabs; works for codex/copilot too).
+  useSyncTranscriptTabName(currentDock?.tabHash, header.name);
 
   const [expandedEntries, setExpandedEntries] = useState<Set<string>>(new Set());
   const [chatExpandedEntries, setChatExpandedEntries] = useState<Set<string>>(new Set());
@@ -253,8 +300,13 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   }, [viewMode, isLoading]);
 
   // ── Mode switch with viewport preservation ────────────────────────────────
-  const switchMode = (newMode: 'chat' | 'trace') => {
+  const switchMode = (newMode: TranscriptMode) => {
     if (newMode === viewMode) return;
+    // The call-stack / execution views don't scroll the transcript — skip anchoring.
+    if (newMode === 'execution' || newMode === 'callstack') {
+      setViewMode(newMode);
+      return;
+    }
     isProgrammaticScrollRef.current = true;
     const anchorEntry = currentEntryId ? entries.find((e) => e.id === currentEntryId) ?? null : null;
     const anchorTs = anchorEntry ? resolveEntryTimestamp(anchorEntry) : internalTimestampRef.current;
@@ -473,6 +525,21 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2">
         <ViewModeToggle mode={viewMode} onChange={switchMode} />
 
+        {indicatorProcess && (
+          <span
+            title={getStatusLabel(indicatorProcess)}
+            className="flex shrink-0 items-center"
+            data-testid="transcript-process-status"
+          >
+            <ProcessStatusIndicator
+              process={indicatorProcess}
+              showLabel
+              size="sm"
+              className="px-1 text-muted-foreground"
+            />
+          </span>
+        )}
+
         {/* Scroll-position clock */}
         <div className="flex flex-1 items-center justify-center gap-0 text-[11px] tabular-nums">
           {transcriptStartTs && (
@@ -517,18 +584,31 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
         </div>
 
         {sessionId && (
-          <div className="flex items-center gap-1" data-testid="transcript-viewer-toolbar">
-            <AnalysisToolbarButtons controls={analysisControls} />
-            <button
-              type="button"
-              onClick={handleOpenInTerminal}
-              className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-              title="Open in terminal"
-              data-testid="transcript-open-in-terminal"
-            >
-              <Terminal className="h-3 w-3" />
-              Open in terminal
-            </button>
+          <div
+            className="flex items-center gap-1"
+            data-testid={received ? 'transcript-analyze-toolbar' : 'transcript-viewer-toolbar'}
+          >
+            {received ? (
+              <WorkerToolbar
+                hasProcess={!!transcriptSession.process}
+                starting={transcriptSession.starting}
+                onOpen={transcriptSession.open}
+                onLaunch={transcriptSession.launch}
+                openTitle="Open the transcript analysis session"
+                testIdPrefix="transcript-analyze"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={handleOpenInTerminal}
+                className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                title="Open in terminal"
+                data-testid="transcript-open-in-terminal"
+              >
+                <Terminal className="h-3 w-3" />
+                Open in terminal
+              </button>
+            )}
           </div>
         )}
 
@@ -554,7 +634,11 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
         )}
       </div>
 
-      {viewMode === 'chat' ? (
+      {viewMode === 'callstack' ? (
+        <CallStackView workerType={workerType} sessionId={sessionId} />
+      ) : viewMode === 'execution' ? (
+        <ExecutionView controls={analysisControls} workerType={workerType} sessionId={sessionId} />
+      ) : viewMode === 'chat' ? (
         <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
           {chatEntries.map((entry, idx) => {
             const ts = resolveEntryTimestamp(entry);

@@ -1,8 +1,11 @@
 import { Project } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import type { WorkerType } from '@src/components/workers/worker-types';
+import {
+  workerIcon,
+  workerLabel,
+} from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { canonicalPath, projectListToSelectorItems, ProjectSelector } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -15,8 +18,9 @@ import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
 import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
-/** Agentic worker kinds offered by the picker's worker toolbar. */
-export type ProjectWorkerType = 'claude_code' | 'codex' | 'copilot';
+/** Agentic worker kinds offered by the picker's worker toolbar. Alias of the
+ *  shared {@link WorkerType} (re-exported so the host can use it by name). */
+export type ProjectWorkerType = WorkerType;
 
 interface ProjectsCounterChipProps {
   /** Project that the surrounding tab strip is currently scoped to. Used to highlight that row. */
@@ -82,38 +86,6 @@ function bucketRowLabel(bucket: TabProjectBucket): string {
 
 // Worker entries for the action strip — mirrors the tab strip's opener
 // buttons.
-interface PickerWorker {
-  workerType: ProjectWorkerType;
-  name: string;
-  testId: string;
-  Icon: React.ComponentType<{ className?: string }>;
-  iconClassName: string;
-}
-
-const PICKER_WORKERS: PickerWorker[] = [
-  {
-    workerType: 'claude_code',
-    name: 'Claude Code',
-    testId: 'projects-counter-open-claude',
-    Icon: ClaudeIcon,
-    iconClassName: 'text-orange-500',
-  },
-  {
-    workerType: 'codex',
-    name: 'Codex',
-    testId: 'projects-counter-open-codex',
-    Icon: CodexIcon,
-    iconClassName: 'text-emerald-500',
-  },
-  {
-    workerType: 'copilot',
-    name: 'Copilot',
-    testId: 'projects-counter-open-copilot',
-    Icon: CopilotIcon,
-    iconClassName: 'text-sky-500',
-  },
-];
-
 /**
  * Picker panel shown after a worker icon on the action strip is clicked.
  * Mounted only then, so its data hooks (compute-node project
@@ -123,12 +95,13 @@ const PICKER_WORKERS: PickerWorker[] = [
  */
 const ProjectPickerPanel: React.FC<{
   /** The armed worker — picking a project opens it with this worker. */
-  worker: PickerWorker;
+  worker: ProjectWorkerType;
   /** Canonical mount paths (see `canonicalPath`) of already-open projects, matched against item ids. */
   excludePaths: ReadonlyArray<string>;
   onBack: () => void;
   onPick: (cwd: string) => void;
 }> = ({ worker, excludePaths, onBack, onPick }) => {
+  const WorkerIcon = workerIcon(worker);
   const { projects, isLoading } = useAllProjects();
 
   const items = useMemo(() => projectListToSelectorItems(projects), [projects]);
@@ -144,8 +117,8 @@ const ProjectPickerPanel: React.FC<{
         >
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
-        <worker.Icon className={`h-3.5 w-3.5 shrink-0 ${worker.iconClassName}`} />
-        <span className="text-xs font-medium text-muted-foreground">Open {worker.name} on…</span>
+        <WorkerIcon className="h-3.5 w-3.5 shrink-0" />
+        <span className="text-xs font-medium text-muted-foreground">Open {workerLabel(worker)} on…</span>
       </div>
       <div className="min-h-0 flex-1">
         <ProjectSelector
@@ -174,7 +147,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const [open, setOpen] = useState(false);
   // Non-null while the picker is shown; carries the worker armed by the
   // clicked icon on the action strip.
-  const [pickerWorker, setPickerWorker] = useState<PickerWorker | null>(null);
+  const [pickerWorker, setPickerWorker] = useState<ProjectWorkerType | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
   const { navigation } = useDockNavigation();
   const { buckets } = useTabProjectBuckets();
@@ -184,9 +157,6 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const tabTotal = buckets.reduce((sum, b) => sum + b.tabCount, 0);
   const projectTotal = buckets.length;
   const isEmpty = projectTotal === 0;
-  // With an action callback the chip stays clickable even with zero buckets —
-  // the popover then offers only the action rows.
-  const isChipDisabled = isEmpty && !onLaunchProjectPath && !onOpenHistory;
 
   // Name of the current project, shown as a label segment on the chip.
   const projectName = useMemo(
@@ -220,7 +190,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     hasProject
       ? 'border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10'
       : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
-  } ${isChipDisabled ? 'cursor-default opacity-50 hover:bg-primary/5' : ''}`;
+  }`;
 
   // Per-type icon from the backend TypeInfo registry (CLAUDE.md: never hardcode
   // a glyph for an entity type) — the same project icon every other surface shows.
@@ -244,26 +214,11 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     </>
   );
 
-  if (isChipDisabled) {
-    return (
-      <TooltipProvider delayDuration={400}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              disabled
-              data-testid="projects-counter-chip"
-              className={chipClass}
-              aria-label={tooltipText}
-            >
-              {triggerContent}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{tooltipText}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  }
+  // No project owns any open tab (buckets empty ⇒ both counts are 0). Even when
+  // an ambient active project still resolves a name, a "<project> · 0 / 0" chip
+  // represents nothing — a strip whose only tabs are global has no project tab
+  // to count — so the chip stays hidden rather than advertising "0,0".
+  if (isEmpty) return null;
 
   const handleRecover = async (bucket: TabProjectBucket) => {
     setRecoveringId(bucket.projectId);
@@ -309,41 +264,12 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   };
 
   const handlePickProjectPath = (cwd: string) => {
-    const workerType = pickerWorker?.workerType;
+    const workerType = pickerWorker;
     handleOpenChange(false);
     if (workerType) void onLaunchProjectPath?.(cwd, workerType);
   };
 
-  // Action strip contents — one entry per worker (arms the picker) plus the
-  // history opener, gated by the host-provided callbacks. A single list so
-  // every action renders through the same icon-button markup below.
-  const stripActions = [
-    ...(onLaunchProjectPath
-      ? PICKER_WORKERS.map((worker) => ({
-          key: worker.workerType as string,
-          Icon: worker.Icon,
-          iconClassName: worker.iconClassName,
-          label: `Open ${worker.name} on another project`,
-          testId: worker.testId,
-          onClick: () => setPickerWorker(worker),
-        }))
-      : []),
-    ...(onOpenHistory
-      ? [
-          {
-            key: 'history',
-            Icon: History,
-            iconClassName: '',
-            label: 'Open from history',
-            testId: 'projects-counter-open-history',
-            onClick: () => {
-              handleOpenChange(false);
-              onOpenHistory();
-            },
-          },
-        ]
-      : []),
-  ];
+  const hasActions = !!onLaunchProjectPath || !!onOpenHistory;
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -412,32 +338,40 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                   </li>
                 );
               })}
-              {stripActions.length ? (
+              {hasActions ? (
                 // Action strip — compact icon buttons set apart from the
                 // bucket rows by a horizontal rule, no label line. Worker
-                // icons open the project picker with that worker armed
-                // (picking a project launches it immediately); the history
-                // icon reopens a past session (the host owns the modal).
-                // Meaning is carried by tooltips/aria-labels.
+                // icons (shared WorkerToolbar) open the project picker with
+                // that worker armed (picking a project launches it
+                // immediately); the history icon reopens a past session (the
+                // host owns the modal). Meaning is carried by tooltips/aria.
                 <li className={isEmpty ? '' : 'mt-2 border-t border-border pt-2'}>
                   <div
                     data-testid="projects-counter-actions"
                     className="flex w-full items-center justify-center gap-2 px-2 py-1"
                   >
-                    {stripActions.map((action) => (
+                    {onLaunchProjectPath && (
+                      <WorkerToolbar
+                        onLaunch={(worker) => setPickerWorker(worker)}
+                        testIdPrefix="projects-counter-open"
+                      />
+                    )}
+                    {onOpenHistory && (
                       <Button
-                        key={action.key}
                         variant="secondary"
                         size="icon"
                         className="h-7 w-7 shrink-0 rounded"
-                        onClick={action.onClick}
-                        aria-label={action.label}
-                        title={action.label}
-                        data-testid={action.testId}
+                        onClick={() => {
+                          handleOpenChange(false);
+                          onOpenHistory();
+                        }}
+                        aria-label="Open from history"
+                        title="Open from history"
+                        data-testid="projects-counter-open-history"
                       >
-                        <action.Icon className={`h-4 w-4 ${action.iconClassName}`} />
+                        <History className="h-4 w-4" />
                       </Button>
-                    ))}
+                    )}
                   </div>
                 </li>
               ) : null}

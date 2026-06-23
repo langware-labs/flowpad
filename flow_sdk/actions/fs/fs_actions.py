@@ -430,6 +430,15 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         content_bytes = content.encode("utf-8") if isinstance(content, str) else content
         await storage.upload(BytesIO(content_bytes), fs_info.vpath.abs_vfspath)
 
+        # Auto-version asset files: bump frontmatter `version` + file-scoped git
+        # commit when an asset's content actually changed. Best-effort, local-only,
+        # and gated to frontmatter-bearing files — never blocks the save.
+        from flow_sdk.actions.fs.asset_versioning import autoversion_commit_local  # noqa: PLC0415
+
+        await autoversion_commit_local(
+            storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else ""
+        )
+
         # Return FSItem
         fs_item = FSItem(
             vfs_abs_path=fs_info.vpath.abs_vfspath,

@@ -29,6 +29,16 @@ except ImportError as e:
     print(f"[WARN] Failed to import Workspace: {e}")
 
 try:
+    from flow_sdk.builtin.organization import Organization  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Organization: {e}")
+
+try:
+    from flow_sdk.builtin.team import Team  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Team: {e}")
+
+try:
     from flow_sdk.builtin.agent import Agent  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Agent: {e}")
@@ -64,6 +74,11 @@ try:
     from flow_sdk.builtin.bookmark import Bookmark  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Bookmark: {e}")
+
+try:
+    from flow_sdk.builtin.graph_context import GraphContext  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import GraphContext: {e}")
 
 try:
     from flow_sdk.builtin.contact_permission import ContactPermission  # noqa: F401
@@ -121,9 +136,29 @@ except ImportError as e:
     print(f"[WARN] Failed to import FlowpadDiagnosis: {e}")
 
 try:
+    from flow_sdk.builtin.feed_entry import FeedEntry  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import FeedEntry: {e}")
+
+try:
+    from flow_sdk.builtin.message_suggest import MessageSuggest  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import MessageSuggest: {e}")
+
+try:
+    from flow_sdk.builtin.user_note import UserNote  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import UserNote: {e}")
+
+try:
     from flow_sdk.builtin.agent_trace import AgentTrace  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import AgentTrace: {e}")
+
+try:
+    from flow_sdk.builtin.usage_report import UsageReport  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import UsageReport: {e}")
 
 # These have more complex dependencies - skip for now
 # from builtin.page import Page  # noqa: F401
@@ -152,11 +187,6 @@ try:
     from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import MarkdownIndex: {e}")
-
-try:
-    from flow_sdk.builtin.git_repo import GitRepo  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import GitRepo: {e}")
 
 try:
     from flow_sdk.builtin.git_remote import GitRemote  # noqa: F401

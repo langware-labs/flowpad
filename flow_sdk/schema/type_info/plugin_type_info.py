@@ -12,5 +12,5 @@ PLUGIN = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_plugin,
-    gen_id_fn=plugin_id,
+    gen_uuid_fn=plugin_id,
 )

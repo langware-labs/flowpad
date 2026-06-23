@@ -132,7 +132,7 @@ If a test fails on time, the production code is too slow or stalls — that's th
 
 **An entity id is always a UUID v4 (random) or v5 (deterministic). Never any other version.** v4 = no stable key (random); v5 = derived from a stable key (a file path or a natural key, via `uuid5`). Nothing else is a valid entity id.
 
-* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py` (re-exported from `flow_sdk/fs_store/identifier.py`): `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id`, or a type's `gen_id_fn`, which themselves use it).
+* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py` (re-exported from `flow_sdk/fs_store/identifier.py`): `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id`, or a type's `gen_uuid_fn`, which themselves use it).
 
 * **Validate on adopt.** Any id taken from outside the minter — a markdown/asset **frontmatter** **`id:`**, a slug, a client-supplied id — must pass `is_valid_entity_id` (UUID v4/v5) before it's adopted. If it doesn't (e.g. a hand-authored v7), **ignore it and derive a stable v5 instead** — never let a foreign id become an entity id. The per-type `_read_*_frontmatter_id` readers and `Entity.allocate_id` already enforce this; new id-adopting paths must too.
 

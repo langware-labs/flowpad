@@ -68,9 +68,10 @@ EXPECTED = {
     "JOB_EXECUTION": "job_execution", "API_KEY": "api_key", "CODE_REF": "code_ref",
     "AGENT_HOOK": "agent_hook", "TRIGGER": "trigger", "PROCESS_RESULT": "process_result",
     "CRON_EVENT": "cron_event", "FLOW_MESSAGE": "flow_message", "TEAM_SPACE": "team_space",
-    "NOTIFICATION": "notification", "RUN": "run", "GIT_REPO": "git_repo",
+    "NOTIFICATION": "notification", "RUN": "run",
     # Git identity split + SemanticLock file targets (5a19f9e6) — additions
     # recorded after the fact; the commit that added them missed this freeze.
+    # (Legacy GIT_REPO share-chip removed; GitRemote/GitBranch are the path.)
     "GIT_REMOTE": "git_remote", "GIT_BRANCH": "git_branch", "FILE": "file",
     "ARTIFACT_RELATION": "artifact_relation", "FS_ITEM": "fs_item",
     "KNOWLEDGE_BASE": "knowledge_base",
@@ -79,6 +80,8 @@ EXPECTED = {
     # Tab entity system + AgentTrace — additive members; the commits that added
     # them missed this freeze. New members are allowed; existing values stay frozen.
     "AGENT_TRACE": "agent_trace", "TAB": "tab",
+    # GraphContext entity (0.2.67-fixes) — additive member; existing values stay frozen.
+    "GRAPH_CONTEXT": "graph_context",
 }
 
 

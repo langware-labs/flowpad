@@ -11,11 +11,13 @@ Replaces the deleted ``TaskResource`` subclass.
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Any
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -95,9 +97,10 @@ def task_gen_id(ref: FSRef) -> str:
     try:
         data = json.loads(ref._path.read_text(encoding="utf-8"))
         data = _unwrap_task_envelope(data)
-        return str(data.get("task_id") or data.get("id") or ref._path.parent.name)
+        key = str(data.get("task_id") or data.get("id") or ref._path.parent.name)
     except (json.JSONDecodeError, OSError):
-        return ref._path.parent.name
+        key = ref._path.parent.name
+    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.TASK}:{key}", namespace=uuid.NAMESPACE_DNS)
 
 
 # ---------------------------------------------------------------------------

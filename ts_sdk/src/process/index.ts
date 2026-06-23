@@ -22,6 +22,10 @@ export {
   isBusy,
   getDisplayStatus,
   getWorkerMode,
+  ExecutionMode,
+  ERROR_WORKER_STATUSES,
+  classifyExecutionMode,
+  supportedExecutionModes,
 } from './agentic-types';
 export type { ParsedUIUri, ProcessIconKey, UIComponentPayload, StatusBearingProcess } from './agentic-types';
 
@@ -29,6 +33,7 @@ export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
 export type {
   AgenticProcessReportEventResult,
   IAgenticProcess,
+  MarkdownDoc,
   ProcessState,
   ExecuteOptions,
   SpawnResult,

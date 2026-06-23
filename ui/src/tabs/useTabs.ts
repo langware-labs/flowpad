@@ -1,80 +1,111 @@
-import { AgenticProcess, dataContext, Project, Shell, Tab, type TabRow, TypeId } from '@sdk';
-import { getAllTabRowsSnapshot, refreshAllTabRows, useAllTabRows } from '@src/tabs/all-tabs-store';
+import {
+  AgenticProcess,
+  ConnectionManager,
+  dataContext,
+  type DataOpType,
+  type IEntity,
+  Project,
+  Shell,
+  Tab,
+  TypeId,
+  type ITab,
+} from '@sdk';
+import { useContext } from '@sdk/react/hooks';
+import { coerceTab, getAllTabsSnapshot, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
+import { tabInProject } from '@src/tabs/tab-candidates';
 import { useEffect, useMemo, useState } from 'react';
 
-// ─── Terminal rows (docs/tab-management.md) ─────────────────────────────────
-// Terminal tabs are driven entirely by the backend `Tab` (the `tab` action). The
-// strip + body render straight off `TabRow`; the only client-side join is each
-// mounted panel hydrating its own live entity. There is no `TerminalTab`
-// view-model and no reactive entity query.
+// ─── Tab filtering and access ─────────────────────────────────────────────────
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
 
-/** Terminal-target `TabRow`s for a scope, in backend global order. `'all'` = every
- *  project (the developer sessions view); `'project'` = the active project +
- *  projectless (the `filter_for_project` view). */
-export function terminalRowsForScope(
-  rows: TabRow[],
+function tabKey(tab: Tab): string {
+  return tab.dockPointer?.tabHash ?? tab.id;
+}
+
+export function uniqueTabsByDockKey(tabs: Tab[]): Tab[] {
+  const seen = new Set<string>();
+  return tabs.filter((tab) => {
+    const key = tabKey(tab);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Terminal tabs (Shell + AgenticProcess targets) for a scope, in backend global order.
+ *  `'all'` = every project (the developer sessions view); `'project'` = the active
+ *  project + projectless. */
+export function terminalTabsForScope(
+  tabs: Array<Tab | ITab>,
   scope: 'project' | 'all',
   projectId: string | null,
-): TabRow[] {
-  const terminals = rows.filter((r) => TERMINAL_TARGET_TYPES.has(r.target_type ?? ''));
-  if (scope === 'all') return terminals;
-  return terminals.filter((r) => r.project_id === projectId || r.project_id == null);
+): Tab[] {
+  const terminals = tabs.map(coerceTab).filter((t) => TERMINAL_TARGET_TYPES.has(t.target_type ?? ''));
+  if (scope === 'all') return uniqueTabsByDockKey(terminals);
+  return uniqueTabsByDockKey(terminals.filter((t) => tabInProject(t, projectId)));
 }
 
-/** React binding for {@link terminalRowsForScope}, reading the one global store. */
-export function useTerminalTabRows(
-  scope: 'project' | 'all' = 'project',
-  projectId?: string | null,
-): TabRow[] {
-  const rows = useAllTabRows();
+/** Tabs for the current active project + projectless (the render view for the
+ *  unified tab strip). */
+export function useCurrentTabs(): Tab[] {
+  const all = useAllTabs();
+  const { project } = useContext();
+  return useMemo(
+    () => uniqueTabsByDockKey(all.filter((t) => tabInProject(t, project?.id ?? null))),
+    [all, project?.id],
+  );
+}
+
+/** React binding for terminal tabs, reading the global store. */
+export function useTerminalTabs(scope: 'project' | 'all' = 'project', projectId?: string | null): Tab[] {
+  const tabs = useAllTabs();
   const pid = projectId ?? dataContext.project?.id ?? null;
-  return useMemo(() => terminalRowsForScope(rows, scope, pid), [rows, scope, pid]);
+  return useMemo(() => terminalTabsForScope(tabs, scope, pid), [tabs, scope, pid]);
 }
 
-/** Imperative snapshot of terminal `TabRow`s for route loaders (outside React).
+/** Imperative snapshot of terminal tabs for route loaders (outside React).
  *  Fetches the canonical global list, then scopes it. */
-export async function getTerminalTabRowsSnapshot(
+export async function getTerminalTabsSnapshot(
   scope: 'project' | 'all' = 'all',
   projectId?: string | null,
-): Promise<TabRow[]> {
-  const rows = await refreshAllTabRows();
-  return terminalRowsForScope(rows, scope, projectId ?? dataContext.project?.id ?? null);
+): Promise<Tab[]> {
+  const tabs = await refreshAllTabs();
+  return terminalTabsForScope(tabs, scope, projectId ?? dataContext.project?.id ?? null);
 }
 
-/** Resolve the visible Tab row backing a terminal target TypeId (shell-<id> /
- *  agentic_process-<id>), or null. Reads the global store (loading it once if the
- *  snapshot is empty) and matches by denormalized `target_id`. */
-async function tabRowForTarget(target: TypeId | string): Promise<TabRow | null> {
+/** Resolve the visible Tab backing a terminal target TypeId (shell-<id> /
+ *  agentic_process-<id>), or null. Reads the global store (loading it once if
+ *  the snapshot is empty) and matches by denormalized `target_id`. */
+async function tabForTarget(target: TypeId | string): Promise<Tab | null> {
   let targetId = '';
   try {
     targetId = new TypeId(typeof target === 'string' ? target : target.toString()).id;
   } catch {
     return null;
   }
-  let rows = getAllTabRowsSnapshot();
-  if (rows.length === 0) rows = await refreshAllTabRows();
-  return rows.find((t) => t.target_id === targetId) ?? null;
+  let tabs = getAllTabsSnapshot();
+  if (tabs.length === 0) tabs = await refreshAllTabs();
+  return tabs.find((t) => t.target_id === targetId) ?? null;
 }
 
 /** Soft-close the terminal tab backing a target TypeId (shell-<id> /
- *  agentic_process-<id>) — resolves its visible Tab row and closes it by id
+ *  agentic_process-<id>) — resolves its visible Tab and closes it by id
  *  through the `tab` close action (backend dispatches PTY/worker teardown). */
 export async function closeTerminalTab(target: TypeId | string): Promise<void> {
-  const row = await tabRowForTarget(target);
-  if (row) await Tab.closeById(row.id);
+  const tab = await tabForTarget(target);
+  if (tab) await Tab.closeById(tab.id);
 }
 
 /**
- * User-initiated terminal rename — resolves the Tab row by target and renames it
+ * User-initiated terminal rename — resolves the Tab by target and renames it
  * by id. The backend `rename` action sets `Tab.name` (fixing the inactive chip
  * label) and reflects onto the target entity via the generic `Entity.rename`
  * (mirrors `name`; shell/AP also pin `auto_rename=false`).
  */
 export async function renameTerminalTab(target: TypeId | string, name: string): Promise<void> {
-  const row = await tabRowForTarget(target);
-  if (row) await Tab.renameById(row.id, name);
+  const tab = await tabForTarget(target);
+  if (tab) await Tab.renameById(tab.id, name);
 }
 
 /**
@@ -83,8 +114,67 @@ export async function renameTerminalTab(target: TypeId | string, name: string): 
  * inactive chip's label correct after the active tab auto-renames.
  */
 export async function syncTerminalTabName(target: TypeId | string, name: string): Promise<void> {
-  const row = await tabRowForTarget(target);
-  if (row && row.name !== name) await Tab.setNameById(row.id, name);
+  const tab = await tabForTarget(target);
+  if (tab && tab.name !== name) await Tab.setNameById(tab.id, name);
+}
+
+/**
+ * Mirror a transcript lens's resolved session name onto its Tab label.
+ *
+ * Transcript tabs (`lens/<worker>/transcript/<id>`) can't rely on the content
+ * data-op mirror below: codex/copilot sessions have no entity to fire a data-op,
+ * and legacy claude tabs were minted with a null `target_id` (so the
+ * `target_id === id` match never hits). This resolves the tab by the current
+ * dock's `tabHash` instead and `set_name`-mirrors the generic worker-session
+ * name (from the transcript header) once known — `set_name`, not `rename`, so it
+ * never pins `auto_rename`. Guarded + no-op when unchanged, so it's safe to run
+ * from the read-only viewer on every load.
+ */
+export function useSyncTranscriptTabName(tabHash: string | null | undefined, name: string | null | undefined): void {
+  const tabs = useAllTabs();
+  useEffect(() => {
+    const trimmed = name?.trim();
+    if (!tabHash || !trimmed) return;
+    const tab = tabs.find((t) => tabKey(t) === tabHash);
+    if (tab && tab.name !== trimmed) {
+      void Tab.setNameById(tab.id, trimmed).then(() => void refreshAllTabs());
+    }
+  }, [tabs, tabHash, name]);
+}
+
+/**
+ * Generic entity → tab name sync. Mount once (the tab strip). A single
+ * `on_data_op` listener mirrors a CONTENT entity's renamed `name` onto its tab
+ * label via the tab-only `set_name` action — the same guarded mirror terminals
+ * already use for PTY auto-titles, generalized so that renaming any backing
+ * entity (e.g. a GraphContext in its sidebar) keeps the tab chip in step.
+ *
+ * Leak-safe: ONE listener, registered on mount and removed on cleanup; reads the
+ * live tab snapshot at fire-time so it never re-subscribes. Terminals keep their
+ * own `auto_rename`-aware path and are skipped. No-op unless the name changed.
+ */
+export function useSyncContentTabNames(): void {
+  useEffect(() => {
+    const cm = ConnectionManager.getInstance();
+    const handler = (_typeIdStr: string, op: DataOpType, data: IEntity) => {
+      if (op === 'delete') return;
+      // Skip terminal-type ops before scanning tabs — shells/agentic-processes
+      // stream frequent status data-ops and keep their own auto-rename path.
+      const type = (data as { type?: string | null } | null)?.type;
+      if (type && TERMINAL_TARGET_TYPES.has(type)) return;
+      const id = data?.id;
+      const name = (data as { name?: string | null } | null)?.name;
+      if (!id || !name) return;
+      const tab = getAllTabsSnapshot().find((t) => t.target_id === id);
+      if (tab && tab.name !== name) {
+        void Tab.setNameById(tab.id, name).then(() => void refreshAllTabs());
+      }
+    };
+    cm.on('on_data_op', handler);
+    return () => {
+      cm.off('on_data_op', handler);
+    };
+  }, []);
 }
 
 // ─── Project-bucketed view (chip consumes this) ─────────────────────────────
@@ -93,7 +183,7 @@ export type BucketState = 'loading' | 'live' | 'missing';
 
 export interface TabProjectBucket {
   /** Stable bucket identity. For stranded buckets this is still the dangling
-   *  project_id — the row exists, the Project entity just doesn't. */
+   *  project_id — the tab exists, the Project entity just doesn't. */
   projectId: string;
   /** Resolved Project entity. Non-null iff ``state === 'live'``. */
   project: Project | null;
@@ -114,14 +204,14 @@ export interface UseTabProjectBucketsResult {
 /**
  * Bucket the global tab list by ``project_id`` and resolve each bucket's Project.
  * Single owner of the "which projects own which tabs" question — consumers (e.g.
- * ProjectsCounterChip) render rows straight from this hook.
+ * ProjectsCounterChip) render tabs straight from this hook.
  *
  * Membership is KIND-AGNOSTIC: every visible `Tab` counts (terminal, agent,
  * markdown, skill, …). Reads the same `all-tabs-store` projection the terminal
- * rows use — no separate query. Global tabs (`project_id == null`) never bucket.
+ * tabs use — no separate query. Global tabs (`project_id == null`) never bucket.
  */
 export function useTabProjectBuckets(): UseTabProjectBucketsResult {
-  const allTabs = useAllTabRows();
+  const allTabs = useAllTabs();
 
   const grouped = useMemo(() => {
     const counts = new Map<string, number>();
@@ -198,3 +288,8 @@ export function useTabProjectBuckets(): UseTabProjectBucketsResult {
 
   return { buckets };
 }
+
+// Backward-compat aliases for migration
+export const useTerminalTabRows = useTerminalTabs;
+export const getTerminalTabRowsSnapshot = getTerminalTabsSnapshot;
+export const terminalRowsForScope = terminalTabsForScope;

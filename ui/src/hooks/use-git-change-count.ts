@@ -1,20 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionInfo, dataManager } from '@sdk';
-
-interface GitFile {
-  status: string;
-  path: string;
-  insertions: number | null;
-  deletions: number | null;
-}
-
-interface GitStatusData {
-  error: string | null;
-  branch: string | null;
-  ahead: number;
-  behind: number;
-  files: GitFile[];
-}
+import { getGitStatus } from '@src/lib/git-status-cache';
 
 export interface UseGitChangeCountResult {
   /** Total changed + untracked files, or null when unknown / no workdir. */
@@ -48,41 +33,31 @@ export function useGitChangeCount(
   const [branch, setBranch] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
-  const fetchStatus = useCallback(async () => {
+  const fetchStatus = useCallback(async (force = false) => {
     if (!computeNodeId || !workdir) {
       setCount(null);
       setHasRepo(false);
       setBranch(null);
       return;
     }
-    const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
-    action.subpath = 'status';
-    action.queryParameters = { workdir };
-    try {
-      const result = await dataManager.callAction<null, GitStatusData>(action);
-      if (!mountedRef.current) return;
-      if (!result || result.error) {
-        setHasRepo(false);
-        setCount(null);
-        setBranch(null);
-      } else {
-        setHasRepo(true);
-        setCount(result.files?.length ?? 0);
-        setBranch(result.branch ?? null);
-      }
-    } catch {
-      if (mountedRef.current) {
-        setHasRepo(false);
-        setCount(null);
-        setBranch(null);
-      }
+    // Shared cache dedups the cross-tab mount burst; force on poll/refresh.
+    const result = await getGitStatus(computeNodeId, workdir, { force });
+    if (!mountedRef.current) return;
+    if (!result || result.error) {
+      setHasRepo(false);
+      setCount(null);
+      setBranch(null);
+    } else {
+      setHasRepo(true);
+      setCount(result.files?.length ?? 0);
+      setBranch(result.branch ?? null);
     }
   }, [computeNodeId, workdir]);
 
   useEffect(() => {
     mountedRef.current = true;
     void fetchStatus();
-    const interval = setInterval(() => { void fetchStatus(); }, POLL_MS);
+    const interval = setInterval(() => { void fetchStatus(true); }, POLL_MS);
     return () => {
       mountedRef.current = false;
       clearInterval(interval);
@@ -90,7 +65,7 @@ export function useGitChangeCount(
   }, [fetchStatus]);
 
   const refresh = useCallback(() => {
-    void fetchStatus();
+    void fetchStatus(true);
   }, [fetchStatus]);
 
   return { count, hasRepo, branch, refresh };

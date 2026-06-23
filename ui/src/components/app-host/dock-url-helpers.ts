@@ -1,5 +1,4 @@
 import { DockPointer } from '@src/navigation/DockPointer';
-import { parseDockUrl } from '@src/navigation/url-builder';
 
 // Anchored to structural positions in the URL — the substring `/dock/` can
 // legitimately appear inside paths like `/docs/dock-faq.html` and must NOT
@@ -26,20 +25,14 @@ export function isInternalDockUrl(url: string): boolean {
 
 /** Convert a /dock/... URL into a DockPointer the host can navigate to. */
 export function parseDockUrlToPointer(url: string): DockPointer | null {
-  let pathname: string;
-  let search: string;
+  let parsedUrl: URL;
   try {
-    const u = url.startsWith('/') ? new URL(url, window.location.origin) : new URL(url);
-    pathname = u.pathname;
-    search = u.search;
+    parsedUrl = url.startsWith('/') ? new URL(url, window.location.origin) : new URL(url);
   } catch {
     return null;
   }
-  const parsed = parseDockUrl(pathname);
-  if (!parsed || !parsed.viewType) return null;
-  const searchParams = new URLSearchParams(search);
   try {
-    return DockPointer.fromUrl(parsed.viewType, parsed.pointer, searchParams, parsed.layout);
+    return DockPointer.fromUrl(`${parsedUrl.pathname}${parsedUrl.search}`);
   } catch {
     return null;
   }

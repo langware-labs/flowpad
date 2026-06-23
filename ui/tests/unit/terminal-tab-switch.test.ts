@@ -10,10 +10,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
 
-const tabbedTerminalPath = resolve(
-  __dirname,
-  '../../src/components/terminal/TabbedTerminal.tsx',
-);
+const tabbedTerminalPath = resolve(__dirname, '../../src/components/terminal/TabbedTerminal.tsx');
 const tabbedTerminalSource = readFileSync(tabbedTerminalPath, 'utf-8');
 
 // Creation flows and opener descriptors moved into the strip controller
@@ -25,10 +22,7 @@ const stripControllerSource = readFileSync(
 
 // Opener-button rendering moved to the TerminalOpenerToolbar sibling module;
 // match against its source so the contract stays intact after the refactor.
-const openerToolbarPath = resolve(
-  __dirname,
-  '../../src/components/terminal/openers/TerminalOpenerToolbar.tsx',
-);
+const openerToolbarPath = resolve(__dirname, '../../src/components/terminal/openers/TerminalOpenerToolbar.tsx');
 const openerToolbarSource = readFileSync(openerToolbarPath, 'utf-8');
 
 describe('TabbedTerminal – tab switching contract (FLOWPAD-1645)', () => {
@@ -69,6 +63,6 @@ describe('TabbedTerminal – tab switching contract (FLOWPAD-1645)', () => {
     // Once mounted, a panel stays mounted (the `mounted` set only grows), so
     // re-activation is instant and PTY/canvas state is preserved.
     expect(tabbedTerminalSource).toContain('keep mounted ones');
-    expect(tabbedTerminalSource).toContain('mounted.has(row.pointer)');
+    expect(tabbedTerminalSource).toContain('mounted.has(tabHash)');
   });
 });

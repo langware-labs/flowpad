@@ -1,6 +1,7 @@
 """Type metadata for AGENT."""
 from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 from flow_sdk.fs_store.indexer.functions.agent import (
     agent_gen_id,
     extract_agent,
@@ -25,9 +26,9 @@ def _agent_default_body(entity) -> str:
 AGENT = TypeMetadata(
     type=EntityType.AGENT,
     from_disk_fn=extract_agent,
-    gen_id_fn=agent_gen_id,
+    gen_uuid_fn=agent_gen_id,
     indexed_by_default=True,
-    browseable=True,
+    browseable_by=ViewMode.STANDARD,
     creatable=True,
     api_visible=True,
     icon="Bot",

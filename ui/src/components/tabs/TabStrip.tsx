@@ -24,7 +24,8 @@ import {
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { ChevronLeft, ChevronRight, ExternalLink, X, type LucideIcon } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 /** One chip in the strip. Kind-agnostic: terminals, entity tabs, and the
@@ -34,11 +35,14 @@ export interface TabStripItem {
   key: string;
   /** Display title. */
   title: string;
+  /** Extra classes for the title text (e.g. blue for projectless/global tabs). */
+  titleClassName?: string;
   /** Leading icon node (resolved by the owner — vendor override ?? type icon). */
   icon?: React.ReactNode;
   /** Extra inline markers after the icon (e.g. worktree badge). */
   badge?: React.ReactNode;
   isDisabled?: boolean;
+  hasError?: boolean;
   statusReason?: string;
   /** Soft attention glow (never on the active chip). */
   isPending?: boolean;
@@ -59,6 +63,8 @@ export interface TabStripContextMenuItem {
   label: string;
   shortcut?: string;
   onSelect: () => void;
+  /** Optional leading icon (e.g. graph glyph for "Open Context"). */
+  Icon?: LucideIcon;
 }
 
 export interface TabStripProps {
@@ -113,7 +119,11 @@ export const TabStrip: React.FC<TabStripProps> = ({
 }) => {
   // One ordered list (backend-owned) — projectless tabs are inline, no section.
   const allVisibleItems = items;
+  // The rich per-tab info card is an Advanced/Dev affordance; Standard mode keeps
+  // the calm minimal hover (statusReason / title only).
+  const isAdvanced = useIsAdvanced();
   const tabContainerRef = useRef<HTMLDivElement>(null);
+  const trailingRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -140,10 +150,20 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // chevron rather than flush against it.
     const PAD = 8;
 
+    // The trailing toolbar is `sticky right-0` INSIDE the scroll container, so it
+    // paints on top of whatever scrolls under it. If we used the bare container
+    // right edge, a rightmost chip would land with its X/open controls tucked
+    // beneath the sticky toolbar — visible text, hidden controls. Treat the
+    // toolbar's left edge as the effective right boundary so the whole chip
+    // header (controls included) clears it.
+    const trailingRect = trailingRef.current?.getBoundingClientRect();
+    const effectiveRight =
+      trailingRect && trailingRect.width > 0 ? Math.min(containerRect.right, trailingRect.left) : containerRect.right;
+
     if (tabRect.left < containerRect.left + PAD) {
       container.scrollBy({ left: tabRect.left - containerRect.left - PAD, behavior });
-    } else if (tabRect.right > containerRect.right - PAD) {
-      container.scrollBy({ left: tabRect.right - containerRect.right + PAD, behavior });
+    } else if (tabRect.right > effectiveRight - PAD) {
+      container.scrollBy({ left: tabRect.right - effectiveRight + PAD, behavior });
     }
   }, []);
 
@@ -269,6 +289,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <>
         {entries.map((entry) => (
           <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
+            {entry.Icon && <entry.Icon className="mr-2 h-4 w-4" />}
             {entry.label}
             {entry.shortcut && <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
           </ContextMenuItem>
@@ -348,6 +369,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const { key } = item;
     const isActive = activeKey === key;
     const isDisabled = !!item.isDisabled;
+    const hasError = !!item.hasError;
     const isPending = !!item.isPending && !isActive;
 
     const tabContent = (
@@ -358,9 +380,11 @@ export const TabStrip: React.FC<TabStripProps> = ({
         className={`group flex shrink-0 select-none items-center gap-2 rounded-t border-b-2 px-3 py-1.5 transition-colors ${
           isDisabled
             ? 'cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground/50'
-            : isActive
-              ? 'cursor-pointer border-primary bg-background text-foreground'
-              : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+            : hasError
+              ? 'cursor-pointer border-destructive bg-destructive/10 text-destructive hover:bg-destructive/15'
+              : isActive
+                ? 'cursor-pointer border-primary bg-background text-foreground'
+                : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
         } ${isPending ? 'animate-pending-glow rounded-md' : ''} ${dragKey === key ? 'opacity-60' : ''}`}
         onPointerDown={(e) => startDrag(e, key, isDisabled)}
         onClick={() => {
@@ -393,7 +417,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           />
         ) : (
           <span
-            className="max-w-[160px] truncate text-sm font-medium"
+            className={`max-w-[160px] truncate text-sm font-medium ${item.titleClassName ?? ''}`}
             onDoubleClick={(e) => {
               if (!item.renameable) return;
               e.stopPropagation();
@@ -441,7 +465,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
             <TooltipTrigger asChild>
               <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
             </TooltipTrigger>
-            {item.tooltip ? (
+            {isAdvanced && item.tooltip ? (
               <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
                 {item.tooltip}
               </TooltipContent>
@@ -519,7 +543,11 @@ export const TabStrip: React.FC<TabStripProps> = ({
         {/* Trailing toolbar flows after the last tab but sticks to the right
             edge when tabs overflow. Placement is unconditional, so it does
             not oscillate with hasTabOverflow. */}
-        {trailing && <div className="sticky right-0 z-10 flex items-center self-stretch bg-muted">{trailing}</div>}
+        {trailing && (
+          <div ref={trailingRef} className="sticky right-0 z-10 flex items-center self-stretch bg-muted">
+            {trailing}
+          </div>
+        )}
       </div>
 
       {/* Right Scroll Button */}

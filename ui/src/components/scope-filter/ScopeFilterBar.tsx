@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { ScopeFilter } from '@src/lib/scope-filter';
+import { scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
 import { useScopeFilterChips, type ScopeMode } from './useScopeFilterChips';
@@ -62,7 +62,7 @@ export function ScopeFilterBar({
       <ProjectPickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}
-        selectedIds={scope.projects}
+        selectedIds={scopeProjectIds(scope)}
         onConfirm={onPickerConfirm}
       />
     </>

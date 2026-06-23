@@ -1,6 +1,7 @@
-import { ConnectionManager, Tab, type TabRow } from '@sdk';
+import { ConnectionManager, Tab, type ITab } from '@sdk';
 import { useEffect, useSyncExternalStore } from 'react';
 import { computeReorder } from '@src/tabs/tab-order';
+import { syncTabLifecycleWithTabs } from '@src/tabs/tab-lifecycle';
 
 /**
  * The single tab store: the GLOBAL visible-tab list (every kind, all projects),
@@ -13,8 +14,38 @@ import { computeReorder } from '@src/tabs/tab-order';
  * and no second (project-scoped) store/endpoint.
  */
 
-let snapshot: TabRow[] = [];
+let snapshot: Tab[] = [];
 const listeners = new Set<() => void>();
+
+export function coerceTab(tab: Tab | ITab): Tab {
+  if (tab instanceof Tab) return tab;
+  try {
+    return new Tab(tab);
+  } catch {
+    const fallback = Object.create(Tab.prototype) as Tab;
+    Object.assign(
+      fallback,
+      {
+        id: tab.id ?? '',
+        type: Tab.type,
+        pointer: '',
+        target_type: null,
+        target_id: null,
+        visible: true,
+        icon_key: null,
+        worktree: false,
+        name: null,
+        project_id: null,
+        tab_order: 0,
+        last_active_at: null,
+        status: null,
+        is_disabled: false,
+      },
+      tab,
+    );
+    return fallback;
+  }
+}
 
 function notify(): void {
   for (const l of listeners) l();
@@ -25,40 +56,45 @@ function subscribe(cb: () => void): () => void {
   return () => listeners.delete(cb);
 }
 
-function getSnapshot(): TabRow[] {
+function getSnapshot(): Tab[] {
   return snapshot;
 }
 
 /** Imperative read for loaders / resolvers outside React. */
-export function getAllTabRowsSnapshot(): TabRow[] {
+export function getAllTabsSnapshot(): Tab[] {
   return snapshot;
 }
 
-/** Adopt a canonical row list directly (no fetch). */
-export function applyAllTabRows(rows: TabRow[]): void {
-  snapshot = rows;
+/** Adopt a canonical tab list directly (no fetch). `tabs` MUST be the UNSCOPED
+ *  global list (every project) — the `Tab.listAll()` projection, never a
+ *  project-scoped `Tab.list`/`new_tab` result. Adopting a single-project slice
+ *  here erases every other project's tabs from the global snapshot (the footer
+ *  projects-chip then collapses to one project). */
+export function applyAllTabs(tabs: Array<Tab | ITab>): void {
+  snapshot = tabs.map(coerceTab);
+  syncTabLifecycleWithTabs(snapshot);
   notify();
 }
 
 /** Fetch the canonical global list and adopt it. */
-export async function refreshAllTabRows(): Promise<TabRow[]> {
-  const rows = await Tab.listAll();
-  applyAllTabRows(rows);
-  return rows;
+export async function refreshAllTabs(): Promise<Tab[]> {
+  const tabs = await Tab.listAll();
+  applyAllTabs(tabs);
+  return tabs;
 }
 
-/** Optimistic drag preview: reorder the current rows by a predicted id order
+/** Optimistic drag preview: reorder the current tabs by a predicted id order
  *  (via the shared `computeReorder`, byte-equal to the backend), keeping each
- *  row's resolved data. Replaced by the next `tabs-changed` refresh on drop. */
+ *  tab's resolved data. Replaced by the next `tabs-changed` refresh on drop. */
 export function applyPredictedOrder(reorderId: string, afterId: string | null, beforeId: string | null): void {
-  const byId = new Map(snapshot.map((r) => [r.id, r]));
+  const byId = new Map(snapshot.map((t) => [t.id, t]));
   const order = computeReorder(
-    snapshot.map((r) => r.id),
+    snapshot.map((t) => t.id),
     reorderId,
     afterId,
     beforeId,
   );
-  snapshot = order.map((id) => byId.get(id)).filter((r): r is TabRow => r != null);
+  snapshot = order.map((id) => byId.get(id)).filter((t): t is Tab => t != null);
   notify();
 }
 
@@ -70,20 +106,26 @@ function attach(): void {
   const cm = ConnectionManager.getInstance();
   cm.on('on_flow_data', (_typeId: unknown, flowData: unknown) => {
     const fd = (flowData ?? {}) as { element_type?: string; elementType?: string };
-    if ((fd.element_type ?? fd.elementType) === 'tabs_changed') void refreshAllTabRows();
+    if ((fd.element_type ?? fd.elementType) === 'tabs_changed') void refreshAllTabs();
   });
 }
 
-/** React binding: the global visible-tab rows. Attaches the ping once and does a
+/** React binding: the global visible tabs. Attaches the ping once and does a
  *  one-time initial fetch (subsequent updates ride the `tabs-changed` ping). */
-export function useAllTabRows(): TabRow[] {
-  const rows = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+export function useAllTabs(): Tab[] {
+  const tabs = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   useEffect(() => {
     attach();
     if (!loadedOnce) {
       loadedOnce = true;
-      void refreshAllTabRows();
+      void refreshAllTabs();
     }
   }, []);
-  return rows;
+  return tabs;
 }
+
+// Backward-compat aliases for migration
+export const useAllTabRows = useAllTabs;
+export const refreshAllTabRows = refreshAllTabs;
+export const getAllTabRowsSnapshot = getAllTabsSnapshot;
+export const applyAllTabRows = applyAllTabs;

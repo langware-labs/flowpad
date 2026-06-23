@@ -79,22 +79,13 @@ export function CollaborationPage() {
   const { currentDock } = useDockNavigation();
 
   const isActiveView = currentDock?.viewType === ViewType.PROJECT;
-  const { projectId, roomId, conversationId: pointerConversationId } = useMemo(
+  const { projectTypeId, roomId, conversationId: pointerConversationId } = useMemo(
     () =>
       isActiveView
         ? DockPointer.parseProjectPointer(currentDock?.pointer)
-        : { projectId: null, roomId: null, conversationId: null },
+        : { projectTypeId: null, roomId: null, tabTypeId: null, conversationId: null },
     [isActiveView, currentDock?.pointer],
   );
-
-  const projectTypeId = useMemo(() => {
-    if (!projectId) return null;
-    try {
-      return new TypeId(Project.type, projectId);
-    } catch {
-      return null;
-    }
-  }, [projectId]);
 
   const roomTypeId = useMemo(() => {
     if (!roomId) return null;
@@ -137,8 +128,8 @@ export function CollaborationPage() {
   // per-project when no room is selected) to sessionStorage so refresh
   // restores the open set + active tab.
   const storageKey = useMemo(
-    () => persistenceKey(projectId, roomId),
-    [projectId, roomId],
+    () => persistenceKey(projectTypeId?.id ?? null, roomId),
+    [projectTypeId, roomId],
   );
   const [roomTabs, setRoomTabs] = useState<RoomTab[]>(() => readPersistedRoomTabs(storageKey).tabs);
   const [activeRoomTabKey, setActiveRoomTabKey] = useState<string | null>(
@@ -228,7 +219,7 @@ export function CollaborationPage() {
     });
   }, []);
 
-  if (!projectId) return <EmptyState />;
+  if (!projectTypeId) return <EmptyState />;
   if (!project) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>

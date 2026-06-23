@@ -105,6 +105,20 @@ keyring.set_keyring(_InMemoryKeyring())
 # See flow_sdk/flow_rs_binary.py::vendored_flow_rs_enabled.
 os.environ["FLOWPAD_DISABLE_VENDORED_FLOW_RS"] = "1"
 
+# Neutralize inherited Electron-desktop env for the test session. When the suite
+# is launched from inside the Flowpad desktop app's PTY (an agentic-process
+# worker), the desktop exports these vars and they leak into the tests:
+#   FLOWPAD_DESKTOP   flips the consent gate into its desktop-only branch
+#                     (is_secrets_enabled marker-only => False)
+#   SOD_ENC_KEY       makes sod_key resolve to a fixed env key that bypasses the
+#                     keychain entirely (breaks keychain-loss/recovery tests)
+#   DEPLOY_ENV        leaks "desktop" — an invalid value for tooling that parses it
+# Default the session to a clean non-desktop env; tests that exercise these paths
+# set the vars themselves via monkeypatch. Listed explicitly so the next leak is a
+# one-line addition here rather than another scattered special case.
+for _inherited in ("FLOWPAD_DESKTOP", "SOD_ENC_KEY", "DEPLOY_ENV"):
+    os.environ.pop(_inherited, None)
+
 from flow_sdk.config import FLOWPAD_TEMP_DIR
 
 # Ensure tests use a separate DB path (prevents conflicts with a running dev server)

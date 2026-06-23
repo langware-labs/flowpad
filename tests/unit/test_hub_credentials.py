@@ -19,6 +19,7 @@ import pytest
 from flow_sdk.cli.app_config import clear_user, set_user
 from flow_sdk.cli.auth.credentials import (
     UserHubCredentials,
+    _scoped_key,
     clear_credentials,
     load_credentials,
     save_credentials,
@@ -39,11 +40,16 @@ def test_credentials_round_trip_preserves_fields(sod_env):
     )
 
     save_credentials(creds)
+    # The active-user pointer identifies whose scoped entries to read. Set it
+    # the way _finalize_login does (set_user after save_credentials).
+    set_user(creds.user)
     loaded = load_credentials()
     assert loaded == creds
+    # Loading by explicit id resolves the same record without the pointer.
+    assert load_credentials("u1") == creds
 
 
-def test_credentials_stored_as_separate_sod_entries(sod_env):
+def test_credentials_stored_as_per_user_scoped_sod_entries(sod_env):
     save_credentials(UserHubCredentials(
         api_key="k1",
         refresh_token="r1",
@@ -51,10 +57,58 @@ def test_credentials_stored_as_separate_sod_entries(sod_env):
         user={"id": "u"},
     ))
     sod = get_instance_settings().sod
-    assert sod.read("api_key") == "k1"
-    assert sod.read("refresh_token") == "r1"
-    assert sod.read("expires_at") == "99.0"
-    assert json.loads(sod.read("user")) == {"id": "u"}
+    # Keyed by user id — NOT the legacy flat names.
+    assert sod.read(_scoped_key("api_key", "u")) == "k1"
+    assert sod.read(_scoped_key("refresh_token", "u")) == "r1"
+    assert sod.read(_scoped_key("expires_at", "u")) == "99.0"
+    assert json.loads(sod.read(_scoped_key("user", "u"))) == {"id": "u"}
+    # The old flat slots are untouched by a user-scoped save.
+    assert sod.read("api_key") is None
+
+
+def test_two_users_coexist_without_overwrite(sod_env):
+    """The core regression: a second user logging in must NOT destroy the
+    first user's credentials. Both sets live side by side in one sodot."""
+    alice = UserHubCredentials(api_key="alice-tok", user={"id": "alice", "email": "a@x"})
+    bob = UserHubCredentials(api_key="bob-tok", user={"id": "bob", "email": "b@x"})
+
+    save_credentials(alice)
+    save_credentials(bob)  # would clobber alice under the old flat-key model
+
+    assert load_credentials("alice").api_key == "alice-tok"
+    assert load_credentials("bob").api_key == "bob-tok"
+
+    # Active-user pointer selects which one a zero-arg load returns; flipping
+    # it back to alice still finds her token (nothing was cleaned up).
+    set_user(bob.user)
+    assert load_credentials().api_key == "bob-tok"
+    set_user(alice.user)
+    assert load_credentials().api_key == "alice-tok"
+
+
+def test_clear_credentials_only_touches_target_user(sod_env):
+    save_credentials(UserHubCredentials(api_key="alice-tok", user={"id": "alice"}))
+    save_credentials(UserHubCredentials(api_key="bob-tok", user={"id": "bob"}))
+
+    set_user({"id": "bob"})
+    clear_credentials()  # active user == bob
+
+    assert load_credentials("bob") is None
+    assert load_credentials("alice").api_key == "alice-tok"
+
+
+def test_legacy_flat_keys_still_load(sod_env):
+    """Instances written before per-user keying carry flat keys. A user whose
+    scoped entries are absent must still load via the flat fallback."""
+    sod = get_instance_settings().sod
+    sod.write("api_key", "legacy-tok")
+    sod.write("user", json.dumps({"id": "legacy-user"}))
+
+    # Resolved as the active user, the scoped read misses and falls back to flat.
+    set_user({"id": "legacy-user"})
+    loaded = load_credentials()
+    assert loaded is not None
+    assert loaded.api_key == "legacy-tok"
 
 
 def test_save_clears_optional_fields_when_omitted(sod_env):

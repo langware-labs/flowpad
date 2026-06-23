@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import tempfile
 import zipfile
@@ -419,12 +420,22 @@ def _ensure_asset_dest_root(asset_dest_root: Path | None) -> Path:
     """Resolve the unpack destination for FS-rooted assets.
 
     Called lazily — only when an FS-rooted entry is actually encountered, so
-    bundles without skill/agent attachments never allocate a temp dir.
+    bundles without skill/agent attachments never touch the filesystem.
+
+    When the caller passes no destination (the AUTO-materialization path on
+    message receive, as opposed to a project-scoped chip download), fall back to
+    the user's personal library root (``~`` → ``~/.claude/skills`` /
+    ``~/.claude/agents``) rather than a throwaway temp dir. A received skill the
+    recipient still has hub access to must materialize DURABLY and get indexed
+    into their library — landing it in a temp dir made it vanish as soon as the
+    carrying conversation was left or deleted, even though the hub grant
+    persists. Home is the same root the app reads personal skills/agents from,
+    so the asset shows up in the library and survives independently.
     """
     if asset_dest_root is not None:
         return asset_dest_root
-    chosen = Path(tempfile.mkdtemp(prefix="flowmsg_assets_"))
-    logger.info("[bundle] asset_dest_root unset; restoring FS-rooted assets to %s", chosen)
+    chosen = Path.home()
+    logger.info("[bundle] asset_dest_root unset; restoring FS-rooted assets to personal library %s", chosen)
     return chosen
 
 
@@ -522,6 +533,18 @@ def _restore_spec_source(spec_file: Path, entry_id: str, staging_root: Path) -> 
 
 
 
+# Build/environment artifacts that must never ride inside a shared asset
+# bundle. They are regenerable cruft, not skill source, and their deeply
+# nested trees (a `.venv` ships `…/site-packages/pip/_internal/…/__pycache__/
+# *.pyc`) blow past Windows' 260-char MAX_PATH on the receiver's extractall —
+# which silently aborts the whole download. Keep this in sync with the spirit
+# of a `.gitignore`: ship source, not built environments.
+_ASSET_PACK_IGNORE = shutil.ignore_patterns(
+    ".venv", "venv", "env", "__pycache__", "*.pyc", "*.pyo",
+    "node_modules", ".git", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+)
+
+
 async def _pack_fs_rooted_attachment(
     entry_type: str, entry_id: str, attachment_dir: Path,
 ) -> None:
@@ -530,6 +553,10 @@ async def _pack_fs_rooted_attachment(
     Bundle layout: ``attachment/<type>-@<id>/.claude/<relative-path>``. Format
     is unchanged from the source — the indexer reads exactly the same shape
     on disk in production, so unpack just needs to restore + reindex.
+
+    Build/environment cruft (``.venv``, ``__pycache__``, ``node_modules``, …)
+    is filtered out via ``_ASSET_PACK_IGNORE`` — it isn't asset source and its
+    deep paths break extraction on Windows.
     """
     src = await _fs_rooted_asset_path(entry_type, entry_id)
     if src is None or not src.exists():
@@ -539,7 +566,7 @@ async def _pack_fs_rooted_attachment(
     dest = dest_root / rel
     dest.parent.mkdir(parents=True, exist_ok=True)
     if src.is_dir():
-        shutil.copytree(src, dest, dirs_exist_ok=True)
+        shutil.copytree(src, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
         # Folder assets (whiteboard, skill) key their id off the main doc's
         # frontmatter id, falling back to a name/path-derived value that won't
         # match the sender's entity id. Pin the sender's id into the main doc so
@@ -859,6 +886,21 @@ async def _create_prompt_from_file(prompt_file: Path, prompt_id: str, owner_type
         logger.warning("unpack_bundle: could not create Prompt from %s: %s", prompt_file, e)
 
 
+def _extended_length_path(p: Path) -> Path:
+    """Return ``p`` as a Windows extended-length (``\\\\?\\``) path so writes
+    under it bypass the 260-char MAX_PATH limit. No-op off Windows and when the
+    prefix is already present. The prefix requires a fully-qualified,
+    backslash-separated path with no ``.``/``..`` components, so resolve first."""
+    if os.name != "nt":
+        return p
+    resolved = os.path.abspath(str(p))
+    if resolved.startswith("\\\\?\\"):
+        return Path(resolved)
+    if resolved.startswith("\\\\"):  # UNC: \\server\share -> \\?\UNC\server\share
+        return Path("\\\\?\\UNC" + resolved[1:])
+    return Path("\\\\?\\" + resolved)
+
+
 async def unpack_bundle(
     zip_path: Path,
     local_user_id: str,
@@ -888,9 +930,14 @@ async def unpack_bundle(
 
     tmp_root = Path(tempfile.mkdtemp(prefix="flowmsg_unpack_"))
     try:
-        # 1. Extract zip
+        # 1. Extract zip. On Windows, anchor extraction at an extended-length
+        # (``\\?\``) path so members whose full path exceeds the 260-char
+        # MAX_PATH still extract instead of raising FileNotFoundError mid-way
+        # (which would silently abort the whole unpack). Hardening in depth —
+        # the packer already strips the deep `.venv`/cache trees that used to
+        # trip this; this keeps a legitimately-deep asset from breaking a share.
         with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(tmp_root)
+            zf.extractall(_extended_length_path(tmp_root))
 
         # 2. Read top-level header.json
         msg_data = _read_entity_header(tmp_root)
@@ -1048,7 +1095,11 @@ async def unpack_bundle(
                     if sess_data is not None:
                         from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
                         sess_id = sess_data.get("id") or entry_id
-                        sess_payload = {**sess_data, "id": sess_id, "remote": False}
+                        # ``received=True``: the transcript rode in with the share
+                        # and lives only under received_transcripts/ — it never ran
+                        # here and is not resumable. Drives the viewer's resume-hide
+                        # + analyze-transcript toolbar.
+                        sess_payload = {**sess_data, "id": sess_id, "remote": False, "received": True}
                         existing_sess = await ClaudeSession.get_one({"id": sess_id})
                         if existing_sess is None or overwrite:
                             sess = ClaudeSession.model_validate(sess_payload)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAllProjects } from '@src/hooks/use-all-projects';
-import type { ScopeFilter } from '@src/lib/scope-filter';
+import { filterScope, projectScope, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import type { SearchScopeMode } from '@src/components/record-search-bar/SearchScopeToggle';
 
 interface UseGlobalSearchScopeOptions {
@@ -24,14 +24,14 @@ export function useGlobalSearchScope({
     for (const project of projects) {
       if (project.id) ids.add(project.id);
     }
-    return { user: true, projects: [...ids] };
+    return filterScope(true, [...ids]);
   }, [projects]);
 
   return { scope, isLoading };
 }
 
 export function currentProjectOnlySearchScope(currentProjectId: string): ScopeFilter {
-  return { user: false, projects: [currentProjectId] };
+  return projectScope(currentProjectId);
 }
 
 export function useSearchScopeToggle(
@@ -74,7 +74,7 @@ export function useSearchScopeToggle(
     isLoading,
     mode,
     setMode,
-    allProjectCount: allProjectsScope.projects.length,
+    allProjectCount: scopeProjectIds(allProjectsScope).length,
     currentProjectAvailable,
   };
 }

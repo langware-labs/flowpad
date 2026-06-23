@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Activity, ExternalLink, Loader2, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { Activity, ExternalLink, Loader2, RefreshCw, RotateCcw } from 'lucide-react';
 import { AgenticProcess, ProcessKind, QueryFilter, QueryRequest, Skill } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { SideDrawer } from '@src/components/ui/side-drawer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { deriveAnalysisAction } from './analysis-state';
 import { useSessionAnalyses } from './useSessionAnalyses';
@@ -15,8 +16,12 @@ import { useSessionAnalyses } from './useSessionAnalyses';
  * keyed to the analyzed process (child + mutual private context, paired
  * server-side at create).
  */
-export function useAnalysisControls(sessionId: string | null, lastEntryTs: string | null) {
-  const { traces, analysisTarget, analysisProcesses } = useSessionAnalyses(sessionId);
+export function useAnalysisControls(
+  sessionId: string | null,
+  lastEntryTs: string | null,
+  options: { analysisTargetOverride?: string | null } = {},
+) {
+  const { traces, analysisTarget, analysisProcesses } = useSessionAnalyses(sessionId, options);
   const [panelOpen, setPanelOpen] = useState(false);
   const [autoPrompt, setAutoPrompt] = useState<{ text: string; nonce: number; newSession?: boolean } | null>(null);
 
@@ -42,10 +47,12 @@ export function useAnalysisControls(sessionId: string | null, lastEntryTs: strin
   return { action, panelOpen, setPanelOpen, autoPrompt, analysisTarget, startAnalysis };
 }
 
+export type AnalysisControls = ReturnType<typeof useAnalysisControls>;
+
 export function AnalysisToolbarButtons({
   controls,
 }: {
-  controls: ReturnType<typeof useAnalysisControls>;
+  controls: AnalysisControls;
 }) {
   const { navigation } = useDockNavigation();
   const { action, startAnalysis, setPanelOpen } = controls;
@@ -140,7 +147,7 @@ export function AnalysisToolbarButtons({
 export function AnalysisSidePanel({
   controls,
 }: {
-  controls: ReturnType<typeof useAnalysisControls>;
+  controls: AnalysisControls;
 }) {
   const { panelOpen, setPanelOpen, analysisTarget, autoPrompt } = controls;
 
@@ -162,21 +169,15 @@ export function AnalysisSidePanel({
   if (!panelOpen || !analysisTarget) return null;
 
   return (
-    <aside className="flex w-[380px] shrink-0 flex-col border-l border-border" data-testid="analysis-side-panel">
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1.5">
-        <span className="text-xs font-medium">Session analysis</span>
-        <button
-          type="button"
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={() => setPanelOpen(false)}
-          title="Close panel"
-          data-testid="analysis-panel-close"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+    <SideDrawer
+      open={panelOpen}
+      onOpenChange={setPanelOpen}
+      title="Session analysis"
+      width="w-[380px]"
+      data-testid="analysis-side-panel"
+    >
       <EntityExecutionPanel
-        className="min-h-0 flex-1"
+        className="h-full"
         target={analysisTarget}
         processType={ProcessKind.Analysis}
         autoPrompt={autoPrompt}
@@ -198,6 +199,6 @@ export function AnalysisSidePanel({
           }
         }}
       />
-    </aside>
+    </SideDrawer>
   );
 }

@@ -70,6 +70,14 @@ For each attention segment / marker cluster, read the relevant transcript span t
 - **Stucks** — the synthesizer marks ≥3 identical failing commands; add judgment-level stucks (spinning across *different* commands on one problem, long unproductive spans).
 - **Skill performance** — for every `skill_load` event, judge the span that follows: did the skill's instructions get followed? Where did they mislead or under-specify? This feedback is the product — be precise about which instruction needs adjusting.
 
+**Per-asset attribution (the product's structured form).** When a divergence or issue is caused by a *skill's* instructions — not the environment, not the user — attribute it to that skill so the fix half (skillit) can consume it per-asset. On that finding set:
+
+- `skill` — the **name** of the loaded skill it implicates (from the `skill_load` event / the owning skill lane's `skill_name`). This is the routing key: skillit resolves a target skill by name.
+- `section_hint` — *where in that skill's files the fix belongs* — quote a **verbatim substring** of the skill text (a heading or instruction line), not a paraphrase with `...` ellipses. The backend resolves your quotes against the skill folder; a quote that exists nowhere is flagged `unresolved_anchors` (a stale anchor), so keep it literal and current.
+- `evidence` — `{"quote": "<verbatim transcript excerpt>", "ts": "<ISO-8601 Z>"}` proving the finding from the run itself. **A finding with no run evidence is a guess, not a finding** — the same bar review mode applies to its context citations. This quote is what the verify step (below) and skillit check against.
+
+A finding with no `skill` is **session-level** (goal drift, a wrong conclusion, a flaky retry that no skill caused) — leave `skill` unset; it stays for the human, never goes to a fixer. Prefer one structured attributed finding over a prose `notes` line: `notes` is for context that isn't a per-skill defect; anything actionable on a skill belongs in a `divergence`/`issue` with `skill` + `section_hint` + `evidence` set.
+
 ### 3. Annotate
 
 Write `$OUT/<SESSION_ID>.annotations.json`:
@@ -80,13 +88,30 @@ Write `$OUT/<SESSION_ID>.annotations.json`:
   "verdict_reason": "one line",
   "goals": [{"label": "...", "lane_id": "root", "start_ts": "...", "end_ts": "...",
              "verdict": "ok|mixed|bad", "subgoals": [{"label": "...", "start_ts": "...", "end_ts": "..."}]}],
-  "divergences": [{"ts": "...", "lane_id": "...", "label": "...", "detail": "...", "severity": "notable|attention"}],
-  "issues": [{"ts": "...", "lane_id": "...", "label": "...", "detail": "...", "severity": "attention"}],
-  "notes": ["skill <name>: instruction X caused Y — suggest Z"]
+  "divergences": [{"ts": "...", "lane_id": "...", "label": "...", "detail": "...", "severity": "notable|attention",
+                   "skill": "<skill-name, if a skill caused it>", "section_hint": "<verbatim skill quote>",
+                   "evidence": {"quote": "<verbatim transcript excerpt>", "ts": "..."}}],
+  "issues": [{"ts": "...", "lane_id": "...", "label": "...", "detail": "...", "severity": "attention",
+              "skill": "<skill-name, if applicable>", "section_hint": "<verbatim skill quote>",
+              "evidence": {"quote": "<verbatim transcript excerpt>", "ts": "..."}}],
+  "notes": ["context that is NOT a per-skill defect (env, one-off) — skill defects go in divergences/issues with skill+section_hint+evidence"]
 }
 ```
 
+`skill` / `section_hint` / `evidence` are optional per finding — set them when a skill caused it (see Per-asset attribution above), omit for session-level findings. The backend folds attributed findings into `annotations.by_skill[<skill>]` (the per-asset bucket skillit consumes) and the rest into `annotations.unattributed`, and stamps each with `judged_against` (`loaded` = the SKILL body the run actually used, recovered from the transcript; else `disk`) and `unresolved_anchors`. **Judge against the loaded body, not on-disk** — if `summary.skill_drift[<skill>]` is true the run used a different skill version than what's on disk now, so a finding about on-disk text the run never saw is likely spurious.
+
 Timestamps must be copied verbatim from skeleton entries (ISO-8601 Z) so markers land on the timeline.
+
+### 3.5 Verify findings (adversarial, independent)
+
+Your findings are hypotheses until the transcript backs them. Before you create the record, **substantiate each attributed finding with an independent refuter** — a fresh look biased toward disproving it — so a misread trace never reaches skillit as a fix. (This run's own analysis can't be its own judge: it already believed the finding.)
+
+For each finding in `annotations.by_skill[*].findings`, launch ONE `model: haiku` agent from `agents/finding-verifier.md`, filled with the finding, its `evidence` quote, the session id, and the loaded skill body (`agent_trace --loaded-skills <SESSION_ID>` — the body the run actually used). It returns `{substantiated, quote, reason}`:
+
+- **substantiated** → keep the finding.
+- **refuted** → move it out of `divergences`/`issues` into a top-level `refuted` list in your annotations (label, skill, reason) — flag it, never silently drop. It does not go to skillit; it goes back as signal that the finding was wrong.
+
+Run verifiers concurrently (they're independent). A finding whose `evidence` is empty, or whose `judged_against` is `disk` while `summary.skill_drift[<skill>]` is true (graded against text the run never saw), should be treated as refuted unless the refuter still substantiates it from the transcript.
 
 ### 4. Create the record
 

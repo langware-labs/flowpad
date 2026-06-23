@@ -59,6 +59,58 @@ def test_terminal_set_matches_spec(status_fixture):
     assert _TERMINAL_STATUSES == expected
 
 
+def test_error_set_matches_spec(status_fixture):
+    """Python ``_ERROR_STATUSES`` must equal the shared fixture literal
+    (``worker_execution_error``), kept in parity with the TS ``ERROR_WORKER_STATUSES``."""
+    from flow_sdk.builtin.worker_status import _ERROR_STATUSES
+
+    expected = {WorkerStatus(v) for v in status_fixture["worker_execution_error"]}
+    assert _ERROR_STATUSES == expected
+
+
+# ── classify_execution_mode truth table ──────────────────────────────────────
+
+
+def test_classify_execution_mode_truth_table():
+    from flow_sdk.builtin.worker_status import ExecutionMode, classify_execution_mode
+
+    # Not live → None.
+    for s in ("new", "stopping", "stopped", "failed"):
+        assert classify_execution_mode(status=s, worker_status=None, visible=True) is None
+
+    # Live PTY / CLI split.
+    for s in ("running", "starting"):
+        assert (
+            classify_execution_mode(status=s, worker_status=None, visible=True)
+            == ExecutionMode.INTERACTIVE
+        )
+        assert (
+            classify_execution_mode(status=s, worker_status=None, visible=False)
+            == ExecutionMode.BACKGROUND
+        )
+
+    # Error worker_status wins over visible, for both PTY and CLI.
+    for w in ("error", "api_timeout", "inactive"):
+        assert (
+            classify_execution_mode(status="running", worker_status=w, visible=True)
+            == ExecutionMode.ERROR
+        )
+        assert (
+            classify_execution_mode(status="running", worker_status=w, visible=False)
+            == ExecutionMode.ERROR
+        )
+
+    # Dead PTY pid → Error; CLI without pid liveness stays Background.
+    assert (
+        classify_execution_mode(status="running", worker_status=None, visible=True, pid_alive=False)
+        == ExecutionMode.ERROR
+    )
+    assert (
+        classify_execution_mode(status="running", worker_status=None, visible=False)
+        == ExecutionMode.BACKGROUND
+    )
+
+
 # ── ProcessStatus enum shape ─────────────────────────────────────────────────
 
 
@@ -200,6 +252,45 @@ def test_tail_status_last_prompt_after_end_turn_is_complete(tmp_path: Path):
         {"type": "last-prompt"},
     ])
     os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
+def test_tail_status_last_prompt_with_end_turn_past_tail_window_is_complete(tmp_path: Path):
+    """``end_turn`` stranded past the 4 KB tail window must still read COMPLETE.
+
+    Regression for the "pinned at WAITING / never PENDING_USER" bug: the turn
+    genuinely ended (``stop_reason=end_turn``) and Claude appended trailing
+    ``last-prompt`` / ``system`` / envelope markers, but a large preceding
+    ``tool_use`` line pushed the ``end_turn`` entry just past the 4 KB
+    (``_TAIL_BYTES``) tail read. The ``last-prompt`` branch then saw no completed
+    assistant in-window and fell through to WAITING — leaving a finished, idle
+    worker stuck on the animated "Waiting" pill (``ready_for_input=False``,
+    never projected to PENDING_USER). The tail read must widen until the
+    completing assistant turn is in-window.
+    """
+    f = tmp_path / "session.jsonl"
+    # A large final assistant turn (a long summary message is routine), so the
+    # ``end_turn`` line's START lands > 4096 bytes from EOF once the trailing
+    # ack/envelope run is appended — exactly the on-disk shape that pinned a
+    # finished worker at WAITING.
+    big_blob = "x" * 6000
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {
+            "role": "assistant", "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": big_blob}]}},
+        {"type": "system", "subtype": "info"},
+        {"type": "last-prompt"},
+        {"type": "last-prompt"},
+        # Trailing ignored session-envelope run, exactly as Claude Code writes it.
+        {"type": "ai-title"},
+        {"type": "mode"},
+        {"type": "permission-mode"},
+    ])
+    os.utime(f, None)
+    # Sanity: the end_turn really is stranded past the 4 KB tail window.
+    raw = f.read_bytes()
+    assert len(raw) - raw.rindex(b'"end_turn"') > 4096
     assert _tail_status(f) == WorkerStatus.COMPLETE
 
 

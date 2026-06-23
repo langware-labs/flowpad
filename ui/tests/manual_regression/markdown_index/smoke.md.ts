@@ -49,7 +49,7 @@ test.describe('MarkdownIndex — Smoke', () => {
     // System entity: not crawled by default, not in the records browser.
     expect(t.has_entity_cls, 'has_entity_cls').toBe(true);
     expect(t.indexed_by_default, 'indexed_by_default false (system entity)').toBe(false);
-    expect(t.browseable, 'browseable false (system entity)').toBe(false);
+    expect(t.browseable_by, 'browseable_by null (system entity)').toBeNull();
     // NOTE: `has_record_cls` no longer exists — the entity/record split was
     // unified, so the schema exposes only has_entity_cls. parent_type is
     // best-effort (self-referential registration) and not asserted.

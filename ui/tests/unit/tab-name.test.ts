@@ -7,8 +7,11 @@ import { dataManager } from '@sdk';
 import { describe, expect, it } from 'vitest';
 
 describe('dataManager.getTabName', () => {
-  it('vfs pointer → file/folder basename', () => {
-    expect(dataManager.getTabName({ viewType: 'assets', pointer: 'editor/code/vfs/foo/bar/baz.ts' })).toBe('baz.ts');
+  it('assets is scope-keyed: an open document folds into the scope-titled tab', () => {
+    // Single-tab-per-scope — the open document no longer titles the tab by file
+    // name; an unscoped assets dock → null (global "Assets" fallback). Per-scope
+    // titles ("<project>'s Assets" / "My Assets") live in assets-tab-name-scope.test.ts.
+    expect(dataManager.getTabName({ viewType: 'assets', pointer: 'editor/code/vfs/foo/bar/baz.ts' })).toBeNull();
   });
 
   it('wiki pointer → keyword', () => {

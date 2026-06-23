@@ -5,7 +5,9 @@ instantiated per-request.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 import shlex
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -62,6 +64,29 @@ class GitHasCommitData(_CamelModel):
 
 class GitFileDiff(_CamelModel):
     diff: str
+
+
+class GitFileContent(_CamelModel):
+    content: str
+
+
+class GitRevision(_CamelModel):
+    hash: str
+    version: int | None = None
+    message: str
+    date: str
+    author: str
+
+
+class GitRevisionList(_CamelModel):
+    revisions: list[GitRevision] = []
+    version: int | None = None  # current (HEAD) version parsed from the newest revision
+    unpushed: int = 0  # commits to this file ahead of @{u} (0 when no upstream)
+
+
+class GitRestoreResult(_CamelModel):
+    ok: bool
+    message: str
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +160,35 @@ class GitRepo:
             return None
         return branch.strip() or None
 
+    @staticmethod
+    def _parse_branch_header(line: str) -> tuple[str | None, int, int]:
+        """Parse a porcelain v1 ``## `` branch header into (branch, ahead, behind).
+
+        Examples::
+
+            ## main                              → ("main", 0, 0)
+            ## main...origin/main                → ("main", 0, 0)
+            ## main...origin/main [ahead 1, behind 2] → ("main", 1, 2)
+            ## HEAD (no branch)                  → (None, 0, 0)   # detached
+            ## No commits yet on main            → ("main", 0, 0) # empty repo
+        """
+        body = line[3:].strip()
+        ahead = behind = 0
+        m = re.search(r"\[([^\]]*)\]\s*$", body)
+        if m:
+            for part in m.group(1).split(","):
+                part = part.strip()
+                if part.startswith("ahead "):
+                    ahead = int(part[len("ahead "):] or 0)
+                elif part.startswith("behind "):
+                    behind = int(part[len("behind "):] or 0)
+            body = body[: m.start()].strip()
+        if body.startswith("No commits yet on "):
+            return (body[len("No commits yet on "):].strip() or None, ahead, behind)
+        if body.startswith("HEAD "):  # "HEAD (no branch)" — detached
+            return (None, ahead, behind)
+        return (body.split("...", 1)[0].strip() or None, ahead, behind)
+
     async def get_status(self) -> GitStatus:
         """Return a rich git-status object.
 
@@ -148,21 +202,18 @@ class GitRepo:
                 files    = [GitStatusFile(status, path, insertions, deletions), ...],
             )
         """
-        if not await self.is_init():
+        # One combined call replaces is_init + get_branch + ahead/behind +
+        # file-list (4 git spawns → 1). ``--branch`` prepends a
+        # ``## <branch>...<upstream> [ahead N, behind M]`` header line; the
+        # remaining lines are the same porcelain v1 file entries parsed below.
+        # rc != 0 ⇒ not a git repository (replaces the separate is_init probe).
+        status_out, status_rc = await self._run_git(
+            "status", "--porcelain=v1", "--branch", "--untracked-files=all"
+        )
+        if status_rc != 0:
             return GitStatus(error="not a git repository")
 
-        branch = await self.get_branch()
-
-        # Ahead / behind remote
-        ahead, behind = 0, 0
-        ab_out, ab_rc = await self._run_git("rev-list", "--left-right", "--count", "HEAD...@{upstream}")
-        if ab_rc == 0 and ab_out:
-            parts = ab_out.split()
-            if len(parts) == 2:
-                try:
-                    ahead, behind = int(parts[0]), int(parts[1])
-                except ValueError:
-                    pass
+        branch, ahead, behind = None, 0, 0
 
         # Numstat for insertion/deletion counts
         def parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
@@ -178,18 +229,23 @@ class GitRepo:
                         pass
             return result
 
-        numstat_unstaged_out, _ = await self._run_git("diff", "--numstat")
-        numstat_staged_out, _ = await self._run_git("diff", "--numstat", "--staged")
+        # Independent reads — run concurrently rather than back-to-back.
+        (numstat_unstaged_out, _), (numstat_staged_out, _) = await asyncio.gather(
+            self._run_git("diff", "--numstat"),
+            self._run_git("diff", "--numstat", "--staged"),
+        )
         numstat_unstaged = parse_numstat(numstat_unstaged_out)
         numstat_staged = parse_numstat(numstat_staged_out)
 
-        # Porcelain v1 for file list. ``--untracked-files=all`` lists each
-        # untracked file individually instead of collapsing a wholly-untracked
-        # directory into a single ``dir/`` entry — otherwise a new file like
-        # ``marketing/workflows/.../workflow.md`` is hidden behind ``marketing/``.
-        porcelain_out, _ = await self._run_git("status", "--porcelain=v1", "--untracked-files=all")
+        # File list comes from the same ``status_out`` above. ``--untracked-files=all``
+        # lists each untracked file individually instead of collapsing a wholly-
+        # untracked directory into a single ``dir/`` entry — otherwise a new file
+        # like ``marketing/workflows/.../workflow.md`` is hidden behind ``marketing/``.
         files: list[GitStatusFile] = []
-        for line in porcelain_out.splitlines():
+        for line in status_out.splitlines():
+            if line.startswith("## "):
+                branch, ahead, behind = self._parse_branch_header(line)
+                continue
             if len(line) < 4:
                 continue
             x = line[0]   # staged status char
@@ -247,6 +303,140 @@ class GitRepo:
         return GitFileDiff(diff=diff)
 
     # ------------------------------------------------------------------
+    # Per-file revision history (scoped to a single asset file)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _version_from_message(message: str) -> int | None:
+        """Parse the running version the auto-commit hook encodes as ``v{n}``."""
+        m = re.search(r"\bv(\d+)\b", message)
+        return int(m.group(1)) if m else None
+
+    async def get_file_revisions(self, file_path: str) -> GitRevisionList:
+        """Commit history for a single file, newest first.
+
+        Each record carries the running ``version`` parsed from its commit
+        message (encoded as ``v{n}`` by the auto-version hook). The list's
+        top-level ``version`` is the newest revision's.
+        """
+        fmt = "--format=%H%x1f%an%x1f%aI%x1f%s"
+        out, _ = await self._run_git("log", "--follow", fmt, "--", f"'{file_path}'")
+        revisions: list[GitRevision] = []
+        for line in out.splitlines():
+            if not line.strip():
+                continue
+            parts = line.split("\x1f")
+            if len(parts) < 4:
+                continue
+            hash_, author, date, message = parts[0], parts[1], parts[2], parts[3]
+            revisions.append(
+                GitRevision(
+                    hash=hash_,
+                    version=self._version_from_message(message),
+                    message=message,
+                    date=date,
+                    author=author,
+                )
+            )
+        current = revisions[0].version if revisions else None
+        # Unpushed commits to this file. `rev-list @{u}..HEAD` exits non-zero when
+        # there's no upstream — treat that (and any parse miss) as 0, so no extra
+        # `rev-parse @{u}` probe is needed.
+        unpushed = 0
+        cnt_out, cnt_rc = await self._run_git(
+            "rev-list", "--count", "@{u}..HEAD", "--", f"'{file_path}'"
+        )
+        if cnt_rc == 0:
+            try:
+                unpushed = int(cnt_out.strip() or "0")
+            except ValueError:
+                unpushed = 0
+        return GitRevisionList(revisions=revisions, version=current, unpushed=unpushed)
+
+    async def compare_file_revision(self, file_path: str, commit_hash: str) -> GitFileDiff:
+        """Unified diff of a file between a past revision and the working tree."""
+        diff, _ = await self._run_git(
+            "diff", shlex.quote(commit_hash), "HEAD", "--", f"'{file_path}'"
+        )
+        return GitFileDiff(diff=diff)
+
+    async def get_file_at(self, file_path: str, commit_hash: str) -> GitFileContent:
+        """Full file content at a revision (``git show <hash>:./<file>``).
+
+        Powers the Word-style review compare, which renders both versions as
+        formatted markdown. ``commit_hash`` may be ``HEAD`` for the current side.
+
+        The ``:./`` prefix makes git resolve ``file_path`` relative to the working
+        dir (``git -C work_dir``); plain ``<rev>:<path>`` is **repo-root**-relative,
+        so a basename for a file in a subdirectory would silently resolve to nothing.
+
+        Note: ``git show`` does not follow renames, so a revision from *before* the
+        file moved to its current path returns empty content (the review viewer then
+        shows it as all-new — acceptable; rename-aware history is out of scope).
+        """
+        rel = file_path[2:] if file_path.startswith("./") else file_path
+        content, _ = await self._run_git("show", shlex.quote(f"{commit_hash}:./{rel}"))
+        return GitFileContent(content=content)
+
+    async def restore_file(self, file_path: str, commit_hash: str) -> GitRestoreResult:
+        """Check out a single file at a past revision (working-tree mutation).
+
+        Scoped to the one file (``git checkout <hash> -- <file>``); other files
+        in the shared working tree are untouched. The restore itself is a content
+        change, so the next save re-versions it as a fresh revision.
+        """
+        _, err, rc = await self._run_git_io(
+            "checkout", shlex.quote(commit_hash), "--", f"'{file_path}'"
+        )
+        if rc != 0:
+            return GitRestoreResult(ok=False, message=(err or "Restore failed").strip())
+        return GitRestoreResult(ok=True, message=f"Restored to {commit_hash[:8]}")
+
+    # ------------------------------------------------------------------
+    # Per-file working-tree actions (discard / stage / unstage)
+    # ------------------------------------------------------------------
+
+    async def discard_file(self, file_path: str, status: str) -> GitRestoreResult:
+        """Undo a single file's pending change, chosen by its status char.
+
+        * ``?`` untracked → delete the file (``git clean -f``); it isn't tracked,
+          so there's nothing to restore it to.
+        * everything else (``M`` modified, ``D`` deleted, ``A`` added, ``R``
+          renamed, …) → revert both the index and the working tree to HEAD
+          (``git restore --staged --worktree``), bringing a deleted file back and
+          dropping edits/staging in one shot.
+
+        For a rename the panel hands us the **new** path (the caller strips the
+        ``old → new`` display form); v1 reverts that path only — the old name may
+        linger as a separate deletion until the next refresh.
+        """
+        if status == "?":
+            _, err, rc = await self._run_git_io("clean", "-f", "--", f"'{file_path}'")
+            verb = "Deleted"
+        else:
+            _, err, rc = await self._run_git_io(
+                "restore", "--staged", "--worktree", "--", f"'{file_path}'"
+            )
+            verb = "Discarded changes to"
+        if rc != 0:
+            return GitRestoreResult(ok=False, message=(err or "Discard failed").strip())
+        return GitRestoreResult(ok=True, message=f"{verb} {file_path}")
+
+    async def stage_file(self, file_path: str) -> GitRestoreResult:
+        """Stage just this file (``git add -- <file>``)."""
+        _, err, rc = await self._run_git_io("add", "--", f"'{file_path}'")
+        if rc != 0:
+            return GitRestoreResult(ok=False, message=(err or "Stage failed").strip())
+        return GitRestoreResult(ok=True, message=f"Staged {file_path}")
+
+    async def unstage_file(self, file_path: str) -> GitRestoreResult:
+        """Unstage just this file (``git restore --staged -- <file>``)."""
+        _, err, rc = await self._run_git_io("restore", "--staged", "--", f"'{file_path}'")
+        if rc != 0:
+            return GitRestoreResult(ok=False, message=(err or "Unstage failed").strip())
+        return GitRestoreResult(ok=True, message=f"Unstaged {file_path}")
+
+    # ------------------------------------------------------------------
     # Greedy "non-tech" push: stage-all → commit → pull --rebase → push
     # ------------------------------------------------------------------
 
@@ -265,11 +455,55 @@ class GitRepo:
         }
         return ", ".join(paths)
 
+    # Failure classes a publish can land in. `conflict` keeps its dedicated flag
+    # for the existing Resolve-agent path; the rest let the UI give state-specific,
+    # plain-language guidance instead of one generic "Push failed".
+    @staticmethod
+    def _classify_push_error(stderr: str) -> str:
+        """Map raw git/transport stderr to a publish failure kind.
+
+        One of: ``permission | no_remote | network | conflict | generic``.
+        """
+        s = (stderr or "").lower()
+        if any(k in s for k in (
+            "permission denied", "denied", "403", "forbidden", "authentication failed",
+            "access rights", "not authorized", "could not read from remote repository",
+        )):
+            return "permission"
+        if any(k in s for k in (
+            "does not appear to be a git repository", "no configured push destination",
+            "no such remote", "'origin' does not", "no upstream",
+        )):
+            return "no_remote"
+        if any(k in s for k in (
+            "could not resolve host", "connection refused", "connection timed out",
+            "timed out", "network is unreachable", "failed to connect", "ssl",
+        )):
+            return "network"
+        if any(k in s for k in ("non-fast-forward", "rejected", "fetch first", "behind", "unmerged")):
+            return "conflict"
+        return "generic"
+
     @staticmethod
     def _push_result(branch: str | None, message: str, *, ok: bool = False,
-                     conflict: bool = False, nothing: bool = False) -> dict:
-        """Build the dict the footer push button consumes."""
-        return {"ok": ok, "conflict": conflict, "nothing": nothing, "branch": branch, "message": message}
+                     conflict: bool = False, nothing: bool = False, kind: str | None = None) -> dict:
+        """Build the dict the publish UI consumes.
+
+        ``kind`` is the typed outcome (``pushed|nothing|conflict|permission|
+        no_remote|network|generic``). When omitted it's derived from the flags so
+        existing call sites stay correct; the back-compat ``ok/conflict/nothing``
+        keys are kept for the footer button.
+        """
+        if kind is None:
+            if nothing:
+                kind = "nothing"
+            elif conflict:
+                kind = "conflict"
+            elif ok:
+                kind = "pushed"
+            else:
+                kind = "generic"
+        return {"ok": ok, "conflict": conflict, "nothing": nothing, "kind": kind, "branch": branch, "message": message}
 
     async def push(self) -> dict:
         """Stage everything, auto-commit, sync with remote, and push.
@@ -283,7 +517,7 @@ class GitRepo:
         so the resolve agent can finish it) — never auto-aborted here.
         """
         if not await self.is_init():
-            return self._push_result(None, "Not a git repository")
+            return self._push_result(None, "Not a git repository", kind="no_repo")
 
         # 1. Stage everything.
         await self._run_git("add", "-A")
@@ -334,7 +568,11 @@ class GitRepo:
                             f"Merge conflict while syncing with the remote. Conflicted: {files or 'see git status'}",
                             conflict=True,
                         )
-                    return self._push_result(branch, combined.strip() or "Could not sync with the remote")
+                    return self._push_result(
+                        branch,
+                        combined.strip() or "Could not sync with the remote",
+                        kind=self._classify_push_error(combined),
+                    )
 
         # 6. Push (set upstream when the branch is new on the remote).
         push_args = ["push", "origin", shlex.quote(branch)] if has_upstream else ["push", "-u", "origin", shlex.quote(branch)]
@@ -342,13 +580,56 @@ class GitRepo:
         if ps_rc != 0:
             combined = (ps_err or ps_out or "").strip()
             unmerged, _ = await self._run_git("ls-files", "--unmerged")
-            lowered = combined.lower()
-            conflict = bool(unmerged.strip()) or any(
-                s in lowered for s in ("non-fast-forward", "rejected", "fetch first", "behind")
+            kind = "conflict" if unmerged.strip() else self._classify_push_error(combined)
+            return self._push_result(
+                branch, combined or "Push failed", conflict=(kind == "conflict"), kind=kind,
             )
-            return self._push_result(branch, combined or "Push failed", conflict=conflict)
 
         return self._push_result(branch, "Pushed", ok=True)
+
+    # ------------------------------------------------------------------
+    # Share — mint a point-in-time GitBranch snapshot of this workdir
+    # ------------------------------------------------------------------
+
+    async def branch_snapshot(self) -> dict:
+        """Mint a ``GitBranch`` snapshot for this workdir's ``origin`` remote.
+
+        Reads the origin URL + current branch + HEAD, ensures the deterministic
+        ``GitRemote`` registry row, and persists a fresh ``GitBranch`` (uuid4)
+        parented to it — the wire vehicle for sharing a repo into a
+        conversation. Returns the GitBranch json, or ``{"error": ...}`` when
+        there is no usable ``origin`` remote to share.
+        """
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.git_branch import GitBranch  # noqa: PLC0415
+        from flow_sdk.builtin.git_remote import GitRemote  # noqa: PLC0415
+        from flow_sdk.utils.git_identity import parse_git_remote_url  # noqa: PLC0415
+
+        # The three reads are independent — run them together (the share button
+        # only shows on a real repo, so a separate is_init() probe is redundant:
+        # a missing origin already surfaces below).
+        (url, url_rc), branch, (head, head_rc) = await asyncio.gather(
+            self._run_git("remote", "get-url", "origin"),
+            self.get_branch(),
+            self._run_git("rev-parse", "HEAD"),
+        )
+        parsed = parse_git_remote_url(url.strip()) if url_rc == 0 else None
+        if not parsed:
+            return {"error": "no git remote to share — add an 'origin' remote first"}
+        provider, owner, name = parsed
+        remote = await GitRemote.ensure(provider, owner, name)
+        snapshot = GitBranch(
+            branch=branch or "",
+            head_commit=(head.strip() or None) if head_rc == 0 else None,
+            taken_at=datetime.now().isoformat(),
+            provider=provider,
+            owner=owner,
+            name=name,
+            parent_type_id=str(remote.typeid),
+        )
+        await snapshot.save()
+        return snapshot.model_dump(mode="json")
 
     # ------------------------------------------------------------------
     # Dispatch — routes git-ops sub-paths to the appropriate operation
@@ -366,6 +647,9 @@ class GitRepo:
             has-commit          → has_commit()           → {hasCommit}
             diff                → get_file_diff()        → {diff}  (requires ?file=&status=)
             push  (POST)        → push()                 → {ok, conflict, nothing, branch, message}
+            discard-file (POST) → discard_file()         → {ok, message}  (requires ?file=&status=)
+            stage-file   (POST) → stage_file()           → {ok, message}  (requires ?file=)
+            unstage-file (POST) → unstage_file()         → {ok, message}  (requires ?file=)
         """
         from flow_sdk.responses.response import ApiSuccessResponse, ApiFailResponse  # noqa: PLC0415
 
@@ -375,6 +659,13 @@ class GitRepo:
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/push requires POST", status_code=405)
             return ApiSuccessResponse(data=await self.push())
+        if sub == "branch-snapshot":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/branch-snapshot requires POST", status_code=405)
+            result = await self.branch_snapshot()
+            if "error" in result:
+                return ApiFailResponse(message=result["error"], status_code=400)
+            return ApiSuccessResponse(data=result)
         if sub == "status":
             return ApiSuccessResponse(data=(await self.get_status()).model_dump(by_alias=True))
         if sub == "branch":
@@ -391,6 +682,46 @@ class GitRepo:
             if not file_path:
                 return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
             return ApiSuccessResponse(data=(await self.get_file_diff(file_path, status)).model_dump(by_alias=True))
+        if sub == "file-revisions":
+            file_path = params.get("file", "")
+            if not file_path:
+                return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
+            return ApiSuccessResponse(data=(await self.get_file_revisions(file_path)).model_dump(by_alias=True))
+        if sub == "revision-diff":
+            file_path = params.get("file", "")
+            commit_hash = params.get("hash", "")
+            if not file_path or not commit_hash:
+                return ApiFailResponse(message="Missing required query parameter: file and hash", status_code=400)
+            return ApiSuccessResponse(data=(await self.compare_file_revision(file_path, commit_hash)).model_dump(by_alias=True))
+        if sub == "show":
+            file_path = params.get("file", "")
+            commit_hash = params.get("hash", "")
+            if not file_path or not commit_hash:
+                return ApiFailResponse(message="Missing required query parameter: file and hash", status_code=400)
+            return ApiSuccessResponse(data=(await self.get_file_at(file_path, commit_hash)).model_dump(by_alias=True))
+        if sub == "restore-file":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/restore-file requires POST", status_code=405)
+            file_path = params.get("file", "")
+            commit_hash = params.get("hash", "")
+            if not file_path or not commit_hash:
+                return ApiFailResponse(message="Missing required parameter: file and hash", status_code=400)
+            return ApiSuccessResponse(data=(await self.restore_file(file_path, commit_hash)).model_dump(by_alias=True))
+        # Per-file working-tree mutations share the same shape: POST-only, a
+        # required ``file`` param, and a GitRestoreResult-returning coroutine.
+        # ``discard-file`` additionally passes the status char.
+        post_file_ops = {
+            "discard-file": lambda fp: self.discard_file(fp, params.get("status", "M")),
+            "stage-file": lambda fp: self.stage_file(fp),
+            "unstage-file": lambda fp: self.unstage_file(fp),
+        }
+        if sub in post_file_ops:
+            if method.upper() != "POST":
+                return ApiFailResponse(message=f"git-ops/{sub} requires POST", status_code=405)
+            file_path = params.get("file", "")
+            if not file_path:
+                return ApiFailResponse(message="Missing required parameter: file", status_code=400)
+            return ApiSuccessResponse(data=(await post_file_ops[sub](file_path)).model_dump(by_alias=True))
         return ApiFailResponse(message=f"Unknown git-ops sub-path: '{sub}'", status_code=404)
 
 

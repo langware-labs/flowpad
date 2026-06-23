@@ -176,6 +176,16 @@ async def _finalize_login(login_data: LoginData) -> None:
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
     user_info = login_data.user
+    # Fold the hub-resolved organization id/role into the user dict so the
+    # frontend ``currentUser`` carries them (the profile chip reads
+    # ``currentUser.organization_id``). The org entity itself is materialized
+    # below; here we only stamp the edge (id + role, default "member").
+    if isinstance(user_info, dict) and login_data.organization:
+        org_id = login_data.organization.get("id")
+        if org_id:
+            user_info["organization_id"] = org_id
+            user_info["organization_role"] = login_data.organization_role or "member"
+
     await _broadcast_oauth(OAuthMessage(
         oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
         status=OAuthMessageStatus.SUCCESS,
@@ -190,8 +200,14 @@ async def _finalize_login(login_data: LoginData) -> None:
     from flow_sdk.cli.auth.secrets import enable_secrets
     enable_secrets()
     save_credentials(UserHubCredentials.from_login_data(login_data))
-    # Read-back verification: confirms the sod write decrypts cleanly.
-    stored = load_credentials()
+    # Read-back verification: confirms the sod write decrypts cleanly. Pass the
+    # just-logged-in user id explicitly — the config.json active-user pointer
+    # (set_user below) isn't committed yet, so a zero-arg load here would
+    # resolve the PREVIOUS active user's scoped entries, not this login's.
+    login_user_id = (
+        str(user_info["id"]) if isinstance(user_info, dict) and user_info.get("id") else None
+    )
+    stored = load_credentials(login_user_id)
     stored_ok = stored is not None and stored.api_key == login_data.token
     sodot_path = get_instance_settings().sodot_path
     logger.info(
@@ -200,6 +216,15 @@ async def _finalize_login(login_data: LoginData) -> None:
         sodot_path,
     )
     set_user(user_info)
+    # Materialize the user's organization locally as a remote=True row so the
+    # Organization settings tab + member list resolve from a real entity.
+    if login_data.organization:
+        try:
+            from flow_sdk.app.actions.membership_sync import materialize_remote_organization
+
+            await materialize_remote_organization(login_data.organization)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("org materialize on login failed: %s", e)
     state.login_result = {"success": True, "user": user_info, "message": "Login successful"}
     state.login_received.set()
     invalidate_bootstrap_cache()
@@ -259,6 +284,9 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
     except Exception:
         pass
 
+    # Ordering is load-bearing: clear_credentials() resolves the active user
+    # from the config.json pointer to delete that user's SCOPED sod entries,
+    # so it must run BEFORE set_user({}) wipes the pointer. Do not reorder.
     clear_credentials()
     set_user({})
     state.login_result = None

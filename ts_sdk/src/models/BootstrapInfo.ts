@@ -15,6 +15,8 @@ export interface EnvInfo {
   cloud_api_url?: string;
   /** App version (e.g., "0.1.28") */
   version?: string;
+  /** Current instance name (e.g., "prod", "dev", "test"); dev-mode only */
+  instance_name?: string;
 }
 
 /**
@@ -101,7 +103,7 @@ export interface BootstrapNotice {
 }
 
 export interface BootstrapInfo {
-  // Complete type registry: TypeInfo (icon/browseable/creatable/fields) +
+  // Complete type registry: TypeInfo (icon/browseable_by/creatable/fields) +
   // nested JSON schema, one entry per registered type. Loaded into the
   // frontend SchemaRegistry (dataManager.typeInfos) at startup.
   types?: TypeInfo[];

@@ -21,8 +21,8 @@
  */
 
 import { AgenticProcess, Shell, TypeId } from '@sdk';
-import { closeTerminalTab, getTerminalTabRowsSnapshot } from '@src/tabs/useTabs';
-import { resolveNextTabRow, rowTargetKey } from '@src/tabs/tab-candidates';
+import { closeTerminalTab, getTerminalTabsSnapshot } from '@src/tabs/useTabs';
+import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { loadShell, ShellLoadError } from './load-shell';
 
@@ -159,12 +159,12 @@ export async function loadNextProcess(
   const cleaned: CleanupRecord[] = [];
   const tried = new Set(options.excludeIds ?? []);
 
-  const allTabs = await getTerminalTabRowsSnapshot('all');
+  const allTabs = await getTerminalTabsSnapshot('all');
   const projectId = options.projectId ?? null;
-  const tabs = projectId == null ? allTabs : allTabs.filter((r) => r.project_id === projectId);
+  const tabs = projectId == null ? allTabs : allTabs.filter((t) => t.project_id === projectId);
 
   while (true) {
-    const tab = resolveNextTabRow(tabs, tried);
+    const tab = resolveNextTab(tabs, tried);
     if (!tab) {
       return { loaded: null, cleaned };
     }
@@ -190,7 +190,7 @@ export async function loadNextProcess(
     // loadShell hydrates the entity on demand below.
     const shellId = tab.target_id;
     if (!shellId) {
-      tried.add(rowTargetKey(tab));
+      tried.add(tabTargetKey(tab));
       continue;
     }
 

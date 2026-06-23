@@ -2,6 +2,7 @@ import { ViewToggle } from '@src/components/view-toggle/view-toggle';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
 import { PoweredBy } from '@src/components/powered-by';
+import { FusionSpinner } from '@src/components/icons/FusionSpinner';
 import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
 import { StatusBar } from '@src/components/status-bar';
 import { VersionPopover } from '@src/components/version-popover';
@@ -36,20 +37,23 @@ export function Footer({ className = '' }: FooterProps) {
   const { agentId } = useParams();
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId);
-  const { data: projectArtifacts } = useCurrentArtifacts();
+  const { data: projectArtifacts, isLoading: isLoadingArtifacts } = useCurrentArtifacts();
   const { navigation } = useDockNavigation();
   useColorPalette(agent?.site_config);
   usePendingCompletionSound();
 
   // Extract repo and branch info from artifacts
   const repoInfo = useMemo(() => {
-    if (!projectArtifacts) return null;
+    if (!projectArtifacts?.length) return null;
 
     const repoArtifacts = projectArtifacts.filter(
       (artifact) => (artifact as ArtifactWithMetadata).artifact_type === ArtifactType.GIT_REPO,
     );
 
-    if (repoArtifacts.length === 0) return null;
+    // Signal "has artifacts but no git repo" via noRepo sentinel
+    if (repoArtifacts.length === 0) {
+      return { url: null, branch: null, isZip: false, noRepo: true };
+    }
 
     const repoArtifact = repoArtifacts[0] as ArtifactWithMetadata;
     const metadata = repoArtifact?.metadata;
@@ -60,11 +64,11 @@ export function Footer({ className = '' }: FooterProps) {
 
     if (isZipFile) {
       const zipName = metadata.name || metadata.url.replace(/\.zip$/i, '');
-      return { url: zipName, branch: null, isZip: true };
+      return { url: zipName, branch: null, isZip: true, noRepo: false };
     }
 
     const branch = metadata.branch || 'main';
-    return { url: metadata.url, branch, isZip: false };
+    return { url: metadata.url, branch, isZip: false, noRepo: false };
   }, [projectArtifacts]);
 
   return (
@@ -85,11 +89,17 @@ export function Footer({ className = '' }: FooterProps) {
 
         {/* Repo info centered in the available space */}
         <div className="flex-1 text-center">
-          {repoInfo && (
+          {isLoadingArtifacts ? (
+            <FusionSpinner size="xs" />
+          ) : repoInfo?.noRepo ? (
+            <div className="font-mono text-[10px] text-muted-foreground">
+              (no git repo)
+            </div>
+          ) : repoInfo ? (
             <div className="font-mono text-[10px] text-muted-foreground">
               {repoInfo.isZip ? repoInfo.url : `${repoInfo.url}:${repoInfo.branch}`}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Version + Powered by on the right */}

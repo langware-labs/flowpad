@@ -1,8 +1,7 @@
 """GitRemote entity — deterministic registry row for one upstream git repo.
 
 Identity object only: provider + owner + name, nothing mutable, nothing
-point-in-time (branch/commit snapshots live on ``GitBranch``; the legacy
-``git_repo`` share chip is unrelated and untouched). The id is
+point-in-time (branch/commit snapshots live on ``GitBranch``). The id is
 ``uuid5(canonical_git_remote_key(...))`` so every instance — and every
 machine — mints the SAME row for the same upstream repo.
 

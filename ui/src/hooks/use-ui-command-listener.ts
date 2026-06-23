@@ -1,6 +1,6 @@
 import { ConnectionManager, DockPointerData, dataManager, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
 import { useEffect } from 'react';
-import { buildDockUrl, stripDockPortion } from '@src/navigation/url-builder';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 /**
  * Listen for server-side `ui_command` WS messages and execute them.
@@ -56,20 +56,13 @@ export function useUiCommandListener(): void {
         pointer = new DockPointerData(ViewType.HOME, typeId.toString());
       }
 
-      // Build the dock URL relative to the current path. This preserves
-      // agent/process base segments (e.g. /agent/<id>/flow/<id>/dock/...).
-      const currentPath = window.location.pathname;
-      const pointerStr = pointer.pointer ?? undefined;
-      const options = (pointer.options ?? undefined) as Record<string, string> | undefined;
-      const fullUrl = buildDockUrl(currentPath, pointer.viewType, pointerStr, options, pointer.layout);
+      const fullUrl = new DockPointer(pointer).toUrl(window.location.pathname);
 
       if (fullUrl === window.location.pathname + window.location.search) return;
 
       // createBrowserRouter listens for popstate — this is how we navigate
       // without needing a react-router hook.
-      const basePath = stripDockPortion(currentPath);
-      const navUrl = basePath && fullUrl.startsWith(basePath) ? fullUrl : fullUrl;
-      window.history.pushState(null, '', navUrl);
+      window.history.pushState(null, '', fullUrl);
       window.dispatchEvent(new PopStateEvent('popstate'));
     };
 
