@@ -5,6 +5,7 @@ instantiated per-request.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import shlex
@@ -159,6 +160,35 @@ class GitRepo:
             return None
         return branch.strip() or None
 
+    @staticmethod
+    def _parse_branch_header(line: str) -> tuple[str | None, int, int]:
+        """Parse a porcelain v1 ``## `` branch header into (branch, ahead, behind).
+
+        Examples::
+
+            ## main                              → ("main", 0, 0)
+            ## main...origin/main                → ("main", 0, 0)
+            ## main...origin/main [ahead 1, behind 2] → ("main", 1, 2)
+            ## HEAD (no branch)                  → (None, 0, 0)   # detached
+            ## No commits yet on main            → ("main", 0, 0) # empty repo
+        """
+        body = line[3:].strip()
+        ahead = behind = 0
+        m = re.search(r"\[([^\]]*)\]\s*$", body)
+        if m:
+            for part in m.group(1).split(","):
+                part = part.strip()
+                if part.startswith("ahead "):
+                    ahead = int(part[len("ahead "):] or 0)
+                elif part.startswith("behind "):
+                    behind = int(part[len("behind "):] or 0)
+            body = body[: m.start()].strip()
+        if body.startswith("No commits yet on "):
+            return (body[len("No commits yet on "):].strip() or None, ahead, behind)
+        if body.startswith("HEAD "):  # "HEAD (no branch)" — detached
+            return (None, ahead, behind)
+        return (body.split("...", 1)[0].strip() or None, ahead, behind)
+
     async def get_status(self) -> GitStatus:
         """Return a rich git-status object.
 
@@ -172,21 +202,18 @@ class GitRepo:
                 files    = [GitStatusFile(status, path, insertions, deletions), ...],
             )
         """
-        if not await self.is_init():
+        # One combined call replaces is_init + get_branch + ahead/behind +
+        # file-list (4 git spawns → 1). ``--branch`` prepends a
+        # ``## <branch>...<upstream> [ahead N, behind M]`` header line; the
+        # remaining lines are the same porcelain v1 file entries parsed below.
+        # rc != 0 ⇒ not a git repository (replaces the separate is_init probe).
+        status_out, status_rc = await self._run_git(
+            "status", "--porcelain=v1", "--branch", "--untracked-files=all"
+        )
+        if status_rc != 0:
             return GitStatus(error="not a git repository")
 
-        branch = await self.get_branch()
-
-        # Ahead / behind remote
-        ahead, behind = 0, 0
-        ab_out, ab_rc = await self._run_git("rev-list", "--left-right", "--count", "HEAD...@{upstream}")
-        if ab_rc == 0 and ab_out:
-            parts = ab_out.split()
-            if len(parts) == 2:
-                try:
-                    ahead, behind = int(parts[0]), int(parts[1])
-                except ValueError:
-                    pass
+        branch, ahead, behind = None, 0, 0
 
         # Numstat for insertion/deletion counts
         def parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
@@ -202,18 +229,23 @@ class GitRepo:
                         pass
             return result
 
-        numstat_unstaged_out, _ = await self._run_git("diff", "--numstat")
-        numstat_staged_out, _ = await self._run_git("diff", "--numstat", "--staged")
+        # Independent reads — run concurrently rather than back-to-back.
+        (numstat_unstaged_out, _), (numstat_staged_out, _) = await asyncio.gather(
+            self._run_git("diff", "--numstat"),
+            self._run_git("diff", "--numstat", "--staged"),
+        )
         numstat_unstaged = parse_numstat(numstat_unstaged_out)
         numstat_staged = parse_numstat(numstat_staged_out)
 
-        # Porcelain v1 for file list. ``--untracked-files=all`` lists each
-        # untracked file individually instead of collapsing a wholly-untracked
-        # directory into a single ``dir/`` entry — otherwise a new file like
-        # ``marketing/workflows/.../workflow.md`` is hidden behind ``marketing/``.
-        porcelain_out, _ = await self._run_git("status", "--porcelain=v1", "--untracked-files=all")
+        # File list comes from the same ``status_out`` above. ``--untracked-files=all``
+        # lists each untracked file individually instead of collapsing a wholly-
+        # untracked directory into a single ``dir/`` entry — otherwise a new file
+        # like ``marketing/workflows/.../workflow.md`` is hidden behind ``marketing/``.
         files: list[GitStatusFile] = []
-        for line in porcelain_out.splitlines():
+        for line in status_out.splitlines():
+            if line.startswith("## "):
+                branch, ahead, behind = self._parse_branch_header(line)
+                continue
             if len(line) < 4:
                 continue
             x = line[0]   # staged status char
