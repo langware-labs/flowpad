@@ -4,7 +4,7 @@ name: rca
 description: Root Cause Analyzer — prove the real cause of a failure by finding its
 tags: ''
 eval: 'false'
-version: 71
+version: 72
 ---
 
 # RCA — Root Cause Analyzer
