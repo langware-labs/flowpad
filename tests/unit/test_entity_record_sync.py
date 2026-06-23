@@ -233,7 +233,11 @@ class TestEntityRecordCwdSync:
         stale_entity_id = "11111111-2222-4333-8444-555555555555"
         canonical_entity_id = "22222222-3333-4444-8555-666666666666"
 
-        async def fake_project_get_all(*_args, **_kwargs):
+        # resolve_project_scope sources the by-id/by-record maps from the cached
+        # entity read (get_cached_projects) and enriches via the entity-table GET
+        # (get_known_projects) — NOT the footer FETCH (get_all_projects). Patch the
+        # seams the hot path actually calls (see search_filters.resolve_project_scope).
+        async def fake_get_cached_projects(*_args, **_kwargs):
             return [
                 SimpleNamespace(
                     id=stale_entity_id,
@@ -242,8 +246,7 @@ class TestEntityRecordCwdSync:
                 )
             ]
 
-        async def fake_get_all_projects(*_args, **_kwargs):
-            assert _kwargs.get("create_missing") is False
+        async def fake_get_known_projects(*_args, **_kwargs):
             return [
                 ProjectInfo(
                     cwd=cwd,
@@ -253,8 +256,8 @@ class TestEntityRecordCwdSync:
                 )
             ]
 
-        monkeypatch.setattr(Project, "get_all", fake_project_get_all)
-        monkeypatch.setattr(all_projects_mod, "get_all_projects", fake_get_all_projects)
+        monkeypatch.setattr(all_projects_mod, "get_cached_projects", fake_get_cached_projects)
+        monkeypatch.setattr(all_projects_mod, "get_known_projects", fake_get_known_projects)
 
         resolved = await resolve_project_scope(ScopeFilter(user=True, projects=(legacy_id,)))
 

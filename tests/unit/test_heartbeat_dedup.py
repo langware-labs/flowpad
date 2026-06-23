@@ -111,7 +111,6 @@ async def test_heartbeat_trigger_registered_once():
         mock_get_scheduler.return_value = mock_scheduler
 
         with patch("flow_sdk.builtin.trigger.Trigger.get_by_uname") as mock_get_by_uname:
-            # First call (create), second call fails (update)
             existing_trigger = Trigger(
                 id="heartbeat-id",
                 uname="builtin_system_heartbeat",
@@ -120,7 +119,24 @@ async def test_heartbeat_trigger_registered_once():
                 sched_trigger_type="cron",
                 expr="* * * * *",
             )
-            mock_get_by_uname.return_value = existing_trigger
+
+            # Each builtin trigger resolves to its OWN entity (distinct id). Only
+            # the system heartbeat carries "heartbeat-id"; other SCHEDULE builtins
+            # (e.g. the daily usage-analysis trigger) register under their own id,
+            # so the heartbeat-id filter below isolates the heartbeat alone.
+            def _get_by_uname(uname):
+                if uname == "builtin_system_heartbeat":
+                    return existing_trigger
+                return Trigger(
+                    id=f"other-{uname}",
+                    uname=uname,
+                    name=uname,
+                    trigger_type="schedule",
+                    sched_trigger_type="cron",
+                    expr="* * * * *",
+                )
+
+            mock_get_by_uname.side_effect = _get_by_uname
 
             with patch.object(Trigger, "update", new_callable=AsyncMock) as mock_update:
                 with patch.object(Trigger, "save", new_callable=AsyncMock):
