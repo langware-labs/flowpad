@@ -54,10 +54,17 @@ describe('PTY launch readiness under load', () => {
         const proc = await launchPty(true);
 
         // shell_id links asynchronously after createProcess returns — resolve it.
+        // Poll with a RAW REST fetch, not AgenticProcess.getById: in this node
+        // SDK realm getById serves the dataManager cache, which never reflects
+        // the async shell-link (the WS entity update doesn't reach the cache
+        // here), so shell_id reads null forever. A fresh GET sees the link — the
+        // same raw-apiClient approach the dev-1 chat test uses. (realm-per-instance.)
+        const procUrl = `${sdk.GRAPH_API_PREFIX}/${sdk.AgenticProcess.type}/${proc.id}`;
         let shellId = proc.shell_id;
         for (let i = 0; i < 80 && !shellId; i++) {
           await new Promise((r) => setTimeout(r, 100));
-          shellId = (await sdk.AgenticProcess.getById<{ shell_id?: string }>(proc.id))?.shell_id ?? null;
+          shellId =
+            ((await sdk.apiClient.get(procUrl).catch(() => null)) as { shell_id?: string } | null)?.shell_id ?? null;
         }
         if (!shellId) throw new Error('shell_id never linked');
         const shell = await sdk.Shell.getById<InstanceType<SdkRealm['Shell']>>(shellId);

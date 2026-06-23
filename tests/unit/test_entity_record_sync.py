@@ -220,7 +220,15 @@ class TestEntityRecordCwdSync:
 
     @pytest.mark.asyncio
     async def test_resolve_project_scope_prefers_canonical_project_list(self, monkeypatch):
-        """URL legacy ids resolve through the same canonical list as the footer."""
+        """URL legacy ids resolve to the canonical Project entity id.
+
+        The scope resolver reads the entity table via ``get_cached_projects``
+        (the entity-row list) and enriches via ``get_known_projects`` — NOT the
+        old FS-FETCH ``get_all_projects``. In that GET path a ``ProjectInfo``'s
+        ``project_id`` IS the Project entity id (``_entity_to_project_info``),
+        so a URL token carrying the legacy ``uuid5(project:<cwd>)`` derived id
+        resolves to the real entity id while still matching legacy rows.
+        """
         from types import SimpleNamespace
 
         from flow_sdk.builtin.project import Project
@@ -230,20 +238,23 @@ class TestEntityRecordCwdSync:
 
         cwd = "/tmp/testproject_scope_legacy_id"
         legacy_id = Project.derive_id_for_path(cwd)
-        stale_entity_id = "11111111-2222-4333-8444-555555555555"
         canonical_entity_id = "22222222-3333-4444-8555-666666666666"
 
-        async def fake_project_get_all(*_args, **_kwargs):
+        # The entity-table read (get_cached_projects) returns the real Project
+        # row: its `id` is canonical; `project_id` carries the legacy derived id
+        # for back-compat row matching.
+        async def fake_get_cached_projects(*_args, **_kwargs):
             return [
                 SimpleNamespace(
-                    id=stale_entity_id,
+                    id=canonical_entity_id,
                     project_id=legacy_id,
                     fs_storage_mount_path=cwd,
                 )
             ]
 
-        async def fake_get_all_projects(*_args, **_kwargs):
-            assert _kwargs.get("create_missing") is False
+        # The enrichment GET (get_known_projects) is sourced from the same entity
+        # row, so its ProjectInfo.project_id is the canonical entity id.
+        async def fake_get_known_projects(*_args, **_kwargs):
             return [
                 ProjectInfo(
                     cwd=cwd,
@@ -253,8 +264,8 @@ class TestEntityRecordCwdSync:
                 )
             ]
 
-        monkeypatch.setattr(Project, "get_all", fake_project_get_all)
-        monkeypatch.setattr(all_projects_mod, "get_all_projects", fake_get_all_projects)
+        monkeypatch.setattr(all_projects_mod, "get_cached_projects", fake_get_cached_projects)
+        monkeypatch.setattr(all_projects_mod, "get_known_projects", fake_get_known_projects)
 
         resolved = await resolve_project_scope(ScopeFilter(user=True, projects=(legacy_id,)))
 

@@ -48,6 +48,14 @@ describe('skill edit round-trip via the UI (no mocks)', () => {
     console.log(mark(`[skill edit] created skill ${id} (isEval=${created.isEval})`));
 
     try {
+      // The eval toggle lives in the markdown editor's Advanced-only header slot
+      // (MarkdownEditor renders `{advanced && nameExtras}`; the toggle is in
+      // nameExtras). Skill-management controls only surface in Advanced view
+      // mode, so drive the app there — set on the SAME realm bootApp will mount,
+      // before any render, via the context's own API (no hardcoded storage key).
+      const { setViewMode, ViewMode } = await import('@src/contexts/view-mode-context');
+      setViewMode(ViewMode.Advanced);
+
       // 2. Open the full app (router fresh from the same realm) and navigate to
       //    this skill's editor.
       const { container, router } = await bootApp();
