@@ -69,6 +69,12 @@ function parseNetstatPids(stdout, port) {
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
 
+// Python interpreter flowpad's tool venv must run on. flowpad requires >=3.10,
+// but uv would otherwise pick the system default (e.g. 3.12). Pin every
+// `uv tool install` to 3.10 so the backend always runs on the supported
+// interpreter; uv auto-downloads a managed CPython 3.10 if none is present.
+const PYTHON_VERSION = '3.10';
+
 const API_PREFIX = '/api/v1';
 
 
@@ -530,7 +536,7 @@ class UvManager {
   async installLatest() {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
     await this._killStaleToolProcesses();
-    await this._uv(['tool', 'install', PYPI_PACKAGE, '--force'], { timeout: 120000 });
+    await this._uv(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--force'], { timeout: 120000 });
     await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
@@ -1065,7 +1071,7 @@ class UvManager {
   async upgrade() {
     this.log.info('[uv] Upgrading flowpad...');
     await this._killStaleToolProcesses();
-    await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--force'], { timeout: 120000 });
+    await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', PYTHON_VERSION, '--force'], { timeout: 120000 });
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
@@ -1081,7 +1087,7 @@ class UvManager {
   async reinstall() {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
     await this._killStaleToolProcesses();
-    await this._uv(['tool', 'install', PYPI_PACKAGE, '--reinstall', '--force'], { timeout: 120000 });
+    await this._uv(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--reinstall', '--force'], { timeout: 120000 });
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
