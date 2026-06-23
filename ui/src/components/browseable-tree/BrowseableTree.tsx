@@ -193,8 +193,10 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
   );
 
   const canAcceptDrop = !!(dragData && node.onDrop && (!node.canDrop || node.canDrop(dragData)));
-  // Keep count badges clear of the absolutely-positioned compact toolbar
-  // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1).
+  // Space reserved (on hover/focus only) so the label clears the
+  // absolutely-positioned compact toolbar when it appears
+  // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1). At rest the toolbar is
+  // hidden, so the label keeps its full width.
   const toolbarSpace =
     node.toolbar && node.toolbar.length > 0
       ? node.toolbar.length * 22 + 6
@@ -273,8 +275,12 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
         }}
       >
         <div
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
-          style={toolbarSpace ? { paddingRight: toolbarSpace } : undefined}
+          className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
+            toolbarSpace
+              ? 'transition-[padding] group-hover:pr-[var(--toolbar-space)] group-focus-within:pr-[var(--toolbar-space)]'
+              : ''
+          }`}
+          style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}
         >
           {hasChildrenHint ? (
             <button
