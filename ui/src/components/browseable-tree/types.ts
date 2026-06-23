@@ -44,6 +44,24 @@ export interface Browseable {
   /** Optional trailing content (count chips, status dots, time-ago labels). */
   badge?: ReactNode;
 
+  /** Optional extra classes applied to the row container. Lets an adapter
+   *  de-emphasize a row (e.g. an out-of-active-project chat row uses
+   *  `opacity-50 hover:opacity-100`). Cosmetic only — never carries behavior. */
+  rowClassName?: string;
+
+  /** Optional full-row body that replaces the default `icon | label | badge`
+   *  zone. Use for rich, multi-line rows (e.g. a trigger showing scope chip +
+   *  name + type-specific metadata lines). When set, `label`/`icon`/`badge` are
+   *  ignored for rendering (but `label` is still used for the drag/aria text).
+   *  The chevron, toolbar, and selection styling are still provided by the row. */
+  content?: ReactNode;
+
+  /** When set, the row supports inline rename: double-clicking the row while it
+   *  is selected swaps the label for a text input. Commit on Enter/blur, cancel
+   *  on Escape. Ignored when `content` is set (rich rows manage their own
+   *  editing). The side effect (persisting the new name) is the adapter's. */
+  onRename?: (newName: string) => void | Promise<void>;
+
   /** Tri-state hint so the chevron can show before children are loaded.
    *  - `true`: children exist, load on expand
    *  - `false`: leaf, no chevron

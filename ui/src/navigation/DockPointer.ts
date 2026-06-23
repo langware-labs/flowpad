@@ -190,6 +190,24 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Triggers dock. The selected trigger id (and the transient "creating" mode)
+   * ride in OPTIONS, never `pointer`, so the Triggers tabHash stays `triggers|`
+   * — selection/creation are URL-addressable + reload-safe but stay in ONE tab
+   * (the same rule the scope filter already follows here). Pair with the
+   * `trigger` / `creating` option keys read by TriggersView/TriggersNavigator.
+   */
+  static forTriggers(
+    triggerId?: string,
+    opts?: { creating?: string },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const options: Record<string, string> = {};
+    if (triggerId) options.trigger = triggerId;
+    if (opts?.creating) options.creating = opts.creating;
+    return new DockPointer(ViewType.TRIGGERS, undefined, options, layout);
+  }
+
+  /**
    * Create dock pointer for file editor
    */
   static forFile(

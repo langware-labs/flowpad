@@ -1,5 +1,6 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { CollapsedSidebar } from '@src/components/collapsed-sidebar';
+import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import { Footer } from '@src/components/footer';
 import { EnvVar, useEnvVarsStore } from '@src/hooks/use-env-vars-store';
 import { EnvVarType } from '@src/types/envVarTypes';
@@ -37,6 +38,10 @@ export default function FlowPage() {
       <div data-testid="flow-page" className="flex h-full w-full overflow-hidden bg-background">
         {/* Collapsed Icon Sidebar (~50px wide) */}
         <CollapsedSidebar />
+
+        {/* Zone B — shared left-menu slot. Renders the active view's navigator
+            (assets tree / workflows / docs / triggers / chats) or nothing. */}
+        <NavigatorSlot />
 
         {/* Main Content Area. min-w-0 is load-bearing: without it this
             flex-row child sizes to max-content and the unified tab strip
