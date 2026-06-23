@@ -1013,15 +1013,18 @@ class UvManager {
    * Non-blocking — failures are logged and silently ignored.
    * Shows a native OS dialog if an update is required.
    */
-  async checkForUpdatesInBackground(mainWindow, { sendStatus, waitForBackend, backendUrl, cloudUrl }) {
+  async checkForUpdatesInBackground(
+    mainWindow,
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false }
+  ) {
     try {
       const status = await this.getUpdateStatus(cloudUrl);
-      if (!status || !status.required || !status.latestVersion) return;
+      if (!status || !status.required || !status.latestVersion) return false;
 
       const latest = status.latestVersion;
       this.log.info(`[uv] Update available: ${status.currentVersion} → ${latest}`);
 
-      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (!mainWindow || mainWindow.isDestroyed()) return false;
 
       const { response } = await require('electron').dialog.showMessageBox(mainWindow, {
         type: 'info',
@@ -1031,37 +1034,45 @@ class UvManager {
         buttons: ['Upgrade', 'Later'],
         defaultId: 0,
       });
+      if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
 
-      if (response === 0 && mainWindow && !mainWindow.isDestroyed()) {
-        // User chose Upgrade — show loading screen and wait for it to be ready
-        const loadingPath = require('path').join(__dirname, 'loading.html');
-        await mainWindow.loadFile(loadingPath);
+      // User chose Upgrade — show loading screen and wait for its IPC listener.
+      const loadingPath = require('path').join(__dirname, 'loading.html');
+      await mainWindow.loadFile(loadingPath);
+      await new Promise(r => setTimeout(r, 200));
 
-        // Small delay to ensure the renderer's IPC listener is registered
-        await new Promise(r => setTimeout(r, 200));
-
+      // Pre-start: nothing is running yet, so skip the stop. Post-boot: stop the
+      // live backend before reinstalling over it.
+      if (!beforeBackendStart) {
         if (sendStatus) sendStatus('Stopping server');
         await this.stop();
         this.isShuttingDown = false;
-
-        if (sendStatus) sendStatus('Upgrading Flowpad');
-        await this.upgrade();
-
-        if (sendStatus) sendStatus('Starting server');
-        await this.start();
-
-        if (sendStatus) sendStatus('Waiting for server');
-        // 120s window — matches the upgrade() subprocess ceiling and gives
-        // the freshly-installed backend room to boot before the user sees
-        // a false "failed to start" error.
-        if (waitForBackend) await waitForBackend({ maxChecks: 240 });
-
-        if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
-          mainWindow.loadURL(backendUrl);
-        }
       }
+
+      if (sendStatus) sendStatus('Upgrading Flowpad');
+      await this.upgrade();
+
+      // Pre-start: hand back to startApp's normal start path to boot the
+      // upgraded backend — calling start()/loadURL here would double-start the
+      // backend and load the main UI prematurely.
+      if (beforeBackendStart) return true;
+
+      if (sendStatus) sendStatus('Starting server');
+      await this.start();
+
+      if (sendStatus) sendStatus('Waiting for server');
+      // 120s window — matches the upgrade() subprocess ceiling and gives
+      // the freshly-installed backend room to boot before the user sees
+      // a false "failed to start" error.
+      if (waitForBackend) await waitForBackend({ maxChecks: 240 });
+
+      if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
+        mainWindow.loadURL(backendUrl);
+      }
+      return true;
     } catch (err) {
       this.log.warn(`[uv] Background update check failed: ${err.message}`);
+      return false;
     }
   }
 
