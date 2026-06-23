@@ -1393,7 +1393,20 @@ class SQLiteDBDriver(DBDriver):
         # (if Python post-filter or Python sort is needed, pagination must happen after)
         is_su = bool(request_info and request_info.su)
         has_auth = bool(user_id and source_entity and not is_su)
-        can_push_pagination = fully_sql and not needs_python_sort and not has_auth
+        # Scope membership is structural, not a permission. A scoped list query
+        # (``/graph/project/<id>/<type>``) passes the project as ``source_entity``
+        # and must only return descendants of that scope. ``su`` (local mode)
+        # bypasses permission/policy checks, which also turns off ``has_auth`` —
+        # so without this, a su request leaks every entity of the type into a
+        # scoped list (e.g. a fresh project's asset tree showing the user's
+        # global ~/.claude plans/prompts). Apply the child-of-scope filter here
+        # whenever the scope is a non-user entity, independent of su.
+        needs_scope_filter = bool(
+            source_entity and not self._source_is_user(source_entity, user_id) and not has_auth
+        )
+        can_push_pagination = (
+            fully_sql and not needs_python_sort and not has_auth and not needs_scope_filter
+        )
         if can_push_pagination:
             if entities_filter.offset:
                 query = query.offset(entities_filter.offset)
@@ -1404,13 +1417,20 @@ class SQLiteDBDriver(DBDriver):
             result = await session.execute(query)
             entities = [self._schema_to_entity(s) for s in result.scalars().all()]
 
-        # Authorization (always Python-side — requires relationship lookups)
-        if has_auth:
-            authorized = []
+        # Per-entity filter (always Python-side — requires relationship lookups).
+        # ``has_auth`` checks permission; ``needs_scope_filter`` checks structural
+        # scope membership. The two are mutually exclusive by construction.
+        if has_auth or needs_scope_filter:
+            kept = []
             for entity in entities:
-                if await self._user_has_access(user_id, entity.id, source_entity):
-                    authorized.append(entity)
-            entities = authorized
+                ok = (
+                    await self._user_has_access(user_id, entity.id, source_entity)
+                    if has_auth
+                    else await self._is_child_of_source(entity.id, source_entity)
+                )
+                if ok:
+                    kept.append(entity)
+            entities = kept
 
         # Python post-filter — only needed when SQL pushdown was partial
         if not fully_sql:
@@ -2146,6 +2166,20 @@ class SQLiteDBDriver(DBDriver):
 
     # ==================== Authorization ====================
 
+    @staticmethod
+    def _source_is_user(source_entity: TypeId | None, user_id: str | None) -> bool:
+        """True when the auth/scope source is the requesting user themselves.
+
+        A user-source means "everything I can reach"; a non-user source (e.g. a
+        project) is a structural scope boundary that must be enforced via
+        ``_is_child_of_source``.
+        """
+        return bool(
+            source_entity
+            and source_entity.type == "user"
+            and source_entity.id == user_id
+        )
+
     async def _user_has_access(self, user_id: str, entity_id: str, source_entity: TypeId | None = None) -> bool:
         """Check if user has access to entity through role relationships."""
         if user_id == entity_id:
@@ -2160,11 +2194,9 @@ class SQLiteDBDriver(DBDriver):
         # Check if any valid role path exists
         for path in paths:
             if self._validate_role_path(path):
-                if source_entity:
-                    source_is_user = source_entity.type == "user" and source_entity.id == user_id
-                    if not source_is_user:
-                        if not await self._is_child_of_source(entity_id, source_entity):
-                            continue
+                if source_entity and not self._source_is_user(source_entity, user_id):
+                    if not await self._is_child_of_source(entity_id, source_entity):
+                        continue
                 return True
 
         return False
