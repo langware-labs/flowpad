@@ -47,7 +47,7 @@ dependencies = [
     "groq",
     "openai",
     "anthropic",
-    "pydantic-ai-slim",
+    "pydantic-ai-slim>=1.62,<2",
     "distro",
     "appdirs",
     "colorama",
