@@ -428,7 +428,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
           </span>
         )}
 
-        {onPopout && (
+        {/* Open-external is an Advanced/Dev affordance; Standard mode keeps the
+            chip minimal (close button only). */}
+        {onPopout && isAdvanced && (
           <button
             onClick={(e) => {
               e.stopPropagation();

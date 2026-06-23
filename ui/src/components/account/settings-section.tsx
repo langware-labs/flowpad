@@ -4,11 +4,14 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { Label } from '@src/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
+import { Switch } from '@src/components/ui/switch';
+import { setDev, useIsDev } from '@src/components/view-mode';
 import { useCallback, useEffect, useState } from 'react';
 
 export function SettingsSection() {
   const { preferences } = useInstancePreferences();
   const [cliLogLevel, setCliLogLevel] = useState('info');
+  const isDev = useIsDev();
 
   const computeNode = dataContext.computeNode;
 
@@ -39,6 +42,20 @@ export function SettingsSection() {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor="dev-mode" className="cursor-pointer text-sm">
+          Dev mode
+          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+            Surface developer-only views and controls across the app.
+          </span>
+        </Label>
+        <Switch
+          id="dev-mode"
+          checked={isDev}
+          onCheckedChange={setDev}
+        />
+      </div>
+
       <div className="flex items-center gap-2">
         <Checkbox
           id="show-system-skills"
