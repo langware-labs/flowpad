@@ -148,6 +148,9 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
   const children = tree.getChildren(node.id);
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isDropping, setIsDropping] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const canRename = !!node.onRename && !node.content;
 
   // Restored expansion (persistKey / defaultExpandedIds) marks nodes expanded
   // without the children fetch that interactive expand() runs — load on first
@@ -173,6 +176,9 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
   const hasChildrenHint = node.hasChildren === true || (node.hasChildren === 'unknown' && !!node.listChildren);
 
   const handleRowClick = useCallback(() => {
+    // Inline rename in progress — a click commits via the input's own handlers;
+    // never navigate/toggle underneath it.
+    if (editing) return;
     // Toggle expand on the row click for nodes that have children AND
     // navigate if the node has a pointer. Matches Notion's behavior where
     // clicking a page both navigates AND expands.
@@ -182,7 +188,20 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
     if (node.pointer) {
       onNavigate(node.pointer);
     }
-  }, [hasChildrenHint, node, tree, onNavigate]);
+  }, [editing, hasChildrenHint, node, tree, onNavigate]);
+
+  // Inline rename: double-click a *selected* row to edit its label in place.
+  const handleDoubleClick = useCallback(() => {
+    if (!canRename || !isSelected) return;
+    setDraft(node.label);
+    setEditing(true);
+  }, [canRename, isSelected, node.label]);
+
+  const commitRename = useCallback(async () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (next && next !== node.label) await node.onRename?.(next);
+  }, [draft, node]);
 
   const handleChevronClick = useCallback(
     (e: React.MouseEvent) => {
@@ -259,7 +278,7 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
           isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
         } ${node.pointer ? 'cursor-pointer' : 'cursor-default'} ${node.dragData ? 'active:cursor-grabbing' : ''} ${
           isDropTarget ? 'bg-primary/10 ring-1 ring-primary/40' : ''
-        } ${isDropping ? 'opacity-60' : ''}`}
+        } ${isDropping ? 'opacity-60' : ''} ${node.rowClassName ?? ''}`}
         style={{ marginLeft: `${level * 14}px` }}
         role="treeitem"
         aria-level={level + 1}
@@ -303,12 +322,38 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
             <div className="w-4 flex-shrink-0" />
           )}
 
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden" onClick={handleRowClick}>
-            {node.icon}
-            <span className="min-w-0 flex-1 truncate" title={node.label}>
-              {node.label}
-            </span>
-            {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
+          <div
+            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+            onClick={handleRowClick}
+            onDoubleClick={handleDoubleClick}
+          >
+            {node.content ? (
+              node.content
+            ) : editing ? (
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.target.select()}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') void commitRename();
+                  else if (e.key === 'Escape') setEditing(false);
+                }}
+                onBlur={() => void commitRename()}
+                className="min-w-0 flex-1 rounded border border-input bg-background px-1 py-0.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+                data-testid={`browseable-rename-${node.id}`}
+              />
+            ) : (
+              <>
+                {node.icon}
+                <span className="min-w-0 flex-1 truncate" title={node.label}>
+                  {node.label}
+                </span>
+                {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
+              </>
+            )}
           </div>
         </div>
 
@@ -358,7 +403,7 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
   );
 }
 
-function ToolbarButton({ action, compact }: { action: ToolbarAction; compact?: boolean }) {
+export function ToolbarButton({ action, compact }: { action: ToolbarAction; compact?: boolean }) {
   const [busy, setBusy] = useState(false);
   const showBusy = action.showBusyIndicator ?? true;
 
