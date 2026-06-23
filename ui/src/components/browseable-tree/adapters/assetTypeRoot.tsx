@@ -11,7 +11,7 @@ import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 import { DEFAULT_ASSET_FILTER, applyFilterToParams } from '@src/components/assets/assetFilter';
-import { scopeFilterKey } from '@src/lib/scope-filter';
+import { scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -24,7 +24,7 @@ export interface AssetTypeRootDeps {
    *  Receives the active filter so per-type scans can scope to the same. */
   indexType: (
     typeName: string,
-    scope?: { user: boolean; projects: string[] },
+    scope?: ScopeFilter,
     options?: { force?: boolean; orphanAction?: 'index' | 'ignore' | 'delete' },
   ) => Promise<{ indexed?: number } | void>;
   /** Called when the "New" toolbar button is clicked for a creatable type. */

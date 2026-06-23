@@ -1,14 +1,13 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
-
-const EMPTY_SCOPE = { user: true, projects: [] as string[] };
+import { userScope, projectScope } from '@src/lib/scope-filter';
 
 describe('ScopeFilterBar', () => {
   it('renders three scope buttons', () => {
     render(
       <ScopeFilterBar
-        scope={EMPTY_SCOPE}
+        scope={userScope()}
         currentProjectId={null}
         onScopeChange={() => {}}
       />,
@@ -22,16 +21,14 @@ describe('ScopeFilterBar', () => {
     const onScopeChange = vi.fn();
     render(
       <ScopeFilterBar
-        scope={{ user: false, projects: ['project-1'] }}
+        scope={projectScope('project-1')}
         currentProjectId={null}
         onScopeChange={onScopeChange}
       />,
     );
     fireEvent.click(screen.getByText('User'));
-    // "User" = user-assets-only: it clears projects on purpose. Keeping them
-    // would be {user:true, projects:[...]} which chipFor() maps to the "All"
-    // chip, making user-only unreachable. See ScopeFilterBar handleChange.
-    expect(onScopeChange).toHaveBeenCalledWith({ user: true, projects: [] });
+    // "User" = user-assets-only scope ({mode:'user'}).
+    expect(onScopeChange).toHaveBeenCalledWith(userScope());
   });
 
   it('defaults the project scope to the current project', () => {
@@ -39,7 +36,7 @@ describe('ScopeFilterBar', () => {
 
     render(
       <ScopeFilterBar
-        scope={EMPTY_SCOPE}
+        scope={userScope()}
         currentProjectId="project-1"
         onScopeChange={onScopeChange}
       />,
@@ -50,6 +47,6 @@ describe('ScopeFilterBar', () => {
 
     fireEvent.click(screen.getByText('Project'));
 
-    expect(onScopeChange).toHaveBeenCalledWith({ user: false, projects: ['project-1'] });
+    expect(onScopeChange).toHaveBeenCalledWith(projectScope('project-1'));
   });
 });

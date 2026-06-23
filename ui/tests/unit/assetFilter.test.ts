@@ -4,7 +4,9 @@ import {
   DEFAULT_ASSET_FILTER,
 } from '@src/components/assets/assetFilter';
 import {
-  parseScopeFilterFromParams,
+  filterScope,
+  projectScope,
+  userScope,
   scopeFilterEqual,
   scopeFilterKey,
 } from '@src/lib/scope-filter';
@@ -19,21 +21,21 @@ describe('applyFilterToParams (unified ScopeFilter wire format)', () => {
 
   it('user=true with projects writes both', () => {
     const p = new URLSearchParams();
-    applyFilterToParams(p, { ...DEFAULT_ASSET_FILTER, scope: { user: true, projects: ['p1'] } });
+    applyFilterToParams(p, { ...DEFAULT_ASSET_FILTER, scope: filterScope(true, ['p1']) });
     expect(p.get('user')).toBe('true');
     expect(p.get('projects')).toBe('p1');
   });
 
   it('user=false with projects writes user=false', () => {
     const p = new URLSearchParams();
-    applyFilterToParams(p, { ...DEFAULT_ASSET_FILTER, scope: { user: false, projects: ['a', 'b'] } });
+    applyFilterToParams(p, { ...DEFAULT_ASSET_FILTER, scope: filterScope(false, ['a', 'b']) });
     expect(p.get('user')).toBe('false');
     expect(p.get('projects')).toBe('a,b');
   });
 
   it('user=false with empty projects (degenerate) still serializes both', () => {
     const p = new URLSearchParams();
-    applyFilterToParams(p, { ...DEFAULT_ASSET_FILTER, scope: { user: false, projects: [] } });
+    applyFilterToParams(p, { ...DEFAULT_ASSET_FILTER, scope: filterScope(false, []) });
     expect(p.get('user')).toBe('false');
     expect(p.get('projects')).toBe('');
   });
@@ -45,37 +47,18 @@ describe('applyFilterToParams (unified ScopeFilter wire format)', () => {
   });
 });
 
-describe('parseScopeFilterFromParams round-trip', () => {
-  it('round-trips a user-only filter', () => {
-    const p = new URLSearchParams();
-    applyFilterToParams(p, { ...DEFAULT_ASSET_FILTER, scope: { user: true, projects: [] } });
-    expect(parseScopeFilterFromParams(p)).toEqual({ user: true, projects: [] });
-  });
-
-  it('round-trips a both filter', () => {
-    const p = new URLSearchParams();
-    applyFilterToParams(p, { ...DEFAULT_ASSET_FILTER, scope: { user: true, projects: ['A', 'B'] } });
-    expect(parseScopeFilterFromParams(p)).toEqual({ user: true, projects: ['A', 'B'] });
-  });
-
-  it('round-trips a project-only filter', () => {
-    const p = new URLSearchParams();
-    applyFilterToParams(p, { ...DEFAULT_ASSET_FILTER, scope: { user: false, projects: ['X'] } });
-    expect(parseScopeFilterFromParams(p)).toEqual({ user: false, projects: ['X'] });
-  });
-});
-
 describe('ScopeFilter helpers', () => {
   it('scopeFilterEqual is order-insensitive on projects', () => {
-    expect(scopeFilterEqual({ user: true, projects: ['a', 'b'] }, { user: true, projects: ['b', 'a'] })).toBe(true);
-    expect(scopeFilterEqual({ user: true, projects: ['a'] }, { user: false, projects: ['a'] })).toBe(false);
-    expect(scopeFilterEqual({ user: true, projects: ['a'] }, { user: true, projects: ['b'] })).toBe(false);
+    expect(scopeFilterEqual(filterScope(true, ['a', 'b']), filterScope(true, ['b', 'a']))).toBe(true);
+    expect(scopeFilterEqual(filterScope(true, ['a']), filterScope(false, ['a']))).toBe(false);
+    expect(scopeFilterEqual(filterScope(true, ['a']), filterScope(true, ['b']))).toBe(false);
   });
 
   it('scopeFilterKey is stable and order-insensitive', () => {
-    expect(scopeFilterKey({ user: true, projects: ['b', 'a'] }))
-      .toBe(scopeFilterKey({ user: true, projects: ['a', 'b'] }));
-    expect(scopeFilterKey({ user: true, projects: [] })).toBe('1:');
-    expect(scopeFilterKey({ user: false, projects: ['a'] })).toBe('0:a');
+    expect(scopeFilterKey(filterScope(true, ['b', 'a'])))
+      .toBe(scopeFilterKey(filterScope(true, ['a', 'b'])));
+    expect(scopeFilterKey(filterScope(true, ['a', 'b']))).toBe('filter:1:a,b');
+    expect(scopeFilterKey(userScope())).toBe('user');
+    expect(scopeFilterKey(projectScope('a'))).toBe('project:a');
   });
 });

@@ -12,12 +12,14 @@ import { History } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, TypeId } from '@sdk';
+import { FSRef, TypeId, looksBinaryText } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
-import { ProjectNameChip } from '@src/components/assets/ProjectNameChip';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { genericEntityShareSource } from '@src/hooks/share-sources';
@@ -35,6 +37,11 @@ const DEFAULT_MODE: ViewMode = 'view';
 
 function isEditorMode(value: string | undefined | null): value is ViewMode {
   return value != null && (EDITOR_MODES as readonly string[]).includes(value);
+}
+
+/** 'review' and 'markdown' are power-user surfaces — only shown in Advanced. */
+function isAdvancedOnlyMode(mode: ViewMode): boolean {
+  return mode === 'review' || mode === 'markdown';
 }
 
 function readStoredMode(): ViewMode {
@@ -197,12 +204,21 @@ function MarkdownEditorContent({
 }) {
   const { navigation, currentDock } = useDockNavigation();
 
+  // Standard vs Advanced (Advanced || Dev) skin gating. Standard hides the
+  // power-user affordances (eval/worker buttons, the secondary file toolbar,
+  // the project chip, the review/markdown editor modes, the side window).
+  const advanced = useIsAdvanced();
+
   // viewMode source of truth: URL `?editorMode=…` if present and valid; else
   // last-used value from localStorage; else DEFAULT_MODE. Updating viewMode
   // pushes a new DockPointer with the option merged in — the URL becomes
   // shareable + back-button-restorable, and per-tab independent.
   const urlMode = currentDock?.options?.[EDITOR_MODE_PARAM];
-  const viewMode: ViewMode = isEditorMode(urlMode) ? urlMode : readStoredMode();
+  const rawViewMode: ViewMode = isEditorMode(urlMode) ? urlMode : readStoredMode();
+  // In Standard, fall back to 'view' so the body never renders a surface whose
+  // chip is hidden (e.g. a share-link pinning ?editorMode=review opened by a
+  // Standard user).
+  const viewMode: ViewMode = !advanced && isAdvancedOnlyMode(rawViewMode) ? 'view' : rawViewMode;
 
   const setViewMode = useCallback((mode: ViewMode) => {
     if (!currentDock) return; // outside dock context — shouldn't happen for MarkdownEditor
@@ -329,6 +345,9 @@ function MarkdownEditorContent({
   const sourcePathStr = typeof sourcePath === 'string' ? sourcePath : '';
   const fileName = sourcePathStr.split('/').pop() || sourcePathStr;
   const dirPath = sourcePathStr.slice(0, sourcePathStr.lastIndexOf('/'));
+  // Asset's own entity type, for the registry type-icon shown before the name.
+  // Prefer the resolved entity TypeId; fall back to the URL's asset-editor segment.
+  const headerType = chatTarget ? new TypeId(chatTarget).type : (currentDock?.pointer?.split('/')?.[1] ?? '');
 
   const handleOpenExternal = useCallback(() => {
     void fsRef.open({ select: true });
@@ -379,8 +398,8 @@ function MarkdownEditorContent({
       <div className="flex h-full flex-col overflow-hidden">
         <EditorHeader
           fileName={fileName}
+          entityType={headerType}
           dirPath={dirPath}
-          sourcePath={sourcePathStr}
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -403,8 +422,8 @@ function MarkdownEditorContent({
       <div className="flex h-full flex-col overflow-hidden">
         <EditorHeader
           fileName={fileName}
+          entityType={headerType}
           dirPath={dirPath}
-          sourcePath={sourcePathStr}
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -432,8 +451,8 @@ function MarkdownEditorContent({
       <div className="flex h-full flex-col overflow-hidden">
         <EditorHeader
           fileName={fileName}
+          entityType={headerType}
           dirPath={dirPath}
-          sourcePath={sourcePathStr}
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -454,12 +473,60 @@ function MarkdownEditorContent({
     );
   }
 
+  // ── Binary / non-text body ──────────────────────────────────────────────────
+  // Never hand binary content to Milkdown/Monaco — it locks up the renderer and
+  // can hang the whole app (e.g. an image mistakenly stored as a .md body). Show
+  // a safe placeholder with a download escape hatch instead.
+  if (looksBinaryText(body)) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <EditorHeader
+          fileName={fileName}
+          entityType={headerType}
+          dirPath={dirPath}
+          dirty={false}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onOpenExternal={handleOpenExternal}
+          onDownload={handleDownload}
+          onDelete={handleDelete}
+          actions={toolbar}
+          showLearningMode={showLearningMode}
+        />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+          <p className="text-sm font-medium text-foreground">This file isn&apos;t text</p>
+          <p className="max-w-md text-xs text-muted-foreground">
+            Its contents look like binary data (for example an image), so it can&apos;t be
+            shown in the editor.
+          </p>
+          <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
+          <Button variant="outline" size="sm" onClick={handleDownload}>
+            <Download className="mr-1 h-4 w-4" />
+            Download
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Editor ─────────────────────────────────────────────────────────────────
   const shareButton = shareSource ? (
     <ShareButton
       onClick={() => setShareOpen(true)}
       tooltip="Share to a conversation"
       testId="markdown-editor-share"
+    />
+  ) : null;
+
+  // Favorite toggle next to Share (both modes), mirroring the interactive tab.
+  // Keyed on the asset entity's TypeId (the same id chat/share use).
+  const favoriteTypeId = chatTarget ? new TypeId(chatTarget) : null;
+  const favoriteStar = favoriteTypeId ? (
+    <FavoriteStar
+      entityType={favoriteTypeId.type}
+      entityId={favoriteTypeId.id}
+      title={deleteLabel ?? fileName}
+      size={14}
     />
   ) : null;
 
@@ -475,6 +542,7 @@ function MarkdownEditorContent({
         onAfterPublish={revisionStatus.refresh}
       />
       {shareButton}
+      {favoriteStar}
     </>
   );
 
@@ -482,8 +550,8 @@ function MarkdownEditorContent({
     <div className="flex h-full flex-col overflow-hidden">
       <EditorHeader
         fileName={fileName}
+        entityType={headerType}
         dirPath={dirPath}
-        sourcePath={sourcePathStr}
         dirty={dirty}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -645,9 +713,9 @@ function MonacoMarkdownEditor({
 
 interface EditorHeaderProps {
   fileName: string;
+  /** Asset's entity type; resolves the registry icon shown before the name. */
+  entityType?: string;
   dirPath: string;
-  /** Absolute path of the asset; used to resolve the owning project chip. */
-  sourcePath?: string;
   dirty: boolean;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
@@ -662,38 +730,51 @@ interface EditorHeaderProps {
   showLearningMode?: boolean;
 }
 
-function EditorHeader({ fileName, dirPath, sourcePath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, nameExtras, showLearningMode }: EditorHeaderProps) {
-  const visibleModes = EDITOR_MODES.filter((m) => m !== 'learning' || showLearningMode);
+// Standard mode hides the eval/worker `nameExtras`, the secondary file toolbar
+// (copy/open-external/download — Delete stays), and the review/markdown
+// editor-mode chips.
+function EditorHeader({ fileName, entityType, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, nameExtras, showLearningMode }: EditorHeaderProps) {
+  const advanced = useIsAdvanced();
+  const TypeIcon = entityType ? iconForType(entityType) : null;
+  const visibleModes = EDITOR_MODES.filter((m) => {
+    if (m === 'learning') return !!showLearningMode;
+    if (!advanced && isAdvancedOnlyMode(m)) return false;
+    return true;
+  });
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 truncate">
+          {TypeIcon && <TypeIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
           <span className="truncate text-sm font-medium" title={fileName}>{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
-          {sourcePath && <ProjectNameChip sourcePath={sourcePath} />}
-          {nameExtras}
+          {advanced && nameExtras}
         </div>
         <div className="flex min-w-0 items-center gap-1">
           {dirPath && (
             <span className="min-w-0 truncate text-[11px] text-muted-foreground">{dirPath}</span>
           )}
-          <button
-            title="Copy path"
-            onClick={() => void navigator.clipboard.writeText(dirPath ? `${dirPath}/${fileName}` : fileName)}
-            data-testid="markdown-editor-copy-path"
-            className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Copy className="h-3 w-3" />
-          </button>
-          <button
-            title="Reveal in Finder"
-            onClick={onOpenExternal}
-            data-testid="markdown-editor-open-external"
-            className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <ExternalLink className="h-3 w-3" />
-          </button>
-          {onDownload && (
+          {advanced && (
+            <button
+              title="Copy path"
+              onClick={() => void navigator.clipboard.writeText(dirPath ? `${dirPath}/${fileName}` : fileName)}
+              data-testid="markdown-editor-copy-path"
+              className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Copy className="h-3 w-3" />
+            </button>
+          )}
+          {advanced && (
+            <button
+              title="Reveal in Finder"
+              onClick={onOpenExternal}
+              data-testid="markdown-editor-open-external"
+              className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </button>
+          )}
+          {advanced && onDownload && (
             <button
               title="Download file"
               onClick={onDownload}

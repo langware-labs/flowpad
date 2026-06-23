@@ -271,6 +271,17 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
+   * Permanently delete this project and everything that belongs to it:
+   * every indexed record whose ``project_id`` is this project (DB row + FTS +
+   * wiki edges + on-disk record shadow + records_data bundle), the project's
+   * own record, and the project source folder on disk. Irreversible.
+   */
+  async deleteWithChildren(): Promise<{ project_id: string; deleted_children: number } | null> {
+    const info = new ActionInfo('delete-with-children', Project.type, this.typeId.id, 'POST');
+    return await dataManager.callAction<void, { project_id: string; deleted_children: number }>(info);
+  }
+
+  /**
    * Resolve a shareable session_code → project. Used by the join flow.
    * Uses a dedicated FastAPI route at /api/v1/project/resolve/{code}.
    */

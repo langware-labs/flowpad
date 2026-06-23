@@ -1,8 +1,4 @@
-/** The CLI harnesses a conversation session can launch — drives the worker
- *  buttons in the conversation header and the Private Context "+" menu. Glyph +
- *  label come from the shared worker-vendor helpers (transcript-utils) so they
- *  match every other surface. Shared here so the header component and the drawer
- *  agree on the exact list and type. */
-export type WorkerType = 'claude_code' | 'codex' | 'copilot';
-
-export const LAUNCHABLE_WORKERS: WorkerType[] = ['claude_code', 'codex', 'copilot'];
+/** The CLI worker vendors a conversation session can launch. Canonical home is
+ *  now `workers/worker-types` (the list is cross-cutting, not conversation-only);
+ *  re-exported here so existing conversation-layer imports keep working. */
+export { LAUNCHABLE_WORKERS, type WorkerType } from '@src/components/workers/worker-types';

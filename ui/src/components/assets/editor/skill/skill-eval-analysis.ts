@@ -6,6 +6,8 @@ import {
   Skill,
 } from '@sdk';
 import { notify } from '@src/notifications';
+import { launchWorkerWithAsset } from '@src/components/workers/launchWorkerWithAsset';
+import type { WorkerType } from '@src/components/workers/worker-types';
 
 const SKILLIT_NAME = 'skillit';
 const AGENT_TRACE_NAME = 'agent-trace';
@@ -61,35 +63,29 @@ const skillProcessOpts = (targetSkill: Skill): Parameters<ComputeNode['createPro
   permissionMode: 'bypassPermissions',
 });
 
-/** Interactive worker vendors offered by the skill-test toolbar. */
-export type TestWorkerKind = 'claude_code' | 'codex' | 'copilot';
-
 /**
  * Spin up an **interactive** worker so the author can test the skill by hand —
  * the "quick start testing" toolbar next to the eval flag.
  *
  * Unlike {@link launchSkillEval} (which auto-prompts `skillit` in a stream-json
- * execution process), this opens a real interactive terminal tab. The worker
- * boots **idle** (no launch prompt — `launchPrompt` would run as the launch
- * instruction, i.e. auto-submit), and a starter prompt is **staged on the
- * prompt queue with draining disabled**: it sits ready for the author to send,
- * never auto-injected. Disable-before-enqueue closes the drain window (the
- * queue is empty until then, so nothing can fire). The skill is referenced by
- * name so the harness discovers the installed skill on boot; we deliberately
- * skip `embeddedAssets.attach`, whose action lands after the visible auto-start
- * — too late for the driver's `--add-dir` set.
+ * execution process), this opens a real interactive terminal tab via the shared
+ * {@link launchWorkerWithAsset} helper in **staged** mode: the worker boots idle
+ * and a starter prompt sits on the queue (draining disabled) for the author to
+ * send. The skill is referenced by name so the harness discovers the installed
+ * skill on boot (see the helper's note on why `embeddedAssets.attach` can't run
+ * pre-boot for an interactive tab).
  */
 export async function launchSkillTest(
   targetSkill: Skill,
-  workerType: TestWorkerKind,
+  workerType: WorkerType,
 ): Promise<AgenticProcess | null> {
   try {
-    const proc = await AgenticProcess.openTab(workerType);
-    // Stage (don't run) the starter on the queue: disable draining first so an
-    // idle worker can't inject it, then enqueue.
-    await proc.setQueueEnabled(false);
-    await proc.enqueue(`Let's test the "${targetSkill.name}" skill. `, 'skill-test');
-    return proc;
+    return await launchWorkerWithAsset({
+      workerType,
+      seedPrompt: `Let's test the "${targetSkill.name}" skill. `,
+      stage: true,
+      enqueueSource: 'skill-test',
+    });
   } catch (err) {
     notify.error({
       title: 'Could not start test worker',

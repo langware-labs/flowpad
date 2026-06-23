@@ -204,6 +204,7 @@ async def _on_server_startup():
     await _start_cloud_ws_listener()
     await _start_inbox_catchup()
     await _seed_service_triggers()
+    await _prune_orphan_scheduler_jobs()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
     await _start_system_content_index()
@@ -223,6 +224,21 @@ async def _start_system_content_index() -> None:
         print("  System content index: scheduled (background)")
     except Exception:
         logging.getLogger(__name__).exception("System content index: failed to start")
+
+
+async def _prune_orphan_scheduler_jobs() -> None:
+    """Drop persisted APScheduler jobs that no longer map to a live trigger.
+
+    Runs after `_seed_service_triggers()` so the current builtin/user triggers
+    are registered first; everything left in the jobstore without a matching
+    entity is a stale orphan (see ``prune_orphan_scheduler_jobs``)."""
+    try:
+        from flow_sdk.server.scheduler import prune_orphan_scheduler_jobs
+
+        pruned = await prune_orphan_scheduler_jobs()
+        print(f"  Scheduler jobstore: pruned {pruned} orphan job(s)")
+    except Exception:
+        logging.getLogger(__name__).exception("Scheduler jobstore: orphan prune failed")
 
 
 async def _seed_service_triggers() -> None:

@@ -3,7 +3,7 @@ import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
-import { type ScopeFilter } from '@src/lib/scope-filter';
+import { isAllScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import { ActionInfo, dataManager, type ITrigger } from '@sdk';
 import { HelpCircle, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -58,15 +58,15 @@ function filterTriggers(
     if (s === 'system') return includeSystem;
     // "All" shows everything (user + every project); system still rides the
     // separate `includeSystem` toggle (handled above).
-    if (scope.all) return true;
+    if (isAllScope(scope)) return true;
     if (s === 'project') {
       // Project-scoped triggers without a project_id are unreachable via the
       // chip picker — hide them rather than leaking into the list.
       const pid = t.project_id ?? '';
-      return pid !== '' && scope.projects.includes(pid);
+      return pid !== '' && scopeProjectIds(scope).includes(pid);
     }
     // Anything else (legacy / unknown / 'user') goes through the user toggle.
-    return scope.user;
+    return scopeIncludesUser(scope);
   });
 }
 

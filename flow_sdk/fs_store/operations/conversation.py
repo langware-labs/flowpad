@@ -148,13 +148,23 @@ def from_jsonl(
 
 
 async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None:
-    """Mirror the on-disk pointer index into Conversation.message_ids/message_count.
+    """Mirror the on-disk pointer index into Conversation.message_ids/message_count
+    and set ``conv.updated_date`` to the conversation's recency.
 
-    Bumps ``conv.updated_date`` to the latest pointer's ts.
+    Recency is the last *real* message change — ``max(message.updated_date)`` over
+    the conversation's messages, NOT the pointer ts (which is each message's
+    ``created_date`` and so never reflects an edit). ``FlowMessage.is_stale``
+    keeps a message's ``updated_date`` from advancing on a bare touch, so this
+    ``max`` excludes touches by construction: a body re-download bumps no
+    message clock and therefore no inbox recency. ``updated_date`` stays the
+    single field used for inbox order AND the hub-sync LWW key — there is no
+    separate recency column.
     """
     from datetime import datetime
     from flow_sdk._compat import UTC
     from flow_sdk.builtin.conversation import Conversation, _PROJECTION_SENTINEL
+    from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 
     conv = await Conversation.get_one({"id": rec.id})
     if not conv:
@@ -162,22 +172,43 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
     pointers = message_pointers(rec)
     new_count = len(pointers)
     new_ids = json.dumps([p.to_dict() for p in pointers]) if pointers else None
-    if conv.message_ids == new_ids and conv.message_count == new_count:
+
+    # Recency = max real-change clock across the messages. Prefer each row's
+    # ``updated_date`` (advanced only by a real edit); fall back to the pointer
+    # ts (created_date) when the row isn't loadable. Batch-load the rows in one
+    # query rather than a get_one per pointer.
+    by_id: dict[str, FlowMessage] = {}
+    if pointers:
+        try:
+            rows = await FlowMessage.get_all(QueryFilter(
+                match=ExpressionNode(op=QueryOp.IN, operands=["id", [p.id for p in pointers]]),
+            ))
+            by_id = {fm.id: fm for fm in rows}
+        except Exception:  # noqa: BLE001
+            by_id = {}
+    new_updated = None
+    for p in pointers:
+        fm = by_id.get(p.id)
+        ts = Conversation._as_datetime(
+            fm.updated_date if fm is not None and fm.updated_date is not None else p.ts
+        )
+        if ts is not None and (new_updated is None or ts > new_updated):
+            new_updated = ts
+    if new_updated is None:
+        new_updated = datetime.now(UTC)
+
+    projection_changed = not (conv.message_ids == new_ids and conv.message_count == new_count)
+    recency_changed = Conversation._as_datetime(conv.updated_date) != new_updated
+    if not projection_changed and not recency_changed:
         return
-    conv._set_projection("message_ids", new_ids, _PROJECTION_SENTINEL)
-    conv._set_projection("message_count", new_count, _PROJECTION_SENTINEL)
+    if projection_changed:
+        conv._set_projection("message_ids", new_ids, _PROJECTION_SENTINEL)
+        conv._set_projection("message_count", new_count, _PROJECTION_SENTINEL)
     # The projection write IS the "reconciled from hub/disk" moment for a
     # conversation — make it observable on the row the UI renders. Normal
     # field (not in _PROJECTED_FIELDS), so no sentinel needed.
     conv.fetched_at = datetime.now(UTC)
-    latest_ts = pointers[-1].ts if pointers else None
-    if latest_ts:
-        try:
-            conv.updated_date = datetime.fromisoformat(latest_ts.replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            conv.updated_date = datetime.now(UTC)
-    else:
-        conv.updated_date = datetime.now(UTC)
+    conv.updated_date = new_updated
     local_user_typeid = await _resolve_local_owner_typeid()
     await conv.save(local_user_typeid, notify=notify)
 

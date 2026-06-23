@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Layout, TypeId, ViewType } from '@sdk';
+import { projectScope } from '@src/lib/scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 const LAYOUTS = [Layout.DOCK, Layout.DEV, Layout.WIN] as const;
@@ -112,7 +113,7 @@ function representativePointers(): DockPointer[] {
     DockPointer.forFile('/Users/me/src/main file.ts', { line: 12, column: 4 }, Layout.WIN),
     DockPointer.forFs('/Users/me/src/app.ts'),
     DockPointer.forPlan(agenticProcess, '/Users/me/plans/loader plan.md'),
-    DockPointer.forAssetList('skill', { projectId: project }),
+    DockPointer.forAssetList('skill', { scope: projectScope(project) }),
     DockPointer.forAssetFolder('markdown', 'compute_node-@local', 'docs/plans & notes', Layout.DEV),
     DockPointer.forAssetEditor('markdown', '/Users/me/project docs/read me.md', Layout.WIN, {
       editorMode: 'learning',

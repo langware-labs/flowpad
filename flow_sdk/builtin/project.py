@@ -634,3 +634,104 @@ class Project(Entity):
             return ApiFailResponse(message="member_id is required")
         updated = await self._touch_member(member_id)
         return ApiSuccessResponse(data={"ok": updated, "members": self.members})
+
+    async def _delete_with_children(self) -> dict:
+        """Permanently delete this project and everything that belongs to it.
+
+        Irreversible. Removes, for the project and for every indexed record
+        whose ``project_id`` is this project:
+          * the DB row + FTS entry + wiki edges (via ``FSRecord.destroy``),
+          * the on-disk record shadow under ``records/<type>/<type>-@<id>/``,
+          * the ``records_data`` bundle (both the canonical ``<type>-@<id>``
+            and the legacy ``<id>``-only shape used by index types),
+        and finally the project's own source folder on disk
+        (``fs_storage_mount_path`` — the user's real files).
+
+        Cross-type enumeration walks the shadow store on disk: ``Entity.get_all``
+        is type-locked, but each ``metadata.json`` carries its ``project_id``,
+        so a single sweep of ``records_root`` finds children of every type.
+        """
+        import json  # noqa: PLC0415
+        import logging  # noqa: PLC0415
+        import shutil  # noqa: PLC0415
+
+        from flow_sdk.fs_store import (  # noqa: PLC0415
+            FSRecord,
+            get_default_records_data_root,
+            get_default_records_root,
+            record_stem,
+        )
+
+        log = logging.getLogger(__name__)
+        pid = str(self.id)
+        records_root = get_default_records_root()
+        data_root = get_default_records_data_root()
+
+        def _purge_data(rtype: str, rid: str) -> None:
+            # records_data has two on-disk shapes across types: the canonical
+            # <type>/<type>-@<id>/ and the legacy <id>-only used by index types.
+            for sub in (record_stem(rtype, rid), rid):
+                p = data_root / rtype / sub
+                try:
+                    shutil.rmtree(p)  # idempotent — FileNotFoundError when absent
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    log.warning("[project-delete] records_data rmtree failed %s: %s", p, exc)
+
+        async def _destroy(meta: dict) -> None:
+            rtype, rid = meta["type"], meta["id"]
+            # Build the record from the metadata we already read — no second
+            # read of metadata.json. destroy() = DB row + FTS + wiki + shadow.
+            try:
+                await FSRecord.from_dict(meta).destroy()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[project-delete] destroy %s:%s failed: %s", rtype, rid, exc)
+            _purge_data(rtype, rid)
+
+        # 1. Collect every child record's metadata by scanning the shadow store.
+        #    Materialize the full list first — destroy() rmtree's folders, so we
+        #    must not mutate the directory tree while iterating it.
+        targets: list[dict] = []
+        if records_root.exists():
+            for type_dir in sorted(records_root.iterdir()):
+                if not type_dir.is_dir():
+                    continue
+                for rec_dir in type_dir.iterdir():
+                    meta_path = rec_dir / "metadata.json"
+                    if not meta_path.exists():
+                        continue
+                    try:
+                        data = json.loads(meta_path.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        continue
+                    if data.get("project_id") != pid:
+                        continue
+                    if not data.get("type") or not data.get("id") or data.get("id") == pid:
+                        continue  # skip malformed + the project's own record
+                    targets.append(data)
+
+        # 2. Destroy each child record.
+        for meta in targets:
+            await _destroy(meta)
+
+        # 3. Delete the project's own source folder on disk (the user's files).
+        mount = self.fs_storage_mount_path
+        if mount:
+            try:
+                shutil.rmtree(mount)  # idempotent — FileNotFoundError when absent
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                log.warning("[project-delete] source folder rmtree failed %s: %s", mount, exc)
+
+        # 4. Delete the project's own record (DB row + FTS + wiki + shadow + data).
+        await _destroy({"type": self.type, "id": pid})
+
+        return {"project_id": pid, "deleted_children": len(targets)}
+
+    @action.post(action_name="delete-with-children")
+    async def _http_delete_with_children(self) -> ApiResponse:
+        """Permanently delete this project and all of its children. Irreversible."""
+        result = await self._delete_with_children()
+        return ApiSuccessResponse(data=result)

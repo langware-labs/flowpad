@@ -762,13 +762,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // scoped assets dock normalizes its pointer to ''.
     if (dock?.viewType === 'assets') {
       const scope = dockOptionsToScopeFilter(dock.options);
-      if (scope && !scope.all) {
-        if (!scope.user && scope.projects.length === 1) {
-          const name = nameFromCache('project', scope.projects[0]);
-          return name ? `${name}'s Assets` : 'Assets';
-        }
-        if (scope.user && scope.projects.length === 0) return 'My Assets';
+      if (scope?.mode === 'project' && scope.activeProjectId) {
+        const name = nameFromCache('project', scope.activeProjectId);
+        return name ? `${name}'s Assets` : 'Assets';
       }
+      if (scope?.mode === 'user') return 'My Assets';
       return null;
     }
     const pointer = dock?.pointer ?? '';

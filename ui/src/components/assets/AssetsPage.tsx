@@ -13,8 +13,14 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
+import type { Project } from '@sdk';
+import { FSRef } from '@sdk';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { ProjectChip } from '@src/components/project/ProjectChip';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { EDITOR_TYPES } from '@src/navigation/asset-doc-types';
 import apiClient from '@sdk/client';
-import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
+import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, Trash2, X } from 'lucide-react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -27,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
-import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, unionAssetBucket } from '@src/lib/scope-filter';
+import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, projectScope, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { useEntity } from '@sdk/react/hooks';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
@@ -301,6 +307,31 @@ export function AssetsPage() {
   // else the context project. Drives the Project mode + its tooltip name.
   const scopeProjectId = urlProjectId ?? currentProjectId;
   const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
+  // The project entity backing the project view — drives the "Delete project"
+  // header action. Only resolved on a project page.
+  const projectTypeId = useMemo<TypeId | null>(
+    () => (isProjectView && scopeProjectId ? new TypeId('project', scopeProjectId) : null),
+    [isProjectView, scopeProjectId],
+  );
+  const { data: projectEntity } = useEntity<Project>(projectTypeId);
+  const handleDeleteProject = useCallback(() => {
+    const proj = projectEntity;
+    if (!proj) return;
+    const name = proj.displayName ?? 'this project';
+    showDeleteAssetModal({
+      name,
+      description:
+        'This permanently deletes the project and everything in it — all indexed ' +
+        'records and their children, and the project folder on disk. This cannot be undone.',
+      onConfirm: async () => {
+        await proj.deleteWithChildren();
+      },
+      onAfterDelete: () => {
+        notify.success({ title: 'Project deleted', message: name });
+        navigation.closeDock();
+      },
+    });
+  }, [projectEntity, navigation]);
   // On a project page, scope is *preselected* to that project (not locked) — the
   // user can still switch to All/User/Selected. `projectSeedScope` is that
   // preselection: it seeds the initial scope, scopes the project index status,
@@ -351,6 +382,32 @@ export function AssetsPage() {
     () => assetScopeBucket(openAsset as { scope?: string | null; project_id?: string | null } | null),
     [openAsset],
   );
+  // The open asset may be addressed by a VFS path (not a TypeId), in which case
+  // `openAsset` above is null. Resolve that entity by path too so the header
+  // can show its owning-project chip. (Same 30s-cached lookup the editor uses.)
+  const openVfsRef = useMemo<{ type: string; fsRef: FSRef } | null>(() => {
+    if (!effectivePointer.startsWith('editor/')) return null;
+    try {
+      const p = AssetDocPointer.parse(effectivePointer);
+      if (!p.editor || p.editor === AssetEditor.CODE || p.method !== AssetRoutingMethod.VFS) return null;
+      const vfs = VFSPath.parse(p.value);
+      if (!vfs.typeId) return null;
+      return {
+        type: (EDITOR_TYPES[p.editor][0] as string | undefined) ?? p.editor,
+        fsRef: new FSRef(vfs.entitySubPath, vfs.typeId),
+      };
+    } catch {
+      return null;
+    }
+  }, [effectivePointer]);
+  const { entity: openVfsEntity } = useEntityByPath(openVfsRef?.type ?? null, openVfsRef?.fsRef ?? null);
+  // The project whose chip the header shows: the URL project on a project page,
+  // else the owning project of the open asset (TypeId- or VFS-addressed).
+  const openEntityProjectId =
+    (openAsset as { project_id?: string | null } | null)?.project_id ??
+    (openVfsEntity as { project_id?: string | null } | null)?.project_id ??
+    null;
+  const chipProjectId = urlProjectId ?? openEntityProjectId;
   // Manual scope edits suppress the auto-union for the *current* asset only;
   // opening a different asset re-enables it (the guard is keyed to the id).
   const [suppressedAssetId, setSuppressedAssetId] = useState<string | null>(null);
@@ -770,7 +827,7 @@ export function AssetsPage() {
       });
       if (match) {
         setAssetFilter({ ...DEFAULT_ASSET_FILTER });
-        openScoped({ user: false, projects: [match.record_id] });
+        openScoped(projectScope(match.record_id));
       }
     } catch {
       // ignore
@@ -795,7 +852,8 @@ export function AssetsPage() {
           )}
         </button>
         <BookOpen className="h-4 w-4 text-muted-foreground" />
-        <span className="ml-1 text-sm font-medium">Assets</span>
+        <span className="ml-1 text-sm font-medium">{isProjectView ? 'Project assets' : 'Assets'}</span>
+        <ProjectChip projectId={chipProjectId} className="ml-1.5" />
         <div className="ml-auto flex items-center gap-2">
           <div className="relative w-96 shrink-0">
             <RecordSearchBar
@@ -866,6 +924,18 @@ export function AssetsPage() {
                   : 'Refresh search data'}
               </TooltipContent>
             </Tooltip>
+          )}
+          {isProjectView && projectEntity && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 shrink-0 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={handleDeleteProject}
+              data-testid="project-delete"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete project
+            </Button>
           )}
         </div>
       </div>

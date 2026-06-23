@@ -28,6 +28,8 @@ interface DeleteRequest {
   name: string;
   onConfirm: () => Promise<void>;
   onAfterDelete?: () => void;
+  /** Overrides the default "removes the file from disk" warning copy. */
+  description?: string;
 }
 
 interface ModalState {
@@ -94,7 +96,7 @@ export function DeleteAssetModal() {
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {request?.name ?? 'asset'}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This permanently removes the file from disk. This cannot be undone.
+            {request?.description ?? 'This permanently removes the file from disk. This cannot be undone.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error && (

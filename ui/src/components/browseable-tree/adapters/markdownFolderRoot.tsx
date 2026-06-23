@@ -12,7 +12,7 @@ import type {
   ToolbarAction,
 } from '@src/components/browseable-tree/types';
 import { parseAssetPointer } from './assetTypeRoot';
-import { scopeFilterKey } from '@src/lib/scope-filter';
+import { scopeFilterKey, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import {
   DEFAULT_ASSET_FILTER,
   applyFilterToParams,
@@ -24,7 +24,7 @@ export interface MarkdownFolderRootDeps {
    *  filter so per-type scans honor the same scope. */
   indexType: (
     typeName: string,
-    scope?: { user: boolean; projects: string[] },
+    scope?: ScopeFilter,
     options?: { force?: boolean; orphanAction?: 'index' | 'ignore' | 'delete' },
   ) => Promise<{ indexed?: number } | void>;
   /** Called when the root-level "New" toolbar is clicked (falls back to the
@@ -398,9 +398,9 @@ function folderBrowseable(args: {
  *  `sf.user`; a project vault is kept iff its Project id or legacy
  *  record_project_id is selected. Empty `projects` means no project vaults. */
 function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
-  if (v.scope === 'user') return filter.scope.user;
+  if (v.scope === 'user') return scopeIncludesUser(filter.scope);
   if (v.scope === 'project') {
-    const selected = new Set(filter.scope.projects);
+    const selected = new Set(scopeProjectIds(filter.scope));
     return (
       (!!v.project_id && selected.has(v.project_id)) ||
       (!!v.record_project_id && selected.has(v.record_project_id))
