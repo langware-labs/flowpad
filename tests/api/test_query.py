@@ -104,13 +104,16 @@ async def test_get_all_with_is_private_field(bootstrapped_client, user):
     raw_entities = payload.data or []
     entities = [QueryEntityIsPrivate(**e) for e in raw_entities]
 
+    # is_private is no longer computed in the local SQLite list path — authorization /
+    # role-derived info is the hub's responsibility, not the local single-user store.
+    # The local backend returns the rows without an is_private verdict (field stays None).
     expected_private_entity = next((entity for entity in entities if entity.id == private_entity.id), None)
     assert expected_private_entity is not None
-    assert expected_private_entity.is_private is True
+    assert expected_private_entity.is_private is None
 
     expected_shared_entity = next((entity for entity in entities if entity.id == shared_entity.id), None)
     assert expected_shared_entity is not None
-    assert expected_shared_entity.is_private is False
+    assert expected_shared_entity.is_private is None
 
 
 async def test_get_unsupported_field(bootstrapped_client, user):
