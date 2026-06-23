@@ -22,6 +22,7 @@ from typing import Any, ClassVar
 
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.schema.view_mode import ViewMode, visible_in, view_mode_rank
 
 _MAX_LOG_ENTRIES: int = 100
 
@@ -213,7 +214,9 @@ class TypeInfo:
     index_fields: list[str] = field(default_factory=list)
     defaults: dict[str, Any] = field(default_factory=dict)
     indexed_by_default: bool = False
-    browseable: bool = False
+    # Minimum view mode at which this type is browseable (None ⇒ never). See
+    # flow_sdk/schema/view_mode.py — visibility is cumulative.
+    browseable_by: ViewMode | None = None
     creatable: bool = False
     api_visible: bool = False
     icon: str | None = None
@@ -231,10 +234,10 @@ class TypeInfo:
     # in ``fs_store/indexer/functions/<type>.py``. The indexer reads these
     # instead of duck-typing classmethods on the entity:
     #   from_disk_fn:  Callable[[FSRef], list[FSRecord]] — parse (cold path)
-    #   gen_id_fn:     Callable[[FSRef], str]           — mint/read id (hot path)
+    #   gen_uuid_fn:     Callable[[FSRef], str]           — mint/read id (hot path)
     #   asset_hash_fn: Callable[[FSRef], float]         — cheap freshness stat
     from_disk_fn: Any = field(default=None, compare=False, repr=False)
-    gen_id_fn: Any = field(default=None, compare=False, repr=False)
+    gen_uuid_fn: Any = field(default=None, compare=False, repr=False)
     asset_hash_fn: Any = field(default=None, compare=False, repr=False)
     # Per-type default-body writer: Callable[[entity], str]. Read by
     # FSRecord.default_body / upsert_main_ref to materialize the backing file on
@@ -298,6 +301,22 @@ class TypeInfo:
         return asset_path
 
     @property
+    def folder_backed(self) -> bool:
+        """True when ``asset_ref`` points at a browsable folder — a folder-layout
+        type whose asset_ref is the bare folder (skill-style,
+        ``main_file_is_asset_ref=False``), not the inner ``main_file``
+        (spec-style). The Assets sidebar expands these rows into their on-disk
+        file tree. Derived from the existing folder-layout fields so no type
+        carries a redundant flag."""
+        return self.main_layout == "folder" and not self.main_file_is_asset_ref
+
+    @property
+    def browseable_by_str(self) -> str | None:
+        """``browseable_by`` as its serialized string value (or None) — the one
+        wire form used by both ``schema_hash`` and ``to_dict``."""
+        return self.browseable_by.value if self.browseable_by else None
+
+    @property
     def schema_hash(self) -> str:
         """MD5 of structural fields as canonical JSON. Stable across runs."""
         payload = {
@@ -306,7 +325,7 @@ class TypeInfo:
             "index_fields": sorted(self.index_fields),
             "defaults": self.defaults,
             "indexed_by_default": self.indexed_by_default,
-            "browseable": self.browseable,
+            "browseable_by": self.browseable_by_str,
             "creatable": self.creatable,
             "api_visible": self.api_visible,
             "icon": self.icon,
@@ -338,7 +357,7 @@ class TypeInfo:
             "index_fields": self.index_fields,
             "defaults": self.defaults,
             "indexed_by_default": self.indexed_by_default,
-            "browseable": self.browseable,
+            "browseable_by": self.browseable_by_str,
             "creatable": self.creatable,
             "api_visible": self.api_visible,
             "icon": self.icon,
@@ -346,6 +365,7 @@ class TypeInfo:
             "locations": self.locations,
             "main_subdir": self.main_subdir,
             "main_layout": self.main_layout,
+            "folder_backed": self.folder_backed,
             "schema_hash": self.schema_hash,
         }
 
@@ -357,7 +377,7 @@ class TypeInfo:
             index_fields=data.get("index_fields", []),
             defaults=data.get("defaults", {}),
             indexed_by_default=data.get("indexed_by_default", False),
-            browseable=data.get("browseable", False),
+            browseable_by=ViewMode(data["browseable_by"]) if data.get("browseable_by") else None,
             creatable=data.get("creatable", False),
             api_visible=data.get("api_visible", False),
             icon=data.get("icon"),
@@ -428,7 +448,7 @@ class SchemaRegistry:
             type_name=type_name,
             icon=icon,
             indexed_by_default=False,
-            browseable=False,
+            browseable_by=None,
             creatable=False,
         ))
 
@@ -452,8 +472,8 @@ class SchemaRegistry:
                 existing.post_sync_fn = info.post_sync_fn
             if info.from_disk_fn is not None:
                 existing.from_disk_fn = info.from_disk_fn
-            if info.gen_id_fn is not None:
-                existing.gen_id_fn = info.gen_id_fn
+            if info.gen_uuid_fn is not None:
+                existing.gen_uuid_fn = info.gen_uuid_fn
             if info.asset_hash_fn is not None:
                 existing.asset_hash_fn = info.asset_hash_fn
             if info.default_body_fn is not None:
@@ -482,8 +502,12 @@ class SchemaRegistry:
                 existing.icon = info.icon
             if info.creatable and not existing.creatable:
                 existing.creatable = True
-            if info.browseable and not existing.browseable:
-                existing.browseable = True
+            if info.browseable_by is not None and (
+                existing.browseable_by is None
+                or view_mode_rank(info.browseable_by) < view_mode_rank(existing.browseable_by)
+            ):
+                # Keep the more permissive (lower-ordered) non-null level.
+                existing.browseable_by = info.browseable_by
             if info.indexed_by_default and not existing.indexed_by_default:
                 existing.indexed_by_default = True
             if info.api_visible and not existing.api_visible:
@@ -569,9 +593,15 @@ class SchemaRegistry:
         return info.icon if info else None
 
     @classmethod
-    def is_browseable(cls, type_name: str) -> bool:
+    def browseable_by(cls, type_name: str) -> ViewMode | None:
+        """Minimum view mode at which ``type_name`` is browseable (None ⇒ never)."""
         info = cls.get(type_name)
-        return bool(info and info.browseable)
+        return info.browseable_by if info else None
+
+    @classmethod
+    def is_browseable_in(cls, type_name: str, mode: ViewMode) -> bool:
+        """True iff ``type_name`` is browseable in the given view ``mode`` (cumulative)."""
+        return visible_in(cls.browseable_by(type_name), mode)
 
     @classmethod
     def is_creatable(cls, type_name: str) -> bool:

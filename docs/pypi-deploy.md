@@ -9,7 +9,7 @@ id: 684208ee-360e-50e6-a71e-b642ca95ac57
 - PyPI credentials configured (either `TWINE_API_TOKEN` env var or `~/.pypirc`)
 - `uv` installed (or `python3 -m build` / `python3 -m twine` as fallback)
 
-## Quick Deploy (bump + publish in one shot)
+## Quick Deploy (the full end-to-end flow: commit → PR → merge → deploy → branch next)
 
 > **Deploy from the release branch.** PyPI is released from the highest
 > `release/vX.Y` branch, and the version bump must land on that same branch so
@@ -17,34 +17,72 @@ id: 684208ee-360e-50e6-a71e-b642ca95ac57
 > release from a feature branch or `main` — the bump would diverge and the
 > branch/PyPI versions would drift apart (a real bug we've hit).
 
+This is the canonical release operation. It takes the current dev branch, lands
+it on the release branch, publishes the new patch to PyPI, and names the dev
+branch after the version just deployed. The release-branch steps run in an
+**isolated git worktree** so they never disturb the shared main checkout —
+concurrent sessions commit onto whatever branch is checked out there, so we must
+not `git checkout` the release branch in the main working tree.
+
+> **Branch-naming invariant: the dev branch is named after the *most recently
+> deployed* version.** After publishing `0.2.<NEW>`, the dev branch is
+> `0.2.<NEW>-fixes` — it holds the fixes that will become the *next* release.
+> The next run bumps to `0.2.<NEW+1>` at deploy time and only **then** renames
+> the branch to `0.2.<NEW+1>-fixes`. So in the common steady state the dev branch
+> already equals `0.2.<NEW>-fixes` after the bump and step 4's rename is a no-op;
+> it only actually renames when the deploy crossed into a new patch number. Do
+> **not** pre-name the dev branch one ahead of what's on PyPI.
+
 ```bash
-# 0. Check out the highest release/vX.Y branch — the deploy source.
+DEV_BRANCH=$(git branch --show-current)          # e.g. 0.2.68-fixes
 git fetch origin --prune
 RELEASE_BRANCH=$(git branch -r | grep -oE 'release/v[0-9]+\.[0-9]+' | sort -t. -k2,2n -u | tail -1)
-git checkout "$RELEASE_BRANCH" && git pull --ff-only origin "$RELEASE_BRANCH"
 
-# 1. Bump version — base off the HIGHER of PyPI and the branch's current
-#    version (never go backwards), then increment the patch.
-curl -s https://pypi.org/pypi/flowpad/json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])"
-echo '__version__ = "0.2.X"' > flow_sdk/_version.py
+# --- 1. COMMIT: land any working-tree changes on the dev branch, then push.
+git add -A                                        # include untracked unless told otherwise
+git commit -m "…"                                 # skip if the tree is already clean
+git push origin "$DEV_BRANCH"
 
-# 2. Clean old artifacts
-rm -rf dist/ build/ flowpad.egg-info/
+# --- 2. PR + MERGE: dev branch → release branch (server-side; no local checkout).
+gh pr create --base "$RELEASE_BRANCH" --head "$DEV_BRANCH" \
+  --title "Release: $DEV_BRANCH → $RELEASE_BRANCH" --body "Quick deploy."
+gh pr merge "$DEV_BRANCH" --merge --delete-branch=false
+git fetch origin "$RELEASE_BRANCH"
 
-# 3. Build UI assets (required — embeds frontend into wheel)
-python3 build_ui.py
-
-# 4. Build wheel + sdist (uv reads the version from _version.py; no `build` module needed)
-uv build
-
-# 5. Publish to PyPI
-python3 -m twine upload dist/flowpad-0.2.X*
-
-# 6. Commit + push the bump to the release branch so it matches PyPI.
+# --- 3. DEPLOY: bump + build + publish from an isolated worktree on the release branch.
+#     Pick the new patch off the HIGHER of PyPI and the branch (never go backwards).
+PYPI=$(curl -s https://pypi.org/pypi/flowpad/json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])")
+NEW=0.2.X                                          # = max(PyPI, branch) patch + 1
+WT=$(mktemp -d)/release-wt
+git worktree add "$WT" "origin/$RELEASE_BRANCH"
+ln -s "$(pwd)/ui/node_modules" "$WT/ui/node_modules"   # reuse deps so build_ui.py is fast
+cd "$WT"
+echo "__version__ = \"$NEW\"" > flow_sdk/_version.py
 git add flow_sdk/_version.py
-git commit -m "chore: bump version to 0.2.X for PyPI release"
-git push origin HEAD
+git commit -m "chore: bump version to $NEW for PyPI release"
+git push origin "HEAD:$RELEASE_BRANCH"
+rm -rf dist build flowpad.egg-info
+python3 build_ui.py                                # REQUIRED — embeds frontend into the wheel
+uv build                                           # reads version from _version.py
+python3 -m twine upload "dist/flowpad-$NEW"*
+cd -                                               # back to the main checkout
+git worktree remove "$WT" --force
+
+# --- 4. BRANCH NEXT: name the dev branch after the version JUST DEPLOYED ($NEW),
+#        NOT $NEW+1. This is a no-op when the branch is already named so.
+git fetch origin "$RELEASE_BRANCH"
+git branch -m "$DEV_BRANCH" "$NEW-fixes"           # e.g. 0.2.68-fixes after deploying 0.2.68
+git merge "origin/$RELEASE_BRANCH"                 # pick up the version bump so dev == released
+git push -u origin "$NEW-fixes"
+# If the rename changed the name, delete the now-stale remote dev branch:
+[ "$DEV_BRANCH" != "$NEW-fixes" ] && git push origin --delete "$DEV_BRANCH"
 ```
+
+The PR/merge in step 2 runs entirely on GitHub, and the deploy in step 3 runs in
+a throwaway worktree — so the main working tree stays on the dev branch the whole
+time. Only step 4 (`git branch -m`) touches it, renaming the branch in place to
+`$NEW-fixes` (the version just deployed; same commit, new name) and merging in
+the release bump.
 
 ## Validate Before Publishing
 

@@ -269,6 +269,9 @@ export const isOperation = (e: GenericEntry): boolean =>
 // ── Header / response shape ─────────────────────────────────────────────────
 
 export interface TranscriptHeader {
+  /** Generic worker-session display title (same value the history list shows);
+   *  used to label the transcript tab. Absent when nothing names the session. */
+  name?: string;
   cwd?: string;
   cli_version?: string;
   originator?: string;
@@ -284,6 +287,11 @@ export interface ParsedTranscript {
   worker_type: string;
   session_id: string;
   path: string;
+  /** True when this transcript arrived via a shared message (lives only under
+   *  the instance's received_transcripts/ store) and therefore cannot be
+   *  resumed locally — the viewer hides the resume affordance and offers an
+   *  analyze-transcript worker instead. */
+  received: boolean;
   transcript_format: TranscriptFormat | null;
   transcript_source: TranscriptSource | null;
   header: TranscriptHeader;

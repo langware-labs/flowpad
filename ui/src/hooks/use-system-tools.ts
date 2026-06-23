@@ -55,6 +55,7 @@ export function useSystemTools() {
     restore:          systemTools.restore.bind(systemTools),
     indexType:        systemTools.indexType.bind(systemTools),
     indexTypes:       systemTools.indexTypes.bind(systemTools),
+    indexProjectSessions: systemTools.indexProjectSessions.bind(systemTools),
     resetAndRescan:   systemTools.resetAndRescan.bind(systemTools),
     getPaths:         systemTools.getPaths.bind(systemTools),
     getStats:         systemTools.getStats.bind(systemTools),

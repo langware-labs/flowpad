@@ -18,7 +18,7 @@ export async function selectProjectContext(project: Project): Promise<void> {
 
 /**
  * Idempotent project ensure-and-select used by both the QuickCreate flows and
- * the Home `+` menu's "Project (local)" / "Project (git)" entries.
+ * the Home `+` menu's "Project (local)" / "From git" entries.
  *
  * Steps:
  *   1. dedup by canonical mount-path against the latest Project query
@@ -60,7 +60,7 @@ export function useEnsureProject() {
 }
 
 /**
- * Companion helper for the "Project (git)" flow: the backend has already
+ * Companion helper for the "From git" flow: the backend has already
  * cloned + saved the Project. We only need steps 3–5 of `useEnsureProject`.
  */
 export function useSelectExistingProject() {

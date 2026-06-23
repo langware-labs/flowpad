@@ -57,6 +57,7 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
     the first fire dispatches.
     """
     from flow_sdk.server import system_heartbeat as _heartbeat  # noqa: F401  decorator side-effect
+    from flow_sdk.usage_report import callback as _usage_report_cb  # noqa: F401  decorator side-effect
     from flow_sdk.transcript_streamer.triggers import transcript_watcher_trigger_specs
 
     settings = get_instance_settings()
@@ -72,6 +73,20 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             actions=[TriggerAction(
                 action_type=ActionType.CALLBACK,
                 callback_name="builtin_toplog_filter_apply",
+            )],
+        ),
+        dict(
+            uname="builtin_daily_usage_analysis",
+            name="Last day usage analysis",
+            description="Every day at 7am (local): analyze the previous day's "
+                        "agentic usage and post a usage report to the Home Feed. "
+                        "Manually runnable like any trigger.",
+            trigger_type=TriggerType.SCHEDULE,
+            sched_trigger_type="cron",
+            expr="0 7 * * *",
+            actions=[TriggerAction(
+                action_type=ActionType.CALLBACK,
+                callback_name="builtin_daily_usage_report",
             )],
         ),
         dict(

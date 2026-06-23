@@ -55,13 +55,21 @@ class DeliveryStatus(str, Enum):
     """Delivery-receipt lifecycle of a FlowMessage. Monotonic. Single source of
     truth — imported by both the client (here) and the hub.
 
+    PENDING_SEND — composed locally while cloud login was unavailable; the user
+                  asked to send but we could not even attempt the hub push, so
+                  it is queued for a later (manual) re-send. Strictly more local
+                  than CREATED and below it in rank (deliberately NOT in
+                  ``DELIVERY_ORDER`` — see below — so any real hub status
+                  advances over it and it can never downgrade a sent message).
     CREATED   — local only; the hub has NOT accepted it (🕐 Pending).
     SENT      — accepted/stored on the hub (✓).
     DELIVERED — recipient's client pulled it (✓✓).
     RECEIVED  — recipient read it (✓✓ blue).
 
-    The hub never stores CREATED — that is a purely client-local pre-accept state.
+    The hub never stores PENDING_SEND / CREATED — those are purely client-local
+    pre-accept states.
     """
+    PENDING_SEND = "pending_send"
     CREATED = "created"
     SENT = "sent"
     DELIVERED = "delivered"
@@ -133,14 +141,13 @@ def is_image_filename(name: str) -> bool:
 # TYPE_ID attachment types that ride in the body bundle but never materialize a
 # standard local record folder (which is what ``_type_id_record_materialized``
 # probes) — either conversation plumbing (conversation/flow_message/task, the
-# UI's STRUCTURAL_ATTACHMENT_TYPES), a remote reference resolved on accept
-# (git_repo), or an indexer-owned type whose bundle unpack creates only an
-# entity ROW, never a records folder (claude_session — the transcript content
-# rides as a FILE attachment). They must NOT gate the message-level
-# ``body_downloaded`` signal, or a message carrying one would be stuck behind
-# the Download button forever.
+# UI's STRUCTURAL_ATTACHMENT_TYPES), or an indexer-owned type whose bundle
+# unpack creates only an entity ROW, never a records folder (claude_session —
+# the transcript content rides as a FILE attachment). They must NOT gate the
+# message-level ``body_downloaded`` signal, or a message carrying one would be
+# stuck behind the Download button forever.
 _NON_MATERIALIZING_TYPE_IDS = frozenset(
-    {"conversation", "flow_message", "task", "git_repo", "claude_session",
+    {"conversation", "flow_message", "task", "claude_session",
      # git identity split: bundle unpack creates entity ROWS only (git_branch
      # header + re-minted git_remote), never a records folder.
      "git_branch", "git_remote"}
@@ -246,6 +253,11 @@ class FlowMessage(Entity):
         "body_status", "is_read", "is_archived", "received_at", "is_draft",
         "prompt_auto_handled",
     })
+    # Fields ignored when deciding real-change-vs-touch in ``is_stale``: the
+    # local-only state plus the clocks themselves.
+    _STALE_IGNORE_FIELDS: ClassVar[frozenset[str]] = LOCAL_ONLY_FIELDS | frozenset({
+        "updated_date", "updated_by",
+    })
 
     type: str = APIField(default="flow_message")
     text: str = APIField(...)
@@ -324,6 +336,36 @@ class FlowMessage(Entity):
                     if data in local_approved and not att.get("approved_by"):
                         att["approved_by"] = local_approved[data]
         return merged
+
+    @classmethod
+    def is_stale(cls, local, hub_payload):  # type: ignore[override]
+        """LWW staleness, with a *touch* guard on top of the base date compare.
+
+        The base rule (``hub.updated_date > local.updated_date``) treats any
+        newer hub clock as a real change. But the hub re-stamps a message's
+        ``updated_date`` on bare touches too — re-materializing / re-downloading
+        the body, re-emitting an otherwise-unchanged row — which would drag the
+        local message clock (and, via projection, the conversation's inbox
+        recency) forward for no real change. So when the base says "newer",
+        confirm an actual content/state delta before adopting: serialize the
+        local row and the merged candidate, ignoring ``updated_date`` and the
+        local-only state, and treat byte-identical payloads as NOT stale.
+
+        A real edit (text, delivery_status, attachment, …) still differs and
+        stays stale; only the pure touch is filtered out.
+        """
+        if not super().is_stale(local, hub_payload):
+            return False
+        # super() already handled: no local row / no hub updated_date → here the
+        # hub clock is strictly newer. Decide real-change vs. touch by content.
+        try:
+            candidate = cls.model_validate(cls.merge_hub_payload(local, hub_payload))
+        except Exception:  # noqa: BLE001
+            return True  # can't prove it's a touch → fail safe to "stale"
+        ctx = {"skip_api_serializer": True}
+        before = local.model_dump(mode="json", exclude=cls._STALE_IGNORE_FIELDS, context=ctx)
+        after = candidate.model_dump(mode="json", exclude=cls._STALE_IGNORE_FIELDS, context=ctx)
+        return before != after
 
     @model_serializer(mode="wrap")
     def _serialize_with_local_paths(
@@ -451,6 +493,25 @@ class FlowMessage(Entity):
         local_path hydration) without changing the call sites.
         """
         return self.attachment
+
+    def summary(self) -> str:
+        """One-line human summary: ``[<status>] <sender>: <text preview> (+N attachments)``.
+
+        Pure render (no I/O). The attachment count excludes the two structural
+        self-pointers every message carries (``conversation-<id>`` /
+        ``flow_message-<id>``) so it reflects only user-meaningful attachments.
+        """
+        text = " ".join((self.text or "").split())
+        preview = text if len(text) <= 80 else text[:77] + "..."
+        sender = self.sender_name or self.sender_id or "unknown"
+        structural = {f"conversation-{self.conversation_id}", f"flow_message-{self.id}"}
+        n = sum(
+            1
+            for a in (self.attachment or [])
+            if not (a.attachment_type == AttachmentType.TYPE_ID and a.data in structural)
+        )
+        suffix = f" (+{n} attachment{'s' if n != 1 else ''})" if n else ""
+        return f"[{self.delivery_status}] {sender}: {preview}{suffix}"
 
     def clone_for_forward(
         self,

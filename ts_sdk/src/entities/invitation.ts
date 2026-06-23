@@ -9,6 +9,12 @@ export interface IInvitation extends IEntity {
   expiration_at?: string | Date;
   sent?: boolean;
   message?: string;
+  // Membership invitations (organization / team) carry a target descriptor
+  // instead of a backing conversation, so the inbox renders a generic row.
+  target_type?: string;
+  target_id?: string;
+  target_name?: string;
+  target_role?: string;
 }
 
 @registerEntity
@@ -19,6 +25,10 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
   expiration_at?: string | Date;
   sent?: boolean;
   message?: string;
+  target_type?: string;
+  target_id?: string;
+  target_name?: string;
+  target_role?: string;
   static type: string = 'invitation';
 
   constructor(entity: Partial<IInvitation> = {}) {
@@ -29,6 +39,10 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
     this.expiration_at = entity.expiration_at;
     this.sent = entity.sent;
     this.message = entity.message;
+    this.target_type = entity.target_type;
+    this.target_id = entity.target_id;
+    this.target_name = entity.target_name;
+    this.target_role = entity.target_role;
   }
 }
 

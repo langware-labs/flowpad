@@ -1,15 +1,20 @@
 ---
 id: e7d69e47-4ca0-5d06-aa52-ea46e2974787
+---
+
+---
+
+id: e7d69e47-4ca0-5d06-aa52-ea46e2974787
 name: slick
 description: 'The flowpad code-design lens. Use this whenever you are writing, reviewing,
-  refactoring, or deciding WHERE logic belongs in the flowpad / flow-cli codebase
-  — adding a feature, an action, an entity, a worker/vendor, or a dependency; judging
-  "is this clean?"; or being asked to make code "slick". Trigger it even when the
-  user doesn''t say "slick": any time you''re about to put logic in the frontend,
-  branch on a string, hand-roll a parallel code path, or add a package, run this lens
-  first. It tells you the right layer, the right seam, and the test that proves the
-  code is slick. Supports two explicit modes: "slick check" (concise diagnosis of
-  real violations) and "slick suggest" (the concrete changes to reach slick design).'
+refactoring, or deciding WHERE logic belongs in the flowpad / flow-cli codebase
+— adding a feature, an action, an entity, a worker/vendor, or a dependency; judging
+"is this clean?"; or being asked to make code "slick". Trigger it even when the
+user doesn''t say "slick": any time you''re about to put logic in the frontend,
+branch on a string, hand-roll a parallel code path, or add a package, run this lens
+first. It tells you the right layer, the right seam, and the test that proves the
+code is slick. Supports two explicit modes: "slick check" (concise diagnosis of
+real violations) and "slick suggest" (the concrete changes to reach slick design).'
 ---
 
 # Slick — flowpad code design
@@ -32,11 +37,13 @@ below — open it when you need the exact path or class to model after.
 
 The seven principles below are the rubric. There are three ways to apply them:
 
-- **`slick` (default, while authoring)** — apply the lens as you write. No
+* **`slick`** **(default, while authoring)** — apply the lens as you write. No
   report; just produce slick code.
-- **`slick check`** — diagnose. Run the rubric over the target and return a
+
+* **`slick check`** — diagnose. Run the rubric over the target and return a
   concise list of *real* violations. Diagnosis only — do not edit.
-- **`slick suggest`** — prescribe. For the same violations, list the concrete
+
+* **`slick suggest`** — prescribe. For the same violations, list the concrete
   change that reaches slick design. Still do not edit unless asked; this is the
   plan.
 
@@ -128,12 +135,13 @@ When the backend owns the computation (e.g. `Entity.private_context_entities`
 is merged server-side and the frontend just renders the result), every surface
 agrees for free.
 
-**The test:** *could this behavior run with no browser — driven by `curl`, the
-`flow` CLI, or a pytest?* If not, the logic is in the wrong layer.
+**The test:** *could this behavior run with no browser — driven by* *`curl`, the
+`flow`* *CLI, or a pytest?* If not, the logic is in the wrong layer.
 
-- Slick: the `prompt` action branches on `process.visible` server-side; the
+* Slick: the `prompt` action branches on `process.visible` server-side; the
   frontend calls the same `prompt()` for both transports and knows nothing.
-- Not slick: a `promptPty()` SDK method + `inject`/`launched` flags in a React
+
+* Not slick: a `promptPty()` SDK method + `inject`/`launched` flags in a React
   component deciding how the backend should route. (This exact code existed and
   was deleted — the routing moved into the backend action.)
 
@@ -153,7 +161,7 @@ second caller the way a UI-level check can.
 ### 2b. Prefer built-in Python; a new package must earn its place
 
 Reach for the standard library first. Before adding a dependency, check: can
-this be ~20 lines of stdlib? Is it already a transitive dep? Does it pull a
+this be \~20 lines of stdlib? Is it already a transitive dep? Does it pull a
 heavy tree for a small need?
 
 **Why:** every package is install surface, version risk, and a thing the next
@@ -161,7 +169,7 @@ reader must learn. flowpad's dep list is already heavy (`anthropic`, `openai`,
 `groq`, `usearch`, `tiktoken`, `numpy`) — each new one raises the bar for the
 next.
 
-- Slick: `flow_sdk/transcript_analyzer/` parses every vendor transcript with
+* Slick: `flow_sdk/transcript_analyzer/` parses every vendor transcript with
   stdlib only — no parser framework, no pandas. It's the model citizen.
 
 ### 3. Entities are maintained, and a frontend entity reflects a backend one
@@ -181,7 +189,7 @@ backend `Entity` class, or its `uname` and metadata never materialize.
 
 The only channel is: `entity.ts` builds an `ActionInfo` and calls
 `dataManager.callAction` → REST → `entity.py`'s `@action.post/get` method of the
-**same `action_name`**.
+**same** **`action_name`**.
 
 ```
 new ActionInfo('prompt', AgenticProcess.type, id, 'POST')   // ts_sdk
@@ -190,10 +198,13 @@ new ActionInfo('prompt', AgenticProcess.type, id, 'POST')   // ts_sdk
 ```
 
 **Rules that keep it slick:**
-- Same `action_name` on both sides — grep-able as a pair.
-- Generic behavior goes on the **base `Entity`** with `types="all"`; the named
+
+* Same `action_name` on both sides — grep-able as a pair.
+
+* Generic behavior goes on the **base** **`Entity`** with `types="all"`; the named
   type is the first consumer, not the scope.
-- **Don't add a parallel action when an existing one can branch.** One action
+
+* **Don't add a parallel action when an existing one can branch.** One action
   that routes internally beats two near-identical actions and the SDK method
   each would need.
 
@@ -209,9 +220,10 @@ fails silently. An enum is a compile/lint-checked contract; `TypeInfo` means
 adding a type lights up every surface (including the frontend icon registry,
 which reads `iconForType` from the bootstrap, not a hardcoded map).
 
-- Slick: `pty_submits_on_paste` declared on each `WorkerDriver`; resolved as
+* Slick: `pty_submits_on_paste` declared on each `WorkerDriver`; resolved as
   `self.driver.pty_submits_on_paste`.
-- Not slick: `ref.type == "agent"` / `self.driver.name == "claude"` scattered at
+
+* Not slick: `ref.type == "agent"` / `self.driver.name == "claude"` scattered at
   call sites. (Real anti-patterns live in `agentic_process.py` — don't add more.)
 
 ### 6. Vendor/variant differences hide behind a driver, not an `if name ==`
@@ -229,7 +241,7 @@ one vendor's quirk breaks another (e.g. copilot's `assistant.turn_end` once
 mapped to the wrong status and pinned every copilot session "busy").
 
 Generalize the rule beyond workers: **any time you're about to write
-`if name == "x"` on shared infrastructure, the difference belongs as a trait or
+`if name == "x"`** **on shared infrastructure, the difference belongs as a trait or
 method on the thing that varies.**
 
 ### 7. Console-testable — three ways, under fifteen lines
@@ -248,8 +260,9 @@ version falls out naturally as a short function with a clear name. Real flowpad
 unit tests are 13–46 lines; the cap is 30s and is never raised (a slow test
 means slow code — fix the code).
 
-- Slick: `type_id_str(t, id)` — one line, trivially tested.
-- Not slick: a 100-method `AgenticProcess` god-object where a behavior can only
+* Slick: `type_id_str(t, id)` — one line, trivially tested.
+
+* Not slick: a 100-method `AgenticProcess` god-object where a behavior can only
   be reached by booting a worker. Prefer short functions with clear names;
   done right, most functionality is provable in under ten lines.
 
@@ -263,7 +276,7 @@ When you catch yourself about to write code, walk this:
    the action.
 4. **Am I about to compute in the frontend?** → stop. Render derived state;
    move the compute to the backend entity.
-5. **Am I adding a second action/method that's ~95% an existing one?** → branch
+5. **Am I adding a second action/method that's \~95% an existing one?** → branch
    the existing one instead.
 6. **Am I comparing a bare string for a typed value?** → use the enum.
 7. **Can I exercise this in a REPL and a <15-line no-mock test?** → if not,

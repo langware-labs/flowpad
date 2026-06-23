@@ -1,14 +1,16 @@
 import '@src/styles/highlightjs.css';
 import { trackEvent } from '@src/utils/analytics';
-import { config, navigator } from '@sdk';
+import { config, dataContext, navigator } from '@sdk';
+import { useLocation } from 'react-router';
 import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
+import { NotificationOutlet, NotificationCommandBridge, DiagnoseErrorModal, initNotificationIngest } from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
 import { useEffect, useRef } from 'react';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
@@ -49,6 +51,14 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     usePresenceReporter();
     useUiCommandListener();
     useSpotlightHotkey();
+    // Re-report browser_context (incl. the current URL) on every navigation.
+    // The reporter's mobx autorun only fires on context-slot changes, so a
+    // pure-URL move (e.g. leaving a conversation for Home) wouldn't otherwise
+    // refresh the pathname the backend reads to tell what page is open.
+    const { pathname } = useLocation();
+    useEffect(() => {
+      dataContext.resendBrowserContext();
+    }, [pathname]);
     return null;
   };
 
@@ -84,8 +94,10 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       <TooltipProvider>
         <NotificationOutlet />
         <NotificationCommandBridge />
+        <DiagnoseErrorModal />
         <CleanupModal />
         <DeleteAssetModal />
+        <InputPromptModal />
         <Spotlight />
         <ActivityProgressModalRoot />
         <GlobalEvents />

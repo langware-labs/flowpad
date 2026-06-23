@@ -5,23 +5,34 @@ import { Button } from '@src/components/ui/button';
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { sdkConfig } from '@sdk/config/index';
+import { connectionManager } from '@sdk/websocket';
+import { useIsDev } from '@src/components/view-mode';
+import { useContext } from '@sdk/react/hooks';
 import {
   Check,
   ChevronDown,
   ChevronRight,
   Copy,
   ExternalLink,
+  History,
   Loader2,
   RefreshCw,
   Stethoscope,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+interface PypiRelease {
+  version: string;
+  published_at: string | null;
+  yanked: boolean;
+}
+
 interface PypiInfo {
   current: string;
   latest: string | null;
   update_available: boolean;
   error: string | null;
+  releases: PypiRelease[];
 }
 
 interface ReleaseInfo {
@@ -50,6 +61,14 @@ interface ElectronAPI {
   getAppVersion?: () => Promise<string>;
   upgradeFlowpad?: () => Promise<{ success: boolean; error?: string }>;
   openExternal?: (url: string) => Promise<boolean>;
+}
+
+interface InstallVersionResponse {
+  success: boolean;
+  restarting?: boolean;
+  reason?: string | null;
+  error?: string | null;
+  output?: string | null;
 }
 
 function getElectronApi(): ElectronAPI | undefined {
@@ -166,11 +185,10 @@ function TimestampRow({ label, timestamp }: TimestampRowProps) {
 interface ReleaseNotesProps {
   title: string;
   release: ReleaseInfo | null;
-  defaultOpen?: boolean;
 }
 
-function ReleaseNotes({ title, release, defaultOpen = false }: ReleaseNotesProps) {
-  const [open, setOpen] = useState(defaultOpen);
+function ReleaseNotes({ title, release }: ReleaseNotesProps) {
+  const [open, setOpen] = useState(false);
   if (!release || !release.body) return null;
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="mt-1">
@@ -182,6 +200,33 @@ function ReleaseNotes({ title, release, defaultOpen = false }: ReleaseNotesProps
         <MarkdownView value={release.body} compact />
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+function CopyableUrlField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore
+    }
+  }, [value]);
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <button
+        type="button"
+        onClick={() => void handleCopy()}
+        className="flex max-w-[200px] items-center gap-1 truncate rounded-sm bg-muted/30 px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        title={`Copy ${label.toLowerCase()}`}
+      >
+        <span className="truncate">{value}</span>
+        {copied ? <Check className="h-3 w-3 shrink-0 text-green-500" /> : <Copy className="h-3 w-3 shrink-0" />}
+      </button>
+    </div>
   );
 }
 
@@ -220,12 +265,20 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [error, setError] = useState<string | null>(null);
   const [electronVersion, setElectronVersion] = useState<string | null>(null);
   const [upgrading, setUpgrading] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [pendingVersion, setPendingVersion] = useState<string | null>(null);
+  const [installResult, setInstallResult] = useState<InstallVersionResponse | null>(null);
+  const [restarting, setRestarting] = useState(false);
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
   const [diagReport, setDiagReport] = useState<{
     diagnosisId: string;
     conversationId?: string;
     flowMessageId?: string;
   } | null>(null);
+
+  const isDev = useIsDev();
+  const context = useContext();
+  const instanceName = context?.instanceName;
 
   const electronApi = getElectronApi();
   const mode: 'Desktop' | 'Browser' = electronApi ? 'Desktop' : 'Browser';
@@ -275,6 +328,59 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       setUpgrading(false);
     }
   }, [electronApi]);
+
+  // Wait for the backend to go down and come back healthy, then reload so the
+  // (possibly different-version) UI is reloaded fresh. The python monitor restart
+  // can take a little while, so poll generously before giving up.
+  const waitForRestartAndReload = useCallback(async () => {
+    const healthUrl = `${sdkConfig.apiUrl}/health/status`;
+    const deadline = Date.now() + 90_000;
+    // Give the old server a moment to actually exit first.
+    await new Promise((r) => setTimeout(r, 3000));
+    while (Date.now() < deadline) {
+      try {
+        const r = await fetch(healthUrl, { cache: 'no-store' });
+        if (r.ok) {
+          window.location.reload();
+          return;
+        }
+      } catch {
+        /* server down mid-restart — keep polling */
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    setRestarting(false);
+    setInstallResult({ success: false, error: 'Server did not come back. Restart Flowpad manually.' });
+  }, []);
+
+  const handleInstallVersion = useCallback(
+    async (version: string) => {
+      // Pure-SDK path: the backend reinstalls the pinned version and restarts
+      // itself via the monitor. Reuse the upgrading flag for the in-flight UX.
+      setUpgrading(true);
+      setInstallResult(null);
+      try {
+        const resp = await fetch(`${sdkConfig.apiUrl}/api/v1/version/install`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version }),
+        });
+        const json = (await resp.json()) as InstallVersionResponse;
+        if (json.success && json.restarting) {
+          setRestarting(true);
+          void waitForRestartAndReload();
+          return;
+        }
+        setInstallResult(json);
+      } catch (e) {
+        setInstallResult({ success: false, error: e instanceof Error ? e.message : String(e) });
+      } finally {
+        setUpgrading(false);
+      }
+    },
+    [waitForRestartAndReload],
+  );
 
   const handleOpenExternal = useCallback(
     async (url: string) => {
@@ -327,6 +433,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {mode}
               </span>
+              {isDev && instanceName && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {instanceName}
+                </span>
+              )}
             </div>
             <button
               type="button"
@@ -346,15 +457,38 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             </div>
           )}
 
+          {restarting && (
+            <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-2 py-1.5 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+              <span>Installing and restarting Flowpad… this can take up to a minute.</span>
+            </div>
+          )}
+
           {/* Python / PyPI section */}
           <section className="space-y-1.5">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Python (flow SDK)</h4>
-              {pypi?.error && (
-                <span className="text-[10px] text-muted-foreground" title={pypi.error}>
-                  PyPI unavailable
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {pypi?.error && (
+                  <span className="text-[10px] text-muted-foreground" title={pypi.error}>
+                    PyPI unavailable
+                  </span>
+                )}
+                {(pypi?.releases?.length ?? 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingVersion(null);
+                      setPicking((p) => !p);
+                    }}
+                    className="flex items-center gap-1 rounded-sm px-1 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    title="Change the installed flow SDK version"
+                  >
+                    <History className="h-3 w-3" />
+                    <span>Change</span>
+                  </button>
+                )}
+              </div>
             </div>
             <VersionRow
               label="Installed"
@@ -371,10 +505,9 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             <ReleaseNotes
               title={`Notes for v${currentVersion}`}
               release={pypiCurrentRelease}
-              defaultOpen={!pypi?.update_available}
             />
             {pypi?.update_available && pypiLatestRelease && (
-              <ReleaseNotes title={`Notes for v${pypi.latest}`} release={pypiLatestRelease} defaultOpen={true} />
+              <ReleaseNotes title={`Notes for v${pypi.latest}`} release={pypiLatestRelease} />
             )}
             {pypi?.update_available && (
               <div className="pt-1">
@@ -404,6 +537,82 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               <ExternalLink className="h-3 w-3" />
               <span>View on PyPI</span>
             </button>
+
+            {picking && (
+              <div className="space-y-1.5 pt-1">
+                <p className="text-[10px] text-muted-foreground">Select a version to install:</p>
+                <div className="max-h-48 overflow-y-auto rounded-sm border bg-muted/30 py-0.5">
+                  {(pypi?.releases ?? []).map((r) => {
+                    const isCurrent = r.version === currentVersion;
+                    const isPending = r.version === pendingVersion;
+                    return (
+                      <div key={r.version}>
+                        <button
+                          type="button"
+                          disabled={isCurrent || r.yanked || upgrading}
+                          onClick={() => setPendingVersion(isPending ? null : r.version)}
+                          className={`flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-[11px] transition-colors disabled:cursor-default ${
+                            isPending ? 'bg-accent' : 'hover:bg-accent'
+                          } ${isCurrent || r.yanked ? 'opacity-60' : ''}`}
+                        >
+                          <span className="font-mono">v{r.version}</span>
+                          <span className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                            {formatDateWithAge(r.published_at)}
+                            {isCurrent && (
+                              <span className="rounded-full bg-muted px-1.5 py-0.5 font-medium">current</span>
+                            )}
+                            {r.yanked && (
+                              <span className="rounded-full bg-muted px-1.5 py-0.5 font-medium">yanked</span>
+                            )}
+                          </span>
+                        </button>
+                        {isPending && (
+                          <div className="space-y-1.5 border-t bg-background/60 px-2 py-2">
+                            <p className="text-[11px]">
+                              Install <span className="font-mono">v{r.version}</span> and restart Flowpad?
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPendingVersion(null);
+                                  setInstallResult(null);
+                                }}
+                                disabled={upgrading}
+                                className="flex-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-accent disabled:opacity-60"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleInstallVersion(r.version)}
+                                disabled={upgrading}
+                                className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                              >
+                                {upgrading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                                {upgrading ? 'Installing…' : 'Install & restart'}
+                              </button>
+                            </div>
+                            {installResult && !installResult.success && (
+                              <div className="space-y-1.5">
+                                <p className="text-[10px] text-destructive">
+                                  {installResult.error ?? 'Install failed.'}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  Run from your terminal, then restart Flowpad:
+                                </p>
+                                <CopyableCommand command={`uv tool install flowpad==${r.version} --force`} />
+                                <CopyableCommand command={`pip install flowpad==${r.version}`} />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </section>
 
           <div className="border-t" />
@@ -435,14 +644,12 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               <ReleaseNotes
                 title={`Notes for v${electronVersion}`}
                 release={electronCurrentRelease}
-                defaultOpen={false}
               />
             )}
             {githubLatest && (
               <ReleaseNotes
                 title={`Notes for v${githubLatest.tag}`}
                 release={githubLatest}
-                defaultOpen={githubUpdateAvailable || mode === 'Browser'}
               />
             )}
             {mode === 'Desktop' && !githubUpdateAvailable && !data?.github_error && (
@@ -471,6 +678,13 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               </section>
             </>
           )}
+
+          <div className="border-t" />
+          <section className="space-y-1.5">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connection Info</h4>
+            <CopyableUrlField label="URL" value={window.location.href} />
+            <CopyableUrlField label="Connection ID" value={connectionManager.id} />
+          </section>
 
           {/* Toolbar */}
           <div className="-mx-3 -mb-3 mt-1 border-t px-3 pb-1 pt-2.5">

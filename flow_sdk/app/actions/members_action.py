@@ -27,6 +27,30 @@ async def list_members(self: Entity) -> ApiSuccessResponse:
     return ApiResponse.success(data=_participants(self))
 
 
+@action.post(action_name="members", types="all")
+async def invite_member(self: Entity) -> ApiSuccessResponse:
+    """Invite a member — reflection enabler. Like ``list_members``, the SDK
+    calls this with ``hub_reflect`` set: for a ``remote`` entity (e.g. an
+    organization or team) the dispatcher forwards the POST to the hub's
+    ``create_membership`` (which creates the Invitation + emails the recipient)
+    and mirrors the resulting roster back. The POST body is a
+    ``MembershipRequest`` — ``{recipient_email, invitation_targets:[{typeid, role}]}``.
+
+    There is no local-only membership store, so the local body is a no-op
+    success — the reflect path is the real implementation. A registered POST
+    handler is required for the dispatcher to match (and therefore reflect) the
+    call; without it the route 404s before reflection."""
+    return ApiResponse.success(data=_participants(self))
+
+
+@action.all(action_name="members", methods="put", types="all")
+async def set_member_role(self: Entity) -> ApiSuccessResponse:
+    """Change a member's role — reflection enabler (hub-owned). Forwarded to the
+    hub for a ``remote`` entity; the PUT body is ``{user_id, role}``. Local body
+    is a no-op success."""
+    return ApiResponse.success(data=_participants(self))
+
+
 @action.delete(action_name="members", types="all")
 async def remove_member(self: Entity) -> ApiSuccessResponse:
     """Remove a member — OWNER ONLY (enforced hub-side in

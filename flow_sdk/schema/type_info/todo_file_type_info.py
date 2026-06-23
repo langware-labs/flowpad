@@ -12,5 +12,5 @@ TODO_FILE = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_todo,
-    gen_id_fn=todo_id,
+    gen_uuid_fn=todo_id,
 )

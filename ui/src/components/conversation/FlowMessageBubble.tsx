@@ -1,4 +1,4 @@
-import { createConversationForShare, FlowMessage, GitRepo, isImagePath, Prompt, TypeId, User } from '@sdk';
+import { createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -10,7 +10,6 @@ import { MessageBubble } from './MessageBubble';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, iconForEntity } from './EntityChip';
-import { GitRepoChip } from '@src/components/git/GitRepoChip';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
@@ -362,15 +361,12 @@ export function FlowMessageBubble({
     timestamp,
   };
 
-  // Files + entities (Skill / Markdown / Spec / git_repo) come from the single
+  // Files + entities (Skill / Markdown / Spec) come from the single
   // `useAttachments` surface, along with the message-level `downloaded` flag.
-  // `git_repo` is a remote reference rendered via its own accept-and-work modal
-  // (no bundle download), so it's split out and always shown; `prompt` entities
-  // render via the attachment-actions row's PromptAttachmentPreview (inside
-  // MessageBubble), not as generic chips; the rest ride in the body bundle and
-  // only render as live chips once `downloaded`.
-  const gitRepoEntities = entities.filter((t) => t.type === GitRepo.type);
-  const otherEntities = entities.filter((t) => t.type !== GitRepo.type && t.type !== Prompt.type);
+  // `prompt` entities render via the attachment-actions row's
+  // PromptAttachmentPreview (inside MessageBubble), not as generic chips; the
+  // rest ride in the body bundle and only render as live chips once `downloaded`.
+  const otherEntities = entities.filter((t) => t.type !== Prompt.type);
   const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   const hasBody = bodyStatus !== BodyStatus.NA;
@@ -471,15 +467,6 @@ export function FlowMessageBubble({
               {progress.phase === 'upload' ? 'Uploading' : 'Downloading'}
               {progressPct === null ? '…' : ` ${progressPct}%`}
             </span>
-          </div>
-        )}
-        {/* git_repo references open the accept-and-work modal directly — no
-          bundle download needed, so they render in both states. */}
-        {gitRepoEntities.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {gitRepoEntities.map((typeId) => (
-              <GitRepoChip key={`asset:${typeId.type}-${typeId.id}`} typeId={typeId} />
-            ))}
           </div>
         )}
         {/* Locally-available images always render as image cards — no project

@@ -5,6 +5,16 @@ import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const navMocks = vi.hoisted(() => ({
+  openDock: vi.fn(),
+}));
+
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({
+    navigation: navMocks,
+  }),
+}));
+
 vi.mock('@src/tabs/useTabs', () => ({
   useTabProjectBuckets: vi.fn(),
 }));
@@ -37,6 +47,7 @@ function makeBucket(id: string, displayName: string, tabCount: number): TabProje
 
 describe('ProjectsCounterChip', () => {
   beforeEach(() => {
+    navMocks.openDock.mockReset();
     mockUseTabProjectBuckets.mockReset();
     mockUseAllProjects.mockReset();
     mockUseAllProjects.mockReturnValue({ projects: [], isLoading: false });
@@ -148,11 +159,7 @@ describe('ProjectsCounterChip', () => {
     const onOpenHistory = vi.fn();
 
     render(
-      <ProjectsCounterChip
-        currentProjectId={projectA}
-        onLaunchProjectPath={vi.fn()}
-        onOpenHistory={onOpenHistory}
-      />,
+      <ProjectsCounterChip currentProjectId={projectA} onLaunchProjectPath={vi.fn()} onOpenHistory={onOpenHistory} />,
     );
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
 
@@ -191,15 +198,15 @@ describe('ProjectsCounterChip', () => {
     expect(screen.getByRole('button', { name: 'zebra 1' }).getAttribute('aria-current')).toBe('true');
   });
 
-  it('keeps the chip clickable with zero buckets when a launch callback exists', async () => {
+  it('hides the chip entirely when there are zero project buckets', () => {
+    // A strip whose only tabs are global has no project tab to count, so the
+    // chip stays hidden rather than advertising "0 / 0" — even when a launch
+    // callback is provided (the strip's own openers handle the empty case).
     mockUseTabProjectBuckets.mockReturnValue({ buckets: [] });
     const onLaunchProjectPath = vi.fn();
 
     render(<ProjectsCounterChip onLaunchProjectPath={onLaunchProjectPath} />);
 
-    const chip = screen.getByTestId('projects-counter-chip');
-    expect(chip.hasAttribute('disabled')).toBe(false);
-    await userEvent.click(chip);
-    expect(screen.getByTestId('projects-counter-actions')).toBeTruthy();
+    expect(screen.queryByTestId('projects-counter-chip')).toBeNull();
   });
 });

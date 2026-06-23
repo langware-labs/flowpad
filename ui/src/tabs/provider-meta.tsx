@@ -10,6 +10,7 @@ import {
   getDisplayStatus,
   isProcessRunning,
   ProcessStatus,
+  Tab,
   TypeId,
 } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
@@ -130,6 +131,61 @@ export const LazyProcessTooltip: React.FC<{
         {fallbackName}
       </p>
       {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
+    </div>
+  );
+};
+
+/** "agentic_process" → "Agentic Process", "markdown" → "Markdown". */
+export function humanizeType(s: string): string {
+  return s
+    .replace(/[-_]/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
+/**
+ * Info card for a non-terminal (content) tab — same chrome as
+ * `ProcessInfoTooltip` so every chip's tooltip reads identically: a header,
+ * a kind row, the dock address, then the open/update timestamps. Content tabs
+ * have no live process, so the kind dot is a static accent (not a liveness
+ * indicator) and the fields come straight off the `Tab` row — no entity fetch.
+ */
+export const ContentTabTooltip: React.FC<{ tab: Tab; typeLabel: string; statusReason?: string }> = ({
+  tab,
+  typeLabel,
+  statusReason,
+}) => {
+  const dock = tab.dockPointer;
+  const address = dock?.pointer || (tab.target_type && tab.target_id ? `${tab.target_type}/${tab.target_id}` : '');
+  const lastActive = tab.last_active_at;
+
+  return (
+    <div className="min-w-[220px] space-y-1.5">
+      <p className="text-xs font-semibold text-foreground" data-testid="tab-tooltip-name">
+        {tab.name || typeLabel}
+      </p>
+      {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
+      <div className="flex items-center gap-2">
+        <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
+        <span className="text-[11px] font-semibold text-foreground">{typeLabel}</span>
+        {tab.worktree && <span className="text-[10px] font-medium text-amber-500">worktree</span>}
+      </div>
+      {address && (
+        <p className="max-w-[240px] truncate font-mono text-[10px] text-muted-foreground" title={address}>
+          {address}
+        </p>
+      )}
+      <div className="space-y-1 border-t pt-1.5">
+        {tab.created_date && (
+          <InfoRow label="Opened" value={`${formatDateTime(tab.created_date)} · ${timeAgo(tab.created_date)}`} />
+        )}
+        {tab.updated_date && (
+          <InfoRow label="Updated" value={`${formatDateTime(tab.updated_date)} · ${timeAgo(tab.updated_date)}`} />
+        )}
+        {lastActive != null && lastActive !== '' && (
+          <InfoRow label="Active" value={timeAgo(typeof lastActive === 'number' ? new Date(lastActive) : lastActive)} />
+        )}
+      </div>
     </div>
   );
 };

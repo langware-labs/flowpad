@@ -13,8 +13,14 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
+import type { Project } from '@sdk';
+import { FSRef } from '@sdk';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { ProjectChip } from '@src/components/project/ProjectChip';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { EDITOR_TYPES } from '@src/navigation/asset-doc-types';
 import apiClient from '@sdk/client';
-import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
+import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, Trash2, X } from 'lucide-react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -24,10 +30,10 @@ import {
   BreadcrumbSeparator,
 } from '@src/components/ui/breadcrumb';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
-import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, unionAssetBucket } from '@src/lib/scope-filter';
+import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, projectScope, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { useEntity } from '@sdk/react/hooks';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
@@ -301,6 +307,31 @@ export function AssetsPage() {
   // else the context project. Drives the Project mode + its tooltip name.
   const scopeProjectId = urlProjectId ?? currentProjectId;
   const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
+  // The project entity backing the project view — drives the "Delete project"
+  // header action. Only resolved on a project page.
+  const projectTypeId = useMemo<TypeId | null>(
+    () => (isProjectView && scopeProjectId ? new TypeId('project', scopeProjectId) : null),
+    [isProjectView, scopeProjectId],
+  );
+  const { data: projectEntity } = useEntity<Project>(projectTypeId);
+  const handleDeleteProject = useCallback(() => {
+    const proj = projectEntity;
+    if (!proj) return;
+    const name = proj.displayName ?? 'this project';
+    showDeleteAssetModal({
+      name,
+      description:
+        'This permanently deletes the project and everything in it — all indexed ' +
+        'records and their children, and the project folder on disk. This cannot be undone.',
+      onConfirm: async () => {
+        await proj.deleteWithChildren();
+      },
+      onAfterDelete: () => {
+        notify.success({ title: 'Project deleted', message: name });
+        navigation.closeDock();
+      },
+    });
+  }, [projectEntity, navigation]);
   // On a project page, scope is *preselected* to that project (not locked) — the
   // user can still switch to All/User/Selected. `projectSeedScope` is that
   // preselection: it seeds the initial scope, scopes the project index status,
@@ -310,23 +341,21 @@ export function AssetsPage() {
     [urlProjectId],
   );
   const effectivePointer = isProjectView ? assetSubPointer : (currentDock?.pointer ?? '');
-  // Initial scope seeded from the current project so the Project mode's count
-  // is accurate from the first render. Seeding lives in `defaultScopeFilter`
-  // (lib/scope-filter.ts) so every surface gets the same context-aware default.
+  // Scope is URL-first: it lives in the dock options (read generically via
+  // `DockPointer.scopeFilter`). An explicit option wins; on a project page we
+  // default to that project; the bare `/dock/assets` (no option) falls back to
+  // the context-aware default (project chip when in a project, else user-only)
+  // — NOT a forced "All".
+  const urlScope = useMemo<ScopeFilter>(
+    () => currentDock?.scopeFilter ?? projectSeedScope ?? defaultScopeFilter(currentProjectId),
+    [currentDock, projectSeedScope, currentProjectId],
+  );
+  // Non-scope filter state (query / tags / per-type filters / folder path).
+  // The `scope` field is vestigial here — `effectiveFilter` always derives it
+  // from `urlScope`, keeping scope URL-authoritative.
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
     ...DEFAULT_ASSET_FILTER,
-    scope: projectSeedScope ?? defaultScopeFilter(currentProjectId),
   }));
-  // Preselect the project's scope when navigating to a *different* project page.
-  // Not a lock — the filter stays switchable. The initial scope is already
-  // seeded in useState, so the ref guard skips the redundant set on first mount.
-  const seededProjectRef = useRef(urlProjectId);
-  useEffect(() => {
-    if (urlProjectId && urlProjectId !== seededProjectRef.current) {
-      setAssetFilter((prev) => ({ ...prev, scope: defaultScopeFilter(urlProjectId) }));
-    }
-    seededProjectRef.current = urlProjectId;
-  }, [urlProjectId]);
 
   // --- Side menu follows the open asset ---------------------------------
   // The asset open in the editor may live in a different project (or in the
@@ -353,17 +382,41 @@ export function AssetsPage() {
     () => assetScopeBucket(openAsset as { scope?: string | null; project_id?: string | null } | null),
     [openAsset],
   );
+  // The open asset may be addressed by a VFS path (not a TypeId), in which case
+  // `openAsset` above is null. Resolve that entity by path too so the header
+  // can show its owning-project chip. (Same 30s-cached lookup the editor uses.)
+  const openVfsRef = useMemo<{ type: string; fsRef: FSRef } | null>(() => {
+    if (!effectivePointer.startsWith('editor/')) return null;
+    try {
+      const p = AssetDocPointer.parse(effectivePointer);
+      if (!p.editor || p.editor === AssetEditor.CODE || p.method !== AssetRoutingMethod.VFS) return null;
+      const vfs = VFSPath.parse(p.value);
+      if (!vfs.typeId) return null;
+      return {
+        type: (EDITOR_TYPES[p.editor][0] as string | undefined) ?? p.editor,
+        fsRef: new FSRef(vfs.entitySubPath, vfs.typeId),
+      };
+    } catch {
+      return null;
+    }
+  }, [effectivePointer]);
+  const { entity: openVfsEntity } = useEntityByPath(openVfsRef?.type ?? null, openVfsRef?.fsRef ?? null);
+  // The project whose chip the header shows: the URL project on a project page,
+  // else the owning project of the open asset (TypeId- or VFS-addressed).
+  const openEntityProjectId =
+    (openAsset as { project_id?: string | null } | null)?.project_id ??
+    (openVfsEntity as { project_id?: string | null } | null)?.project_id ??
+    null;
+  const chipProjectId = urlProjectId ?? openEntityProjectId;
   // Manual scope edits suppress the auto-union for the *current* asset only;
   // opening a different asset re-enables it (the guard is keyed to the id).
   const [suppressedAssetId, setSuppressedAssetId] = useState<string | null>(null);
 
   const effectiveFilter = useMemo<AssetFilter>(() => {
-    if (!openAssetBucket || openAssetId === suppressedAssetId) {
-      return assetFilter;
-    }
-    const scope = unionAssetBucket(assetFilter.scope, openAssetBucket);
-    return scope === assetFilter.scope ? assetFilter : { ...assetFilter, scope };
-  }, [assetFilter, openAssetBucket, openAssetId, suppressedAssetId]);
+    const useBucket = openAssetBucket && openAssetId !== suppressedAssetId;
+    const scope = useBucket ? unionAssetBucket(urlScope, openAssetBucket) : urlScope;
+    return { ...assetFilter, scope };
+  }, [assetFilter, urlScope, openAssetBucket, openAssetId, suppressedAssetId]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
@@ -485,20 +538,32 @@ export function AssetsPage() {
     window.addEventListener('mouseup', onUp);
   }, [sidebarWidth]);
 
+  // URL-first scope write: scope is a dock option (serialized once, in
+  // lib/scope-filter). Writing the URL is the single source of truth —
+  // `urlScope` re-derives it on the next render.
+  const openScoped = useCallback((scope: ScopeFilter) => {
+    const base = currentDock ?? DockPointer.forAssetList('all');
+    navigation.openDock(base.withScopeFilter(scope));
+  }, [currentDock, navigation]);
+
   const handleScopeChange = useCallback((scope: ScopeFilter) => {
-    setAssetFilter(prev => ({ ...prev, scope }));
+    openScoped(scope);
     // The user took control of the scope — stop auto-unioning the open asset's
     // bucket for this asset (rule honored only until they open a different one).
     setSuppressedAssetId(openAssetId);
-  }, [openAssetId]);
+  }, [openScoped, openAssetId]);
 
   // Asset-shaped pointers (`forAssetEditor`, `forAssetFolder`, `forAssetList`)
   // open at `/dock/assets/<sub>`. Under `/dock/project/<id>` we must rebase
   // them onto the project URL or every tree click, breadcrumb, or row click
   // would jump out of the project shell.
   const navigateAsset = useCallback((p: DockPointer) => {
-    navigation.openDock(DockPointer.rebaseAssetsOntoProject(p, urlProjectId));
-  }, [navigation, urlProjectId]);
+    // Every in-assets navigation (type click, folder, breadcrumb, row→editor)
+    // stays in the SAME scope-keyed tab: re-stamp the current scope onto the
+    // freshly-built (scope-less) pointer so the assets tabHash is unchanged and
+    // the scope isn't dropped from the URL.
+    navigation.openDock(p.withScopeFilter(urlScope));
+  }, [navigation, urlScope]);
 
   // BrowseableTree's adapters key selection off `ViewType.ASSETS` pointers,
   // so in project view we synthesize one from the sub-pointer. Memoized so
@@ -761,12 +826,13 @@ export function AssetsPage() {
         return lastSeg === label || p.name === label;
       });
       if (match) {
-        setAssetFilter({ ...DEFAULT_ASSET_FILTER, scope: { user: false, projects: [match.record_id] } });
+        setAssetFilter({ ...DEFAULT_ASSET_FILTER });
+        openScoped(projectScope(match.record_id));
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [openScoped]);
 
   return (
     <div className="flex h-full flex-col">
@@ -786,7 +852,8 @@ export function AssetsPage() {
           )}
         </button>
         <BookOpen className="h-4 w-4 text-muted-foreground" />
-        <span className="ml-1 text-sm font-medium">Assets</span>
+        <span className="ml-1 text-sm font-medium">{isProjectView ? 'Project assets' : 'Assets'}</span>
+        <ProjectChip projectId={chipProjectId} className="ml-1.5" />
         <div className="ml-auto flex items-center gap-2">
           <div className="relative w-96 shrink-0">
             <RecordSearchBar
@@ -858,6 +925,18 @@ export function AssetsPage() {
               </TooltipContent>
             </Tooltip>
           )}
+          {isProjectView && projectEntity && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 shrink-0 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={handleDeleteProject}
+              data-testid="project-delete"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete project
+            </Button>
+          )}
         </div>
       </div>
 
@@ -884,6 +963,7 @@ export function AssetsPage() {
                 <BrowseableTree
                   roots={wikiRoots}
                   activePointer={treeActivePointer}
+                  activeKey={openAssetId}
                   isLoading={typesLoading && wikiRoots.length === 0}
                   onNavigate={navigateAsset}
                 />

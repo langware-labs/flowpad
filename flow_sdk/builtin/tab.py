@@ -22,6 +22,8 @@ expected to reset on such a rebuild anyway).
 
 from __future__ import annotations
 
+import json as _json
+import logging
 import uuid
 
 from flow_sdk.actions.action_registry import action as _action_registry
@@ -35,14 +37,37 @@ from flow_sdk.core import Entity
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.schema.types import EntityType
 
+logger = logging.getLogger(__name__)
+
+
+def _pointer_to_hash(pointer: str) -> str:
+    """Extract the canonical 'viewType|sub' identity string from either format:
+    - new: JSON {"viewType": ..., "pointer": ...}
+    - old: legacy "viewType|sub" string (backward compat during migration)
+
+    This ensures UUID5 remains stable across the format transition.
+    """
+    if pointer.startswith('{'):
+        try:
+            data = _json.loads(pointer)
+            vt = data.get('viewType', '')
+            sub = data.get('pointer', '')
+            return f"{vt}|{sub}"
+        except (ValueError, TypeError):
+            return pointer
+    return pointer
+
 
 def tab_id_for(pointer: str) -> str:
     """Deterministic Tab id (uuid5) for a canonical pointer string.
 
     The ``tab:`` scheme prefix keeps the Tab keyspace disjoint from every other
-    ``mint_uuid`` caller that uses ``NAMESPACE_URL``.
+    ``mint_uuid`` caller that uses ``NAMESPACE_URL``. The pointer can be in either
+    new JSON format or legacy "viewType|sub" format — UUID5 is keyed on the
+    canonical hash extracted from it, so it remains stable across migration.
     """
-    return mint_uuid(key=f"tab:{pointer}", namespace=uuid.NAMESPACE_URL)
+    hash_str = _pointer_to_hash(pointer)
+    return mint_uuid(key=f"tab:{hash_str}", namespace=uuid.NAMESPACE_URL)
 
 
 class Tab(Entity):
@@ -80,6 +105,11 @@ class Tab(Entity):
     # and the receiver merge never clears absent keys, so a null signal cannot
     # propagate cross-client. Never model close as delete or ``visible=None``.
     visible: bool = APIField(default=True)
+
+    # Runtime-computed fields: populated at query time from the backing entity.
+    # Never persisted — re-resolved on every list/close/rename action.
+    status: str | None = APIField(default=None, persist=Persist.FALSE)
+    is_disabled: bool = APIField(default=False, persist=Persist.FALSE)
 
     # ``name`` and ``project_id`` are inherited from the base Entity. ``name`` is
     # the generic source of truth for the tab label; ``rename`` reflects it onto
@@ -153,8 +183,77 @@ async def _visible_tabs_sorted() -> list[Tab]:
     """Every visible Tab in canonical GLOBAL order (``tab_order`` asc, ``id`` as
     the deterministic tiebreak so legacy ``tab_order==0`` rows never reshuffle)."""
     tabs = await Tab.get_all({"visible": True})
+    tabs = await _delete_tabs_for_missing_projects(tabs)
     tabs.sort(key=lambda t: (getattr(t, "tab_order", 0) or 0, t.id))
     return tabs
+
+
+async def _project_exists(project_id: str | None) -> bool:
+    if not project_id:
+        return True
+    try:
+        uuid.UUID(str(project_id))
+    except (TypeError, ValueError):
+        # Legacy/test project identifiers are not reliable Project primary keys;
+        # only UUID-shaped project refs are eligible for stale-row deletion.
+        return True
+    try:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        return await Project.get_by_id(str(project_id)) is not None
+    except Exception:
+        # Fail open: a transient project lookup problem must not hard-delete tabs.
+        return True
+
+
+async def delete_tabs_for_missing_project(project_id: str | None) -> int:
+    """Hard-delete stale Tab rows whose owning project no longer exists.
+
+    This is intentionally different from user-initiated tab close. Close remains
+    a soft membership change and may dispatch target teardown; stale project
+    cleanup removes only dangling Tab rows via ``Tab.delete()`` and never calls
+    ``Tab.close()``.
+    """
+    if await _project_exists(project_id):
+        return 0
+    try:
+        tabs = await Tab.get_all({"project_id": str(project_id)})
+    except Exception:
+        return 0
+    deleted = 0
+    for tab in tabs:
+        try:
+            await tab.delete()
+        except Exception:
+            continue
+        deleted += 1
+    if deleted:
+        await broadcast_tabs_changed()
+    return deleted
+
+
+async def _delete_tabs_for_missing_projects(tabs: list[Tab]) -> list[Tab]:
+    project_ids = sorted({str(t.project_id) for t in tabs if getattr(t, "project_id", None)})
+    if not project_ids:
+        return tabs
+    missing_ids = [pid for pid in project_ids if not await _project_exists(pid)]
+    if not missing_ids:
+        return tabs
+    deleted_ids: set[str] = set()
+    for project_id in missing_ids:
+        try:
+            project_tabs = await Tab.get_all({"project_id": project_id})
+        except Exception:
+            continue
+        for tab in project_tabs:
+            try:
+                await tab.delete()
+            except Exception:
+                continue
+            deleted_ids.add(tab.id)
+    if deleted_ids:
+        await broadcast_tabs_changed()
+    return [t for t in tabs if t.id not in deleted_ids]
 
 
 async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> bool:
@@ -206,6 +305,13 @@ async def ensure_tab(
             await stray.save()
     if existing is not None:
         dirty = False
+        # Heal legacy "viewType|sub" pointers on access — migrate to JSON format
+        if existing.pointer and not existing.pointer.startswith('{'):
+            parts = existing.pointer.split('|', 1)
+            vt = parts[0] if parts else ''
+            sub = parts[1] if len(parts) > 1 else ''
+            existing.pointer = _json.dumps({"viewType": vt, "pointer": sub})
+            dirty = True
         if not existing.visible:
             existing.visible = True
             dirty = True
@@ -329,26 +435,6 @@ async def _resolve_status(tab: Tab) -> str | None:
     return str(status) if status is not None else None
 
 
-async def _serialize_row(tab: Tab) -> dict:
-    """One fully-resolved strip row — the chip renders straight off this (no FE
-    entity-cache overlay anymore)."""
-    status = await _resolve_status(tab)
-    return {
-        "id": tab.id,
-        "pointer": tab.pointer,
-        "target_type": tab.target_type,
-        "target_id": tab.target_id,
-        "project_id": tab.project_id,
-        "name": tab.name,
-        "icon_key": tab.icon_key,
-        "worktree": bool(tab.worktree),
-        "tab_order": tab.tab_order,
-        "last_active_at": tab.last_active_at,
-        "status": status,
-        "is_disabled": status == "closing",
-    }
-
-
 def _normalize_project(project: str | None) -> str | None:
     """Treat empty/``"null"`` as the no-active-project (projectless) view."""
     if project in (None, "", "null"):
@@ -356,39 +442,88 @@ def _normalize_project(project: str | None) -> str | None:
     return project
 
 
-async def _build_list(project: str | None) -> list[dict]:
-    """The ordered, project-filtered strip payload: global order filtered to
-    ``{project OR projectless}`` (decision 3), each row fully resolved."""
+async def _populate_tab_statuses(tabs: list[Tab]) -> None:
+    """Populate status and is_disabled fields on a list of Tabs (in-place mutation).
+    Called before serialization to ensure every Tab carries current status from its backing entity."""
+    for tab in tabs:
+        tab.status = await _resolve_status(tab)
+        tab.is_disabled = tab.status == "closing"
+
+
+async def _build_tab_list(project: str | None) -> list[Tab]:
+    """The ordered, project-filtered list of Tabs with runtime status resolved.
+    Global order filtered to ``{project OR projectless}`` (decision 3), each Tab
+    fully populated with status/is_disabled. The Tab objects are serialized
+    directly for API responses — no separate projection."""
     tabs = await _visible_tabs_sorted()
     order_ids = [t.id for t in tabs]
     project_of: dict[str, str | None] = {t.id: t.project_id for t in tabs}
     filtered = filter_for_project(order_ids, project_of, _normalize_project(project))
     by_id = {t.id: t for t in tabs}
-    return [await _serialize_row(by_id[i]) for i in filtered]
+    result = [by_id[tab_id] for tab_id in filtered]
+    await _populate_tab_statuses(result)
+    return result
+
+
+def _serialize_row(tab: Tab) -> dict:
+    """Serialize the strip-facing Tab projection without base Entity computed fields."""
+    return {
+        "id": tab.id,
+        "type": tab.type,
+        "pointer": tab.pointer,
+        "target_type": tab.target_type,
+        "target_id": tab.target_id,
+        "project_id": tab.project_id,
+        "name": tab.name,
+        "icon_key": tab.icon_key,
+        "worktree": tab.worktree,
+        "tab_order": tab.tab_order,
+        "last_active_at": tab.last_active_at,
+        "visible": tab.visible,
+        "status": tab.status,
+        "is_disabled": tab.is_disabled,
+    }
+
+
+async def _build_list(project: str | None) -> list[dict]:
+    """Compatibility projection for older tests/callers.
+
+    The canonical implementation returns ``Tab`` objects via ``_build_tab_list``;
+    this helper preserves the previous dict-row contract without introducing a
+    second ordering or filtering path.
+    """
+    tabs = await _build_tab_list(project)
+    return [_serialize_row(t) for t in tabs]
 
 
 # Stable sentinel TypeId for the global ping. ``flow_data_msg`` is dropped client-
-# side unless ``to_entity`` parses as ``<type>-<uuid>`` (websocket.parseTypeId), so
-# we ride a fixed Tab id; the frontend keys on ``element_type``, never this id.
-_TABS_CHANGED_SIGNAL = f"tab-{tab_id_for('__tabs_changed_signal__')}"
+# Broadcast signal moved to proper broadcast() function in websocket.py
+# (was: creating synthetic tab ID = uuid5(__tabs_changed_signal__), which was horrible design)
 
 
 async def broadcast_tabs_changed() -> None:
     """Global ``tabs-changed`` ping so every client refetches the list — covers
-    backend-originated changes (death/orphan-cleanup, rename, second window). Uses
-    the watcher-less broadcast channel (same path as scan/upload progress)."""
-    from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+    backend-originated changes (death/orphan-cleanup, rename, second window). Sends
+    a proper broadcast message to all connected clients."""
+    try:
+        from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
+        from pydantic import BaseModel
+        from flow_sdk.api.messages import WSMessageType
 
-    await broadcast_progress(
-        to_entity=_TABS_CHANGED_SIGNAL,
-        flow_data={"element_type": "tabs_changed", "attributes": {}},
-    )
+        class TabsChangedMessage(BaseModel):
+            message_type: str = WSMessageType.BROADCAST.value
+            broadcast_type: str = "tabs_changed"
+
+        await broadcast(TabsChangedMessage().model_dump_json())
+    except Exception as e:
+        logger.debug(f"broadcast_tabs_changed failed: {e}")
 
 
 async def _list_response(project: str | None):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
-    return ApiSuccessResponse(data={"tabs": await _build_list(project)})
+    tabs = await _build_tab_list(project)
+    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 
 async def _http_new_tab(
@@ -455,7 +590,8 @@ async def _http_list_all(cls):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs = await _visible_tabs_sorted()
-    return ApiSuccessResponse(data={"tabs": [await _serialize_row(t) for t in tabs]})
+    await _populate_tab_statuses(tabs)
+    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 
 _action_registry.register(

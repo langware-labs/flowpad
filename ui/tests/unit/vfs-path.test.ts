@@ -155,6 +155,37 @@ describe('VFSPath', () => {
     });
   });
 
+  describe('machinePath property (the asset_ref form)', () => {
+    it('re-adds the leading slash that fromMachinePath dropped (POSIX)', () => {
+      const vpath = VFSPath.parse('compute_node-@local/Users/x/y/skill');
+      expect(vpath.entitySubPath).toBe('Users/x/y/skill');
+      expect(vpath.machinePath).toBe('/Users/x/y/skill');
+    });
+
+    it('round-trips fromMachinePath → machinePath', () => {
+      const machine = '/Users/shlom/Documents/dev/flowpad-app/.claude/skills/e2e-qa';
+      const vpath = VFSPath.fromMachinePath(machine, new TypeId('compute_node', '@local'));
+      expect(vpath.absVfsPath).toBe(`compute_node-@local${machine}`);
+      expect(vpath.machinePath).toBe(machine);
+    });
+
+    it('does NOT carry the compute-node prefix (distinct from absVfsPath)', () => {
+      const vpath = VFSPath.parse('compute_node-@local/Users/x/file.md');
+      expect(vpath.absVfsPath).toBe('compute_node-@local/Users/x/file.md');
+      expect(vpath.machinePath).toBe('/Users/x/file.md');
+      expect(vpath.machinePath).not.toContain('compute_node');
+    });
+
+    it('passes an already-absolute subpath through unchanged', () => {
+      const vpath = VFSPath.parse('/some/relative/path');
+      expect(vpath.machinePath).toBe('/some/relative/path');
+    });
+
+    it('returns empty string when there is no sub-path', () => {
+      expect(VFSPath.parse('compute_node-@local').machinePath).toBe('');
+    });
+  });
+
   describe('uri property', () => {
     it('should return path with vfs:// protocol', () => {
       const vpath = VFSPath.parse('compute_node-@local/Users/test/file.md');

@@ -25,6 +25,7 @@ import {
   dataContext,
   dataManager,
   QueryRequest,
+  Project,
   Shell,
   ShellStatus,
   systemTools,
@@ -102,7 +103,7 @@ export async function loadShell(shellId: string): Promise<Shell> {
   // ── Project phase — URL-first: resolve project into context BEFORE
   // `shell.start()` runs, so anything downstream reads the right project.
   if (shell.project_id) {
-    await loadProject(shell.project_id).catch(() => {
+    await loadProject(new TypeId(Project.type, shell.project_id)).catch(() => {
       // Dangling project_id — fall through to workdir-based resolve below.
       return systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
     });

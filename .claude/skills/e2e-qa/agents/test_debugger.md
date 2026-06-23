@@ -57,12 +57,12 @@ Work through these in order, stopping when you have sufficient confidence:
 - Distinguish between: code bug, environment issue, test scenario issue, flaky timing
 - **An "environment/contamination" classification must be PROVEN, not asserted**: produce a passing comparable of the same test on the SAME instance and config. No comparable → the failure stands as real. The same failure signature across two independent runs is real by default. A baseline from a different instance proves nothing about this one.
 - Rate your confidence: high / medium / low
-- If the root cause is architectural or unfixable without violating a non-negotiable: include `Recommendation: flagged` with the reasoning — the manager will record it per the Autonomous Run Policy
+- If the root cause is architectural or unfixable without violating a non-negotiable: include `Recommendation: flagged` with the reasoning — the manager will record it per the Autonomous Run Policy. **Exception — Playwright phases 11 & 12 (`.md.ts`): `flagged` is not available.** There a file must reach a machine-read exit 0 (the only non-green is a documented env `test.skip(...)`); if it genuinely cannot, recommend `BLOCKED` with the proven cause — the phase surfaces it loudly rather than quarantining it.
 
 ### 6. Sweep for the same pattern across all test layers
 - Once the root cause is proven, the same condition or code pattern likely appears in other tests. Catching it now prevents re-discovery 24 hours later in a different layer (e.g. a gating condition found in unit tests re-appearing in manual regression).
 - Grep for the specific pattern: the gating condition (e.g. `viewMode=advanced`), hardcoded literal (e.g. port number `5173`), or API shape (e.g. field name, response structure).
-- Search across all test layers: `tests/` (unit, api, react, long, hub), `ui/tests/`, `ui/src/test/`, and relevant helper files referenced by those tests.
+- Search across all test layers: `tests/` (pytest unit/api/long/hub), `ui/tests/` (vitest unit, api, react, long, hub, **headless**), `ui/src/test/`, and relevant helper files referenced by those tests.
 - Record in debug_log.md: `Swept: found N other instances at <file:line> / none found`
 - Include the swept instances in your RCA message to bug_fixer — a pattern found once is presumed to repeat, and the fixer should address all instances together rather than one at a time.
 

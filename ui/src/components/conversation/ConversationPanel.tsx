@@ -5,6 +5,7 @@ import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
+import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
@@ -311,7 +312,7 @@ export function ConversationPanel({
               />
             </div>
           )}
-          <div className={`${bodyWrapper} min-h-0 flex-1 overflow-y-auto`}>
+          <div className={`${bodyWrapper} relative min-h-0 flex-1 overflow-y-auto`}>
             <ChipsExcludeProvider add={taskKeys}>
               <ConversationView
                 conversationId={conversationId}
@@ -342,20 +343,13 @@ export function ConversationPanel({
           </TabbedSideDrawer>
         ) : (
           // Collapsed strip — clicking the drawer icon folds it back open.
-          <div
-            className="flex w-9 shrink-0 flex-col items-center border-l bg-background py-1.5"
-            data-testid="conversation-side-drawer-collapsed"
-          >
-            <button
-              type="button"
+          <CollapsedSideRail data-testid="conversation-side-drawer-collapsed">
+            <SideRailButton
+              icon={PanelRightOpen}
+              label="Expand drawer"
               onClick={() => setSideOpen(true)}
-              title="Expand drawer"
-              aria-label="Expand drawer"
-              className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <PanelRightOpen className="h-4 w-4" />
-            </button>
-          </div>
+            />
+          </CollapsedSideRail>
         )}
       </div>
 

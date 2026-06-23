@@ -112,6 +112,7 @@ class ClaudeParser:
             worker=self.worker_type,
             parent_id=str(raw.get("parentUuid") or "") or None,
             is_sidechain=bool(raw.get("isSidechain", False)),
+            attribution_skill=str(raw.get("attributionSkill") or "") or None,
         )
 
         # Compaction boundary — the summary that survives a context reset.

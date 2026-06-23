@@ -89,6 +89,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
           open={isProjectModalOpen}
           onOpenChange={setIsProjectModalOpen}
           onProjectChanged={() => void refetchProjects()}
+          contextOnly
         />
       </>
     );
@@ -139,6 +140,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
         open={isProjectModalOpen}
         onOpenChange={setIsProjectModalOpen}
         onProjectChanged={() => void refetchProjects()}
+        contextOnly
       />
     </>
   );

@@ -36,7 +36,7 @@ You are a **teammate** managed by the QA Manager (team lead). Follow this workfl
 
 ## Your TODO List
 
-### 0. Reset the DB (Phase 11 / manual regression runs only)
+### 0. Reset the DB (Phase 12 / manual regression runs only)
 Before executing each scenario, reset the database to a clean state:
 ```bash
 curl -s -X POST {API_URL}/api/v1/graph/compute_node/@local/desktop-db/clear
@@ -171,16 +171,19 @@ cd ui && VITE_PORT=<frontend-port-from-APP_URL> npx playwright test \
 
 **Why `VITE_PORT`**: The `playwright.config.ts` sets `baseURL` from `VITE_PORT` with a stale fallback port. Without this env var, tests navigate to the wrong port and time out. Always derive it from the `APP_URL` in your task description.
 
-### Result mapping
-- Exit code 0 → all tests in the scenario passed
-- Non-zero → parse Playwright output for failure details. Each `test('...')` block maps to a test in the JSON result.
+### Result mapping — the exit code is authoritative
+
+- **A `.md.ts` is green ONLY when `npx playwright test` exits 0.** That exit code (and the JSON report) is the verdict. Your narrative, your belief that "the fix should work", a screenshot that looks right — none of these green a file. If you did not capture a real exit 0, the file is not passing; re-run it and capture the code (`run …; echo "exit=$?"` as the very next statement).
+- Exit code 0 → all tests in the file passed. Completion additionally requires the `--repeat-each=3` stability run (above) to exit 0 when you authored or changed the file.
+- Non-zero → parse the Playwright JSON for per-test failure details (each `test('...')` block maps to a test). A non-zero from a crashed/hung/interrupted run is still non-zero — it is NOT a pass and NOT a skip; it blocks until a real exit 0 is produced.
+- The only non-green that does not block is a real in-code `test.skip(...)` for one of the three documented environment reasons (Skip Detection), which appears as `skipped` in the JSON — never a verbal "I'm treating this as skipped".
 
 ### Updating or authoring a `.md.ts`
 Treat the `.md.ts` (and any `.fast.ts`) as a **cache** of the full `.md` run, not as an authority:
 1. **Fast version passes** → trust it, move on.
 2. **Fast version fails** → do not rerun or patch it. Run the full `.md` instead (the source of truth).
 3. **Once the full `.md` is resolved** (passes after any fix, or is confirmed a real reported failure), fold the learnings back into the `.md.ts` — corrected selectors, timing, steps — so it matches reality, then re-run the updated `.md.ts` and confirm it now passes. Only then is the task done. Never edit a `.md.ts` just to make it green without going through the full `.md` first.
-4. **`.md`-only scenarios (Phase 11)**: if the task says no `.md.ts` exists, then once the full `.md` passes, **author a new `.md.ts`** in the same category directory — follow the category's existing `.md.ts` conventions (helpers, selectors, one `test('...')` per `test N:` block; the per-category `playwright.config.ts` picks it up via `testMatch: '*.md.ts'`). The new file must encode exactly what the `.md` validates — no extra assertions, no weakened ones.
+4. **`.md`-only scenarios (Phase 12)**: if the task says no `.md.ts` exists, then once the full `.md` passes, **author a new `.md.ts`** in the same category directory — follow the category's existing `.md.ts` conventions (helpers, selectors, one `test('...')` per `test N:` block; the per-category `playwright.config.ts` picks it up via `testMatch: '*.md.ts'`). The new file must encode exactly what the `.md` validates — no extra assertions, no weakened ones.
 5. **Stability check (after any update or authoring)**: prove the changed `.md.ts` is solid, not luckily green:
    ```bash
    cd ui && VITE_PORT=<frontend-port-from-APP_URL> npx playwright test \

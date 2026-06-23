@@ -1,4 +1,4 @@
-import { AgenticProcess, dataManager, isReadyForInput, isWorkerRunning, WorkerStatus, type StatusBearingProcess } from '@sdk';
+import { AgenticProcess, classifyExecutionMode, dataManager, ExecutionMode, isReadyForInput, isWorkerRunning, WorkerStatus, type StatusBearingProcess } from '@sdk';
 import { subscribeToEntityOps } from '@sdk/react/hooks';
 import { useMemo, useSyncExternalStore } from 'react';
 
@@ -33,6 +33,8 @@ export interface ProcessTracker {
   projectId: string | null;
   status: string | undefined;
   workerStatus: string | undefined;
+  /** PTY (visible=true) vs headless CLI (visible=false). Routes ExecutionMode. */
+  visible: boolean | undefined;
   ready: boolean;
   /** Wall time (ms) of the most recent observed status / worker_status change. */
   lastStatusChangedAt: number;
@@ -137,7 +139,13 @@ function ensureTimer(): void {
   }, TIMER_TICK_MS);
 }
 
-function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
+/**
+ * Single ingestion point for AgenticProcess WS ops (create / update / delete).
+ * Exported for unit tests so they can drive the real tracker pipeline with
+ * synthetic ops instead of standing up the WS bus; production code reaches it
+ * only via the `subscribeToEntityOps` wiring in `attachOnce`.
+ */
+export function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
   // Type filtering is handled by `subscribeToEntityOps` in `attachOnce()` —
   // this callback is only invoked for AgenticProcess events.
   const prefix = `${AgenticProcess.type}-`;
@@ -158,6 +166,7 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
     session_id?: string | null;
     project_id?: string | null;
     ready_for_input_since?: number | null;
+    visible?: boolean;
   };
   // WS ops are partial: a worker_status-only update would have
   // `ready_for_input_since: undefined` and wipe our tracker's readyAt
@@ -170,6 +179,7 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
         session_id?: string | null;
         project_id?: string | null;
         ready_for_input_since?: number | null;
+        visible?: boolean;
       })
     | null;
   const merged = {
@@ -178,6 +188,7 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
     session_id: obj.session_id ?? cached?.session_id ?? null,
     project_id: obj.project_id ?? cached?.project_id ?? null,
     ready_for_input_since: obj.ready_for_input_since ?? cached?.ready_for_input_since ?? null,
+    visible: obj.visible ?? cached?.visible,
   };
   const view: StatusBearingProcess = {
     status: merged.status,
@@ -187,6 +198,7 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
   const ready = isReadyForInput(view);
   const newStatus = merged.status;
   const newWorkerStatus = merged.worker_status;
+  const newVisible = merged.visible;
   const projectId = merged.project_id;
   const serverReadyAt = ready ? merged.ready_for_input_since : null;
   const now = Date.now();
@@ -198,6 +210,7 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
       projectId,
       status: newStatus,
       workerStatus: newWorkerStatus,
+      visible: newVisible,
       ready,
       lastStatusChangedAt: now,
       readyAt: serverReadyAt,
@@ -219,6 +232,12 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
     prev.status = newStatus;
     prev.workerStatus = newWorkerStatus;
     prev.lastStatusChangedAt = now;
+    dirty = true;
+  }
+  if (prev.visible !== newVisible) {
+    // visible flip (interactive↔background) doesn't change pending/burning, but
+    // it moves the row between execution-mode buckets — re-derive the list.
+    prev.visible = newVisible;
     dirty = true;
   }
   if (prev.projectId !== projectId) {
@@ -357,20 +376,7 @@ export function useLastStatusChange(processId: string | null | undefined): numbe
   return t ? t.lastStatusChangedAt : null;
 }
 
-/**
- * "Active process" view: union of mid-turn workers (burning tokens) and
- * processes in the pending-input glow window. This is what the footer
- * chip surfaces. Membership rule:
- *
- *   active = isBurning(tracker) || isCurrentlyPending(tracker)
- *
- * The pending side already has a 5-min TTL + per-device ack store.
- * The burning side flips off the moment WS delivers a status change
- * out of {WAITING, THINKING, TOOL_CALL, TOOL_RUNNING, API_ERROR}.
- *
- * The 1-s tick only runs while a tracker is in the ready state — pure
- * burning entries don't need it because every status change is a WS op.
- */
+/** Shared shape for a tracked worker surfaced to a React view. */
 export interface ActiveProcessEntry {
   processId: string;
   projectId: string | null;
@@ -392,12 +398,31 @@ function isBurningTracker(t: ProcessTracker): boolean {
   return isWorkerRunning(t.workerStatus as WorkerStatus);
 }
 
-function buildActiveEntries(now: number): ActiveProcessEntry[] {
-  const out: ActiveProcessEntry[] = [];
+/**
+ * Worker-list view: EVERY live worker (`ProcessStatus ∈ {RUNNING, STARTING}`)
+ * classified into an `ExecutionMode` — not just the burning∪pending subset.
+ * Idle-but-running workers appear here too.
+ *
+ * `pending` / `burning` are still carried so the chip drives the per-row glow
+ * and the pulse exactly as before; `mode` is the new grouping/filter axis.
+ * `external` is never produced here — those rows come only from the `/workers`
+ * backend snapshot.
+ */
+export interface WorkerListEntry extends ActiveProcessEntry {
+  mode: ExecutionMode;
+}
+
+export function buildWorkerEntries(now: number): WorkerListEntry[] {
+  const out: WorkerListEntry[] = [];
   for (const t of trackers.values()) {
+    const mode = classifyExecutionMode({
+      status: t.status,
+      worker_status: t.workerStatus,
+      visible: t.visible,
+    });
+    if (mode === null) continue; // not live → not listed
     const pending = isCurrentlyPending(t, now);
     const burning = isBurningTracker(t);
-    if (!pending && !burning) continue;
     out.push({
       processId: t.processId,
       projectId: t.projectId,
@@ -406,11 +431,11 @@ function buildActiveEntries(now: number): ActiveProcessEntry[] {
       burning,
       pending,
       readyAt: pending ? t.readyAt : null,
+      mode,
     });
   }
-  // Sort: pending first (most recent readyAt), then burning by
-  // lastStatusChangedAt desc. Stable order so React keys don't churn
-  // for unchanged renders.
+  // Same ordering as the active view: pending first (newest readyAt), then
+  // burning, then by last-status-change desc — stable React keys.
   out.sort((a, b) => {
     if (a.pending !== b.pending) return a.pending ? -1 : 1;
     if (a.pending && b.pending) return (b.readyAt ?? 0) - (a.readyAt ?? 0);
@@ -420,25 +445,54 @@ function buildActiveEntries(now: number): ActiveProcessEntry[] {
 }
 
 /**
- * Subscribe to the combined "active processes" view. Re-renders whenever
- * any tracker changes status / readyAt / projectId, since the same
- * `subscribe` + `getSnapshot` pair feeds `usePendingActions` and notifies
- * on every dirty op (see `handleDataOp`).
- *
- * The returned array is memoized against the snapshot reference *and*
- * a counter that bumps on every `notify()` — burning trackers are not
- * part of the pending `snapshot`, so we need a separate signal to
- * re-derive when a tracker flips burning state without touching
- * pending membership.
+ * Subscribe to the worker list, filtered to the modes the current view mode
+ * supports (pass `supportedExecutionModes(useIsAdvanced())`). Same dual
+ * render-signal as `useActiveProcesses`.
  */
-export function useActiveProcesses(): ReadonlyArray<ActiveProcessEntry> {
-  // Subscribe so we re-render on every notify().
+export function useWorkerList(
+  supportedModes: readonly ExecutionMode[],
+): ReadonlyArray<WorkerListEntry> {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  // useSyncExternalStore's snapshot only flips when pending content
-  // changes. To also re-render on burning-only changes we read a
-  // monotonic counter that increments inside notify() — see below.
   const tick = useSyncExternalStore(subscribe, getActiveTick, getActiveTick);
-  return useMemo(() => buildActiveEntries(Date.now()), [tick]);
+  const key = supportedModes.join(',');
+  return useMemo(() => {
+    const allow = new Set(supportedModes);
+    return buildWorkerEntries(Date.now()).filter((e) => allow.has(e.mode));
+    // `key` captures the supported-mode set for memo invalidation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick, key]);
+}
+
+/**
+ * Per-mode counts over the supported set — drives the filter-toggle badges.
+ * Modes with no live workers report 0 (every supported mode is a key).
+ */
+export function useWorkerCountsByMode(
+  supportedModes: readonly ExecutionMode[],
+): Record<ExecutionMode, number> {
+  const list = useWorkerList(supportedModes);
+  const key = supportedModes.join(',');
+  return useMemo(() => {
+    const counts = {} as Record<ExecutionMode, number>;
+    for (const m of supportedModes) counts[m] = 0;
+    for (const e of list) counts[e.mode] = (counts[e.mode] ?? 0) + 1;
+    return counts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, key]);
+}
+
+/**
+ * Test-only: clear all tracker state (the module `trackers` map + the pending
+ * snapshot) so each unit test starts from an empty store. Not used in
+ * production — the store is module-scoped and never reset at runtime.
+ */
+export function __resetTrackersForTest(): void {
+  trackers.clear();
+  snapshot = [];
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
 }
 
 /** Format a millisecond timestamp as a short "ago" string. */

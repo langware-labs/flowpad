@@ -3,12 +3,15 @@ import {
   Archive,
   Bot,
   ChevronRight,
+  FlaskConical,
   Layers,
   Sparkles,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@src/lib/utils';
+import { useSkillsByName } from '@src/hooks/useSkillsByName';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { fmtDuration } from './format';
 import type { AgentTraceDoc, CallFrame } from './trace-types';
 
@@ -63,6 +66,9 @@ interface CallTreeViewProps {
   doc: AgentTraceDoc;
   selectedFrameId: string | null;
   onSelectFrame: (frame: CallFrame) => void;
+  /** Launch a skillit analysis for the given skill name. Omitted → no Evaluate
+   *  button (e.g. the read-only lens variant). */
+  onEvaluateSkill?: (skillName: string) => void;
 }
 
 /**
@@ -70,8 +76,11 @@ interface CallTreeViewProps {
  * (session → skill → subagent → tool/compaction), each with rolled-up time,
  * cost, and issues. Expandable rows, metric-driven bars + sort, click to seek.
  */
-export function CallTreeView({ doc, selectedFrameId, onSelectFrame }: CallTreeViewProps) {
+export function CallTreeView({ doc, selectedFrameId, onSelectFrame, onEvaluateSkill }: CallTreeViewProps) {
   const [metric, setMetric] = useState<Metric>('cost');
+  const { isEvalByName } = useSkillsByName();
+  // The under-eval marker is an Advanced/Dev affordance; Standard mode hides it.
+  const advanced = useIsAdvanced();
   const root = doc.call_tree;
 
   const rootMetric = useMemo(() => (root ? Math.max(metricOf(root, metric), 1e-9) : 1), [root, metric]);
@@ -114,6 +123,9 @@ export function CallTreeView({ doc, selectedFrameId, onSelectFrame }: CallTreeVi
           rootMetric={rootMetric}
           selectedFrameId={selectedFrameId}
           onSelectFrame={onSelectFrame}
+          isEvalByName={isEvalByName}
+          onEvaluateSkill={onEvaluateSkill}
+          advanced={advanced}
           defaultOpen
         />
       </div>
@@ -128,6 +140,10 @@ interface FrameRowProps {
   rootMetric: number;
   selectedFrameId: string | null;
   onSelectFrame: (frame: CallFrame) => void;
+  isEvalByName: (name: string) => boolean;
+  onEvaluateSkill?: (skillName: string) => void;
+  /** Advanced/Dev view mode — gates the under-eval marker. */
+  advanced: boolean;
   defaultOpen?: boolean;
 }
 
@@ -138,6 +154,9 @@ function FrameRow({
   rootMetric,
   selectedFrameId,
   onSelectFrame,
+  isEvalByName,
+  onEvaluateSkill,
+  advanced,
   defaultOpen,
 }: FrameRowProps) {
   const [open, setOpen] = useState(defaultOpen ?? depth < 2);
@@ -145,6 +164,8 @@ function FrameRow({
   const Icon = KIND_ICON[frame.kind] ?? Wrench;
   const barFrac = Math.min(1, metricOf(frame, metric) / rootMetric);
   const selected = selectedFrameId === frame.id;
+  const isSkill = frame.kind === 'skill';
+  const underEval = advanced && isSkill && isEvalByName(frame.callable);
 
   // Inefficiency flag: many issues per dollar/minute under this frame.
   const inefficient =
@@ -182,6 +203,30 @@ function FrameRow({
         </button>
         <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <span className={cn('truncate', severityRowClass(frame.worst_severity))}>{frame.callable}</span>
+        {underEval && (
+          <span
+            className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded bg-blue-500/15 text-blue-600 ring-1 ring-blue-500/20 dark:text-blue-400"
+            title="Under eval"
+            aria-label="Under eval"
+            data-testid="call-frame-under-eval"
+          >
+            <FlaskConical className="h-2.5 w-2.5" />
+          </span>
+        )}
+        {isSkill && onEvaluateSkill && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEvaluateSkill(frame.callable);
+            }}
+            title={`Evaluate "${frame.callable}"`}
+            data-testid="call-frame-evaluate-skill"
+            className="flex-shrink-0 rounded px-1 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            Eval
+          </button>
+        )}
         {frame.kind === 'tool' && frame.tool_call_count > 1 && (
           <span className="flex-shrink-0 text-[10px] text-muted-foreground">×{frame.tool_call_count}</span>
         )}
@@ -239,6 +284,9 @@ function FrameRow({
             rootMetric={rootMetric}
             selectedFrameId={selectedFrameId}
             onSelectFrame={onSelectFrame}
+            isEvalByName={isEvalByName}
+            onEvaluateSkill={onEvaluateSkill}
+            advanced={advanced}
           />
         ))}
     </div>

@@ -15,7 +15,8 @@ import {
 import { NavigateFunction } from 'react-router';
 import { DockPointer } from './DockPointer';
 import { FileOptions, TabOptions } from './types';
-import { buildDockUrl, preserveWindowLayout, stripDockPortion } from './url-builder';
+import { preserveWindowLayout, stripDockPortion } from './url-builder';
+import { allScope, projectScope } from '@src/lib/scope-filter';
 
 function toStringRecord(obj?: Record<string, unknown>): Record<string, string> | undefined {
   if (!obj) return undefined;
@@ -49,6 +50,10 @@ export class NavigationActions {
     return `${window.location.pathname}${window.location.search}`;
   }
 
+  private static needsRouterFallback(): boolean {
+    return typeof navigator !== 'undefined' && /\bjsdom\b/i.test(navigator.userAgent);
+  }
+
   private static clearCommittedPendingNavigation(): void {
     if (pendingDockNavigationUrl && pendingDockNavigationUrl === NavigationActions.getCurrentBrowserUrl()) {
       pendingDockNavigationUrl = null;
@@ -62,6 +67,22 @@ export class NavigationActions {
         pendingDockNavigationUrl = null;
       }
     }, 1000);
+  }
+
+  private commitBrowserNavigation(fullUrl: string, routerUrl: string): void {
+    this.markPendingNavigation(fullUrl);
+
+    if (NavigationActions.getCurrentBrowserUrl() !== fullUrl) {
+      window.history.pushState(null, '', fullUrl);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+
+    // createMemoryRouter in RTL/jsdom is not wired to window.history/popstate.
+    // BrowserRouter is wired to popstate, so calling navigate there would run
+    // the route loaders twice.
+    if (NavigationActions.needsRouterFallback()) {
+      void this.navigate(routerUrl);
+    }
   }
 
   static resetPendingNavigationForTests(): void {
@@ -91,33 +112,47 @@ export class NavigationActions {
       // relative no-op, so close-dock silently did nothing outside the
       // /agent|/flow prefixed namespaces. Normalize to the app root.
       const baseUrl = stripDockPortion(currentPath) || '/';
-      if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) return;
-      this.markPendingNavigation(baseUrl);
-      void this.navigate(baseUrl);
+      this.navigateToBaseUrl(baseUrl);
       return;
     }
 
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    const dock = extraOptions
+    let dock = extraOptions
       ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
       : base;
 
+    // URL-first default scope for assets: an assets dock opened WITHOUT an explicit
+    // scope (no `scope-*` keys → `scopeFilter === null`) adopts the current project's
+    // scope — project mode when a project is in context (so the minted Tab attaches
+    // to that project), else "all". This puts the scope on the URL where the loader
+    // and Tab.getFromDockPointer can read it, instead of leaving it to AssetsPage
+    // component state (which the tab can't see). An explicit scope (incl. `all`) is
+    // respected untouched.
+    if (dock.viewType === ViewType.ASSETS && dock.scopeFilter === null) {
+      const projectId = dataContext.project?.id ?? null;
+      dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
+    }
+
     if (this.currentDock?.equals(dock)) return; // already at this pointer, no-op
 
-    const { viewType, pointer: pointerValue, layout } = dock.toUrlSegments();
-    const searchParams = dock.toSearchParams();
-
-    const fullUrl = buildDockUrl(
-      currentPath,
-      viewType,
-      pointerValue,
-      Object.fromEntries(searchParams.entries()),
-      // Morph rule (Part 3 §7): inside a win/ focus window, internal
-      // navigation preserves the WIN layout so the window stays chrome-less.
-      preserveWindowLayout(currentPath, layout),
-    );
+    const layout = preserveWindowLayout(currentPath, dock.layout);
+    const targetDock = layout === dock.layout
+      ? dock
+      : new DockPointer(dock.viewType, dock.pointer, dock.options, layout);
+    const fullUrl = targetDock.toUrl(currentPath);
 
     if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) return;
+
+    if (import.meta.env.DEV) {
+      try {
+        const roundTrippedUrl = DockPointer.fromUrl(fullUrl).toUrl(currentPath);
+        if (roundTrippedUrl !== fullUrl) {
+          console.error(`DockPointer URL round-trip mismatch: ${fullUrl} -> ${roundTrippedUrl}`);
+        }
+      } catch (error) {
+        console.error(`DockPointer URL round-trip check failed for ${fullUrl}`, error);
+      }
+    }
 
     // For react-router with a basename, we need to navigate relative to the base.
     // Extract just the dock portion (everything from /dock/ or /dev/) from the full URL.
@@ -125,8 +160,21 @@ export class NavigationActions {
     const basePath = stripDockPortion(currentPath);
     const url = basePath && fullUrl.startsWith(basePath) ? fullUrl.substring(basePath.length) : fullUrl;
 
-    this.markPendingNavigation(fullUrl);
-    void this.navigate(url);
+    this.commitBrowserNavigation(fullUrl, url);
+  }
+
+  private navigateToBaseUrl(baseUrl: string): void {
+    const currentUrl = NavigationActions.getCurrentBrowserUrl();
+    if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) return;
+
+    this.markPendingNavigation(baseUrl);
+    if (NavigationActions.getCurrentBrowserUrl() !== baseUrl) {
+      window.history.pushState(null, '', baseUrl);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+    if (NavigationActions.needsRouterFallback()) {
+      void this.navigate(baseUrl);
+    }
   }
 
   /**
@@ -135,16 +183,7 @@ export class NavigationActions {
    */
   getDockUrl(pointer: IDockPointer | DockPointer): string {
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    const { viewType, pointer: pointerValue, layout } = base.toUrlSegments();
-    const searchParams = base.toSearchParams();
-
-    const fullUrl = buildDockUrl(
-      window.location.pathname,
-      viewType,
-      pointerValue,
-      Object.fromEntries(searchParams.entries()),
-      layout,
-    );
+    const fullUrl = base.toUrl(window.location.pathname);
     return `${window.location.origin}${fullUrl}`;
   }
 

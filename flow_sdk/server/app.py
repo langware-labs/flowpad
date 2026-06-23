@@ -156,6 +156,20 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability discovery: failed to start ({_e})")
 
+    # Reconcile orphaned headless workers BEFORE serving: a restart kills the
+    # previous backend's child workers, but their ``visible=false`` records keep
+    # status=RUNNING and would show as phantom "Background" agents in the footer
+    # chip. Stamp them STOPPED now (pure DB writes — no spawn — so the first
+    # bootstrap is already clean). Visible PTYs are handled by the recovery
+    # watchdog below, not here.
+    try:
+        from flow_sdk.server.pty_recovery import reconcile_orphaned_workers
+
+        await reconcile_orphaned_workers()
+        print("  Orphaned-worker reconcile: done")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Orphaned-worker reconcile: failed ({_e})")
+
     # PTY recovery watchdog: respawn visible sessions whose worker died — both at
     # startup (restart kills PTY children) AND periodically while running (a
     # worker that crashes mid-session). Background — startup never blocks;
@@ -194,6 +208,7 @@ async def _on_server_startup():
     await _start_cloud_ws_listener()
     await _start_inbox_catchup()
     await _seed_service_triggers()
+    await _prune_orphan_scheduler_jobs()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
     await _start_system_content_index()
@@ -213,6 +228,21 @@ async def _start_system_content_index() -> None:
         print("  System content index: scheduled (background)")
     except Exception:
         logging.getLogger(__name__).exception("System content index: failed to start")
+
+
+async def _prune_orphan_scheduler_jobs() -> None:
+    """Drop persisted APScheduler jobs that no longer map to a live trigger.
+
+    Runs after `_seed_service_triggers()` so the current builtin/user triggers
+    are registered first; everything left in the jobstore without a matching
+    entity is a stale orphan (see ``prune_orphan_scheduler_jobs``)."""
+    try:
+        from flow_sdk.server.scheduler import prune_orphan_scheduler_jobs
+
+        pruned = await prune_orphan_scheduler_jobs()
+        print(f"  Scheduler jobstore: pruned {pruned} orphan job(s)")
+    except Exception:
+        logging.getLogger(__name__).exception("Scheduler jobstore: orphan prune failed")
 
 
 async def _seed_service_triggers() -> None:
@@ -404,6 +434,15 @@ async def _start_cloud_ws_listener() -> None:
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
+
+    # Close the process-shared outbound hub HTTP client (kept alive across calls
+    # so its TLS context isn't rebuilt per request — see hub_http._hub_client).
+    try:
+        from flow_sdk.cloud_client.transport.hub_http import close_hub_client
+
+        await close_hub_client()
+    except Exception:
+        pass
 
     # Stop cron scheduler
     try:

@@ -4,6 +4,7 @@ from typing import Optional
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 from flow_sdk.fs_store.indexer.functions.dataset import (
     dataset_asset_hash,
     dataset_gen_id,
@@ -25,7 +26,7 @@ class DatasetMeta(BaseMeta):
 DATASET = TypeMetadata(
     type=EntityType.DATASET,
     icon="Database",
-    browseable=True,
+    browseable_by=ViewMode.ADVANCED,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
@@ -33,7 +34,7 @@ DATASET = TypeMetadata(
     main_subdir="assets/datasets",
     main_layout="folder",
     from_disk_fn=extract_dataset,
-    gen_id_fn=dataset_gen_id,
+    gen_uuid_fn=dataset_gen_id,
     asset_hash_fn=dataset_asset_hash,
     meta_model=DatasetMeta,
 )

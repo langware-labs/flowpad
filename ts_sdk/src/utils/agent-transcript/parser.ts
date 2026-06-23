@@ -42,6 +42,7 @@ export function parseTranscriptResponse(json: unknown): ParsedTranscript {
     worker_type: String(obj.worker_type ?? ''),
     session_id: String(obj.session_id ?? ''),
     path: String(obj.path ?? ''),
+    received: obj.received === true,
     transcript_format: Object.values(TranscriptFormat).includes(obj.transcript_format as TranscriptFormat)
       ? obj.transcript_format as TranscriptFormat
       : null,

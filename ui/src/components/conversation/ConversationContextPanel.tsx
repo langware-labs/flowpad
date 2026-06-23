@@ -29,11 +29,11 @@ import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { localAttachmentUrl, editorPathForLocalFile } from './attachment-url';
 import { ICON_BY_TYPE, buildDockPointer } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
-import { LAUNCHABLE_WORKERS, type WorkerType } from './conversation-session-constants';
+import type { WorkerType } from './conversation-session-constants';
 import { useConversationSession } from './useConversationSession';
 import {
   buildAttachmentEntries,
@@ -959,23 +959,14 @@ function PrivateContextSection({
           </button>
           {menuOpen && (
             <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md">
-              {onStartAssistance &&
-                LAUNCHABLE_WORKERS.map((workerType) => {
-                  const Icon = workerIcon(workerType);
-                  return (
-                    <button
-                      key={workerType}
-                      type="button"
-                      onClick={() => handleLaunchWorker(workerType)}
-                      disabled={starting}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                      data-testid={`private-context-launch-${workerType}`}
-                    >
-                      <Icon className="h-3 w-3" />
-                      Session — {workerLabel(workerType)}
-                    </button>
-                  );
-                })}
+              {onStartAssistance && (
+                <WorkerToolbar
+                  variant="menu-list"
+                  onLaunch={handleLaunchWorker}
+                  starting={starting}
+                  testIdPrefix="private-context"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => void handleAddSpec()}

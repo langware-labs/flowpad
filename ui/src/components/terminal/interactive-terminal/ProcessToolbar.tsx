@@ -530,6 +530,8 @@ function IconToggleButton({
   tooltip,
   disabled,
   activeClassName,
+  ariaLabel,
+  testId,
   onClick,
 }: {
   icon: React.ReactNode;
@@ -537,6 +539,8 @@ function IconToggleButton({
   tooltip: string;
   disabled: boolean;
   activeClassName?: string;
+  ariaLabel?: string;
+  testId?: string;
   onClick: () => void;
 }) {
   return (
@@ -546,6 +550,7 @@ function IconToggleButton({
       <TooltipTrigger asChild>
         <span className="inline-flex" style={disabled ? { pointerEvents: 'auto' } : undefined}>
           <button
+            type="button"
             className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors
               ${disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-accent cursor-pointer'}
               ${active && activeClassName ? activeClassName : 'text-muted-foreground'}
@@ -553,6 +558,8 @@ function IconToggleButton({
             disabled={disabled}
             onClick={onClick}
             aria-pressed={active}
+            aria-label={ariaLabel ?? tooltip}
+            data-testid={testId}
           >
             {icon}
           </button>

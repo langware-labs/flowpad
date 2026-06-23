@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import requests
 import typer
+from typing import Optional
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
@@ -53,6 +54,10 @@ def navigate_entity(
         str,
         typer.Argument(help="Entity TypeId in '<type>-<id>' form (e.g. 'shell-550e8400-...')"),
     ],
+    connection_id: Annotated[
+        Optional[str],
+        typer.Option("--connection-id", "-c", help="Target a specific WS connection by id."),
+    ] = None,
 ) -> None:
     """POST to /api/v1/agent/navigate/entity and surface the server's verdict.
 
@@ -66,8 +71,12 @@ def navigate_entity(
     port = _discover_port()
     url = f"http://127.0.0.1:{port}/api/v1/agent/navigate/entity"
 
+    body = {"typeid": typeid}
+    if connection_id:
+        body["connection_id"] = connection_id
+
     try:
-        resp = requests.post(url, json={"typeid": typeid}, timeout=5)
+        resp = requests.post(url, json=body, timeout=5)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return  # unreachable — _fail raises typer.Exit
@@ -94,6 +103,7 @@ def navigate_entity(
     mapping = {
         "NO_ACTIVE_TAB": EXIT_NO_ACTIVE_TAB,
         "ENTITY_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
+        "CONNECTION_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
         "INVALID_TYPEID": EXIT_INVALID_ARG,
     }
     exit_code = mapping.get(error_code, EXIT_CONNECTION_ERROR)

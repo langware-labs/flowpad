@@ -270,6 +270,52 @@ describe('BrowseableTree', () => {
     });
   });
 
+  describe('Selection by activeKey (typeid)', () => {
+    it('selects a row whose selectionKey matches activeKey even when the pointer differs', () => {
+      // The leaf's pointer is the vfs form; the active pointer is the typeid form.
+      const leafPointer = new DockPointer(ViewType.ASSETS, 'editor/skill/vfs/compute_node-@local/x/y');
+      const root = makeRoot('skill', {
+        pointer: new DockPointer(ViewType.ASSETS, 'list/skill'),
+        children: [makeLeaf('skill-leaf', { label: 'my-skill', pointer: leafPointer, selectionKey: 'skill-abc' })],
+        hasChildren: true,
+      });
+      const typeidPointer = new DockPointer(ViewType.ASSETS, 'editor/skill/typeid/skill-abc');
+      render(
+        <BrowseableTree
+          roots={[root]}
+          activePointer={typeidPointer}
+          activeKey="skill-abc"
+          defaultExpandedIds={['skill']}
+        />,
+      );
+      return waitFor(() => {
+        const item = screen.getByText('my-skill').closest('[role="treeitem"]');
+        expect(item).toHaveAttribute('aria-selected', 'true');
+      });
+    });
+
+    it('does not select when selectionKey differs from activeKey', () => {
+      const root = makeRoot('skill', {
+        children: [makeLeaf('skill-leaf', { label: 'my-skill', pointer: null, selectionKey: 'skill-other' })],
+        hasChildren: true,
+      });
+      render(
+        <BrowseableTree roots={[root]} activePointer={null} activeKey="skill-abc" defaultExpandedIds={['skill']} />,
+      );
+      return waitFor(() => {
+        const item = screen.getByText('my-skill').closest('[role="treeitem"]');
+        expect(item).toHaveAttribute('aria-selected', 'false');
+      });
+    });
+
+    it('still selects by pointer-string when no selectionKey/activeKey is involved', () => {
+      const root = makeRoot('alpha');
+      render(<BrowseableTree roots={[root]} activePointer={mockPointerFor('alpha')} activeKey={null} />);
+      const item = screen.getByText('alpha').closest('[role="treeitem"]');
+      expect(item).toHaveAttribute('aria-selected', 'true');
+    });
+  });
+
   describe('Deep-link auto-expand', () => {
     it('expands ancestors when activePointer points to a deep descendant', async () => {
       const leaf = makeLeaf('alpha/child-0/leaf');

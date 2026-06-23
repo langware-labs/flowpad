@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { OpenerId } from './tab_opener_types';
+import { VALID_OPENER_IDS, type OpenerId } from './tab_opener_types';
+import { readLastOpenerId, subscribeLastOpener, writeLastOpenerId } from './useLastWorkerType';
 
 const STORAGE_KEY = 'flowpad.terminal.pinnedOpeners';
-const LAST_OPENER_STORAGE_KEY = 'flowpad.terminal.lastOpener';
-
-const VALID_IDS: OpenerId[] = ['claude', 'codex', 'copilot', 'claude-resume-by-id', 'terminal', 'sandbox', 'docker', 'history'];
 
 function isValidOpenerId(value: unknown): value is OpenerId {
-  return typeof value === 'string' && (VALID_IDS as string[]).includes(value);
+  return typeof value === 'string' && (VALID_OPENER_IDS as string[]).includes(value);
 }
 
 function readFromStorage(): OpenerId[] {
@@ -23,18 +21,6 @@ function readFromStorage(): OpenerId[] {
   }
 }
 
-function readLastOpenerFromStorage(): OpenerId | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(LAST_OPENER_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return isValidOpenerId(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
 export interface UsePinnedOpenersResult {
   pinned: OpenerId[];
   lastOpened: OpenerId | null;
@@ -45,7 +31,7 @@ export interface UsePinnedOpenersResult {
 
 export function usePinnedOpeners(): UsePinnedOpenersResult {
   const [pinned, setPinned] = useState<OpenerId[]>(() => readFromStorage());
-  const [lastOpened, setLastOpened] = useState<OpenerId | null>(() => readLastOpenerFromStorage());
+  const [lastOpened, setLastOpened] = useState<OpenerId | null>(() => readLastOpenerId());
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -56,18 +42,8 @@ export function usePinnedOpeners(): UsePinnedOpenersResult {
     }
   }, [pinned]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      if (lastOpened) {
-        window.localStorage.setItem(LAST_OPENER_STORAGE_KEY, JSON.stringify(lastOpened));
-      } else {
-        window.localStorage.removeItem(LAST_OPENER_STORAGE_KEY);
-      }
-    } catch {
-      // Ignore storage failures (private mode, quota exceeded)
-    }
-  }, [lastOpened]);
+  // Stay in sync when another surface (e.g. WorkerToolbar) writes the shared key.
+  useEffect(() => subscribeLastOpener(() => setLastOpened(readLastOpenerId())), []);
 
   const isPinned = useCallback((id: OpenerId) => pinned.includes(id), [pinned]);
 
@@ -77,6 +53,7 @@ export function usePinnedOpeners(): UsePinnedOpenersResult {
 
   const rememberOpened = useCallback((id: OpenerId) => {
     setLastOpened(id);
+    writeLastOpenerId(id);
   }, []);
 
   return {

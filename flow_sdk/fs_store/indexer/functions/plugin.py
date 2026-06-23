@@ -9,10 +9,12 @@ registry. Replaces ``user_collector.get_installed_plugins``.
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.source_file_records import (
@@ -97,7 +99,10 @@ def _split_plugin_key(plugin_key: str) -> tuple[str, str]:
 
 
 def plugin_id(ref: FSRef) -> str:
-    """Stable id ``<name>@<marketplace>`` (matches legacy collector)."""
+    """Stable, filesystem-safe **UUID** id. The natural key
+    ``<name>@<marketplace>`` is hashed into a uuid5 with the same
+    ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches the DB
+    id (a conforming id is kept as-is)."""
     frag = _read_install(Path(ref.path), ref.json_path or "")
     if frag is not None:
         plugin_key = frag[0]
@@ -105,9 +110,11 @@ def plugin_id(ref: FSRef) -> str:
         segs = (ref.json_path or "").strip("/").split("/")
         plugin_key = _unescape_json_pointer(segs[1]) if len(segs) >= 2 else ""
     if not plugin_key:
-        return ref.json_path or Path(ref.path).name
-    name, marketplace = _split_plugin_key(plugin_key)
-    return f"{name}@{marketplace}"
+        key = ref.json_path or Path(ref.path).name
+    else:
+        name, marketplace = _split_plugin_key(plugin_key)
+        key = f"{name}@{marketplace}"
+    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.PLUGIN}:{key}", namespace=uuid.NAMESPACE_DNS)
 
 
 def extract_plugin(ref: FSRef) -> list[FSRecord]:

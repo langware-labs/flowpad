@@ -7,6 +7,7 @@
 
 import { useEntity } from '@src/hooks/entity-hooks';
 import { TabbedTerminal } from '@src/components/terminal';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { AgenticProcess, TypeId } from '@sdk';
 
 interface ProcessTerminalProps {
@@ -14,8 +15,13 @@ interface ProcessTerminalProps {
 }
 
 export function ProcessTerminal({ processId }: ProcessTerminalProps) {
+  // Accept either a bare id or a full `agentic_process-<id>` pointer.
+  const normalizedProcessId = DockPointer.isAgenticProcessPointer(processId)
+    ? DockPointer.extractAgenticProcessId(processId)
+    : processId;
+
   const { data: process } = useEntity<AgenticProcess>(
-    processId ? new TypeId(AgenticProcess.type, processId) : null,
+    normalizedProcessId ? new TypeId(AgenticProcess.type, normalizedProcessId) : null,
   );
   const shellId = (process as AgenticProcess | null)?.shell_id ?? null;
 

@@ -2,6 +2,7 @@ import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-actio
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
 import { ActionInfo, dataManager, FlowpadDiagnosis, sendDiagnosisReport } from '@sdk';
+import { streamDiagnose, type DiagnoseEvent } from '@src/components/diagnose/diagnose-stream';
 import { CheckCircle2, Info, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -15,23 +16,6 @@ interface DiagnoseModalProps {
     flowMessageId?: string;
   }) => void;
 }
-
-// Mirrors the event dicts emitted by `_run_diagnose` (flow_sdk/cli/commands/diagnose_cmd.py),
-// forwarded verbatim as SSE by POST /api/v1/graph/diagnose.
-type DiagnoseEvent =
-  | { type: 'status'; text: string }
-  | { type: 'narration'; text: string }
-  | { type: 'error'; text: string }
-  | { type: 'progress' }
-  | { type: 'flush' }
-  | {
-      type: 'done';
-      ok: boolean;
-      diagnosis_id: string | null;
-      conversation_id: string | null;
-      flow_message_id: string | null;
-      feed_posted: boolean;
-    };
 
 interface Line {
   kind: 'narration' | 'status' | 'error';
@@ -135,36 +119,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
     abortRef.current = controller;
 
     try {
-      // Null-entity graph service action → POST /api/v1/graph/diagnose, streamed.
-      const info = new ActionInfo('diagnose', null, null, 'POST', false, true, controller.signal);
-      info.bodyParameters = { message };
-      const resp = await dataManager.callAction<{ message: string }, Response>(info);
-      if (!resp || !resp.body) throw new Error('No streaming response body');
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      // Parse the SSE stream: events are separated by a blank line; each carries a
-      // single `data: <json>` field.
-      for (;;) {
-        const { done: streamDone, value } = await reader.read();
-        if (streamDone) break;
-        buffer += decoder.decode(value, { stream: true });
-        let sep: number;
-        while ((sep = buffer.indexOf('\n\n')) !== -1) {
-          const frame = buffer.slice(0, sep);
-          buffer = buffer.slice(sep + 2);
-          for (const raw of frame.split('\n')) {
-            const trimmed = raw.startsWith('data:') ? raw.slice(5).trim() : '';
-            if (!trimmed) continue;
-            try {
-              handleEvent(JSON.parse(trimmed) as DiagnoseEvent);
-            } catch {
-              /* ignore malformed frame */
-            }
-          }
-        }
-      }
+      await streamDiagnose(message, handleEvent, controller.signal);
     } catch (e) {
       if (!controller.signal.aborted) {
         const text = e instanceof Error ? e.message : String(e);

@@ -313,6 +313,13 @@ class DBDriver(Generic[RecordType]):
         raise NotImplementedError("delete is not implemented")
 
     async def get_all(self, entities_filter: QueryFilter, source_entity: TypeId | None = None) -> List[RecordType]:
+        """Return entities matching ``entities_filter``.
+
+        ``source_entity`` is *structural scope*, not authorization (authorization is
+        the hub's concern, not the local store's): ``None`` or a ``user`` source means
+        "no scope" (return all matching rows), while a non-user source restricts the
+        result to that entity's descendants via the ``is_child`` role edges.
+        """
         raise NotImplementedError("get_all is not implemented")
 
     async def get_peers(

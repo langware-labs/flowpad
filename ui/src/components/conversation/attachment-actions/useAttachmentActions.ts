@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { FlowMessage, TypeId } from '@sdk';
 import type { Attachment } from '@sdk/entities/flow-message';
-import { flowMessageSpecTypeId } from '../flow-message-helpers';
+import { flowMessageGitBranchTypeId, flowMessageSpecTypeId } from '../flow-message-helpers';
 import { ATTACHMENT_ACTION_DESCRIPTORS } from './registry';
 import { flowMessagePromptEntityTypeId, promptAttachmentsOf } from './prompt-attachment';
 import type { AttachmentAction, AttachmentActionContext, AttachmentActionHandlers } from './types';
@@ -47,6 +47,7 @@ export function useAttachmentActions({
       isFromOther,
       isComposerPreview,
       specTypeId: flowMessageSpecTypeId(resolvedFm),
+      gitBranchTypeId: flowMessageGitBranchTypeId(resolvedFm),
       promptEntityTypeId: flowMessagePromptEntityTypeId(resolvedFm),
       hasPlanSession,
       handlers,

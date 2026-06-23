@@ -7,6 +7,10 @@ export interface IUser extends IEntity {
   email?: string;
   picture?: string;
   last_login?: Date;
+  /** Optional cloud organization the user belongs to (hub-authoritative). */
+  organization_id?: string;
+  /** The user's role on that organization. Defaults to "member". */
+  organization_role?: string;
 }
 
 @registerEntity
@@ -15,6 +19,8 @@ export class User extends APIEntity<User> implements IUser {
   email?: string;
   picture?: string;
   last_login?: Date;
+  organization_id?: string;
+  organization_role?: string;
   static type: string = 'user';
 
   constructor(entity: Partial<IUser> = {}) {
@@ -23,6 +29,8 @@ export class User extends APIEntity<User> implements IUser {
     this.email = entity.email;
     this.picture = entity.picture;
     this.last_login = entity.last_login;
+    this.organization_id = entity.organization_id;
+    this.organization_role = entity.organization_role;
   }
 
   /**

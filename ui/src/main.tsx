@@ -8,6 +8,7 @@ import ReactDOM from 'react-dom/client';
 import { RouterProvider } from 'react-router';
 import '@src/contexts/dev-mode-context';
 import '@src/contexts/view-mode-context';
+import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
 import './styles/highlightjs.css';
 

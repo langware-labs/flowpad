@@ -10,5 +10,5 @@ COPILOT_SESSION = TypeMetadata(
     type=EntityType.COPILOT_SESSION,
     indexed_by_default=True,
     from_disk_fn=extract_copilot_session,
-    gen_id_fn=copilot_session_id,
+    gen_uuid_fn=copilot_session_id,
 )

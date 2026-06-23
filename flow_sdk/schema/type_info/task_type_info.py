@@ -9,11 +9,10 @@ from flow_sdk.fs_store.indexer.functions.task import (
 TASK = TypeMetadata(
     type=EntityType.TASK,
     icon="CheckSquare",
-    browseable=False,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
     index_fields=["description", "objective"],
     from_disk_fn=extract_task,
-    gen_id_fn=task_gen_id,
+    gen_uuid_fn=task_gen_id,
 )

@@ -4,7 +4,7 @@ id: 56fb0e59-2f93-57c1-bec9-49a18b3151c5
 
 # Scan and Discovery
 
-This document describes the discovery mechanisms used throughout `flow_sdk` to locate, load, and index records from disk. The current model is a single **DFS walker** — `FSIndexer` (`flow_sdk/fs_store/indexer/index_function.py`) — that starts from a small set of roots, fans out through transient *waypoint* types, and dispatches per-type parser slots (`from_disk_fn` / `gen_id_fn` / `asset_hash_fn`) declared in `flow_sdk/schema/type_info/<type>_info.py`. It also covers Claude/Codex session lookup helpers, `RecordQuery` filtering, the scan/index HTTP actions, and error-record handling.
+This document describes the discovery mechanisms used throughout `flow_sdk` to locate, load, and index records from disk. The current model is a single **DFS walker** — `FSIndexer` (`flow_sdk/fs_store/indexer/index_function.py`) — that starts from a small set of roots, fans out through transient *waypoint* types, and dispatches per-type parser slots (`from_disk_fn` / `gen_uuid_fn` / `asset_hash_fn`) declared in `flow_sdk/schema/type_info/<type>_info.py`. It also covers Claude/Codex session lookup helpers, `RecordQuery` filtering, the scan/index HTTP actions, and error-record handling.
 
 > **Disk is the source of truth.** Records are scanned from disk; the Entity/DB layer is a queryable index that can be deleted and rebuilt from disk without data loss. See `docs/CLAUDE.md`.
 
@@ -115,7 +115,7 @@ Walkers are typically synchronous file I/O. `scan()` runs them in chunks of `_SC
 
 ---
 
-## Per-type Dispatch Slots: `from_disk_fn` / `gen_id_fn` / `asset_hash_fn`
+## Per-type Dispatch Slots: `from_disk_fn` / `gen_uuid_fn` / `asset_hash_fn`
 
 **Source:** `flow_sdk/schema/type_info/__init__.py` (`TypeMetadata`), registered into `SchemaRegistry` (`flow_sdk/fs_store/schema_registry.py`, `TypeInfo`).
 
@@ -126,7 +126,7 @@ The dispatch callables:
 | Slot | Signature | Role |
 |---|---|---|
 | `from_disk_fn` | `(FSRef) -> list[FSRecord]` (sync or async) | Parse one discovered ref into one or more records. `index()` only parses refs whose type declares this (`_has_dispatch`). |
-| `gen_id_fn` | `(FSRef) -> str` | Mint-on-first-encounter id: idempotent if the file already carries an id (e.g. frontmatter), else writes the derived id back so future scans are rename-stable. Falls back to a `mint_uuid(path)` uuid5 when absent. |
+| `gen_uuid_fn` | `(FSRef) -> str` | Mint-on-first-encounter id: idempotent if the file already carries an id (e.g. frontmatter), else writes the derived id back so future scans are rename-stable. Falls back to a `mint_uuid(path)` uuid5 when absent. |
 | `asset_hash_fn` | `(...) -> str` | Content hash for the type's primary asset (used by skip-fresh / sentinel logic). |
 | `post_sync_fn` | hook | Post-sync side effects. |
 | `default_body_fn` | hook | Default-body writer for `FSRecord.upsert_main_ref` on create. |
@@ -141,7 +141,7 @@ SKILL = TypeMetadata(
     index_fields=["description"],
     main_subdir=".claude/skills", main_layout="folder",
     from_disk_fn=extract_skill,
-    gen_id_fn=skill_gen_id,
+    gen_uuid_fn=skill_gen_id,
     asset_hash_fn=skill_asset_hash,
 )
 ```
@@ -150,7 +150,7 @@ SKILL = TypeMetadata(
 
 For each visited ref of a type that has a `from_disk_fn`:
 
-1. **Mint id** via `gen_id_fn` (or default `mint_uuid(path)`), record it in `seen_ids` *before* any skip/index decision (so a fresh-skip isn't later misclassified as an orphan).
+1. **Mint id** via `gen_uuid_fn` (or default `mint_uuid(path)`), record it in `seen_ids` *before* any skip/index decision (so a fresh-skip isn't later misclassified as an orphan).
 2. **Skip-fresh** (unless `opts.force`): a probe `FSRecord` reads its own on-disk `.hash` sentinel; if `not index_required`, increment `skipped` and continue. This is pure on-disk equality — no parse, no DB read.
 3. **Parse + persist**: call `from_disk_fn(ref)` (awaited or via `to_thread`), stamp walk-time `scope`/`project_id` from the FSRef parent-chain onto each record, `await rec.sync_to_db(fts_batch=..., notify=False)`, then `probe.write_hash()` on success (a failed parse stays `index_required` for retry).
 

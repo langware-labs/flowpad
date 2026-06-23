@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { resultTypeId } from '@src/navigation/record-type-nav';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { VFSPath } from '@sdk';
@@ -10,11 +11,12 @@ import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 import { DEFAULT_ASSET_FILTER, applyFilterToParams } from '@src/components/assets/assetFilter';
-import { scopeFilterKey } from '@src/lib/scope-filter';
+import { scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
+import { skillCreateActions, skillFolderListChildren } from './skillFolder';
 import { config } from '@sdk';
 
 export interface AssetTypeRootDeps {
@@ -22,7 +24,7 @@ export interface AssetTypeRootDeps {
    *  Receives the active filter so per-type scans can scope to the same. */
   indexType: (
     typeName: string,
-    scope?: { user: boolean; projects: string[] },
+    scope?: ScopeFilter,
     options?: { force?: boolean; orphanAction?: 'index' | 'ignore' | 'delete' },
   ) => Promise<{ indexed?: number } | void>;
   /** Called when the "New" toolbar button is clicked for a creatable type. */
@@ -122,7 +124,7 @@ function assetNodeId(typeName: string, path: string): string {
 /**
  * Build a child Browseable from a SearchResult.
  */
-function assetChild(typeName: string, iconName: string | null, result: SearchResult, onAfterDelete?: () => void): Browseable {
+function assetChild(typeName: string, iconName: string | null, result: SearchResult, folderBacked: boolean, onAfterDelete?: () => void): Browseable {
   const label = result.name || basename(result.asset_ref) || '(untitled)';
   // Projects open in their collaboration space rather than the asset editor.
   const pointer = typeName === 'project'
@@ -149,15 +151,34 @@ function assetChild(typeName: string, iconName: string | null, result: SearchRes
       showBusyIndicator: false,
     });
   }
-  return {
+  const node: Browseable = {
     id: assetNodeId(typeName, result.asset_ref),
     kind: 'asset',
     label,
     icon: resolveAssetIcon(iconName, 'h-3.5 w-3.5 flex-shrink-0'),
     hasChildren: false,
     pointer,
+    // Stable typeid (`<type>-<uuid>`) so a typeid-form active pointer selects this
+    // row even though `pointer` is the vfs form. `resultTypeId` handles bare-uuid
+    // vs full-typeid `record_id`.
+    selectionKey: resultTypeId(result)?.toString(),
     toolbar: toolbar.length > 0 ? toolbar : undefined,
   };
+
+  // Folder-backed types (asset_ref is a bare folder, e.g. skill) expand the row
+  // to browse/create/delete their files inline — one unified tree, no second
+  // panel. The flag comes from TypeInfo.folder_backed (derived from the folder
+  // layout), so any such type gets this without a per-type string branch.
+  if (folderBacked && result.asset_ref) {
+    return {
+      ...node,
+      hasChildren: 'unknown',
+      toolbar: [...skillCreateActions(result.asset_ref, node.id), ...toolbar],
+      listChildren: skillFolderListChildren(result.asset_ref, node.id),
+    };
+  }
+
+  return node;
 }
 
 function basename(p: string): string {
@@ -241,7 +262,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   };
   const listChildren = async (): Promise<Browseable[]> => {
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
-    return results.map((r) => assetChild(type.type_name, type.icon, r, onAfterDelete));
+    return results.map((r) => assetChild(type.type_name, type.icon, r, !!type.folder_backed, onAfterDelete));
   };
 
   const root: BrowseableRoot = {

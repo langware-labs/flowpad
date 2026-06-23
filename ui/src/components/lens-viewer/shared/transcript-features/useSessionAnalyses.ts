@@ -17,7 +17,11 @@ import { useProcessesForTarget } from '@src/components/entity-execution-panel/ho
  */
 const EMPTY_TRACES: AgentTrace[] = [];
 
-export function useSessionAnalyses(sessionId: string | null) {
+export function useSessionAnalyses(
+  sessionId: string | null,
+  options: { analysisTargetOverride?: string | null } = {},
+) {
+  const analysisTargetOverride = options.analysisTargetOverride ?? null;
   // useEntitiesQuery dereferences the request even when disabled — always
   // build one; the sentinel never matches anything and the query is disabled.
   const sid = sessionId ?? '__none__';
@@ -48,15 +52,20 @@ export function useSessionAnalyses(sessionId: string | null) {
     [sid],
   );
   const { data: ownerProcesses } = useEntitiesQuery<AgenticProcess>(ownerQuery, {
-    enabled: !!sessionId,
+    enabled: !!sessionId && !analysisTargetOverride,
   });
   const owningProcess = ownerProcesses?.[0] ?? null;
 
-  const analysisTarget = sessionId
-    ? owningProcess
-      ? owningProcess.typeId.toString()
-      : `claude_session/${sessionId}`
-    : null;
+  let analysisTarget: string | null = null;
+  if (sessionId) {
+    if (analysisTargetOverride) {
+      analysisTarget = analysisTargetOverride;
+    } else if (owningProcess) {
+      analysisTarget = owningProcess.typeId.toString();
+    } else {
+      analysisTarget = `claude_session/${sessionId}`;
+    }
+  }
 
   const { processes: analysisProcesses } = useProcessesForTarget(analysisTarget, {
     processType: ProcessKind.Analysis,

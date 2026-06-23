@@ -51,4 +51,14 @@ describe('terminalRowsForScope', () => {
   it('only terminal target types are kept', () => {
     expect(terminalRowsForScope([row('x', 'markdown', 'projA')], 'all', 'projA')).toEqual([]);
   });
+
+  it('deduplicates repeated dock keys while preserving backend order', () => {
+    const duplicate = {
+      ...row('shellA', 'shell', 'projA'),
+      id: 'tab-shellA-duplicate',
+      name: 'duplicate',
+    };
+    const names = terminalRowsForScope([rows[0], duplicate, rows[1]], 'all', 'projA').map((r) => r.name);
+    expect(names).toEqual(['shellA', 'procA']);
+  });
 });

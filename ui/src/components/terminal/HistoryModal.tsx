@@ -10,7 +10,8 @@ import { PromptIndexPanel, usePromptsForProcess } from '@src/components/terminal
 import { cn } from '@src/lib/utils';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useProject } from '@src/hooks/useProject';
-import { ArrowDown, ArrowUp, MessageSquare, Search, X } from 'lucide-react';
+import { useSystemTools } from '@src/hooks/use-system-tools';
+import { ArrowDown, ArrowUp, MessageSquare, RotateCw, Search, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -111,8 +112,10 @@ function entryKey(entry: WorkerHistoryEntry): string {
 }
 
 export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps) {
-  const { entries, isLoading } = useWorkerHistory(30, { enabled: open });
+  const { entries, isLoading, refetch } = useWorkerHistory(30, { enabled: open });
   const { project: currentProject } = useProject();
+  const { indexProjectSessions } = useSystemTools();
+  const [refreshing, setRefreshing] = useState(false);
 
   const [allProjects, setAllProjects] = usePersistedState(ALL_PROJECTS_STORAGE_KEY, (raw) => raw === 'true');
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
@@ -245,6 +248,25 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
     setPeekKey((prev) => (prev === key ? null : key));
   };
 
+  // Refresh = re-index this project's sessions (Claude precise + Codex/Copilot
+  // skip-fresh; backend streams progress to the footer pill), then re-pull the
+  // list. The list hook caches by URL across opens, so a plain reopen serves
+  // stale data — this button is the explicit "I just started a session, show
+  // it" escape hatch. Scoped to the active project; no-op without one.
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      if (currentProject?.id) {
+        await indexProjectSessions(currentProject.id);
+      }
+    } catch (err) {
+      console.error('[HistoryModal] session refresh failed:', err);
+    } finally {
+      await refetch();
+      setRefreshing(false);
+    }
+  };
+
   const peeking = peekKey != null;
 
   return (
@@ -284,6 +306,17 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
               </label>
             </div>
             <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                title="Refresh — re-index this project's sessions"
+                aria-label="Refresh sessions"
+                data-testid="history-refresh"
+                disabled={refreshing}
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-50"
+                onClick={() => void handleRefresh()}
+              >
+                <RotateCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+              </button>
               <button
                 type="button"
                 title={

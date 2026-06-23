@@ -1,6 +1,7 @@
 import React from 'react';
 import { Download, ExternalLink, FolderOpen, Trash2 } from 'lucide-react';
 import { ProjectNameChip } from '@src/components/assets/ProjectNameChip';
+import { useIsAdvanced } from '@src/components/view-mode';
 
 export interface AssetEditorHeaderProps {
   /** Filename or folder name shown on the top line. */
@@ -48,6 +49,7 @@ export function AssetEditorHeader({
   onDelete,
   actions,
 }: AssetEditorHeaderProps) {
+  const advanced = useIsAdvanced();
   const resolvedPath = sourcePath ?? (dirPath ? `${dirPath}/${fileName}` : fileName);
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
@@ -55,13 +57,13 @@ export function AssetEditorHeader({
         <div className="flex items-center gap-1.5 truncate">
           <span className="text-sm font-medium">{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
-          <ProjectNameChip sourcePath={resolvedPath} />
+          {advanced && <ProjectNameChip sourcePath={resolvedPath} />}
         </div>
         <div className="flex min-w-0 items-center gap-1">
           {dirPath && (
             <span className="min-w-0 truncate text-[11px] text-muted-foreground">{dirPath}</span>
           )}
-          {onOpenExternal && (
+          {advanced && onOpenExternal && (
             <button
               title="Open externally"
               onClick={onOpenExternal}
@@ -71,7 +73,7 @@ export function AssetEditorHeader({
               <ExternalLink className="h-3 w-3" />
             </button>
           )}
-          {onRevealInFinder && (
+          {advanced && onRevealInFinder && (
             <button
               title="Reveal in Finder"
               onClick={onRevealInFinder}
@@ -81,7 +83,7 @@ export function AssetEditorHeader({
               <FolderOpen className="h-3 w-3" />
             </button>
           )}
-          {onDownload && (
+          {advanced && onDownload && (
             <button
               title="Download file"
               onClick={onDownload}
