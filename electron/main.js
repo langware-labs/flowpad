@@ -86,11 +86,53 @@ ipcMain.on('renderer-log', (_event, level, message) => {
 // ----------------------------------------------------------------------------
 // Electron desktop wrapper auto-update.
 // ----------------------------------------------------------------------------
-function setupElectronAutoUpdater() {
-  if (!app.isPackaged) {
-    log.info('[electron-updater] skipped: app is not packaged');
-    return;
+// While set (during the pre-server startup gate), the next terminal
+// electron-updater event resolves this instead of prompting directly, so
+// `checkElectronUpdateBeforeStart` can await the outcome. Cleared once the
+// gate resolves; afterwards the hourly recheck prompts on its own.
+let electronUpdateStartupGate = null;
+let electronAutoUpdaterReady = false;
+
+function resolveElectronStartupGate(outcome) {
+  if (!electronUpdateStartupGate) return;
+  const gate = electronUpdateStartupGate;
+  electronUpdateStartupGate = null;
+  gate.resolve(outcome);
+}
+
+// Show the Restart/Later dialog for an already-downloaded update. Returns true
+// if the user accepted (app is quitting to install), false if deferred.
+async function promptRestartForElectronUpdate(info) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    log.warn('[electron-updater] mainWindow missing; will install on quit');
+    return false;
   }
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    buttons: ['Restart now', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'FlowPad update ready',
+    message: `FlowPad ${info.version} is ready to install.`,
+    detail: 'Restart FlowPad now to apply the update.',
+  });
+  if (result.response === 0) {
+    log.info('[electron-updater] user accepted, quitting to install');
+    isQuitting = true;
+    autoUpdater.quitAndInstall();
+    return true;
+  }
+  log.info('[electron-updater] user deferred install');
+  return false;
+}
+
+// Register the electron-updater event handlers (once) and start the hourly
+// re-check so long-lived sessions still pick up new releases. The initial
+// at-launch check is driven separately by checkElectronUpdateBeforeStart so it
+// can block startup until the prompt is answered.
+function setupElectronAutoUpdater() {
+  if (electronAutoUpdaterReady) return;
+  electronAutoUpdaterReady = true;
 
   autoUpdater.logger = log;
   // Download silently in the background — only ask the user before the
@@ -102,54 +144,72 @@ function setupElectronAutoUpdater() {
   });
   autoUpdater.on('update-available', (info) => {
     log.info(`[electron-updater] update available: ${info.version}`);
+    sendStatus('Downloading FlowPad update');
   });
   autoUpdater.on('update-not-available', (info) => {
     log.info(`[electron-updater] up to date. current=${app.getVersion()} latest=${info && info.version}`);
+    resolveElectronStartupGate({ updated: false });
   });
   autoUpdater.on('download-progress', (p) => {
     log.info(`[electron-updater] download ${Math.round(p.percent)}% (${p.transferred}/${p.total})`);
+    sendStatus(`Downloading FlowPad update ${Math.round(p.percent)}%`);
   });
   autoUpdater.on('error', (err) => {
     log.error('[electron-updater] error:', err);
+    // Never block startup on an updater failure — treat it as "no update".
+    resolveElectronStartupGate({ updated: false });
   });
 
   autoUpdater.on('update-downloaded', async (info) => {
     log.info(`[electron-updater] update downloaded: ${info.version}`);
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      log.warn('[electron-updater] mainWindow missing; will install on quit');
+    // During the startup gate, hand the outcome back to the blocking caller so
+    // it prompts (and the rest of startup waits on the answer). Outside the
+    // gate (hourly recheck) we own the prompt here.
+    if (electronUpdateStartupGate) {
+      resolveElectronStartupGate({ updated: true, info });
       return;
     }
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      buttons: ['Restart now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'FlowPad update ready',
-      message: `FlowPad ${info.version} is ready to install.`,
-      detail: 'Restart FlowPad now to apply the update.',
-    });
-    if (result.response === 0) {
-      log.info('[electron-updater] user accepted, quitting to install');
-      isQuitting = true;
-      autoUpdater.quitAndInstall();
-    } else {
-      log.info('[electron-updater] user deferred install');
-    }
+    await promptRestartForElectronUpdate(info);
   });
 
-  // Check immediately at launch, then re-check every hour while the app keeps
-  // running. Without the periodic check a long-lived FlowPad session never
-  // picks up new releases until the user relaunches.
+  // Re-check every hour while the app keeps running. Without the periodic check
+  // a long-lived FlowPad session never picks up new releases until relaunch.
   // electron-updater is internally idempotent: if a download is already in
   // progress, subsequent checkForUpdates() calls are no-ops.
   const HOUR_MS = 60 * 60 * 1000;
-  const runCheck = () => {
+  setInterval(() => {
     autoUpdater.checkForUpdates().catch((err) => {
       log.error('[electron-updater] check failed:', err);
     });
-  };
-  runCheck();
-  setInterval(runCheck, HOUR_MS);
+  }, HOUR_MS);
+}
+
+// Pre-server gate: check for a desktop-wrapper update and, if one downloads,
+// prompt the user to restart BEFORE the backend starts. Resolves (and lets
+// startup continue) when the app is up to date, the check fails, or the user
+// defers the install. If the user accepts, the app quits to install and this
+// never resolves.
+async function checkElectronUpdateBeforeStart() {
+  if (!app.isPackaged) {
+    log.info('[electron-updater] skipped: app is not packaged');
+    return;
+  }
+  setupElectronAutoUpdater();
+  sendStatus('Checking for FlowPad updates');
+
+  const outcome = await new Promise((resolve) => {
+    electronUpdateStartupGate = { resolve };
+    autoUpdater.checkForUpdates().catch((err) => {
+      log.error('[electron-updater] check failed:', err);
+      resolveElectronStartupGate({ updated: false });
+    });
+  });
+
+  if (outcome.updated) {
+    // If the user restarts, the app quits inside this call. If they defer,
+    // fall through and continue booting the current version.
+    await promptRestartForElectronUpdate(outcome.info);
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -395,16 +455,17 @@ function sendStatus(message) {
 }
 
 async function startApp() {
-  // Kick off the desktop wrapper update check immediately at launch — runs in
-  // parallel with backend startup and is a no-op when the app isn't packaged.
-  setupElectronAutoUpdater();
-
   createWindow();
 
   // Wait for the loading page to finish loading so IPC listeners are ready
   if (mainWindow.webContents.isLoading()) {
     await new Promise((resolve) => mainWindow.webContents.once('did-finish-load', resolve));
   }
+
+  // Check for a desktop-wrapper update and prompt to restart BEFORE starting the
+  // backend. If the user accepts, the app quits to install and never reaches the
+  // server start below; if they defer (or there's no update), startup continues.
+  await checkElectronUpdateBeforeStart();
 
   // In development mode, assume backend is running externally
   const isDev = process.env.MINIHUB_DEV === 'true';
@@ -447,6 +508,20 @@ async function startApp() {
             activeBin = uvManager.getInstalledFlowBin() || flowBin;
             backendJustUpgraded = true;
           }
+        }
+
+        // Ask the cloud whether a flowpad upgrade is required and, if so, prompt
+        // the user — all BEFORE the backend starts. Doing this pre-server means
+        // the upgrade offer is reachable even when the current engine is too old
+        // or broken to boot (the old post-server check sat behind waitForBackend
+        // and was dead on arrival for a stuck engine). The check only needs the
+        // flow binary on disk plus the cloud, not a running backend.
+        if (await uvManager.promptAndUpgradeIfAvailable(mainWindow, {
+          sendStatus,
+          cloudUrl: FLOWPAD_CLOUD_URL,
+        })) {
+          activeBin = uvManager.getInstalledFlowBin() || activeBin;
+          backendJustUpgraded = true;
         }
 
         const version = uvManager.getInstalledVersionSync(activeBin);
@@ -562,22 +637,6 @@ async function startApp() {
   if (isDev) {
     mainWindow.webContents.openDevTools();
   }
-
-  // Background update check (non-blocking, after UI is loaded)
-  if (!uvManager) {
-    uvManager = new UvManager(log);
-    try {
-      uvManager._flowBin = await uvManager._resolveFlowBin();
-    } catch {
-      uvManager._flowBin = 'flow';
-    }
-  }
-  uvManager.checkForUpdatesInBackground(mainWindow, {
-    sendStatus,
-    waitForBackend,
-    backendUrl: BACKEND_URL,
-    cloudUrl: FLOWPAD_CLOUD_URL,
-  });
 }
 // App lifecycle events
 app.whenReady().then(startApp);
