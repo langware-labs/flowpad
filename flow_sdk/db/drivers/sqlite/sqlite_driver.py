@@ -17,7 +17,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Set, Tupl
 from flow_sdk._compat import UTC
 
 from fastapi import HTTPException
-from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
+from sqlalchemy import and_, asc, delete, desc, or_, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -32,7 +32,7 @@ from flow_sdk.db.drivers.db_driver import (
 )
 from flow_sdk.db.drivers.path_model import NodeConnection, NodesPath
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
-from flow_sdk.flowpad_types.enums import ExpansionType, RelationshipDirection
+from flow_sdk.flowpad_types.enums import RelationshipDirection
 
 
 # TODO: request_context methods not available locally
@@ -1360,7 +1360,7 @@ class SQLiteDBDriver(DBDriver):
             return self._schema_to_entity(schema)
 
     async def get_all(self, entities_filter: QueryFilter, source_entity: TypeId | None = None) -> List[DBBaseRecord]:
-        """Get all entities matching filter with authorization.
+        """Get all entities matching the filter.
 
         Translates the QueryFilter match expression into a single SQL WHERE clause so
         SQLite does the filtering — avoiding deserializing every row of a type into
@@ -1368,10 +1368,13 @@ class SQLiteDBDriver(DBDriver):
 
         For conditions that cannot be expressed in SQL (PROP references, unsupported ops)
         a Python post-filter is applied on the already-reduced result set.
-        """
-        request_info = get_current_request_info()
-        user_id = request_info.user.id if request_info and request_info.user else None
 
+        ``source_entity`` is *structural scope*, NOT authorization. Local SQLite is a
+        single-user store and enforces no per-user authorization (that lives at the hub).
+        - ``None`` or a ``user`` source  -> no scope filter (return all rows of the type).
+        - a non-user source              -> restrict to descendants of that entity via the
+          ``is_child`` role edges, as a single recursive-CTE subquery (no per-row walk).
+        """
         counter = [0]  # mutable counter for unique SQL parameter names
 
         # Base query — always filters by entity type (indexed column)
@@ -1384,29 +1387,19 @@ class SQLiteDBDriver(DBDriver):
         if sql_cond is not None:
             query = query.where(sql_cond)
 
+        # Structural scope: restrict to descendants of a non-user source (see helper).
+        scope_cond = self._scope_descendants_condition(source_entity)
+        if scope_cond is not None:
+            query = query.where(scope_cond)
+
         # Push ORDER BY for column-level sort fields
         sql_order, needs_python_sort = self._build_sql_order_by(entities_filter.order_by)
         if sql_order:
             query = query.order_by(*sql_order)
 
         # Push LIMIT/OFFSET to SQL only when the full filter+sort is handled in SQL
-        # (if Python post-filter or Python sort is needed, pagination must happen after)
-        is_su = bool(request_info and request_info.su)
-        has_auth = bool(user_id and source_entity and not is_su)
-        # Scope membership is structural, not a permission. A scoped list query
-        # (``/graph/project/<id>/<type>``) passes the project as ``source_entity``
-        # and must only return descendants of that scope. ``su`` (local mode)
-        # bypasses permission/policy checks, which also turns off ``has_auth`` —
-        # so without this, a su request leaks every entity of the type into a
-        # scoped list (e.g. a fresh project's asset tree showing the user's
-        # global ~/.claude plans/prompts). Apply the child-of-scope filter here
-        # whenever the scope is a non-user entity, independent of su.
-        needs_scope_filter = bool(
-            source_entity and not self._source_is_user(source_entity, user_id) and not has_auth
-        )
-        can_push_pagination = (
-            fully_sql and not needs_python_sort and not has_auth and not needs_scope_filter
-        )
+        # (if Python post-filter or Python sort is needed, pagination must happen after).
+        can_push_pagination = fully_sql and not needs_python_sort
         if can_push_pagination:
             if entities_filter.offset:
                 query = query.offset(entities_filter.offset)
@@ -1416,21 +1409,6 @@ class SQLiteDBDriver(DBDriver):
         async with self._session_ctx(write=False) as session:
             result = await session.execute(query)
             entities = [self._schema_to_entity(s) for s in result.scalars().all()]
-
-        # Per-entity filter (always Python-side — requires relationship lookups).
-        # ``has_auth`` checks permission; ``needs_scope_filter`` checks structural
-        # scope membership. The two are mutually exclusive by construction.
-        if has_auth or needs_scope_filter:
-            kept = []
-            for entity in entities:
-                ok = (
-                    await self._user_has_access(user_id, entity.id, source_entity)
-                    if has_auth
-                    else await self._is_child_of_source(entity.id, source_entity)
-                )
-                if ok:
-                    kept.append(entity)
-            entities = kept
 
         # Python post-filter — only needed when SQL pushdown was partial
         if not fully_sql:
@@ -1447,10 +1425,40 @@ class SQLiteDBDriver(DBDriver):
             if entities_filter.limit:
                 entities = entities[: entities_filter.limit]
 
-        if entities_filter.expand_is_private:
-            await self._apply_is_private_expansion(entities)
-
         return entities
+
+    @staticmethod
+    def _scope_descendants_condition(source_entity: TypeId | None):
+        """SQL condition restricting EntitySchema.id to descendants of ``source_entity``.
+
+        Structural scope only (NOT authorization). Returns None when no scoping applies:
+        a ``None`` source or a ``user`` source means "no scope" (single-user local store —
+        all rows are the user's). For a non-user source, builds a recursive CTE over the
+        ``is_child`` role edges rooted at the source and requires membership in it — one
+        SQL statement, instead of a per-row descendant walk.
+        """
+        if source_entity is None or source_entity.type == "user":
+            return None
+        # Anchor: direct children of the source via is_child role edges.
+        descendants = (
+            select(RelationshipSchema.to_id.label("id"))
+            .where(
+                RelationshipSchema.from_id == source_entity.id,
+                RelationshipSchema.type == "role",
+                RelationshipSchema.is_child.is_(True),
+            )
+            .cte("scope_descendants", recursive=True)
+        )
+        # Recursive step: children of nodes already in the set (transitive descendants).
+        descendants = descendants.union_all(
+            select(RelationshipSchema.to_id.label("id"))
+            .join(descendants, RelationshipSchema.from_id == descendants.c.id)
+            .where(
+                RelationshipSchema.type == "role",
+                RelationshipSchema.is_child.is_(True),
+            )
+        )
+        return EntitySchema.id.in_(select(descendants.c.id))
 
     def _expr_to_sql(self, expr: ExpressionNode, counter: list) -> tuple:
         """Translate an ExpressionNode into a SQLAlchemy WHERE condition.
@@ -1613,30 +1621,6 @@ class SQLiteDBDriver(DBDriver):
                     else:
                         needs_python = True
         return sql_clauses, needs_python
-
-    async def _apply_is_private_expansion(self, entities: List[DBBaseRecord]):
-        """Apply is_private expansion to entities."""
-        # Already imported at top as ExpansionType
-
-        for entity in entities:
-            entity.mark_expansion(ExpansionType.IsPrivate)
-            # Entity is private if it has exactly one role relationship (only the owner)
-            role_count = await self._count_role_relationships(entity.id)
-            if entity.expand:
-                entity.expand.is_private = role_count == 1
-
-    async def _count_role_relationships(self, entity_id: str) -> int:
-        """Count incoming role relationships to an entity."""
-        async with self._session_ctx(write=False) as session:
-            result = await session.execute(
-                select(func.count())
-                .select_from(RelationshipSchema)
-                .where(
-                    RelationshipSchema.to_id == entity_id,
-                    RelationshipSchema.type == "role",
-                )
-            )
-            return result.scalar() or 0
 
     # ==================== Relationship CRUD ====================
 
@@ -2164,103 +2148,6 @@ class SQLiteDBDriver(DBDriver):
                 pass
                 # await create_builtin_instances()
 
-    # ==================== Authorization ====================
-
-    @staticmethod
-    def _source_is_user(source_entity: TypeId | None, user_id: str | None) -> bool:
-        """True when the auth/scope source is the requesting user themselves.
-
-        A user-source means "everything I can reach"; a non-user source (e.g. a
-        project) is a structural scope boundary that must be enforced via
-        ``_is_child_of_source``.
-        """
-        return bool(
-            source_entity
-            and source_entity.type == "user"
-            and source_entity.id == user_id
-        )
-
-    async def _user_has_access(self, user_id: str, entity_id: str, source_entity: TypeId | None = None) -> bool:
-        """Check if user has access to entity through role relationships."""
-        if user_id == entity_id:
-            return True
-
-        # Use fast path validation with raw edge data (no N+1 queries)
-        graph = await self._load_relationship_graph("role")
-
-        # Find valid role paths using BFS with inline validation
-        paths = self._get_raw_paths(graph, user_id, entity_id)
-
-        # Check if any valid role path exists
-        for path in paths:
-            if self._validate_role_path(path):
-                if source_entity and not self._source_is_user(source_entity, user_id):
-                    if not await self._is_child_of_source(entity_id, source_entity):
-                        continue
-                return True
-
-        return False
-
-    def _validate_role_path(self, connections: List[dict]) -> bool:
-        """Validate that a role path grants authorization using raw edge data (no DB queries)."""
-        if not connections:
-            return False
-
-        current_role = "$start_path"
-
-        for i, connection in enumerate(connections):
-            from_role = connection.get("from_role") or "*"
-            to_role = connection.get("to_role") or "*"
-
-            # Validate role transition
-            if not self._is_valid_role_transition(current_role, from_role):
-                return False
-
-            current_role = to_role
-
-            # Check is_final
-            if connection.get("is_final"):
-                if i < len(connections) - 1:
-                    return False
-                break
-
-        return True
-
-    def _is_valid_role_transition(self, current_role: str, expected_role: str) -> bool:
-        """Check if role transition is valid."""
-        if expected_role == "*" or current_role == "*":
-            return True
-        if current_role == "$start_path":
-            return True
-        return current_role == expected_role
-
-    async def _is_child_of_source(self, entity_id: str, source: TypeId) -> bool:
-        """Check if entity is descendant of source."""
-        visited = set()
-        queue = [source.id]
-
-        while queue:
-            current = queue.pop(0)
-            if current in visited:
-                continue
-            visited.add(current)
-
-            if current == entity_id:
-                return True
-
-            # Get children
-            async with self._session_ctx(write=False) as session:
-                query = select(RelationshipSchema).where(
-                    RelationshipSchema.from_id == current,
-                    RelationshipSchema.type == "role",
-                    RelationshipSchema.is_child == True,  # noqa: E712
-                )
-                result = await session.execute(query)
-                for rel in result.scalars():
-                    queue.append(rel.to_id)
-
-        return False
-
     # ==================== Helper Methods ====================
 
     async def _create_owner_relationship(self, entity: DBBaseRecord, owner: TypeId):
@@ -2394,50 +2281,6 @@ class SQLiteDBDriver(DBDriver):
                     }
                 )
         return graph
-
-    def _get_raw_paths(self, graph: Dict[str, List[dict]], from_id: str, to_id: str) -> List[List[dict]]:
-        """Find all paths between two nodes, returning raw edge lists."""
-        if from_id == to_id:
-            # Self-loop case
-            paths = []
-            for edge in graph.get(from_id, []):
-                if edge["to_id"] == from_id:
-                    paths.append([edge])
-            return paths
-
-        # Collect self-loops at start for role chain initialization
-        start_self_loops = [e for e in graph.get(from_id, []) if e["to_id"] == from_id]
-
-        # BFS to find all paths
-        queue = [(from_id, [from_id], [])]
-        visited_paths = set()
-        raw_paths = []
-
-        while queue:
-            current_id, path_nodes, path_edges = queue.pop(0)
-
-            if current_id == to_id and path_edges:
-                path_key = tuple(e["id"] for e in path_edges)
-                if path_key not in visited_paths:
-                    visited_paths.add(path_key)
-                    raw_paths.append(path_edges)
-                continue
-
-            for edge in graph.get(current_id, []):
-                next_id = edge["to_id"]
-                if next_id not in path_nodes or next_id == to_id:
-                    queue.append((next_id, path_nodes + [next_id], path_edges + [edge]))
-
-        # Prepend self-loops for role chain initialization
-        final_paths = []
-        for raw_path in raw_paths:
-            if start_self_loops:
-                for self_loop in start_self_loops:
-                    final_paths.append([self_loop] + raw_path)
-            else:
-                final_paths.append(raw_path)
-
-        return final_paths
 
     async def _build_nodes_paths_batched(self, all_edge_lists: List[List[dict]]) -> List[NodesPath]:
         """Build multiple NodesPath objects from edge lists using batched queries."""
