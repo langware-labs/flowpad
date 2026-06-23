@@ -3,6 +3,7 @@ import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
 import { IDockPointer } from '../models/DockPointer';
 import { EntityTypes } from '../schema/types';
+import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 
 /** A terminal target's display fields, read off the (cached/resolved) entity. */
 interface TerminalTargetFields {
@@ -277,10 +278,16 @@ export class Tab extends APIEntity<Tab> implements ITab {
     ) as (APIEntity<any> & TerminalTargetFields & { project_id?: string | null }) | null;
     if (!targetTypeId && target) targetTypeId = target.typeId;
 
+    // A target-less dock (assets list/folder) has no entity to inherit a project
+    // from — but if its scope is pinned to a single project (`mode: 'project'`),
+    // the tab belongs to THAT project. This is what makes a project-scoped assets
+    // tab attach to its project (and render project-colored) instead of global.
+    const scope = dockOptionsToScopeFilter(dock.options);
+    const scopeProjectId = scope?.mode === 'project' ? (scope.activeProjectId ?? null) : null;
     const projectId =
       targetTypeId?.type === EntityTypes.Project
         ? targetTypeId.id // a project belongs to itself
-        : (target?.project_id ?? null);
+        : (target?.project_id ?? scopeProjectId ?? null);
 
     const { iconKey, worktree } = displayForTarget(targetTypeId?.type ?? null, target);
 

@@ -9,11 +9,16 @@
 import { Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resetTabLifecycleForTests, setupTab } from '@src/tabs/tab-lifecycle';
-import { type ScopeFilter } from '@src/lib/scope-filter';
+import { projectScope, type ScopeFilter } from '@src/lib/scope-filter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const A: ScopeFilter = { user: false, projects: ['A'] };
-const B: ScopeFilter = { user: false, projects: ['B'] };
+// Single-project ("active project") scopes. Ids must be valid entity ids (UUID
+// v4/v5) so they survive the dock-options encode/decode that `tabHash` reads —
+// `SCOPE_CODEC` drops a foreign id from a `project` scope.
+const PROJECT_A = '00000000-0000-4000-8000-00000000000a';
+const PROJECT_B = '00000000-0000-4000-8000-00000000000b';
+const A: ScopeFilter = projectScope(PROJECT_A);
+const B: ScopeFilter = projectScope(PROJECT_B);
 
 let tabIdCounter = 0;
 function nextTabId(): string {
@@ -57,7 +62,7 @@ describe('assets tab dedup by scope', () => {
 
     expect(getSpy).toHaveBeenCalledTimes(2);
     expect(store).toHaveLength(2);
-    expect(store[0].dockPointer?.tabHash).toBe('assets|0:A');
-    expect(store[1].dockPointer?.tabHash).toBe('assets|0:B');
+    expect(store[0].dockPointer?.tabHash).toBe(`assets|project:${PROJECT_A}`);
+    expect(store[1].dockPointer?.tabHash).toBe(`assets|project:${PROJECT_B}`);
   });
 });

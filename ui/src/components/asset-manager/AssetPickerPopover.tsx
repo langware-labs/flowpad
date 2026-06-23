@@ -12,7 +12,12 @@ import {
 import { EntityTypeBar, type EntityTypeFilter } from './EntityTypeBar';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
-import { ALL_SCOPE_FILTER } from '@src/lib/scope-filter';
+import {
+  ALL_SCOPE_FILTER,
+  isAllScope,
+  scopeIncludesUser,
+  scopeProjectIds as scopeProjectIdList,
+} from '@src/lib/scope-filter';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { Boxes, Lock, Search, type LucideIcon } from 'lucide-react';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
@@ -89,12 +94,13 @@ export function AssetPickerPopover({
   const [scope, setScope, currentProjectId] = useDefaultScopeFilter();
   const { projects: allProjects } = useAllProjects({ enabled: open });
   const scopeProjectIds = useMemo(() => {
-    const ids = new Set(scope.projects);
+    const selected = scopeProjectIdList(scope);
+    const ids = new Set(selected);
     for (const p of allProjects) {
-      if (scope.projects.includes(p.id) && p.record_project_id) ids.add(p.record_project_id);
+      if (selected.includes(p.id) && p.record_project_id) ids.add(p.record_project_id);
     }
     return ids;
-  }, [allProjects, scope.projects]);
+  }, [allProjects, scope]);
 
   // process: null → useProcessAssets returns the synthetic Agent + Skill list
   // pulled from the global entity queries. No process needs to exist yet.
@@ -152,10 +158,10 @@ export function AssetPickerPopover({
         if (!selectedTypes.includes(type)) return false;
       }
       // Scope gate — skipped entirely when scope = "All" (show everything).
-      if (!scope.all) {
+      if (!isAllScope(scope)) {
         if (d.project_id) {
           if (!scopeProjectIds.has(d.project_id)) return false;
-        } else if (!scope.user) {
+        } else if (!scopeIncludesUser(scope)) {
           return false;
         }
       }

@@ -971,7 +971,8 @@ export class DockPointer implements IDockPointer {
     if (this.viewType === ViewType.SHELL && !this.pointer) return null;
     // Assets is a SINGLE tab per scope: every type/folder/editor sub-pointer of
     // one scope folds into ONE tab. Identity = the scope filter (global when
-    // unset), NOT the sub-pointer. scopeFilterKey: 'all' | '1:p1,p2' | '0:p1'.
+    // unset), NOT the sub-pointer. scopeFilterKey: 'all' | 'user' |
+    // 'project:<id>' | 'filter:<0|1>:p1,p2'.
     if (this.viewType === ViewType.ASSETS) {
       return `${ViewType.ASSETS}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
     }

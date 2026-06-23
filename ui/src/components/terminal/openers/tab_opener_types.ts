@@ -13,6 +13,21 @@ export type OpenerId =
   | 'history'
   | 'open-context';
 
+/** Every valid opener id — the single allow-list for persisting/validating the
+ *  last-opener + pinned-opener storage. Kept here (next to `OpenerId`) so the
+ *  hooks that read those keys can't drift apart. */
+export const VALID_OPENER_IDS: OpenerId[] = [
+  'claude',
+  'codex',
+  'copilot',
+  'claude-resume-by-id',
+  'terminal',
+  'sandbox',
+  'docker',
+  'history',
+  'open-context',
+];
+
 export type OpenerIcon = LucideIcon | ComponentType<SVGProps<SVGSVGElement> & { className?: string }>;
 
 export interface OpenerDescriptor {

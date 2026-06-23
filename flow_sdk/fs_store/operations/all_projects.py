@@ -36,6 +36,77 @@ class ProjectInfo:
     modified_at: str | None = None                        # entity updated_date, when known
 
 
+# ── GET vs FETCH ──────────────────────────────────────────────────────────────
+# `get_all_projects` is the FETCH path: a blocking filesystem scan of
+# ~/.claude/projects (∪ codex/copilot/workspace) plus optional entity creation.
+# It belongs on the footer project picker only.
+#
+# Read paths (scope resolution, list / count / search) only need KNOWN
+# (entity-table) projects. They go through the cached reads below — NO filesystem
+# scan, NO writes — so the UI's repeated scoped requests don't re-read all rows.
+_PROJECTS_CACHE: list | None = None
+
+
+def invalidate_projects_cache() -> None:
+    """Drop the cached Project list. Called when a project is materialized; the
+    scope resolver also force-refreshes on a token miss, so a freshly-created
+    project self-heals even without an explicit invalidate."""
+    global _PROJECTS_CACHE
+    _PROJECTS_CACHE = None
+
+
+async def get_cached_projects(*, force: bool = False):
+    """Cached ``Project.get_all()`` for the scope-resolution hot path.
+
+    Builds the Project-entity list once and serves it from memory thereafter, so
+    the UI's repeated scoped requests don't re-read every row each time. The
+    scope resolver passes ``force=True`` on a token miss to pick up a
+    freshly-created project. NO filesystem scan (that is the FETCH path).
+    """
+    global _PROJECTS_CACHE
+    if force or _PROJECTS_CACHE is None:
+        from flow_sdk.builtin.project import Project  # local: avoid circular import
+        _PROJECTS_CACHE = await Project.get_all()
+    return _PROJECTS_CACHE
+
+
+def _entity_to_project_info(proj, cwd: str) -> ProjectInfo:
+    """Build a ``ProjectInfo`` from a Project entity row at canonical ``cwd``.
+    ``worker_types`` is empty — that provenance comes from the FS scan."""
+    from flow_sdk.builtin.project import Project  # local: avoid circular import
+    return ProjectInfo(
+        cwd=cwd,
+        name=getattr(proj, "name", None) or cwd,
+        project_id=proj.id,
+        record_project_id=Project.derive_id_for_path(cwd) or "",
+        worker_types=[],
+        modified_at=getattr(proj, "updated_date", None),
+    )
+
+
+async def get_known_projects(*, include_temp: bool = False) -> list[ProjectInfo]:
+    """Cheap read of KNOWN projects — entity table only, NO FS scan, NO writes.
+
+    The GET counterpart to the FETCH ``get_all_projects``. Returns the same
+    ``ProjectInfo`` shape sourced from the cached ``Project.get_all()`` read.
+    Unordered: callers use it as a lookup source, not a display list.
+
+    Projects that exist on disk but were never materialized into an entity are
+    intentionally absent — scope resolution never references them (no entity id),
+    and the footer picker, which DOES surface them, uses the FETCH path.
+    """
+    infos: list[ProjectInfo] = []
+    for proj in await get_cached_projects():
+        mount = getattr(proj, "fs_storage_mount_path", None)
+        cwd = canonical_posix_path(mount) if mount else ""
+        if not cwd:
+            continue
+        if not include_temp and is_temp_path(cwd):
+            continue
+        infos.append(_entity_to_project_info(proj, cwd))
+    return infos
+
+
 def iter_codex_project_paths(include_temp: bool = False) -> Iterator[Path]:
     """Yield canonical Codex project paths from ``<home>/.codex/config.toml``.
 
@@ -211,14 +282,7 @@ async def get_all_projects(
         # include_temp=True indexer run) doesn't resurface in the picker.
         if not include_temp and is_temp_path(cwd):
             continue
-        fs_by_cwd[cwd] = ProjectInfo(
-            cwd=cwd,
-            name=proj.name or cwd,
-            project_id=proj.id,
-            record_project_id=Project.derive_id_for_path(cwd) or "",
-            worker_types=[],
-            modified_at=getattr(proj, "updated_date", None),
-        )
+        fs_by_cwd[cwd] = _entity_to_project_info(proj, cwd)
 
     # `modified_at` may arrive as ISO string or datetime — coerce for ordering.
     return sorted(
@@ -267,3 +331,4 @@ async def _materialize(info: ProjectInfo) -> None:
     proj.id = Project.allocate_id(proj.model_dump())
     info.project_id = proj.id
     await proj.save()
+    invalidate_projects_cache()  # a new project entity exists — drop the GET cache

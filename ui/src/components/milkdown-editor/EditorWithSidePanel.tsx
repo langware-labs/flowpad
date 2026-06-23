@@ -1,7 +1,8 @@
 import type { AgenticProcess } from '@sdk';
 import type { ReactNode } from 'react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
 import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
 import { useSideWindows } from '@src/navigation/useSideWindows';
@@ -67,6 +68,22 @@ export function EditorWithSidePanel({
   cursorLine,
 }: EditorWithSidePanelProps) {
   const { windows, active, open, close, closeAll, select } = useSideWindows();
+  const advanced = useIsAdvanced();
+
+  // Standard mode: the side window is closed by default — collapse any
+  // persisted/shared-open windows once on entry (and again whenever the user
+  // drops from Advanced back to Standard) so a Standard user lands on the rail.
+  // The rail stays, so they can still open a window for the session.
+  const didStandardCollapse = useRef(false);
+  useEffect(() => {
+    if (advanced) {
+      didStandardCollapse.current = false;
+      return;
+    }
+    if (didStandardCollapse.current) return;
+    didStandardCollapse.current = true;
+    if (windows.length > 0) closeAll();
+  }, [advanced, windows, closeAll]);
 
   // Full registry of openable windows (Chat + Backlinks + caller extras), in
   // display order. Drives both the open-tab descriptors and the collapsed rail.

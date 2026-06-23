@@ -5,6 +5,31 @@ import { DownloadOptions, UploadOptions } from '../models/FSOptions';
 import { FileUpload } from './FileUpload';
 
 /**
+ * Heuristic: does a UTF-8-decoded string look like binary rather than text?
+ *
+ * Some drag-drop / clipboard sources hand us a File with an empty or missing
+ * MIME type, which slips past a `file.type`-based check. Decoding such a binary
+ * file (e.g. a JPEG) as UTF-8 yields a NUL byte and/or a high density of C0
+ * control chars and U+FFFD replacement chars. Writing that as a text/markdown
+ * body corrupts the file and locks up downstream editors, so we reject it.
+ */
+export function looksBinaryText(s: string): boolean {
+  if (!s) return false;
+  // Sniff a bounded prefix only — a binary-as-text file reveals itself (NUL /
+  // control-char density) within the first few KB, so we never scan the whole
+  // body (this runs on the editor's per-keystroke render path).
+  const sample = s.length > 4096 ? s.slice(0, 4096) : s;
+  if (sample.includes('\u0000')) return true;
+  let suspicious = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const c = sample.charCodeAt(i);
+    // Allow tab (9), LF (10), CR (13); flag other C0 controls + the U+FFFD char.
+    if (c < 9 || (c > 13 && c < 32) || c === 0xfffd) suspicious++;
+  }
+  return suspicious / sample.length > 0.1;
+}
+
+/**
  * BrowseResult - Result of a directory listing operation
  */
 export interface BrowseResult {
@@ -233,6 +258,13 @@ export class FSManager {
           throw new Error(`Cannot upload binary file '${file.name}': server does not support multipart upload for this content type`);
         }
         const content = await this.readFileAsText(file);
+        // A missing/empty MIME type (common for some drag-drop and clipboard
+        // sources) slips past the check above, so also sniff the decoded bytes:
+        // writing binary content as a text body corrupts the file and hangs the
+        // editor that later opens it.
+        if (looksBinaryText(content)) {
+          throw new Error(`Cannot upload binary file '${file.name}': its contents are not text`);
+        }
         const fullPath = this.joinDestinationPath(destinationPath, file.name);
         const writtenItem = await this.writeFile(typeid, fullPath, content);
         uploadedViaWrite.push(writtenItem);

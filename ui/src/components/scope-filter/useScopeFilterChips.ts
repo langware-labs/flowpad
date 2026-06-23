@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import {
-  ALL_SCOPE_FILTER,
-  defaultScopeFilter,
-  scopeFilterEqual,
+  allScope,
+  filterScope,
+  projectScope,
+  scopeProjectIds,
+  userScope,
   type ScopeFilter,
 } from '@src/lib/scope-filter';
 
@@ -12,27 +14,20 @@ import {
  * four mutually-exclusive modes — whatever is marked is active, no cross
  * logic between modes:
  *
- *   "all"      → everything ({all:true})
- *   "user"     → user assets only ({user:true, projects:[]})
- *   "project"  → the current project only ({user:false, projects:[currentId]})
- *   "selected" → explicitly-picked projects ({user:false, projects:[...]})
+ *   "all"      → everything ({mode:'all'})
+ *   "user"     → user assets only ({mode:'user'})
+ *   "project"  → the current project only ({mode:'project', activeProjectId})
+ *   "selected" → explicitly-picked projects ({mode:'filter', projects:[...]})
  *
- * `project` always means the current project (never the picker selection);
- * `selected` is driven by the project picker.
+ * The active chip reads straight off `scope.mode` — `filter` surfaces as the
+ * "Selected" chip. No inference from field combinations, so "Project" (the
+ * active-project context) and "Selected" (an ad-hoc pick of one project) never
+ * get confused, even when they select the same single project.
  */
 export type ScopeMode = 'all' | 'user' | 'project' | 'selected';
 
-function modeFor(scope: ScopeFilter, currentProjectId: string | null): ScopeMode {
-  if (scope.all) return 'all';
-  if (!scope.user && scope.projects.length > 0) {
-    // "Project" = exactly the current project; anything else is "Selected".
-    // Reuse scopeFilterEqual so the comparison stays canonical.
-    return currentProjectId && scopeFilterEqual(scope, defaultScopeFilter(currentProjectId))
-      ? 'project'
-      : 'selected';
-  }
-  // {user:true, projects:[]} and any non-canonical state read as "user".
-  return 'user';
+function modeFor(scope: ScopeFilter): ScopeMode {
+  return scope.mode === 'filter' ? 'selected' : scope.mode;
 }
 
 export interface UseScopeFilterChipsArgs {
@@ -61,20 +56,20 @@ export function useScopeFilterChips({
 }: UseScopeFilterChipsArgs): UseScopeFilterChips {
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const activeMode = modeFor(scope, currentProjectId);
-  const selectedCount = scope.all ? 0 : scope.projects.length;
+  const activeMode = modeFor(scope);
+  const selectedCount = scope.mode === 'filter' ? scopeProjectIds(scope).length : 0;
   const projectDisabled = !currentProjectId;
 
   const handleSelect = (mode: ScopeMode) => {
     switch (mode) {
       case 'all':
-        onScopeChange({ ...ALL_SCOPE_FILTER });
+        onScopeChange(allScope());
         return;
       case 'user':
-        onScopeChange({ user: true, projects: [] });
+        onScopeChange(userScope());
         return;
       case 'project':
-        if (currentProjectId) onScopeChange({ user: false, projects: [currentProjectId] });
+        if (currentProjectId) onScopeChange(projectScope(currentProjectId));
         return;
       case 'selected':
         // Pick which projects first; scope applies on confirm.
@@ -85,7 +80,7 @@ export function useScopeFilterChips({
 
   const onPickerConfirm = (ids: string[]) => {
     // Empty selection falls back to "All" so the view is never left empty.
-    onScopeChange(ids.length === 0 ? { ...ALL_SCOPE_FILTER } : { user: false, projects: ids });
+    onScopeChange(ids.length === 0 ? allScope() : filterScope(false, ids));
     setPickerOpen(false);
   };
 

@@ -4,7 +4,7 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { buildAssistancePrompt } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
 import { useProjectMappingGate } from './useProjectMappingGate';
-import { WorkerLaunchToolbar } from './WorkerLaunchToolbar';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 
 /**
  * Conversation-header affordance for the conversation's owning worker session.
@@ -39,7 +39,7 @@ export function ConversationHeaderSession({
 
   return (
     <>
-      <WorkerLaunchToolbar
+      <WorkerToolbar
         hasProcess={!!conversationProcess}
         starting={starting}
         onOpen={open}
