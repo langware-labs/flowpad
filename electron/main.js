@@ -433,6 +433,24 @@ async function startApp() {
           }
         }
 
+        // Pre-start update offer: ask the cloud /check-update policy whether an
+        // upgrade is required and, if the user accepts, upgrade BEFORE booting
+        // the backend (the flow CLI's `upgrade --info` works with the server
+        // down). `beforeBackendStart` makes the call return right after the
+        // upgrade — the normal start path below boots the upgraded backend, so
+        // we avoid a double start + premature UI load.
+        const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
+          sendStatus,
+          waitForBackend,
+          backendUrl: BACKEND_URL,
+          cloudUrl: FLOWPAD_CLOUD_URL,
+          beforeBackendStart: true,
+        });
+        if (upgradedPreStart) {
+          activeBin = uvManager.getInstalledFlowBin() || activeBin;
+          backendJustUpgraded = true;
+        }
+
         const version = uvManager.getInstalledVersionSync(activeBin);
         const versionSuffix = version ? ` v${version}` : '';
         sendStatus(`Starting flowpad${versionSuffix}`);
