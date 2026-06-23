@@ -15,6 +15,7 @@ SCOPED_RECORD_TYPES: frozenset[str] = frozenset({
     "skill", "agent", "markdown", "whiteboard", "workflow", "task",
     "claude_hook", "claude_rules", "claude_memory", "claude_md",
     "claude_session", "codex_session", "command", "spec",
+    "plan", "prompt",
 })
 
 # Scopes matched by ``project_id`` (i.e. that carry a project). System rows
