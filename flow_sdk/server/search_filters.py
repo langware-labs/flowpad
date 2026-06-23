@@ -15,6 +15,7 @@ SCOPED_RECORD_TYPES: frozenset[str] = frozenset({
     "skill", "agent", "markdown", "whiteboard", "workflow", "task",
     "claude_hook", "claude_rules", "claude_memory", "claude_md",
     "claude_session", "codex_session", "command", "spec",
+    "plan", "prompt",
 })
 
 # Scopes matched by ``project_id`` (i.e. that carry a project). System rows
@@ -180,20 +181,28 @@ async def resolve_project_scope(
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_store.identifier import is_valid_uuid  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.roots import lookup_project_id_by_uname  # noqa: PLC0415
-    from flow_sdk.fs_store.operations.all_projects import get_all_projects  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import (  # noqa: PLC0415
+        get_cached_projects,
+        get_known_projects,
+    )
 
-    projects = await Project.get_all()
-    by_id = {str(p.id): p for p in projects if getattr(p, "id", None)}
-    by_record_id: dict[str, Project] = {}
-    for proj in projects:
-        candidates = [
-            getattr(proj, "project_id", None),
-            Project.derive_id_for_path(getattr(proj, "fs_storage_mount_path", None)),
-        ]
-        for candidate in candidates:
-            key = str(candidate or "").strip()
-            if key and key not in by_record_id:
-                by_record_id[key] = proj
+    def _build_maps(projects):
+        by_id = {str(p.id): p for p in projects if getattr(p, "id", None)}
+        by_record_id: dict[str, Project] = {}
+        for proj in projects:
+            candidates = [
+                getattr(proj, "project_id", None),
+                Project.derive_id_for_path(getattr(proj, "fs_storage_mount_path", None)),
+            ]
+            for candidate in candidates:
+                key = str(candidate or "").strip()
+                if key and key not in by_record_id:
+                    by_record_id[key] = proj
+        return by_id, by_record_id
+
+    # Cached entity-table read — no all-rows DB hit per request, no FS scan.
+    projects = await get_cached_projects()
+    by_id, by_record_id = _build_maps(projects)
 
     normalized_tokens: list[str] = []
     needs_project_infos = False
@@ -207,10 +216,25 @@ async def resolve_project_scope(
         if token in by_record_id and token not in by_id:
             needs_project_infos = True
 
+    # A token that matches no known project → the cache may be stale (a
+    # freshly-created project). Force ONE refresh from the entity table and
+    # rebuild the maps. Known tokens never reach here, so steady state stays a
+    # pure in-memory hit; only a genuinely new/unknown id pays a DB read.
+    if any(t not in by_id and t not in by_record_id for t in normalized_tokens):
+        projects = await get_cached_projects(force=True)
+        by_id, by_record_id = _build_maps(projects)
+        needs_project_infos = any(
+            t in by_record_id and t not in by_id for t in normalized_tokens
+        )
+
     info_by_id = {}
     info_by_record_id = {}
     if needs_project_infos:
-        project_infos = await get_all_projects(create_missing=create_missing)
+        # Scope resolution is a READ — always use the entity-table GET (no FS
+        # scan, no writes). The FETCH (get_all_projects) lives on the footer
+        # picker only. Enrichment only ever resolves KNOWN entities, and the
+        # by_id/by_record_id fallback below covers any id the GET map misses.
+        project_infos = await get_known_projects()
         info_by_id = {str(info.project_id): info for info in project_infos if info.project_id}
         for info in project_infos:
             candidates = [

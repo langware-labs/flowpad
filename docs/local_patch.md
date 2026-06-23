@@ -190,43 +190,46 @@ it must behave **"as if it were truly production"** (same hardened-runtime launc
 
 ## What "patch desktop" means (canonical definition)
 
-**"Patch desktop" is two halves, from ONE source, never mix-and-match. The SDK half always
-runs; the shell half runs ONLY when `electron/` actually changed:**
+**"Patch desktop" means: run YOUR LOCAL CODE on the desktop. The desktop is two independently
+versioned halves — the SDK/backend (`flow_sdk` + the `ui`/`ts_sdk` it serves) and the Electron
+shell (`electron/`). A half is "patched" iff it has local code that is NOT in the release. So the
+FIRST step is always: ask git which half diverges — don't assume, and don't mark a half that
+matches the release.**
 
-1. **The SDK / backend local deployment — ALWAYS.** Build the wheel (`build_ui.py` →
-   `uv build`) and `uv tool install --force --python 3.13` it, so the server on **9007** is
-   your code (Local Deployment in [`pypi-deploy.md`](./pypi-deploy.md)). This is **not
-   optional** — a shell-only asar patch leaves the backend + served UI stale and the two
-   halves drift (observed 2026-06-14: backend at `0.2.53+local`, shell still `0.2.52-patch1`,
-   tabs broken). After installing, **restart the app** (quit → `open`) so the shell respawns
-   the new backend and serves the rebuilt UI — even when the shell asar itself is untouched.
-2. **The Electron shell asar patch — ONLY IF `electron/` CHANGED.** The asar repack + integrity
-   rewrite + ad-hoc re-sign is the expensive half; skip it entirely when `main.js` (etc.) is
-   byte-identical to what's already in the deployed `~/Flowpad-patched.app` asar. Gate it:
-   ```bash
-   git show HEAD:electron/main.js > /tmp/main_head.js
-   node -e 'const a=require("./electron/node_modules/@electron/asar"),fs=require("fs");
-     const inAsar=a.extractFile(process.env.HOME+"/Flowpad-patched.app/Contents/Resources/app.asar","main.js");
-     process.exit(Buffer.compare(inAsar,fs.readFileSync("/tmp/main_head.js"))?1:0)' \
-     && echo "unchanged — SKIP repack" || echo "changed — repack (steps below)"
-   ```
-   When skipped, the shell keeps its existing `-patch<count>` stamp (no bump — nothing in the
-   bundle changed); only bump `-patch<count>` on an actual repack.
+### Step 0 — which half is actually patched? (`git diff` decides)
 
-Both halves MUST come from the **same source**, and the versions prove it:
+```bash
+git fetch origin release/v0.2
+git diff --stat origin/release/v0.2 -- electron                # Electron shell divergence
+git diff --stat origin/release/v0.2 -- flow_sdk ui ts_sdk      # SDK / backend+UI divergence
+```
 
-* **Default source = the latest release published on PyPI.** Fetch `origin/release/v0.2`,
-  verify its tip's `_version.py` equals the live PyPI latest
-  (`curl -fsS https://pypi.org/pypi/flowpad/json` → `info.version`); take the wheel from a
-  worktree of that tip and `main.js` via `git show origin/release/v0.2:electron/main.js`.
-  Backend installs as `<latest>+local<count>`, shell stamps `<latest>-patch<count>`
-  (the *release* version + counter, not the Electron bundle base, so About/logs name the
-  release at a glance). Counters take the next free number; restart `-patch` at 1 when
-  `<latest>` moves; never reuse a deployed label.
-* **Building from the dev branch is a legitimate variant** when you want the in-flight work
-  (e.g. a feature not yet released) — both halves still come from that one branch
-  (`flow_sdk/_version.py` is `X.Y.Z`, stamp `X.Y.Z+local<count>` / `X.Y.Z-patch<count>`).
-  Say which source you used; the rule is *no mixing*, not *release-only*.
+Empty output = that half is **identical to release** → use the pristine release artifact, stamp the
+**plain** version, **no suffix**. Non-empty = that half carries **local code** → build it locally
+and mark it. The mark *names the patched half*:
+
+| Half | Diverges from release? | What to ship | Stamp |
+| --- | --- | --- | --- |
+| **SDK** (`flow_sdk`/`ui`/`ts_sdk`) | yes | wheel built from **this checkout** (`build_ui.py` bakes local `ui`+`ts_sdk` in) | `<sdk>+local<N>` |
+| **SDK** | no | the **published** wheel (`uv tool install flowpad==<sdk>`) | plain `<sdk>` |
+| **Electron** (`electron/`) | yes | asar repacked with **your local `main.js`** | `<electron-base>-patch<N>` |
+| **Electron** | no | the release `main.js` on the cloned bundle (compat only — release code, not yours) | plain `<electron-base>` |
+
+`<sdk>` = `flow_sdk/_version.py` (PyPI axis). `<electron-base>` = the bundle's own
+`CFBundleShortVersionString` (e.g. `0.2.28`) — its own axis, **never** the SDK number. `+local`/
+`-patch` are **per-half** and appear ONLY on the half git shows as diverged.
+
+> ⚠️ **The 2026-06-17 disaster — got both halves backwards.** A "patch locally" for `0.2.64`:
+> `git diff` showed `electron/` **identical** to release and all local code in `flow_sdk`+`ui`+`ts_sdk`
+> (26 files). Yet I installed the **pristine** SDK (`0.2.64`, omitting the local code) and stamped
+> the **unchanged** shell `0.2.64-patch1`. Result: the desktop ran **none** of the local work, the
+> suffix was on the wrong half, and it carried the SDK's number. The fix is this table: SDK had the
+> local code → `0.2.64+local1` (built from the checkout); Electron matched release → plain `0.2.28`,
+> no `-patch`. **Run `git diff` first; mark only what diverged.**
+
+Both patched halves MUST come from the **same checkout** (no mixing a release SDK with a dev shell or
+vice-versa). When `electron/` is unchanged you still **restart the shell** after the SDK install so it
+respawns the new backend and serves the rebuilt UI — restarting ≠ stamping.
 
 > **Build OOM (large bundles):** `vite build` can exhaust node's default heap on big bundles
 > (seen on 0.2.53). It's a real resource need, not a flake — run the UI build with
@@ -271,24 +274,40 @@ main-process (`electron/`) changes require the steps below.
 > `main.js` asar patch — `build_ui.py` had run but the rebuilt bundle was never overlaid into the
 > install. Overlay + reload fixed it; no asar repack needed.
 
-## Version tag — `<pypi-latest>-patchN` (answer: yes, this works)
+## Version tag — `<electron-base>-patchN` (the shell's OWN version, NOT the SDK's)
 
-`electron/semver.js` (mirrored 1:1 in `flow_sdk/utils/semver.py`) treats any trailing "extra"
-tag as **newer** than the bare triple — `0.2.52-patch1 > 0.2.52`, the *opposite* of the
-SemVer pre-release rule, and intentional here. The triple is the **PyPI-latest release
-version** (canonical definition above), not the Electron bundle's own base — early
-iterations stamped the bundle base (`0.2.28-patchN`) and it made the About box useless for
-telling which release the machine ran. Stamping `<latest>-patch1`, `-patch2`, … :
+The shell and the SDK are **independently versioned** — keep their numbers on separate axes:
 
-- survives the auto-updater (it never looks "older" → won't be auto-replaced), and
-- is unmistakable in the log — boot prints `[update] desktop upgraded <prev> → 0.2.52-patch1`.
+| Half | Version source | Stamp — identical to release | Stamp — has local code |
+| --- | --- | --- | --- |
+| **SDK / backend** | `flow_sdk/_version.py` (PyPI), e.g. `0.2.64` | plain `0.2.64` (pristine wheel) | `0.2.64+local<count>` (built from checkout) |
+| **Electron shell** | the bundle's own version (`electron/package.json` / cloned app's `CFBundleShortVersionString`), e.g. `0.2.28` | plain `0.2.28` (no `-patch`) | `0.2.28-patch<count>` |
+
+The suffix is **per-half and conditional**: it appears ONLY on the half that `git diff
+origin/release/v0.2` shows as diverged (Step 0). A half that matches the release stays **plain** —
+adding `-patch`/`+local` to an unchanged half is a lie about what's running. The Electron bundle
+moves only on a desktop/`electron/` release; the SDK moves on every PyPI cut. **Never stamp the shell
+with the SDK/PyPI number** (`0.2.64-patch1` on a `0.2.28` shell was the 2026-06-17 bug), and never
+leave the SDK pristine when it actually carries local code.
+
+Derive the base **dynamically** from the bundle you cloned — don't hardcode it:
+
+```bash
+ELECTRON_BASE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /Applications/Flowpad.app/Contents/Info.plist)
+PATCHVER="${ELECTRON_BASE}-patch1"     # e.g. 0.2.28-patch1; next free patchN; restart at 1 when ELECTRON_BASE moves
+```
+
+`electron/semver.js` (mirrored in `flow_sdk/utils/semver.py`) treats a trailing tag as **newer**
+than the bare triple (`0.2.28-patch1 > 0.2.28`), so the patched clone never looks "older" than the
+pristine `0.2.28` it was cloned from. (Trade-off vs. the old PyPI-number scheme: a future *desktop*
+release `> 0.2.28` would out-rank the clone — that's fine, because the clone lives at
+`~/Flowpad-patched.app` and is launched by hand; the auto-updater only ever targets `/Applications`.)
 
 Stamp it in **two** places: the packed `app.asar/package.json` `version` (authoritative for
-`app.getVersion()`) **and** `Info.plist:CFBundleShortVersionString` (Finder/About display).
-Use the next `patchN` each iteration so you never confuse two patched builds; the counter
-restarts at 1 when the release version moves.
+`app.getVersion()`) **and** `Info.plist:CFBundleShortVersionString` (Finder/About display). Bump
+`patchN` only on an actual shell repack; the counter restarts at 1 when the Electron base moves.
 
-## The four blockers (lessons — all hit on macOS 2026-06-10)
+## The five blockers (lessons — macOS)
 
 1. **`/Applications/Flowpad.app` is TCC App-Management protected.** Writing into a signed
    bundle there fails with `Operation not permitted` — and worse, `asar pack` **silently
@@ -306,12 +325,30 @@ restarts at 1 when the release version moves.
    the signature and the OS kills it on launch. **Ad-hoc re-sign** with the checkout's
    entitlements (they grant `allow-jit` / `disable-library-validation`, which Electron's
    helpers need): result flags should read `adhoc,runtime`.
-4. **Transplant only `main.js`, and take it from the release tip.** Ship
-   `git show origin/release/v0.2:electron/main.js`, not the working tree — a checkout copy
-   can smuggle unreleased shell features (validated 2026-06-11: a working-tree transplant
-   shipped the unreleased `win/` focus-windows handler ahead of its frontend). Leave every
-   other extracted file as the production build — don't wholesale-replace from the checkout
-   (its `electron/package.json` version may have drifted).
+4. **Transplant only `main.js`, from the source that matches your intent (Step 0).** If the shell
+   has **no** local code (`ELE_LOCAL=0`) ship `git show origin/release/v0.2:electron/main.js`
+   (release code, for backend compat — stamp stays **plain**). Only when you are deliberately
+   shipping **local** shell work (`ELE_LOCAL=1`) ship your own `main.js` (`git show HEAD:electron/main.js`)
+   and stamp `-patchN`. Either way transplant **only `main.js`** — never the working tree wholesale
+   (a checkout copy can smuggle unreleased shell features: validated 2026-06-11, a working-tree
+   transplant shipped the unreleased `win/` focus-windows handler ahead of its frontend), and leave
+   every other extracted file as the production build (its `electron/package.json` version may have drifted).
+
+5. **`open` launches the WRONG bundle — same bundle id as `/Applications`.** The clone and
+   `/Applications/Flowpad.app` share `CFBundleIdentifier` `ai.flowpad.desktop`, so LaunchServices
+   resolves by id, not path: `open ~/Flowpad-patched.app` (and `open -n`) can silently launch the
+   **`/Applications` original** (the pristine, *unpatched* shell) instead of the clone — leaving
+   you "patched" on paper while the old `main.js` runs. **Launch the clone by exec'ing its binary
+   directly**, which bypasses the id resolver, and then **prove which bundle actually came up**:
+   ```bash
+   "$HOME/Flowpad-patched.app/Contents/MacOS/Flowpad" >/dev/null 2>&1 &   # exec the clone, not `open`
+   sleep 3
+   ps -Axo args | grep -oE 'app-path=[^ ]*app.asar' | sort -u            # must read ~/Flowpad-patched.app, NOT /Applications
+   ```
+   (Observed 2026-06-17: after a `flow stop` + `open ~/Flowpad-patched.app`, the running shell was
+   `/Applications/Flowpad.app` 0.2.28 — the renderer's `--app-path` pointed at `/Applications`.)
+   Quit any `/Applications` instance first; if it keeps stealing the launch, it is already
+   registered/running.
 
 > **Keychain note:** an **ad-hoc** copy has a different code signature than the Developer-ID
 > original, so the OS may prompt once for keychain access to the existing `sod_key` item
@@ -327,17 +364,28 @@ ASAR="$DST/Contents/Resources/app.asar"
 PLIST="$DST/Contents/Info.plist"
 ASARBIN="$PWD/electron/node_modules/.bin/asar"
 
-# 0a. Resolve the release: PyPI latest must equal the release tip's version
+# 0a. STEP 0 — which half is patched? git diff vs release decides (mark ONLY what diverges).
 git fetch origin release/v0.2
-LATEST=$(curl -fsS https://pypi.org/pypi/flowpad/json | python3 -c 'import json,sys;print(json.load(sys.stdin)["info"]["version"])')
-git show origin/release/v0.2:flow_sdk/_version.py | grep -q "\"$LATEST\"" || echo "MISMATCH — release tip != PyPI $LATEST, stop and reconcile"
-PATCHVER="${LATEST}-patch1"                 # next free patchN; counter restarts when LATEST moves
+git diff --quiet origin/release/v0.2 -- flow_sdk ui ts_sdk && SDK_LOCAL=0 || SDK_LOCAL=1   # 1 = SDK has local code
+git diff --quiet origin/release/v0.2 -- electron            && ELE_LOCAL=0 || ELE_LOCAL=1   # 1 = shell has local code
+SDK=$(python3 -c 'print(open("flow_sdk/_version.py").read().split("\"")[1])')               # PyPI axis, e.g. 0.2.64
+ELECTRON_BASE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$SRC/Contents/Info.plist")  # shell axis, e.g. 0.2.28
+echo "SDK_LOCAL=$SDK_LOCAL ELE_LOCAL=$ELE_LOCAL"
 
-# 0b. Backend prerequisite: the wheel from that SAME tip, installed as <latest>+local<count>
-#     (Local Deployment in pypi-deploy.md, built in a worktree of origin/release/v0.2).
-#     Skip only if `flow` already prints that exact version.
+# 0b. SDK / backend half:
+#   SDK_LOCAL=1 → build from THIS checkout, install as <SDK>+local<N> (build_ui bakes local ui/+ts_sdk in):
+#       echo "__version__ = \"${SDK}+local1\"" > flow_sdk/_version.py
+#       python3 build_ui.py && uv build && (cd ~ && uv tool install --force --python 3.13 dist/flowpad-${SDK}+local1-*.whl)
+#       git checkout flow_sdk/_version.py        # discard the +local marker from the tree
+#   SDK_LOCAL=0 → install the pristine published wheel, plain <SDK>:
+#       (cd ~ && uv tool install --force --python 3.13 flowpad==$SDK)
 
-# 0c. UI changes only: rebuild + overlay into the install — NO asar repack needed (see --ui above).
+# 0c. Electron stamp depends on ELE_LOCAL:
+#   ELE_LOCAL=1 → STAMP="${ELECTRON_BASE}-patch1"   (next free patchN; restart at 1 when ELECTRON_BASE moves)
+#   ELE_LOCAL=0 → STAMP="${ELECTRON_BASE}"          (plain — shell == release, NO -patch)
+[ "$ELE_LOCAL" = 1 ] && STAMP="${ELECTRON_BASE}-patch1" || STAMP="${ELECTRON_BASE}"
+
+# 0d. UI changes only: rebuild + overlay into the install — NO asar repack needed (see --ui above).
 
 # 1. Kill the app naturally (quits the shell AND its child backend on 9007)
 osascript -e 'tell application "Flowpad" to quit'
@@ -352,33 +400,48 @@ cp -p "$SRC/Contents/Info.plist"         "$HOME/flowpad-patch-backup/Info.plist.
 rm -rf "$DST"; ditto "$SRC" "$DST"
 TREE=$(mktemp -d)/app
 "$ASARBIN" extract "$ASAR" "$TREE"
-git show origin/release/v0.2:electron/main.js > "$TREE/main.js"       # transplant ONLY main.js, FROM THE RELEASE TIP
+# main.js source: ELE_LOCAL=1 → your local shell code; ELE_LOCAL=0 → release main.js (compat only — the
+# shipped 0.2.28 main.js may be too old for the new backend; this is release code, so STAMP stays plain).
+[ "$ELE_LOCAL" = 1 ] && git show HEAD:electron/main.js > "$TREE/main.js" \
+                     || git show origin/release/v0.2:electron/main.js > "$TREE/main.js"
 python3 -c 'import json,sys; p,v=sys.argv[1:3]; d=json.load(open(p)); d["version"]=v; json.dump(d,open(p,"w"),indent=2)' \
-        "$TREE/package.json" "$PATCHVER"                             # stamp app.getVersion()
+        "$TREE/package.json" "$STAMP"                                # stamp app.getVersion() (plain or -patchN per Step 0)
 rm -f "$ASAR"; "$ASARBIN" pack "$TREE" "$ASAR"                        # repack (no --unpack: this build has 0 unpacked entries)
 
 # 4. Recompute the asar integrity hash and write it + the version into Info.plist
 NEWHASH=$(node -e 'const c=require("crypto"),a=require("'"$PWD"'/electron/node_modules/@electron/asar");process.stdout.write(c.createHash("sha256").update(a.getRawHeader(process.argv[1]).headerString).digest("hex"))' "$ASAR")
 /usr/libexec/PlistBuddy -c "Set :ElectronAsarIntegrity:Resources/app.asar:hash $NEWHASH" "$PLIST"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $PATCHVER" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $STAMP" "$PLIST"
 
 # 5. Ad-hoc re-sign (hardened runtime + checkout entitlements) and verify
 codesign --force --deep --options runtime --entitlements electron/entitlements.mac.plist --sign - "$DST"
 codesign --verify --deep --strict "$DST" && echo "codesign OK"        # flags should show: adhoc,runtime
 
-# 6. Start the patched app
-open "$DST"
+# 6. Start the patched app — exec the binary directly, NOT `open` (bundle-id redirect, blocker 5)
+osascript -e 'tell application "Flowpad" to quit' 2>/dev/null      # quit any /Applications instance first
+until ! pgrep -f "/Applications/Flowpad.app/Contents/MacOS/Flowpad" >/dev/null; do sleep 0.5; done
+"$DST/Contents/MacOS/Flowpad" >/dev/null 2>&1 &                    # launch THE CLONE by path
+sleep 3
+ps -Axo args | grep -oE 'app-path=[^ ]*app.asar' | sort -u        # MUST be ~/Flowpad-patched.app, not /Applications
 ```
 
 ## Verify
 
 ```bash
+# 1. Right BUNDLE running? (blocker 5 — must be the clone, not /Applications)
+ps -Axo args | grep -oE 'app-path=[^ ]*app.asar' | sort -u                # → ~/Flowpad-patched.app
+# 2. Right STAMP? (the ELECTRON base + patchN, e.g. 0.2.28-patch1 — NOT the SDK number)
+/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$DST/Contents/Info.plist"
+# 3. Logs + backend
 LOG="$HOME/.flow/logs/main_desktop/$(ls -t "$HOME/.flow/logs/main_desktop" | head -1)"
 grep -E "desktop upgraded|nav-debug|Backend is ready|Loading UI" "$LOG"   # log path from electron/main.js
 curl -fsS http://localhost:9007/health/status && echo " 9007 OK"
+"$HOME/.local/share/uv/tools/flowpad/bin/flow" | head -1                  # backend (SDK) version, e.g. 0.2.64
 ```
 
-Expect `[update] desktop upgraded <base> → <base>-patch1`, then your main-process log lines,
+Expect `[update] desktop upgraded <prev> → <STAMP>` — `<electron-base>` plain when the shell matches
+release (e.g. `→ 0.2.28`), or `<electron-base>-patchN` when you shipped local shell code. Then
+your main-process log lines,
 then `Backend is ready!` / `Loading UI from http://localhost:9007`. **All Electron main-process
 logs land in `~/.flow/logs/main_desktop/<ts>.log`** (electron-log); renderer `console.*` only
 reaches that file if `main.js` forwards it (e.g. a `console-message` listener).

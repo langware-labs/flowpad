@@ -1,29 +1,30 @@
 import { useCallback, useState } from 'react';
 
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { patchTranscriptDockOptions } from './transcript-dock-options';
 
-export type TranscriptMode = 'chat' | 'trace';
+export type TranscriptMode = 'chat' | 'trace' | 'callstack' | 'execution';
 
 const STORAGE_KEY = 'transcript-viewer-mode';
 const URL_PARAM = 'transcriptMode';
 const DEFAULT_MODE: TranscriptMode = 'chat';
 
+/** Resolve a raw URL/stored value to a mode, mapping legacy aliases. */
+function normalizeMode(value: string | undefined | null): TranscriptMode | undefined {
+  // Legacy alias: 'transcript' → 'trace'.
+  if (value === 'transcript') return 'trace';
+  return value === 'chat' || value === 'trace' || value === 'callstack' || value === 'execution'
+    ? value
+    : undefined;
+}
+
 function readStored(): TranscriptMode {
   if (typeof window === 'undefined') return DEFAULT_MODE;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === 'chat' || raw === 'trace') return raw;
-    // Backward-compat: prior value 'transcript' maps to new 'trace' name.
-    if (raw === 'transcript') return 'trace';
-    return DEFAULT_MODE;
+    return normalizeMode(localStorage.getItem(STORAGE_KEY)) ?? DEFAULT_MODE;
   } catch {
     return DEFAULT_MODE;
   }
-}
-
-function isTranscriptMode(value: string | undefined | null): value is TranscriptMode {
-  return value === 'chat' || value === 'trace';
 }
 
 /**
@@ -39,9 +40,9 @@ function isTranscriptMode(value: string | undefined | null): value is Transcript
  */
 export function useTranscriptMode() {
   const { navigation, currentDock } = useDockNavigation();
-  const urlMode = currentDock?.options?.[URL_PARAM];
+  const urlMode = normalizeMode(currentDock?.options?.[URL_PARAM]);
   const [localMode, setLocalMode] = useState<TranscriptMode>(readStored);
-  const mode: TranscriptMode = isTranscriptMode(urlMode) ? urlMode : localMode;
+  const mode: TranscriptMode = urlMode ?? localMode;
 
   const setMode = useCallback(
     (m: TranscriptMode) => {
@@ -51,23 +52,7 @@ export function useTranscriptMode() {
       } catch {
         /* storage may be disabled */
       }
-      if (currentDock) {
-        const nextOptions = { ...(currentDock.options ?? {}), [URL_PARAM]: m };
-        // Re-encode the transcript ref so abs paths survive buildDockUrl's
-        // per-segment encoding. Without this, an absolute ref like "/var/..."
-        // joins with the route as "/dock/lens/<worker>/transcript//var/..." —
-        // react-router normalises the embedded "//" away, dropping the leading
-        // "/" and silently demoting the path to a relative slug that the
-        // legacy claude resolver then rewrites under ~/.claude/projects/.
-        const pointer = currentDock.pointer ?? '';
-        const m2 = /^([^/]+)\/transcript\/(.*)$/.exec(pointer);
-        const reencodedPointer = m2
-          ? `${m2[1]}/transcript/${encodeURIComponent(m2[2])}`
-          : pointer;
-        navigation.openDock(
-          new DockPointer(currentDock.viewType, reencodedPointer, nextOptions, currentDock.layout),
-        );
-      }
+      patchTranscriptDockOptions(navigation, currentDock, { [URL_PARAM]: m });
     },
     [currentDock, navigation],
   );

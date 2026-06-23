@@ -3,7 +3,7 @@ import { Filter } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
-import type { ScopeFilter } from '@src/lib/scope-filter';
+import { isAllScope, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 
 interface ScopeFilterPopoverProps {
   scope: ScopeFilter;
@@ -12,8 +12,9 @@ interface ScopeFilterPopoverProps {
 }
 
 function chipLabel(scope: ScopeFilter): string {
-  if (scope.user && scope.projects.length > 0) return 'All';
-  if (!scope.user && scope.projects.length > 0) return `Project (${scope.projects.length})`;
+  if (isAllScope(scope)) return 'All';
+  const n = scopeProjectIds(scope).length;
+  if (n > 0) return `Project (${n})`;
   return 'User';
 }
 

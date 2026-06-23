@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Filter, Layers, User } from 'lucide-react';
-import type { ScopeFilter } from '@src/lib/scope-filter';
+import { scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -71,7 +71,7 @@ export function ScopeFilterIconBar({
       <ProjectPickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}
-        selectedIds={scope.projects}
+        selectedIds={scopeProjectIds(scope)}
         onConfirm={onPickerConfirm}
       />
     </>

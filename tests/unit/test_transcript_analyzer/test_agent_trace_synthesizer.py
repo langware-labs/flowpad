@@ -94,7 +94,10 @@ def test_segments_cut_at_prompts_and_calls_collected(claude_home):
     assert trace["summary"]["tool_call_count"] == 2
     prompts = [e for e in trace["events"] if e["kind"] == "user_prompt"]
     assert [p["label"] for p in prompts] == ["first goal", "second goal"]
-    assert trace["annotations"] == {"goals": [], "divergences": [], "verdict": None, "notes": []}
+    assert trace["annotations"] == {
+        "goals": [], "divergences": [], "issues": [], "verdict": None,
+        "notes": [], "by_skill": {}, "unattributed": [],
+    }
 
 
 def test_subagent_files_become_lanes_joined_on_tool_use_id(claude_home):

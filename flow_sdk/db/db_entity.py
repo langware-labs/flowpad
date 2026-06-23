@@ -787,17 +787,12 @@ class DBEntity(DBBaseRecord):
                 raise ValueError(f"Invalid expansions: {list(set(entities_filter.expand) - set(available_expansions))}")
         _all: list[DBEntityType] = await cls._db.get_all(entities_filter, source_entity)
 
-        expansion_tasks = []
-        if entities_filter.expand_permissions:
-            expansion_tasks.extend([entity.expand_permissions() for entity in _all])
+        # Role/permission expansions (expand_permissions / expand_auth_scopes /
+        # expand_is_private) are NOT computed locally — local SQLite holds no
+        # authorization; that info comes from the hub. Only expand_blobs (reads
+        # embedded blob data, unrelated to authz) is applied here.
         if entities_filter.expand_blobs:
-            expansion_tasks.extend([entity.expand_blobs() for entity in _all])  # type: ignore
-        if entities_filter.expand_auth_scopes:
-            expansion_tasks.extend([entity.expand_auth_scopes() for entity in _all])
-        if expansion_tasks:
-            await asyncio.gather(*expansion_tasks)
-        if entities_filter.expand_is_private:
-            [entity.mark_expansion(ExpansionType.IsPrivate) for entity in _all]
+            await asyncio.gather(*[entity.expand_blobs() for entity in _all])  # type: ignore
 
         return _all
 

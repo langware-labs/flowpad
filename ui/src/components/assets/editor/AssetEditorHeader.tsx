@@ -1,11 +1,15 @@
 import React from 'react';
 import { Download, ExternalLink, FolderOpen, Trash2 } from 'lucide-react';
+import { ProjectNameChip } from '@src/components/assets/ProjectNameChip';
+import { useIsAdvanced } from '@src/components/view-mode';
 
 export interface AssetEditorHeaderProps {
   /** Filename or folder name shown on the top line. */
   fileName: string;
   /** Parent directory path shown beneath the name (truncated). */
   dirPath: string;
+  /** Absolute path of the asset; used to resolve the owning project chip. */
+  sourcePath?: string;
   /** Adds a yellow asterisk after the filename for unsaved-changes signal. */
   dirty?: boolean;
   /** "Open externally" — open the asset in the OS default app via fsRef.open(). */
@@ -37,6 +41,7 @@ export interface AssetEditorHeaderProps {
 export function AssetEditorHeader({
   fileName,
   dirPath,
+  sourcePath,
   dirty,
   onOpenExternal,
   onRevealInFinder,
@@ -44,18 +49,21 @@ export function AssetEditorHeader({
   onDelete,
   actions,
 }: AssetEditorHeaderProps) {
+  const advanced = useIsAdvanced();
+  const resolvedPath = sourcePath ?? (dirPath ? `${dirPath}/${fileName}` : fileName);
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-0.5 truncate">
+        <div className="flex items-center gap-1.5 truncate">
           <span className="text-sm font-medium">{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
+          {advanced && <ProjectNameChip sourcePath={resolvedPath} />}
         </div>
         <div className="flex min-w-0 items-center gap-1">
           {dirPath && (
             <span className="min-w-0 truncate text-[11px] text-muted-foreground">{dirPath}</span>
           )}
-          {onOpenExternal && (
+          {advanced && onOpenExternal && (
             <button
               title="Open externally"
               onClick={onOpenExternal}
@@ -65,7 +73,7 @@ export function AssetEditorHeader({
               <ExternalLink className="h-3 w-3" />
             </button>
           )}
-          {onRevealInFinder && (
+          {advanced && onRevealInFinder && (
             <button
               title="Reveal in Finder"
               onClick={onRevealInFinder}
@@ -75,7 +83,7 @@ export function AssetEditorHeader({
               <FolderOpen className="h-3 w-3" />
             </button>
           )}
-          {onDownload && (
+          {advanced && onDownload && (
             <button
               title="Download file"
               onClick={onDownload}

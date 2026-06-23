@@ -21,13 +21,8 @@
  */
 
 import { AgenticProcess, Shell, TypeId } from '@sdk';
-import {
-  closeTerminalTab,
-  getTerminalTabsSnapshot,
-  terminalProcessId,
-  terminalTransportShellId,
-} from '@src/tabs/useTabs';
-import { resolveNextTab } from '@src/tabs/tab-candidates';
+import { closeTerminalTab, getTerminalTabsSnapshot } from '@src/tabs/useTabs';
+import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { loadShell, ShellLoadError } from './load-shell';
 
@@ -164,11 +159,9 @@ export async function loadNextProcess(
   const cleaned: CleanupRecord[] = [];
   const tried = new Set(options.excludeIds ?? []);
 
-  const allTabs = await getTerminalTabsSnapshot();
+  const allTabs = await getTerminalTabsSnapshot('all');
   const projectId = options.projectId ?? null;
-  const tabs = projectId == null
-    ? allTabs
-    : allTabs.filter((t) => t.projectId === projectId);
+  const tabs = projectId == null ? allTabs : allTabs.filter((t) => t.project_id === projectId);
 
   while (true) {
     const tab = resolveNextTab(tabs, tried);
@@ -176,7 +169,7 @@ export async function loadNextProcess(
       return { loaded: null, cleaned };
     }
 
-    const processId = terminalProcessId(tab);
+    const processId = tab.target_type === AgenticProcess.type ? tab.target_id : null;
     if (processId) {
       try {
         const result = await loadProcess(processId);
@@ -193,10 +186,11 @@ export async function loadNextProcess(
       }
     }
 
-    const shellId = terminalTransportShellId(tab);
-    if (!shellId || !tab.shell) {
-      // Defensive: filterTabs shouldn't yield a tab without either entity.
-      tried.add(tab.targetTypeId.toString());
+    // A shell tab's transport id is its target id (present without any cache);
+    // loadShell hydrates the entity on demand below.
+    const shellId = tab.target_id;
+    if (!shellId) {
+      tried.add(tabTargetKey(tab));
       continue;
     }
 

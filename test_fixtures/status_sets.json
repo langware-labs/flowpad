@@ -19,6 +19,11 @@
     "complete",
     "interrupted"
   ],
+  "worker_execution_error": [
+    "error",
+    "api_timeout",
+    "inactive"
+  ],
   "process_running": [
     "starting",
     "running",

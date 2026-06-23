@@ -1,25 +1,29 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
-import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/tabs/useTabs';
+import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// ProjectsCounterChip calls useDockNavigation() -> useNavigate(); rendered here
-// without a <Router>, so stub the nav hook (no Router provider in this unit).
+const navMocks = vi.hoisted(() => ({
+  openDock: vi.fn(),
+}));
+
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: { openDock: vi.fn(), closeDock: vi.fn() }, currentDock: null }),
+  useDockNavigation: () => ({
+    navigation: navMocks,
+  }),
 }));
 
 vi.mock('@src/tabs/useTabs', () => ({
-  useTerminalProjectBuckets: vi.fn(),
+  useTabProjectBuckets: vi.fn(),
 }));
 
 vi.mock('@src/hooks/use-all-projects', () => ({
   useAllProjects: vi.fn(),
 }));
 
-const mockUseTerminalProjectBuckets = vi.mocked(useTerminalProjectBuckets);
+const mockUseTabProjectBuckets = vi.mocked(useTabProjectBuckets);
 const mockUseAllProjects = vi.mocked(useAllProjects);
 
 function makeProject(id: string, displayName: string) {
@@ -31,20 +35,20 @@ function makeProject(id: string, displayName: string) {
   };
 }
 
-function makeBucket(id: string, displayName: string, tabCount: number): TerminalProjectBucket {
-  const tabs = Array.from({ length: tabCount }, () => ({ projectId: id }));
+function makeBucket(id: string, displayName: string, tabCount: number): TabProjectBucket {
   return {
     projectId: id,
-    project: makeProject(id, displayName) as unknown as TerminalProjectBucket['project'],
+    project: makeProject(id, displayName) as unknown as TabProjectBucket['project'],
     state: 'live',
-    tabs: tabs as unknown as TerminalProjectBucket['tabs'],
+    tabCount,
     recover: vi.fn(),
   };
 }
 
 describe('ProjectsCounterChip', () => {
   beforeEach(() => {
-    mockUseTerminalProjectBuckets.mockReset();
+    navMocks.openDock.mockReset();
+    mockUseTabProjectBuckets.mockReset();
     mockUseAllProjects.mockReset();
     mockUseAllProjects.mockReturnValue({ projects: [], isLoading: false });
   });
@@ -56,13 +60,13 @@ describe('ProjectsCounterChip', () => {
   function seedBuckets() {
     const projectA = '11111111-1111-4111-8111-111111111111';
     const projectB = '22222222-2222-4222-8222-222222222222';
-    mockUseTerminalProjectBuckets.mockReturnValue({
+    mockUseTabProjectBuckets.mockReturnValue({
       buckets: [makeBucket(projectA, '11111111', 2), makeBucket(projectB, '22222222', 1)],
     });
     return { projectA, projectB };
   }
 
-  it('counts active projects while including terminal total in the label', () => {
+  it('counts active projects while including open-tab total in the label', () => {
     const { projectA } = seedBuckets();
 
     render(<ProjectsCounterChip currentProjectId={projectA} />);
@@ -71,10 +75,10 @@ describe('ProjectsCounterChip', () => {
     expect(chip.textContent).toContain('2');
     // The chip labels the current project as a prefix segment (added 5937eaa4):
     // `<projectName> — <count summary>`.
-    expect(chip.getAttribute('aria-label')).toBe('11111111 — 2 active projects with 3 terminals');
+    expect(chip.getAttribute('aria-label')).toBe('11111111 — 2 active projects with 3 open tabs');
   });
 
-  it('keeps per-project terminal counts in the popover list', async () => {
+  it('keeps per-project tab counts in the popover list', async () => {
     const { projectA } = seedBuckets();
 
     render(<ProjectsCounterChip currentProjectId={projectA} />);
@@ -155,11 +159,7 @@ describe('ProjectsCounterChip', () => {
     const onOpenHistory = vi.fn();
 
     render(
-      <ProjectsCounterChip
-        currentProjectId={projectA}
-        onLaunchProjectPath={vi.fn()}
-        onOpenHistory={onOpenHistory}
-      />,
+      <ProjectsCounterChip currentProjectId={projectA} onLaunchProjectPath={vi.fn()} onOpenHistory={onOpenHistory} />,
     );
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
 
@@ -180,7 +180,7 @@ describe('ProjectsCounterChip', () => {
   it('sorts buckets alphabetically without bumping the current project to the top', async () => {
     const idZebra = '33333333-3333-4333-8333-333333333333';
     const idAlpha = '44444444-4444-4444-8444-444444444444';
-    mockUseTerminalProjectBuckets.mockReturnValue({
+    mockUseTabProjectBuckets.mockReturnValue({
       buckets: [makeBucket(idZebra, 'zebra', 1), makeBucket(idAlpha, 'alpha', 1)],
     });
 
@@ -198,15 +198,15 @@ describe('ProjectsCounterChip', () => {
     expect(screen.getByRole('button', { name: 'zebra 1' }).getAttribute('aria-current')).toBe('true');
   });
 
-  it('keeps the chip clickable with zero buckets when a launch callback exists', async () => {
-    mockUseTerminalProjectBuckets.mockReturnValue({ buckets: [] });
+  it('hides the chip entirely when there are zero project buckets', () => {
+    // A strip whose only tabs are global has no project tab to count, so the
+    // chip stays hidden rather than advertising "0 / 0" — even when a launch
+    // callback is provided (the strip's own openers handle the empty case).
+    mockUseTabProjectBuckets.mockReturnValue({ buckets: [] });
     const onLaunchProjectPath = vi.fn();
 
     render(<ProjectsCounterChip onLaunchProjectPath={onLaunchProjectPath} />);
 
-    const chip = screen.getByTestId('projects-counter-chip');
-    expect(chip.hasAttribute('disabled')).toBe(false);
-    await userEvent.click(chip);
-    expect(screen.getByTestId('projects-counter-actions')).toBeTruthy();
+    expect(screen.queryByTestId('projects-counter-chip')).toBeNull();
   });
 });

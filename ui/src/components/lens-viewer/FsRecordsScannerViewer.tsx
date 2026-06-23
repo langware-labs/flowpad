@@ -19,7 +19,16 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { SearchFilters, useRecordSearch } from '@src/hooks/use-record-search';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
-import { applyScopeToParams, scopeFilterEqual, scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
+import {
+  applyScopeToParams,
+  filterScope,
+  scopeFilterEqual,
+  scopeFilterKey,
+  scopeIncludesUser,
+  scopeProjectIds,
+  userScope,
+  type ScopeFilter,
+} from '@src/lib/scope-filter';
 import { useProjectList } from '@src/hooks/use-claude-projects';
 
 const BASE = '/graph/compute_node/@local/fs-records';
@@ -294,10 +303,9 @@ export function FsRecordsScannerViewer() {
   // async (useProjectList), so seed user+current-project immediately and
   // widen to the full project set once the list loads — unless the user has
   // already touched the scope chips.
-  const [scope, setScope] = useState<ScopeFilter>(() => ({
-    user: true,
-    projects: currentProjectId ? [currentProjectId] : [],
-  }));
+  const [scope, setScope] = useState<ScopeFilter>(() =>
+    currentProjectId ? filterScope(true, [currentProjectId]) : userScope(),
+  );
   const scopeTouched = useRef(false);
   const handleScopeChange = useCallback((next: ScopeFilter) => {
     scopeTouched.current = true;
@@ -317,17 +325,22 @@ export function FsRecordsScannerViewer() {
   useEffect(() => {
     if (scopeTouched.current || allProjectIds.length === 0) return;
     setScope((prev) =>
-      scopeFilterEqual(prev, { user: true, projects: allProjectIds })
+      scopeFilterEqual(prev, filterScope(true, allProjectIds))
         ? prev
-        : { user: true, projects: allProjectIds },
+        : filterScope(true, allProjectIds),
     );
   }, [allProjectIds]);
 
+  // Derive scope facts once — `scopeProjectIds`/`scopeIncludesUser` are
+  // recomputed below (footer label, selection check) and each rebuilds an array.
+  const selectedProjectIds = scopeProjectIds(scope);
+  const scopeHasUser = scopeIncludesUser(scope);
+  const selectedProjectIdSet = new Set(selectedProjectIds);
   const allProjectsSelected =
-    allProjectIds.length > 0 && allProjectIds.every((id) => scope.projects.includes(id));
+    allProjectIds.length > 0 && allProjectIds.every((id) => selectedProjectIdSet.has(id));
   const scopeIsDefault = allProjectIds.length === 0
-    ? scope.user
-    : scopeFilterEqual(scope, { user: true, projects: allProjectIds });
+    ? scopeHasUser
+    : scopeFilterEqual(scope, filterScope(true, allProjectIds));
   const scopeQs = useCallback((): string => {
     const p = new URLSearchParams();
     applyScopeToParams(p, scope);
@@ -632,7 +645,7 @@ export function FsRecordsScannerViewer() {
           />
           <button
             type="button"
-            onClick={() => handleScopeChange({ user: scope.user, projects: allProjectIds })}
+            onClick={() => handleScopeChange(filterScope(scopeIncludesUser(scope), allProjectIds))}
             disabled={allProjectIds.length === 0}
             aria-pressed={allProjectsSelected}
             title={allProjectsSelected ? 'Every project is selected' : 'Select every project'}
@@ -866,11 +879,11 @@ export function FsRecordsScannerViewer() {
             <>
               {' · '}
               <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
-                {scope.user && scope.projects.length > 0
-                  ? `scope: user + ${scope.projects.length} project${scope.projects.length === 1 ? '' : 's'}`
-                  : scope.user
+                {scopeHasUser && selectedProjectIds.length > 0
+                  ? `scope: user + ${selectedProjectIds.length} project${selectedProjectIds.length === 1 ? '' : 's'}`
+                  : scopeHasUser
                     ? 'scope: user only'
-                    : `scope: ${scope.projects.length} project${scope.projects.length === 1 ? '' : 's'} only`}
+                    : `scope: ${selectedProjectIds.length} project${selectedProjectIds.length === 1 ? '' : 's'} only`}
               </span>
             </>
           )}

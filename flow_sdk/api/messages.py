@@ -35,6 +35,7 @@ class WSMessageType(Enum):
     AUTH_EXPIRED_MSG = "auth_expired_msg"
     CLOUD_LOGIN_STATUS_MSG = "cloud_login_status_msg"
     CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
+    PRIVACY_MODE_MSG = "privacy_mode_msg"
 
 
 class ExeMessageSubType(StrEnum):
@@ -130,6 +131,13 @@ class HubClientErrorMessage(BaseMessage):
 class AuthExpiredMessage(BaseMessage):
     message_type: str = WSMessageType.AUTH_EXPIRED_MSG.value
     reason: str
+
+
+class PrivacyModeMessage(BaseMessage):
+    """Broadcast when this instance's data-privacy mode changes, so every open
+    client updates the footer control + cloud-access guards without a reload."""
+    message_type: str = WSMessageType.PRIVACY_MODE_MSG.value
+    privacy_mode: str  # "local" | "connected"
 
 
 class EntityMessage(BaseMessage):

@@ -19,6 +19,7 @@ from typing import Any
 from flow_sdk.actions.action_registry import Action
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.instance_settings.privacy_mode import is_local_mode
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put
 
@@ -40,6 +41,7 @@ def should_reflect_to_hub(entity: Entity | None, hub_reflect: bool) -> bool:
         and entity is not None
         and getattr(entity, "remote", False) is True
         and is_logged_in()
+        and not is_local_mode()
     )
 
 

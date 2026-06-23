@@ -33,6 +33,7 @@ class EnvInfo(BaseModel):
     env_name: str
     cloud_api_url: Optional[str] = None
     version: Optional[str] = None
+    instance_name: Optional[str] = None
 
 
 class LmInfo(BaseModel):
@@ -85,6 +86,11 @@ class BootstrapInfo(BaseModel):
     sniffer_hook: Optional[Dict[str, Any]] = None
     scan_info: Optional[Dict[str, Any]] = None
     records_root: Optional[str] = None
+    # Data-privacy mode for this instance: "local" (no cloud access — login,
+    # sharing, and outbound hub HTTP disabled) or "connected" (default). Seeds
+    # the frontend privacy manager so the footer control + guards paint without
+    # a second round-trip; live changes arrive over WS.
+    privacy_mode: str = "connected"
     # One-time, UI-facing notice surfaced as a toast on startup (e.g. the
     # secrets file was reset after the keychain key was lost). None normally.
     notice: Optional[Dict[str, Any]] = None

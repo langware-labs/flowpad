@@ -23,6 +23,22 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 
 logger = logging.getLogger(__name__)
 
+# Standardized copy for the privacy-mode block — kept in sync with the
+# frontend guard (``ts_sdk/src/services/privacy-guard.ts``).
+LOCAL_MODE_SHARE_MESSAGE = "Sharing disabled in Local mode"
+
+
+def _local_mode_share_blocked() -> bool:
+    """True when this instance is in Local privacy mode and must not share.
+
+    The single backend gate the share/send/forward endpoints call before any
+    hub side effect — belt-and-suspenders behind the frontend guard so the API
+    can't be driven around the UI.
+    """
+    from flow_sdk.instance_settings.privacy_mode import is_local_mode  # noqa: PLC0415
+
+    return is_local_mode()
+
 
 @action.post(action_name="share", types="all")
 async def share_entity() -> ApiSuccessResponse:
@@ -32,6 +48,9 @@ async def share_entity() -> ApiSuccessResponse:
     reconstruct the entity in-process (no DB save) and call ``.share()``
     which POSTs to the hub and flips ``remote=True``.
     """
+    if _local_mode_share_blocked():
+        raise HTTPException(status_code=403, detail=LOCAL_MODE_SHARE_MESSAGE)
+
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
         raise HTTPException(status_code=400, detail="share: target typeid required")
@@ -128,11 +147,21 @@ async def conversation_add_message() -> ApiResponse:
     # overwrite any stale id a caller might also have put in the body.
     body["conversation_id"] = request_info.target_entity_typeid.id
 
-    # Drafts are local-only (no hub push); only real sends require login.
-    if not bool(body.get("is_draft")) and not is_logged_in():
-        return ApiFailResponse(message="Cloud login required to send messages")
+    # Drafts are local-only (no hub push) and stay allowed; only real sends
+    # touch the cloud — those are blocked in Local mode. When cloud login is
+    # unavailable we no longer refuse the send: the message is persisted locally
+    # as ``pending_send`` (queued, not delivered) so nothing is lost, and a
+    # later re-send (once logged in) flushes it. Local mode stays a hard block.
+    pending_send = False
+    if not bool(body.get("is_draft")):
+        if _local_mode_share_blocked():
+            return ApiFailResponse(message=LOCAL_MODE_SHARE_MESSAGE)
+        if not is_logged_in():
+            pending_send = True
 
-    return await handle_add_message(body, request_info.someone_typeid)
+    return await handle_add_message(
+        body, request_info.someone_typeid, pending_send=pending_send,
+    )
 
 
 @action.post(action_name="forward", types=["flow_message"])
@@ -165,7 +194,9 @@ async def flow_message_forward() -> ApiResponse:
     # The URL is the source of truth for which message is being forwarded.
     body["flow_message_id"] = request_info.target_entity_typeid.id
 
-    # Same gate as add_message — sends require login.
+    # Same gate as add_message — sends touch the cloud.
+    if _local_mode_share_blocked():
+        return ApiFailResponse(message=LOCAL_MODE_SHARE_MESSAGE)
     if not is_logged_in():
         return ApiFailResponse(message="Cloud login required to send messages")
 

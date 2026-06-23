@@ -117,6 +117,48 @@ async def maybe_emit_recovered_on_watch(connection_id: str, entity_type: str, en
     await emit_recovered_to_connection(connection_id, process_id, None, None)
 
 
+async def reconcile_orphaned_workers() -> None:
+    """Stamp dead headless (``visible=false``) RUNNING/STARTING workers to STOPPED.
+
+    On restart the previous backend's child workers die (SIGHUP) and the new
+    process starts with an empty in-memory PTY registry. ``run_pty_recovery``
+    respawns the *visible* PTYs (with ``--resume``); a *headless* worker
+    (``visible=false``, ``worker_pid``/``worker_status`` already gone) is not
+    resumable in place, so its record would otherwise linger forever as a phantom
+    "Background" agent in the footer chip (whose count keys on
+    ``ProcessStatus ∈ {RUNNING, STARTING}``). The restart took the worker down —
+    a clean stop, not a worker crash — so we stamp ``STOPPED`` (which is
+    ``isProcessStartable``, letting the user relaunch).
+
+    Pure DB writes — no subprocess spawn — so this is awaited at startup *before*
+    serving, leaving the first bootstrap clean. ``save()`` emits the data_op, so
+    already-connected clients also correct reactively. Visible PTYs are untouched
+    here: they belong to ``run_pty_recovery`` (respawn) / ``_on_pty_exit``
+    (FAILED), and stamping them at startup would race the respawn.
+    """
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+    live = (ProcessStatus.RUNNING.value, ProcessStatus.STARTING.value)
+    try:
+        procs = await AgenticProcess.get_all()
+    except Exception:
+        logger.exception("reconcile: failed to enumerate processes")
+        return
+
+    for proc in procs:
+        try:
+            if proc.visible:
+                continue  # owned by run_pty_recovery (respawn) / _on_pty_exit
+            if proc.status not in live:
+                continue
+            proc.status = ProcessStatus.STOPPED.value
+            await proc.save()  # emits data_op → reactive correction in connected UIs
+            logger.info("reconcile: stopped orphaned headless worker %s", proc.id)
+        except Exception:
+            logger.exception("reconcile: failed on %s", getattr(proc, "id", "?"))
+
+
 async def run_pty_recovery() -> None:
     """Reconcile + respawn dead PTYs: agentic workers (with ``--resume``) and bare
     terminals (a fresh shell). Both kinds are ``Shell``-backed; the only divergence

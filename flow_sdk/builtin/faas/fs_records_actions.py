@@ -187,6 +187,175 @@ class FsRecordsActionsMixin:
             pass
         return ""
 
+    async def _handle_asset_usage(self, request_info) -> ApiResponse:
+        """GET /asset-usage?skill=<name> — past sessions in which an asset was used.
+
+        Pure FSIndexer scan of session transcripts (claude/codex) + the transcript
+        analyzer: enumerate sessions, then for each, detect usage of the asset —
+        skill assets via ``SKILL_CALL`` ``skill_name`` (doc assets by file-op path
+        is a later follow-up). Returns rows newest-first. User-click only (no auto
+        walk), and reports ``scan`` progress so the footer/panel show
+        "Scanning <name> usage…".
+        """
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+        from flow_sdk.builtin.worker_history import (  # noqa: PLC0415
+            _build_agentic_process_index,
+            _load_agentic_processes,
+            _pick_last_prompt,
+            _pick_name,
+        )
+        from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+            PROGRESS_TEXT_COMPLETE,
+            IndexerOptions,
+            IndexProgressTable,
+            TypeProgressRow,
+            get_shared_indexer,
+        )
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import (  # noqa: PLC0415
+            extract_claude_session_from_path,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+        from flow_sdk.transcript_analyzer.entry import EntryKind  # noqa: PLC0415
+        from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile  # noqa: PLC0415
+
+        qp = request_info.request.query_params
+        skill = (qp.get("skill") or "").strip()
+        if not skill:
+            return ApiFailResponse(message="asset-usage requires ?skill=<name>", status_code=400)
+
+        session_types = [RecordType.CLAUDE_SESSION, RecordType.CODEX_SESSION]
+        try:
+            activity = self._start_activity("scan", timeout_seconds=600)
+        except RuntimeError as e:
+            return ApiFailResponse(message=str(e), status_code=409)
+
+        def _table(done: int, total: int, text: str | None = None) -> IndexProgressTable:
+            return IndexProgressTable(
+                job_name="scan",
+                rows=(TypeProgressRow(type_name=f"{skill} usage", done=done, total=total),),
+                current=f"{skill} usage",
+                done=done,
+                total=total,
+                text=text,
+                ts=datetime.now(timezone.utc).isoformat(),
+            )
+
+        async def emit(done: int, total: int, text: str | None = None) -> None:
+            activity.latest_table = _table(done, total, text)
+            await broadcast_progress(to_entity=str(self.typeid), flow_data=activity.make_flow_data())
+
+        # Friendly-name source, same priority history uses: AgenticProcess.name
+        # (user/upsert-set) wins, else the session's own custom_title / slug.
+        # One bulk fetch up front; the per-session title read is cheap (head+tail,
+        # include_content=False) and only runs for sessions that matched the skill.
+        try:
+            ap_index = _build_agentic_process_index(await _load_agentic_processes())
+        except Exception:
+            logging.getLogger(__name__).debug("asset-usage: AgenticProcess index failed", exc_info=True)
+            ap_index = {}
+
+        rows: list[dict] = []
+        def _scan_one(path: str, wk: str) -> dict | None:
+            # Cheap pre-filter: skip the (expensive) full parse unless the raw
+            # transcript even mentions the skill name. Most sessions never touched
+            # this asset, so this avoids ~1000 parses per scan.
+            try:
+                if skill not in Path(path).read_text(encoding="utf-8", errors="ignore"):
+                    return None
+            except OSError:
+                return None
+            t = AgentTranscriptFile(wk, path)
+            count = 0
+            last_ts = ""
+            for e in t.filter(kind=EntryKind.SKILL_CALL):
+                if getattr(e, "skill_name", "") == skill:
+                    count += 1
+                    ts = getattr(e, "ts", "") or ""
+                    if ts > last_ts:
+                        last_ts = ts
+            if not count:
+                return None
+            sid = t.session_id or Path(path).stem
+            # Resolve a human-readable title the same way the history dropdown does.
+            name: str | None = None
+            last_prompt: str | None = None
+            ap_name = ap_index.get(sid, (None, None))[1]
+            if wk == "claude":
+                try:
+                    sess = extract_claude_session_from_path(path, include_content=False)
+                    name = _pick_name(
+                        custom_title=getattr(sess, "custom_title", None) or None,
+                        slug=getattr(sess, "slug", None) or None,
+                        display=None,
+                        session_id=sid,
+                    )
+                    last_prompt = _pick_last_prompt(getattr(sess, "slug", None) or None)
+                except Exception:
+                    logging.getLogger(__name__).debug(
+                        "asset-usage: title extract failed %s", path, exc_info=True,
+                    )
+            # AgenticProcess name (user rename) takes top priority, matching history.
+            name = ap_name or name
+            return {
+                "sessionId": sid,
+                "workerType": wk,
+                "count": count,
+                "lastTs": last_ts,
+                "cwd": getattr(t, "cwd", None),
+                "name": name,
+                "lastPrompt": last_prompt,
+            }
+
+        try:
+            nodes = await get_shared_indexer().scan(IndexerOptions(types=session_types, verbose=False))
+            sessions = [n for n in nodes if n.record_type in session_types]
+            total = len(sessions)
+            await emit(0, total)
+            for i, n in enumerate(sessions):
+                worker = "codex" if n.record_type == RecordType.CODEX_SESSION else "claude"
+                try:
+                    row = await asyncio.to_thread(_scan_one, n.path, worker)
+                    if row:
+                        rows.append(row)
+                except Exception:
+                    logging.getLogger(__name__).debug("asset-usage: failed to scan %s", n.path, exc_info=True)
+                if i % 5 == 0 or i == total - 1:
+                    await emit(i + 1, total)
+            await emit(total, total, text=PROGRESS_TEXT_COMPLETE)
+        finally:
+            self._complete_activity("scan")
+
+        rows.sort(key=lambda r: r.get("lastTs") or "", reverse=True)
+        return ApiSuccessResponse(data={"asset": skill, "sessions": rows})
+
+    async def _handle_commit_asset(self, request_info) -> ApiResponse:
+        """POST /commit-asset {workdir, file} — commit an asset edited on disk.
+
+        The "commit" step of the improvement cycle: a skill-fixer worker edits a
+        skill via its ``Edit`` tool (a raw disk write that bypasses the ``fs.write``
+        autoversion hook), so the version bump + file-scoped commit are triggered
+        here explicitly. Returns ``{hash, version}`` of the new revision, or
+        ``{committed: False}`` when nothing changed.
+        """
+        import os  # noqa: PLC0415
+
+        from flow_sdk.actions.fs.asset_versioning import commit_asset_change  # noqa: PLC0415
+
+        body = await request_info.get_post_data() if request_info else {}
+        params = {**(request_info.request_parameters or {}), **(body or {})} if request_info else {}
+        workdir = (params.get("workdir") or "").strip()
+        file_path = (params.get("file") or "").strip()
+        if not workdir or not file_path:
+            return ApiFailResponse(message="commit-asset requires workdir and file", status_code=400)
+        real = file_path if os.path.isabs(file_path) else os.path.join(workdir, file_path)
+        result = await commit_asset_change(real)
+        if result is None:
+            return ApiSuccessResponse(data={"committed": False})
+        return ApiSuccessResponse(data={"committed": True, **result})
+
     async def _handle_fs_records_history(self, request_info) -> ApiResponse:
         """GET /fs-records/history_entry?limit=N — unified worker history.
 
@@ -352,19 +521,19 @@ class FsRecordsActionsMixin:
 
     @staticmethod
     def _ref_gen_id(ref) -> "str | None":
-        """Mint the deterministic id for an FSRef via its type's gen_id_fn.
+        """Mint the deterministic id for an FSRef via its type's gen_uuid_fn.
 
-        Returns None when the type has no gen_id_fn or minting raises —
+        Returns None when the type has no gen_uuid_fn or minting raises —
         callers decide the fallback (the scan list falls back to the path; the
         diff loop skips). Single source of truth for the gen_id dispatch dance.
         """
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         info = SchemaRegistry.get(str(ref.record_type)) if ref.record_type is not None else None
-        gen_id_fn = getattr(info, "gen_id_fn", None) if info else None
-        if gen_id_fn is None:
+        gen_uuid_fn = getattr(info, "gen_uuid_fn", None) if info else None
+        if gen_uuid_fn is None:
             return None
         try:
-            return gen_id_fn(ref) or None
+            return gen_uuid_fn(ref) or None
         except Exception:
             return None
 
@@ -652,6 +821,20 @@ class FsRecordsActionsMixin:
             "diff_included": do_diff,
         })
 
+    @staticmethod
+    async def _scope_filter_from_query(request_info):
+        """Resolve the unified ScopeFilter from ``?user=&projects=`` query params
+        (None when neither is present). Shared by the index-status and
+        asset-stats handlers so the scope-parsing path is defined once."""
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
+
+        qp = request_info.request.query_params
+        return await resolve_project_scope(
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
+
     async def _handle_fs_records_index_status(self, request_info) -> ApiResponse:
         """Return index freshness info.
 
@@ -666,15 +849,8 @@ class FsRecordsActionsMixin:
         from dataclasses import asdict  # noqa: PLC0415
 
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
 
-        qp = request_info.request.query_params
-        scope_filter = await resolve_project_scope(
-            ScopeFilter.from_query_params(qp)
-            if (qp.get("user") is not None or qp.get("projects") is not None)
-            else None
-        )
-
+        scope_filter = await self._scope_filter_from_query(request_info)
         status = await SchemaRegistry.get_index_status(scope=scope_filter)
         return ApiSuccessResponse(
             data={
@@ -686,6 +862,23 @@ class FsRecordsActionsMixin:
                 "total_orphans": status.total_orphans,
             }
         )
+
+    async def _handle_fs_records_asset_stats(self, request_info) -> ApiResponse:
+        """Live per-type asset counts for a ScopeFilter — the single source the
+        UI counter surfaces render from.
+
+        GET /fs-records/asset-stats[?user=&projects=]
+
+        Counts only (``{per_type, total}``); freshness/orphans stay on
+        ``index-status``. Same scope-parsing path as that handler.
+        """
+        from dataclasses import asdict  # noqa: PLC0415
+
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        scope_filter = await self._scope_filter_from_query(request_info)
+        stats = await SchemaRegistry.get_asset_stats(scope=scope_filter)
+        return ApiSuccessResponse(data=asdict(stats))
 
     async def _handle_fs_records_index_clear(self, request_info) -> ApiResponse:
         """Clear all FTS index data and reset index logs.
@@ -862,6 +1055,13 @@ class FsRecordsActionsMixin:
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
+        # Single-path scoping: when the caller points at one file/dir it just
+        # wrote ("open it" after a Write), index ONLY that subtree instead of
+        # the full known-root set. Without this the walk fans out over every
+        # root and hangs on a large workspace (proven RCA: 120s read timeout),
+        # so the agent never gets a TypeId to navigate to. An explicit path is
+        # explicit intent, so it also overrides the temp-path skip below.
+        index_path = qp.get("path", "").strip()
         # Unified ScopeFilter from canonical wire format `?user=…&projects=A,B`.
         from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
         # Surface stale callers still using the legacy `?project_id=<id>` shim
@@ -913,7 +1113,26 @@ class FsRecordsActionsMixin:
         # and acted on. Without this, a record physically inside project A
         # but referenced from project B would be falsely flagged as orphan
         # when the user picks scope=A.
-        if orphan_action != OrphanAction.INDEX:
+        # Path-scoped run: a single explicit path short-circuits all root
+        # resolution — walk just that file's directory. Cheap and bounded.
+        if index_path:
+            from pathlib import Path as _Path  # noqa: PLC0415
+
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+            from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
+
+            _p = _Path(index_path).expanduser().resolve()
+            _root_dir = _p.parent if _p.is_file() else _p
+            custom_roots = (
+                FSRef(
+                    _root_dir,
+                    record_type=RecordType.CWD_ROOT,
+                    scope=Scope.PROJECT.value,
+                    project_id=Project.derive_id_for_path(_root_dir),
+                ),
+            )
+        elif orphan_action != OrphanAction.INDEX:
             custom_roots = None
         else:
             custom_roots = await self._resolve_scoped_roots(scope_filter)
@@ -970,6 +1189,9 @@ class FsRecordsActionsMixin:
                 verbose=False,
                 roots=custom_roots,
                 force=force,
+                # An explicit path is explicit intent — index it even under a
+                # temp root (/tmp, /var/folders), which the default walk skips.
+                include_temp=bool(index_path),
                 project_id=effective_project_id,
                 orphan_action=orphan_action,
                 scope_filter=scope_filter,
@@ -991,6 +1213,25 @@ class FsRecordsActionsMixin:
             }
             for rt, pt in result.per_type.items()
         ]
+
+        # For a path-scoped run, mint the TypeId(s) for the named file so the
+        # caller (CLI / agent) can navigate straight to it — the whole point of
+        # "index then open". Deterministic (v5 gen_id from the path), so it
+        # matches what the indexer just stored.
+        indexed_typeids: list[str] = []
+        indexed_typeid: str | None = None
+        if index_path and _p.is_file():
+            from flow_sdk.fs_store.type_id import type_id_str  # noqa: PLC0415
+
+            _rtypes = types_filter or [RecordType(str(rt)) for rt in result.per_type.keys()]
+            for _rt in _rtypes:
+                try:
+                    _id = self._ref_gen_id(FSRef(_p, record_type=_rt))
+                except Exception:
+                    _id = None
+                if _id:
+                    indexed_typeids.append(type_id_str(str(_rt), _id))
+            indexed_typeid = indexed_typeids[0] if indexed_typeids else None
 
         SchemaRegistry.append_index(
             trigger=trigger,
@@ -1032,6 +1273,8 @@ class FsRecordsActionsMixin:
                     "orphans_found": 0,
                     "orphans_db_removed": 0,
                     "orphans_disk_removed": 0,
+                    "typeid": indexed_typeid,
+                    "typeids": indexed_typeids,
                 })
             one = types_out[0]
             return ApiSuccessResponse(data={
@@ -1041,6 +1284,8 @@ class FsRecordsActionsMixin:
                 "orphans_found": one["orphans_found"],
                 "orphans_db_removed": one["orphans_db_removed"],
                 "orphans_disk_removed": one["orphans_disk_removed"],
+                "typeid": indexed_typeid,
+                "typeids": indexed_typeids,
             })
 
         return ApiSuccessResponse(data={
@@ -1053,7 +1298,135 @@ class FsRecordsActionsMixin:
             "orphans_disk_removed": result.total_orphans_disk_removed,
             "types": types_out,
             "duration_ms": result.duration_ms,
+            "typeid": indexed_typeid,
+            "typeids": indexed_typeids,
         })
+
+    async def _handle_fs_records_index_sessions(self, request_info) -> ApiResponse:
+        """POST /fs-records/index-sessions?project_id=<id>
+
+        Fast, scoped re-index of agent **sessions only**, for the "Recent
+        Sessions" refresh button. Two passes under one ``index`` activity so
+        the footer pill reports progress exactly like ``/fs-records/index``:
+
+          1. Claude — precise: walk only the project's
+             ``~/.claude/projects/<encoded-cwd>`` dir (skipped when the project
+             has no Claude history dir yet).
+          2. Codex + Copilot — their session storage is user-global (organized
+             by date, not cwd), so there's no per-project dir to scope to. We
+             walk the whole store; skip-fresh re-parses only changed files, so
+             repeat refreshes stay cheap. The ``types`` filter gates
+             ``claude_projects_fn`` out of this pass (its PROJECT output only
+             reaches CLAUDE_SESSION, absent here), so it never re-walks every
+             Claude project.
+
+        ``project_id`` stamps the produced records (claude pass) but does not
+        narrow Codex/Copilot — those surface in the list via the UI's own
+        project filter.
+        """
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — auto-register
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+            IndexerOptions,
+            IndexProgressTable,
+            get_shared_indexer,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+        from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        qp = request_info.request.query_params
+        project_id = qp.get("project_id", "").strip() or None
+
+        # Resolve the project's cwd → its ~/.claude/projects/<encoded> dir.
+        # The encoding is lossy, so match by decoded cwd rather than re-encoding.
+        claude_root: FSRef | None = None
+        if project_id:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+            proj = await Project.get_one(QueryFilter.parse({"id": project_id}))
+            if proj is None:
+                return ApiFailResponse(
+                    message=f"Project '{project_id}' not found", status_code=404
+                )
+            project_cwd = getattr(proj, "fs_storage_mount_path", None)
+            if project_cwd:
+                from flow_sdk.fs_store.indexer.functions._claude_projects import (  # noqa: PLC0415
+                    _claude_projects_dir,
+                    decode_claude_project_dir,
+                )
+
+                try:
+                    target = Path(project_cwd).resolve()
+                except OSError:
+                    target = None
+                projects_dir = _claude_projects_dir()
+                if target is not None and projects_dir.is_dir():
+                    for d in projects_dir.iterdir():
+                        if not d.is_dir():
+                            continue
+                        decoded = decode_claude_project_dir(d)
+                        try:
+                            if decoded is not None and decoded.resolve() == target:
+                                claude_root = FSRef(
+                                    d,
+                                    record_type=RecordType.PROJECT,
+                                    scope=Scope.USER.value,
+                                    project_id=project_id,
+                                )
+                                break
+                        except OSError:
+                            continue
+
+        home_root = FSRef(
+            get_instance_settings().user_home,
+            record_type=RecordType.USER_HOME_FOLDER,
+            scope=Scope.USER.value,
+        )
+
+        try:
+            activity = self._start_activity("index", timeout_seconds=300)
+        except RuntimeError as e:
+            return ApiFailResponse(message=str(e), status_code=409)
+
+        async def emit(table: IndexProgressTable) -> None:
+            activity.latest_table = table
+            await broadcast_progress(
+                to_entity=str(self.typeid),
+                flow_data=activity.make_flow_data(),
+            )
+
+        indexer = get_shared_indexer()
+        results = []
+        try:
+            if claude_root is not None:
+                results.append(await indexer.index(IndexerOptions(
+                    types=[RecordType.CLAUDE_SESSION],
+                    roots=(claude_root,),
+                    on_progress=emit,
+                    verbose=False,
+                    project_id=project_id,
+                )))
+            results.append(await indexer.index(IndexerOptions(
+                types=[RecordType.CODEX_SESSION, RecordType.COPILOT_SESSION],
+                roots=(home_root,),
+                on_progress=emit,
+                verbose=False,
+                project_id=project_id,
+            )))
+        finally:
+            self._complete_activity("index")
+
+        indexed = {
+            str(rt): pt.indexed
+            for result in results
+            for rt, pt in result.per_type.items()
+        }
+        return ApiSuccessResponse(data={"indexed": indexed})
 
     async def _index_system_assets(self) -> None:
         """Startup pass: index the SDK-shipped Flowpad Assistant system project
@@ -1356,9 +1729,17 @@ class FsRecordsActionsMixin:
         if segments and segments[0] == "index" and method == "post":
             return await self._handle_fs_records_index(request_info)
 
+        # Index sessions (scoped to a project): POST /fs-records/index-sessions
+        if segments and segments[0] == "index-sessions" and method == "post":
+            return await self._handle_fs_records_index_sessions(request_info)
+
         # Index status: GET /fs-records/index-status
         if segments and segments[0] == "index-status" and method == "get":
             return await self._handle_fs_records_index_status(request_info)
+
+        # Asset stats: GET /fs-records/asset-stats
+        if segments and segments[0] == "asset-stats" and method == "get":
+            return await self._handle_fs_records_asset_stats(request_info)
 
         # Activity status: GET /fs-records/activity-status
         if segments and segments[0] == "activity-status" and method == "get":

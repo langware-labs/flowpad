@@ -16,5 +16,5 @@ MCP_SERVER = TypeMetadata(
     # advertise the structured fields consumers should filter on.
     index_fields=["command", "url", "scope", "worker_type", "connector_type"],
     from_disk_fn=extract_mcp_server,
-    gen_id_fn=mcp_server_id,
+    gen_uuid_fn=mcp_server_id,
 )

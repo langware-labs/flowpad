@@ -15,6 +15,7 @@ URL structure follows the Flowpad Hub API guidelines:
 """
 from __future__ import annotations
 
+import contextlib as _contextlib
 import logging
 import uuid as _uuid
 from typing import Any, Awaitable, Callable, Optional
@@ -29,13 +30,57 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 logger = logging.getLogger(__name__)
 
 
+# Process-shared hub client. Every hub call used to do
+# ``async with FlowpadClient(ApiConfig.from_env())`` — a fresh client (and thus
+# a fresh httpx client + a freshly-built TLS context) per call. Building that
+# context reloads the CA bundle from disk (``ssl.load_verify_locations``), which
+# profiling showed was ~40% of a conversation-list request (219 hub calls → 219
+# cert-bundle loads). Reusing ONE client builds the TLS context once and pools
+# connections; httpx clients are safe for concurrent use, and per-request auth
+# is injected by the client's event hooks, so the shared instance needs no
+# per-call credential refresh. Rebuilt only when the hub base URL changes (read
+# back off the client itself, so there's no second bookkeeping global to sync).
+_shared_client: "FlowpadClient | None" = None
+
+
+@_contextlib.asynccontextmanager
+async def _hub_client():
+    """Yield the process-shared hub client. Does NOT close it on exit (the whole
+    point is to keep the TLS context + connection pool alive across calls)."""
+    global _shared_client
+    cfg = ApiConfig.from_env()
+    if _shared_client is None or _shared_client.config.api_base_url != cfg.api_base_url:
+        await close_hub_client()  # close any stale (URL-changed) client first
+        _shared_client = FlowpadClient(cfg)
+    yield _shared_client
+
+
+async def close_hub_client() -> None:
+    """Close the shared hub client (call on server shutdown)."""
+    global _shared_client
+    if _shared_client is not None:
+        client, _shared_client = _shared_client, None
+        try:
+            await client.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
 # bytes_total is 0 when the size is unknown (no Content-Length on a download).
 ProgressCallback = Callable[[int, int], Awaitable[None]]
 
 
 def hub_base_url() -> Optional[str]:
-    """Return the hub base URL from config, or None if not configured."""
+    """Return the hub base URL from config, or None if not configured.
+
+    In Local (private) data-privacy mode this always returns ``None`` so every
+    outbound hub call short-circuits exactly as it does when ``FLOWPAD_HUB_URL``
+    is unset — the single chokepoint that guarantees no HTTP reaches the cloud.
+    """
+    from flow_sdk.instance_settings.privacy_mode import is_local_mode
+    if is_local_mode():
+        return None
     from flow_sdk.config import default_service_config
     url = default_service_config.flowpad_hub_url
     return url.rstrip("/") if url else None
@@ -175,7 +220,7 @@ async def hub_get(
     timeout = httpx.Timeout(connect=10, write=10, read=600, pool=5) if raw else httpx.Timeout(10)
     if raw and on_progress is not None:
         try:
-            async with FlowpadClient(ApiConfig.from_env()) as client:
+            async with _hub_client() as client:
                 logger.info("[hub] GET (stream) %s", url)
                 stream_cm = await client.open_stream("GET", url, params=params or {}, timeout=timeout)
                 async with stream_cm as resp:
@@ -205,7 +250,7 @@ async def hub_get(
             logger.warning("[hub] GET (stream) %s error (non-fatal): %s", url, e)
             return None
     try:
-        async with FlowpadClient(ApiConfig.from_env()) as client:
+        async with _hub_client() as client:
             logger.info("[hub] GET %s params=%s", url, params)
             resp = await client.request("GET", url, params=params or {}, timeout=timeout)
             if resp.status_code == 200:
@@ -254,7 +299,7 @@ async def hub_resolve_by_typeid(typeid: Any) -> tuple[HubResolveState, Optional[
         # FLOWPAD_HUB_URL not configured — we genuinely don't know.
         return ("indeterminate", None)
     try:
-        async with FlowpadClient(ApiConfig.from_env()) as client:
+        async with _hub_client() as client:
             resp = await client.request("GET", url, params={}, timeout=httpx.Timeout(10))
             if resp.status_code == 200:
                 return ("present", resp.json().get("data") or {})
@@ -306,7 +351,7 @@ async def hub_post(
     if files and on_progress is not None:
         return await _hub_post_streamed_upload(url, files, timeout, on_progress)
     try:
-        async with FlowpadClient(ApiConfig.from_env()) as client:
+        async with _hub_client() as client:
             logger.info(
                 "[hub] POST %s files=%s payload_keys=%s",
                 url, bool(files), list(payload.keys()) if not files and payload else None,
@@ -380,7 +425,7 @@ async def _hub_post_streamed_upload(
         "Content-Length": str(total),
     }
     try:
-        async with FlowpadClient(ApiConfig.from_env()) as client:
+        async with _hub_client() as client:
             logger.info("[hub] POST (stream) %s body=%dB", url, total)
             resp = await client.request(
                 "POST", url, content=_body(), headers=headers, timeout=timeout,
@@ -421,7 +466,7 @@ async def hub_delete(
                      entity_type, entity_id)
         return None
     try:
-        async with FlowpadClient(ApiConfig.from_env()) as client:
+        async with _hub_client() as client:
             logger.info("[hub] DELETE %s payload=%s", url, payload)
             resp = await client.request(
                 "DELETE", url, json=payload or {}, timeout=httpx.Timeout(10),
@@ -459,7 +504,7 @@ async def hub_put(
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping PUT %s/%s", entity_type, entity_id)
         return None
     try:
-        async with FlowpadClient(ApiConfig.from_env()) as client:
+        async with _hub_client() as client:
             logger.info(
                 "[hub] PUT %s payload_keys=%s",
                 url, list(payload.keys()) if payload else None,

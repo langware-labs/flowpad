@@ -57,6 +57,7 @@ The file `.flow/skills/agentic-qa/test_index.md` uses this format:
 - `scenario_path`, `category`, `status` (pass|fail|skip|error|test-issue|flagged)
 - `execution_method` (playwright|fast-path|mcp-browser|skipped)
 - `known_bug`, `flag_reason`, `tests[]`, `environment`
+- **`flagged` is valid only for phases 1–10.** For the Playwright phases (11 `.md.ts` green gate, 12 `.md`→`.md.ts` authoring) a file is `pass` only on a machine-read exit 0; the sole non-green is `skip` for a documented environment reason (real in-code `test.skip(...)`). Any other residual is a **BLOCKED** phase, not a `flagged` result.
 - **Filled sample**: `examples/sample-test-result.json`
 
 ### Cycle Report (`schemas/cycle-report.schema.json`)
@@ -80,8 +81,8 @@ Inject at `<!-- REPORT_DATA -->`:
 _results/
   2026-03-04T10-30-00/
     cycle-state.md                 ← durable orchestration ledger (phase, dispositions, owners, locks)
-    phase10--chat.json             ← raw Playwright JSON reporter output, per category
-    phase10-summary.json           ← aggregated per-test pass/fail list (Phase 11's work list)
+    phase11--chat.json             ← raw Playwright JSON reporter output, per category
+    phase11-summary.json           ← aggregated per-test pass/fail list (Phase 11's own failing-file work list; the gate is the manager's full-sweep re-run)
     chat--chat_input_controls.json
     terminal--run_basic_command.json
     flagged.md                     ← senior-dev-review queue (Autonomous Run Policy)

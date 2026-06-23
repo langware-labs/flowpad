@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { FlowMessage, TypeId, type HubClientErrorInfo } from '@sdk';
 import { AttachmentType, BodyStatus, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import { AttachmentChipState } from './AttachmentChip';
-import { isPromptAttachment } from './attachment-actions/prompt-attachment';
+import { isImagePromptFileAttachment, isPromptAttachment } from './attachment-actions/prompt-attachment';
 import { isTranscriptAttachment } from './conversation-context-aggregation';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
@@ -10,8 +10,7 @@ import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
 
 /** TYPE_ID attachment types the send path injects as structural self-refs
  *  (parent conversation, the message, the bound task). Plumbing — never
- *  rendered as chips. Mirrors the backend ``_NON_MATERIALIZING_TYPE_IDS``
- *  (minus git_repo, which DOES render — as a GitRepoChip). */
+ *  rendered as chips. Mirrors the backend ``_NON_MATERIALIZING_TYPE_IDS``. */
 const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message', 'task']);
 
 /** One downloadable attachment, resolved into everything a chip needs to render
@@ -43,7 +42,7 @@ export interface UseAttachments {
   /** FILE attachments (the conversation.jsonl transcript is filtered out). */
   items: AttachmentView[];
   /** Non-structural TYPE_ID (entity) attachments — skill / markdown / agent /
-   *  spec / git_repo — as TypeIds. Rendered as entity chips once the body is
+   *  spec — as TypeIds. Rendered as entity chips once the body is
    *  downloaded; until then they ride inside the single Download button. */
   entities: TypeId[];
   /** Message-level download state, straight from the backend-derived
@@ -110,19 +109,24 @@ function stateFor(att: Attachment, bodyStatus: BodyStatus): AttachmentChipState 
 function buildItems(fm: FlowMessage | null | undefined, messageId: string): AttachmentView[] {
   if (!fm) return [];
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
-  return (fm.attachment ?? []).filter(isDownloadableFileAttachment).map((a) => {
-    const d = attachmentDataString(a);
-    const state = stateFor(a, bodyStatus);
-    return {
-      key: d,
-      filename: d.split('/').pop() || d,
-      state,
-      // localAttachmentUrl is itself gated on local_path, so this is null for
-      // every non-Downloaded state — belt-and-suspenders with `state`.
-      url: state === AttachmentChipState.Downloaded ? localAttachmentUrl(messageId, a) : null,
-      localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
-    };
-  });
+  // FILE attachments plus image prompt-files (a screenshot attached to a
+  // prompt): both are downloadable bytes the recipient should see as a picture,
+  // not a filename. Non-image prompt files stay in the prompt row.
+  return (fm.attachment ?? [])
+    .filter((a) => isDownloadableFileAttachment(a) || isImagePromptFileAttachment(a))
+    .map((a) => {
+      const d = attachmentDataString(a);
+      const state = stateFor(a, bodyStatus);
+      return {
+        key: d,
+        filename: d.split('/').pop() || d,
+        state,
+        // localAttachmentUrl is itself gated on local_path, so this is null for
+        // every non-Downloaded state — belt-and-suspenders with `state`.
+        url: state === AttachmentChipState.Downloaded ? localAttachmentUrl(messageId, a) : null,
+        localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
+      };
+    });
 }
 
 function typeLabel(type: string): string {

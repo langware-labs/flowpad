@@ -24,7 +24,7 @@ from uuid import uuid4
 from pydantic import SerializationInfo, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
@@ -418,6 +418,11 @@ class AgenticProcess(Entity):
     )
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
+    connection_id: str | None = APIField(
+        default=None,
+        persist=Persist.FALSE,
+        description="WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted)",
+    )
     visible: bool = APIField(
         default=False,
         description=(
@@ -504,6 +509,16 @@ class AgenticProcess(Entity):
             "Absolute path to the latest plan markdown produced by this process, "
             "or null if none yet. Persists across reloads so the 'Open Plan' UI "
             "affordance survives a refresh without re-running the line trigger."
+        ),
+    )
+    markdown_docs: list[dict] = APIField(
+        default_factory=list,
+        description=(
+            "User-facing markdown docs this process authored, oldest-first. Each "
+            "entry is {path, name, change} where change is 'create' (Write) or "
+            "'update' (Edit). The tail is the latest doc — what the ribbon's docs "
+            "chip shows by default. Plan files and agent-internal docs are excluded. "
+            "Persists across reloads so the 'Open Doc' affordance survives a refresh."
         ),
     )
     terminal_at: datetime | None = APIField(
@@ -962,6 +977,9 @@ class AgenticProcess(Entity):
                 "FLOWPAD_EXECUTION_SCOPE",
                 json.dumps([{"type": self.get_type(), "id": self.id}]),
             )
+            # Inject the WebSocket connection ID so the worker can navigate its own tab explicitly
+            if self.connection_id:
+                cmd.add_env("FLOWPAD_CONNECTION_ID", self.connection_id)
 
             is_resume = cmd.resume
 
@@ -3249,6 +3267,22 @@ class AgenticProcess(Entity):
             }
         )
 
+    @action.get(action_name="cmd-line")
+    async def cmd_line_action(self) -> "ApiSuccessResponse":
+        """Live launch command for this process, computed on demand.
+
+        Deliberately an explicit per-process read, NOT a serialized field:
+        resolving ``cmd_line`` walks cli_options -> transcript_descriptor ->
+        get_claude_session (disk I/O), which must never run inside model_dump().
+        The UI fetches this only for the one process whose run drawer / session
+        info popover is open. Failure-tolerant: returns ``cmd_line: None`` if a
+        driver isn't wired or the cli_config is malformed.
+        """
+        try:
+            return ApiSuccessResponse(data={"cmd_line": self.cmd_line})
+        except Exception:
+            return ApiSuccessResponse(data={"cmd_line": None})
+
     @cached_property
     def driver(self) -> WorkerDriver:
         """The vendor-specific driver for this process's ``worker_type``.
@@ -3300,14 +3334,12 @@ class AgenticProcess(Entity):
         data["ready_for_input"] = ready
         data["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         data["queue"] = self._queue_state()
-        # Surface the live launch command so the UI (run drawer, session info
-        # popover, etc.) can show what was actually spawned. Failure-tolerant:
-        # if a driver hasn't been wired or the cli_config is malformed, omit
-        # the field rather than failing the whole entity serialization.
-        try:
-            data["cmd_line"] = self.cmd_line
-        except Exception:
-            data["cmd_line"] = None
+        # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
+        # cli_options -> transcript_descriptor -> get_claude_session, i.e. live
+        # worker work with disk I/O — which must never run inside a model_dump()
+        # (the universal currency for persistence, query-filter, WS broadcast and
+        # REST response). The launch command is fetched explicitly, per-process,
+        # via the "cmd-line" action below, only when the UI actually needs it.
         # Derive per-process execution folders when absent from the row.
         # Rows synced before this field existed have no folder dicts; the
         # record's on-disk layout is deterministic from (type, id), so we
@@ -3587,15 +3619,14 @@ class AgenticProcess(Entity):
         worker + linked shell (today's terminal-close semantics)."""
         await self.close()
 
-    async def _on_tab_renamed(self, payload: dict) -> dict:
-        """``tab-renamed`` reflection: mirror the new tab name and pin it
-        (``auto_rename=False``) so the worker title can't overwrite it."""
-        new_name = (payload or {}).get("name")
-        if new_name and self.name != new_name:
-            self.name = new_name
+    async def rename(self, name: str) -> None:
+        """Tab-rename reflection (``Tab.rename`` → ``target.rename``): mirror the
+        new name and pin it (``auto_rename=False``) so the worker title can't
+        overwrite it. Extends the generic ``Entity.rename`` with that pin."""
+        if name and self.name != name:
+            self.name = name
             self.auto_rename = False
             await self.save()
-        return {"name": self.name}
 
     async def close(self) -> bool:
         """Terminate this process and close its linked shell entity.
@@ -3657,6 +3688,9 @@ class AgenticProcess(Entity):
         ``start_failure`` latch so a failed-to-start process relaunches.
         """
         request_info = get_current_request_info()
+        # Capture the WebSocket connection ID so the worker can target this tab explicitly
+        if request_info and request_info.request_connection_id:
+            self.connection_id = request_info.request_connection_id
         body = await request_info.get_post_data() if request_info else {}
         instruction = body.get("instruction")
         visible = body.get("visible")
@@ -3992,6 +4026,15 @@ class AgenticProcess(Entity):
                     {"path": path, "tool_name": getattr(entry, "tool_name", "")},
                 )
 
+                # Docs chip: a user-facing markdown write produces a
+                # markdown.create (Write) / markdown.update (Edit) event and is
+                # tracked on the persisted ``markdown_docs`` list (parallel to
+                # ``plan_path`` + ``plan.create``). Plan files and agent-internal
+                # docs are excluded so they don't double up with the Open-Plan chip.
+                if isinstance(entry, (FileWriteEntry, FileEditEntry)) and self._is_user_doc(path):
+                    change = "create" if isinstance(entry, FileWriteEntry) else "update"
+                    await self._track_markdown_doc(path, change)
+
     async def _flush_transcript_change(self) -> None:
         """Run after the debounce window on this AP's transcript.
 
@@ -4085,6 +4128,64 @@ class AgenticProcess(Entity):
             entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
         )
         return procs[0] if procs else None
+
+    @staticmethod
+    def _is_user_doc(path: str) -> bool:
+        """True for a user-facing markdown doc the agent authored.
+
+        Excludes plan files (owned by the Open-Plan chip) and agent-internal
+        docs (``CLAUDE.md``/``AGENTS.md``, anything under ``~/.claude`` or
+        ``~/.codex``) so the docs chip only surfaces docs meant for the user.
+        """
+        if not path or not path.endswith(".md"):
+            return False
+        from pathlib import Path as _Path
+
+        from flow_sdk.instance_settings import get_instance_settings
+
+        p = _Path(path)
+        if p.name in ("CLAUDE.md", "AGENTS.md"):
+            return False
+        try:
+            plans_dir = get_instance_settings().claude_plans_dir
+            if plans_dir and plans_dir in p.parents:
+                return False
+        except Exception:
+            pass
+        home = _Path.home()
+        for internal in (home / ".claude", home / ".codex"):
+            if internal in p.parents:
+                return False
+        return True
+
+    async def _track_markdown_doc(self, path: str, change: str) -> None:
+        """Upsert ``path`` into ``markdown_docs`` (tail = latest) and broadcast.
+
+        Re-writing an existing path moves it to the tail and upgrades its change
+        to ``update``. Saves before the event so the entity-update WS precedes
+        the ``markdown.{change}`` broadcast (same ordering as ``plan.create``).
+        """
+        from os.path import basename
+
+        name = basename(path)
+        docs = list(self.markdown_docs or [])
+        existing = next((d for d in docs if d.get("path") == path), None)
+        if existing is not None:
+            docs.remove(existing)
+            # A path seen before is an update even if this entry was a Write.
+            change = "update"
+        docs.append({"path": path, "name": name, "change": change})
+        self.markdown_docs = docs
+        try:
+            await self.save()
+        except Exception:
+            logger.debug(
+                "AgenticProcess %s: markdown_docs save failed", self.id, exc_info=True,
+            )
+        await self.emit_entity_event(
+            f"markdown.{change}",
+            {"path": path, "name": name, "session_id": self.session_id},
+        )
 
     async def on_plan_created(self, entry) -> None:
         """T7: Connect a freshly-detected plan to this AgenticProcess.
@@ -4257,8 +4358,3 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
-
-
-# Register on the owning subclass so the handler doesn't leak to siblings
-# (docs/tab-management.md — generic Tab.rename reflects onto subscribers).
-AgenticProcess.on_event("tab-renamed")(AgenticProcess._on_tab_renamed)

@@ -1,19 +1,8 @@
 ---
-id: a3f7c821-4b2e-5d19-8e6f-1c9a0b3e7d52
-name: flow-diagnose
-description: >
-  Diagnoses and auto-repairs Flowpad desktop/backend installation and runtime issues.
-  Use when the user reports: Flowpad won't start or open, the app is **stuck on "Starting…"**,
-  "Startup Error" dialog, "Backend server failed to respond", port 9007 conflict, blank page/404
-  assets, macOS "app is damaged", Windows SmartScreen warning, Linux AppImage won't launch,
-  auto-update stuck or wrong arch, cloud/hub unreachable, version mismatch between Electron shell
-  and Python backend. Covers Electron desktop-app startup issues (the shell), not just the backend.
-  Accepts an optional pasted error string; without one runs a full diagnostic sweep.
-  Keywords: flowpad, flow diagnose, won't open, stuck on starting, startup error, port 9007,
-  backend unhealthy, electron, desktop app, damaged app, update failed, instance not running,
-  sodot, server.lock, blank page.
-
-recommended_scope: project
+id: "a3f7c821-4b2e-5d19-8e6f-1c9a0b3e7d52"
+name: "flow-diagnose"
+description: ">"
+recommended_scope: "project"
 ---
 
 # Flow Diagnose
@@ -24,31 +13,37 @@ plain-language "To Summarize:" line.
 
 ## Operating rules
 
-- You run **autonomously and headless** — you **CANNOT ask the user any questions** and no human
+* You run **autonomously and headless** — you **CANNOT ask the user any questions** and no human
   will reply mid-run. Never pause for confirmation or input. Make the most reasonable assumption,
   proceed, and note the assumption in the report.
-- Do the **whole job in one go** and do not end your turn until it's done:
+
+* Do the **whole job in one go** and do not end your turn until it's done:
   diagnose → root cause → prove it → fix (when safe) → validate → end-to-end check → record.
-- Apply fixes yourself only when safe **and** capable (Step 4); otherwise advise the user (Step 5).
-- **You diagnose ANY issue the user raises — the catalog is not a closed list.** The known-issue
+
+* Apply fixes yourself only when safe **and** capable (Step 4); otherwise advise the user (Step 5).
+
+* **You diagnose ANY issue the user raises — the catalog is not a closed list.** The known-issue
   catalog (A1–G17) is an internal cheat-sheet that gives you fast, proven fixes for *some* common
   problems. It is **not** the set of problems you handle. If the user's issue isn't in it, that
   changes **nothing** about your job: investigate, find the root cause, fix or advise — exactly as
   you would for a catalogued issue.
-- **Never expose the internal scaffolding to the user.** Do not mention the catalog, entry codes
+
+* **Never expose the internal scaffolding to the user.** Do not mention the catalog, entry codes
   (A1–G17), step numbers, "Step 5b", or words like "unrecognized" / "not in my catalog" / "not a
   known issue" in anything the user sees (your narration, the report, the summary). The user does
   not care how you organize your knowledge. Never say "that wasn't on my list but I'll debug
   anyway" — there is no "anyway." Just diagnose the issue as if it were always in scope, because it
   is. (The `--status unrecognized` value in Step 7 is an internal record field only; it never
   appears in your prose to the user.)
-- **Read the logs — they are primary evidence.** The **`flowpad_logs`** skill is the authoritative
+
+* **Read the logs — they are primary evidence.** The **`flowpad_logs`** skill is the authoritative
   list of every Flowpad log location: the backend instance logs
   (`~/.flow/instances/<name>/logs/`), the **Electron desktop app** logs
   (`~/.flow/logs/{main_desktop,monitor,server}/`), and the local hub. Scan the logs it lists when
   looking for whether there IS an issue **and** when establishing the root cause — never conclude
   "healthy" from a live health check alone (the shell can be stuck even when the backend is up).
-- Never raise or add any timeout/retry/backoff/poll budget to mask a symptom.
+
+* Never raise or add any timeout/retry/backoff/poll budget to mask a symptom.
 
 ## Instructions
 
@@ -82,31 +77,38 @@ check below. (The packaged desktop app uses `9007` and serves the UI on that sam
 Run ALL checks below, collect all results, THEN report. Do not stop at the first finding.
 
 **2a. Backend port ($PORT, default 9007)**
+
 ```bash
 # macOS/Linux
 lsof -ti tcp:$PORT
 # Windows (PowerShell): $PORT resolved as above
 netstat -ano | findstr ":$PORT"
 ```
+
 Expected: empty (port free). Any PID = potential conflict.
 
 **2b. Backend health**
+
 ```bash
 curl -fsS http://localhost:$PORT/health/status
 ```
+
 Expected: `{"data":true}`. Anything else or curl error = unhealthy.
 
 **2c. Log tails** (newest file in each directory, last 20 lines)
 Consult the **`flowpad_logs`** skill for the full, authoritative list of log locations and scan
 **all** of them — backend instance logs, the Electron desktop logs, and the hub. At minimum:
+
 ```bash
 # macOS/Linux — repeat for server, monitor, main_desktop
 LOGDIR=~/.flow/logs/server
 tail -20 "$(ls -t $LOGDIR/ | head -1 | xargs -I{} echo $LOGDIR/{})"
 ```
+
 Look for: `record_error`, `integrity_check`, `EADDRINUSE`, `electron-updater`, `x64` on arm64.
 
 **2d. Instance state**
+
 ```bash
 ls ~/.flow/instances/
 # For the prod instance:
@@ -118,24 +120,28 @@ cat ~/.flow/instances/prod/server.pid 2>/dev/null
 ```
 
 **2e. Version**
+
 ```bash
 uv tool list | grep flowpad     # Python backend
 # Electron version: grep the newest ~/.flow/logs/main_desktop/ file for "Starting Flowpad"
 ```
 
 **2f. Disk space**
+
 ```bash
 # macOS/Linux
 df -h ~/.flow
 # Windows (PowerShell)
 Get-PSDrive C | Select Used,Free
 ```
+
 Warn if < 500 MB free.
 
 **2g. Electron desktop app startup (ALWAYS check — even if the backend is healthy)**
 The Electron shell waits only **30 s** for the backend; it can be stuck on "Starting…" or have shown
 a "Startup Error" even though the backend is healthy *now*. Read the newest `main_desktop` log and
 reason about the shell↔backend timeline:
+
 ```bash
 # macOS/Linux — newest main_desktop log, last ~40 lines
 LOGDIR=~/.flow/logs/main_desktop
@@ -143,6 +149,7 @@ tail -40 "$(ls -t $LOGDIR/ | head -1 | xargs -I{} echo $LOGDIR/{})"
 # Windows (PowerShell)
 Get-Content (Get-ChildItem $HOME\.flow\logs\main_desktop\*.log | Sort LastWriteTime -Desc | Select -First 1) -Tail 40
 ```
+
 Look for: `Waiting for backend` **without** a following `Backend is ready!`; `Backend failed to
 start within timeout`; `[startup error details]`; `[update] desktop upgraded` / `[uv] Upgrading
 flowpad...` / `[electron-updater] update downloaded`; `flow shim blocked by Windows Device Guard`;
@@ -160,26 +167,42 @@ wording varies and will change over time, and you are an LLM that can understand
 known issues live in `references/catalog.md` (entries A1–G17); here they are summarized by meaning
 so you know what shortcuts you have:
 
-- **A1** — backend port 9007 already in use / "address already in use".
-- **A2** — backend unhealthy or "failed to respond" (stale lock, DB corruption, full disk).
-- **A3** — an instance isn't running / no `server.json`.
-- **A4** — secrets/keychain (sodot) can't be decrypted.
-- **B5** — blank page / missing JS·CSS assets (pip wheel built without `build_ui.py`).
-- **C6** — cloud/hub unreachable or token expired (**non-fatal** — the app is still healthy).
-- **D7** — macOS "app is damaged / unidentified developer" (signing/notarization).
-- **D8** — Windows SmartScreen / unknown publisher (unsigned installer).
-- **D9** — Linux AppImage won't launch (FUSE missing).
-- **E10** — Apple Silicon received the Intel build (auto-update manifest merge bug).
-- **E11** — updates never detected (manifest version mismatch).
-- **E12** — macOS auto-update broken (missing `.zip` / `.blockmap`).
-- **F13** — Electron shell vs Python backend version drift.
-- **G14** — **Electron app stuck on "Starting…"** / backend health-check timed out (shell gives up at
+* **A1** — backend port 9007 already in use / "address already in use".
+
+* **A2** — backend unhealthy or "failed to respond" (stale lock, DB corruption, full disk).
+
+* **A3** — an instance isn't running / no `server.json`.
+
+* **A4** — secrets/keychain (sodot) can't be decrypted.
+
+* **B5** — blank page / missing JS·CSS assets (pip wheel built without `build_ui.py`).
+
+* **C6** — cloud/hub unreachable or token expired (**non-fatal** — the app is still healthy).
+
+* **D7** — macOS "app is damaged / unidentified developer" (signing/notarization).
+
+* **D8** — Windows SmartScreen / unknown publisher (unsigned installer).
+
+* **D9** — Linux AppImage won't launch (FUSE missing).
+
+* **E10** — Apple Silicon received the Intel build (auto-update manifest merge bug).
+
+* **E11** — updates never detected (manifest version mismatch).
+
+* **E12** — macOS auto-update broken (missing `.zip` / `.blockmap`).
+
+* **F13** — Electron shell vs Python backend version drift.
+
+* **G14** — **Electron app stuck on "Starting…"** / backend health-check timed out (shell gives up at
   30 s even though the backend becomes healthy moments later). Often the answer to "won't open" /
   "stuck on Starting".
-- **G15** — auto-update mid-session reinstalled the backend; next launch exceeds the 30 s window → G14.
-- **G16** — shell can't install/run `flow` (first-run `uv`/PyPI failure, or Windows Device Guard
+
+* **G15** — auto-update mid-session reinstalled the backend; next launch exceeds the 30 s window → G14.
+
+* **G16** — shell can't install/run `flow` (first-run `uv`/PyPI failure, or Windows Device Guard
   blocks the shim).
-- **G17** — backend spawned but crashed / port not freed by the shell.
+
+* **G17** — backend spawned but crashed / port not freed by the shell.
 
 Read `references/catalog.md` for each entry's exact detection + repair. The **G-series** is found
 in the `main_desktop` logs (Step 2g) — check it even when the backend is currently healthy, since a
@@ -218,29 +241,34 @@ budget. The timeout is correct; fix the underlying stall or contention instead.
 
 The per-issue repair details (A1–G17) below are the **"how"** for the Fix sub-step:
 
----
+***
 
 **A1 — Port 9007 occupied**
 
 Repair:
+
 1. Run `flow stop`.
 2. Re-check port. If still held:
-   - macOS/Linux: `kill -TERM <pid>` → wait 3 s → `kill -KILL <pid>` if still alive.
-   - Windows: `taskkill /PID <pid> /F`
+
+   * macOS/Linux: `kill -TERM <pid>` → wait 3 s → `kill -KILL <pid>` if still alive.
+
+   * Windows: `taskkill /PID <pid> /F`
 3. Report each PID killed and whether it was a Flowpad process or foreign.
 4. Confirm port is free: re-run lsof/netstat. Tell user to relaunch Flowpad (do NOT auto-start).
 
----
+***
 
 **A2 — Backend unhealthy / failed to respond**
 
 Work through sub-checks in order:
 
 a) Stale lock from dead PID:
+
 ```bash
 PID=$(cat ~/.flow/instances/prod/server.pid 2>/dev/null)
 kill -0 "$PID" 2>/dev/null && echo "alive" || echo "dead"
 ```
+
 If dead → delete `~/.flow/instances/prod/server.lock` and `server.pid`. Tell user to relaunch.
 
 b) DB integrity: look for `record_error` or `integrity_check` in `~/.flow/logs/server/` newest file.
@@ -252,17 +280,19 @@ c) Disk space (from 2f). If < 500 MB free, that is likely the cause — tell use
 d) If no specific cause found: tail the most recent server and monitor log lines and quote the
 relevant error lines verbatim so the user can report them.
 
----
+***
 
 **A3 — Instance not running / no server.json**
 
 Show: `ls ~/.flow/instances/` and `echo "FLOW_INSTANCE=${FLOW_INSTANCE:-prod}"`
 
-- Desktop app: always uses "prod" — tell user to relaunch Flowpad.
-- CLI user: tell them to run `flow start` (or `FLOW_INSTANCE=<name> flow start`).
-- Do NOT auto-start a backend on behalf of the Electron desktop app.
+* Desktop app: always uses "prod" — tell user to relaunch Flowpad.
 
----
+* CLI user: tell them to run `flow start` (or `FLOW_INSTANCE=<name> flow start`).
+
+* Do NOT auto-start a backend on behalf of the Electron desktop app.
+
+***
 
 **A4 — Sodot/secrets undecryptable**
 
@@ -270,45 +300,52 @@ Self-healing — `recover_orphaned_sodot` resets the secrets store on next launc
 Tell user: any API keys stored in Flowpad need to be re-entered after restarting. No manual
 file deletion needed or safe.
 
----
+***
 
 **B5 — Blank page / 404 on static assets (pip path)**
 
 Repair:
+
 ```bash
 uv tool install flowpad --force
 # OR
 pip install --force-reinstall flowpad
 ```
+
 Then restart the backend. This is a packaging bug (wheel built without `build_ui.py` output).
 Instruct user to file a report with the version number if it recurs on an official release.
 
----
+***
 
 **D9 — Linux AppImage / FUSE missing**
 
 Detection:
+
 ```bash
 ls /dev/fuse 2>/dev/null || echo "fuse missing"
 ldconfig -p 2>/dev/null | grep libfuse || echo "libfuse not found"
 ```
 
 Present BOTH options and ask user to choose — do NOT run sudo automatically:
-- Option 1: `sudo apt-get install -y libfuse2`  (requires sudo)
-- Option 2 (no sudo): `./Flowpad-*.AppImage --appimage-extract && ./squashfs-root/AppRun`
 
----
+* Option 1: `sudo apt-get install -y libfuse2`  (requires sudo)
+
+* Option 2 (no sudo): `./Flowpad-*.AppImage --appimage-extract && ./squashfs-root/AppRun`
+
+***
 
 **F13 — Two-updater version drift**
 
 Backend repair (user-side):
+
 ```bash
 uv tool install flowpad@latest --force
 ```
+
 Tell user to relaunch. Electron shell auto-updates on next launch if its manifest is correct;
 if it does not, see E11/E12.
 
----
+***
 
 ### Step 5 — Non-auto-repairable entries: explain + workaround + report
 
@@ -318,22 +355,24 @@ App is fully functional locally. Only sharing/sync/realtime degrade.
 Expired token: backend auto-logs-out; user logs in again from Settings.
 Hub unreachable on localhost:8093: the local hub process is not running (dev-only scenario).
 
----
+***
 
 **D7 — macOS "app is damaged / can't be opened"**
 
 Problem class: signing/notarization failure in CI (langware-labs/flowpad-desktop repo).
 
 Safe workaround (per-app only, does NOT disable system Gatekeeper):
+
 ```bash
 xattr -dr com.apple.quarantine /Applications/Flowpad.app
 ```
+
 Or: right-click Flowpad.app → Open → Open.
 
-Report: file an issue at https://github.com/langware-labs/flowpad-desktop/issues with your
+Report: file an issue at <https://github.com/langware-labs/flowpad-desktop/issues> with your
 macOS version and Flowpad version. CI must use a valid Developer ID Application cert + notarize + staple.
 
----
+***
 
 **D8 — Windows SmartScreen / unknown publisher**
 
@@ -343,7 +382,7 @@ Safe workaround: "More info" → "Run anyway" in the SmartScreen dialog.
 
 Report: file an issue with Windows version and Flowpad version. CI must configure Azure Trusted Signing secrets.
 
----
+***
 
 **E10 — Apple Silicon receives Intel (x64) build**
 
@@ -354,7 +393,7 @@ Safe workaround: manually download the `arm64` .dmg from the GitHub Releases pag
 Report: include Mac model ("M1/M2/M3"), Flowpad version, and the electron-updater log line
 from `~/.flow/logs/main_desktop/` showing an `x64` artifact being downloaded on arm64.
 
----
+***
 
 **E11 — Updates never detected**
 
@@ -363,7 +402,7 @@ back to `package.json`). Backend: latest-mac.yml / latest.yml / latest-linux.yml
 
 Safe workaround: manually install the latest release from GitHub Releases.
 
----
+***
 
 **E12 — macOS auto-update broken**
 
@@ -372,7 +411,7 @@ Problem class: CI did not upload `.zip` + `.blockmap`; electron-updater on macOS
 
 Safe workaround: download and reinstall from the `.dmg` on the GitHub Releases page.
 
----
+***
 
 ### Step 5b — General diagnosis (any issue without a ready-made catalog fix)
 
@@ -399,7 +438,7 @@ and report what you found.
 
 Never raise or add any timeout/retry/backoff to mask a symptom — fix the root cause or report it.
 
----
+***
 
 ### Step 5c — End-to-end validation (headless Playwright)
 
@@ -462,19 +501,20 @@ The script is the SDK, **not** an HTTP API — it opens the local instance DB it
 when the backend is DOWN. Run the reporter that ships **next to this SKILL.md** (`report.py` in this
 skill directory); do **not** hand-build any entities and do **not** import from `flow_sdk`.
 
-You do not decide whether to post a Feed entry — **`report.py` decides that from `--status`**. You
-just always run it with the right status:
+You do not decide what gets surfaced — **`report.py`** **decides that from** **`--status`**. You just always
+run it with the right status:
 
-1. It **always** creates a `flowpad_diagnosis` record from your `title / symptoms / rca / fix`.
-2. If you found an issue (`--status` is `fixed`, `needs_action`, or `unrecognized`) it also posts the
-   diagnosis to the Home Feed (hidden support Conversation + summary `flow_message` with the diagnosis
-   attached + a `message_suggest` `feed_entry`) so the user can send it to support in one click.
+1. It **always** creates a `flowpad_diagnosis` record from your `title / symptoms / rca / fix / summary`.
+2. If you found an issue (`--status` is `fixed`, `needs_action`, or `unrecognized`) it also creates the
+   support artifact the report buttons act on: a hidden support Conversation + a summary `flow_message`
+   with the diagnosis attached.
 3. If the sweep was clean (`--status ok`) or the only findings are benign (`--status informational`),
-   it records the diagnosis for history but creates **no** Feed entry. **Use `--status ok` for a
-   healthy result — and still run the script.**
+   it records the diagnosis for history only. **Use** **`--status ok`** **for a healthy result — and still run
+   the script.**
 
-(The `flow diagnose` runner cross-links the diagnosis to this process for you afterwards — do **not**
-attempt the cross-link yourself.)
+(Surfacing the diagnosis to the user — the CLI's Home-Feed card, or the UI's "View diagnosis" popup —
+is handled by the `flow diagnose` runner afterwards, not by you. The runner also cross-links the
+diagnosis to this process for you — do **not** attempt the cross-link yourself.)
 
 ```bash
 uv run python "<this skill dir>/report.py" \
@@ -490,26 +530,29 @@ uv run python "<this skill dir>/report.py" \
 
 `<this skill dir>` is the folder this SKILL.md is in — the same path you were given to read it from.
 Use `--status ok` when everything is healthy and no issue was found. It prints a JSON line including
-`diagnosis_id` (and the Feed ids when a Feed entry was posted).
+`diagnosis_id` (and the support `conversation_id` / `flow_message_id` when an issue was found).
 
 Do not end your turn before the reporter script has printed its JSON. Do **not** fail the whole run if
 this step errors; the console report from Step 6 still stands.
 
 ## Reference Files
 
-- [Full known-issue catalog with detection commands](references/catalog.md)
-- `report.py` — the SDK-direct reporter this skill runs in Step 7 (Conversation + FlowMessage + FeedEntry).
+* [Full known-issue catalog with detection commands](references/catalog.md)
+
+* `report.py` — the SDK-direct reporter this skill runs in Step 7 (flowpad\_diagnosis record + support Conversation + FlowMessage).
 
 ## Examples
 
 ### Example 1: Full sweep — stale lock
 
 **Input:**
+
 ```
 flow diagnose
 ```
 
 **Output:**
+
 ```
 == Flowpad Diagnostic Report ==
 Platform: macOS (Darwin)
@@ -535,11 +578,13 @@ To Summarize: A leftover lock file from a crashed backend was blocking startup. 
 ### Example 2: macOS damaged-app error
 
 **Input:**
+
 ```
 flow diagnose "Flowpad is damaged and can't be opened. You should move it to the Trash."
 ```
 
 **Output:**
+
 ```
 == Flowpad Diagnostic Report ==
 Platform: macOS (Darwin)
@@ -559,11 +604,13 @@ To Summarize: This is a code-signing problem that happened during the build, not
 ### Example 3: Port conflict
 
 **Input:**
+
 ```
 flow diagnose "Error: listen EADDRINUSE: address already in use :::9007"
 ```
 
 **Output:**
+
 ```
 == Flowpad Diagnostic Report ==
 Platform: Linux
@@ -584,11 +631,13 @@ cheat-sheet. Note what the output does **not** say — no "this wasn't in my cat
 no "unrecognized issue". It just diagnoses the actual question the user asked.
 
 **Input:**
+
 ```
 flow diagnose "Why do I see so many projects in my Flowpad workspace I didn't open?"
 ```
 
 **Output:**
+
 ```
 == Flowpad Diagnostic Report ==
 Platform: macOS (Darwin)
@@ -616,3 +665,4 @@ End-to-end: passed — headless Playwright loaded http://localhost:9007; the wor
 
 To Summarize: The extra projects are duplicate records the app creates every time it scans your files — a known indexing bug, not something you did. Your real projects are fine; I've recorded the details so the team can ship the fix.
 ```
+

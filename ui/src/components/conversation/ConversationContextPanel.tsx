@@ -29,11 +29,12 @@ import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
-import { resolveWorkdir } from './apply-project-choice';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { localAttachmentUrl, editorPathForLocalFile } from './attachment-url';
 import { ICON_BY_TYPE, buildDockPointer } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
+import type { WorkerType } from './conversation-session-constants';
+import { useConversationSession } from './useConversationSession';
 import {
   buildAttachmentEntries,
   buildPrivateTypeIds,
@@ -81,13 +82,6 @@ interface ConversationContextPanelProps {
 function humanType(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
 }
-
-type WorkerType = 'claude_code' | 'codex' | 'copilot';
-
-/** The CLI harnesses a conversation session can launch — drives the worker
- *  buttons in the Private Context "+" menu. Glyph + label come from the shared
- *  worker-vendor helpers (transcript-utils) so they match every other surface. */
-const LAUNCHABLE_WORKERS: WorkerType[] = ['claude_code', 'codex', 'copilot'];
 
 /** Canonical dock pointer for an entity TypeId — delegates to the single
  *  EntityChip dispatch (``buildDockPointer``). Asset types navigate by TypeId
@@ -260,15 +254,6 @@ export function ConversationContextPanel({
     }));
     return { privateTasks: tasksOut, privateProcesses: procsOut };
   }, [orderedMessages, conversation]);
-  // Loaded becomes a trivial constant under the FM-anchored model: the FM
-  // entity has already loaded by the time we get here (it's what the panel
-  // is rendering). The "Start session" gate just checks the transcript flag.
-  const processesLoaded = true;
-
-  // PTY-backed (visible) sessions block "Start session" affordances — same
-  // rule as the per-message version, just lifted to conversation scope.
-  const hasTranscriptSession = privateProcesses.some((p) => p.process.visible);
-  const showStartSession = processesLoaded && !hasTranscriptSession;
 
   const projectTypeId = useMemo(
     () => resolveProjectTypeId(task, conversation),
@@ -292,68 +277,21 @@ export function ConversationContextPanel({
     [selectedMessageIds, flowMessageIdSet, orderedMessages],
   );
 
-  // ─── Lifted start-session lifecycle (basic primitives per
-  //     docs/agent-management/agentic-process.md). Same flow for both the
-  //     "Implement Plan" spec-row chip and the "Use Flowpad assistance"
-  //     rectangular button — only the injected instruction differs.
-  const [starting, setStarting] = useState(false);
-  const startSession = useCallback(
-    async (workerType: WorkerType, buildInstruction: () => Promise<string>) => {
-      if (!conversation || starting) return;
-      // The conversation owns the project (conversation.project_id). No task,
-      // no my_process_id — a worker starts on the conversation's project and is
-      // linked back via the generic shared-context interface.
-      const workdir = await resolveWorkdir(conversation.project_id);
-      if (!workdir) {
-        notify.warning({ title: 'Map this conversation to a local project first.' });
-        return;
-      }
-      setStarting(true);
-      try {
-        const instruction = await buildInstruction();
-        const convTypeIdString = conversation.id
-          ? new TypeId(Conversation.type, conversation.id).toString()
-          : undefined;
-        // Run in the conversation's OWN project (workdir) with the Flowpad
-        // Assistant mounted — not the @flowpad_assistant system project — and
-        // route the first prompt through the queue (launch pops the head).
-        const proc = await AgenticProcess.launch({
-          workerType,
-          workdir,
-          projectId: conversation.project_id ?? undefined,
-          launchPrompt: instruction,
-          enableAssistant: true,
-          sharedContextEntities: convTypeIdString ? [convTypeIdString] : undefined,
-        });
-        // Save the worker into the conversation's context (generic shared-context
-        // interface) so it surfaces in the recent-processes list and is the
-        // target for per-message append. No dedicated process-pointer field.
-        if (proc.id) {
-          try {
-            await conversation.shareContextEntities(new TypeId(AgenticProcess.type, proc.id));
-          } catch (linkErr) {
-            console.error('[ContextPanel] failed to link process to conversation', linkErr);
-          }
-        }
-      } catch (err) {
-        console.error('[ContextPanel] start session failed', err);
-        notify.error({ title: 'Failed to start session' });
-      } finally {
-        setStarting(false);
-      }
-    },
-    [conversation, starting],
+  // The conversation's owning worker session — one source of truth shared with
+  // the conversation header (useConversationSession). Its presence is the gate:
+  // present ⇒ the process is openable (rendered as a row below + Open in the
+  // header); absent ⇒ offer the launch toolbar. The drawer supplies the full
+  // context-aware launch prompt; the launch stamps ProcessKind.Conversation.
+  const buildPrompt = useCallback(
+    () => buildAssistancePrompt(sharedTypeIds, privateTypeIds),
+    [sharedTypeIds, privateTypeIds],
   );
-
-  const handleStartAssistance = useCallback(
-    (workerType: WorkerType) => {
-      const run = () =>
-        startSession(workerType, () => Promise.resolve(buildAssistancePrompt(sharedTypeIds, privateTypeIds)));
-      if (ensureMapped) ensureMapped(run);
-      else void run();
-    },
-    [startSession, sharedTypeIds, privateTypeIds, ensureMapped],
-  );
+  const { conversationProcess, starting, launch: launchSession } = useConversationSession({
+    conversation,
+    ensureMapped,
+    buildPrompt,
+  });
+  const showStartSession = !conversationProcess;
 
   // Pull the bundle for the message that contributed an entity attachment. One
   // bundle materializes every attachment, so the originating bubble AND every
@@ -402,7 +340,7 @@ export function ConversationContextPanel({
         selectedSet={selectedSet}
         selectedEntityKey={entityKey}
         onSelectEntity={onSelectEntity}
-        onStartAssistance={showStartSession ? handleStartAssistance : undefined}
+        onStartAssistance={showStartSession ? launchSession : undefined}
         starting={starting}
       />
     </div>
@@ -1021,23 +959,14 @@ function PrivateContextSection({
           </button>
           {menuOpen && (
             <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md">
-              {onStartAssistance &&
-                LAUNCHABLE_WORKERS.map((workerType) => {
-                  const Icon = workerIcon(workerType);
-                  return (
-                    <button
-                      key={workerType}
-                      type="button"
-                      onClick={() => handleLaunchWorker(workerType)}
-                      disabled={starting}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                      data-testid={`private-context-launch-${workerType}`}
-                    >
-                      <Icon className="h-3 w-3" />
-                      Session — {workerLabel(workerType)}
-                    </button>
-                  );
-                })}
+              {onStartAssistance && (
+                <WorkerToolbar
+                  variant="menu-list"
+                  onLaunch={handleLaunchWorker}
+                  starting={starting}
+                  testIdPrefix="private-context"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => void handleAddSpec()}

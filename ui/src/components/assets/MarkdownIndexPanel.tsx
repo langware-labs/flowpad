@@ -15,6 +15,7 @@ import { ListTree, FileText, FolderTree, ExternalLink, RefreshCw } from 'lucide-
 import apiClient from '@sdk/client';
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
+import { SideDrawer } from '@src/components/ui/side-drawer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
@@ -82,15 +83,17 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
   }, [folderAbsPath, tick]);
 
   return (
-    <aside
+    <SideDrawer
+      open
       data-testid="markdown-index-panel"
-      className="flex h-full w-80 shrink-0 flex-col border-l bg-background"
-    >
-      <div className="flex h-[40px] shrink-0 items-center justify-between border-b px-3">
-        <div className="flex items-center gap-1.5 text-sm font-medium">
+      width="w-80"
+      title={
+        <span className="flex items-center gap-1.5">
           <ListTree className="h-4 w-4 text-muted-foreground" />
           LLM Index
-        </div>
+        </span>
+      }
+      headerActions={
         <Button
           variant="ghost"
           size="icon"
@@ -100,9 +103,9 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
         >
           <RefreshCw className="h-3 w-3" />
         </Button>
-      </div>
-
-      <ScrollArea className="flex-1">
+      }
+    >
+      <ScrollArea className="h-full">
         {state === 'loading' && (
           <div className="p-4 text-xs text-muted-foreground">Loading…</div>
         )}
@@ -192,6 +195,6 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
           </div>
         )}
       </ScrollArea>
-    </aside>
+    </SideDrawer>
   );
 }

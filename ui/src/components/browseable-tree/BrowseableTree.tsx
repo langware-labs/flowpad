@@ -22,6 +22,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   const {
     roots,
     activePointer,
+    activeKey,
     header,
     onNavigate,
     isLoading,
@@ -60,18 +61,25 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   // adapter like useAssetTypes loads after initial render).
   useEffect(() => {
     if (!activePointer) return;
-    const key = `${activePointer.viewType ?? ''}::${activePointer.pointer ?? ''}`;
+    const key = `${activePointer.viewType ?? ''}::${activePointer.pointer ?? ''}::${activeKey ?? ''}`;
     if (key === lastResolvedRef.current) return;
     void tree.expandParentsForPointer(activePointer).then((leaf) => {
-      if (!leaf) return;
-      lastResolvedRef.current = key;
       requestAnimationFrame(() => {
-        const el = document.querySelector(`[data-browseable-id="${CSS.escape(leaf.id)}"]`);
-        el?.scrollIntoView({ block: 'center' });
+        // Prefer the keyed target: a typeid URL expands the type root (pathFor →
+        // [root]) so the matching leaf renders, but it's keyed by vfs path, not
+        // the URL's typeid. Find it by `data-selection-key`; fall back to the
+        // pathFor leaf (the vfs case). Only mark resolved once a target is found
+        // so a not-yet-rendered typeid leaf retries on the next children load.
+        const el =
+          (activeKey && document.querySelector(`[data-selection-key="${CSS.escape(activeKey)}"]`)) ||
+          (leaf && document.querySelector(`[data-browseable-id="${CSS.escape(leaf.id)}"]`));
+        if (!el) return;
+        lastResolvedRef.current = key;
+        el.scrollIntoView({ block: 'center' });
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePointer, tree.expandParentsForPointer]);
+  }, [activePointer, activeKey, tree.expandParentsForPointer]);
 
   if (isLoading) {
     return <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}>Loading...</div>;
@@ -110,6 +118,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             level={0}
             tree={tree}
             activePointer={activePointer}
+            activeKey={activeKey}
             onNavigate={handleNavigate}
             dragData={dragData}
             onDragStart={setDragData}
@@ -126,13 +135,14 @@ interface RowProps {
   level: number;
   tree: ReturnType<typeof useBrowseableTree>;
   activePointer: DockPointer | null;
+  activeKey?: string | null;
   onNavigate: (p: DockPointer) => void;
   dragData: BrowseableDragData | null;
   onDragStart: (data: BrowseableDragData) => void;
   onDragEnd: () => void;
 }
 
-function BrowseableRow({ node, level, tree, activePointer, onNavigate, dragData, onDragStart, onDragEnd }: RowProps) {
+function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate, dragData, onDragStart, onDragEnd }: RowProps) {
   const expanded = tree.isExpanded(node.id);
   const loadState = tree.getLoadState(node.id);
   const children = tree.getChildren(node.id);
@@ -150,10 +160,14 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate, dragData,
   }, [expanded, loadState.status, node.id]);
 
   const isSelected = !!(
-    node.pointer &&
-    activePointer &&
-    node.pointer.viewType === activePointer.viewType &&
-    node.pointer.pointer === activePointer.pointer
+    // Stable-id match: a typeid URL (activeKey) selects this row even though its
+    // `pointer` is the vfs form.
+    (node.selectionKey && activeKey && node.selectionKey === activeKey) ||
+    // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
+    (node.pointer &&
+      activePointer &&
+      node.pointer.viewType === activePointer.viewType &&
+      node.pointer.pointer === activePointer.pointer)
   );
 
   const hasChildrenHint = node.hasChildren === true || (node.hasChildren === 'unknown' && !!node.listChildren);
@@ -179,8 +193,10 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate, dragData,
   );
 
   const canAcceptDrop = !!(dragData && node.onDrop && (!node.canDrop || node.canDrop(dragData)));
-  // Keep count badges clear of the absolutely-positioned compact toolbar
-  // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1).
+  // Space reserved (on hover/focus only) so the label clears the
+  // absolutely-positioned compact toolbar when it appears
+  // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1). At rest the toolbar is
+  // hidden, so the label keeps its full width.
   const toolbarSpace =
     node.toolbar && node.toolbar.length > 0
       ? node.toolbar.length * 22 + 6
@@ -237,7 +253,7 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate, dragData,
   );
 
   return (
-    <div data-browseable-id={node.id}>
+    <div data-browseable-id={node.id} data-selection-key={node.selectionKey}>
       <div
         className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-colors ${
           isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
@@ -259,8 +275,12 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate, dragData,
         }}
       >
         <div
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
-          style={toolbarSpace ? { paddingRight: toolbarSpace } : undefined}
+          className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
+            toolbarSpace
+              ? 'transition-[padding] group-hover:pr-[var(--toolbar-space)] group-focus-within:pr-[var(--toolbar-space)]'
+              : ''
+          }`}
+          style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}
         >
           {hasChildrenHint ? (
             <button
@@ -325,6 +345,7 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate, dragData,
               level={level + 1}
               tree={tree}
               activePointer={activePointer}
+              activeKey={activeKey}
               onNavigate={onNavigate}
               dragData={dragData}
               onDragStart={onDragStart}

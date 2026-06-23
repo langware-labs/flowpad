@@ -92,6 +92,57 @@ _TERMINAL_STATUSES: frozenset[WorkerStatus] = frozenset({
 })
 
 
+_ERROR_STATUSES: frozenset[WorkerStatus] = frozenset({
+    WorkerStatus.ERROR,
+    WorkerStatus.API_TIMEOUT,
+    WorkerStatus.INACTIVE,
+})
+
+# Live process-lifecycle states. String literals (not ProcessStatus) keep this a
+# true leaf module — they mirror ``ProcessStatus.RUNNING`` / ``STARTING``.
+_LIVE_PROCESS_STATUSES: frozenset[str] = frozenset({"running", "starting"})
+
+
+class ExecutionMode(StrEnum):
+    """Coarse "kind of running worker" for the footer worker-list chip.
+
+    Mirrors the TS ``ExecutionMode`` in ``ts_sdk/src/process/agentic-types.ts``.
+    Derived, never stored. ``EXTERNAL`` is server-only (OS-scanned).
+    """
+
+    INTERACTIVE = "interactive"   # PTY worker (visible=true)
+    BACKGROUND = "background"     # headless CLI worker (visible=false)
+    ERROR = "error"              # error/dead state
+    EXTERNAL = "external"        # running outside the app (OS-scanned)
+
+
+def classify_execution_mode(
+    *,
+    status: str | None,
+    worker_status: str | None,
+    visible: bool | None,
+    pid_alive: bool | None = None,
+) -> ExecutionMode | None:
+    """Classify a *live* worker into an ``ExecutionMode`` (or ``None`` when the
+    process is not live). Mirrors the TS ``classifyExecutionMode`` truth table:
+
+      1. worker_status ∈ _ERROR_STATUSES               → ERROR
+      2. visible is True and pid_alive is False (dead PTY) → ERROR
+      3. visible is True                                → INTERACTIVE
+      4. visible is False                               → BACKGROUND
+
+    ``EXTERNAL`` is never returned here. ``pid_alive`` only matters for PTY;
+    CLI workers have no PID so rule 2 never applies to them.
+    """
+    if status not in _LIVE_PROCESS_STATUSES:
+        return None
+    if worker_status is not None and worker_status in _ERROR_STATUSES:
+        return ExecutionMode.ERROR
+    if visible is True and pid_alive is False:
+        return ExecutionMode.ERROR
+    return ExecutionMode.INTERACTIVE if visible else ExecutionMode.BACKGROUND
+
+
 def is_running(status: WorkerStatus) -> bool:
     """True while the worker is mid-turn (WAITING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR)."""
     return status in _RUNNING_STATUSES
@@ -370,11 +421,21 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     sz = stat.st_size
 
     # Expanding tail read: start at 4 KB and widen (×16, clamped to
-    # ``_TAIL_MAX_BYTES``) only while the window holds nothing but ignored
+    # ``_TAIL_MAX_BYTES``) while the window holds nothing but ignored
     # session-envelope lines (``last_type is None``), so a long trailing meta run
     # can't bury the real last chat entry and force a spurious UNKNOWN. Healthy
     # sessions find a meaningful entry in the first 4 KB and never expand; the
     # read never exceeds ``_TAIL_MAX_BYTES``.
+    #
+    # ALSO widen when the tail ends in a ``last-prompt`` idle marker but the
+    # window doesn't yet contain a completed assistant turn: the ``last-prompt``
+    # branch below classifies COMPLETE vs WAITING from the ``end_turn`` of the
+    # last assistant entry, and a single oversized tool_use line just ahead of
+    # the trailing ``last-prompt``/``system``/envelope run can strand that
+    # ``end_turn`` past the 4 KB window — making ``_has_completed_assistant``
+    # falsely return False and pinning a genuinely-finished worker at WAITING
+    # forever (never projected to PENDING_USER). Widen until the assistant turn
+    # is in-window (or we hit the file start / ``_TAIL_MAX_BYTES``).
     last_type: str | None = None
     last_subtype: str | None = None
     last_stop_reason: str | None = None
@@ -390,7 +451,12 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         except OSError:
             return WorkerStatus.INITIALIZING
         last_type, last_subtype, last_stop_reason, last_user_ts = _scan_reversed(chunk)
-        if last_type is not None or window >= sz or read_bytes >= _TAIL_MAX_BYTES:
+        if window >= sz or read_bytes >= _TAIL_MAX_BYTES:
+            break
+        need_wider = last_type is None or (
+            last_type == "last-prompt" and not _has_completed_assistant(chunk)
+        )
+        if not need_wider:
             break
         read_bytes = min(read_bytes * 16, _TAIL_MAX_BYTES)
 
@@ -412,6 +478,18 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
             return WorkerStatus.WAITING
         if _has_pending_tool_use(chunk):
             return WorkerStatus.TOOL_RUNNING
+        # ``last-prompt`` also rides in as an idle ack *between* tool calls:
+        # the model finished a tool (tool_result landed, so nothing is pending)
+        # and is slowly planning its next call. When the most recent assistant
+        # turn ended with ``stop_reason=tool_use`` the model is still mid-turn —
+        # the trailing ``last-prompt`` is NOT a turn end. Declaring COMPLETE here
+        # cuts ``stream_transcript`` off during a long inter-tool pause (Opus can
+        # take 20-40 s), so the diagnose runner never scrapes the final report
+        # and falsely reports "not recorded". Only a genuine ``end_turn`` is
+        # terminal; otherwise stay WAITING and keep reading. (Mirrors the
+        # ``stop_reason=="end_turn"`` guard on the ``_post_tool_idle`` path.)
+        if _last_assistant_stop_reason(chunk) != "end_turn":
+            return WorkerStatus.WAITING
         return WorkerStatus.COMPLETE
     if last_type == "user" and "interrupted" in _last_user_text(chunk).lower():
         return WorkerStatus.INTERRUPTED

@@ -3,8 +3,9 @@ import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHea
 import { Button } from '@src/components/ui/button';
 import { AlertDialogFooter } from '@src/components/ui/alert-dialog';
 import { LogIn, Mail, PartyPopper, X } from 'lucide-react';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { trackEvent } from '../utils/analytics';
+import { guardCloudAction } from '@src/services/privacy-guard';
 
 export type LoginDialogVariant = 'require_login' | 'visitor_limit';
 
@@ -72,7 +73,16 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ open, onOpenChange, variant =
   const config = VARIANT_CONFIG[variant];
   const Icon = config.icon;
 
+  // In Local (private) mode the cloud is off-limits — never prompt to log in;
+  // raise the standardized notice and close. The single guard owns the copy.
+  useEffect(() => {
+    if (open && !guardCloudAction('login')) {
+      onOpenChange?.(false);
+    }
+  }, [open, onOpenChange]);
+
   const handleLogin = (source: string) => () => {
+    if (!guardCloudAction('login')) return;
     trackEvent({ event: 'login_clicked', event_source: `${config.eventSource}_${source}` });
     void cloudManager.login();
   };

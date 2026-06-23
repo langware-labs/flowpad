@@ -9,11 +9,13 @@ Claude Code (distinct from project ``tasks/<title>/header.json`` handled by
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -46,8 +48,15 @@ def todo_fn(
 
 
 def todo_id(ref: FSRef) -> str:
-    """Stable id ``todo:<filename-stem>`` (matches legacy collector)."""
-    return f"todo:{Path(ref.path).stem}"
+    """Stable, filesystem-safe **UUID** id derived from the legacy collector key
+    ``todo:<filename-stem>`` — hashed into a uuid5 with the same
+    ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches the DB
+    id and is free of any path-illegal character.
+    """
+    return mint_uuid(
+        f"{RecordType.TODO_FILE}:todo:{Path(ref.path).stem}",
+        namespace=uuid.NAMESPACE_DNS,
+    )
 
 
 def extract_todo(ref: FSRef) -> list[FSRecord]:

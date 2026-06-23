@@ -5,12 +5,14 @@ import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import {
-  ContextEntitiesEnum,
   dataContext,
   type ProjectListItem,
   Project,
   QueryRequest,
 } from '@sdk';
+import { selectProjectContext } from '@src/components/project-selector';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { Button } from '@src/components/ui/button';
@@ -522,6 +524,10 @@ interface OpenProjectComponentProps {
   /** Called after the project has been picked + side-effects applied. The
    *  gate uses this to resume the action that opened the dialog. */
   onPicked?: (project: Project) => void | Promise<void>;
+  /** Plain switch only: change the active-project CONTEXT without navigating
+   *  (no project tab/dock is opened). Used by the footer "Switch Project" so
+   *  switching projects doesn't pull focus into a project view. */
+  contextOnly?: boolean;
 }
 
 export function OpenProjectComponent({
@@ -533,9 +539,11 @@ export function OpenProjectComponent({
   remoteProjectName,
   trigger,
   onPicked,
+  contextOnly,
 }: OpenProjectComponentProps) {
   const { project: currentProject } = useProject();
   const { computeNode } = useAgentContext();
+  const { navigation } = useDockNavigation();
 
   const [showCreate, setShowCreate] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -572,23 +580,35 @@ export function OpenProjectComponent({
 
   const setCurrentProjectContext = useCallback(
     async (project: Project) => {
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
-      await dataContext.refreshProject();
-      dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
+      await selectProjectContext(project);
 
       onProjectChanged?.();
-      // Entity stamping (task/conversation/project_id, mapping table writes,
-      // remap navigation) happens inside `onPicked` — the gate's apply
-      // callback owns it so the wasReplacement signal isn't clobbered by a
-      // pre-stamp here. In the plain footer-switch case onPicked is undefined
-      // and only ctx.project changes, which is the right behavior.
-      try {
-        await onPicked?.(project);
-      } catch {
-        // continuation errors shouldn't break the picker
+      if (onPicked) {
+        // Entity stamping (task/conversation/project_id, mapping table writes,
+        // remap navigation) happens inside `onPicked` — the gate's apply
+        // callback owns it (and its own navigation) so the wasReplacement
+        // signal isn't clobbered by a pre-stamp here.
+        try {
+          await onPicked(project);
+        } catch {
+          // continuation errors shouldn't break the picker
+        }
+      } else if (!contextOnly) {
+        // Plain switch: select the project by navigating to its tab — the same
+        // path as clicking that tab (dockForProjectEntry → fromTabHash →
+        // openDock). Resumes the last-active tab, or the project landing when it
+        // has no open tab. Without this the active project changed but the URL
+        // stayed on the old project's tab, so nothing was selected.
+        //
+        // `contextOnly` (footer Switch Project) deliberately skips this: it only
+        // changes the active-project context — no navigation, no project tab.
+        // Note: this context switch is ephemeral by design — the URL-first
+        // loader re-derives the active project from the URL on the next
+        // navigation, so the switch sticks only until you navigate.
+        navigation.openDock(await dockForProjectEntry(project.id));
       }
     },
-    [onProjectChanged, onPicked],
+    [onProjectChanged, onPicked, navigation, contextOnly],
   );
 
   const ensureProjectAndSetContext = useCallback(

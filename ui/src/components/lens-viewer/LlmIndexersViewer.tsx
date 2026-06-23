@@ -24,6 +24,7 @@ import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { notify } from '@src/notifications';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
+import { scopeIncludesUser, scopeProjectIds } from '@src/lib/scope-filter';
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -76,10 +77,10 @@ export function LlmIndexersViewer() {
     return allIndexes.filter((idx) => {
       const vr = idx.vault_root;
       // Configuration rows with no vault_root: treat as user-area.
-      if (!vr) return scope.user;
+      if (!vr) return scopeIncludesUser(scope);
       const matching = allProjects.find((p) => p.cwd && isInsidePath(vr, p.cwd));
-      if (matching) return scope.projects.includes(matching.id);
-      return scope.user;
+      if (matching) return scopeProjectIds(scope).includes(matching.id);
+      return scopeIncludesUser(scope);
     });
   }, [allIndexes, allProjects, scope]);
 

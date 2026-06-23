@@ -28,8 +28,8 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
+    merge_frontmatter,
 )
 
 
@@ -134,17 +134,9 @@ def skill_gen_id(ref: FSRef) -> str:
         text = skill_md.read_text(encoding="utf-8")
     except OSError:
         return new_id
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    fields: dict = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
     try:
         skill_md.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
+            merge_frontmatter(text, {"id": new_id}, drop_keys=("asset_id",), prepend=True),
             encoding="utf-8",
         )
     except OSError:

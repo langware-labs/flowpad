@@ -5,13 +5,21 @@ import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurf
 import { Button } from '@src/components/ui/button';
 import { WikiToolbar } from '@src/components/wiki-toolbar';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
+import { useAssetRevisionStatus } from '@src/hooks/use-asset-revision-status';
+import { AssetGitPill } from './AssetGitPill';
+import { RevisionsPanel } from '@src/components/assets/editor/revisions/RevisionsPanel';
+import { History } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { FSRef, TypeId } from '@sdk';
+import { useSideWindows } from '@src/navigation/useSideWindows';
+import { FSRef, TypeId, looksBinaryText } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { genericEntityShareSource } from '@src/hooks/share-sources';
@@ -29,6 +37,11 @@ const DEFAULT_MODE: ViewMode = 'view';
 
 function isEditorMode(value: string | undefined | null): value is ViewMode {
   return value != null && (EDITOR_MODES as readonly string[]).includes(value);
+}
+
+/** 'review' and 'markdown' are power-user surfaces — only shown in Advanced. */
+function isAdvancedOnlyMode(mode: ViewMode): boolean {
+  return mode === 'review' || mode === 'markdown';
 }
 
 function readStoredMode(): ViewMode {
@@ -49,6 +62,17 @@ const MODE_ICONS: Record<ViewMode, React.ComponentType<{ className?: string }>> 
   learning: GraduationCap,
 };
 
+/**
+ * Context handed to `headerExtras` — the live frontmatter buffer of the editor.
+ * A header control (e.g. the skill eval toggle) reads `fields` and writes via
+ * `setField`, going through the SAME content buffer as the body autosave, so
+ * there is a single writer to the file (no two-writer race).
+ */
+export interface MarkdownHeaderExtrasCtx {
+  fields: Record<string, string>;
+  setField: (key: string, value: string) => void;
+}
+
 interface MarkdownEditorProps {
   /** FSRef to the .md file — carries path + typeId + read/write. */
   fsRef: FSRef;
@@ -59,12 +83,14 @@ interface MarkdownEditorProps {
   chatTarget: string | null;
   /** Optional asset-specific toolbar actions rendered in the header */
   toolbar?: React.ReactNode;
+  /**
+   * Frontmatter-aware header slot. Rendered in the header (live state only) with
+   * the editor's own `fields`/`setField`, so a control can read+write a
+   * frontmatter key through the single content buffer.
+   */
+  headerExtras?: (ctx: MarkdownHeaderExtrasCtx) => React.ReactNode;
   /** Appended to the side drawer after Editor + Backlinks. */
   extraSideTabs?: ExtraSideTab[];
-  /** Controlled active side-drawer tab id. */
-  activeSideTab?: string;
-  /** Fires when the active side-drawer tab changes (including internal clicks). */
-  onActiveSideTabChange?: (id: string) => void;
   /** Forwarded to the Editor tab — runs once after its backing process is created. */
   onChatProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
   /** When true, the "Learning" view-mode chip appears in the header strip. */
@@ -95,9 +121,8 @@ export function MarkdownEditor({
   fsRef,
   chatTarget,
   toolbar,
+  headerExtras,
   extraSideTabs,
-  activeSideTab,
-  onActiveSideTabChange,
   onChatProcessCreated,
   showLearningMode,
   learningPanel,
@@ -110,9 +135,8 @@ export function MarkdownEditor({
       sourcePath={fsRef.path}
       chatTarget={chatTarget}
       toolbar={toolbar}
+      headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}
-      activeSideTab={activeSideTab}
-      onActiveSideTabChange={onActiveSideTabChange}
       onChatProcessCreated={onChatProcessCreated}
       showLearningMode={showLearningMode}
       learningPanel={learningPanel}
@@ -158,9 +182,8 @@ function MarkdownEditorContent({
   sourcePath,
   chatTarget,
   toolbar,
+  headerExtras,
   extraSideTabs,
-  activeSideTab,
-  onActiveSideTabChange,
   onChatProcessCreated,
   showLearningMode,
   learningPanel,
@@ -171,9 +194,8 @@ function MarkdownEditorContent({
   sourcePath: string;
   chatTarget: string | null;
   toolbar?: React.ReactNode;
+  headerExtras?: MarkdownEditorProps['headerExtras'];
   extraSideTabs?: ExtraSideTab[];
-  activeSideTab?: string;
-  onActiveSideTabChange?: (id: string) => void;
   onChatProcessCreated?: MarkdownEditorProps['onChatProcessCreated'];
   showLearningMode?: boolean;
   learningPanel?: React.ReactNode;
@@ -182,12 +204,21 @@ function MarkdownEditorContent({
 }) {
   const { navigation, currentDock } = useDockNavigation();
 
+  // Standard vs Advanced (Advanced || Dev) skin gating. Standard hides the
+  // power-user affordances (eval/worker buttons, the secondary file toolbar,
+  // the project chip, the review/markdown editor modes, the side window).
+  const advanced = useIsAdvanced();
+
   // viewMode source of truth: URL `?editorMode=…` if present and valid; else
   // last-used value from localStorage; else DEFAULT_MODE. Updating viewMode
   // pushes a new DockPointer with the option merged in — the URL becomes
   // shareable + back-button-restorable, and per-tab independent.
   const urlMode = currentDock?.options?.[EDITOR_MODE_PARAM];
-  const viewMode: ViewMode = isEditorMode(urlMode) ? urlMode : readStoredMode();
+  const rawViewMode: ViewMode = isEditorMode(urlMode) ? urlMode : readStoredMode();
+  // In Standard, fall back to 'view' so the body never renders a surface whose
+  // chip is hidden (e.g. a share-link pinning ?editorMode=review opened by a
+  // Standard user).
+  const viewMode: ViewMode = !advanced && isAdvancedOnlyMode(rawViewMode) ? 'view' : rawViewMode;
 
   const setViewMode = useCallback((mode: ViewMode) => {
     if (!currentDock) return; // outside dock context — shouldn't happen for MarkdownEditor
@@ -238,10 +269,54 @@ function MarkdownEditorContent({
     isMissing,
     recreate,
     reload,
+    lastSync,
   } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000 });
 
   const [propsExpanded, setPropsExpanded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+
+  // ── Per-asset git revisions (common to every asset editor) ──────────────────
+  // Self-contained from the file's own ref so history resolves against the file's
+  // OWN repo regardless of which project is active: run git from the file's
+  // directory (git walks up to the enclosing .git) with the bare filename as the
+  // pathspec. `lastSync` (set on every autosave) re-fetches after the backend
+  // auto-commits the file.
+  const gitComputeNodeId = fsRef.typeId.id;
+  const gitFileDir = fsRef.parent.path;
+  const gitFileName = fsRef.path.slice(fsRef.path.lastIndexOf('/') + 1);
+  const revisionStatus = useAssetRevisionStatus(
+    gitComputeNodeId,
+    gitFileDir,
+    gitFileName,
+    lastSync,
+  );
+
+  // Side windows are URL-first dock state (see useSideWindows). The header git
+  // pill opens the "revisions" window by navigating, not by lifting local state.
+  const { open: openSideWindow } = useSideWindows();
+
+  const revisionsTab = useMemo<ExtraSideTab>(() => ({
+    id: 'revisions',
+    label: revisionStatus.version != null ? `Revisions v${revisionStatus.version}` : 'Revisions',
+    icon: History,
+    description: 'Revision history of this file',
+    panel: (
+      <RevisionsPanel
+        computeNodeId={gitComputeNodeId}
+        workdir={gitFileDir}
+        file={gitFileName}
+        revisions={revisionStatus.revisions}
+        hasRepo={revisionStatus.hasRepo}
+        refresh={revisionStatus.refresh}
+        onRestored={reload}
+      />
+    ),
+  }), [revisionStatus, gitComputeNodeId, gitFileDir, gitFileName, reload]);
+
+  const allSideTabs = useMemo(
+    () => [revisionsTab, ...(extraSideTabs ?? [])],
+    [revisionsTab, extraSideTabs],
+  );
 
   const shareSource = useMemo(() => {
     if (!chatTarget) return null;
@@ -270,6 +345,9 @@ function MarkdownEditorContent({
   const sourcePathStr = typeof sourcePath === 'string' ? sourcePath : '';
   const fileName = sourcePathStr.split('/').pop() || sourcePathStr;
   const dirPath = sourcePathStr.slice(0, sourcePathStr.lastIndexOf('/'));
+  // Asset's own entity type, for the registry type-icon shown before the name.
+  // Prefer the resolved entity TypeId; fall back to the URL's asset-editor segment.
+  const headerType = chatTarget ? new TypeId(chatTarget).type : (currentDock?.pointer?.split('/')?.[1] ?? '');
 
   const handleOpenExternal = useCallback(() => {
     void fsRef.open({ select: true });
@@ -320,6 +398,7 @@ function MarkdownEditorContent({
       <div className="flex h-full flex-col overflow-hidden">
         <EditorHeader
           fileName={fileName}
+          entityType={headerType}
           dirPath={dirPath}
           dirty={false}
           viewMode={viewMode}
@@ -343,6 +422,7 @@ function MarkdownEditorContent({
       <div className="flex h-full flex-col overflow-hidden">
         <EditorHeader
           fileName={fileName}
+          entityType={headerType}
           dirPath={dirPath}
           dirty={false}
           viewMode={viewMode}
@@ -371,6 +451,7 @@ function MarkdownEditorContent({
       <div className="flex h-full flex-col overflow-hidden">
         <EditorHeader
           fileName={fileName}
+          entityType={headerType}
           dirPath={dirPath}
           dirty={false}
           viewMode={viewMode}
@@ -392,6 +473,42 @@ function MarkdownEditorContent({
     );
   }
 
+  // ── Binary / non-text body ──────────────────────────────────────────────────
+  // Never hand binary content to Milkdown/Monaco — it locks up the renderer and
+  // can hang the whole app (e.g. an image mistakenly stored as a .md body). Show
+  // a safe placeholder with a download escape hatch instead.
+  if (looksBinaryText(body)) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <EditorHeader
+          fileName={fileName}
+          entityType={headerType}
+          dirPath={dirPath}
+          dirty={false}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onOpenExternal={handleOpenExternal}
+          onDownload={handleDownload}
+          onDelete={handleDelete}
+          actions={toolbar}
+          showLearningMode={showLearningMode}
+        />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+          <p className="text-sm font-medium text-foreground">This file isn&apos;t text</p>
+          <p className="max-w-md text-xs text-muted-foreground">
+            Its contents look like binary data (for example an image), so it can&apos;t be
+            shown in the editor.
+          </p>
+          <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
+          <Button variant="outline" size="sm" onClick={handleDownload}>
+            <Download className="mr-1 h-4 w-4" />
+            Download
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Editor ─────────────────────────────────────────────────────────────────
   const shareButton = shareSource ? (
     <ShareButton
@@ -401,10 +518,39 @@ function MarkdownEditorContent({
     />
   ) : null;
 
+  // Favorite toggle next to Share (both modes), mirroring the interactive tab.
+  // Keyed on the asset entity's TypeId (the same id chat/share use).
+  const favoriteTypeId = chatTarget ? new TypeId(chatTarget) : null;
+  const favoriteStar = favoriteTypeId ? (
+    <FavoriteStar
+      entityType={favoriteTypeId.type}
+      entityId={favoriteTypeId.id}
+      title={deleteLabel ?? fileName}
+      size={14}
+    />
+  ) : null;
+
+  const leadingActions = (
+    <>
+      <AssetGitPill
+        version={revisionStatus.version}
+        unpushed={revisionStatus.unpushed}
+        hasRepo={revisionStatus.hasRepo}
+        computeNodeId={gitComputeNodeId}
+        workdir={gitFileDir}
+        onOpenHistory={() => openSideWindow('revisions')}
+        onAfterPublish={revisionStatus.refresh}
+      />
+      {shareButton}
+      {favoriteStar}
+    </>
+  );
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <EditorHeader
         fileName={fileName}
+        entityType={headerType}
         dirPath={dirPath}
         dirty={dirty}
         viewMode={viewMode}
@@ -412,7 +558,8 @@ function MarkdownEditorContent({
         onOpenExternal={handleOpenExternal}
         onDownload={handleDownload}
         onDelete={handleDelete}
-        leadingActions={shareButton}
+        leadingActions={leadingActions}
+        nameExtras={headerExtras?.({ fields, setField })}
         actions={toolbar}
         showLearningMode={showLearningMode}
       />
@@ -461,9 +608,7 @@ function MarkdownEditorContent({
         ) : (
           <EditorWithSidePanel
             chatTarget={chatTarget}
-            extraTabs={extraSideTabs}
-            activeTab={activeSideTab}
-            onActiveTabChange={onActiveSideTabChange}
+            extraTabs={allSideTabs}
             onChatProcessCreated={onChatProcessCreated}
             cursorLine={cursorLine}
           >
@@ -568,6 +713,8 @@ function MonacoMarkdownEditor({
 
 interface EditorHeaderProps {
   fileName: string;
+  /** Asset's entity type; resolves the registry icon shown before the name. */
+  entityType?: string;
   dirPath: string;
   dirty: boolean;
   viewMode: ViewMode;
@@ -578,39 +725,56 @@ interface EditorHeaderProps {
   actions?: React.ReactNode;
   /** Slot rendered to the left of the review/edit mode chips. */
   leadingActions?: React.ReactNode;
+  /** Slot rendered inline next to the file name (e.g. the skill eval toggle). */
+  nameExtras?: React.ReactNode;
   showLearningMode?: boolean;
 }
 
-function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, showLearningMode }: EditorHeaderProps) {
-  const visibleModes = EDITOR_MODES.filter((m) => m !== 'learning' || showLearningMode);
+// Standard mode hides the eval/worker `nameExtras`, the secondary file toolbar
+// (copy/open-external/download — Delete stays), and the review/markdown
+// editor-mode chips.
+function EditorHeader({ fileName, entityType, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, nameExtras, showLearningMode }: EditorHeaderProps) {
+  const advanced = useIsAdvanced();
+  const TypeIcon = entityType ? iconForType(entityType) : null;
+  const visibleModes = EDITOR_MODES.filter((m) => {
+    if (m === 'learning') return !!showLearningMode;
+    if (!advanced && isAdvancedOnlyMode(m)) return false;
+    return true;
+  });
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-0.5 truncate">
+        <div className="flex items-center gap-1.5 truncate">
+          {TypeIcon && <TypeIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
           <span className="truncate text-sm font-medium" title={fileName}>{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
+          {advanced && nameExtras}
         </div>
         <div className="flex min-w-0 items-center gap-1">
           {dirPath && (
             <span className="min-w-0 truncate text-[11px] text-muted-foreground">{dirPath}</span>
           )}
-          <button
-            title="Copy path"
-            onClick={() => void navigator.clipboard.writeText(dirPath ? `${dirPath}/${fileName}` : fileName)}
-            data-testid="markdown-editor-copy-path"
-            className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Copy className="h-3 w-3" />
-          </button>
-          <button
-            title="Reveal in Finder"
-            onClick={onOpenExternal}
-            data-testid="markdown-editor-open-external"
-            className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <ExternalLink className="h-3 w-3" />
-          </button>
-          {onDownload && (
+          {advanced && (
+            <button
+              title="Copy path"
+              onClick={() => void navigator.clipboard.writeText(dirPath ? `${dirPath}/${fileName}` : fileName)}
+              data-testid="markdown-editor-copy-path"
+              className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Copy className="h-3 w-3" />
+            </button>
+          )}
+          {advanced && (
+            <button
+              title="Reveal in Finder"
+              onClick={onOpenExternal}
+              data-testid="markdown-editor-open-external"
+              className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </button>
+          )}
+          {advanced && onDownload && (
             <button
               title="Download file"
               onClick={onDownload}

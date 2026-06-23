@@ -7,6 +7,7 @@ import config from '../config';
 import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
+import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -87,7 +88,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * Frontend SchemaRegistry — complete reflection of the backend type registry
    * (TypeInfo + nested JSON schema), populated once from the bootstrap ``types``
    * payload via {@link loadTypes}. Single source of truth for type metadata
-   * (icon/browseable/creatable/fields) and validation schemas.
+   * (icon/browseable_by/creatable/fields) and validation schemas.
    */
   typeInfos: { [type: string]: TypeInfo } = {};
   streams: WSStream[] = [];
@@ -137,7 +138,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return this.schemas[type.toLowerCase()];
   }
 
-  /** TypeInfo for a type (icon/browseable/creatable/fields/schema). */
+  /** TypeInfo for a type (icon/browseable_by/creatable/fields/schema). */
   public getTypeInfo(type: string): TypeInfo | undefined {
     if (typeof type !== 'string') return undefined;
     return this.typeInfos[type.toLowerCase()];
@@ -732,9 +733,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * Returns null when nothing distinguished resolves (the chip then falls back
    * to the ViewType title).
    */
-  public getTabName(dock: { viewType?: string; pointer?: string } | null | undefined): string | null {
-    const pointer = dock?.pointer ?? '';
-    if (!pointer) return null;
+  public getTabName(
+    dock: { viewType?: string; pointer?: string; options?: Record<string, string> } | null | undefined,
+  ): string | null {
     // Resolve a cached entity's name by typeid — either a raw `<type>-<id>`
     // string, or a (viewType, bare-id) pair when the dock's type lives in the
     // viewType segment (e.g. /dock/conversation/<uuid>).
@@ -742,12 +743,34 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (!typeOrRaw) return null;
       try {
         const tid = id !== undefined ? new TypeId(typeOrRaw, id) : new TypeId(typeOrRaw);
-        const ent = this.getByTypeIdFromCache(tid) as { name?: string | null } | null;
-        return ent?.name ?? null;
+        // Prefer the entity's canonical display label (e.g. a Conversation
+        // surfaces its `title` via getDisplayName), falling back to the raw
+        // `name` — both for entities with no display override and for plain
+        // cached rows that have no `displayName` getter.
+        const ent = this.getByTypeIdFromCache(tid) as
+          | { displayName?: string | null; name?: string | null }
+          | null;
+        return (ent?.displayName ?? ent?.name) ?? null;
       } catch {
         return null;
       }
     };
+    // Assets is a single scope-keyed tab — its title follows the SCOPE, not the
+    // (in-tab) sub-pointer: single project → "<project>'s Assets"; user → "My
+    // Assets"; global / all / multi-select → null (chip falls back to the
+    // registry "Assets" title). Runs before the empty-pointer guard because a
+    // scoped assets dock normalizes its pointer to ''.
+    if (dock?.viewType === 'assets') {
+      const scope = dockOptionsToScopeFilter(dock.options);
+      if (scope?.mode === 'project' && scope.activeProjectId) {
+        const name = nameFromCache('project', scope.activeProjectId);
+        return name ? `${name}'s Assets` : 'Assets';
+      }
+      if (scope?.mode === 'user') return 'My Assets';
+      return null;
+    }
+    const pointer = dock?.pointer ?? '';
+    if (!pointer) return null;
     const lastSegment = (path: string): string | null =>
       decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
     // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a
@@ -768,6 +791,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (dock?.viewType === 'wiki' || pointer.startsWith('wiki/')) {
       const kw = lastSegment(pointer.replace(/^wiki\//, ''));
       if (kw) return kw;
+    }
+    // 4. lens transcript — the ClaudeSession entity (id = sessionId), fetched
+    //    into cache by the tab mint via `dock.targetTypeId`.
+    if (dock?.viewType === 'lens') {
+      const segs = pointer.split('/').filter(Boolean);
+      if (segs[0] === 'claude' && segs[1] === 'transcript' && segs[2] && !segs[3]) {
+        const n = nameFromCache('claude_session', segs[2]);
+        if (n) return n;
+      }
     }
     return null;
   }
@@ -857,6 +889,22 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const entityJson = await apiClient.get(`${GRAPH_API_PREFIX}/${typeId.type}/${typeId.id}`, {
       params: expansions?.toJSON(),
     });
+
+    // The backend signals "no such entity for this id" two ways: a bare 404, OR
+    // a 200 carrying a ``{status:'FAIL', data:null}`` envelope (the graph
+    // get-by-id route does the latter for an id it can't resolve — e.g. an
+    // optional ``@uname`` system-project lookup that isn't visible to the current
+    // user, or a since-removed entity still referenced by a stale id). The 404
+    // case is already treated as a quiet not-found in ``getByTypeId``; mirror that
+    // here for the FAIL-envelope case so an expected miss negative-caches and
+    // returns null instead of letting ``castAndDeepAssign`` throw — which would
+    // log a console error and reject for what is not an error. (An *optional*
+    // lookup spamming the console then trips every "no console errors" assertion.)
+    if (!entityJson || !DataManager.getTypeOfObject(entityJson)) {
+      ref.status = EntityStatus.ERROR;
+      ref.notFound = true;
+      return null;
+    }
 
     const entity = this.castAndDeepAssign<U>(entityJson);
     //Load entity if load flag is set in query
@@ -1557,6 +1605,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       this.register_new_entity(entity.typeId, entity);
     }
     return entity;
+  }
+
+  /**
+   * Resolve the single entity whose `asset_ref` equals `path` — a PURE index
+   * lookup (`GET /assets/entity`, backed by `Entity.get_by_asset_ref`). No
+   * recovery, no discovery scan, no indexing — returns the entity or null.
+   * The cheap path→entity conversion (e.g. minting a vfs asset tab's project);
+   * `systemTools.discoverByPath` is the heavy recovery counterpart, used only by
+   * the editor view on a bulk miss. Hydrates + caches the hit via the standard
+   * dedup path.
+   */
+  public async getEntityByPath<U extends T>(path: string): Promise<U | null> {
+    const json = await apiClient.get<any>('/assets/entity', { params: { path } }).catch(() => null);
+    if (!json) return null;
+    return this.updateEntityFromJson<U>(json);
   }
 
   /**

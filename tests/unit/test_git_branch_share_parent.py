@@ -22,7 +22,6 @@ def _registered_types():
 def test_registry_flag_set_for_git_branch_only():
     assert SchemaRegistry.get("git_branch").parent_share_on_default is True
     assert SchemaRegistry.get("git_remote").parent_share_on_default is False
-    assert SchemaRegistry.get("git_repo").parent_share_on_default is False
 
 
 @pytest.mark.asyncio

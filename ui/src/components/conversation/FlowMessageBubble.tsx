@@ -1,4 +1,4 @@
-import { createConversationForShare, FlowMessage, GitRepo, Prompt, TypeId, User } from '@sdk';
+import { createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -10,7 +10,6 @@ import { MessageBubble } from './MessageBubble';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, iconForEntity } from './EntityChip';
-import { GitRepoChip } from '@src/components/git/GitRepoChip';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
@@ -362,15 +361,12 @@ export function FlowMessageBubble({
     timestamp,
   };
 
-  // Files + entities (Skill / Markdown / Spec / git_repo) come from the single
+  // Files + entities (Skill / Markdown / Spec) come from the single
   // `useAttachments` surface, along with the message-level `downloaded` flag.
-  // `git_repo` is a remote reference rendered via its own accept-and-work modal
-  // (no bundle download), so it's split out and always shown; `prompt` entities
-  // render via the attachment-actions row's PromptAttachmentPreview (inside
-  // MessageBubble), not as generic chips; the rest ride in the body bundle and
-  // only render as live chips once `downloaded`.
-  const gitRepoEntities = entities.filter((t) => t.type === GitRepo.type);
-  const otherEntities = entities.filter((t) => t.type !== GitRepo.type && t.type !== Prompt.type);
+  // `prompt` entities render via the attachment-actions row's
+  // PromptAttachmentPreview (inside MessageBubble), not as generic chips; the
+  // rest ride in the body bundle and only render as live chips once `downloaded`.
+  const otherEntities = entities.filter((t) => t.type !== Prompt.type);
   const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   const hasBody = bodyStatus !== BodyStatus.NA;
@@ -408,6 +404,22 @@ export function FlowMessageBubble({
   // are already present, so nothing re-downloads). Drafts never reach here —
   // they return early via MessageComposer above.
   const showLiveChips = downloaded && attachmentProjectId != null;
+
+  // Image attachments whose bytes are already local render as image cards right
+  // away — viewing or downloading a picture needs no project context, so they
+  // skip the project-mapping gate the other chips wait behind. This is what the
+  // sender sees the instant they send (their bytes are already on disk): the
+  // picture itself, not a "Download" button for something they just attached.
+  const localImageItems = attachmentItems.filter(
+    (i) => i.state === AttachmentChipState.Downloaded && !!i.url && isImagePath(i.filename),
+  );
+  // The gated chip list and the aggregate "Download N" button must not re-count
+  // what's already surfaced without a download: the images shown inline above,
+  // and prompt entities (their text is previewed in the prompt row and they
+  // materialize on Approve & Execute, not via this button).
+  const gatedItems = showLiveChips ? attachmentItems.filter((i) => !localImageItems.includes(i)) : [];
+  const promptEntityCount = entities.filter((t) => t.type === Prompt.type).length;
+  const pendingAssetCount = assetCount - localImageItems.length - promptEntityCount;
 
   const progressPct = progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
@@ -457,15 +469,24 @@ export function FlowMessageBubble({
             </span>
           </div>
         )}
-        {/* git_repo references open the accept-and-work modal directly — no
-          bundle download needed, so they render in both states. */}
-        {gitRepoEntities.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {gitRepoEntities.map((typeId) => (
-              <GitRepoChip key={`asset:${typeId.type}-${typeId.id}`} typeId={typeId} />
-            ))}
-          </div>
-        )}
+        {/* Locally-available images always render as image cards — no project
+            gate, no download step. The sender sees them immediately. */}
+        {localImageItems.map((item) => (
+          <AttachmentChip
+            key={item.key}
+            url={item.url ?? ''}
+            filename={item.filename}
+            state={item.state}
+            onOpenInEditor={
+              item.localPath ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!)) : undefined
+            }
+            onRevealInFolder={
+              item.localPath
+                ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
+                : undefined
+            }
+          />
+        ))}
         {showLiveChips ? (
           <>
             {otherEntities.length > 0 && (
@@ -480,7 +501,7 @@ export function FlowMessageBubble({
                 ))}
               </div>
             )}
-            {attachmentItems.map((item) => (
+            {gatedItems.map((item) => (
               <AttachmentChip
                 key={item.key}
                 url={item.url ?? ''}
@@ -498,7 +519,7 @@ export function FlowMessageBubble({
                 }
               />
             ))}
-            {attachmentItems.length > 1 && (
+            {gatedItems.length > 1 && (
               <a
                 href={localBundleUrl(messageId)}
                 download
@@ -509,9 +530,9 @@ export function FlowMessageBubble({
               </a>
             )}
           </>
-        ) : hasBody && assetCount > 0 ? (
+        ) : hasBody && pendingAssetCount > 0 ? (
           <DownloadAttachmentsButton
-            count={assetCount}
+            count={pendingAssetCount}
             labels={assetLabels}
             typeChips={assetTypeChips}
             uploading={bodyStatus === BodyStatus.UPLOADING}

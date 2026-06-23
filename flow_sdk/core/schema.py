@@ -15,6 +15,11 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 _full_schema_cache: Optional[List[Dict[str, Any]]] = None
 # Memoized {type_name: json_schema} derived from _full_schema_cache.
 _entity_schema_map_cache: Optional[Dict[str, Dict[str, Any]]] = None
+# Memoized assembled payload list keyed by ``include_schema`` — the per-type
+# ``info.to_dict()`` assembly over ~150 types costs ~225ms, identical every
+# call (the type registry is static after startup). Warmed at server-module
+# import so the first (cold) bootstrap reads it instead of building it inline.
+_all_type_payloads_cache: Dict[bool, List[Dict[str, Any]]] = {}
 
 
 def compare_json_schemas(src: Dict[str, Any], dst: Dict[str, Any]) -> Dict[str, Any]:
@@ -223,6 +228,7 @@ def invalidate_schema_cache() -> None:
     global _full_schema_cache, _entity_schema_map_cache
     _full_schema_cache = None
     _entity_schema_map_cache = None
+    _all_type_payloads_cache.clear()
 
 
 def _entity_schema_map(allow_cache: bool = True) -> Dict[str, Dict[str, Any]]:
@@ -277,7 +283,13 @@ def build_all_type_payloads(
     """Unified payloads for EVERY registered type (so the UI has metadata/icons
     for everything it renders). Delegates to ``build_type_payload`` per type;
     the memoized ``_entity_schema_map`` keeps each per-type schema lookup O(1).
+
+    The assembled list is memoized per ``include_schema`` (cleared by
+    ``invalidate_schema_cache`` on dynamic type registration): the ~225ms
+    assembly is identical once the registry is settled.
     """
+    if allow_cache and include_schema in _all_type_payloads_cache:
+        return _all_type_payloads_cache[include_schema]
     payloads: List[Dict[str, Any]] = []
     for type_name in SchemaRegistry.get_all_types():
         payload = build_type_payload(
@@ -285,4 +297,6 @@ def build_all_type_payloads(
         )
         if payload is not None:
             payloads.append(payload)
+    if allow_cache:
+        _all_type_payloads_cache[include_schema] = payloads
     return payloads

@@ -18,7 +18,13 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.indexer.functions.claude_sessions import extract_claude_session_from_path
+from types import SimpleNamespace
+
+from flow_sdk.fs_store.indexer.functions import claude_sessions as _claude_sessions
+from flow_sdk.fs_store.indexer.functions.claude_sessions import (
+    extract_claude_session_from_path,
+    get_claude_session,
+)
 from flow_sdk.fs_store.indexer.functions.codex_sessions import extract_codex_session_from_path
 
 _CLAUDE_SID = "11111111-1111-4111-8111-111111111111"
@@ -61,6 +67,31 @@ def test_claude_include_content_true_renders_searchable_text(tmp_path):
     rec = extract_claude_session_from_path(p, include_content=True)  # default
     assert rec.session_id == _CLAUDE_SID
     assert _NEEDLE in rec.content  # the full parse ran and indexed the message
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_get_claude_session_lookup_does_not_parse_content(tmp_path, monkeypatch):
+    """RCA: resolving a session BY ID must not parse the whole transcript.
+
+    ``get_claude_session`` is a path/envelope resolver — every caller
+    (``transcript_descriptor``, pty_actions, agentic_process) reads only
+    ``jsonl_path``/``cwd``/existence, never ``content``. It must therefore look
+    up with ``include_content=False``. Today it calls the extractor with the
+    default ``True``, so a single createProcess→cmd_line→transcript_descriptor
+    lookup runs ``worker_summary_log`` over the full JSONL and pins the event
+    loop ~15-20s on a large transcript. Captured at the resolver seam.
+    """
+    proj = tmp_path / "-repo"
+    proj.mkdir()
+    _write_claude_jsonl(proj)  # writes <sid>.jsonl under the project dir
+    monkeypatch.setattr(
+        _claude_sessions, "get_instance_settings",
+        lambda: SimpleNamespace(claude_projects_dir=tmp_path),
+    )
+    rec = get_claude_session(_CLAUDE_SID)
+    assert rec is not None and rec.jsonl_path  # session resolved (path + envelope)
+    # The lookup must NOT have run the expensive full-transcript parse.
+    assert rec.content == ""
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

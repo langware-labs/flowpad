@@ -307,26 +307,33 @@ class Trigger(Entity):
     # ── Schedule job management ───────────────────────────────────────────────
 
     async def _register_schedule_job(self) -> None:
-        """Register this trigger with APScheduler. Updates next_run on success."""
+        """Register this trigger with APScheduler. Updates next_run on success.
+
+        Uses a lock to serialize concurrent job registrations and prevent race
+        conditions where multiple coroutines add the same job multiple times.
+        """
         if not self.id or not self.expr:
             return
         try:
+            from flow_sdk.server.scheduler import _job_registration_lock
+
             scheduler = _get_scheduler()
             if scheduler:
-                trigger = _parse_trigger(self.sched_trigger_type or "cron", self.expr)
-                job = scheduler.add_job(
-                    _fire_schedule_job,
-                    trigger=trigger,
-                    id=self.id,
-                    name=self.name,
-                    args=[self.id],
-                    replace_existing=True,
-                )
-                if not self.enabled:
-                    job.pause()
-                if job.next_run_time:
-                    self.next_run = job.next_run_time
-                    await self.update()
+                async with _job_registration_lock:
+                    trigger = _parse_trigger(self.sched_trigger_type or "cron", self.expr)
+                    job = scheduler.add_job(
+                        _fire_schedule_job,
+                        trigger=trigger,
+                        id=self.id,
+                        name=self.name,
+                        args=[self.id],
+                        replace_existing=True,
+                    )
+                    if not self.enabled:
+                        job.pause()
+                    if job.next_run_time:
+                        self.next_run = job.next_run_time
+                        await self.update()
         except Exception as e:
             logger.warning(f"Failed to schedule trigger job {self.id}: {e}")
 
@@ -335,18 +342,21 @@ class Trigger(Entity):
         if not self.id or not self.expr:
             return
         try:
+            from flow_sdk.server.scheduler import _job_registration_lock
+
             scheduler = _get_scheduler()
             if scheduler:
-                trigger = _parse_trigger(self.sched_trigger_type or "cron", self.expr)
-                job = scheduler.reschedule_job(self.id, trigger=trigger)
-                if job:
-                    if self.enabled:
-                        job.resume()
-                    else:
-                        job.pause()
-                    if job.next_run_time:
-                        self.next_run = job.next_run_time
-                        await self.update()
+                async with _job_registration_lock:
+                    trigger = _parse_trigger(self.sched_trigger_type or "cron", self.expr)
+                    job = scheduler.reschedule_job(self.id, trigger=trigger)
+                    if job:
+                        if self.enabled:
+                            job.resume()
+                        else:
+                            job.pause()
+                        if job.next_run_time:
+                            self.next_run = job.next_run_time
+                            await self.update()
         except Exception as e:
             logger.warning(f"Failed to reschedule trigger {self.id}: {e}")
 

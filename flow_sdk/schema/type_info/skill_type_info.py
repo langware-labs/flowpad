@@ -1,6 +1,7 @@
 """Type metadata for SKILL."""
 from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 from flow_sdk.fs_store.indexer.functions.skill import (
     extract_skill,
     skill_asset_hash,
@@ -24,7 +25,7 @@ def _skill_default_body(entity) -> str:
 SKILL = TypeMetadata(
     type=EntityType.SKILL,
     icon="Sparkles",
-    browseable=True,
+    browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
@@ -33,7 +34,7 @@ SKILL = TypeMetadata(
     main_layout="folder",
     main_file="SKILL.md",
     from_disk_fn=extract_skill,
-    gen_id_fn=skill_gen_id,
+    gen_uuid_fn=skill_gen_id,
     asset_hash_fn=skill_asset_hash,
     default_body_fn=_skill_default_body,
 )

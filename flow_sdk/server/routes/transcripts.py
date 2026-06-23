@@ -19,11 +19,22 @@ from fastapi.responses import JSONResponse
 from flow_sdk.transcript_analyzer.entries import MetaEntry
 from flow_sdk.transcript_analyzer.resolver import (
     TranscriptNotFoundError,
+    received_transcript_dest,
     resolve_session_jsonl,
 )
 from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
 
 logger = logging.getLogger(__name__)
+
+
+def _is_received(worker_type: str, session_id: str, resolved: Path) -> bool:
+    """True when ``resolved`` is the instance's received-transcripts copy for this
+    session — i.e. the transcript arrived via a shared message and never ran here,
+    so it is not resumable. Path-based (single source of truth: the same
+    ``received_transcript_dest`` the resolver falls back to). Both paths are
+    already absolute/canonical, so compare directly — no symlink-resolving I/O."""
+    dest = received_transcript_dest(worker_type, session_id)
+    return dest is not None and resolved == dest
 
 router = APIRouter()
 
@@ -64,6 +75,43 @@ def _build_header(transcript: AgentTranscriptFile) -> dict:
     return out
 
 
+async def _header_with_name(worker_type: str, transcript: AgentTranscriptFile) -> dict:
+    """``_build_header`` plus a generic worker-session display ``name`` (the same
+    title the ``history_entry`` list shows), so the transcript tab can label
+    itself for any worker (claude/codex/copilot). Best-effort: a name-resolve
+    failure never blocks the transcript response."""
+    header = _build_header(transcript)
+    try:
+        from flow_sdk.builtin.worker_history import get_worker_session_name
+
+        name = await get_worker_session_name(
+            worker_type, transcript.session_id, jsonl_path=transcript.path
+        )
+        if name:
+            header["name"] = name
+    except Exception:  # noqa: BLE001
+        logger.exception("transcripts: session name resolve failed for %s", transcript.session_id)
+    return header
+
+
+async def _post_agent_trace_feed_entry(trace_entity) -> str | None:
+    """Best-effort Home Feed entry for a completed session analysis."""
+    try:
+        from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+
+        user = await get_or_create_local_user()
+        feed = FeedEntry(
+            feed_status=FeedStatus.NEW.value,
+            data={"type_id": str(trace_entity.typeid)},
+        )
+        feed = await feed.save(user.typeid)
+        return feed.id
+    except Exception:
+        logger.exception("transcripts: failed to post AgentTrace feed entry")
+        return None
+
+
 @router.get("/api/v1/transcripts/{worker_type}")
 async def get_transcript(worker_type: str, path: str = ""):
     """Return parsed entries for a transcript JSONL.
@@ -96,7 +144,8 @@ async def get_transcript(worker_type: str, path: str = ""):
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
-        "header": _build_header(transcript),
+        "received": _is_received(worker_type, transcript.session_id, p),
+        "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
     }
 
@@ -136,6 +185,7 @@ async def create_agent_trace(worker_type: str, session_id: str, request: Request
     import asyncio
     from datetime import datetime, timezone
 
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.agent_trace import AgentTrace
     from flow_sdk.transcript_analyzer.synthesizers.agent_trace import (
         merge_annotations,
@@ -160,11 +210,25 @@ async def create_agent_trace(worker_type: str, session_id: str, request: Request
         return _error(400, "INVALID_ARG", str(exc))
 
     trace = merge_annotations(skeleton, annotations)
+    try:
+        analyzed_process = await AgenticProcess.get_by_session_id(session_id)
+    except Exception:
+        logger.exception("transcripts: failed to resolve analyzed process for %s", session_id)
+        analyzed_process = None
+    if analyzed_process:
+        trace["analyzed_process_id"] = analyzed_process.id
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     trace["name"] = f"trace-{session_id[:8]}-{stamp}"
     entity = AgentTrace.from_trace(trace)
     await entity.save()
-    return {"ok": True, "id": entity.id, "asset_ref": entity.asset_ref, "summary": trace["summary"]}
+    feed_entry_id = await _post_agent_trace_feed_entry(entity)
+    return {
+        "ok": True,
+        "id": entity.id,
+        "asset_ref": entity.asset_ref,
+        "summary": trace["summary"],
+        "feed_entry_id": feed_entry_id,
+    }
 
 
 @router.get("/api/v1/workers/{worker_type}/{session_id}/transcript")
@@ -202,6 +266,7 @@ async def get_worker_session_transcript(worker_type: str, session_id: str):
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
-        "header": _build_header(transcript),
+        "received": _is_received(worker_type, transcript.session_id, path),
+        "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
     }

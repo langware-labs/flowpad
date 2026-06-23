@@ -8,6 +8,7 @@ from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import TypeId
+from flow_sdk.schema.types import EntityType
 
 
 class ConversationKind(StrEnum):
@@ -64,6 +65,34 @@ def _get_hub_client(api_key: str) -> "FlowpadClient":
     return client
 
 
+# Shared-context asset types the hub hosts as first-class nodes, so a share can
+# grant a DURABLE ``reader`` role edge on the asset ITSELF (minted on accept
+# alongside the conversation ``member`` grant) instead of access living only in
+# the thread. Extend as more asset types gain a hub model (see the hub's
+# ``BuiltinEntityType`` / ``builtin/`` registrations). Doc types (``markdown`` …)
+# are intentionally absent: the hub doesn't host them; they keep riding the
+# message bundle and stay local. (Ideally this becomes a ``hub_hostable`` flag on
+# the type's ``TypeInfo`` so a new type lights up without editing this tuple.)
+_HUB_SHAREABLE_ASSET_TYPES = (EntityType.SKILL.value, EntityType.AGENT.value)
+
+
+def _coerce_context_typeid(ref) -> Optional[TypeId]:
+    """Best-effort ``TypeId`` from a ``shared_context_entities`` entry.
+
+    Entries arrive as a ``TypeId``, a ``"<type>-<id>"`` string, or a
+    ``{"type", "id"}`` dict. Returns ``None`` for anything unparseable."""
+    try:
+        if isinstance(ref, TypeId):
+            return ref
+        if isinstance(ref, str):
+            return TypeId(ref)
+        if isinstance(ref, dict) and ref.get("type") and ref.get("id"):
+            return TypeId(f"{ref['type']}-{ref['id']}")
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
 class Conversation(Entity):
     """A conversation composed into a Task (or other parent entity).
 
@@ -86,9 +115,14 @@ class Conversation(Entity):
     # client payload. See ``ConversationKind``.
     kind: ConversationKind = APIField(default=ConversationKind.DIRECT)
     # Hub-side owner of the conversation (mirrors ``Conversation.initiated_by``
-    # on the hub). Populated by ``_upsert_hub_conversation_metadata`` and used
-    # by ``handle_conversation_delete_archived`` to classify each archived
-    # row as own-delete vs leave vs decline. Always equal to a cloud-user id.
+    # on the hub). Populated VERBATIM by ``_upsert_hub_conversation_metadata``
+    # and used by ``handle_conversation_delete_archived`` to classify each
+    # archived row as own-delete vs leave vs decline. A cloud-user id when the
+    # hub carried an owner — but MAY be null: the hub only stamps
+    # ``initiated_by`` for project-created conversations, so share/diagnostics
+    # convs reflect ``None`` here (the receiver must NOT fabricate a 'system'
+    # sentinel). Ownership for display/authz resolves from the participant
+    # roster's ``owner`` role; all ``created_by ==`` checks are null-safe.
     created_by: Optional[str] = APIField(default=None)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
@@ -152,12 +186,30 @@ class Conversation(Entity):
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required")
 
+        # Deliver any messages composed while this conversation was still local
+        # (the conversation just became remote via super().share() above). A
+        # normal conversation is remote before its first message, so every
+        # message reaches the hub at send time; a conversation composed offline
+        # — the flow-diagnose support artifact — wrote its messages locally
+        # while remote=False and they were never pushed. Flush them through the
+        # same send pipeline a normal reply uses, BEFORE inviting, so the
+        # invitation's callback_override and the recipient's first fetch resolve.
+        await self._deliver_pending_messages()
+
         # Post-accept landing: point at the conversation's first FlowMessage on
         # the hub — that URL renders MessageLanding, which hosts the "Open in
         # Flowpad" button. Computed once per share; same value for every
         # recipient. Falls back to None (hub default = entity URL) when the
         # conversation has no messages yet.
         callback_override = self._first_message_landing_path()
+
+        # Push hub-shareable assets (skill/agent) to the hub so each becomes a
+        # first-class node owned by the sharer, and collect one ``reader`` target
+        # per asset. These ride the SAME invitation as the conversation
+        # ``member`` grant: on accept the recipient gets a direct, durable role
+        # edge on the asset itself, so access survives the conversation being
+        # left or deleted (the conversation is the channel, not the access).
+        asset_targets = await self._share_hostable_assets()
 
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             # Caller joins so the creator enters ``participants``.
@@ -170,6 +222,7 @@ class Conversation(Entity):
                     "recipient_email": email,
                     "invitation_targets": [
                         {"typeid": f"conversation-{self.id}", "role": "member"},
+                        *asset_targets,
                     ],
                 }
                 if callback_override:
@@ -203,13 +256,8 @@ class Conversation(Entity):
             targets = [targets]
         for ref in targets:
             try:
-                if isinstance(ref, TypeId):
-                    tid = ref
-                elif isinstance(ref, str):
-                    tid = TypeId(ref)
-                elif isinstance(ref, dict) and ref.get("type") and ref.get("id"):
-                    tid = TypeId(f"{ref['type']}-{ref['id']}")
-                else:
+                tid = _coerce_context_typeid(ref)
+                if tid is None:
                     continue
                 cls = SchemaRegistry.get_entity_cls(tid.type)
                 if cls is None or not tid.id or "parent_type_id" not in cls.model_fields:
@@ -228,6 +276,91 @@ class Conversation(Entity):
                     logging.warning("[conv.share] link context %s failed (non-fatal): %s", tid, e)
             except Exception as e:  # noqa: BLE001
                 logging.warning("[conv.share] link context entity %r failed (non-fatal): %s", ref, e)
+
+    async def _share_hostable_assets(self) -> list[dict]:
+        """Ensure each hub-shareable shared-context asset has a hub node and
+        return one ``reader`` ``invitation_target`` per asset.
+
+        For every entry in ``shared_context_entities`` whose type the hub hosts
+        (``_HUB_SHAREABLE_ASSET_TYPES`` — skill/agent), push it to the hub via
+        ``Entity.share()`` when it isn't already remote. The hub mints
+        ``sharer ─[ROLE owner]→ asset`` automatically on create, so the asset
+        becomes a first-class, owned node. The returned targets are appended to
+        each recipient's ``MembershipRequest`` so accept grants a direct
+        ``reader`` edge on the asset — durable, independent of the conversation.
+
+        Doc types the hub doesn't host (markdown …) are skipped: they keep
+        riding the message bundle as before. Best-effort per asset; a failed
+        push is logged and that asset simply isn't granted (no membership
+        breakage)."""
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        targets: list[dict] = []
+        for ref in (self.shared_context_entities or []):
+            tid = _coerce_context_typeid(ref)
+            if tid is None or tid.type not in _HUB_SHAREABLE_ASSET_TYPES or not tid.id:
+                continue
+            try:
+                cls = SchemaRegistry.get_entity_cls(tid.type)
+                if cls is None:
+                    continue
+                ent = await cls.get_one({"id": tid.id})
+                if ent is None:
+                    continue
+                if not getattr(ent, "remote", False):
+                    await ent.share()  # hub create → owner edge auto-minted
+                    # Persist remote=True locally so a re-share skips the push.
+                    try:
+                        await ent.save(None)
+                    except Exception as e:  # noqa: BLE001
+                        logging.warning("[conv.share] persist remote %s failed (non-fatal): %s", tid, e)
+                targets.append({"typeid": str(tid), "role": "reader"})
+            except Exception as e:  # noqa: BLE001
+                logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
+        return targets
+
+    async def _deliver_pending_messages(self) -> None:
+        """Push messages that were composed before this conversation was remote.
+
+        Reuses the SAME send pipeline a normal reply uses — there is no separate
+        push path. ``_send_conversation_message_header`` is the hub-side create
+        that ``handle_add_message`` calls for every reply; ``_upload_body_and_
+        finalize`` is its body-bundle step. We read the on-disk pointer index
+        (the source of truth, so this works on the transient entity the share
+        action builds) and run each not-yet-remote message through that pipeline.
+        Best-effort per message: a failed push is logged and the row left local,
+        so a later re-share retries it."""
+        from flow_sdk.app.actions.notification_action import (  # noqa: PLC0415
+            _send_conversation_message_header,
+            _upload_body_and_finalize,
+        )
+        from flow_sdk.builtin.flow_message import BodyStatus, FlowMessage  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
+            default_jsonl_path,
+            from_jsonl,
+            message_pointers,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+        rec = from_jsonl(
+            default_jsonl_path(self.id), parent_id="", record_id=self.id,
+            parent_type=RecordType.PROJECT,
+        )
+        for ptr in message_pointers(rec):
+            fm = await FlowMessage.get_one({"id": ptr.id})
+            if fm is None or getattr(fm, "remote", False):
+                continue  # missing row, or already on the hub — nothing to do
+            # Mirror handle_add_message: a message carrying a body bundle is
+            # announced as UPLOADING so the hub expects the bundle we upload next.
+            if fm.has_body() and fm.body_status != BodyStatus.UPLOADING:
+                fm.body_status = BodyStatus.UPLOADING
+                await fm.save()
+            if not await _send_conversation_message_header(self, fm):
+                continue  # push failed (already logged) — leave local for retry
+            fm.remote = True
+            await fm.save()
+            if fm.body_status == BodyStatus.UPLOADING:
+                await _upload_body_and_finalize(fm, self.id)
 
     def _first_message_landing_path(self) -> Optional[str]:
         """Return ``/flow_message/<id>`` for the earliest FM in this conv, or None.
@@ -256,6 +389,45 @@ class Conversation(Entity):
         if not msg_id:
             return None
         return f"/flow_message/{msg_id}"
+
+    async def summary(self) -> str:
+        """Plain-text summary of this conversation: a header (title,
+        participants+roles, message count) followed by one line per message
+        (``FlowMessage.summary()``), oldest-first.
+
+        Cheap and synchronous-ish: reads the on-disk jsonl pointer index (the
+        source of truth, same idiom as ``_deliver_pending_messages``) and loads
+        each FlowMessage by id. No LLM, no hub calls.
+        """
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
+            default_jsonl_path,
+            from_jsonl,
+            message_pointers,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+        def _who(p: dict) -> str:
+            label = p.get("name") or p.get("email") or p.get("user_id") or "?"
+            role = p.get("role")
+            return f"{label} ({role})" if role else str(label)
+
+        participants = ", ".join(_who(p) for p in (self.participants or [])) or "(none)"
+        lines = [
+            f"Conversation: {self.title or '(untitled)'}",
+            f"Participants: {participants}",
+            f"Messages: {self.message_count}",
+            "",
+        ]
+        rec = from_jsonl(
+            default_jsonl_path(self.id), parent_id="", record_id=self.id,
+            parent_type=RecordType.PROJECT,
+        )
+        for ptr in message_pointers(rec):
+            fm = await FlowMessage.get_one({"id": ptr.id})
+            if fm is not None:
+                lines.append(fm.summary())
+        return "\n".join(lines)
 
     async def add_message(
         self,

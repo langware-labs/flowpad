@@ -24,7 +24,8 @@ import {
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { ChevronLeft, ChevronRight, ExternalLink, X, type LucideIcon } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 /** One chip in the strip. Kind-agnostic: terminals, entity tabs, and the
@@ -34,11 +35,14 @@ export interface TabStripItem {
   key: string;
   /** Display title. */
   title: string;
+  /** Extra classes for the title text (e.g. blue for projectless/global tabs). */
+  titleClassName?: string;
   /** Leading icon node (resolved by the owner — vendor override ?? type icon). */
   icon?: React.ReactNode;
   /** Extra inline markers after the icon (e.g. worktree badge). */
   badge?: React.ReactNode;
   isDisabled?: boolean;
+  hasError?: boolean;
   statusReason?: string;
   /** Soft attention glow (never on the active chip). */
   isPending?: boolean;
@@ -59,6 +63,8 @@ export interface TabStripContextMenuItem {
   label: string;
   shortcut?: string;
   onSelect: () => void;
+  /** Optional leading icon (e.g. graph glyph for "Open Context"). */
+  Icon?: LucideIcon;
 }
 
 export interface TabStripProps {
@@ -84,10 +90,12 @@ export interface TabStripProps {
   trailing?: React.ReactNode;
   /** Hide the aggregated close-all badge button. */
   hideCloseAllButton?: boolean;
-  /** Global-section items (entity tabs with projectId == null) rendered AFTER
-   *  a visual divider (Part 3 §6 — always visible; the toggle checkbox was
-   *  removed as confusing). Pass `undefined`/empty to omit the section. */
-  globalItems?: TabStripItem[];
+  /** Drag-reorder (opt-in). During a drag the strip emits the predicted drop-gap
+   *  anchors (chip keys; null = strip edge) so the owner can paint the optimistic
+   *  order; on drop it emits the commit; a cancel (no move / escape) restores. */
+  onReorderPreview?: (reorderKey: string, afterKey: string | null, beforeKey: string | null) => void;
+  onReorderCommit?: (reorderKey: string, afterKey: string | null, beforeKey: string | null) => void;
+  onReorderCancel?: () => void;
   testId?: string;
 }
 
@@ -104,15 +112,18 @@ export const TabStrip: React.FC<TabStripProps> = ({
   leading,
   trailing,
   hideCloseAllButton,
-  globalItems,
+  onReorderPreview,
+  onReorderCommit,
+  onReorderCancel,
   testId = 'terminal-tab-bar',
 }) => {
-  // Visible chip universe: main items + global-section items.
-  // Scroll-into-view, the close-all badge and "Close All" operate over it;
-  // close-others / close-right stay scoped to the section a chip lives in.
-  const visibleGlobalItems = globalItems ?? [];
-  const allVisibleItems = visibleGlobalItems.length > 0 ? items.concat(visibleGlobalItems) : items;
+  // One ordered list (backend-owned) — projectless tabs are inline, no section.
+  const allVisibleItems = items;
+  // The rich per-tab info card is an Advanced/Dev affordance; Standard mode keeps
+  // the calm minimal hover (statusReason / title only).
+  const isAdvanced = useIsAdvanced();
   const tabContainerRef = useRef<HTMLDivElement>(null);
+  const trailingRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -128,18 +139,31 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const tab = tabRefs.current[targetKey];
     if (!container || !tab) return;
 
-    const tabLeft = tab.offsetLeft;
-    const tabRight = tabLeft + tab.offsetWidth;
-    const visibleLeft = container.scrollLeft;
-    const visibleRight = visibleLeft + container.clientWidth;
+    // Measure against the container's viewport rect (not offsetLeft/scrollLeft):
+    // the scroll container is not a positioned offset-parent, so offsetLeft is
+    // not relative to it and the partial-visibility math drifts — a chip clipped
+    // by a pixel then never triggers a scroll. Rect deltas are exact and
+    // scrollBy applies them regardless of offset-parent.
+    const containerRect = container.getBoundingClientRect();
+    const tabRect = tab.getBoundingClientRect();
+    // Breathing room so a selected chip lands fully clear of the edge / overflow
+    // chevron rather than flush against it.
+    const PAD = 8;
 
-    if (tabLeft < visibleLeft) {
-      container.scrollTo({ left: tabLeft, behavior });
-      return;
-    }
+    // The trailing toolbar is `sticky right-0` INSIDE the scroll container, so it
+    // paints on top of whatever scrolls under it. If we used the bare container
+    // right edge, a rightmost chip would land with its X/open controls tucked
+    // beneath the sticky toolbar — visible text, hidden controls. Treat the
+    // toolbar's left edge as the effective right boundary so the whole chip
+    // header (controls included) clears it.
+    const trailingRect = trailingRef.current?.getBoundingClientRect();
+    const effectiveRight =
+      trailingRect && trailingRect.width > 0 ? Math.min(containerRect.right, trailingRect.left) : containerRect.right;
 
-    if (tabRight > visibleRight) {
-      container.scrollTo({ left: tabRight - container.clientWidth, behavior });
+    if (tabRect.left < containerRect.left + PAD) {
+      container.scrollBy({ left: tabRect.left - containerRect.left - PAD, behavior });
+    } else if (tabRect.right > effectiveRight - PAD) {
+      container.scrollBy({ left: tabRect.right - effectiveRight + PAD, behavior });
     }
   }, []);
 
@@ -208,7 +232,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
       container.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', updateScrollState);
     };
-  }, [items, visibleGlobalItems.length, updateScrollState]);
+  }, [items, updateScrollState]);
 
   // Rename editing — the strip owns the input UI; the owner owns validation
   // and the save (entity rename / PTY `/rename` are kind strategies).
@@ -265,6 +289,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <>
         {entries.map((entry) => (
           <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
+            {entry.Icon && <entry.Icon className="mr-2 h-4 w-4" />}
             {entry.label}
             {entry.shortcut && <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
           </ContextMenuItem>
@@ -274,12 +299,77 @@ export const TabStrip: React.FC<TabStripProps> = ({
     );
   };
 
-  // One chip — shared by the main row and the global section. `list` scopes
-  // the close-others / close-right context-menu actions to the chip's section.
+  // ── Native pointer-drag reorder (no dnd dependency) ─────────────────────────
+  // The strip never reorders its own array: it emits the predicted drop-gap
+  // anchors and the owner repaints from the backend-owned store (so the dragged
+  // chip flows under the cursor). Commit on drop; a no-move release is just a
+  // click (suppressed so it doesn't navigate after a drag).
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const movedRef = useRef(false);
+  const justDraggedRef = useRef(false);
+
+  const anchorsAt = useCallback(
+    (clientX: number, draggedKey: string): { after: string | null; before: string | null } => {
+      // Single pass over the (non-dragged) chips: the gap is between the last
+      // chip left of the cursor (`after`) and the first one right of it (`before`).
+      let after: string | null = null;
+      let before: string | null = null;
+      for (const it of items) {
+        if (it.key === draggedKey) continue;
+        const el = tabRefs.current[it.key];
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (clientX >= r.left + r.width / 2) {
+          after = it.key;
+        } else {
+          before = it.key;
+          break;
+        }
+      }
+      return { after, before };
+    },
+    [items],
+  );
+
+  const startDrag = useCallback(
+    (e: React.PointerEvent, key: string, isDisabled: boolean) => {
+      if (!onReorderPreview || isDisabled || editingKey) return;
+      if ((e.target as HTMLElement).closest('button,input')) return;
+      const startX = e.clientX;
+      movedRef.current = false;
+      const onMove = (ev: PointerEvent) => {
+        if (!movedRef.current && Math.abs(ev.clientX - startX) < 5) return;
+        if (!movedRef.current) {
+          movedRef.current = true;
+          setDragKey(key);
+        }
+        const { after, before } = anchorsAt(ev.clientX, key);
+        onReorderPreview(key, after, before);
+      };
+      const onUp = (ev: PointerEvent) => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        if (movedRef.current) {
+          const { after, before } = anchorsAt(ev.clientX, key);
+          onReorderCommit?.(key, after, before);
+          justDraggedRef.current = true;
+          setTimeout(() => (justDraggedRef.current = false), 0);
+        }
+        setDragKey(null);
+        movedRef.current = false;
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    },
+    [onReorderPreview, onReorderCommit, anchorsAt, editingKey],
+  );
+
+  // One chip in the single ordered row. `list` scopes close-others / close-right.
   const renderChip = (item: TabStripItem, index: number, list: TabStripItem[]) => {
     const { key } = item;
     const isActive = activeKey === key;
     const isDisabled = !!item.isDisabled;
+    const hasError = !!item.hasError;
     const isPending = !!item.isPending && !isActive;
 
     const tabContent = (
@@ -290,12 +380,16 @@ export const TabStrip: React.FC<TabStripProps> = ({
         className={`group flex shrink-0 select-none items-center gap-2 rounded-t border-b-2 px-3 py-1.5 transition-colors ${
           isDisabled
             ? 'cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground/50'
-            : isActive
-              ? 'cursor-pointer border-primary bg-background text-foreground'
-              : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
-        } ${isPending ? 'animate-pending-glow rounded-md' : ''}`}
+            : hasError
+              ? 'cursor-pointer border-destructive bg-destructive/10 text-destructive hover:bg-destructive/15'
+              : isActive
+                ? 'cursor-pointer border-primary bg-background text-foreground'
+                : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+        } ${isPending ? 'animate-pending-glow rounded-md' : ''} ${dragKey === key ? 'opacity-60' : ''}`}
+        onPointerDown={(e) => startDrag(e, key, isDisabled)}
         onClick={() => {
           if (isDisabled) return;
+          if (justDraggedRef.current) return; // a drag just ended — don't navigate
           onSelect(key);
         }}
         data-testid={item.testId}
@@ -323,7 +417,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           />
         ) : (
           <span
-            className="max-w-[160px] truncate text-sm font-medium"
+            className={`max-w-[160px] truncate text-sm font-medium ${item.titleClassName ?? ''}`}
             onDoubleClick={(e) => {
               if (!item.renameable) return;
               e.stopPropagation();
@@ -371,7 +465,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
             <TooltipTrigger asChild>
               <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
             </TooltipTrigger>
-            {item.tooltip ? (
+            {isAdvanced && item.tooltip ? (
               <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
                 {item.tooltip}
               </TooltipContent>
@@ -446,23 +540,14 @@ export const TabStrip: React.FC<TabStripProps> = ({
       >
         {items.map((item, index) => renderChip(item, index, items))}
 
-        {/* Global section (Part 3 §6): a quiet divider, then the projectless
-            entity tabs. Always visible — the toggle checkbox was removed as
-            confusing (2026-06-11). Divider only renders when there is
-            something global to show. */}
-        {visibleGlobalItems.length > 0 && (
-          <div
-            className="ml-1 flex shrink-0 items-center self-stretch border-l border-border pl-1"
-            data-testid="tab-strip-global-divider"
-            aria-label="Global tabs"
-          />
-        )}
-        {visibleGlobalItems.map((item, index) => renderChip(item, index, visibleGlobalItems))}
-
         {/* Trailing toolbar flows after the last tab but sticks to the right
             edge when tabs overflow. Placement is unconditional, so it does
             not oscillate with hasTabOverflow. */}
-        {trailing && <div className="sticky right-0 z-10 flex items-center self-stretch bg-muted">{trailing}</div>}
+        {trailing && (
+          <div ref={trailingRef} className="sticky right-0 z-10 flex items-center self-stretch bg-muted">
+            {trailing}
+          </div>
+        )}
       </div>
 
       {/* Right Scroll Button */}

@@ -26,6 +26,17 @@ Do not invent a TypeId, do not query the DB another way, do not ask the user —
 
 For requests like *"create a task and open it"*: complete the `records` action first (it returns a freshly-indexed TypeId), then pass that TypeId to `flow navigate entity`. One navigation per request — no follow-up "did it open?" verification.
 
+## Opening a file you just wrote (no TypeId yet)
+
+For *"open it / open it in flowpad"* after writing a plain file: the file has no TypeId until it is indexed. `flow record index` is path-scoped (fast) and returns the minted TypeId in `data.typeid`. Do not research, do not open it with the OS — run two commands and stop:
+
+```bash
+flow record index <absolute-path> --types <record-type>   # e.g. --types markdown; returns data.typeid
+flow navigate entity <data.typeid>                        # navigate straight to it
+```
+
+No search needed — `data.typeid` is the entity to open.
+
 ## Expected output
 
 On success the CLI prints a single JSON line to stdout and exits 0:

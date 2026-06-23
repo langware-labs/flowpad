@@ -1,10 +1,12 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useDevMode } from '@src/contexts/dev-mode-context';
+import { DevOnly, ViewMode, useViewMode } from '@src/components/view-mode';
 import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@src/components/ui/sidebar';
 import { useInboxStore } from '@src/store/use-inbox-store';
@@ -16,6 +18,7 @@ import {
   BookOpen,
   Bug,
   ChevronDown,
+  Compass,
   // Cloud,
   // CloudOff,
   // Code,
@@ -25,50 +28,97 @@ import {
   Home,
   Inbox,
   // KeyRound,
-  // MessagesSquare,
+  MessageSquare,
   // PlaySquare,
   Search,
   // Settings,
   // Sparkles,
   // Workflow,
-  Terminal,
   // Variable,
   Webhook,
   Zap,
 } from 'lucide-react';
 import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 
-const mainNavItems = [
-  { title: 'Home', icon: Home, viewType: null },
-  { title: 'Inbox', icon: Inbox, viewType: ViewType.INBOX },
-  { title: 'Shell', icon: Terminal, viewType: ViewType.SHELL },
-  // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW },
-  { title: 'Assets', icon: BookOpen, viewType: ViewType.ASSETS },
-] as const;
+// Per-item placement in the left rail, resolved by the current view mode.
+//   visible   — shown at the top of the rail
+//   collapsed — behind the chevron expander (revealed on hover, or when active)
+//   hidden    — not rendered at all
+// Keyed by ViewMode string values so this config reads exactly like the spec
+// matrix. The hierarchy is dev > advanced > standard; keep each row monotonic
+// (a higher mode never shows less than a lower one).
+type NavVisibility = 'visible' | 'collapsed' | 'hidden';
+type NavVisMap = Record<ViewMode, NavVisibility>;
 
-const secondaryNavItems = [
-  // { title: 'Editor', icon: Code, viewType: ViewType.EDITOR },
-  { title: 'Triggers', icon: Zap, viewType: ViewType.TRIGGERS },
-  { title: 'Capabilities', icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
-  { title: 'Hooks', icon: Webhook, viewType: ViewType.HOOKS },
-  // { title: 'Environment', icon: Variable, viewType: ViewType.ENVIRONMENT },
-  { title: 'Files', icon: FolderOpen, viewType: ViewType.EXPLORER },
-  // { title: 'Web App', icon: Globe, viewType: ViewType.WEB_APP },
-  // { title: 'Connections', icon: LogIn, viewType: ViewType.CONNECTIONS },
-  // { title: 'API Keys', icon: KeyRound, viewType: ViewType.API_KEYS },
-  // { title: 'AI Configuration', icon: Settings, viewType: ViewType.AI_CONFIG },
-  // { title: 'Machine', icon: Cpu, viewType: ViewType.MACHINE },
-] as const;
+const ALL_VISIBLE: NavVisMap = {
+  [ViewMode.Standard]: 'visible',
+  [ViewMode.Advanced]: 'visible',
+  [ViewMode.Dev]: 'visible',
+};
+
+type NavItem = {
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  viewType: ViewType | null;
+  vis: NavVisMap;
+};
+
+const navItems: readonly NavItem[] = [
+  { title: 'Home', icon: Home, viewType: null, vis: ALL_VISIBLE },
+  { title: 'Inbox', icon: Inbox, viewType: ViewType.INBOX, vis: ALL_VISIBLE },
+  { title: 'Shell', icon: MessageSquare, viewType: ViewType.SHELL, vis: ALL_VISIBLE },
+  // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW, vis: ALL_VISIBLE },
+  { title: 'Assets', icon: BookOpen, viewType: ViewType.ASSETS, vis: ALL_VISIBLE },
+  // { title: 'Editor', icon: Code, viewType: ViewType.EDITOR, vis: ALL_VISIBLE },
+  {
+    title: 'Triggers',
+    icon: Zap,
+    viewType: ViewType.TRIGGERS,
+    vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
+  },
+  {
+    title: 'Hooks',
+    icon: Webhook,
+    viewType: ViewType.HOOKS,
+    vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
+  },
+  {
+    title: 'Files',
+    icon: FolderOpen,
+    viewType: ViewType.EXPLORER,
+    vis: { [ViewMode.Standard]: 'collapsed', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
+  },
+  {
+    title: 'Capabilities',
+    icon: BadgeCheck,
+    viewType: ViewType.CAPABILITIES,
+    vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'hidden', [ViewMode.Dev]: 'collapsed' },
+  },
+  // { title: 'Environment', icon: Variable, viewType: ViewType.ENVIRONMENT, vis: ALL_VISIBLE },
+  // { title: 'Web App', icon: Globe, viewType: ViewType.WEB_APP, vis: ALL_VISIBLE },
+  // { title: 'Connections', icon: LogIn, viewType: ViewType.CONNECTIONS, vis: ALL_VISIBLE },
+  // { title: 'API Keys', icon: KeyRound, viewType: ViewType.API_KEYS, vis: ALL_VISIBLE },
+  // { title: 'AI Configuration', icon: Settings, viewType: ViewType.AI_CONFIG, vis: ALL_VISIBLE },
+  // { title: 'Machine', icon: Cpu, viewType: ViewType.MACHINE, vis: ALL_VISIBLE },
+];
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
   // const context = useContext();
   const navigate = useNavigate();
+  const location = useLocation();
+  const onDiscover = location.pathname === '/discover';
   const { goBack, canGoBack } = useNavigationState();
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const devMode = useDevMode();
   const { unreadCount } = useInboxStore();
+  const viewMode = useViewMode();
+
+  // Partition the nav config by the current view mode: 'visible' items ride the
+  // top rail, 'collapsed' items live behind the chevron expander, 'hidden' drop.
+  const visibleItems = navItems.filter((item) => item.vis[viewMode] === 'visible');
+  const collapsedItems = navItems.filter((item) => item.vis[viewMode] === 'collapsed');
 
   const currentView = currentDock?.viewType;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
@@ -82,6 +132,17 @@ export function CollapsedSidebar() {
         if (import.meta.env.DEV && viewType === ViewType.SHELL) {
           (window as Record<string, unknown>).__shellNavT0 = performance.now();
           console.log('[PERF] +0ms shell icon clicked');
+        }
+        // Assets is scope-aware: open the scope-keyed assets tab — the current
+        // project's scope when a project is active (tab "<project>'s Assets"),
+        // else global (the single "Assets" tab). Scope rides the navigation
+        // scope filter (URL options), so the tab identity is the scope.
+        if (viewType === ViewType.ASSETS) {
+          // Default scope (project mode when a project is active, else all) is
+          // seeded centrally in NavigationActions.openDock for any scope-less
+          // assets dock — no need to compute it here.
+          navigation.openDock(DockPointer.forAssetList('all'));
+          return;
         }
         navigation.openTab(viewType);
       }
@@ -139,38 +200,55 @@ export function CollapsedSidebar() {
               </SidebarMenuButton>
             </SidebarMenuItem>
 
-            {mainNavItems.map((item) =>
+            {visibleItems.map((item) =>
               renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined),
             )}
 
-            <div onMouseEnter={() => setSecondaryExpanded(true)} onMouseLeave={() => setSecondaryExpanded(false)}>
-              <div className="flex justify-center py-1">
-                <div
-                  className={`flex h-5 w-8 items-center justify-center rounded-sm text-muted-foreground/50 transition-all duration-200 hover:bg-sidebar-accent hover:text-muted-foreground ${
-                    secondaryExpanded ? 'rotate-180' : ''
-                  }`}
+            {/* Discover — full-page marketplace; a top-level route, not a dock tab,
+                so it navigates directly rather than via navigation.openTab.
+                Dev-only affordance. */}
+            <DevOnly reserve={false}>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Discover"
+                  isActive={onDiscover}
+                  onClick={() => void navigate('/discover')}
+                  className="relative w-full justify-center px-2"
                 >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </div>
-              </div>
+                  <Compass className="h-5 w-5" />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </DevOnly>
 
-              {secondaryNavItems.map((item) => {
-                const isActive = currentView === item.viewType;
-                const shouldShow = secondaryExpanded || isActive;
-
-                return (
+            {collapsedItems.length > 0 && (
+              <div onMouseEnter={() => setSecondaryExpanded(true)} onMouseLeave={() => setSecondaryExpanded(false)}>
+                <div className="flex justify-center py-1">
                   <div
-                    key={item.title}
-                    className={`overflow-hidden transition-all duration-200 ease-in-out ${
-                      shouldShow ? 'max-h-10 opacity-100' : 'max-h-0 opacity-0'
+                    className={`flex h-5 w-8 items-center justify-center rounded-sm text-muted-foreground/50 transition-all duration-200 hover:bg-sidebar-accent hover:text-muted-foreground ${
+                      secondaryExpanded ? 'rotate-180' : ''
                     }`}
                   >
-                    {renderNavItem(item)}
+                    <ChevronDown className="h-3.5 w-3.5" />
                   </div>
-                );
-              })}
+                </div>
 
-            </div>
+                {collapsedItems.map((item) => {
+                  const isActive = currentView === item.viewType;
+                  const shouldShow = secondaryExpanded || isActive;
+
+                  return (
+                    <div
+                      key={item.title}
+                      className={`overflow-hidden transition-all duration-200 ease-in-out ${
+                        shouldShow ? 'max-h-10 opacity-100' : 'max-h-0 opacity-0'
+                      }`}
+                    >
+                      {renderNavItem(item)}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>

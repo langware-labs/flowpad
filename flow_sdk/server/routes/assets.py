@@ -22,103 +22,108 @@ async def _markdown_vaults() -> list[dict]:
     so the UI can filter vaults against the active scope/project filter the
     same way records are filtered. typeid is always `compute_node-@local` —
     every scan root is reachable via the local compute node's VFS.
+
+    A **project** vault is rooted at the project's mount path — the whole
+    project, NOT just its ``docs/`` subfolder — so the menu walks every ``.md``
+    in the project (gitignore-aware, via ``walk_markdown_files``). This is why a
+    project-root file like ``streams_sdk.md`` shows up alongside ``docs/`` files.
+    The single **user** vault stays the user-level ``.claude/docs`` knowledge dir.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.fs_store.operations.markdown_dirs import doc_search_dirs as _doc_search_dirs  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-    home = get_instance_settings().user_home.resolve()
-    project_by_cwd = {
-        canonical_posix_path(p.fs_storage_mount_path): p
-        for p in await Project.get_all()
-        if getattr(p, "fs_storage_mount_path", None)
-    }
     seen: set[str] = set()
     vaults: list[dict] = []
-    for raw in _doc_search_dirs():
+
+    def _add(abs_path: str, *, scope: str, project_id: str | None,
+             record_project_id: str | None, label: str) -> None:
         try:
-            abs_path = str(raw.resolve())
+            resolved = str(Path(abs_path).resolve())
         except OSError:
-            continue
-        if abs_path in seen:
-            continue
-        seen.add(abs_path)
-        p = Path(abs_path)
-        rel_path = abs_path.lstrip("/")
-        scope, project_id, record_project_id, label = _classify_vault(p, home, project_by_cwd)
+            return
+        if resolved in seen or not Path(resolved).is_dir():
+            return
+        seen.add(resolved)
         vaults.append({
             "typeid": "compute_node-@local",
-            "relPath": rel_path,
+            "relPath": resolved.lstrip("/"),
             "label": label,
-            "absPath": abs_path,
+            "absPath": resolved,
             "scope": scope,
             "project_id": project_id,
             "record_project_id": record_project_id,
         })
-    return vaults
 
+    # User vault — the user-level knowledge dir (~/.claude/docs).
+    user_docs = get_instance_settings().claude_docs_dir
+    _add(str(user_docs), scope="user", project_id=None,
+         record_project_id=None, label="User docs")
 
-def _classify_vault(p: Path, home: Path, project_by_cwd: dict[str, object]) -> tuple[str, str | None, str | None, str]:
-    """Return ``(scope, project_id, record_project_id, label)`` for a vault root path.
-
-    User vault → label "User docs". Project vault → label is
-    "Project docs (<name>)" where <name> is the last segment of the
-    project mount path; project_id is the Project entity id when resolvable,
-    and record_project_id is the legacy uuid5 id records may carry.
-    Other dirs (env-supplied) → label is
-    "Workspace docs (<dir>)", scope falls back to "user".
-    """
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
-
-    name = p.name
-    parent_name = p.parent.name if p.parent else ""
-
-    def project_ids(project_mount: Path) -> tuple[str | None, str | None]:
-        record_project_id = Project.derive_id_for_path(str(project_mount))
-        proj = project_by_cwd.get(canonical_posix_path(project_mount))
+    # One vault per project, rooted at the project ROOT (mount path).
+    for proj in await Project.get_all():
+        mount = getattr(proj, "fs_storage_mount_path", None)
+        if not mount:
+            continue
+        name = Path(mount).name or str(mount)
+        record_project_id = Project.derive_id_for_path(str(mount))
         entity_id = str(getattr(proj, "id", "") or "") or record_project_id
-        return entity_id, record_project_id
+        _add(str(mount), scope="project", project_id=entity_id,
+             record_project_id=record_project_id, label=f"Project docs ({name})")
 
-    if name == "docs" and parent_name == ".claude":
-        if p.parent == home / ".claude":
-            return ("user", None, None, "User docs")
-        project_mount = p.parent.parent if p.parent and p.parent.parent else None
-        if project_mount is not None:
-            project_name = project_mount.name or str(project_mount)
-            entity_id, record_project_id = project_ids(project_mount)
-            return ("project", entity_id, record_project_id, f"Project docs ({project_name})")
-
-    if name == "docs":
-        project_mount = p.parent if p.parent else None
-        if project_mount is not None:
-            project_name = project_mount.name or "docs"
-            entity_id, record_project_id = project_ids(project_mount)
-            return ("project", entity_id, record_project_id, f"Project docs ({project_name})")
-
-    return ("user", None, None, f"Workspace docs ({name})" if name else "Workspace docs")
+    return vaults
 
 
 @router.get("/api/v1/assets/types")
 async def get_asset_types():
-    """Return all record types marked as browseable=True."""
+    """Return all record types with a non-null ``browseable_by`` view mode.
+
+    The server can't know the client's current view mode, so it returns every
+    browseable type along with its ``browseable_by`` level; the client filters
+    by the active mode (cumulative — see ``use-asset-types.ts``).
+    """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    types = [{"type_name": "project", "label": "Projects", "icon": None, "creatable": False}]
+    types = [
+        {"type_name": "project", "label": "Projects", "icon": None, "creatable": False,
+         "browseable_by": "standard"}
+    ]
     for type_name in SchemaRegistry.get_all_types():
         ti = SchemaRegistry.get(type_name)
-        if ti and ti.browseable:
+        if ti and ti.browseable_by is not None:
             entry: dict = {
                 "type_name": ti.type_name,
                 "label": ti.type_name.replace("_", " ").title(),
                 "icon": ti.icon,
                 "creatable": ti.creatable,
+                "browseable_by": ti.browseable_by.value,
             }
             if ti.type_name == "markdown":
                 entry["vaults"] = await _markdown_vaults()
             types.append(entry)
     return JSONResponse(content={"status": "SUCCESS", "data": {"types": types}})
+
+
+@router.get("/api/v1/assets/markdown-files")
+async def list_markdown_files(
+    root: str = Query(..., description="Absolute filesystem path of the vault root to walk."),
+):
+    """Walk a vault root for every ``.md`` file, honoring ``.gitignore``.
+
+    Powers the Markdown asset menu's folder tree. Returns the COMPLETE set of
+    markdown files under ``root`` (relative POSIX paths), so a project-root file
+    like ``streams_sdk.md`` is included — not just files under ``docs/``. The
+    walk reuses the indexer's gitignore matcher (``_WALK_IGNORED`` fast-path,
+    ``.claude/`` force-include, last-match-wins ``.gitignore`` stack).
+    """
+    from flow_sdk.fs_store.operations.markdown_dirs import walk_markdown_files  # noqa: PLC0415
+
+    root_path = Path(root)
+    if not root_path.is_dir():
+        return JSONResponse(
+            content={"status": "SUCCESS", "data": {"files": []}},
+        )
+    files = walk_markdown_files(root_path)
+    return JSONResponse(content={"status": "SUCCESS", "data": {"files": files}})
 
 
 @router.get("/api/v1/assets/by-path")
@@ -163,3 +168,24 @@ async def list_entities_by_path(
         "limit": limit,
         "offset": offset,
     }})
+
+
+@router.get("/api/v1/assets/entity")
+async def get_entity_by_path(
+    path: str = Query(..., description="Exact asset_ref (file path) of the entity to resolve."),
+):
+    """Resolve the single entity whose ``asset_ref`` equals ``path``.
+
+    Pure DB lookup across every file-backed type (thin wrapper over
+    ``Entity.get_by_asset_ref``) — **no discovery, no recovery scan, no
+    indexing**. Returns the full entity row, or ``null`` when no entity owns the
+    path (caller keeps its fallback). This is the cheap, best-effort path→entity
+    conversion the loader uses; ``/fs-records/{type}/discover`` is the heavy
+    recovery counterpart and stays out of the hot path.
+    """
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+
+    entity = await Entity.get_by_asset_ref(path)
+    return JSONResponse(content={"status": "SUCCESS", "data": (
+        entity.model_dump(mode="json") if entity is not None else None
+    )})

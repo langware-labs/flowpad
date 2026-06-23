@@ -15,6 +15,7 @@ import { ContextEntitiesEnum } from './FlowSync/context';
 import { getContextEntityFromLocalStorage, setContextEntityToLocalStorage } from './FlowSync/context-local-storage';
 import { capabilityManager } from './capabilities';
 import { cloudManager } from './services/cloud_login';
+import { privacyManager } from './services/privacy_mode';
 import { ConnectionManager } from './websocket';
 
 declare global {
@@ -46,6 +47,10 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl
       // and listens to oauth WS events for the lifetime of the app.
       void cloudManager.bootstrap(bootstrapInfo.desktop_info);
+
+      // Seed the data-privacy mode (Local/Connected); it mirrors into dataContext
+      // and listens for live mode changes over WS.
+      void privacyManager.bootstrap(bootstrapInfo.privacy_mode);
 
       // Seed the capabilities summary so the Capabilities view paints without a
       // second round-trip (it can still refresh via getSummary(true)).

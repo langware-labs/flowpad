@@ -1,5 +1,5 @@
-import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, Shell, TypeId, VFSPath } from '@sdk';
-import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
+import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, isImagePath, Shell, TypeId, VFSPath } from '@sdk';
+import { TabbedTerminal } from '@src/components/terminal';
 import { Button } from '@src/components/ui/button';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
@@ -186,8 +186,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   const [activeTab, setActiveTab] = useState<string>(editorActiveTab || '');
   const [pendingOpenFile, setPendingOpenFile] = useState<string | null>(null);
   const [diffTab, setDiffTab] = useState<{ checkpoint_hash: string } | null>(null);
-  const { onTabClick: onTerminalClick, onTabClose: onTerminalClose, onTabOpen: onTerminalOpen } =
-    useStandardTabNav();
 
   // Convert activeTab to vfs_abs_path format for DirectoryTree selection
   const selectedPath = useMemo(() => {
@@ -216,8 +214,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   }, [effectiveFilePath, fs]);
 
   // Add streaming content from FSStore to open files list (reacts to content changes)
+  // Images never have text content cached — EditorPane renders them straight from
+  // the download URL — so they get an open-file entry on activePath alone.
   useEffect(() => {
-    if (!activePath || !contentCache) return;
+    if (!activePath) return;
+    if (!contentCache && !isImagePath(activePath)) return;
 
     setOpenFiles((prevFiles) => {
       // Check if file already exists in open files
@@ -225,7 +226,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
       const fileItem: EditorFile = {
         path: activePath,
-        content: typeof contentCache.content === 'string' ? contentCache.content : undefined,
+        content: typeof contentCache?.content === 'string' ? contentCache.content : undefined,
         language: detectLanguage(activePath),
         type: 'file',
       };
@@ -335,8 +336,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
     setActiveTab(pendingOpenFile);
 
-    // Download content if not already cached
-    if (!existingFile?.content) {
+    // Download content if not already cached — but never pull image bytes as
+    // text; EditorPane streams those from the download URL into an <img>.
+    if (!existingFile?.content && !isImagePath(pendingOpenFile)) {
       void downloadFileContent(pendingOpenFile);
     }
   }, [pendingOpenFile, openFiles, createTabInfo, downloadFileContent]);
@@ -568,12 +570,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
         </Button>
       </div>
       <div className="flex-1 overflow-hidden">
-        <TabbedTerminal
-          className="h-full"
-          onTabClick={onTerminalClick}
-          onTabClose={onTerminalClose}
-          onTabOpen={onTerminalOpen}
-        />
+        <TabbedTerminal className="h-full" />
       </div>
     </div>
   );

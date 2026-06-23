@@ -396,10 +396,16 @@ describe('DirectoryTree - React API Tests', () => {
         expect(screen.queryByDisplayValue('rename-enter.md')).not.toBeInTheDocument();
       });
 
-      const browseResult = await fsManager.listDirectory(computeNode, '/');
-      const names = browseResult.items.map((item) => item.name.split('/').pop() || item.name);
-      expect(names).toContain('renamed-file.md');
-      expect(names).not.toContain('rename-enter.md');
+      // The Enter keypress fires an async backend FS rename; the input vanishing
+      // is a UI-state edge that can precede the backend commit. Poll the source
+      // of truth until consistent rather than reading it once (a one-shot read
+      // races the rename under load). Default waitFor cap — not raised.
+      await waitFor(async () => {
+        const browseResult = await fsManager.listDirectory(computeNode, '/');
+        const names = browseResult.items.map((item) => item.name.split('/').pop() || item.name);
+        expect(names).toContain('renamed-file.md');
+        expect(names).not.toContain('rename-enter.md');
+      });
     });
 
     it('should cancel rename on Escape key', async () => {

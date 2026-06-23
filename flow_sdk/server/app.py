@@ -40,6 +40,17 @@ load_actions()
 # Entities self-register via their metaclass on import; this import's side
 # effect is what lands the declarative metadata (icons, etc.).
 import flow_sdk.fs_store.indexer.registrations  # noqa: E402, F401
+
+# Warm the per-type payload list now that every TypeInfo is registered. The
+# ~225ms assembly is static after registration, so building it here — at import,
+# before the server listens — keeps it off the first (cold) bootstrap request.
+# Default args (include_schema=True) match bootstrap's call, so it's a cache hit.
+try:
+    from flow_sdk.core.schema import build_all_type_payloads as _warm_type_payloads
+    _warm_type_payloads()
+except Exception:
+    logging.getLogger(__name__).exception("Failed to warm type payloads at startup")
+
 from flow_sdk.server import FlowServer
 
 from .routes import (
@@ -60,6 +71,7 @@ from .routes import (
     capabilities_router,
     navigate_router,
     project_router,
+    privacy_router,
     pty_stream_router,
     search_router,
     semantic_checker_router,
@@ -140,6 +152,20 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability discovery: failed to start ({_e})")
 
+    # Reconcile orphaned headless workers BEFORE serving: a restart kills the
+    # previous backend's child workers, but their ``visible=false`` records keep
+    # status=RUNNING and would show as phantom "Background" agents in the footer
+    # chip. Stamp them STOPPED now (pure DB writes — no spawn — so the first
+    # bootstrap is already clean). Visible PTYs are handled by the recovery
+    # watchdog below, not here.
+    try:
+        from flow_sdk.server.pty_recovery import reconcile_orphaned_workers
+
+        await reconcile_orphaned_workers()
+        print("  Orphaned-worker reconcile: done")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Orphaned-worker reconcile: failed ({_e})")
+
     # PTY recovery watchdog: respawn visible sessions whose worker died — both at
     # startup (restart kills PTY children) AND periodically while running (a
     # worker that crashes mid-session). Background — startup never blocks;
@@ -178,6 +204,7 @@ async def _on_server_startup():
     await _start_cloud_ws_listener()
     await _start_inbox_catchup()
     await _seed_service_triggers()
+    await _prune_orphan_scheduler_jobs()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
     await _start_system_content_index()
@@ -197,6 +224,21 @@ async def _start_system_content_index() -> None:
         print("  System content index: scheduled (background)")
     except Exception:
         logging.getLogger(__name__).exception("System content index: failed to start")
+
+
+async def _prune_orphan_scheduler_jobs() -> None:
+    """Drop persisted APScheduler jobs that no longer map to a live trigger.
+
+    Runs after `_seed_service_triggers()` so the current builtin/user triggers
+    are registered first; everything left in the jobstore without a matching
+    entity is a stale orphan (see ``prune_orphan_scheduler_jobs``)."""
+    try:
+        from flow_sdk.server.scheduler import prune_orphan_scheduler_jobs
+
+        pruned = await prune_orphan_scheduler_jobs()
+        print(f"  Scheduler jobstore: pruned {pruned} orphan job(s)")
+    except Exception:
+        logging.getLogger(__name__).exception("Scheduler jobstore: orphan prune failed")
 
 
 async def _seed_service_triggers() -> None:
@@ -269,7 +311,17 @@ async def _transcript_catch_up_walk() -> None:
         import asyncio as _asyncio
 
         from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.server.routes.bootstrap import first_bootstrap_served
         from flow_sdk.transcript_streamer import transcript_streamer_registry
+
+        # Defer the historical re-parse until the first bootstrap has been served.
+        # On a fresh instance this walk re-parses the entire ~/.claude history;
+        # its parse threads hold the GIL back-to-back and would otherwise ~3×
+        # the wall time of the concurrent cold-start bootstrap. The walk is
+        # low-priority (it only closes the "modified while offline" gap and
+        # subscribers are idempotent), so letting the critical request finish
+        # first costs nothing functional.
+        await first_bootstrap_served.wait()
 
         settings = get_instance_settings()
         roots = [settings.claude_projects_dir, settings.codex_sessions_dir]
@@ -379,6 +431,15 @@ async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
 
+    # Close the process-shared outbound hub HTTP client (kept alive across calls
+    # so its TLS context isn't rebuilt per request — see hub_http._hub_client).
+    try:
+        from flow_sdk.cloud_client.transport.hub_http import close_hub_client
+
+        await close_hub_client()
+    except Exception:
+        pass
+
     # Stop cron scheduler
     try:
         from flow_sdk.server.scheduler import stop_scheduler
@@ -419,6 +480,7 @@ async def _shutdown_extras():
 server = FlowServer()
 server.add_router(auth_router)
 server.add_router(cloud_router)
+server.add_router(privacy_router)
 server.add_router(hooks_router)
 server.add_router(chat_router)
 server.add_router(directory_router)
@@ -531,7 +593,7 @@ if _sdk_path and _sdk_path.exists():
 from fastapi import Request as _Request
 from fastapi.responses import HTMLResponse as _HTMLResponse
 
-from .routes.ui import _get_index_candidates
+from .routes.ui import _get_index_candidates, serve_index_html
 
 
 @app.get("/{full_path:path}")
@@ -541,7 +603,9 @@ async def _spa_fallback(request: _Request, full_path: str):
         return _HTMLResponse(content="Not found", status_code=404)
     for candidate in _get_index_candidates():
         if candidate.exists():
-            return _HTMLResponse(content=candidate.read_text())
+            # Inject the runtime API origin so deep links (e.g. /dock/shell/…)
+            # hit the serving backend, not the bundle's baked URL.
+            return serve_index_html(candidate.read_text())
     return _HTMLResponse(content="UI not found", status_code=404)
 
 

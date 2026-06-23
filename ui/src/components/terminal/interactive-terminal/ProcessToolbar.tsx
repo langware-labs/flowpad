@@ -351,25 +351,26 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         </Tooltip>
   );
 
-  // Primary CTAs — entity name + Share + Bookmark (favorite). The name sits
-  // left of Share (truncated for header fit; full name lives in the tab
-  // tooltip). Download lives in the right toolbar (downloadSlot), not here.
-  const centerSlot = !embedded && (
-    <div className="flex min-w-0 items-center gap-2">
-      <span
-        className="max-w-[240px] truncate text-xs font-medium text-foreground"
-        title={processDisplayName}
-        data-testid="process-header-name"
-      >
-        {processDisplayName}
-      </span>
-      <EntityActionsToolbar
-        typeId={process.typeId}
-        favoriteTitle={processDisplayName}
-        favoriteIcon="agentic_process"
-        variant="prominent"
-      />
-    </div>
+  // Entity name — absolutely centered in the header (truncated for header fit;
+  // full name lives in the tab tooltip). Stays put across view modes.
+  const titleSlot = !embedded && (
+    <span
+      className="max-w-[240px] truncate text-xs font-medium text-foreground"
+      title={processDisplayName}
+      data-testid="process-header-name"
+    >
+      {processDisplayName}
+    </span>
+  );
+
+  // Primary CTAs — Share + Bookmark (favorite), right-aligned in both layouts.
+  const actionsSlot = !embedded && (
+    <EntityActionsToolbar
+      typeId={process.typeId}
+      favoriteTitle={processDisplayName}
+      favoriteIcon="agentic_process"
+      variant="prominent"
+    />
   );
 
   const downloadSlot = !embedded && (
@@ -454,7 +455,8 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     <AdvancedInteractiveTabHeader
       debug={debugSlot}
       restart={restartSlot}
-      center={centerSlot}
+      title={titleSlot}
+      actions={actionsSlot}
       download={downloadSlot}
       right={rightSlot}
     />
@@ -467,7 +469,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
       {embedded ? advancedHeader : (
         <ViewSwap
           advanced={advancedHeader}
-          standard={<StandardInteractiveTabHeader center={centerSlot} />}
+          standard={<StandardInteractiveTabHeader title={titleSlot} actions={actionsSlot} />}
         />
       )}
 
@@ -528,6 +530,8 @@ function IconToggleButton({
   tooltip,
   disabled,
   activeClassName,
+  ariaLabel,
+  testId,
   onClick,
 }: {
   icon: React.ReactNode;
@@ -535,6 +539,8 @@ function IconToggleButton({
   tooltip: string;
   disabled: boolean;
   activeClassName?: string;
+  ariaLabel?: string;
+  testId?: string;
   onClick: () => void;
 }) {
   return (
@@ -544,6 +550,7 @@ function IconToggleButton({
       <TooltipTrigger asChild>
         <span className="inline-flex" style={disabled ? { pointerEvents: 'auto' } : undefined}>
           <button
+            type="button"
             className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors
               ${disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-accent cursor-pointer'}
               ${active && activeClassName ? activeClassName : 'text-muted-foreground'}
@@ -551,6 +558,8 @@ function IconToggleButton({
             disabled={disabled}
             onClick={onClick}
             aria-pressed={active}
+            aria-label={ariaLabel ?? tooltip}
+            data-testid={testId}
           >
             {icon}
           </button>

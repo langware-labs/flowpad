@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { MarkdownEditor } from './MarkdownEditor';
 import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
 import { RunButton } from '@src/components/assets/editor/run/RunButton';
@@ -10,6 +10,7 @@ import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-s
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useSideWindows } from '@src/navigation/useSideWindows';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dataContext, FrontMatterFsRef, ProcessKind } from '@sdk';
 import type { APIEntity, FSRef } from '@sdk';
@@ -56,12 +57,12 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
     navigation.openDock(DockPointer.forAssetList(assetType));
   }, [deletable, navigation, assetType]);
 
-  const [activeSideTab, setActiveSideTab] = useState<string>('editor');
+  const { open: openSideWindow } = useSideWindows();
 
   const { runWithAsset, isStarting, processEntry, mcpModal } = useRunOnFile({
     targetVfsPath: chatTarget,
     filePath: assetRef ?? fsRef.path,
-    onActiveSideTabChange: setActiveSideTab,
+    onOpenSideWindow: openSideWindow,
   });
 
   const { processes: pastRunProcesses } = useProcessesForTarget(chatTarget ?? '', {
@@ -122,8 +123,6 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
         chatTarget={chatTarget}
         toolbar={toolbar}
         extraSideTabs={[runsTab]}
-        activeSideTab={activeSideTab}
-        onActiveSideTabChange={setActiveSideTab}
         onDelete={deletable?.delete ? onDelete : undefined}
         deleteLabel={deletable?.name ?? undefined}
       />

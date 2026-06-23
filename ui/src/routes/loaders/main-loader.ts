@@ -11,24 +11,21 @@ import {
   ContextEntitiesEnum,
   dataContext,
   initSdk,
-  QueryRequest,
+  Project,
   systemTools,
-  Trigger,
   TypeId,
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
-import { ensureTabForCurrentDock } from '@src/tabs/ensure-tab-for-dock';
+import { applyAllTabs } from '@src/tabs/all-tabs-store';
+import { setupTab } from '@src/tabs/tab-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
-import { loadShellRoute } from './load-shell';
-import { loadProject, loadProjectRoute } from './load-project';
-import { loadConversationRoute } from './load-conversation';
-import { loadAssetRoute } from './load-asset';
-import { loadTasksRoute } from './load-tasks';
+import { loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { markPerfT0, perfLog } from './_perf';
+import { loadDockPointer } from './load-dock-pointer';
 
 // Re-export kept for existing consumers (unit tests import from here).
 export { describeProcessStartError };
@@ -52,6 +49,25 @@ async function ensureComputeNodeLoaded(): Promise<void> {
         new TypeId(bootstrapNode.type, bootstrapNode.id),
       );
     }
+  }
+}
+
+async function setupTabAndAdopt(
+  dock: DockPointer,
+  options?: Parameters<typeof setupTab>[1],
+): Promise<void> {
+  const onMaterialized = options?.onMaterialized;
+  let adoptedMaterializedTabs = false;
+  const result = await setupTab(dock, {
+    ...options,
+    onMaterialized: (tabs) => {
+      adoptedMaterializedTabs = true;
+      onMaterialized?.(tabs);
+      applyAllTabs(tabs);
+    },
+  });
+  if (!adoptedMaterializedTabs && result.tabs && result.tabs.length > 0) {
+    applyAllTabs(result.tabs);
   }
 }
 
@@ -106,14 +122,14 @@ export async function loadAgentApp(args: LoaderArgs) {
 
   const { processId, viewType } = params;
   const pointer = params['*'] || '';
+  let dockForSetup: DockPointer | null = null;
 
-  // URL-first tab materialization: the loader is the single writer — ensure a
-  // Tab exists for the dock the URL landed on (every view funnels here, before
-  // the per-view branch tree's early returns). Fire-and-forget; click handlers
-  // only navigate. Invalid view types (DockPointer.fromUrl throws) get no tab.
+  // URL-first tab materialization: the loader is the single writer, but it now
+  // happens through setupTab so content setup has an explicit opening/opened
+  // lifecycle and setup failures keep the visible tab with an error placeholder.
   if (viewType) {
     try {
-      ensureTabForCurrentDock(DockPointer.fromUrl(viewType, pointer || undefined, requestUrl.searchParams));
+      dockForSetup = DockPointer.fromUrl(`${requestUrl.pathname}${requestUrl.search}`);
     } catch {
       /* not a valid dock view — no tab */
     }
@@ -138,9 +154,7 @@ export async function loadAgentApp(args: LoaderArgs) {
       await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, sessionProcessId));
       const process = await AgenticProcess.getById(sessionProcessId).catch(() => null);
       if (process?.project_id) {
-        await loadProject(process.project_id).catch(() =>
-          systemTools.resolveProjectContext(process.workdir, process),
-        );
+        await loadProject(new TypeId(Project.type, process.project_id)).catch(() => systemTools.resolveProjectContext(process.workdir, process));
       } else {
         await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
       }
@@ -148,6 +162,7 @@ export async function loadAgentApp(args: LoaderArgs) {
 
     // Session view doesn't require agent — just ensure compute node and return.
     await ensureComputeNodeLoaded();
+    if (dockForSetup) await setupTabAndAdopt(dockForSetup);
     t.time('ensureComputeNode');
     t.done(1.2);
     return;
@@ -157,53 +172,26 @@ export async function loadAgentApp(args: LoaderArgs) {
     // Project is already loaded by initSdk -> setupProject, just ensure compute node.
     await ensureComputeNodeLoaded();
     t.time('ensureComputeNode');
+    let setupHandled = false;
 
-    if (viewType === ViewType.SHELL) {
-      // Pass the request path so shell-loader redirects preserve the layout
-      // keyword — /win/shell fallbacks stay chrome-less (Part 3 §7).
-      await loadShellRoute(pointer || undefined, requestUrl.pathname);
-      t.time('loadShellRoute');
+    const runSetup = async (setupContent: () => Promise<string>) => {
+      setupHandled = true;
+      let label = 'loadDockPointer';
+      const wrappedSetup = async () => {
+        label = await setupContent();
+      };
+      if (dockForSetup) await setupTabAndAdopt(dockForSetup, { setupContent: wrappedSetup });
+      else await wrappedSetup();
+      t.time(label);
+    };
+
+    if (dockForSetup) {
+      const dock = dockForSetup;
+      await runSetup(() => loadDockPointer(dock, { requestPath: requestUrl.pathname }));
     }
 
-    if (viewType === ViewType.PROJECT) {
-      await loadProjectRoute(pointer || undefined);
-      t.time('loadProjectRoute');
-    }
-
-    if (viewType === ViewType.CONVERSATION) {
-      await loadConversationRoute(pointer || undefined);
-      t.time('loadConversationRoute');
-    }
-
-    if (viewType === ViewType.ASSETS) {
-      await loadAssetRoute(pointer || undefined);
-      t.time('loadAssetRoute');
-    }
-
-    if (viewType === ViewType.TASKS) {
-      await loadTasksRoute(pointer || undefined);
-      t.time('loadTasksRoute');
-    }
-
-    if (viewType === ViewType.TRIGGERS) {
-      await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));
-      t.time('loadTriggers');
-    }
-
-    if (viewType === ViewType.PLAN && pointer) {
-      const parsed = DockPointer.parsePlanPointer(pointer);
-      if (parsed) {
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, parsed.agenticProcessTypeId);
-        const process = await AgenticProcess.getById(parsed.agenticProcessTypeId.id).catch(() => null);
-        if (process?.project_id) {
-          await loadProject(process.project_id).catch(() =>
-            systemTools.resolveProjectContext(process.workdir, process),
-          );
-        } else {
-          await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
-        }
-        t.time('loadPlan (set process context)');
-      }
+    if (dockForSetup && !setupHandled) {
+      await setupTabAndAdopt(dockForSetup);
     }
 
     t.done(1.2);

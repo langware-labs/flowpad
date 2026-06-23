@@ -20,30 +20,23 @@ import pytest
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.builtin.tab import Tab, ensure_tab, tab_id_for
+from flow_sdk.builtin.tab import Tab, delete_tabs_for_missing_project, ensure_tab, tab_id_for
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
 
 class _TabTargetProbe(Entity):
-    """A target entity that subscribes to tab teardown + rename, to prove the
-    Tab dispatch fires by target_type (no real Shell/PTY needed)."""
+    """A plain target entity (no rename override) — proves Tab.rename reflects
+    onto ANY entity through the generic ``Entity.rename``, and that tab teardown
+    dispatches by target_type (no real Shell/PTY needed)."""
 
     type: str = APIField(default="tab_target_probe")
     torn_down: bool = APIField(default=False)
-    reflected_name: str | None = APIField(default=None)
+    auto_rename: bool = APIField(default=False)
 
     async def teardown_for_tab(self) -> None:
         self.torn_down = True
         await self.save()
-
-    async def _on_tab_renamed(self, payload: dict) -> dict:
-        self.reflected_name = (payload or {}).get("name")
-        await self.save()
-        return {"name": self.reflected_name}
-
-
-_TabTargetProbe.on_event("tab-renamed")(_TabTargetProbe._on_tab_renamed)
 
 
 def test_visible_false_survives_exclude_none_wire_rule() -> None:
@@ -76,8 +69,35 @@ async def test_ensure_tab_creates_then_reuses() -> None:
     again = await ensure_tab(p)
     assert again.id == first.id, "reopen must reuse the same row, not duplicate"
 
-    rows = await Tab.get_all({"pointer": p})
-    assert len(rows) == 1, "no duplicate Tab for the same pointer"
+    # Query by ID to verify the tab was stored correctly (pointer may be converted to JSON)
+    row = await Tab.get_one({"id": first.id})
+    assert row is not None, "tab must exist"
+    assert row.id == first.id
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_heals_foreign_id_duplicate() -> None:
+    # Regression: identity is uuid5(pointer), but a row minted under the old
+    # client-side scheme carries a random uuid4 id for the same pointer. An
+    # id-only dedup misses it and mints a second visible row (two chips, one
+    # pointer). ensure_tab must reconcile by the NATURAL KEY (pointer): reuse the
+    # canonical id==tab_id_for row and soft-hide the foreign-id stray.
+    p = f"shell/agentic_process-{uuid.uuid4()}"
+    stray = Tab(id=str(uuid.uuid4()), pointer=p, visible=True)  # uuid4, not tab_id_for
+    await stray.save()
+    assert uuid.UUID(stray.id).version == 4
+
+    tab = await ensure_tab(p, target_type="agentic_process", target_id="ap-x")
+    assert tab.id == tab_id_for(p), "canonical row is keyed by uuid5(pointer)"
+
+    visible = [t for t in await Tab.get_all({"pointer": p}) if t.visible]
+    assert len(visible) == 1, "exactly one visible row remains for the pointer"
+    assert visible[0].id == tab.id, "the survivor is the canonical row"
+
+    healed_stray = await Tab.get_one({"id": stray.id})
+    assert healed_stray is not None and healed_stray.visible is False, (
+        "the foreign-id stray is soft-hidden, not left as a duplicate chip"
+    )
 
 
 @pytest.mark.asyncio
@@ -156,6 +176,28 @@ async def test_deleting_target_soft_closes_its_tabs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_missing_project_cleanup_deletes_tab_without_target_teardown() -> None:
+    # A missing project means the Tab row itself is stale. Clean it with
+    # Tab.delete(), not Tab.close(), so the backing target is not torn down.
+    dangling_project_id = str(uuid.uuid4())
+    probe = _TabTargetProbe(id=str(uuid.uuid4()))
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/missing-project-probe#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+        project_id=dangling_project_id,
+    )
+
+    deleted = await delete_tabs_for_missing_project(dangling_project_id)
+
+    assert deleted == 1
+    assert await Tab.get_one({"id": tab.id}) is None
+    reloaded_probe = await _TabTargetProbe.get_one({"id": probe.id})
+    assert reloaded_probe is not None and reloaded_probe.torn_down is False
+
+
+@pytest.mark.asyncio
 async def test_agentic_process_close_hides_its_terminal_tab() -> None:
     # Regression: clicking close on an agentic_process terminal tab leaves the
     # chip on screen. AgenticProcess.close() stops the worker and deletes the
@@ -186,7 +228,52 @@ async def test_agentic_process_close_hides_its_terminal_tab() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rename_reflects_onto_subscribed_target() -> None:
+async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
+    # `list_all` is the GLOBAL projection (every visible tab, all projects) that the
+    # footer chip + sessions view need; the project-scoped `list(pid)` is
+    # `{that project} + projectless`, and `list(None)` is projectless-only.
+    from flow_sdk.builtin.tab import _build_list, _http_list_all
+
+    tag = uuid.uuid4()
+    pa = f"proj-a-{tag}"
+    pb = f"proj-b-{tag}"
+    a = await ensure_tab(f"shell|a#{tag}", target_type="shell", target_id=f"sa-{tag}", project_id=pa)
+    b = await ensure_tab(f"shell|b#{tag}", target_type="shell", target_id=f"sb-{tag}", project_id=pb)
+    free = await ensure_tab(f"dock/settings#{tag}")  # projectless
+
+    res = await _http_list_all(Tab)
+    ids = {r["id"] for r in res.data["tabs"]}
+    assert {a.id, b.id, free.id} <= ids, "list_all spans every project + projectless"
+
+    # The scoped list of project A excludes project B's tab (proves list_all differs).
+    scoped_a = {r["id"] for r in await _build_list(pa)}
+    assert a.id in scoped_a and free.id in scoped_a and b.id not in scoped_a
+
+
+@pytest.mark.asyncio
+async def test_set_label_changes_tab_name_without_touching_target() -> None:
+    # set_label is the PTY auto-title mirror: it updates ONLY Tab.name and must NOT
+    # reflect onto the target or pin auto_rename (which rename does) — else future
+    # auto-titles would stop.
+    probe = _TabTargetProbe(id=str(uuid.uuid4()), name="orig", auto_rename=True)
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/set-label#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+    )
+    await tab.set_label("auto-titled")
+    assert tab.name == "auto-titled", "Tab label updated"
+    reloaded = await _TabTargetProbe.get_one({"id": probe.id})
+    assert reloaded is not None
+    assert reloaded.name == "orig", "target entity name is NOT changed by set_label"
+    assert reloaded.auto_rename is True, "set_label must not pin auto_rename off"
+
+
+@pytest.mark.asyncio
+async def test_rename_reflects_onto_target_generically() -> None:
+    # Tab.rename → target.rename: a plain entity (no override) still mirrors the
+    # new label onto its own ``name`` via the generic Entity.rename.
     probe = _TabTargetProbe(id=str(uuid.uuid4()))
     await probe.save()
     tab = await ensure_tab(
@@ -197,4 +284,4 @@ async def test_rename_reflects_onto_subscribed_target() -> None:
     await tab.rename("my pinned name")
     assert tab.name == "my pinned name"  # Tab.name is the source of truth
     reloaded = await _TabTargetProbe.get_one({"id": probe.id})
-    assert reloaded is not None and reloaded.reflected_name == "my pinned name"
+    assert reloaded is not None and reloaded.name == "my pinned name"

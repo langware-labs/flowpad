@@ -4,39 +4,151 @@
  *
  * Reuses the pure `loadProcess` / `loadShell` primitives from the shell
  * loaders so PTY attach + context setup is identical to the standard route.
- * Owns its own redirect URL policy — failures bounce to the collaboration
- * room (or project root) inside the same view, not out to /dock/shell.
+ * Owns its own route policy: room-root URLs may redirect to the active tab;
+ * typed failures become dock-load errors rendered inside the requested URL.
  */
 
 import {
+  AgenticProcess,
   CollaborationRoom,
   ContextEntitiesEnum,
   dataContext,
   dataManager,
   Project,
-  type Shell,
+  Shell,
   TypeId,
 } from '@sdk';
-import { getTerminalTabsSnapshot } from '@src/tabs/useTabs';
-import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation';
+import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
+import { getTerminalTabsSnapshot } from '@src/tabs/useTabs';
 import { redirect } from 'react-router';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
-
-/** Map the `{ title, description }` shape from `describeProcessStartError`
- *  onto the unified notify error payload. */
-function notifyProcessStartError(error: unknown): void {
-  const { title, description } = describeProcessStartError(error);
-  notify.error({ title, message: description });
-}
-import { resolveNextTab } from '@src/tabs/tab-candidates';
 import { loadShell, ShellLoadError } from './load-shell';
 import { loadConversation } from './load-conversation';
+import { processLoadErrorToDockError } from './process-load-error-resolution';
+import { DockLoadError } from './dock-load-error';
+import { loadAssetRoute } from './load-asset';
 
-function recoveryUrl(projectId: string, roomId: string | null): string {
-  return roomId
-    ? `/dock/project/${projectId}/collaboration_room/${roomId}`
-    : `/dock/project/${projectId}`;
+function errorStatus(error: unknown): number | undefined {
+  return (error as { response?: { status?: number }; status?: number } | null)?.response?.status
+    ?? (error as { status?: number } | null)?.status;
+}
+
+function hasProjectTabSegment(pointer: string | undefined): boolean {
+  const parts = pointer?.split('/').filter(Boolean) ?? [];
+  return parts[1] === 'collaboration_room' && parts[3] === 'tab';
+}
+
+export class ProjectLoadError extends Error {
+  readonly status = 404;
+
+  constructor(
+    readonly kind: 'not_found',
+    readonly projectId: string,
+    readonly cause?: unknown,
+  ) {
+    super(`project-load:${kind}`);
+  }
+}
+
+function throwProjectRouteError(cause: unknown): never {
+  const status = errorStatus(cause);
+  if (cause instanceof ProjectLoadError || status === 404 || status === 403) {
+    throw new DockLoadError(
+      'project_not_found',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Project not found',
+        message: "This project doesn't exist or is no longer available.",
+      },
+      'project',
+      cause,
+    );
+  }
+  throw new DockLoadError(
+    'project_network_error',
+    'soft',
+    {
+      action: 'render_error',
+      title: 'Project unavailable',
+      message: 'Could not load this project. Try again in a moment.',
+      retryable: true,
+    },
+    'project',
+    cause,
+  );
+}
+
+function throwRoomLoadError(cause: unknown, roomId: string): never {
+  const status = errorStatus(cause);
+  if (status === 404 || status === 403) {
+    throw new DockLoadError(
+      'collaboration_room_not_found',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Room not found',
+        message: 'This collaboration room no longer exists or is unavailable.',
+      },
+      'project',
+      cause,
+    );
+  }
+  throw new DockLoadError(
+    'collaboration_room_network_error',
+    'soft',
+    {
+      action: 'render_error',
+      title: 'Room unavailable',
+      message: `Could not load collaboration room ${roomId.slice(0, 8)}. Try again in a moment.`,
+      retryable: true,
+    },
+    'project',
+    cause,
+  );
+}
+
+function throwShellTabLoadError(error: ShellLoadError): never {
+  if (error.kind === 'not_found') {
+    throw new DockLoadError(
+      'shell_not_found',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Shell not found',
+        message: 'This terminal no longer exists.',
+      },
+      'project',
+      error,
+    );
+  }
+  if (error.kind === 'error_status') {
+    throw new DockLoadError(
+      'shell_error_status',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Shell unavailable',
+        message: error.errorMessage ?? 'Shell error',
+      },
+      'project',
+      error,
+    );
+  }
+  const { title, description } = describeProcessStartError(error.cause ?? error);
+  throw new DockLoadError(
+    'shell_start_failed',
+    'soft',
+    {
+      action: 'render_error',
+      title,
+      message: description,
+      retryable: true,
+    },
+    'project',
+    error,
+  );
 }
 
 /**
@@ -51,13 +163,23 @@ function recoveryUrl(projectId: string, roomId: string | null): string {
  * Throws if the project can't be fetched. Callers decide how to recover
  * (e.g. process.recoverProject() for dangling project_id refs).
  */
-export async function loadProject(projectId: string): Promise<Project> {
-  const project = await dataManager.getByTypeId<Project>(
-    new TypeId(Project.type, projectId),
-  );
+export async function loadProject(projectTypeId: TypeId): Promise<Project> {
+  let project: Project | null = null;
+  try {
+    project = await dataManager.getByTypeId<Project>(projectTypeId);
+  } catch (cause) {
+    const status = errorStatus(cause);
+    if (status === 404 || status === 403) {
+      throw new ProjectLoadError('not_found', projectTypeId.id, cause);
+    }
+    throw cause;
+  }
+  if (!project) {
+    throw new ProjectLoadError('not_found', projectTypeId.id);
+  }
   await dataContext.setContextEntityTypeId(
     ContextEntitiesEnum.CurrentProjectTypeId,
-    new TypeId(Project.type, projectId),
+    projectTypeId,
   );
   return project;
 }
@@ -79,15 +201,11 @@ async function tagShellWithRoom(shell: Shell, roomId: string): Promise<void> {
 }
 
 export async function loadProjectRoute(pointer: string | undefined): Promise<void> {
-  const parsed = DockPointer.parseProjectPointer(pointer) as {
-    projectId: string | null;
-    roomId: string | null;
-    tabTypeId: TypeId | null;
-    conversationId?: string | null;
-  };
-  const { projectId, roomId, tabTypeId } = parsed;
-  const conversationId = parsed.conversationId ?? null;
-  if (!projectId) {
+  const { projectTypeId, roomId, tabTypeId, conversationId } =
+    DockPointer.parseProjectPointer(pointer);
+  const { assetSubPointer } = DockPointer.splitProjectPointer(pointer);
+  const hasTabSegment = hasProjectTabSegment(pointer);
+  if (!projectTypeId) {
     // No project id in URL — page renders its empty state; nothing to load.
     return;
   }
@@ -96,14 +214,9 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
   // calls hit immediately (no render blank → re-render).
   let project: Project | null = null;
   try {
-    project = await loadProject(projectId);
-  } catch {
-    notify.error({
-      title: 'Project not found',
-      message: "This project doesn't exist or is no longer available.",
-    });
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect('/');
+    project = await loadProject(projectTypeId);
+  } catch (cause) {
+    throwProjectRouteError(cause);
   }
 
   if (project?.fs_storage_mount_path) {
@@ -111,34 +224,68 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
   }
 
   if (conversationId) {
-    try {
-      await loadConversation(conversationId);
-    } catch {
-    }
-    await dataContext.setActiveEntityTypeId(new TypeId(Project.type, projectId));
+    await loadConversation(conversationId).catch(() => null);
+    await dataContext.setActiveEntityTypeId(projectTypeId);
+  }
+
+  if (!conversationId && !roomId && assetSubPointer) {
+    await loadAssetRoute(assetSubPointer);
+    await dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProjectTypeId,
+      projectTypeId,
+    );
   }
 
   if (roomId) {
+    let room: CollaborationRoom | null = null;
     try {
-      await dataManager.getByTypeId(new TypeId(CollaborationRoom.type, roomId));
-    } catch {
-      // Missing room — bounce to the project's collaboration root.
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect(recoveryUrl(projectId, null));
+      room = await dataManager.getByTypeId<CollaborationRoom>(
+        new TypeId(CollaborationRoom.type, roomId),
+      );
+    } catch (cause) {
+      throwRoomLoadError(cause, roomId);
     }
+    if (!room) {
+      throwRoomLoadError({ status: 404 }, roomId);
+    }
+  }
+
+  if (!tabTypeId && hasTabSegment) {
+    throw new DockLoadError(
+      'malformed_project_tab',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Unsupported tab',
+        message: 'This project tab URL is malformed.',
+      },
+      'project',
+    );
   }
 
   if (!tabTypeId) {
     // No tab in the URL. If the room already has visible tabs, redirect
     // into the previously-active / first one so the xterm pane isn't blank.
     if (roomId) {
-      const allTabs = await getTerminalTabsSnapshot();
-      const tabs = allTabs.filter((t) => t.shell?.collaboration_room_id === roomId);
+      // Room membership lives on the backing shell (`collaboration_room_id`),
+      // which isn't denormalized on the Tab — resolve it from cache: a shell tab's
+      // own shell, a process tab's linked shell.
+      const allTabs = await getTerminalTabsSnapshot('all');
+      const tabs = allTabs.filter((t) => {
+        const shellId =
+          t.target_type === AgenticProcess.type
+            ? AgenticProcess.getByIdFromCache<AgenticProcess>(t.target_id ?? '')?.shell_id
+            : t.target_id;
+        const shell = shellId ? Shell.getByIdFromCache<Shell>(shellId) : null;
+        return shell?.collaboration_room_id === roomId;
+      });
       const tab = resolveNextTab(tabs);
       if (tab) {
-        const pointer = (tab.agenticProcess ?? tab.shell!).dockPointer.pointer;
+        // The room-tab segment is the target TypeId string (shell-<id> /
+        // agentic_process-<id>) — exactly `tabTargetKey`.
+        const pointer = tabTargetKey(tab);
         // eslint-disable-next-line @typescript-eslint/only-throw-error
-        throw redirect(`/dock/project/${projectId}/collaboration_room/${roomId}/tab/${pointer}`);
+        throw redirect(`/dock/project/${projectTypeId.id}/collaboration_room/${roomId}/tab/${pointer}`);
       }
     }
     return;
@@ -150,29 +297,7 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
       if (roomId) await tagShellWithRoom(shell, roomId);
     } catch (e) {
       if (!(e instanceof ProcessLoadError)) throw e;
-      if (e.kind === 'entity_not_found') {
-        notify.error({
-          title: 'Session not found',
-          message: 'Agentic process does not exist.',
-        });
-      } else if (e.kind === 'network_error') {
-        notify.error({
-          title: 'Couldn’t reach backend',
-          message: 'Try again in a moment.',
-        });
-      } else if (
-        e.kind === 'runtime_terminated' ||
-        e.kind === 'pty_attach_failed'
-      ) {
-        notifyProcessStartError(e.cause ?? e);
-      } else {
-        notify.error({
-          title: 'Session unavailable',
-          message: 'No shell is linked to this process.',
-        });
-      }
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect(recoveryUrl(projectId, roomId));
+      throw processLoadErrorToDockError(e, 'project');
     }
     return;
   }
@@ -183,26 +308,19 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
       if (roomId) await tagShellWithRoom(shell, roomId);
     } catch (e) {
       if (!(e instanceof ShellLoadError)) throw e;
-      if (e.kind === 'not_found') {
-        notify.error({
-          title: 'Shell not found',
-          message: 'This terminal no longer exists.',
-        });
-      } else if (e.kind === 'error_status') {
-        notify.error({
-          title: 'Shell unavailable',
-          message: e.errorMessage ?? 'Shell error',
-        });
-      } else {
-        notifyProcessStartError(e.cause ?? e);
-      }
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect(recoveryUrl(projectId, roomId));
+      throwShellTabLoadError(e);
     }
     return;
   }
 
-  // Unknown tab type: fall back to the room root — tolerant parsing.
-  // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw redirect(recoveryUrl(projectId, roomId));
+  throw new DockLoadError(
+    'unsupported_project_tab',
+    'hard',
+    {
+      action: 'render_error',
+      title: 'Unsupported tab',
+      message: `Project tabs cannot load ${tabTypeId.type}.`,
+    },
+    'project',
+  );
 }
