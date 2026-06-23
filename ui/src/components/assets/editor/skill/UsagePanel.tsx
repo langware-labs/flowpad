@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, Eye, GitCompare, GraduationCap, Loader2, Play, RefreshCw } from 'lucide-react';
 import { ActionInfo, FSRef, Skill, dataManager } from '@sdk';
+import { getGitStatus, invalidateGitStatus } from '@src/lib/git-status-cache';
 
 import { Checkbox } from '@src/components/ui/checkbox';
 import { useAssetRevisionStatus } from '@src/hooks/use-asset-revision-status';
@@ -74,10 +75,9 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
     let cancelled = false;
     void (async () => {
       try {
-        const a = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
-        a.subpath = 'status';
-        a.queryParameters = { workdir };
-        const st = await dataManager.callAction<null, { files?: { path: string }[] }>(a);
+        // Reuse the shared (cached, single-flight) repo status instead of
+        // firing a per-skill-tab full-tree scan; just filter for THIS file.
+        const st = await getGitStatus(computeNodeId, workdir);
         if (!cancelled) setDirty((st?.files ?? []).some((f) => f.path.endsWith(file)));
       } catch {
         if (!cancelled) setDirty(null);
@@ -151,6 +151,9 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
       const r = await dataManager.callAction<null, { committed: boolean; version?: number }>(a);
       if (r?.committed) {
         notify.success({ title: `Committed ${skillName} v${r.version}` });
+        // The commit changed the working tree — drop the cached status so the
+        // reload-triggered dirty re-check (and the footer pill) refetch fresh.
+        invalidateGitStatus(computeNodeId, workdir);
         setReload((x) => x + 1);
         rev.refresh();
       } else {

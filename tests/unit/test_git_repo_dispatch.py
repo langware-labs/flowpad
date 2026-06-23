@@ -47,14 +47,11 @@ def make_repo(responses: list) -> GitRepo:
 
 async def test_dispatch_status_clean_repo():
     """Clean repo returns branch info and empty files list."""
-    # is_init → branch → ahead/behind → numstat unstaged → numstat staged → porcelain
+    # combined status --porcelain=v1 --branch → numstat unstaged → numstat staged
     responses = [
-        make_cmd("true"),    # rev-parse --is-inside-work-tree
-        make_cmd("main"),    # branch --show-current
-        make_cmd("1\t0"),    # rev-list left-right count
+        make_cmd("## main...origin/main [ahead 1, behind 0]"),  # status --branch header, no files
         make_cmd(""),        # diff --numstat (unstaged)
         make_cmd(""),        # diff --numstat --staged
-        make_cmd(""),        # status --porcelain=v1
     ]
     result = await make_repo(responses).dispatch("status")
     assert result.status == "SUCCESS"
