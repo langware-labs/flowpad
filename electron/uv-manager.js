@@ -1011,19 +1011,30 @@ class UvManager {
   }
 
   /**
-   * Run a background update check after the UI is loaded.
-   * Non-blocking — failures are logged and silently ignored.
-   * Shows a native OS dialog if an update is required.
+   * Pre-server update gate: ask the cloud whether a flowpad upgrade is required
+   * and, if so, prompt the user and upgrade — all BEFORE the backend starts.
+   *
+   * Returns true when an upgrade was performed (so the caller can widen the
+   * health-check window and refresh the active binary), false otherwise.
+   *
+   * Unlike the old post-server check, this runs while the backend is down: it
+   * only needs the flow binary on disk (`flow upgrade --info`) plus the cloud
+   * `/check-update` verdict, so there's no stop/restart dance — we just upgrade
+   * and let the normal start path bring up the new version. This is also why the
+   * offer is now reachable when the installed engine is too old/broken to boot.
+   *
+   * Failures are logged and treated as "no upgrade" so a flaky check never
+   * blocks launch.
    */
-  async checkForUpdatesInBackground(mainWindow, { sendStatus, waitForBackend, backendUrl, cloudUrl }) {
+  async promptAndUpgradeIfAvailable(mainWindow, { sendStatus, cloudUrl }) {
     try {
       const status = await this.getUpdateStatus(cloudUrl);
-      if (!status || !status.required || !status.latestVersion) return;
+      if (!status || !status.required || !status.latestVersion) return false;
 
       const latest = status.latestVersion;
       this.log.info(`[uv] Update available: ${status.currentVersion} → ${latest}`);
 
-      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (!mainWindow || mainWindow.isDestroyed()) return false;
 
       const { response } = await require('electron').dialog.showMessageBox(mainWindow, {
         type: 'info',
@@ -1034,36 +1045,17 @@ class UvManager {
         defaultId: 0,
       });
 
-      if (response === 0 && mainWindow && !mainWindow.isDestroyed()) {
-        // User chose Upgrade — show loading screen and wait for it to be ready
-        const loadingPath = require('path').join(__dirname, 'loading.html');
-        await mainWindow.loadFile(loadingPath);
-
-        // Small delay to ensure the renderer's IPC listener is registered
-        await new Promise(r => setTimeout(r, 200));
-
-        if (sendStatus) sendStatus('Stopping server');
-        await this.stop();
-        this.isShuttingDown = false;
-
-        if (sendStatus) sendStatus('Upgrading Flowpad');
-        await this.upgrade();
-
-        if (sendStatus) sendStatus('Starting server');
-        await this.start();
-
-        if (sendStatus) sendStatus('Waiting for server');
-        // 120s window — matches the upgrade() subprocess ceiling and gives
-        // the freshly-installed backend room to boot before the user sees
-        // a false "failed to start" error.
-        if (waitForBackend) await waitForBackend({ maxChecks: 240 });
-
-        if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
-          mainWindow.loadURL(backendUrl);
-        }
+      if (response !== 0) {
+        this.log.info('[uv] user deferred flowpad upgrade');
+        return false;
       }
+
+      if (sendStatus) sendStatus('Upgrading Flowpad');
+      await this.upgrade();
+      return true;
     } catch (err) {
-      this.log.warn(`[uv] Background update check failed: ${err.message}`);
+      this.log.warn(`[uv] Pre-server update check failed: ${err.message}`);
+      return false;
     }
   }
 
