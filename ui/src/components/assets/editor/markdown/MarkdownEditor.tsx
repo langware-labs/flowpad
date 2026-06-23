@@ -12,7 +12,7 @@ import { History } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, TypeId } from '@sdk';
+import { FSRef, TypeId, looksBinaryText } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
@@ -467,6 +467,42 @@ function MarkdownEditorContent({
           <Button variant="outline" size="sm" onClick={reload}>
             <RefreshCw className="mr-1 h-4 w-4" />
             Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Binary / non-text body ──────────────────────────────────────────────────
+  // Never hand binary content to Milkdown/Monaco — it locks up the renderer and
+  // can hang the whole app (e.g. an image mistakenly stored as a .md body). Show
+  // a safe placeholder with a download escape hatch instead.
+  if (looksBinaryText(body)) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <EditorHeader
+          fileName={fileName}
+          entityType={headerType}
+          dirPath={dirPath}
+          dirty={false}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onOpenExternal={handleOpenExternal}
+          onDownload={handleDownload}
+          onDelete={handleDelete}
+          actions={toolbar}
+          showLearningMode={showLearningMode}
+        />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+          <p className="text-sm font-medium text-foreground">This file isn&apos;t text</p>
+          <p className="max-w-md text-xs text-muted-foreground">
+            Its contents look like binary data (for example an image), so it can&apos;t be
+            shown in the editor.
+          </p>
+          <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
+          <Button variant="outline" size="sm" onClick={handleDownload}>
+            <Download className="mr-1 h-4 w-4" />
+            Download
           </Button>
         </div>
       </div>
