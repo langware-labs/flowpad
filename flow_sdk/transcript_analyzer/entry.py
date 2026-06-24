@@ -103,6 +103,46 @@ class TranscriptEntry:
         """
         return []
 
+    def _tool_flow_data(
+        self,
+        args: dict,
+        *,
+        default_name: str = "Tool",
+        extra: dict | None = None,
+    ) -> list["FlowData"]:
+        """Build a single TOOL_CALL ``FlowData`` carrying the fields the UI needs
+        to name the tool (``tool-name`` attr) and pair it with its result
+        (``tool_call_id`` in flow_value). Semantic tool entries delegate here so
+        replayed tools render identically to the live stream.
+        """
+        from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+            FlowData,
+            FlowDataType,
+            FlowElementType,
+        )
+
+        name = getattr(self, "tool_name", "") or default_name
+        tuid = getattr(self, "tool_use_id", "") or ""
+        flow_value = {
+            "tool_name": name,
+            "tool_use_id": tuid,
+            "tool_call_id": tuid,
+            "input": args,
+            "args": args,
+        }
+        if extra:
+            flow_value.update(extra)
+        return [FlowData(
+            flow_value=flow_value,
+            created_time=self.timestamp,
+            attributes={
+                "element-type": FlowElementType.TOOL_CALL,
+                "data-type": FlowDataType.OBJECT,
+                "tool-name": name,
+                "tool-use-id": tuid,
+            },
+        )]
+
     def to_dict(self) -> dict:
         """Serialize the envelope fields for REST round-trip.
 

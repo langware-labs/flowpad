@@ -35,6 +35,13 @@ class SearchEntry(TranscriptEntry):
         self.tool_name = tool_name
         self.tool_use_id = tool_use_id
 
+    def to_flow_data(self) -> list:
+        return self._tool_flow_data(
+            {"query": self.query, "path": self.path},
+            default_name="Search",
+            extra={"results": self.results_preview},
+        )
+
     def to_dict(self) -> dict:
         return {
             **super().to_dict(),
