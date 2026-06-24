@@ -13,7 +13,7 @@ import {
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
-import { DockPointer } from './DockPointer';
+import { DockPointer, HIGHLIGHT_PARAM } from './DockPointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
@@ -96,6 +96,19 @@ export class NavigationActions {
 
   static resetPendingNavigationForTests(): void {
     pendingDockNavigationUrl = null;
+  }
+
+  /**
+   * Navigate to the home root with `?highlight=<wikiword>` set, so a home/feed
+   * element matching that wiki word renders highlighted. URL-carried (shareable,
+   * back-button-safe), mirroring the `selected` option — see docs/wikitip.md.
+   * Used by the WikiTip backward link ("click here to highlight the feedentry").
+   */
+  highlight(wikiword: string): void {
+    NavigationActions.clearCommittedPendingNavigation();
+    const url = `/?${HIGHLIGHT_PARAM}=${encodeURIComponent(wikiword)}`;
+    if (NavigationActions.getCurrentBrowserUrl() === url) return;
+    this.commitBrowserNavigation(url, url);
   }
 
   // ========== Core Navigation ==========
