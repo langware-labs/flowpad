@@ -8,7 +8,6 @@ import {
   FileText,
   Info,
   Loader2,
-  Terminal,
 } from 'lucide-react';
 
 import { AgenticProcess, TypeId, type StatusBearingProcess } from '@sdk';
@@ -34,7 +33,7 @@ import { ChatEntryItem } from './ChatEntryItem';
 import { TranscriptEntryItem } from './TranscriptEntryItem';
 import { TranscriptStats } from './TranscriptStats';
 import { groupEntriesByTurn } from './group-entries';
-import { collectToolKeys, formatAgo, formatDuration, operationFilterKey, resolveEntryTimestamp } from './transcript-utils';
+import { collectToolKeys, formatAgo, formatDuration, operationFilterKey, resolveEntryTimestamp, workerIcon, workerLabel } from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 interface Props {
@@ -76,6 +75,9 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   // worker that loads + summarises it via transcript_analyzer.
   const received = data?.received ?? false;
   const transcriptSession = useTranscriptSession(workerType, received ? sessionId : null);
+  // Vendor icon for the worker backing this transcript — used by the "open in
+  // terminal" affordance so it matches the WorkerToolbar icon-row.
+  const VendorIcon = workerIcon(workerType);
 
   // ── Live process / worker status for the session backing this transcript ──
   // Resolve the AgenticProcess by worker id, watch it for live ProcessStatus
@@ -606,15 +608,17 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
                 testIdPrefix="transcript-analyze"
               />
             ) : (
+              // Own (resumable) session: open its live terminal. Presented as the
+              // worker's vendor icon — matching the WorkerToolbar icon-row on the
+              // received branch — rather than a dedicated labelled button.
               <button
                 type="button"
                 onClick={handleOpenInTerminal}
-                className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                title="Open in terminal"
+                className="inline-flex h-7 w-7 items-center justify-center rounded border border-border text-foreground transition-colors hover:bg-muted"
+                title={`Open ${workerLabel(workerType)} in terminal`}
                 data-testid="transcript-open-in-terminal"
               >
-                <Terminal className="h-3 w-3" />
-                Open in terminal
+                <VendorIcon className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
