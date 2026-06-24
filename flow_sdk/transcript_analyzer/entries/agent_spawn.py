@@ -32,6 +32,12 @@ class AgentSpawnEntry(TranscriptEntry):
         self.tool_name = tool_name
         self.tool_use_id = tool_use_id
 
+    def to_flow_data(self) -> list:
+        return self._tool_flow_data(
+            {"subagent_type": self.agent_type, "description": self.description, "prompt": self.prompt},
+            default_name="Task",
+        )
+
     def to_dict(self) -> dict:
         return {
             **super().to_dict(),
