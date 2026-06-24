@@ -15,6 +15,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -94,6 +95,12 @@ const canonicalPathKey = (path: string): string => {
 
 const getProjectPath = (project: Project): string => normalizePath(project.fs_storage_mount_path || project.name || '');
 
+/** Free-text match against a project's display name or cwd. `q` must already be
+ *  trimmed + lowercased. Shared by the detailed and compact pickers so their
+ *  search heuristic can't drift apart. */
+const matchesProjectQuery = (project: ProjectListItem, q: string): boolean =>
+  getProjectDisplayName(project).toLowerCase().includes(q) || (project.cwd ?? '').toLowerCase().includes(q);
+
 // ---------------------------------------------------------------------------
 // ProjectSelectList
 // ---------------------------------------------------------------------------
@@ -148,8 +155,7 @@ function ProjectSelectList({
     const cutoff = cutoffForFilter(timeFilter);
     return projects.filter((p) => {
       if (cutoff && effectiveModifiedAt(p.modified_at) < cutoff) return false;
-      if (!q) return true;
-      return getProjectDisplayName(p).toLowerCase().includes(q) || (p.cwd ?? '').toLowerCase().includes(q);
+      return !q || matchesProjectQuery(p, q);
     });
   }, [projects, search, timeFilter]);
 
@@ -388,6 +394,159 @@ function ProjectSelectDialog({
 }
 
 // ---------------------------------------------------------------------------
+// CompactProjectSelectDialog — Standard-view footer switcher
+// ---------------------------------------------------------------------------
+//
+// Standard view gets a shortened, compact project list instead of the detailed
+// modal (search + time-filter pills + system toggle + per-row paths/sessions).
+// Just a calm one-line-per-project picker with a tiny search and minimal
+// actions. Advanced/Dev view keeps the full ProjectSelectDialog above.
+
+interface CompactProjectSelectDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projects: ProjectListItem[];
+  isLoadingProjects: boolean;
+  currentProjectPath: string;
+  openingProjectId: string | null;
+  isSubmitting: boolean;
+  computeNodeAvailable: boolean;
+  error: string | null;
+  onProjectClick: (project: ProjectListItem) => void;
+  onOpenFolder: () => void;
+  onCreateNew: () => void;
+}
+
+/** How many recent projects the compact list shows before the rest are
+ *  reachable only via search. Keeps Standard view short. */
+const COMPACT_PROJECT_LIMIT = 8;
+
+function CompactProjectSelectDialog({
+  open,
+  onOpenChange,
+  projects,
+  isLoadingProjects,
+  currentProjectPath,
+  openingProjectId,
+  isSubmitting,
+  computeNodeAvailable,
+  error,
+  onProjectClick,
+  onOpenFolder,
+  onCreateNew,
+}: CompactProjectSelectDialogProps) {
+  const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+
+  const filtered = useMemo(() => {
+    const byRecent = [...projects].sort(
+      (a, b) => effectiveModifiedAt(b.modified_at).getTime() - effectiveModifiedAt(a.modified_at).getTime(),
+    );
+    // No query → show only the most-recent slice; querying searches all projects.
+    return q ? byRecent.filter((p) => matchesProjectQuery(p, q)) : byRecent.slice(0, COMPACT_PROJECT_LIMIT);
+  }, [projects, q]);
+
+  // Without a query the list is capped; surface how many recent projects are hidden.
+  const hiddenCount = q ? 0 : Math.max(0, projects.length - filtered.length);
+  const showSearch = projects.length > COMPACT_PROJECT_LIMIT || search.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-base">Switch Project</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-2">
+          {showSearch && (
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search projects…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 pl-8 text-sm"
+              />
+            </div>
+          )}
+
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-card">
+            {isLoadingProjects ? (
+              <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading…
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                {projects.length === 0 ? 'No projects found' : 'No matches'}
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {filtered.map((project) => {
+                  const projectPath = normalizePath(project.cwd || project.name || '');
+                  const isCurrent =
+                    !!currentProjectPath && canonicalPathKey(projectPath) === canonicalPathKey(currentProjectPath);
+                  const isOpening = openingProjectId === project.id;
+                  return (
+                    <button
+                      key={project.id}
+                      onClick={() => onProjectClick(project)}
+                      disabled={!!openingProjectId || isSubmitting}
+                      title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
+                    >
+                      {isOpening ? (
+                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+                      ) : isCurrent ? (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                      ) : (
+                        <div className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {hiddenCount > 0 && (
+            <p className="px-1 text-[11px] text-muted-foreground">
+              +{hiddenCount} more — search to find them
+            </p>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 gap-1.5"
+              onClick={onOpenFolder}
+              disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              Open Folder
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 gap-1.5"
+              onClick={onCreateNew}
+              disabled={isSubmitting || !!openingProjectId}
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+              Create New
+            </Button>
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // NewProjectDialog
 // ---------------------------------------------------------------------------
 
@@ -551,6 +710,14 @@ export function OpenProjectComponent({
   const [error, setError] = useState<string | null>(null);
   const [showSystem, setShowSystem] = useState<boolean>(loadShowSystemFlag);
   const devMode = useDevMode();
+  const isAdvanced = useIsAdvanced();
+
+  // The detailed picker (search + time pills + system toggle + per-row metadata)
+  // is an Advanced-view affordance. In Standard view the footer "Switch Project"
+  // gets a shortened, compact list instead. Only the plain 'switch' trigger is
+  // compacted — the 'map'/'gate' flows need their explanatory copy + full list.
+  const resolvedTrigger = trigger ?? (remoteProjectId ? 'map' : taskId ? 'gate' : 'switch');
+  const useCompact = !isAdvanced && resolvedTrigger === 'switch';
 
   const { projects: mergedProjects, isLoading: isLoadingScanProjects } = useAllProjects({
     enabled: open,
@@ -698,27 +865,37 @@ export function OpenProjectComponent({
     [ensureProjectAndSetContext, onOpenChange],
   );
 
+  // Shared between the compact + detailed pickers — the detailed one layers on a
+  // few extra props (system toggle, trigger copy) below.
+  const commonDialogProps = {
+    open: open && !showCreate,
+    onOpenChange,
+    projects: mergedProjects,
+    isLoadingProjects: isLoadingScanProjects,
+    currentProjectPath,
+    openingProjectId,
+    isSubmitting,
+    computeNodeAvailable: !!computeNode,
+    error,
+    onProjectClick: (p: ProjectListItem) => void handleProjectClick(p),
+    onOpenFolder: () => void handleOpenFolder(),
+    onCreateNew: () => setShowCreate(true),
+  };
+
   return (
     <>
-      <ProjectSelectDialog
-        open={open && !showCreate}
-        onOpenChange={onOpenChange}
-        projects={mergedProjects}
-        isLoadingProjects={isLoadingScanProjects}
-        currentProjectPath={currentProjectPath}
-        openingProjectId={openingProjectId}
-        isSubmitting={isSubmitting}
-        computeNodeAvailable={!!computeNode}
-        error={error}
-        onProjectClick={(p) => void handleProjectClick(p)}
-        onOpenFolder={() => void handleOpenFolder()}
-        onCreateNew={() => setShowCreate(true)}
-        showSystem={showSystem}
-        onShowSystemChange={handleShowSystemChange}
-        devMode={devMode}
-        trigger={trigger ?? (remoteProjectId ? 'map' : taskId ? 'gate' : 'switch')}
-        remoteProjectName={remoteProjectName}
-      />
+      {useCompact ? (
+        <CompactProjectSelectDialog {...commonDialogProps} />
+      ) : (
+        <ProjectSelectDialog
+          {...commonDialogProps}
+          showSystem={showSystem}
+          onShowSystemChange={handleShowSystemChange}
+          devMode={devMode}
+          trigger={resolvedTrigger}
+          remoteProjectName={remoteProjectName}
+        />
+      )}
       <NewProjectDialog
         open={open && showCreate}
         onOpenChange={(v) => { if (!v) onOpenChange(false); }}
