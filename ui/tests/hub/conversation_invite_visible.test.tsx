@@ -19,6 +19,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { testEntityName, trackForCleanup } from '../_cleanup';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import {
   getAliceCreds,
@@ -58,8 +59,8 @@ beforeEach(async (context: any) => {
 describe('hub: invited conversation is visible pre-accept (SDK + hook)', () => {
   it('useEntity resolves the conversation while the invite is still pending', async () => {
     // 1. Create + invite. share([email]) pushes to the hub and sends the invite.
-    const title = `invite-visible-${Date.now()}`;
-    const conv = new Conversation({ title });
+    const title = testEntityName('conv');
+    const conv = trackForCleanup(new Conversation({ title }));
     expect(conv.id).toBeTruthy();
     await conv.save();
     await conv.share([inviteeEmail]);

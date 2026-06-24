@@ -1,5 +1,12 @@
 import { afterAll } from 'vitest';
 
+import { installCleanup } from '../_cleanup';
+
+// Track + sweep every live local entity these hub tests mint before sharing to
+// the hub. Scope is LOCAL-backend entities (the realm that created them); the
+// remote hub copy is out of scope.
+installCleanup({ sweepTypes: ['skill', 'conversation', 'workflow', 'whiteboard'] });
+
 /**
  * Hub-suite test isolation: reset the per-instance SDK realm override.
  *

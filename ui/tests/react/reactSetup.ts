@@ -3,6 +3,15 @@ import { afterEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
+import { installCleanup } from '../_cleanup';
+
+// The react tier runs against the live local backend (apiTestSetup → bootstrap).
+// Suites that create real AgenticProcess / ComputeNode entities (e.g.
+// agentic_process_stress.test.ts) trackForCleanup() each create; this installs
+// the per-test purge (afterEach) + end-of-file leak sweep (afterAll) once. The
+// sweep also covers agentic_process so an un-tracked live create is caught.
+// Coexists with RTL's own afterEach(cleanup) below — they're independent hooks.
+installCleanup({ sweepTypes: ['agentic_process'] });
 
 // Mock matchMedia for jsdom (used by react-resizable-panels and other UI libraries)
 Object.defineProperty(window, 'matchMedia', {

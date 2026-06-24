@@ -22,6 +22,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { hubAvailable } from './_hub';
 import { pollUntil } from './_matrix';
+import { testEntityName, trackForCleanup } from '../_cleanup';
 import {
   findPendingInvitation,
   getInstance,
@@ -57,7 +58,6 @@ const post = (apiUrl: string, p: string, body?: unknown) =>
 
 describe('two SDK clients in one process (realm per instance)', () => {
   it('isolated realms + backends — a skill on dev-1 does not exist on dev-2', async () => {
-    const ts = Date.now();
 
     // Distinct realms: different namespaces, singletons, and backends.
     expect(dev1.sdk).not.toBe(dev2.sdk);
@@ -66,7 +66,7 @@ describe('two SDK clients in one process (realm per instance)', () => {
     expect(dev1.apiUrl).not.toBe(dev2.apiUrl);
 
     // Create a skill on dev-1 via ITS realm's entity class; it resolves on dev-1.
-    const skill = await dev1.sdk.Skill.create(`iso-skill-${ts}`);
+    const skill = trackForCleanup(await dev1.sdk.Skill.create(testEntityName('skill')));
     expect(skill.id).toBeTruthy();
     const onDev1 = await dev1.sdk.Skill.getById(skill.id!).catch(() => null);
     expect(onDev1?.id).toBe(skill.id);
@@ -77,11 +77,10 @@ describe('two SDK clients in one process (realm per instance)', () => {
   });
 
   it('dev-1 shares a skill conversation; dev-2 SDK client accepts + receives it', async () => {
-    const ts = Date.now();
 
     // ── dev-1 (sender): real SDK share path (mirrors matrix.alice). ──
-    const skill = await dev1.sdk.Skill.create(`share-skill-${ts}`);
-    const conv = new dev1.sdk.Conversation({ title: `skill-share-${ts}` });
+    const skill = trackForCleanup(await dev1.sdk.Skill.create(testEntityName('skill')));
+    const conv = trackForCleanup(new dev1.sdk.Conversation({ title: testEntityName('conv') }));
     await conv.save();
     await conv.share([dev2.email]);
     expect(conv.remote).toBe(true);

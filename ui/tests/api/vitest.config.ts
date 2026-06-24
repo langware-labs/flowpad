@@ -19,6 +19,7 @@ export default mergeConfig(
     test: {
       testTimeout: 15000, // Increased timeout for compute node tests
       hookTimeout: 15000, // Increased hook timeout for API setup with websockets
+      setupFiles: [path.resolve(__dirname, './apiSetup.ts')],
       exclude: [],
       pool: 'threads',
       poolOptions: {
