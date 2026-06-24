@@ -1009,6 +1009,35 @@ class UvManager {
   }
 
   /**
+   * Standalone, dependency-free update verdict for the pre-start prompt: just
+   * compare the installed version to the latest on PyPI.
+   *
+   * This is the PRIMARY check before the backend boots, where the cloud
+   * `/check-update` and `flow upgrade --info` paths are both unavailable or
+   * unreliable. It needs neither: `getInstalledVersionSync` reads `_version.py`
+   * as text (no Python, so it works even on a venv that can't import
+   * `flow_sdk`), and `getLatestPypiVersion` hits PyPI directly. So it behaves
+   * identically for healthy, broken, and offline-from-cloud installs.
+   *
+   * `required` is true when PyPI is strictly newer, or when the installed
+   * version can't be read at all (a partial/corrupt install worth repairing by
+   * upgrade). Returns null when PyPI is unreachable, so an offline machine
+   * never shows a prompt it can't act on.
+   */
+  async _pypiUpdateStatus() {
+    const latestVersion = await this.getLatestPypiVersion();
+    if (!latestVersion) return null;
+    const currentVersion = this.getInstalledVersionSync() || null;
+    const required = !currentVersion || isNewer(currentVersion, latestVersion);
+    if (!required) return null;
+    this.log.info(
+      `[uv] Pre-start update check: installed=${currentVersion || 'unknown'}, ` +
+      `latest=${latestVersion} → offering upgrade`
+    );
+    return { currentVersion, latestVersion, required: true };
+  }
+
+  /**
    * Run a background update check after the UI is loaded.
    * Non-blocking — failures are logged and silently ignored.
    * Shows a native OS dialog if an update is required.
@@ -1018,11 +1047,19 @@ class UvManager {
     { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false }
   ) {
     try {
-      const status = await this.getUpdateStatus(cloudUrl);
+      // Pre-start: the backend is down and the install may even be broken, so
+      // decide with the standalone PyPI-vs-installed check — no cloud, no CLI,
+      // so it behaves the same for healthy, broken, and offline-from-cloud
+      // installs (offer the upgrade whenever PyPI is newer). Post-boot: the
+      // running backend can answer the cloud `/check-update` policy, so defer
+      // to that verdict.
+      const status = beforeBackendStart
+        ? await this._pypiUpdateStatus()
+        : await this.getUpdateStatus(cloudUrl);
       if (!status || !status.required || !status.latestVersion) return false;
 
       const latest = status.latestVersion;
-      this.log.info(`[uv] Update available: ${status.currentVersion} → ${latest}`);
+      this.log.info(`[uv] Update available: ${status.currentVersion || 'unknown'} → ${latest}`);
 
       if (!mainWindow || mainWindow.isDestroyed()) return false;
 
@@ -1030,7 +1067,9 @@ class UvManager {
         type: 'info',
         title: 'Update Available',
         message: `A new version of FlowPad is available (${latest}).`,
-        detail: `You are running version ${status.currentVersion}.`,
+        detail: status.currentVersion
+          ? `You are running version ${status.currentVersion}.`
+          : 'Your current installation could not be verified and may be incomplete.',
         buttons: ['Upgrade', 'Later'],
         defaultId: 0,
       });
