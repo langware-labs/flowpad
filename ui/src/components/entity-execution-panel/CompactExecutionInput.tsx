@@ -36,12 +36,16 @@ export function CompactExecutionInput({
   const [value, setValue] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  // Autosize the textarea up to ~200px.
+  // Autosize the textarea up to ~200px. Keep overflow hidden until the content
+  // genuinely exceeds the cap — otherwise the border-box border leaves a ~2px
+  // overflow and the browser shows a spurious vertical scrollbar.
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = 'auto';
-    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    const full = ta.scrollHeight;
+    ta.style.height = `${Math.min(full, 200)}px`;
+    ta.style.overflowY = full > 200 ? 'auto' : 'hidden';
   }, [value]);
 
   const send = useCallback(async () => {
@@ -69,7 +73,7 @@ export function CompactExecutionInput({
         placeholder={placeholder}
         rows={1}
         aria-label="Message the agent"
-        className="min-h-[44px] flex-1 resize-none rounded-2xl border bg-background px-4 py-3 text-[15px] outline-none transition-colors focus:border-primary disabled:opacity-50"
+        className="min-h-[44px] flex-1 resize-none overflow-y-hidden rounded-2xl border bg-background px-4 py-3 text-[15px] outline-none transition-colors focus:border-primary disabled:opacity-50"
         data-testid="entity-execution-input"
       />
       {statusSlot}
