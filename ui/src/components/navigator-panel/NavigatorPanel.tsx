@@ -5,12 +5,16 @@ import type { NavigatorDescriptor, NavigatorWidth } from './types';
 
 const DEFAULT_WIDTH: NavigatorWidth = { default: 224, min: 160, max: 560 };
 
-function readCollapsed(id: string): boolean {
-  if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem(`navigator:${id}:collapsed`) === '1';
+/** This navigator's own persisted open/closed choice, or `null` if never set,
+ *  so the default (open) applies only on first sight — an explicit '0' (open)
+ *  is remembered, not re-derived from the default. */
+function readCollapsed(id: string): boolean | null {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(`navigator:${id}:collapsed`);
+  return raw == null ? null : raw === '1';
 }
 
-function readWidth(id: string, bounds: NavigatorWidth, legacyKeys?: { width?: string; collapsed?: string }): number {
+function readWidth(id: string, bounds: NavigatorWidth, legacyKeys?: { width?: string }): number {
   if (typeof window === 'undefined') return bounds.default;
   const raw =
     window.localStorage.getItem(`navigator:${id}:width`) ??
@@ -35,18 +39,14 @@ export function NavigatorPanel({
   legacyKeys,
 }: {
   descriptor: NavigatorDescriptor;
-  legacyKeys?: { width?: string; collapsed?: string };
+  legacyKeys?: { width?: string };
 }) {
   const bounds = descriptor.width ?? DEFAULT_WIDTH;
   const { id } = descriptor;
 
-  const [collapsed, setCollapsed] = useState(() => {
-    const persisted = readCollapsed(id);
-    if (persisted) return true;
-    if (legacyKeys?.collapsed && typeof window !== 'undefined')
-      return window.localStorage.getItem(legacyKeys.collapsed) === '1';
-    return false;
-  });
+  // Open by default on first sight; an explicit choice (incl. '0' = open) is
+  // remembered across reloads.
+  const [collapsed, setCollapsed] = useState(() => readCollapsed(id) ?? false);
   const [width, setWidth] = useState<number>(() => readWidth(id, bounds, legacyKeys));
   const [isResizing, setIsResizing] = useState(false);
 
