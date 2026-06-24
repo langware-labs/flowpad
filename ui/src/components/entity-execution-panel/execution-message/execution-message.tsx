@@ -53,9 +53,13 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, a
   }
 
   // Stacked, left-aligned turns (ChatGPT / Gemini / Claude-Code style): a leading
-  // identity row (icon + name) over the message body — no left/right bubble split.
+  // identity row (colored icon + name) over the message body — no left/right
+  // bubble split. User = blue, worker = emerald, so the two read distinctly.
   const Icon = isUser ? User : workerIcon(worker);
   const name = isUser ? 'You' : workerLabel(worker);
+  const accent = isUser
+    ? { circle: 'bg-blue-500/15 text-blue-600 dark:text-blue-400', body: 'text-blue-700 dark:text-blue-200' }
+    : { circle: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', body: 'text-foreground' };
 
   return (
     <div
@@ -65,12 +69,12 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, a
       aria-live={isStreaming ? 'polite' : undefined}
     >
       <div className="mb-1 flex items-center gap-2">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', accent.circle)}>
           <Icon className="h-3 w-3" />
         </span>
         <span className="text-[13px] font-semibold text-foreground">{name}</span>
       </div>
-      <div className="min-w-0 break-words pl-7 text-[15px] leading-7 text-foreground">
+      <div className={cn('min-w-0 break-words pl-7 text-[15px] leading-7', accent.body)}>
         <MarkdownView value={currentContent} compact />
         {isStreaming && (
           <span className="mt-1 inline-flex" aria-label="Assistant is responding">
