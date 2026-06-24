@@ -58,7 +58,7 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
           </div>
         ) : (
           <div className="w-full px-4 py-3">
-            <TurnGroupsList groups={turnGroups} />
+            <TurnGroupsList groups={turnGroups} worker={process.worker_type ?? undefined} />
           </div>
         )}
       </AutoScrollContainer>
