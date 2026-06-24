@@ -71,6 +71,12 @@ log.info('Flowpad starting...');
 // ----------------------------------------------------------------------------
 // Electron desktop wrapper auto-update.
 // ----------------------------------------------------------------------------
+
+// Set when a desktop download was started after the user DEFERRED ("Later") —
+// suppresses the restart prompt so the update just applies silently on the next
+// app quit/restart (autoInstallOnAppQuit). Reset once consumed.
+let suppressDesktopRestartPrompt = false;
+
 function setupElectronAutoUpdater() {
   if (!app.isPackaged) {
     log.info('[electron-updater] skipped: app is not packaged');
@@ -82,6 +88,10 @@ function setupElectronAutoUpdater() {
   // be offered together with a backend update in ONE dialog, and only download
   // once the user opts in. Download is triggered explicitly via downloadUpdate().
   autoUpdater.autoDownload = false;
+  // A deferred ("Later") desktop download still applies on the next quit/restart
+  // without nagging — that's exactly autoInstallOnAppQuit (default true; set
+  // explicitly so the intent is clear).
+  autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('checking-for-update', () => {
     log.info('[electron-updater] checking for update...');
@@ -103,6 +113,13 @@ function setupElectronAutoUpdater() {
   // apply is the one unavoidable step of a desktop self-update, so prompt for it.
   autoUpdater.on('update-downloaded', async (info) => {
     log.info(`[electron-updater] update downloaded: ${info.version}`);
+    if (suppressDesktopRestartPrompt) {
+      // User deferred earlier — don't nag. autoInstallOnAppQuit applies it on
+      // the next quit/restart, so the app comes back on the latest desktop.
+      suppressDesktopRestartPrompt = false;
+      log.info('[electron-updater] deferred — will install on next quit/restart');
+      return;
+    }
     if (!mainWindow || mainWindow.isDestroyed()) {
       log.warn('[electron-updater] mainWindow missing; will install on quit');
       return;
@@ -153,11 +170,15 @@ async function getDesktopUpdateVersion() {
 }
 
 /**
- * Start downloading the desktop update in the background. The `update-downloaded`
- * handler shows the restart prompt when it finishes. Requires a prior
+ * Start downloading the desktop update in the background. Requires a prior
  * getDesktopUpdateVersion() / checkForUpdates() that found an update.
+ *
+ * promptOnReady=true  → the `update-downloaded` handler offers "Restart now".
+ * promptOnReady=false → deferred: no prompt; it applies on the next quit/restart
+ *                       (autoInstallOnAppQuit), so the user isn't nagged.
  */
-function downloadDesktopUpdateInBackground() {
+function downloadDesktopUpdateInBackground({ promptOnReady = true } = {}) {
+  suppressDesktopRestartPrompt = !promptOnReady;
   autoUpdater.downloadUpdate().catch((err) => {
     log.error('[electron-updater] download failed:', err);
   });
@@ -483,6 +504,11 @@ async function startApp() {
               activeBin = uvManager.getInstalledFlowBin() || flowBin;
               backendJustUpgraded = true;
               downloadDesktopUpdateInBackground();
+            } else {
+              // Later: still pre-download the desktop in the background so the
+              // next restart comes back on the latest — but don't nag (it
+              // auto-installs on quit). The backend stays as-is (deferred).
+              downloadDesktopUpdateInBackground({ promptOnReady: false });
             }
           } else {
             // Desktop only → background download + restart prompt (unchanged UX).
