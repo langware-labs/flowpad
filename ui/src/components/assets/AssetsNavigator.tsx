@@ -41,7 +41,7 @@ export function AssetsNavigator() {
 
   return (
     <>
-      <NavigatorPanel descriptor={descriptor} legacyKeys={{ width: 'wiki:sidebar-width', collapsed: 'wiki:sidebar-collapsed' }} />
+      <NavigatorPanel descriptor={descriptor} legacyKeys={{ width: 'wiki:sidebar-width' }} />
       <InputDialog
         open={m.newTypeDialogOpen}
         onOpenChange={m.setNewTypeDialogOpen}
