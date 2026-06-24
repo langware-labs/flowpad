@@ -95,5 +95,56 @@ ok(!mgr.isBrokenInstallError(null), 'null error → not broken (no throw)');
   await m2._ensureShimOnPath(); // must resolve, not reject
   ok(true, '_ensureShimOnPath swallows uv failures (never aborts the install)');
 
+  // ── _pypiUpdateStatus (standalone pre-start check: PyPI vs _version.py) ─────
+  // Dependency-free: reads the on-disk version + PyPI directly, so a wedged
+  // install that can't run `flow upgrade --info` still gets offered the upgrade.
+  {
+    const m = new UvManager(silentLog);
+    m.getLatestPypiVersion = async () => '0.2.75';
+    m.getInstalledVersionSync = () => '0.2.70';
+    eq(await m._pypiUpdateStatus(),
+      { currentVersion: '0.2.70', latestVersion: '0.2.75', required: true },
+      '_pypiUpdateStatus: PyPI newer than installed → offer upgrade');
+
+    m.getInstalledVersionSync = () => null; // broken: _version.py unreadable
+    eq(await m._pypiUpdateStatus(),
+      { currentVersion: null, latestVersion: '0.2.75', required: true },
+      '_pypiUpdateStatus: installed version unknown → offer upgrade (currentVersion null)');
+
+    m.getInstalledVersionSync = () => '0.2.75'; // already at latest
+    eq(await m._pypiUpdateStatus(), null,
+      '_pypiUpdateStatus: installed == latest → null (no prompt)');
+
+    m.getInstalledVersionSync = () => '0.2.80'; // installed ahead of PyPI (dev/pre-release)
+    eq(await m._pypiUpdateStatus(), null,
+      '_pypiUpdateStatus: installed newer than PyPI → null (no downgrade prompt)');
+
+    m.getLatestPypiVersion = async () => null; // PyPI unreachable
+    m.getInstalledVersionSync = () => null;
+    eq(await m._pypiUpdateStatus(), null,
+      '_pypiUpdateStatus: PyPI unreachable → null (never prompt offline, even if broken)');
+  }
+
+  // ── checkForUpdatesInBackground source selection ───────────────────────────
+  // Pre-start decides with the standalone PyPI check (backend down, maybe
+  // broken); post-boot uses the cloud `/check-update` policy verdict.
+  {
+    const make = () => {
+      const m = new UvManager(silentLog);
+      let pypi = false, cloud = false;
+      m._pypiUpdateStatus = async () => { pypi = true; return null; };
+      m.getUpdateStatus = async () => { cloud = true; return null; };
+      return { m, pypi: () => pypi, cloud: () => cloud };
+    };
+
+    const a = make();
+    await a.m.checkForUpdatesInBackground(null, { beforeBackendStart: true });
+    ok(a.pypi() && !a.cloud(), 'pre-start → standalone PyPI check, not the cloud policy');
+
+    const b = make();
+    await b.m.checkForUpdatesInBackground(null, { beforeBackendStart: false });
+    ok(b.cloud() && !b.pypi(), 'post-boot → cloud policy, not the standalone PyPI check');
+  }
+
   console.log(`uv-manager.test.js: ${passed} assertions passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

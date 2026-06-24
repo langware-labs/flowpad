@@ -401,8 +401,9 @@ async function startApp() {
     // Install and start backend via uv + flow CLI
     uvManager = new UvManager(log);
 
-    // Did the user just upgrade to a new desktop build? If so we'll pull the
-    // flowpad package up to latest before starting so backend matches wrapper.
+    // Did the user just upgrade to a new desktop build? Logged for diagnostics
+    // only — the pre-start update prompt below decides (and asks) whether to
+    // bring the flowpad backend up to match; we don't silently auto-upgrade.
     const lastDesktopVersion = readLastDesktopVersion();
     const desktopUpgraded =
       app.isPackaged && lastDesktopVersion && lastDesktopVersion !== app.getVersion();
@@ -417,26 +418,19 @@ async function startApp() {
       if (flowBin) {
         log.info(`Fast path: flow binary found at ${flowBin}`);
 
-        // After a desktop upgrade, bring flowpad up to latest (blocking, with
-        // status) — but only when PyPI actually has a newer version.
-        // The backend is still down here, so check PyPI directly (not the
-        // cloud /check-update policy) and upgrade if a newer flowpad exists.
+        // A newer flowpad on PyPI — whether the user just upgraded the desktop
+        // wrapper (desktopUpgraded) or has simply been running an old backend —
+        // is handled by the single pre-start prompt below, which ASKS before
+        // upgrading. We deliberately no longer silently auto-upgrade on a
+        // desktop bump: the dialog is the one consistent decision point, so the
+        // user is always in control of when the backend is replaced.
         let activeBin = flowBin;
-        if (desktopUpgraded) {
-          const installed = uvManager.getInstalledVersionSync(flowBin);
-          sendStatus('Checking for Flowpad updates');
-          if (await uvManager.isUpgradeAvailable(installed)) {
-            sendStatus('Updating Flowpad to latest');
-            await uvManager.upgrade();
-            activeBin = uvManager.getInstalledFlowBin() || flowBin;
-            backendJustUpgraded = true;
-          }
-        }
 
-        // Pre-start update offer: ask the cloud /check-update policy whether an
-        // upgrade is required and, if the user accepts, upgrade BEFORE booting
-        // the backend (the flow CLI's `upgrade --info` works with the server
-        // down). `beforeBackendStart` makes the call return right after the
+        // Pre-start update prompt: compare the installed version (read straight
+        // from `_version.py` — no Python, no cloud) to the latest on PyPI and,
+        // if PyPI is newer, offer the user Upgrade / Later BEFORE booting the
+        // backend. Works for healthy, broken, and offline-from-cloud installs
+        // alike. `beforeBackendStart` makes the call return right after the
         // upgrade — the normal start path below boots the upgraded backend, so
         // we avoid a double start + premature UI load.
         const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
