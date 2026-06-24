@@ -1,12 +1,16 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
-import { AgentTrace, FlowMessage, MessageSuggest, UsageReport, UserNote, type FeedEntry } from '@sdk';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { AgentTrace, FlowMessage, Markdown, MessageSuggest, UsageReport, UserNote, type FeedEntry } from '@sdk';
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation';
 import { Button } from '@src/components/ui/button';
+import { cn } from '@src/lib/utils';
+import { WikiLabel } from '@src/components/wiki-tip/WikiLabel';
+import { HighlightBeacon } from '@src/components/wiki-tip/HighlightBeacon';
+import { useLingeringHighlight } from '@src/components/wiki-tip/highlight';
 import { FeedData } from './feed-data';
 import { formatRecorded } from './feed-utils';
 
@@ -55,6 +59,21 @@ export function FeedEntryCard({
     return (
       <UnavailableFeedEntryCard
         entry={entry}
+        busy={busy}
+        feedData={feedData}
+        onDismiss={onDismiss}
+      />
+    );
+  }
+
+  // WikiTip feed entries carry `data.kind === 'wiki_tip'` and point at a wiki
+  // (markdown) page — rendered as a wiki label that highlights on
+  // ?highlight=<name>. See docs/wikitip.md.
+  if ((entry.data as { kind?: string } | null)?.kind === 'wiki_tip') {
+    return (
+      <WikiTipFeedEntryCard
+        entry={entry}
+        page={entity as Markdown}
         busy={busy}
         feedData={feedData}
         onDismiss={onDismiss}
@@ -128,14 +147,40 @@ interface FeedEntryFrameProps {
   feedData: FeedData;
   onDismiss: (entry: FeedEntry) => void;
   children: ReactNode;
+  /** Onboarding highlight: ring + attention beacon + scroll-into-view. */
+  highlight?: boolean;
+  /** During the entrance phase, pulse the ring for extra attention. */
+  pulsing?: boolean;
 }
 
-function FeedEntryFrame({ entry, busy, feedData, onDismiss, children }: FeedEntryFrameProps) {
+function FeedEntryFrame({
+  entry,
+  busy,
+  feedData,
+  onDismiss,
+  children,
+  highlight = false,
+  pulsing = false,
+}: FeedEntryFrameProps) {
   const Icon = feedData.icon;
   const recorded = formatRecorded(entry.created_date);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (highlight) ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [highlight]);
 
   return (
-    <div className="flex max-h-64 flex-col rounded border border-border bg-muted/40 px-2.5 py-2 text-left">
+    <div
+      ref={ref}
+      data-highlighted={highlight || undefined}
+      className={cn(
+        'relative flex max-h-64 flex-col rounded border border-border bg-muted/40 px-2.5 py-2 text-left transition-all duration-500',
+        highlight && 'border-primary bg-primary/5 ring-2 ring-primary ring-offset-1 ring-offset-background',
+        pulsing && 'animate-pulse',
+      )}
+    >
+      {highlight && <HighlightBeacon />}
       <div className="flex shrink-0 items-center justify-between gap-2">
         <span
           title={feedData.iconTooltip}
@@ -355,6 +400,42 @@ function UserNoteFeedEntryCard({ entry, note, busy, feedData, onDismiss }: UserN
         <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
           {note.content}
         </p>
+      </div>
+    </FeedEntryFrame>
+  );
+}
+
+interface WikiTipFeedEntryCardProps {
+  entry: FeedEntry;
+  page: Markdown;
+  busy: boolean;
+  feedData: FeedData;
+  onDismiss: (entry: FeedEntry) => void;
+}
+
+/**
+ * A wiki-page feed entry: a clickable wiki label (click → open, hover → peek
+ * the page in a modal) that highlights itself with an onboarding beacon when
+ * the URL carries `?highlight=<name>`. The backward half of the WikiTip
+ * round-trip. See docs/wikitip.md.
+ */
+function WikiTipFeedEntryCard({ entry, page, busy, feedData, onDismiss }: WikiTipFeedEntryCardProps) {
+  const wikiword =
+    (entry.data as { wiki?: string } | null)?.wiki ?? page.name ?? page.title ?? '';
+  const { active, phase } = useLingeringHighlight(wikiword);
+
+  return (
+    <FeedEntryFrame
+      entry={entry}
+      busy={busy}
+      feedData={feedData}
+      onDismiss={onDismiss}
+      highlight={active}
+      pulsing={phase === 'enter'}
+    >
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <WikiLabel wikiword={wikiword} label={wikiword} />
+        <span className="text-muted-foreground">— open, peek, or get highlighted here</span>
       </div>
     </FeedEntryFrame>
   );

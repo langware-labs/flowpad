@@ -1284,6 +1284,11 @@ async def index_system_content() -> None:
     except Exception as e:
         logging.warning(f"[startup-index] Failed to seed Welcome favorite (non-fatal): {e}")
 
+    try:
+        await _ensure_wikitip_feed_entry(user)
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to seed WikiTip feed entry (non-fatal): {e}")
+
 
 async def _ensure_welcome_favorite(user: User) -> None:
     """One-shot onboarding: drop a favorite bookmark to the Welcome markdown
@@ -1324,6 +1329,39 @@ async def _ensure_welcome_favorite(user: User) -> None:
     user.onboarded = True
     await user.save()
     logging.info(f"[bootstrap] Seeded Welcome favorite for user {user.typeid}")
+
+
+async def _ensure_wikitip_feed_entry(user: User) -> None:
+    """WikiTip demo: a Home Feed entry pointing at the Welcome wiki page.
+
+    Renders as a wiki label (open / peek-in-modal) that highlights itself when
+    the URL carries ?highlight=Welcome — the backward half of the round-trip.
+    The card is selected by ``data.kind == "wiki_tip"`` (see FeedEntryCard).
+    See docs/wikitip.md.
+
+    Idempotent on its own (independent of ``user.onboarded``, so it also lands
+    on already-onboarded instances): skips if a wiki_tip feed entry already
+    exists for the user — including a dismissed one, so it never nags.
+    """
+    from flow_sdk.builtin.claude_memory_entities import Docs  # noqa: PLC0415
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus  # noqa: PLC0415
+
+    existing = await FeedEntry.get_all(source_entity=user.typeid)
+    if any((e.data or {}).get("kind") == "wiki_tip" for e in existing):
+        return
+
+    candidates = await Docs.get_all({"name": "Welcome"})
+    if not candidates:
+        logging.info("[bootstrap] Welcome markdown not indexed; skipping WikiTip feed seed for now")
+        return
+    welcome = candidates[0]
+
+    feed_entry = FeedEntry(
+        feed_status=FeedStatus.NEW.value,
+        data={"type_id": str(welcome.typeid), "kind": "wiki_tip", "wiki": "Welcome"},
+    )
+    await feed_entry.save(user.typeid)
+    logging.info(f"[bootstrap] Seeded WikiTip feed entry for user {user.typeid}")
 
 
 # ---------------------------------------------------------------------------

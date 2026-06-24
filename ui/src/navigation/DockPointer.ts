@@ -20,6 +20,16 @@ import {
 } from '@src/lib/side-windows';
 
 /**
+ * URL query-param key carrying the "highlight this thing" intent across the
+ * app — the single source of truth for the WikiTip highlight (see
+ * docs/wikitip.md). Mirrors the existing `selected` option: URL-carried so the
+ * highlight is shareable + back-button-safe. Pairs with `DockPointer.highlight`
+ * / `withHighlight()` (dock surfaces) and `useHighlight()` (the home root `/`,
+ * which is not a dock URL).
+ */
+export const HIGHLIGHT_PARAM = 'highlight';
+
+/**
  * Lens pointer structure for sub-routing within lens viewer
  */
 export interface LensPointerParts {
@@ -132,6 +142,30 @@ export class DockPointer implements IDockPointer {
       this.viewType,
       this.pointer,
       withSideWindowsOptions(this.options, state),
+      this.layout,
+    );
+  }
+
+  /**
+   * The wiki word this dock asks to highlight, or null when none is set. The
+   * generic accessor for highlight-in-URL on dock surfaces; the home root `/`
+   * reads the same `HIGHLIGHT_PARAM` via `useHighlight()` instead (it is not a
+   * dock URL). See docs/wikitip.md.
+   */
+  get highlight(): string | null {
+    return this.options?.[HIGHLIGHT_PARAM] ?? null;
+  }
+
+  /**
+   * Clone this pointer with `highlight` serialized into its options — the
+   * writer that matches the `dockPointer.highlight = <wikiword>` mental model.
+   * Pairs with the `highlight` getter.
+   */
+  withHighlight(wikiword: string): DockPointer {
+    return new DockPointer(
+      this.viewType,
+      this.pointer,
+      { ...this.options, [HIGHLIGHT_PARAM]: wikiword },
       this.layout,
     );
   }

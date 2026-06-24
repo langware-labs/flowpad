@@ -9,7 +9,7 @@ import { useAssetRevisionStatus } from '@src/hooks/use-asset-revision-status';
 import { AssetGitPill } from './AssetGitPill';
 import { RevisionsPanel } from '@src/components/assets/editor/revisions/RevisionsPanel';
 import { History } from 'lucide-react';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 import { FSRef, TypeId, looksBinaryText } from '@sdk';
@@ -384,6 +384,15 @@ function MarkdownEditorContent({
   }, [onDelete, deleteLabel, fileName]);
 
   const handleLinkClick = useCallback((href: string) => {
+    // WikiTip backward link: `/?highlight=<wikiword>` routes home and highlights
+    // the matching feed entry. URL-carried so it is shareable + back-safe — see
+    // docs/wikitip.md. Checked first since it isn't a slug/wiki/asset href.
+    const highlight = new URL(href, window.location.origin).searchParams.get(HIGHLIGHT_PARAM);
+    if (highlight) {
+      navigation.highlight(highlight);
+      return;
+    }
+
     const slug = isSlugLink(href);
     if (slug !== null) {
       goToSlug(slug);
