@@ -3879,6 +3879,16 @@ class AgenticProcess(Entity):
                 if ancestor:
                     self._bind_project_id(ancestor.id)
 
+        # Before the @local catch-all, derive the project from this process's
+        # own workdir (received/recovered processes have a cwd but no DB
+        # ancestry). Reuses the same cwd→Project primitive as the indexer stamp
+        # and recover_project_action, so a worker binds the real project that
+        # owns its directory instead of falling through to @local.
+        if not self.project_id and self.workdir:
+            project = await Project.recover_by_path(self.workdir)
+            if project:
+                self._bind_project_id(project.id)
+
         # Fall back to @local project when no ancestor project is found
         if not self.project_id:
             local_project = await Project.get_by_uname("local")
