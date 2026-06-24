@@ -37,6 +37,7 @@ import { PaneBar } from './PaneBar';
 import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
+import { ChatComposerBar } from './ChatComposerBar';
 import { SimpleChatPane } from './SimpleChatPane';
 import { useChatUiMode } from '@src/contexts/chat-ui-mode-context';
 import { useIsAdvanced } from '@src/components/view-mode';
@@ -180,16 +181,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = propProcess ?? contextProcess ?? undefined;
   const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
-  // Chat-UI mode: the experimental SimpleChatPane overlays the xterm area
-  // (same session, same PTY — see SimpleChatPane). The terminal is the default
-  // for every process; the chat view is opt-in via the debug menu only, since
-  // it is not stable enough for users yet. Embedded terminals keep the full
-  // layout, mirroring the ProcessToolbar decision.
-  const chatUiMode = useChatUiMode();
-  const showSimpleChat = chatUiMode && !embedded && !!process;
-  // Skin layer: the trace/annotation/PTY-timing column header is terminal
-  // debug chrome — power-user only, hidden in Standard view. See docs/viewmodes.md.
+  // Skin layer: Standard users get the friendly SimpleChatPane (chat instead of
+  // the raw xterm); Advanced/Dev keep the terminal. The xterm stays mounted
+  // underneath the chat overlay (same session, same PTY — see SimpleChatPane),
+  // so toggling modes is instant and never resets the terminal. `chatUiMode`
+  // remains an explicit override to force the chat even in Advanced. Embedded
+  // terminals (chat side panel) and shell-only tabs (no AgenticProcess) always
+  // keep the xterm, mirroring the ProcessToolbar decision.
   const isAdvanced = useIsAdvanced();
+  const chatUiMode = useChatUiMode();
+  const showSimpleChat = (!isAdvanced || chatUiMode) && !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
@@ -1661,6 +1662,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           onOpenLastPlan={handleOpenLastPlan}
           markdownDocs={markdownDocs}
           onOpenMarkdown={handleOpenMarkdown}
+          composer={showSimpleChat && process ? <ChatComposerBar process={process} /> : undefined}
         />
       )}
     </div>
