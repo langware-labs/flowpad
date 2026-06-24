@@ -57,7 +57,7 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
             </div>
           </div>
         ) : (
-          <div className="mx-auto w-full max-w-[45rem] px-4 py-3">
+          <div className="w-full px-4 py-3">
             <TurnGroupsList groups={turnGroups} />
           </div>
         )}
