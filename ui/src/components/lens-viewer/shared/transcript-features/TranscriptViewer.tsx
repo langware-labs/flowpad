@@ -23,6 +23,7 @@ import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
 import { useSyncTranscriptTabName } from '@src/tabs/useTabs';
 
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { ViewModeToggle } from '../ViewModeToggle';
 import { AnalysisSidePanel, useAnalysisControls } from './AnalysisControls';
 import { useTranscriptSession } from './useTranscriptSession';
@@ -132,7 +133,10 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   const [displayTimestamp, setDisplayTimestamp] = useState<string | null>(null);
   const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
 
+  // `viewMode` is already forced to 'chat' in Standard view by useTranscriptMode;
+  // `isAdvanced` here only gates the chrome (mode toggle, scroll clock) on/off.
   const [viewMode, setViewMode] = useTranscriptMode();
+  const isAdvanced = useIsAdvanced();
 
   // ── Initialize tool filters on first load (run once per `entries` identity) ─
   const initializedForRef = useRef<UnifiedEntry[] | null>(null);
@@ -523,7 +527,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
     <div className="flex h-full min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2">
-        <ViewModeToggle mode={viewMode} onChange={switchMode} />
+        {isAdvanced && <ViewModeToggle mode={viewMode} onChange={switchMode} />}
 
         {indicatorProcess && (
           <span
@@ -540,7 +544,8 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
           </span>
         )}
 
-        {/* Scroll-position clock */}
+        {/* Scroll-position clock — Advanced/Dev only; Standard keeps a plain spacer. */}
+        {isAdvanced ? (
         <div className="flex flex-1 items-center justify-center gap-0 text-[11px] tabular-nums">
           {transcriptStartTs && (
             <span
@@ -582,6 +587,9 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
             </span>
           )}
         </div>
+        ) : (
+          <div className="flex-1" />
+        )}
 
         {sessionId && (
           <div
@@ -668,6 +676,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
                   entry={entry}
                   isExpanded={chatExpandedEntries.has(entry.id)}
                   onToggle={() => toggleChatEntry(entry.id)}
+                  isAdvanced={isAdvanced}
                 />
               </div>
             );
