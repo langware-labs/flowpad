@@ -1,0 +1,62 @@
+name: PR Tests
+
+# Runs the fast, backend-free test tiers on every pull request.
+#
+# NON-BLOCKING BY DESIGN: these jobs must NOT be added to the branch-protection
+# "required status checks" list — a PR can merge while they are red or pending.
+# They still report true pass/fail, because the PyPI deploy gate
+# (docs/pypi-deploy.md → "Test gate") reads this status to decide whether to
+# publish. Making them required here, or forcing them green, would break that gate.
+#
+# "deep_testing" tiers are intentionally EXCLUDED (they need a live backend or are
+# heavy): pytest tests/long_tests, tests/migration_e2e, tests/pty_fuzz,
+# tests/hub_tests; vitest long, headless, hub, hub-paired. Only the
+# backend-free tiers run here.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: pr-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (pytest unit + cli)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv + Python 3.10
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run pytest (unit + cli)
+        run: uv run pytest tests/unit tests/cli -v
+
+  frontend:
+    name: frontend (vitest unit + react)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Run vitest (unit + react)
+        working-directory: ui
+        run: npm run test:vitest:unit && npm run test:vitest:react
