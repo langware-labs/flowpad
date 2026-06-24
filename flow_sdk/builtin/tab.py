@@ -39,6 +39,13 @@ from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
 
+# Sentinel for ``ensure_tab(project_id=...)``: distinguishes "caller didn't pass
+# a project hint" (keep the existing value on reopen) from an EXPLICIT ``None``
+# (the target is now projectless → clear the stale snapshot). A plain ``None``
+# default could only mean the former, which is why a re-derived projectless tab
+# never cleared.
+_UNSET: object = object()
+
 
 def _pointer_to_hash(pointer: str) -> str:
     """Extract the canonical 'viewType|sub' identity string from either format:
@@ -274,7 +281,7 @@ async def ensure_tab(
     *,
     target_type: str | None = None,
     target_id: str | None = None,
-    project_id: str | None = None,
+    project_id: "str | None" = _UNSET,  # type: ignore[assignment]
     name: str | None = None,
     icon_key: str | None = None,
     worktree: bool | None = None,
@@ -318,11 +325,18 @@ async def ensure_tab(
         for attr, val in (
             ("target_type", target_type),
             ("target_id", target_id),
-            ("project_id", project_id),
         ):
             if val is not None and getattr(existing, attr) != val:
                 setattr(existing, attr, val)
                 dirty = True
+        # ``project_id`` is re-derived from the target on every (re)open, so an
+        # EXPLICIT value — including ``None`` when the target is now projectless —
+        # must overwrite the stale snapshot. Only ``_UNSET`` (no hint passed)
+        # preserves it. Without the null-clearing case the tab kept its old
+        # project color forever.
+        if project_id is not _UNSET and existing.project_id != project_id:
+            existing.project_id = project_id
+            dirty = True
         # Backfill display primitives ONLY when the row has none — a null name
         # was never a user rename, and a null icon_key/worktree predates the
         # field, so filling heals legacy rows on next open without clobbering a
@@ -357,7 +371,7 @@ async def ensure_tab(
         pointer=pointer,
         target_type=target_type,
         target_id=target_id,
-        project_id=project_id,
+        project_id=None if project_id is _UNSET else project_id,
         name=name,
         icon_key=icon_key,
         worktree=bool(worktree),
@@ -373,6 +387,17 @@ async def ensure_tab(
     return tab
 
 
+async def _tabs_for_target(target_type: str, target_id: str) -> list["Tab"]:
+    """All Tabs denormalized onto a target entity (the reverse lookup shared by
+    every target-driven tab maintenance hook). Best-effort: returns [] if the Tab
+    type is absent (e.g. a pytest env without ``register_all``), so callers never
+    have to guard the query themselves."""
+    try:
+        return await Tab.get_all({"target_type": target_type, "target_id": str(target_id)})
+    except Exception:
+        return []
+
+
 async def hide_tabs_for_target(target_type: str, target_id: str) -> None:
     """Membership-only soft-close of every visible Tab denormalized onto a
     target entity (``target_type`` + ``target_id``): flip ``visible=False`` and
@@ -385,12 +410,8 @@ async def hide_tabs_for_target(target_type: str, target_id: str) -> None:
     underway at the call site, so routing through ``Tab.close`` here would
     re-enter that teardown — hence the direct flag flip.
     """
-    try:
-        tabs = await Tab.get_all({"target_type": target_type, "target_id": str(target_id)})
-    except Exception:
-        return
     hid = False
-    for tab in tabs:
+    for tab in await _tabs_for_target(target_type, target_id):
         if getattr(tab, "visible", False):
             tab.visible = False
             await tab.save()
@@ -399,6 +420,29 @@ async def hide_tabs_for_target(target_type: str, target_id: str) -> None:
         # Background death (worker stop / orphan cleanup) — ping clients to refetch
         # so the chip drops without waiting for the next navigation.
         await broadcast_tabs_changed()
+
+
+async def reconcile_tab_project(target_type: str, target_id: str, project_id: str | None) -> int:
+    """Re-derive the denormalized ``project_id`` of every Tab pointing at a target
+    entity after that entity's project changes, and ping clients. Returns the
+    number of tabs updated.
+
+    ``tab.project_id`` is a snapshot of the target's project taken at tab
+    creation; nothing else re-derives it, so a (re)assignment — e.g. a
+    conversation moved into a project — would otherwise leave the tab rendering
+    its stale project color ("stays blue"). This is the project-change sibling of
+    the orphan-close hook in ``Entity.delete``; it is driven generically from
+    ``Entity.save``.
+    """
+    changed = 0
+    for tab in await _tabs_for_target(target_type, target_id):
+        if tab.project_id != project_id:
+            tab.project_id = project_id
+            await tab.save()
+            changed += 1
+    if changed:
+        await broadcast_tabs_changed()
+    return changed
 
 
 # ── Backend-owned tab list (the single render source) ──────────────────────────
