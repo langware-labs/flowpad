@@ -6,8 +6,17 @@
  * response shape).
  */
 
+import { AssistantMessageEntry } from './entries/assistant_message';
 import { ToolUseEntry } from './entries/tool_use';
+import { UserMessageEntry } from './entries/user_message';
 import { EntryKind, TranscriptEntry } from './entry';
+
+/**
+ * Synthetic user-message texts the agent injects (not real prompts) — dropped
+ * from prompt lists and clean-chat renders. Mirrors `_SYNTHETIC_USER_TEXTS` in
+ * flow_sdk/transcript_analyzer/transcript.py.
+ */
+export const SYNTHETIC_USER_TEXTS = new Set(['[Request interrupted by user for tool use]']);
 
 export enum TranscriptFormat {
   CLAUDE_JSONL = 'claude_jsonl',
@@ -69,5 +78,62 @@ export class AgentTranscriptFile {
       }
     }
     return null;
+  }
+
+  /**
+   * Render the transcript as a clean, text-friendly chat — suitable for
+   * pasting into a doc or issue.
+   *
+   * Unlike the Python `to_string()` (a verbose debug dump with entry banners,
+   * ids, and timestamps), this collapses the transcript to readable turns:
+   * `## You` / `## Assistant` headings with the message text, and tool calls
+   * folded to a single `→ tool  arg` line under the assistant turn. Sub-agent
+   * (sidechain) lines, tool results, reasoning, and control-plane entries are
+   * dropped. Blocks are separated by a blank line.
+   */
+  toText(): string {
+    const blocks: string[] = [`# Chat — ${this.worker_type || 'agent'}`];
+    // 'you' | 'assistant' — heading is only re-emitted when the role changes,
+    // so an assistant message and its following tool calls share one heading.
+    let lastRole: 'you' | 'assistant' | null = null;
+
+    const pushTurn = (role: 'you' | 'assistant', body: string) => {
+      if (role !== lastRole) {
+        blocks.push(role === 'you' ? '## You' : '## Assistant');
+        lastRole = role;
+      }
+      blocks.push(body);
+    };
+
+    for (const e of this.entries) {
+      if (e.is_sidechain) continue;
+
+      if (e instanceof UserMessageEntry) {
+        const text = e.text.trim();
+        if (!text || SYNTHETIC_USER_TEXTS.has(text)) continue;
+        pushTurn('you', text);
+      } else if (e instanceof AssistantMessageEntry) {
+        const text = e.text.trim();
+        if (!text) continue;
+        pushTurn('assistant', text);
+      } else if (e instanceof ToolUseEntry) {
+        const arg = AgentTranscriptFile.primaryToolArg(e.tool_input);
+        pushTurn('assistant', arg ? `→ ${e.tool_name}  ${arg}` : `→ ${e.tool_name}`);
+      }
+      // tool_result / system / summary / meta / token_usage / unknown: dropped.
+    }
+
+    return blocks.join('\n\n');
+  }
+
+  /** First informative tool-input field, collapsed to a single line. */
+  private static primaryToolArg(input: Record<string, unknown>): string {
+    for (const key of ['file_path', 'path', 'command', 'pattern', 'url', 'query']) {
+      const v = input[key];
+      if (typeof v !== 'string') continue;
+      const trimmed = v.trim();
+      if (trimmed) return trimmed.split('\n', 1)[0].slice(0, 120);
+    }
+    return '';
   }
 }
