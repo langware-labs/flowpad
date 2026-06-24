@@ -116,6 +116,10 @@ def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
     text = getattr(entry, "text", None)
     if kind == "user_message":
         attributes["role"] = getattr(entry, "role", "user")
+        # Framework-injected (isMeta) user lines — skill bodies, command
+        # expansions, system reminders — collapse to a chip in the UI.
+        if getattr(entry, "is_meta", False):
+            attributes["is-meta"] = "true"
         if isinstance(text, str):
             flow_value = text
             attributes["data-type"] = FlowDataType.TEXT
