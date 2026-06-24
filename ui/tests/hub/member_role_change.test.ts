@@ -19,6 +19,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { hubAvailable } from './_hub';
 import { pollUntil } from './_matrix';
+import { testEntityName, trackForCleanup } from '../_cleanup';
 import {
   findPendingInvitation,
   getInstance,
@@ -57,10 +58,8 @@ async function roster(conv: any): Promise<Record<string, string>> {
 
 describe('conversation member role change over the hub (realm per instance)', () => {
   it('owner promotes a member; denials propagate to the non-owner', async () => {
-    const ts = Date.now();
-
     // ── dev-1 (owner): create + share to dev-2. ──
-    const conv = new dev1.sdk.Conversation({ title: `role-change-${ts}` });
+    const conv = trackForCleanup(new dev1.sdk.Conversation({ title: testEntityName('conv') }));
     await conv.save();
     await conv.share([dev2.email]);
     expect(conv.remote).toBe(true);
