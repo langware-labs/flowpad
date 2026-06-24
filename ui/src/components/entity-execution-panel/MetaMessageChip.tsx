@@ -1,4 +1,13 @@
 import { dataManager, FlowData, Skill, systemTools } from '@sdk';
+import { MarkdownView } from '@src/components/markdown-view';
+import { Button } from '@src/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@src/components/ui/dialog';
 import { useDockNavigation } from '@src/navigation';
 import { notify } from '@src/notifications/notify';
 import { ExternalLink, Loader2, Sparkles } from 'lucide-react';
@@ -7,10 +16,9 @@ import { useState } from 'react';
 /**
  * Framework-injected (`isMeta`) user lines — skill bodies, command expansions,
  * system reminders — are not human messages. Instead of dumping the whole doc
- * into the chat, collapse it to a compact breadcrumb chip. When the injection is
- * a skill, the chip opens that skill's page in a tab (resolved lazily on click
- * from the "Base directory for this skill: …" path) — the chat stays clean, but
- * the user can still inspect the skill.
+ * into the chat, collapse it to a compact breadcrumb chip. For a skill, clicking
+ * the chip previews the skill in a modal (chat stays clean); the modal's "Open
+ * external" button does the full navigation to the skill's page and closes.
  */
 export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
   const content = flowData.content ?? '';
@@ -18,9 +26,10 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
   const skillName = skillDir ? skillDir.replace(/\/+$/, '').split('/').pop() : null;
   const label = skillName ? `Skill: ${skillName}` : 'System note';
   const { navigation } = useDockNavigation();
+  const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
 
-  const open = async () => {
+  const openExternal = async () => {
     if (!skillDir || opening) return;
     setOpening(true);
     try {
@@ -32,7 +41,10 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
       const rowT = row as Record<string, unknown> & { type?: string };
       if (!rowT.type) rowT.type = Skill.type;
       const skill = dataManager.updateEntityFromJson<Skill>(rowT as never);
-      if (skill) navigation.openDock(skill.editorDockPointer);
+      if (skill) {
+        navigation.openDock(skill.editorDockPointer);
+        setOpen(false);
+      }
     } catch (err) {
       notify.error({ title: 'Could not open skill', message: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -44,20 +56,36 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
     <div className="my-1" data-testid="meta-message-chip">
       <button
         type="button"
-        disabled={!skillDir || opening}
-        onClick={() => void open()}
-        title={skillDir ? `Open ${label} in a tab` : label}
+        disabled={!skillDir}
+        onClick={() => setOpen(true)}
+        title={skillDir ? `Preview ${label}` : label}
         className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-70 disabled:hover:bg-muted/40 disabled:hover:text-muted-foreground"
       >
         <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
         <span className="truncate font-medium">{label}</span>
-        {skillDir &&
-          (opening ? (
-            <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin" />
-          ) : (
-            <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
-          ))}
       </button>
+
+      {skillDir && (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-muted-foreground" />
+                {label}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1 text-[14px] leading-7">
+              <MarkdownView value={skillBody(content)} compact />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => void openExternal()} disabled={opening}>
+                {opening ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-1.5 h-4 w-4" />}
+                Open external
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
@@ -66,4 +94,12 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
 function parseSkillDir(content: string): string | null {
   const m = content.match(/Base directory for this skill:\s*(\S+)/);
   return m ? m[1] : null;
+}
+
+/** Strip the injection envelope so the modal shows just the skill doc. */
+function skillBody(content: string): string {
+  return content
+    .replace(/^Base directory for this skill:.*\n?/, '')
+    .replace(/\n*ARGUMENTS:.*$/s, '')
+    .trim();
 }
