@@ -56,8 +56,8 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, a
         className={cn('flex justify-end py-1.5', animateIn && 'animate-fade-in opacity-0', className)}
         data-testid="execution-message"
       >
-        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-muted px-4 py-2 text-[15px] leading-6 text-foreground">
-          {currentContent}
+        <div className="max-w-[80%] min-w-0 break-words rounded-2xl bg-muted px-4 py-2 text-[15px] leading-6 text-foreground">
+          <MarkdownView value={currentContent} compact />
         </div>
       </div>
     );
