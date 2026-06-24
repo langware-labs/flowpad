@@ -21,14 +21,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from flow_sdk.utils.validation import UUID_PATTERN
 
-# Single source of truth for root logging config + correlation (see
-# flow_sdk/logging_setup.py). Must run before the first log call in this module
-# (e.g. init_temp_dir) so Python doesn't auto-install a default handler first.
-# Replaces the former basicConfig here and the duplicate in server/app.py.
-from flow_sdk.logging_setup import configure_logging
-
-configure_logging()
-
 
 # ---------------------------------------------------------------------------
 # URL constants
@@ -782,6 +774,8 @@ class ServiceConfig(BaseSettings):
 # ---------------------------------------------------------------------------
 # Module-level initialization
 # ---------------------------------------------------------------------------
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # Global default service config instance
 default_service_config: ServiceConfig = ServiceConfig()
