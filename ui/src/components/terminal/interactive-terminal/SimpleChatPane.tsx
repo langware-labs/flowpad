@@ -14,6 +14,8 @@ import { useDerivedWorkerStatus } from '@src/components/entity-execution-panel/h
 import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { cn } from '@src/lib/utils';
+import { notify } from '@src/notifications/notify';
+import { Check, Copy, MessageSquare } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface SimpleChatPaneProps {
@@ -58,12 +60,37 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
         await process.prompt(text);
       } catch (err) {
         console.error('[SimpleChatPane] prompt failed', err);
+        notify.error({ title: 'Message not sent', message: err instanceof Error ? err.message : String(err) });
       } finally {
         setSending(false);
       }
     },
     [process, sending],
   );
+
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    try {
+      // Route formatting through the standard transcript method, not the live
+      // FlowData stream: fetch the parsed transcript and render clean chat text.
+      const transcript = await process.getTranscript();
+      await navigator.clipboard.writeText(transcript.toText());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.error('[SimpleChatPane] copy failed', err);
+      notify.error({ title: 'Could not copy chat', message: err instanceof Error ? err.message : String(err) });
+    }
+  }, [process]);
+
+  const handleStop = useCallback(async () => {
+    try {
+      await process.interruptTurn();
+    } catch (err) {
+      console.error('[SimpleChatPane] interrupt failed', err);
+      notify.error({ title: 'Could not stop', message: err instanceof Error ? err.message : String(err) });
+    }
+  }, [process]);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
@@ -97,32 +124,62 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
       data-testid="simple-chat-pane"
     >
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
-        {turnGroups.length === 0 && (
-          <div className="p-3 text-[11px] text-muted-foreground">
-            No conversation yet. Send a message to the agent below.
+        {turnGroups.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <MessageSquare className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-[15px] font-medium text-foreground">Start a conversation</p>
+              <p className="mt-1 text-sm">Send a message below and the agent will get to work.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="mx-auto w-full max-w-[45rem] px-4 py-3">
+            <TurnGroupsList groups={turnGroups} />
           </div>
         )}
-        <TurnGroupsList groups={turnGroups} />
       </AutoScrollContainer>
+      <div className="mx-auto w-full max-w-[45rem]">
       <CompactExecutionInput
         onSend={handleSend}
         disabled={sending || busy}
+        running={busy}
+        onStop={handleStop}
         placeholder="Message the agent…"
         statusSlot={
-          <span
-            title={getStatusLabel(indicatorProcess)}
-            className="flex items-center"
-            data-testid="simple-chat-status"
-          >
-            <ProcessStatusIndicator
-              process={indicatorProcess}
-              showLabel
-              size="sm"
-              className="px-1 text-muted-foreground"
-            />
-          </span>
+          <div className="flex items-center gap-1">
+            <span
+              title={getStatusLabel(indicatorProcess)}
+              className="flex items-center"
+              data-testid="simple-chat-status"
+            >
+              <ProcessStatusIndicator
+                process={indicatorProcess}
+                showLabel
+                size="sm"
+                className="px-1 text-muted-foreground"
+              />
+            </span>
+            {turnGroups.length > 0 && (
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  void handleCopy();
+                }}
+                title="Copy chat as text"
+                aria-label="Copy chat as text"
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                data-testid="simple-chat-copy"
+              >
+                {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+              </button>
+            )}
+          </div>
         }
       />
+      </div>
     </div>
   );
 }
