@@ -149,13 +149,6 @@ def start_server_process(port: int) -> int:
     cleanup_old_logs(server_log_dir)
     server_log_path = generate_timestamped_log_path("server")
 
-    # Single file per boot: the child's stderr is redirected here, AND we tell
-    # the server (via env) to treat this same file as its dev log. The server's
-    # root StreamHandler already writes the full correlation-formatted tree to
-    # stderr — i.e. into this file — so init_dev_file_logging() must NOT add a
-    # second FileHandler (that's what used to create a duplicate file).
-    env["FLOWPAD_SERVER_LOG_PATH"] = str(server_log_path)
-
     server_log = open(server_log_path, "a")  # noqa: WPS515 — fd inherited by child
     args = [sys.executable, "-m", "flow_sdk.server.run"]
     pid = start_detached_process(args, env=env, stderr=server_log)

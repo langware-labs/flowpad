@@ -26,8 +26,6 @@ export * from './utils';
 export * from './websocket';
 export * from './voice';
 export * from './sentry';
-export * from './trace';
-export * from './logger';
 export * from './types/index';
 export * from './schema/index';
 export { FSRef } from './fs/FSRef';
