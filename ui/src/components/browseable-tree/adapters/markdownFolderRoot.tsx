@@ -208,6 +208,11 @@ function rootToolbar(type: AssetTypeInfo, deps: MarkdownFolderRootDeps): Toolbar
  */
 const _vaultFilesCache = new Map<string, Promise<string[]>>();
 
+/** Test-only: drop the per-vault walk cache so each test starts clean. */
+export function clearMarkdownVaultFilesCache(): void {
+  _vaultFilesCache.clear();
+}
+
 function fetchVaultFiles(vaultAbsPath: string, refresh = false): Promise<string[]> {
   if (refresh) _vaultFilesCache.delete(vaultAbsPath);
   const cached = _vaultFilesCache.get(vaultAbsPath);
