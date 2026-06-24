@@ -182,6 +182,9 @@ export interface RestApiMessage extends BaseMessage {
   // Per-call hub-reflection opt-in (default false). The WS-REST handler copies
   // this onto request_info.hub_reflect (the HTTP path uses the Hub-Reflect header).
   hub_reflect?: boolean;
+  // Renderer-minted correlation id (the HTTP path uses the X-Trace-Id header).
+  // The WS-REST handler copies this onto request_info.trace_id.
+  trace_id?: string;
 }
 
 export interface ResponseMessage extends BaseMessage {

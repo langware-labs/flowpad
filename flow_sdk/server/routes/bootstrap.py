@@ -1339,6 +1339,8 @@ def setup_desktop_filesystem() -> None:
 
     Per-instance logs under instance_settings.logs_dir:
       - server/, monitor/, main_desktop/
+      (main_desktop/ is the Electron shell's own log + captured renderer
+       console, written per-instance by electron/main.js.)
 
     Per-instance UI preferences:
       - <instance_dir>/preferences.json  (defaults written if missing;
