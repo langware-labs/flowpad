@@ -24,6 +24,7 @@ from flow_sdk.fs_store.indexer.progress_table import (
     IndexProgressTable,
     TypeProgressRow,
 )
+from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.server.search_filters import ScopeFilter
 
@@ -650,6 +651,16 @@ class FSIndexer:
                                 object.__setattr__(rec, "scope", ref_scope)
                             if ref_pid is not None:
                                 object.__setattr__(rec, "project_id", ref_pid)
+                            elif not getattr(rec, "project_id", None) and (
+                                # No project-scoped ancestor in the FSRef chain
+                                # (e.g. codex/copilot sessions expanded under
+                                # USER_HOME_FOLDER, received transcripts). If the
+                                # record names a cwd, resolve its owning project
+                                # so it scopes + yields a project tab like a
+                                # locally-indexed claude session does.
+                                cwd_pid := resolve_project_id_for_cwd(getattr(rec, "cwd", None))
+                            ):
+                                object.__setattr__(rec, "project_id", cwd_pid)
                             await rec.sync_to_db(fts_batch=fts_batch, notify=False)
                             # Reflect any actually-saved id back into seen_ids in case
                             # from_fsref returns multiple records (rare) or a different id.

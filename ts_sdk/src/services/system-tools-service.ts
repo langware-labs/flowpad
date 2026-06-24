@@ -627,13 +627,7 @@ export class SystemToolsService extends EventEmitter {
     entity?: { project_id?: string | null; save: () => Promise<void> },
   ): Promise<void> {
     if (!workdir) return;
-    const projects = await Project.query<Project>(new QueryRequest({ type: Project.type, scope: [] }));
-    const candidates = projects.filter(
-      (p) => p.fs_storage_mount_path && workdir.startsWith(p.fs_storage_mount_path),
-    );
-    const match = candidates.sort(
-      (a, b) => (b.fs_storage_mount_path?.length ?? 0) - (a.fs_storage_mount_path?.length ?? 0),
-    )[0];
+    const match = await Project.getProjectByPath(workdir);
     if (match) {
       await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, match.typeId);
       if (entity && !entity.project_id) {
