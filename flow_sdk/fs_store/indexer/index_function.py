@@ -535,6 +535,27 @@ class FSIndexer:
         _pending_hashes: list[FSRecord] = []
         driver = get_db_driver()
 
+        # Skip-fresh must require the DB row to exist — not just a matching
+        # on-disk ``.hash`` sentinel. A sentinel outlives its row (a DB
+        # clear/rebuild drops rows but leaves the shadow store), so trusting
+        # the sentinel alone makes the indexer skip re-creating a missing row
+        # forever ("only 3 of 589 markdowns show"). Pre-load the set of
+        # existing entity ids per dispatchable type — one lean SELECT each —
+        # and gate freshness on membership. An empty ``existing_db_ids`` means
+        # "couldn't enumerate" → fall back to sentinel-only (prior behaviour).
+        existing_db_ids: dict[str, set[str]] = {}
+        if hasattr(driver, "list_entity_sources_by_type"):
+            try:
+                for rt in per_type_totals:
+                    rows = await driver.list_entity_sources_by_type(str(rt))
+                    existing_db_ids[str(rt)] = set(rows.keys())
+            except Exception:
+                logging.warning(
+                    "[FSIndexer] could not preload DB ids for skip-fresh row check; "
+                    "falling back to sentinel-only freshness", exc_info=True,
+                )
+                existing_db_ids.clear()
+
         async def _flush_fts() -> None:
             """Flush the accumulated FTS batch (if any) and reset it."""
             if not fts_batch:
@@ -588,11 +609,24 @@ class FSIndexer:
                     else:
                         ref_id = mint_uuid(str(ref._path))
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
-                    # Skip-fresh: pure on-disk equality, no parse, no DB. The
-                    # probe record reads its own `.hash` sentinel (shadow home)
-                    # and the source's current hash via `get_hash`. Fresh when
-                    # unchanged. `opts.force` (Full mode) bypasses it.
-                    fresh = bool(ref_id) and not opts.force and not probe.index_required
+                    # Skip-fresh: on-disk ``.hash`` equality AND a live DB row.
+                    # The probe reads its own sentinel (shadow home) and the
+                    # source's current hash via `get_hash`; ``row_present`` adds
+                    # the requirement that the entity row still exists, so a
+                    # stale sentinel left by a DB clear/rebuild can't mask a
+                    # missing row. `opts.force` (Full mode) bypasses all of it.
+                    # ``existing_db_ids`` is the pre-loaded id set per type;
+                    # empty means it couldn't be enumerated → sentinel-only.
+                    row_present = (
+                        not existing_db_ids
+                        or ref_id in existing_db_ids.get(str(ref.record_type), ())
+                    )
+                    fresh = (
+                        bool(ref_id)
+                        and not opts.force
+                        and not probe.index_required
+                        and row_present
+                    )
                 except Exception as e:
                     logging.warning(
                         "[FSIndexer] probe failed for %s (%s): %r — falling through to parse",
@@ -675,6 +709,16 @@ class FSIndexer:
                         _pending_hashes.append(probe)
                     except Exception:
                         acc["errors"] += 1
+                        # Make failures observable, but cap the full traceback to
+                        # the first few per type so a pathological tree (thousands
+                        # of unparseable files) can't flood the log; the one-line
+                        # warning still counts every failure.
+                        logging.warning(
+                            "indexer: failed to index %s (%s)",
+                            getattr(ref, "path", ref),
+                            ref.record_type,
+                            exc_info=acc["errors"] <= 5,
+                        )
                     acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
 
                     await emit()
@@ -713,10 +757,12 @@ class FSIndexer:
             # ``opts.scope_filter`` is applied on top: orphan-ness is determined
             # globally (so a cross-scope reference still rescues a record), but
             # only orphans whose (scope, project_id) match the filter are
-            # reported and acted on. The callers wiring this on top must use a
-            # global walk (roots=None) so ``seen_ids`` is global; otherwise
-            # records referenced from outside the walked subtree would falsely
-            # appear orphan.
+            # reported and acted on. The callers wiring this on top MUST walk
+            # every source — the all-projects root set (USER_HOME + one
+            # REAL_PROJECT_CWD per project), NOT default_roots() — so
+            # ``seen_ids`` is global; otherwise records under a project tree
+            # that wasn't walked would falsely appear orphan. (See the
+            # ``orphan_action != INDEX`` branch in fs_records_actions.index.)
             #
             # SAFETY GUARD: a destructive orphan_action with a narrowed walk
             # (custom roots) and no scope_filter would silently wipe records
