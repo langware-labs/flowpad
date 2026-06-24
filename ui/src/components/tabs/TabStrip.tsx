@@ -377,14 +377,19 @@ export const TabStrip: React.FC<TabStripProps> = ({
         ref={(node) => {
           tabRefs.current[key] = node;
         }}
-        className={`group flex shrink-0 select-none items-center gap-2 rounded-t border-b-2 px-3 py-1.5 transition-colors ${
+        className={`group relative flex shrink-0 select-none items-center gap-2 overflow-hidden rounded-t-lg border px-3 py-1.5 transition-colors ${
           isDisabled
-            ? 'cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground/50'
+            ? 'cursor-not-allowed border-transparent bg-transparent text-muted-foreground/50'
             : hasError
-              ? 'cursor-pointer border-destructive bg-destructive/10 text-destructive hover:bg-destructive/15'
+              ? 'cursor-pointer border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15'
               : isActive
-                ? 'cursor-pointer border-primary bg-background text-foreground'
-                : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+                ? // Active tab shares the body background and opens its bottom edge
+                  // (-mb-px over the baseline) so it reads as one surface with the
+                  // content below — a folder-tab continuum.
+                  'z-10 -mb-px cursor-pointer border-border border-b-transparent bg-background text-foreground'
+                : // Inactive tabs are raised, fully-bordered chips in the lighter
+                  // muted tone so they never blend into the (darker) body.
+                  'cursor-pointer border-border bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground'
         } ${isPending ? 'animate-pending-glow rounded-md' : ''} ${dragKey === key ? 'opacity-60' : ''}`}
         onPointerDown={(e) => startDrag(e, key, isDisabled)}
         onClick={() => {
@@ -396,6 +401,10 @@ export const TabStrip: React.FC<TabStripProps> = ({
         data-terminal-target={key}
         {...(item.dataAttributes ?? {})}
       >
+        {/* Active accent — absolutely positioned so it never shifts tab height. */}
+        {isActive && !hasError && (
+          <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-primary" />
+        )}
         {item.icon}
         {item.badge}
         {editingKey === key ? (
@@ -515,7 +524,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
     // min-w-0/max-w-full: the strip must never size its host to content —
     // hosts are flex children and would otherwise blow out to the sum of all
     // chip widths (the off-screen right-arrow/close-all/toolbar bug).
-    <div className="flex min-w-0 max-w-full items-center border-b bg-muted" data-testid={testId}>
+    <div className="flex min-w-0 max-w-full items-end bg-background" data-testid={testId}>
       {leading}
       {/* Left Scroll Button — always reserves layout space when tabs
           overflow, so toggling `canScrollLeft` doesn't shift the
@@ -537,7 +546,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <div
         ref={tabContainerRef}
         data-testid="terminal-tabs-scroll-container"
-        className="scrollbar-hide flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 pl-2 pr-0"
+        className="scrollbar-hide flex min-w-0 flex-1 items-end gap-1 overflow-x-auto pb-0 pl-2 pr-0 pt-1"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {items.map((item, index) => renderChip(item, index, items))}
@@ -546,7 +555,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
             edge when tabs overflow. Placement is unconditional, so it does
             not oscillate with hasTabOverflow. */}
         {trailing && (
-          <div ref={trailingRef} className="sticky right-0 z-10 flex items-center self-stretch bg-muted">
+          <div ref={trailingRef} className="sticky right-0 z-10 flex items-center self-stretch bg-background">
             {trailing}
           </div>
         )}

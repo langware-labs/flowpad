@@ -8,7 +8,10 @@ import type { ReactNode } from 'react';
  * docs/viewmodes.md (skin-layer rule + slot pattern).
  */
 
-const ROW = 'flex items-center gap-0.5 border-b bg-muted/30 px-2 py-1';
+// bg-background (not bg-muted) so this header reads as one surface with the
+// active tab above it — the selected tab flows straight into the terminal body.
+// Shared with PaneBar so both terminal header rows stay in lockstep.
+export const ROW = 'flex items-center gap-0.5 border-b bg-background px-2 py-1';
 
 export interface HeaderSlots {
   /** Left debug/trace controls (CLI Options + Columns & Trace dropdowns). */
