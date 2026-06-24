@@ -5,6 +5,7 @@ const log = require('electron-log');
 const crypto = require('crypto');
 const UvManager = require('./uv-manager');
 const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
+const { isNewer } = require('./semver');
 
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
 // Must be called before app.whenReady().
@@ -70,6 +71,12 @@ log.info('Flowpad starting...');
 // ----------------------------------------------------------------------------
 // Electron desktop wrapper auto-update.
 // ----------------------------------------------------------------------------
+
+// Set when a desktop download was started after the user DEFERRED ("Later") —
+// suppresses the restart prompt so the update just applies silently on the next
+// app quit/restart (autoInstallOnAppQuit). Reset once consumed.
+let suppressDesktopRestartPrompt = false;
+
 function setupElectronAutoUpdater() {
   if (!app.isPackaged) {
     log.info('[electron-updater] skipped: app is not packaged');
@@ -77,9 +84,14 @@ function setupElectronAutoUpdater() {
   }
 
   autoUpdater.logger = log;
-  // Download silently in the background — only ask the user before the
-  // restart/install step.
-  autoUpdater.autoDownload = true;
+  // Manual control: we CHECK (no download) at pre-start so a desktop update can
+  // be offered together with a backend update in ONE dialog, and only download
+  // once the user opts in. Download is triggered explicitly via downloadUpdate().
+  autoUpdater.autoDownload = false;
+  // A deferred ("Later") desktop download still applies on the next quit/restart
+  // without nagging — that's exactly autoInstallOnAppQuit (default true; set
+  // explicitly so the intent is clear).
+  autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('checking-for-update', () => {
     log.info('[electron-updater] checking for update...');
@@ -97,8 +109,17 @@ function setupElectronAutoUpdater() {
     log.error('[electron-updater] error:', err);
   });
 
+  // Fires only after an explicit downloadUpdate() completes. Restarting to
+  // apply is the one unavoidable step of a desktop self-update, so prompt for it.
   autoUpdater.on('update-downloaded', async (info) => {
     log.info(`[electron-updater] update downloaded: ${info.version}`);
+    if (suppressDesktopRestartPrompt) {
+      // User deferred earlier — don't nag. autoInstallOnAppQuit applies it on
+      // the next quit/restart, so the app comes back on the latest desktop.
+      suppressDesktopRestartPrompt = false;
+      log.info('[electron-updater] deferred — will install on next quit/restart');
+      return;
+    }
     if (!mainWindow || mainWindow.isDestroyed()) {
       log.warn('[electron-updater] mainWindow missing; will install on quit');
       return;
@@ -121,19 +142,46 @@ function setupElectronAutoUpdater() {
     }
   });
 
-  // Check immediately at launch, then re-check every hour while the app keeps
-  // running. Without the periodic check a long-lived FlowPad session never
-  // picks up new releases until the user relaunches.
-  // electron-updater is internally idempotent: if a download is already in
-  // progress, subsequent checkForUpdates() calls are no-ops.
+  // Long-lived sessions: re-check hourly and, if a newer desktop build appears,
+  // download it in the background (the update-downloaded handler then prompts to
+  // restart). Launch-time is handled by the pre-start flow, not here.
   const HOUR_MS = 60 * 60 * 1000;
-  const runCheck = () => {
-    autoUpdater.checkForUpdates().catch((err) => {
-      log.error('[electron-updater] check failed:', err);
-    });
-  };
-  runCheck();
-  setInterval(runCheck, HOUR_MS);
+  setInterval(async () => {
+    if (await getDesktopUpdateVersion()) downloadDesktopUpdateInBackground();
+  }, HOUR_MS);
+}
+
+/**
+ * Latest desktop build available on the update feed, or null when there's no
+ * newer version (or the app is unpackaged / the check failed). Checks WITHOUT
+ * downloading (autoDownload is false), so it's safe to await before boot to
+ * decide whether to fold the desktop update into the pre-start prompt.
+ */
+async function getDesktopUpdateVersion() {
+  if (!app.isPackaged) return null;
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    const latest = result && result.updateInfo && result.updateInfo.version;
+    if (latest && isNewer(app.getVersion(), latest)) return latest;
+  } catch (err) {
+    log.warn(`[electron-updater] desktop update check failed: ${err.message}`);
+  }
+  return null;
+}
+
+/**
+ * Start downloading the desktop update in the background. Requires a prior
+ * getDesktopUpdateVersion() / checkForUpdates() that found an update.
+ *
+ * promptOnReady=true  → the `update-downloaded` handler offers "Restart now".
+ * promptOnReady=false → deferred: no prompt; it applies on the next quit/restart
+ *                       (autoInstallOnAppQuit), so the user isn't nagged.
+ */
+function downloadDesktopUpdateInBackground({ promptOnReady = true } = {}) {
+  suppressDesktopRestartPrompt = !promptOnReady;
+  autoUpdater.downloadUpdate().catch((err) => {
+    log.error('[electron-updater] download failed:', err);
+  });
 }
 
 // ----------------------------------------------------------------------------
@@ -401,8 +449,9 @@ async function startApp() {
     // Install and start backend via uv + flow CLI
     uvManager = new UvManager(log);
 
-    // Did the user just upgrade to a new desktop build? If so we'll pull the
-    // flowpad package up to latest before starting so backend matches wrapper.
+    // Did the user just upgrade to a new desktop build? Logged for diagnostics
+    // only — the pre-start update prompt below decides (and asks) whether to
+    // bring the flowpad backend up to match; we don't silently auto-upgrade.
     const lastDesktopVersion = readLastDesktopVersion();
     const desktopUpgraded =
       app.isPackaged && lastDesktopVersion && lastDesktopVersion !== app.getVersion();
@@ -417,38 +466,72 @@ async function startApp() {
       if (flowBin) {
         log.info(`Fast path: flow binary found at ${flowBin}`);
 
-        // After a desktop upgrade, bring flowpad up to latest (blocking, with
-        // status) — but only when PyPI actually has a newer version.
-        // The backend is still down here, so check PyPI directly (not the
-        // cloud /check-update policy) and upgrade if a newer flowpad exists.
+        // ── Pre-start updates: desktop + backend, asked ONCE ───────────────
+        // Two independent channels: the desktop wrapper (electron-updater /
+        // GitHub) and the flowpad backend (PyPI). We check the desktop FIRST,
+        // without downloading, so that when BOTH have a newer version we show a
+        // single consolidated dialog instead of two. The backend is applied
+        // immediately (fast, local); the desktop downloads in the background and
+        // prompts to restart when ready. We never silently auto-upgrade — the
+        // dialog is the one decision point, so the user stays in control.
         let activeBin = flowBin;
-        if (desktopUpgraded) {
-          const installed = uvManager.getInstalledVersionSync(flowBin);
-          sendStatus('Checking for Flowpad updates');
-          if (await uvManager.isUpgradeAvailable(installed)) {
-            sendStatus('Updating Flowpad to latest');
-            await uvManager.upgrade();
-            activeBin = uvManager.getInstalledFlowBin() || flowBin;
+        const desktopLatest = await getDesktopUpdateVersion();
+
+        if (desktopLatest) {
+          // Only consolidate when the backend ALSO has an update; otherwise keep
+          // the desktop channel's own background-download + restart-prompt flow.
+          const backendStatus = await uvManager._pypiUpdateStatus();
+          if (backendStatus) {
+            const { response } = await dialog.showMessageBox(mainWindow, {
+              type: 'info',
+              title: 'Updates available',
+              message: 'New versions of FlowPad are available.',
+              detail:
+                `Desktop app: ${app.getVersion()} → ${desktopLatest}\n` +
+                `FlowPad engine: ${backendStatus.currentVersion || 'unknown'} → ${backendStatus.latestVersion}`,
+              buttons: ['Update', 'Later'],
+              defaultId: 0,
+              cancelId: 1,
+            });
+            if (response === 0) {
+              // Backend first (quick) so the about-to-restart desktop boots
+              // paired with the new engine; the desktop downloads in the
+              // background and prompts to restart once ready.
+              const loadingPath = path.join(__dirname, 'loading.html');
+              await mainWindow.loadFile(loadingPath);
+              sendStatus('Upgrading Flowpad');
+              await uvManager.upgrade();
+              activeBin = uvManager.getInstalledFlowBin() || flowBin;
+              backendJustUpgraded = true;
+              downloadDesktopUpdateInBackground();
+            } else {
+              // Later: still pre-download the desktop in the background so the
+              // next restart comes back on the latest — but don't nag (it
+              // auto-installs on quit). The backend stays as-is (deferred).
+              downloadDesktopUpdateInBackground({ promptOnReady: false });
+            }
+          } else {
+            // Desktop only → background download + restart prompt (unchanged UX).
+            downloadDesktopUpdateInBackground();
+          }
+        } else {
+          // No desktop update → the standalone backend prompt handles the
+          // "newer on PyPI" case (and no-ops otherwise). Reads the installed
+          // version from `_version.py`, so it works even when the install is
+          // broken or the cloud is unreachable. `beforeBackendStart` makes the
+          // call return right after the upgrade — the normal start path below
+          // boots the upgraded backend, avoiding a double start + early UI load.
+          const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
+            sendStatus,
+            waitForBackend,
+            backendUrl: BACKEND_URL,
+            cloudUrl: FLOWPAD_CLOUD_URL,
+            beforeBackendStart: true,
+          });
+          if (upgradedPreStart) {
+            activeBin = uvManager.getInstalledFlowBin() || activeBin;
             backendJustUpgraded = true;
           }
-        }
-
-        // Pre-start update offer: ask the cloud /check-update policy whether an
-        // upgrade is required and, if the user accepts, upgrade BEFORE booting
-        // the backend (the flow CLI's `upgrade --info` works with the server
-        // down). `beforeBackendStart` makes the call return right after the
-        // upgrade — the normal start path below boots the upgraded backend, so
-        // we avoid a double start + premature UI load.
-        const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
-          sendStatus,
-          waitForBackend,
-          backendUrl: BACKEND_URL,
-          cloudUrl: FLOWPAD_CLOUD_URL,
-          beforeBackendStart: true,
-        });
-        if (upgradedPreStart) {
-          activeBin = uvManager.getInstalledFlowBin() || activeBin;
-          backendJustUpgraded = true;
         }
 
         const version = uvManager.getInstalledVersionSync(activeBin);
