@@ -43,6 +43,7 @@ import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
 import { Tab } from '@sdk';
 import { useTerminalTabs } from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { GraphContextViewer } from '@src/components/graph-context/GraphContextViewer';
@@ -355,11 +356,22 @@ export function ContentPanel() {
           landing (full-bleed). The body below renders the URL-derived view. */}
       {!hideChrome && <UnifiedTabStrip />}
 
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        {/* Matches the proven per-viewType slot layout (plain h-full, no flex-col)
-            so xterm fits on first paint — a flex-col parent broke its initial sizing. */}
-        <div className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg">
-          {renderBody(bodyViewType)}
+      {/* Zone B — shared left-menu slot, now nested UNDER the tab strip so the
+          active view's navigator (assets tree / workflows / docs / triggers /
+          chats) is scoped to the current tab's content row rather than spanning
+          the full app height beside the tabs. The `border-t` draws the tab
+          body's top edge; the active chip's `-mb-px border-b-transparent`
+          opens its bottom over this line, so the menu + body read as one panel
+          hanging from the current tab (the folder-tab continuum). */}
+      <div className={`flex min-h-0 flex-1 overflow-hidden ${!hideChrome ? 'border-t border-border' : ''}`}>
+        <NavigatorSlot />
+
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {/* Matches the proven per-viewType slot layout (plain h-full, no flex-col)
+              so xterm fits on first paint — a flex-col parent broke its initial sizing. */}
+          <div className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg">
+            {renderBody(bodyViewType)}
+          </div>
         </div>
       </div>
     </div>
