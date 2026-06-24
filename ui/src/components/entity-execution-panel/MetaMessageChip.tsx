@@ -10,7 +10,7 @@ import {
 } from '@src/components/ui/dialog';
 import { useDockNavigation } from '@src/navigation';
 import { notify } from '@src/notifications/notify';
-import { ExternalLink, Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 
 /**
@@ -29,7 +29,7 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
 
-  const openExternal = async () => {
+  const openEditor = async () => {
     if (!skillDir || opening) return;
     setOpening(true);
     try {
@@ -78,9 +78,15 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
               <MarkdownView value={skillBody(content)} compact />
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => void openExternal()} disabled={opening}>
-                {opening ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-1.5 h-4 w-4" />}
-                Open external
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => void openEditor()}
+                disabled={opening}
+                title="Open in editor"
+                aria-label="Open in editor"
+              >
+                {opening ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
               </Button>
             </DialogFooter>
           </DialogContent>
