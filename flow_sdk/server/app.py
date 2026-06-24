@@ -648,7 +648,12 @@ def start_server(port: int):
     Args:
         port: Port number to listen on
     """
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    # Tests run this in a daemon thread that is never joined; on Linux uvloop's
+    # C event loop segfaults when killed at interpreter shutdown (exit 139 after
+    # all tests pass). The pure-Python asyncio loop tears down cleanly there, so
+    # use it under tests. Production keeps the default (uvloop) for performance.
+    loop = "asyncio" if os.environ.get("TESTING") == "true" else "auto"
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", loop=loop)
 
 
 def wait_for_login_callback(timeout_sec: int = None):
