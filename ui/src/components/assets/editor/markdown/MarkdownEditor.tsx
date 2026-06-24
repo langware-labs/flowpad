@@ -33,6 +33,10 @@ type ViewMode = EditorMode;
 
 const MODE_STORAGE_KEY = 'markdownEditor.mode';
 const EDITOR_MODE_PARAM = 'editorMode';
+// Optional 1-indexed body line to drop the caret on at first mount (e.g. a
+// freshly-created skill opens with the caret right after its `# <name>`
+// headline). Once the user moves the caret, that live position takes over.
+const INITIAL_LINE_PARAM = 'initialLine';
 const DEFAULT_MODE: ViewMode = 'view';
 
 function isEditorMode(value: string | undefined | null): value is ViewMode {
@@ -334,7 +338,16 @@ function MarkdownEditorContent({
   const handleEditorLineChange = useCallback((bodyLine: number) => {
     setCursorLine(bodyStartLineRef.current + bodyLine - 1);
   }, []);
-  const initialBodyLine = cursorLine != null ? cursorLine - bodyStartLine + 1 : null;
+  // Seed the caret from `?initialLine=N` on a fresh open (no user caret yet) —
+  // body-line space, so it survives frontmatter changes. Cleared once the user
+  // clicks/types and `cursorLine` becomes the source of truth.
+  const initialLineParam = useMemo(() => {
+    const raw = currentDock?.options?.[INITIAL_LINE_PARAM];
+    if (raw == null) return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [currentDock?.options]);
+  const initialBodyLine = cursorLine != null ? cursorLine - bodyStartLine + 1 : initialLineParam;
 
   const setBodyRef = useRef(setBody);
   setBodyRef.current = setBody;
