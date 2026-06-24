@@ -1059,6 +1059,18 @@ export class DockPointer implements IDockPointer {
         return DockPointer.tryTypeId(ClaudeSession.type, lens.ref);
       }
     }
+    // A PROJECT-rebased asset dock (`/dock/project/<id>/<assetSubPointer>`, the
+    // output of `rebaseAssetsOntoProject`) carries its target in the asset
+    // sub-pointer, addressed exactly as a plain ASSETS dock would. A
+    // typeid-addressed asset surfaces its entity here; a vfs/list/folder/wiki
+    // sub-pointer carries no typeid target (its entity is resolved by path via
+    // `vfsPath`) — and crucially we must NOT surface the `<id>` project segment
+    // as the target, so the path-resolved asset's OWN project wins on the tab.
+    const assetSub = this.assetSubPointer;
+    if (assetSub !== null) {
+      const typeid = this.assetEditorValue(assetSub, AssetRoutingMethod.TYPEID);
+      return typeid ? DockPointer.tryTypeId(typeid) : null;
+    }
     const candidate = pointer.includes('/typeid/') ? pointer.split('/typeid/').pop() ?? '' : pointer;
     return (
       DockPointer.tryTypeId(candidate) ??
@@ -1067,22 +1079,47 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * The inner asset sub-pointer of a PROJECT-rebased asset dock
+   * (`/dock/project/<id>/<assetSubPointer>`) — the same shape a plain
+   * `/dock/assets/<sub>` dock carries. Null when this isn't a project dock
+   * carrying a sub-pointer (a bare `/dock/project/<id>` has none). This is the
+   * un-rebase that lets the tab-mint getters treat a project-shell asset URL
+   * identically to a plain assets URL, so the asset's own project is resolved.
+   */
+  private get assetSubPointer(): string | null {
+    if (this.viewType !== ViewType.PROJECT || !this.pointer) return null;
+    const { assetSubPointer } = DockPointer.splitProjectPointer(this.pointer);
+    return assetSubPointer || null;
+  }
+
+  /**
+   * Parse an asset sub-pointer and return the `value` of an `editor/<...>/<method>`
+   * pointer when it matches `method` (`typeid` → a `<type>-<id>` string, `vfs` →
+   * a vfs path), else null. The shared parse-and-match both `targetTypeId` and
+   * `vfsPath` use to read their respective addressing form off the same pointer.
+   */
+  private assetEditorValue(pointer: string | null, method: AssetRoutingMethod): string | null {
+    if (!pointer) return null;
+    try {
+      const ap = AssetDocPointer.parse(pointer);
+      return ap.mode === AssetMode.EDITOR && ap.method === method ? ap.value : null;
+    } catch {
+      /* list/folder/wiki or malformed — not an editor pointer */
+      return null;
+    }
+  }
+
+  /**
    * The VFS path an asset-editor dock addresses (`assets/editor/<editor>/vfs/<path>`),
    * or null for any other shape. Pure parse via the canonical `AssetDocPointer`
    * grammar — no network. Used by `Tab.getFromDockPointer` to resolve a
-   * path-addressed asset's project via `getEntityByPath`.
+   * path-addressed asset's project via `getEntityByPath`. Handles both the plain
+   * ASSETS dock and the PROJECT-rebased form (un-rebased via `assetSubPointer`).
    */
   get vfsPath(): VFSPath | null {
-    if (this.viewType !== ViewType.ASSETS || !this.pointer) return null;
-    try {
-      const ap = AssetDocPointer.parse(this.pointer);
-      if (ap.mode === AssetMode.EDITOR && ap.method === AssetRoutingMethod.VFS) {
-        return VFSPath.parse(ap.value);
-      }
-    } catch {
-      /* list/folder/wiki or malformed — not a vfs editor pointer */
-    }
-    return null;
+    const assetsPointer = this.viewType === ViewType.ASSETS ? this.pointer ?? null : this.assetSubPointer;
+    const value = this.assetEditorValue(assetsPointer, AssetRoutingMethod.VFS);
+    return value ? VFSPath.parse(value) : null;
   }
 
   /** DEPRECATED: use fromJSON instead. Reconstruct the navigable DockPointer from a
