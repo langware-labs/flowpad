@@ -25,9 +25,10 @@ The WikiTip is **a real `FeedEntry`** rendered inside the Home Feed by the
 existing `FeedEntryCard` switch — not a parallel component. A feed entry whose
 `data.kind === 'wiki_tip'` (and whose `data.type_id` points at a wiki/markdown
 page) renders as `WikiTipFeedEntryCard`. It is seeded server-side by
-`_ensure_wikitip_feed_entry` in `bootstrap.py` — idempotent (skips if a wiki_tip
-entry already exists, including a dismissed one) and independent of the
-`onboarded` gate, so it also lands on already-onboarded instances.
+`create_onboarding_assets` in `bootstrap.py` (alongside the Welcome favorite
+bookmark), gated once by `user.onboarded`. Re-seed it via the **Reset** control
+in profile settings (next to Dev mode) — `POST /api/v1/onboarding/reset` deletes
+the seeded assets, clears `onboarded`, and re-runs the seed.
 
 - **Forward (feed → wiki).** `WikiLabel` renders the wiki word as a button.
   Clicking it navigates to the wiki page (`navigation.openDock(DockPointer.forWiki(word))`).
