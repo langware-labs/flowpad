@@ -59,4 +59,9 @@ jobs:
 
       - name: Run vitest (unit + react)
         working-directory: ui
+        # vitest loads ALL project configs even with --project filtering; the
+        # hub config throws unless LOCAL_SERVER_PORT is set. The unit/react tiers
+        # never reach a backend, so this value only satisfies that load-time guard.
+        env:
+          LOCAL_SERVER_PORT: "9007"
         run: npm run test:vitest:unit && npm run test:vitest:react
