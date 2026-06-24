@@ -101,7 +101,7 @@ export function MarkdownReviewDiff({ oldContent, newContent }: MarkdownReviewDif
 
   const components = useMemo<Components>(
     () => ({
-      ...markdownComponents(),
+      ...markdownComponents({ codeChrome: false }),
       ins: ({ className, children }) => <ReviewMark kind="ins" className={className} onDecide={decide}>{children}</ReviewMark>,
       del: ({ className, children }) => <ReviewMark kind="del" className={className} onDecide={decide}>{children}</ReviewMark>,
     }),

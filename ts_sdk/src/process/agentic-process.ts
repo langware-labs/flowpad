@@ -1754,6 +1754,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
   }
 
+  /**
+   * Interrupt the in-flight turn from a single call site. For a visible PTY
+   * process this sends Ctrl-C (``\x03``, no trailing newline) to the same PTY
+   * the xterm types into; for a print-mode process it cancels the streaming
+   * subprocess via ``cancelPrompt``. Lets both the chat pane and the floating
+   * assistant share one "stop generating" handler.
+   */
+  async interruptTurn(): Promise<void> {
+    if (this.visible && this.shell_id) {
+      const pty = this.ptyConnection ?? (await Shell.getById<Shell>(this.shell_id))?.ptyConnection;
+      if (pty) {
+        await pty.sendInput('\x03');
+        return;
+      }
+    }
+    await this.cancelPrompt();
+  }
+
   async executeInstruction(
     instruction: string,
     options: { sync?: boolean; workerSessionId?: string } = {},

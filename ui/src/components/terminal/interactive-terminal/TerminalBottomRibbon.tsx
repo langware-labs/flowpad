@@ -27,6 +27,8 @@ interface TerminalBottomRibbonProps {
   onOpenMarkdown?: (path: string) => void;
   /** Enables the Prompt Library button (prompt → queue needs a process). */
   process?: AgenticProcess | null;
+  /** Chat composer rendered as the top tier of the ribbon (Standard/chat only). */
+  composer?: React.ReactNode;
 }
 
 const RIBBON_TABS: SideTabIdType[] = [
@@ -53,6 +55,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   markdownDocs = [],
   onOpenMarkdown,
   process = null,
+  composer,
 }) => {
   const isAdvanced = useIsAdvanced();
   // Skin layer: in Standard view, power-user tabs (flagged advancedOnly on
@@ -60,7 +63,11 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   // leaving Prompts + Files. See docs/viewmodes.md.
   const ribbonTabs = isAdvanced ? RIBBON_TABS : RIBBON_TABS.filter((id) => !SIDE_TABS[id].advancedOnly);
   return (
-    <div className="flex items-center border-t bg-muted/30 px-4 py-1.5">
+    <div className="flex flex-col border-t bg-muted/30">
+      {/* Top tier: chat composer (Standard/chat only) — one ribbon, not two rows. */}
+      {composer && <div className="px-4 pb-1 pt-2">{composer}</div>}
+      {/* Controls strip: status LED + plan/doc chips + side-tab launchers. */}
+      <div className="flex items-center px-4 py-1.5">
       {/* Left: process status LED */}
       <div className="flex items-center gap-2">
         <span
@@ -165,6 +172,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
             />
           )}
         </TooltipProvider>
+      </div>
       </div>
     </div>
   );
