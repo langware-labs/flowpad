@@ -1,49 +1,64 @@
 import { useEffect, useState } from 'react';
 import { defineGlobal } from '@sdk/utils';
 
+/**
+ * Which view an interactive agent tab shows.
+ *  - `null`     → follow View mode (Standard ⇒ chat UI, Advanced ⇒ terminal).
+ *  - `'chat'`   → force the chat UI regardless of View mode.
+ *  - `'terminal'` → force the xterm terminal regardless of View mode.
+ *
+ * The user flips it from the bottom-ribbon toggle; once set, it is persisted to
+ * localStorage and **takes priority** over the View-mode default until cleared.
+ */
+export type ChatUiOverride = 'chat' | 'terminal' | null;
+
 declare global {
   interface Window {
-    setChatUi: (val: boolean) => void;
-    getChatUi: () => boolean;
+    setChatUi: (val: ChatUiOverride | boolean) => void;
+    getChatUi: () => ChatUiOverride;
   }
 }
 
-const CHAT_UI_MODE_KEY = 'chatUiMode';
+const KEY = 'chatUiOverride';
+const LEGACY_KEY = 'chatUiMode';
 
-// Chat-UI mode is a *debug* toggle persisted in localStorage, mirroring the
-// dev-mode flag. It controls whether an AgenticProcess surface renders the
-// experimental SimpleChatPane ("ui") instead of the xterm terminal.
-//
-// Default is FALSE → the terminal is the default for every process, everywhere.
-// The simple chat view is not stable enough for users to work with, so it is
-// reachable ONLY through the ProcessToolbar debug dropdown (which only renders
-// in the Advanced tab header), never a public toggle. Flip with
-// window.setChatUi() or the "Chat UI (experimental)" item in that dropdown.
-let _chatUiMode: boolean = localStorage.getItem(CHAT_UI_MODE_KEY) === 'true';
-const _listeners = new Set<(val: boolean) => void>();
+function load(): ChatUiOverride {
+  const v = localStorage.getItem(KEY);
+  if (v === 'chat' || v === 'terminal') return v;
+  // Migrate the legacy boolean flag: true meant "force chat".
+  if (localStorage.getItem(LEGACY_KEY) === 'true') return 'chat';
+  return null;
+}
 
-export function setChatUiMode(val: boolean): void {
-  _chatUiMode = val;
-  localStorage.setItem(CHAT_UI_MODE_KEY, String(val));
+let _override: ChatUiOverride = load();
+const _listeners = new Set<(val: ChatUiOverride) => void>();
+
+export function setChatUiOverride(val: ChatUiOverride): void {
+  _override = val;
+  if (val === null) localStorage.removeItem(KEY);
+  else localStorage.setItem(KEY, val);
+  localStorage.removeItem(LEGACY_KEY);
   _listeners.forEach((fn) => fn(val));
 }
 
-function getChatUiMode(): boolean {
-  return _chatUiMode;
+export function getChatUiOverride(): ChatUiOverride {
+  return _override;
 }
 
-defineGlobal('setChatUi', setChatUiMode);
-defineGlobal('getChatUi', getChatUiMode);
+// Console helper, back-compatible with the old boolean form:
+//   setChatUi('chat' | 'terminal' | null) — explicit; setChatUi(true|false) — legacy.
+defineGlobal('setChatUi', (val: ChatUiOverride | boolean) => {
+  setChatUiOverride(val === true ? 'chat' : val === false ? null : val);
+});
+defineGlobal('getChatUi', getChatUiOverride);
 
-export function useChatUiMode(): boolean {
-  const [chatUiMode, setChatUiModeState] = useState(_chatUiMode);
-
+export function useChatUiOverride(): ChatUiOverride {
+  const [override, setState] = useState(_override);
   useEffect(() => {
-    _listeners.add(setChatUiModeState);
+    _listeners.add(setState);
     return () => {
-      _listeners.delete(setChatUiModeState);
+      _listeners.delete(setState);
     };
   }, []);
-
-  return chatUiMode;
+  return override;
 }

@@ -39,7 +39,7 @@ import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
 import { SimpleChatPane } from './SimpleChatPane';
-import { useChatUiMode } from '@src/contexts/chat-ui-mode-context';
+import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
@@ -181,16 +181,18 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = propProcess ?? contextProcess ?? undefined;
   const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
-  // Skin layer: Standard users get the friendly SimpleChatPane (chat instead of
-  // the raw xterm); Advanced/Dev keep the terminal. The xterm stays mounted
-  // underneath the chat overlay (same session, same PTY — see SimpleChatPane),
-  // so toggling modes is instant and never resets the terminal. `chatUiMode`
-  // remains an explicit override to force the chat even in Advanced. Embedded
-  // terminals (chat side panel) and shell-only tabs (no AgenticProcess) always
-  // keep the xterm, mirroring the ProcessToolbar decision.
+  // Skin layer: by default Standard users get the friendly SimpleChatPane (chat
+  // instead of the raw xterm) and Advanced/Dev keep the terminal. The bottom-
+  // ribbon toggle overrides that per the user's saved choice (chatUiOverride):
+  // once set it takes priority over View mode. The xterm stays mounted underneath
+  // the chat overlay (same session, same PTY — see SimpleChatPane), so toggling
+  // is instant and never resets the terminal. Embedded terminals (chat side
+  // panel) and shell-only tabs (no AgenticProcess) always keep the xterm.
   const isAdvanced = useIsAdvanced();
-  const chatUiMode = useChatUiMode();
-  const showSimpleChat = (!isAdvanced || chatUiMode) && !embedded && !!process;
+  const chatOverride = useChatUiOverride();
+  const wantChat = chatOverride != null ? chatOverride === 'chat' : !isAdvanced;
+  const showSimpleChat = wantChat && !embedded && !!process;
+  const canToggleView = !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
@@ -1663,6 +1665,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           markdownDocs={markdownDocs}
           onOpenMarkdown={handleOpenMarkdown}
           composer={showSimpleChat && process ? <ChatComposerBar process={process} /> : undefined}
+          chatActive={showSimpleChat}
+          onToggleView={
+            canToggleView ? () => setChatUiOverride(showSimpleChat ? 'terminal' : 'chat') : undefined
+          }
         />
       )}
     </div>

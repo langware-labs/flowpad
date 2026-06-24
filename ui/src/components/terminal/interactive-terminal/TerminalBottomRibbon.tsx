@@ -4,7 +4,7 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, ChevronDown, FileText } from 'lucide-react';
+import { BookMarked, ChevronDown, FileText, MessageSquare, SquareTerminal } from 'lucide-react';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { SideTabTooltipContent } from './LastPromptTooltip';
@@ -29,6 +29,10 @@ interface TerminalBottomRibbonProps {
   process?: AgenticProcess | null;
   /** Chat composer rendered as the top tier of the ribbon (Standard/chat only). */
   composer?: React.ReactNode;
+  /** True when the chat UI is currently shown (vs the xterm terminal). */
+  chatActive?: boolean;
+  /** Flip chat⇄terminal (saved override). When omitted, the status dot is shown instead. */
+  onToggleView?: () => void;
 }
 
 const RIBBON_TABS: SideTabIdType[] = [
@@ -56,6 +60,8 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   onOpenMarkdown,
   process = null,
   composer,
+  chatActive = false,
+  onToggleView,
 }) => {
   const isAdvanced = useIsAdvanced();
   // Skin layer: in Standard view, power-user tabs (flagged advancedOnly on
@@ -68,11 +74,30 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
       {composer && <div className="px-4 pb-1 pt-2">{composer}</div>}
       {/* Controls strip: status LED + plan/doc chips + side-tab launchers. */}
       <div className="flex items-center px-4 py-1.5">
-      {/* Left: process status LED */}
+      {/* Left: chat⇄terminal toggle (falls back to a status LED when no toggle). */}
       <div className="flex items-center gap-2">
-        <span
-          className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`}
-        />
+        {onToggleView ? (
+          <TooltipProvider delayDuration={400}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onToggleView}
+                  aria-label={chatActive ? 'Switch to terminal view' : 'Switch to chat view'}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                >
+                  {chatActive ? <SquareTerminal className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                {chatActive ? 'Switch to terminal view' : 'Switch to chat view'}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : (
+          <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
+        )}
         {hasLastPlan && onOpenLastPlan && (
           <TooltipProvider delayDuration={400}>
             <Tooltip>
