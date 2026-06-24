@@ -30,6 +30,15 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> |
 
 let pendingDockNavigationUrl: string | null = null;
 
+// View types whose dock adopts the current project's scope when opened without an
+// explicit one (see openDock). These are the project-aware browser surfaces: the
+// minted Tab attaches to the active project (project tab) or stays global.
+const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
+  ViewType.ASSETS,
+  ViewType.TRIGGERS,
+  ViewType.EXPLORER,
+]);
+
 /**
  * NavigationActions - Navigation actions implementation
  *
@@ -121,14 +130,17 @@ export class NavigationActions {
       ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
       : base;
 
-    // URL-first default scope for assets: an assets dock opened WITHOUT an explicit
-    // scope (no `scope-*` keys → `scopeFilter === null`) adopts the current project's
-    // scope — project mode when a project is in context (so the minted Tab attaches
-    // to that project), else "all". This puts the scope on the URL where the loader
-    // and Tab.getFromDockPointer can read it, instead of leaving it to AssetsPage
-    // component state (which the tab can't see). An explicit scope (incl. `all`) is
-    // respected untouched.
-    if (dock.viewType === ViewType.ASSETS && dock.scopeFilter === null) {
+    // URL-first default scope for scope-aware surfaces (assets, triggers, file
+    // explorer): a dock opened WITHOUT an explicit scope (no `scope-*` keys →
+    // `scopeFilter === null`) adopts the current project's scope — project mode
+    // when a project is in context (so the minted Tab attaches to that project),
+    // else "all". This puts the scope on the URL where the loader and
+    // Tab.getFromDockPointer can read it, instead of leaving it to component
+    // state (which the tab can't see). An explicit scope (incl. `all`) is
+    // respected untouched. This is what makes the left-rail Triggers / Files
+    // icons open a project tab when a project is active and a global one
+    // otherwise — exactly like the Assets icon.
+    if (dock.viewType && SCOPE_SEEDED_VIEWS.has(dock.viewType) && dock.scopeFilter === null) {
       const projectId = dataContext.project?.id ?? null;
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
