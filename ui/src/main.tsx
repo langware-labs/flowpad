@@ -1,4 +1,4 @@
-import { initSentry } from '@sdk';
+import { initLogging, initSentry } from '@sdk';
 import { sdkConfig } from '@sdk/config/index';
 import { initDesktopBackend } from '@sdk/config/desktop';
 import '@src/styles/index.css';
@@ -12,6 +12,9 @@ import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
 import './styles/highlightjs.css';
 
+// Mint the session trace id and start teeing the renderer console to the
+// Electron log file — must run before initSentry so they share the trace id.
+initLogging();
 initSentry();
 
 function defineGlobals() {

@@ -19,7 +19,11 @@ import logging
 
 import uvicorn
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
+# Root logging is configured once in flow_sdk.config (configure_logging); this
+# call is idempotent and only matters if app.py is the first thing imported.
+from flow_sdk.logging_setup import configure_logging
+
+configure_logging()
 from fastapi.staticfiles import StaticFiles
 
 from flow_sdk.cli.config_manager import get_config_value, setup_defaults

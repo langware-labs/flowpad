@@ -174,6 +174,10 @@ class APIMessage(BaseMessage, APIRequest):
     # Per-call hub-reflection opt-in for the WS-REST path (the HTTP path uses the
     # ``Hub-Reflect`` header). Default False — do not reflect.
     hub_reflect: bool = False
+    # Cross-process correlation id minted in the renderer (the HTTP path carries
+    # it in the ``X-Trace-Id`` header). Copied onto request_info.trace_id and
+    # stamped on every backend log line for this request — see logging_setup.
+    trace_id: str | None = None
 
     @property
     def auth_info(self) -> AuthContext:
