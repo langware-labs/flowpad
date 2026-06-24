@@ -3,7 +3,6 @@ import { ApiFailResponse } from './ApiResponse';
 import { alert } from './alert';
 import { APIStats } from './apiStats';
 import config from './config';
-import { getTraceId } from './trace';
 
 //@ts-ignore
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -71,13 +70,6 @@ function initApiClient(client: ApiAxiosInstance) {
       if (extendedClient.testUserToken && !request.headers?.['Authorization']) {
         request.headers = request.headers || {};
         request.headers['Authorization'] = `Bearer ${extendedClient.testUserToken}`;
-      }
-
-      // Cross-process correlation: stamp every backend call with the renderer's
-      // trace id so the backend log lines for this request join back here.
-      request.headers = request.headers || {};
-      if (!request.headers['X-Trace-Id']) {
-        request.headers['X-Trace-Id'] = getTraceId();
       }
 
       return request;

@@ -95,25 +95,16 @@ __logger.setLevel(_log_level)
 def init_dev_file_logging() -> Path | None:
     """Mirror all log output to a timestamped file on disk (development only).
 
-    PyCharm/uvicorn keep printing to the console; this *additionally* mirrors
-    every log line to a single per-boot file under the per-instance *server*
-    logs directory ``<flow_home>/instances/<instance_name>/logs/server/`` so a
-    session can be inspected after the fact.
+    PyCharm/uvicorn keep printing to the console; this *additionally* writes
+    every log line to the per-instance logs directory
+    ``<flow_home>/instances/<instance_name>/logs/<timestamp>.log`` so a
+    session can be inspected after the fact. Captures both logging paths:
 
-    There is exactly **one** file per boot, sourced two ways depending on how
-    the server was launched:
-
-      * **Launched by the monitor** (``launch.py`` / desktop): the monitor has
-        already redirected the server's *stderr* into a ``server/<ts>.log`` and
-        passes that path via ``FLOWPAD_SERVER_LOG_PATH``. The root
-        ``StreamHandler`` (``configure_logging``) writes the full
-        correlation-formatted logging tree to stderr — i.e. into that same file
-        — so we just adopt the path (no second ``FileHandler``: that is what
-        used to produce a duplicate file). The rich-console timer lines are
-        written into it by ``_log_with_timer``.
-      * **Standalone direct run** (``uv run -m flow_sdk.server.run``): stderr
-        goes to the terminal, not a file, so we mint a ``server/<ts>.log`` and
-        attach a ``FileHandler`` to the root logger to mirror the tree to disk.
+      * this module's ``info``/``debug``/... (rich-console path) — via the
+        existing ``log_to_folder`` / ``_log_file`` file writer.
+      * the stdlib ``logging`` tree (uvicorn, ``flow_sdk.*`` module loggers) —
+        via a ``FileHandler`` attached to the root logger, pointed at the
+        same file.
 
     No-op (returns None) outside development mode (e.g. a prod cloud deploy).
     """
@@ -122,18 +113,10 @@ def init_dev_file_logging() -> Path | None:
     if not is_development:
         return None
 
-    # Launched by the monitor: adopt the file its stderr is already going to.
-    # The root StreamHandler (-> stderr -> this file) carries the full tree, so
-    # adding a FileHandler here would write every line twice into one file.
-    monitor_log_path = os.getenv("FLOWPAD_SERVER_LOG_PATH")
-    if monitor_log_path:
-        _log_file = Path(monitor_log_path)
-        log_to_folder = True
-        return _log_file
-
-    # Standalone direct run: mint a server/ file and mirror the tree via a
-    # FileHandler. Every ``*.log`` lives under server/ / monitor/ / main_desktop/.
-    log_dir = _logs_base() / "server"
+    # ``_logs_base()`` already resolves to the canonical per-instance logs
+    # directory (instance_settings.logs_dir) — write session logs straight
+    # into it, no extra subdirectory.
+    log_dir = _logs_base()
     log_dir.mkdir(parents=True, exist_ok=True)
     cleanup_old_logs(log_dir)
     _log_file = log_dir / _timestamped_filename()
@@ -144,13 +127,10 @@ def init_dev_file_logging() -> Path | None:
     # guards against re-adding the handler on a reloader restart.
     root = logging.getLogger()
     if not any(getattr(h, "_flowpad_dev_file", False) for h in root.handlers):
-        from flow_sdk.logging_setup import CorrelationFilter, make_formatter
-
         handler = logging.FileHandler(str(_log_file))
-        # Same correlation-aware format as the root stream handler so the file
-        # mirror and console agree.
-        handler.setFormatter(make_formatter())
-        handler.addFilter(CorrelationFilter())
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        )
         handler.setLevel(logging.DEBUG)
         handler._flowpad_dev_file = True  # type: ignore[attr-defined]
         root.addHandler(handler)
@@ -167,12 +147,10 @@ def _on_first_log(level: int | None = None) -> None:
 def _log_with_timer(level: int, msg: str, style: str) -> None:
     # Check if the message should be logged based on the current logging level
     # first log call on all levels
-    from flow_sdk.logging_setup import format_correlation
+    from flow_sdk.request_context.methods import get_current_request_info
 
-    # Shared correlation suffix (instance/request/user/action/entity/trace) so
-    # the rich console and file mirror agree with the stdlib formatter. Empty
-    # string outside a request — see logging_setup.format_correlation.
-    corr = format_correlation()
+    request_info = get_current_request_info()
+    msg = f"-{request_info.instance_counter}- {msg}" if request_info else f"-- {msg}"
     is_first_log_call = all([_last_log_time[level_time] is None for level_time in _last_log_time])
     if is_first_log_call:
         _on_first_log()
@@ -198,26 +176,19 @@ def _log_with_timer(level: int, msg: str, style: str) -> None:
             # Format timestamp like your original format
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]  # Remove last 3 digits from microseconds
             level_name = logging.getLevelName(level)
-            text.append(f"{timestamp} [{level_name}]{corr} {msg}{timer_info}", style=style)
+            text.append(f"{timestamp} [{level_name}] {msg}{timer_info}", style=style)
             console.print(text)
         else:
-            # Non-local: route through stdlib logging. The root handler's
-            # CorrelationFilter adds the correlation suffix, so don't prepend it
-            # here (it would double up).
+            # Use regular logging which will respect your basicConfig format
             getattr(__logger, logging.getLevelName(level).lower())(f"{msg}{timer_info}")
 
-        # File mirror for the rich-console path ONLY. The stdlib path (else
-        # branch above) routes through __logger → the root FileHandler, which
-        # already writes this line to the same dev file; mirroring here too
-        # would double every line (and re-open the file per call). So guard on
-        # ``console``: only the rich path, which never touches the logging tree,
-        # needs the explicit write.
-        if console and log_to_folder and _log_file:
+        # Write to file if file logging enabled (desktop mode)
+        if log_to_folder and _log_file:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
             level_name = logging.getLevelName(level)
             try:
                 with open(_log_file, "a") as f:
-                    f.write(f"{timestamp} [{level_name}]{corr} {msg}{timer_info}\n")
+                    f.write(f"{timestamp} [{level_name}] {msg}{timer_info}\n")
             except OSError as exc:
                 __logger.warning("Dev log mirror write skipped: %s", exc)
 

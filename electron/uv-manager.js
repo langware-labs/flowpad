@@ -665,18 +665,10 @@ class UvManager {
       // /secrets/seed-key.
       const sodKey = await this._loadSodKey();
 
-      // Which instance the backend runs as: honor FLOW_INSTANCE from the
-      // environment, else default to 'prod'. This is the canonical var the
-      // backend resolves (flow_sdk/instance_settings) — it selects the
-      // per-instance data/records/sod/logs dir under ~/.flow/instances/<name>/.
-      const flowInstance = process.env.FLOW_INSTANCE || 'prod';
-      this.log.info(`[uv] FLOW_INSTANCE=${flowInstance}`);
-
       const env = {
         ...process.env,
         PATH: this._enrichedPath(),
         DEPLOY_ENV: 'desktop',
-        FLOW_INSTANCE: flowInstance,
         MINIHUB_HOST: '127.0.0.1',
         LOCAL_SERVER_PORT: '9007',
         MINIHUB_RELOAD: 'false',
@@ -1017,24 +1009,13 @@ class UvManager {
   }
 
   /**
-   * Pre-server update gate: ask the cloud whether a flowpad upgrade is required
-   * and, if so, prompt the user and upgrade — all BEFORE the backend starts.
-   *
-   * Returns true when an upgrade was performed (so the caller can widen the
-   * health-check window and refresh the active binary), false otherwise.
-   *
-   * Unlike the old post-server check, this runs while the backend is down: it
-   * only needs the flow binary on disk (`flow upgrade --info`) plus the cloud
-   * `/check-update` verdict, so there's no stop/restart dance — we just upgrade
-   * and let the normal start path bring up the new version. This is also why the
-   * offer is now reachable when the installed engine is too old/broken to boot.
-   *
-   * Failures are logged and treated as "no upgrade" so a flaky check never
-   * blocks launch.
+   * Run a background update check after the UI is loaded.
+   * Non-blocking — failures are logged and silently ignored.
+   * Shows a native OS dialog if an update is required.
    */
-  async promptAndUpgradeIfAvailable(
+  async checkForUpdatesInBackground(
     mainWindow,
-    { sendStatus, cloudUrl, beforeBackendStart = false }
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false }
   ) {
     try {
       const status = await this.getUpdateStatus(cloudUrl);
@@ -1090,7 +1071,7 @@ class UvManager {
       }
       return true;
     } catch (err) {
-      this.log.warn(`[uv] Pre-server update check failed: ${err.message}`);
+      this.log.warn(`[uv] Background update check failed: ${err.message}`);
       return false;
     }
   }

@@ -27,10 +27,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Startup status updates (loading screen)
   onStartupStatus: (callback) => ipcRenderer.on('startup-status', (_event, message) => callback(message)),
 
-  // Persist a renderer console line to the Electron log file (main_desktop).
-  // Used by the SDK logger's console capture so frontend logs survive DevTools.
-  logToFile: (level, message) => ipcRenderer.send('renderer-log', level, message),
-
   // Startup logs
   getStartupLogs: () => ipcRenderer.invoke('get-startup-logs'),
   watchStartupLogs: () => ipcRenderer.send('watch-startup-logs'),
