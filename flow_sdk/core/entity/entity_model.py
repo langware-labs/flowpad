@@ -1679,6 +1679,9 @@ class Entity(DBEntity):
         # has to upsert main_ref and sync_from_entity.
         await self._prepare_for_storage()
         await self._save_blobs()
+        # Captured before the write flips ``exist_in_db``: a fresh entity can't yet
+        # have a Tab pointing at it, so the project-reconcile below is update-only.
+        was_create = not self.exist_in_db
         await super().save(user_id, notify=notify)
         # Sync metadata down to disk + upsert main_ref iff missing (Record
         # contract: writes go through main_ref FSRef, no per-type store()).
@@ -1688,6 +1691,24 @@ class Entity(DBEntity):
         # save() overrides funnel through this base).
         if not _SUPPRESS_STORE.get():
             await self.store()
+            # Reconcile dependent content Tabs when this entity's project changes.
+            # ``tab.project_id`` is a denormalized snapshot of the target's project
+            # taken at tab creation; without this a (re)assignment leaves the tab
+            # showing its stale project color. Project-change sibling of the
+            # orphan-close hook in ``delete()``; gated by the same _SUPPRESS_STORE
+            # check so the disk→DB adopt / bulk-indexer path never triggers it.
+            # Best-effort — the Tab type may be absent (e.g. a pytest env without
+            # register_all), so a failure here must never block the save.
+            if not was_create and self.type != "tab" and hasattr(self, "project_id"):
+                try:
+                    from flow_sdk.builtin.tab import reconcile_tab_project
+                    await reconcile_tab_project(self.type, str(self.id), getattr(self, "project_id", None))
+                except Exception as tab_exc:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "Tab project-reconcile failed for %s:%s — %s",
+                        self.type, self.id, tab_exc,
+                    )
         # Invalidate authorization cache since entity properties have changed
         from ..auth.auth_cache import get_auth_cache
 
