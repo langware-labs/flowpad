@@ -8,6 +8,8 @@ id: 684208ee-360e-50e6-a71e-b642ca95ac57
 
 - PyPI credentials configured (either `TWINE_API_TOKEN` env var or `~/.pypirc`)
 - `uv` installed (or `python3 -m build` / `python3 -m twine` as fallback)
+- `gh` authenticated (used by the [Test gate](#test-gate-publishing-requires-the-release-prs-tests-to-have-passed) to read PR check status)
+- `SLACK_BOT_TOKEN` set — a Slack bot token (scopes `chat:write` + `users:read.email`), used only by the Test gate to DM the person running the deploy about blocked / publish-anyway releases. The recipient is resolved from `git config user.email`, so that must be your Slack email. Keep the token secret; never echo it.
 
 ## Quick Deploy (the full end-to-end flow: commit → PR → merge → deploy → branch next)
 
@@ -49,6 +51,21 @@ gh pr create --base "$RELEASE_BRANCH" --head "$DEV_BRANCH" \
 gh pr merge "$DEV_BRANCH" --merge --delete-branch=false
 git fetch origin "$RELEASE_BRANCH"
 
+# --- 2b. TEST GATE: the latest PR merged into the release branch must have GREEN
+#     PR Tests before we publish. Pending counts as "not passed". See the
+#     "Test gate" section below for the block / Slack / publish-anyway rules.
+GATE_JSON=$(gh pr list --base "$RELEASE_BRANCH" --state merged --limit 1 \
+  --json number,url --jq '.[0]')
+PR_NUM=$(echo "$GATE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['number'])")
+PR_URL=$(echo "$GATE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['url'])")
+if gh pr checks "$PR_NUM"; then
+  TESTS_PASSED=1                                  # all checks green → ok to publish
+else
+  TESTS_PASSED=0                                  # any failing OR pending → blocked
+fi
+# If TESTS_PASSED=0: do NOT run step 3. Post the "NOT deployed" Slack message
+# (below) and STOP — unless the user has explicitly said publish anyway.
+
 # --- 3. DEPLOY: bump + build + publish from an isolated worktree on the release branch.
 #     Pick the new patch off the HIGHER of PyPI and the branch (never go backwards).
 PYPI=$(curl -s https://pypi.org/pypi/flowpad/json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])")
@@ -83,6 +100,58 @@ a throwaway worktree — so the main working tree stays on the dev branch the wh
 time. Only step 4 (`git branch -m`) touches it, renaming the branch in place to
 `$NEW-fixes` (the version just deployed; same commit, new name) and merging in
 the release bump.
+
+## Test gate (publishing requires the release PR's tests to have passed)
+
+**A version is only published to PyPI if the latest PR merged into the release
+branch has GREEN PR Tests.** The `PR Tests` workflow (`.github/workflows/pr-tests.yml`)
+runs the fast backend-free tiers (pytest `unit`+`cli`, vitest `unit`+`react`) on
+every PR. It is intentionally **non-blocking for merge** — a PR can be merged
+while its tests are red or still running — so this gate is the point where the
+test result actually matters. **Pending counts as "not passed"**: if the checks
+haven't finished, treat it as not passed and do not publish.
+
+The Slack notice is a **direct message to whoever ran this deploy** — not a
+shared channel. The recipient is resolved from `git config user.email` (so that
+must match your Slack email). Define this helper once before the cases below:
+
+```bash
+# DM the deploying user via Slack. $SLACK_BOT_TOKEN needs chat:write +
+# users:read.email. Never echo the token.
+slack_dm() {
+  local text="$1" uid
+  uid=$(curl -fsS "https://slack.com/api/users.lookupByEmail?email=$(git config user.email)" \
+    -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit('Slack lookup failed: '+str(d.get('error'))) if not d.get('ok') else print(d['user']['id'])") || return 1
+  curl -fsS -X POST https://slack.com/api/chat.postMessage \
+    -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+    -H 'Content-type: application/json; charset=utf-8' \
+    --data "$(python3 -c "import json,sys; print(json.dumps({'channel': sys.argv[1], 'text': sys.argv[2]}))" "$uid" "$text")" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit('Slack post failed: '+str(d.get('error'))) if not d.get('ok') else None"
+}
+```
+
+Step 2b above computes `TESTS_PASSED`, `PR_NUM`, and `PR_URL`. Then:
+
+* **`TESTS_PASSED=1`** → proceed with step 3 and publish normally. No Slack message.
+
+* **`TESTS_PASSED=0` and the user has NOT said to publish anyway** → **do not run
+  step 3.** DM the deploying user that it was blocked and STOP, telling them the
+  tests didn't pass and linking the PR:
+
+  ```bash
+  slack_dm "⚠️ flowpad $NEW was NOT deployed to PyPI — tests did not pass in PR #$PR_NUM: $PR_URL"
+  ```
+
+* **`TESTS_PASSED=0` but the user explicitly says "publish anyway" / insists in
+  any way** → run step 3 (publish) regardless, then DM the deploying user that it
+  shipped with failing/pending tests:
+
+  ```bash
+  slack_dm "🚀 flowpad $NEW was deployed to PyPI even though tests did NOT pass in PR #$PR_NUM: $PR_URL"
+  ```
+
+Only these two cases send Slack. A clean, gated release (`TESTS_PASSED=1`) is silent.
 
 ## Validate Before Publishing
 
