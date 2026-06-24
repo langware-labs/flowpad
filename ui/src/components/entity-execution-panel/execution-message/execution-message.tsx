@@ -1,8 +1,10 @@
 import { FlowData, FlowDataType, FlowElementTypes } from '@sdk';
 import { useDataStreamText } from '@sdk/react/hooks';
 import { DotPulse } from '@src/components/dot-pulse';
+import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { MarkdownView } from '@src/components/markdown-view';
 import { cn } from '@src/lib/utils';
+import { User } from 'lucide-react';
 import React, { useMemo } from 'react';
 
 interface ExecutionMessageProps {
@@ -11,9 +13,11 @@ interface ExecutionMessageProps {
   animateIn?: boolean;
   collapsible?: boolean;
   className?: string;
+  /** Assistant vendor (claude_code/codex/copilot) — picks the worker icon + label. */
+  worker?: string;
 }
 
-const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, animateIn = false, className }) => {
+const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, animateIn = false, className, worker }) => {
   // Determine if this message type should stream
   // Must check both elementType AND dataType since useDataStreamText only supports string data
   const messageTypes: string[] = [FlowElementTypes.TEXT, FlowElementTypes.CHAT, FlowElementTypes.USER_MESSAGE];
@@ -48,33 +52,32 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, a
     return null;
   }
 
-  // User → a subtle right-aligned pill. Assistant → full-width prose, no bubble
-  // (the message column itself is the surface, claude.ai-style).
-  if (isUser) {
-    return (
-      <div
-        className={cn('flex justify-end py-1.5', animateIn && 'animate-fade-in opacity-0', className)}
-        data-testid="execution-message"
-      >
-        <div className="max-w-[80%] min-w-0 break-words rounded-2xl bg-muted px-4 py-2 text-[15px] leading-6 text-foreground">
-          <MarkdownView value={currentContent} compact />
-        </div>
-      </div>
-    );
-  }
+  // Stacked, left-aligned turns (ChatGPT / Gemini / Claude-Code style): a leading
+  // identity row (icon + name) over the message body — no left/right bubble split.
+  const Icon = isUser ? User : workerIcon(worker);
+  const name = isUser ? 'You' : workerLabel(worker);
 
   return (
     <div
-      className={cn('py-1.5 text-[15px] leading-7 text-foreground', animateIn && 'animate-fade-in opacity-0', className)}
+      className={cn('py-2.5', animateIn && 'animate-fade-in opacity-0', className)}
       data-testid="execution-message"
+      data-role={isUser ? 'user' : 'assistant'}
       aria-live={isStreaming ? 'polite' : undefined}
     >
-      <MarkdownView value={currentContent} compact />
-      {isStreaming && (
-        <span className="mt-1 inline-flex" aria-label="Assistant is responding">
-          <DotPulse />
+      <div className="mb-1 flex items-center gap-2">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <Icon className="h-3 w-3" />
         </span>
-      )}
+        <span className="text-[13px] font-semibold text-foreground">{name}</span>
+      </div>
+      <div className="min-w-0 break-words pl-7 text-[15px] leading-7 text-foreground">
+        <MarkdownView value={currentContent} compact />
+        {isStreaming && (
+          <span className="mt-1 inline-flex" aria-label="Assistant is responding">
+            <DotPulse />
+          </span>
+        )}
+      </div>
     </div>
   );
 };

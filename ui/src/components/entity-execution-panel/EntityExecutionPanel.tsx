@@ -537,11 +537,12 @@ export function EntityExecutionPanel({
           </div>
         )}
         {dense
-          ? <TurnGroupsList groups={turnGroups} />
+          ? <TurnGroupsList groups={turnGroups} worker={activeProcess?.worker_type ?? undefined} />
           : messages.map((m) => (
               <ExecutionMessage
                 key={m.id ?? m.timestamp}
                 flowData={m}
+                worker={activeProcess?.worker_type ?? undefined}
                 isUser={
                   m.elementType === FlowElementTypes.USER_MESSAGE ||
                   (m.attributes && m.attributes.role === 'user')
