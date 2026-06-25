@@ -24,6 +24,7 @@ export type EntryKind =
   | 'web_fetch'
   | 'todo_update'
   | 'agent_spawn'
+  | 'skill_call'
   | 'system'
   | 'summary'
   | 'meta'
@@ -221,6 +222,20 @@ export interface AgentSpawnEntry extends BaseEntry {
   tool_use_id: string;
 }
 
+/**
+ * A skill invocation, normalized across workers (Claude/Copilot native Skill
+ * tool, Codex SKILL.md file-load). Mirrors backend
+ * `flow_sdk/transcript_analyzer/entries/skill_call.py`.
+ */
+export interface SkillCallEntry extends BaseEntry {
+  kind: 'skill_call';
+  skill_name: string;
+  /** 'tool' (native Skill tool) | 'file_load' (SKILL.md read). */
+  invocation_kind: string;
+  tool_name: string;
+  tool_use_id: string;
+}
+
 export type GenericEntry =
   | UserMessageEntry
   | AssistantMessageEntry
@@ -234,6 +249,7 @@ export type GenericEntry =
   | WebFetchEntry
   | TodoUpdateEntry
   | AgentSpawnEntry
+  | SkillCallEntry
   | SystemEntry
   | SummaryEntry
   | MetaEntry
@@ -254,6 +270,7 @@ export const isSearch = (e: GenericEntry): e is SearchEntry => e.kind === 'searc
 export const isWebFetch = (e: GenericEntry): e is WebFetchEntry => e.kind === 'web_fetch';
 export const isTodoUpdate = (e: GenericEntry): e is TodoUpdateEntry => e.kind === 'todo_update';
 export const isAgentSpawn = (e: GenericEntry): e is AgentSpawnEntry => e.kind === 'agent_spawn';
+export const isSkillCall = (e: GenericEntry): e is SkillCallEntry => e.kind === 'skill_call';
 export const isSystem = (e: GenericEntry): e is SystemEntry => e.kind === 'system';
 export const isSummary = (e: GenericEntry): e is SummaryEntry => e.kind === 'summary';
 export const isMeta = (e: GenericEntry): e is MetaEntry => e.kind === 'meta';
