@@ -297,11 +297,18 @@ async def _pack_markdown_attachment(entry_id: str, attachment_dir: Path) -> None
     md_dir = attachment_dir / f"{mtype}-@{entry_id}"
     md_dir.mkdir(parents=True, exist_ok=True)
     dest = md_dir / "document.md"
+    # The receiver derives the chip title from the file STEM when frontmatter
+    # carries no ``title:`` — and the bundle always names the file ``document.md``.
+    # Pass the materialized title so a source whose name came from its filename
+    # (no explicit ``title:``) still transfers its name instead of "document".
+    title = data.get("title") or data.get("name")
     src = data.get("asset_ref")
     if src and Path(src).exists():
-        rewritten = _inject_id_into_frontmatter_text(Path(src).read_text(encoding="utf-8"), entry_id)
+        rewritten = _inject_id_into_frontmatter_text(
+            Path(src).read_text(encoding="utf-8"), entry_id, title=title,
+        )
         if rewritten is None:
-            shutil.copy2(Path(src), dest)  # source already carries the id → verbatim
+            shutil.copy2(Path(src), dest)  # source already carries id + title → verbatim
         else:
             dest.write_text(rewritten, encoding="utf-8")
         return
@@ -690,12 +697,21 @@ async def _pack_fs_rooted_attachment(
         _ensure_id_in_md_frontmatter(dest, entry_id)
 
 
-def _inject_id_into_frontmatter_text(text: str, entry_id: str) -> "str | None":
+def _inject_id_into_frontmatter_text(
+    text: str, entry_id: str, title: "str | None" = None,
+) -> "str | None":
     """Return ``text`` with ``id: <entry_id>`` ensured in its YAML frontmatter
-    (other fields + body preserved), or None when the id already matches — so a
+    (other fields + body preserved), or None when nothing needs changing — so a
     caller can keep the original bytes verbatim. Single source of truth for the
     "carry the sender's id into a shared markdown asset" contract, shared by the
-    spec restore and the FS-rooted packer."""
+    spec restore and the FS-rooted packer.
+
+    When ``title`` is given AND the frontmatter has no ``title`` of its own, it
+    is injected too: a markdown asset's title falls back to the file STEM when
+    absent from frontmatter, and the bundle always names the file ``document.md``
+    — so without an explicit ``title:`` the receiver would render the chip as
+    "document" instead of the sender's name. Only fills a missing title; never
+    overrides one the source already carries."""
     from flow_sdk.fs_store.indexer._frontmatter import (  # noqa: PLC0415
         _extract_body,
         _extract_frontmatter,
@@ -706,10 +722,13 @@ def _inject_id_into_frontmatter_text(text: str, entry_id: str) -> "str | None":
     fields = (_yaml_load(fm) or {}) if fm else {}
     if not isinstance(fields, dict):
         fields = {}
-    if fields.get("id") == entry_id:
+    need_title = bool(title) and not fields.get("title")
+    if fields.get("id") == entry_id and not need_title:
         return None
     body = _extract_body(text) if fm else text
     merged = {"id": entry_id, **{k: v for k, v in fields.items() if k != "id"}}
+    if need_title:
+        merged["title"] = title
     return _render_frontmatter(merged) + "\n\n" + body.lstrip("\n")
 
 
