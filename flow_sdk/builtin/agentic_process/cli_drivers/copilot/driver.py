@@ -87,7 +87,13 @@ class CopilotDriver:
         if not process.workdir:
             return ApiFailResponse(message="copilot prompt: workdir is not set")
 
-        had_session = bool(process.session_id)
+        # Resume ONLY when copilot actually has a session file for this id.
+        # A preassigned ``session_id`` that copilot never wrote (a fresh chat
+        # tab, or a PTY session killed before its first turn) must start fresh
+        # WITH that id (copilot accepts a caller-provided ``--session-id``),
+        # not resume a non-existent one. ``had_session`` alone (is the field
+        # set?) can't tell those apart; ``has_resumable_session`` checks the file.
+        resumable = self.has_resumable_session(process)
         if not process.session_id:
             process.session_id = str(uuid4())
             try:
@@ -104,8 +110,8 @@ class CopilotDriver:
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
             effort=cli_cfg.get("effort"),
             add_dirs=list(process.resolved_add_dirs or []),
-            session_id=process.session_id if not had_session else None,
-            resume_session_id=process.session_id if had_session else None,
+            session_id=process.session_id if not resumable else None,
+            resume_session_id=process.session_id if resumable else None,
         )
 
         worker = CopilotCLIStreamWorker.for_process(process.id)
@@ -137,7 +143,9 @@ class CopilotDriver:
             logger.exception("CopilotDriver.headless_prompt: start notify failed")
 
         async def _run_turn() -> None:
-            session_id_persisted = had_session
+            # Resumed sessions already have the right id persisted; a fresh start
+            # persists copilot's real id once the worker reports it (below).
+            session_id_persisted = resumable
             try:
                 async for fd in worker.execute(prompt=full_prompt, context=context):
                     sid = worker.get_session_id()

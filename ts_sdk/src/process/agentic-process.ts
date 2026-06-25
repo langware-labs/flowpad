@@ -2146,6 +2146,49 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Toggle CHAT → TERMINAL: materialise (resume) the interactive PTY for this
+   * session. Chat and terminal are mutually-exclusive execution modes of ONE
+   * logical session — chat runs headless (print-mode, no PTY); terminal is the
+   * interactive xterm. This is just ``start({visible:true})`` (the backend
+   * ``open`` sets ``visible=True`` and resumes the session via the worker's
+   * resume logic), plus the ``restarted`` event so the terminal clears + attaches.
+   * The caller disables the toggle mid-turn (mutual exclusion); the backend
+   * open-lock prevents a double-spawn.
+   */
+  async switchToTerminal(opts?: { cols?: number; rows?: number }): Promise<boolean> {
+    const ok = await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
+    this.emit('restarted', { process: this });
+    return ok;
+  }
+
+  /**
+   * Toggle TERMINAL → CHAT: close the PTY worker and revert to headless routing
+   * (``visible=False``), keeping ``session_id`` + transcript so the next
+   * ``prompt()`` resumes the same session headless. Mirrors {@link exit}'s
+   * optimistic CLOSING + user-stop guard, but routes through the dedicated
+   * ``switch-to-chat`` action (which also resets ``visible`` — ``exit`` alone
+   * leaves it True so a plain restart stays in terminal mode). Rejected by the
+   * backend (409) if a turn is in flight.
+   */
+  async switchToChat(): Promise<void> {
+    const { Shell } = await import('../entities/shell');
+    this._userInitiatedStop = true;
+    const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
+    if (shell) {
+      shell.status = ShellStatus.CLOSING;
+      dataManager.notifyEntityChanged(shell);
+    }
+    const actionInfo = new ActionInfo('switch-to-chat', AgenticProcess.type, this.id, 'POST');
+    await dataManager.callAction(actionInfo);
+    this.visible = false;
+    // Deliberately do NOT emit 'restarted' here: that event drives the
+    // InteractiveTerminal to re-``attachPty`` — correct for →terminal (a new PTY
+    // to attach), but →chat has just KILLED the PTY, so re-attaching the dead
+    // shell throws "PTY not found" on a loop. The chat reconcile (clear +
+    // loadHistory) is owned by the view's toggle handler, not this event.
+  }
+
+  /**
    * Bridge backend-initiated restarts to the local 'restarted' event.
    *
    * The UI restart button drives {@link restart} client-side, which emits
