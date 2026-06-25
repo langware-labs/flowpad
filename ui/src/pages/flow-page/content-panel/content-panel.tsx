@@ -46,6 +46,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { GraphContextViewer } from '@src/components/graph-context/GraphContextViewer';
+import { DiagnosisViewer } from '@src/components/diagnosis-viewer/DiagnosisViewer';
 import { useSendMessageStore } from '@src/store/use-send-message-store';
 import { useSurveyStore } from '@src/store/use-survey-store';
 import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
@@ -336,6 +337,8 @@ export function ContentPanel() {
         return <SpecRoute />;
       case ViewType.GRAPH_CONTEXT:
         return <GraphContextViewer pointer={currentDock?.pointer} />;
+      case ViewType.DIAGNOSIS:
+        return <DiagnosisViewer pointer={currentDock?.pointer} />;
       case ViewType.HOME:
       default:
         return <HomeLanding />;

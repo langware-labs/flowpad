@@ -10,6 +10,9 @@ export interface IMessageSuggest extends IEntity {
   conversation_id?: string | null;
   /** The summary FlowMessage in that conversation; issue cards only. */
   flow_message_id?: string | null;
+  /** The recorded FlowpadDiagnosis this card is about; powers the feed View
+   *  button. Present on every diagnosis card (issue and clean-sweep alike). */
+  diagnosis_id?: string | null;
   /** Card variant: "" = diagnosis (Report/Forward), "draft_reply" = a draft
    *  reply waiting to send (Send/Open). */
   kind?: string;
@@ -22,6 +25,7 @@ export class MessageSuggest extends APIEntity<MessageSuggest> implements IMessag
   message_text?: string;
   conversation_id?: string | null;
   flow_message_id?: string | null;
+  diagnosis_id?: string | null;
   kind?: string;
 
   constructor(entity: Partial<IMessageSuggest> = {}) {
@@ -30,6 +34,7 @@ export class MessageSuggest extends APIEntity<MessageSuggest> implements IMessag
     this.message_text = entity.message_text;
     this.conversation_id = entity.conversation_id ?? null;
     this.flow_message_id = entity.flow_message_id ?? null;
+    this.diagnosis_id = entity.diagnosis_id ?? null;
     this.kind = entity.kind;
   }
 
