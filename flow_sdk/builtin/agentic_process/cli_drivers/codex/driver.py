@@ -122,7 +122,14 @@ class CodexDriver:
             env_vars=dict(cli_cfg.get("env_vars") or {}),
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
-            resume_session_id=process.session_id if process.session_id else None,
+            # Resume ONLY when codex actually has a rollout for this id. Codex
+            # (unlike claude) mints its own rollout id — a preassigned/PTY
+            # ``session_id`` that codex never wrote (e.g. a fresh chat tab, or a
+            # PTY session killed before its first turn) has no rollout, and
+            # ``codex exec resume <unknown-id>`` exits with an error. Starting
+            # fresh lets the worker mint a rollout; its real id is captured from
+            # the stream below and persisted back onto ``process.session_id``.
+            resume_session_id=process.session_id if self.has_resumable_session(process) else None,
         )
 
         worker = CodexCLIStreamWorker.for_process(process.id)

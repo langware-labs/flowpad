@@ -1182,6 +1182,44 @@ class AgenticProcess(Entity):
             await self.save()
             return ApiFailResponse(message=str(e))
 
+    @action.post(action_name="switch-to-chat")
+    async def switch_to_chat(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Toggle TERMINAL → CHAT: close the PTY worker, keep the session.
+
+        Chat and terminal are mutually-exclusive execution modes of ONE logical
+        session (one ``session_id``, one transcript). The CHAT → TERMINAL
+        direction is just ``start_pty(visible=True)`` (existing ``open`` action,
+        resumes the session interactively). This is the inverse: it kills the
+        interactive worker via :meth:`exit` (which preserves ``shell_id`` +
+        ``session_id`` + transcript) and flips ``visible=False`` so the next
+        :meth:`prompt` runs headless and resumes the very same session.
+        ``exit()`` alone can't reset ``visible`` — a plain ``restart``
+        (exit+start) must keep it True — so the reset lives here, the explicit
+        mode-switch. Rejected mid-turn so two workers never share the transcript.
+        """
+        if _get_prompt_lock(self.id).locked():
+            return ApiFailResponse(
+                message="a prompt turn is in flight; cannot switch mode",
+                status_code=409,
+            )
+        if self.shell_id and await self.is_running():
+            exit_result = await self.exit()
+            if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
+                return exit_result
+        # Reload so the visible reset rides on the row exit() just saved (status,
+        # context_data) rather than overwriting it from a stale snapshot.
+        fresh = await AgenticProcess.get_by_id(self.id) or self
+        fresh.visible = False
+        await fresh.save()
+        return ApiSuccessResponse(
+            data={
+                "id": fresh.id,
+                "status": fresh.status,
+                "visible": fresh.visible,
+                "session_id": fresh.session_id,
+            }
+        )
+
     @action.post(action_name="restart")
     async def http_restart(self) -> ApiSuccessResponse | ApiFailResponse:
         """exit() + start_pty(). Shell entity is preserved and reused.
@@ -1895,7 +1933,14 @@ class AgenticProcess(Entity):
         if self.visible:
             return self._run_pty_prompt(message)
 
-        had_session = bool(self.session_id)
+        # Resume ONLY when the worker actually has a resumable session on disk
+        # for this id — NOT merely "session_id is set". A ``session_id`` that
+        # the worker never wrote a resumable transcript for (a fresh chat tab, or
+        # a PTY session whose id was reconciled but killed before finalising a
+        # rollout) makes ``codex exec resume <id>`` / ``claude --resume <id>``
+        # exit with "no rollout/transcript found". The mode toggle (PTY⇄chat)
+        # makes that case routine, so this must be a real check, worker-agnostic.
+        resumable = self.driver.has_resumable_session(self)
         if not self.session_id and bool(getattr(self.driver, "preassign_interactive_session_id", False)):
             self.session_id = str(uuid4())
             try:
@@ -1909,8 +1954,9 @@ class AgenticProcess(Entity):
             env_vars = dict((self.cli_config or {}).get("env_vars") or {})
 
         # Context for the worker, reconstructed from the AgenticProcess entity.
-        # Fresh preassigned sessions must be passed as ``session_id``; only
-        # existing sessions should be sent as ``resume_session_id``.
+        # Non-resumable sessions start fresh WITH the id (workers that accept a
+        # caller-provided ``--session-id``, e.g. claude/copilot); only a real
+        # resumable session is sent as ``resume_session_id``.
         context = _AgenticContext(
             workdir=self.workdir,
             env_vars=env_vars,
@@ -1918,8 +1964,8 @@ class AgenticProcess(Entity):
             permission_mode=(self.cli_config or {}).get("permission_mode", "bypassPermissions"),
             effort=(self.cli_config or {}).get("effort"),
             add_dirs=list(self.resolved_add_dirs or []),
-            session_id=self.session_id if self.session_id and not had_session else None,
-            resume_session_id=self.session_id if had_session else None,
+            session_id=self.session_id if (self.session_id and not resumable) else None,
+            resume_session_id=self.session_id if resumable else None,
         )
 
         # Inline embedded-agent definitions (and persona directive when a single
