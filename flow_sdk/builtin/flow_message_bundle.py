@@ -245,6 +245,32 @@ async def _pack_git_branch_attachment(entry_id: str, attachment_dir: Path) -> No
     )
 
 
+async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/flowpad_diagnosis-@<id>/header.json`` (the recorded
+    diagnosis fields).
+
+    Metadata-only entity (no backing source file), so the header IS the record:
+    the receiver re-materializes the row via ``.save()`` — the same create-or-
+    fill-merge contract as TASK / CLAUDE_SESSION. Without this the forwarded
+    diagnosis never transfers, the receiver can't materialize it, and their
+    ``body_downloaded`` (hence the Download button) never clears."""
+    from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
+
+    diag = await FlowpadDiagnosis.get_one({"id": entry_id})
+    if not diag:
+        return
+    diag_dir = attachment_dir / f"{EntityType.FLOWPAD_DIAGNOSIS.value}-@{entry_id}"
+    diag_dir.mkdir(parents=True, exist_ok=True)
+    diag_data = diag.model_dump(
+        mode="python",
+        include={"id", "type", "name", "title", "symptoms", "rca", "fix", "summary", "user_report"},
+        context={"skip_api_serializer": True},
+    )
+    (diag_dir / "header.json").write_text(
+        json.dumps(diag_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 async def _pack_conversation_attachment(
     entry_id: str, flow_message: "FlowMessage", attachment_dir: Path,
 ) -> None:
@@ -336,6 +362,8 @@ async def _pack_attachment_entry(
         await _pack_claude_session_attachment(entry_id, attachment_dir)
     elif entry_type == EntityType.GIT_BRANCH.value:
         await _pack_git_branch_attachment(entry_id, attachment_dir)
+    elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
+        await _pack_flowpad_diagnosis_attachment(entry_id, attachment_dir)
     elif entry_type in _FS_ROOTED_TYPES:
         await _pack_fs_rooted_attachment(entry_type, entry_id, attachment_dir)
 
@@ -1126,6 +1154,23 @@ async def unpack_bundle(
                             await branch.save(owner_typeid)
                         elif _fill_merge_entity(existing_branch, branch_payload, ("id", "type")):
                             await existing_branch.save(owner_typeid)
+
+                elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
+                    # Metadata-only diagnosis: materialize the entity row from the
+                    # packed header (same create-or-fill-merge contract as TASK /
+                    # CLAUDE_SESSION) so the receiver's chip resolves and
+                    # body_downloaded flips true, clearing the Download button.
+                    diag_data = _read_entity_header(entry_dir)
+                    if diag_data is not None:
+                        from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis  # noqa: PLC0415
+                        diag_id = diag_data.get("id") or entry_id
+                        diag_payload = {**diag_data, "id": diag_id}
+                        existing_diag = await FlowpadDiagnosis.get_one({"id": diag_id})
+                        if existing_diag is None or overwrite:
+                            diag = FlowpadDiagnosis.model_validate(diag_payload)
+                            await diag.save(owner_typeid)
+                        elif _fill_merge_entity(existing_diag, diag_payload, ("id", "type")):
+                            await existing_diag.save(owner_typeid)
 
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"

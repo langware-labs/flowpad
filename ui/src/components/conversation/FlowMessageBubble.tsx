@@ -536,7 +536,11 @@ export function FlowMessageBubble({
               </a>
             )}
           </>
-        ) : hasBody && pendingAssetCount > 0 ? (
+        ) : hasBody && pendingAssetCount > 0 && (!downloaded || attachmentItems.length > 0) ? (
+          // Show the Download button only when there's actually something to pull
+          // (`!downloaded`) or a FILE attachment that still needs project-mapping
+          // to open. An entity-only message whose entity is already local (e.g. the
+          // sender's own forwarded diagnosis) needs neither — its chip renders above.
           <DownloadAttachmentsButton
             count={pendingAssetCount}
             labels={assetLabels}
