@@ -72,6 +72,7 @@ export enum ViewType {
   CONVERSATION = 'conversation', // Single Conversation viewer (avatar bubbles + composer)
   SPEC = 'spec', // Single Spec viewer (shows spec metadata, plan link, generated tasks)
   GRAPH_CONTEXT = 'graph_context', // Frozen-context viewer - /dock/graph_context/<id>
+  DIAGNOSIS = 'diagnosis', // Single FlowpadDiagnosis viewer - /dock/diagnosis/<id>
 }
 
 /**
