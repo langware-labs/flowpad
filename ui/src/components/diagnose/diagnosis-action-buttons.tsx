@@ -3,7 +3,7 @@ import { deriveConversationTitle } from '@src/components/conversation/conversati
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { EyeOff, Forward } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 interface DiagnosisActionButtonsProps {
   /** The support conversation — excluded from the Forward list (you don't forward
@@ -50,6 +50,14 @@ export function DiagnosisActionButtons({
     excludeId: suggestedConversationId,
   });
 
+  // The list expands *below* the button row. In a scroll-capped surface (the
+  // diagnosis popup) it can open below the fold — the user sees only a scrollbar.
+  // Scroll it into view on open so the conversations are visibly revealed.
+  const listRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (forwardOpen) listRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [forwardOpen, conversations.length]);
+
   return (
     <>
       <div className="mt-2 flex shrink-0 items-center gap-2">
@@ -92,6 +100,7 @@ export function DiagnosisActionButtons({
 
       {forwardOpen && (
         <ul
+          ref={listRef}
           className="mt-2 flex min-h-0 max-h-48 flex-col gap-1 overflow-y-auto overscroll-contain"
           data-testid="feed-forward-conversations"
         >
