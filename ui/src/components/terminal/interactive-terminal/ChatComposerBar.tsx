@@ -15,6 +15,12 @@ import { useCallback, useMemo, useState } from 'react';
 interface ChatComposerBarProps {
   /** The interactive tab's live PTY AgenticProcess. */
   process: AgenticProcess;
+  /**
+   * Handle images pasted into the composer — upload to the process input dir
+   * and open the Files side tab, returning a reference line per image. Supplied
+   * by InteractiveTerminal so chat paste reuses the exact PTY paste behaviour.
+   */
+  onPasteImages?: (files: File[]) => Promise<string[] | void> | string[] | void;
 }
 
 /**
@@ -24,7 +30,7 @@ interface ChatComposerBarProps {
  * the PTY for a visible process) and interrupts the in-flight turn via
  * `interruptTurn()`. Status + busy come from the gold entity, reflected live.
  */
-export function ChatComposerBar({ process }: ChatComposerBarProps) {
+export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps) {
   const [sending, setSending] = useState(false);
 
   const handleSend = useCallback(
@@ -76,6 +82,7 @@ export function ChatComposerBar({ process }: ChatComposerBarProps) {
       disabled={sending || busy}
       running={busy}
       onStop={handleStop}
+      onPasteImages={onPasteImages}
       placeholder="Message the agent…"
       statusSlot={
         <span

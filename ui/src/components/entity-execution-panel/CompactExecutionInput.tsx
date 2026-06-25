@@ -1,4 +1,5 @@
 import { cn } from '@src/lib/utils';
+import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
 import { Send, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -15,6 +16,13 @@ interface CompactExecutionInputProps {
   onStop?: () => void | Promise<void>;
   /** Drop the container's top border + background so it nests inside another ribbon. */
   bare?: boolean;
+  /**
+   * Handle pasted image files (upload to the process input dir, open the Files
+   * side tab, etc). Returns one reference line per uploaded image — these are
+   * inserted into the composer at the caret so they ride along with the next
+   * send, mirroring the PTY paste behaviour. Omit to leave paste as plain text.
+   */
+  onPasteImages?: (files: File[]) => Promise<string[] | void> | string[] | void;
 }
 
 /**
@@ -32,6 +40,7 @@ export function CompactExecutionInput({
   running = false,
   onStop,
   bare = false,
+  onPasteImages,
 }: CompactExecutionInputProps) {
   const [value, setValue] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -55,6 +64,35 @@ export function CompactExecutionInput({
     await onSend(text);
   }, [value, disabled, onSend]);
 
+  // Image paste: hand the image files to the owner (upload + open Files tab),
+  // then splice the returned reference line(s) into the textarea at the caret.
+  // Non-image pastes fall through to the browser's default text paste.
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (!onPasteImages || disabled) return;
+      const images = imageFilesFromClipboardData(e.clipboardData, new Date(), { prefix: 'screenshot' });
+      if (images.length === 0) return;
+      e.preventDefault();
+      const ta = e.currentTarget;
+      const start = ta.selectionStart ?? value.length;
+      const end = ta.selectionEnd ?? start;
+      void Promise.resolve(onPasteImages(images)).then((refs) => {
+        if (!refs || refs.length === 0) return;
+        const insert = refs.join('\n');
+        setValue((prev) => `${prev.slice(0, start)}${insert}${prev.slice(end)}`);
+        requestAnimationFrame(() => {
+          const node = taRef.current;
+          if (!node) return;
+          const caret = start + insert.length;
+          node.focus();
+          node.selectionStart = caret;
+          node.selectionEnd = caret;
+        });
+      });
+    },
+    [onPasteImages, disabled, value],
+  );
+
   const showStop = running && !!onStop;
 
   return (
@@ -63,6 +101,7 @@ export function CompactExecutionInput({
         ref={taRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
+        onPaste={handlePaste}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey && (!e.nativeEvent.isComposing || e.metaKey || e.ctrlKey)) {
             e.preventDefault();

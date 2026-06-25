@@ -16,6 +16,7 @@ import { taskChipKeys } from './chips/keys';
 import { ConversationBottomRibbon, type ConversationSideTab } from './ConversationBottomRibbon';
 import { ConversationContextPanel } from './ConversationContextPanel';
 import { MembersAvatarStack } from './MembersAvatarStack';
+import { ProjectChip } from '@src/components/project/ProjectChip';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
@@ -307,6 +308,7 @@ export function ConversationPanel({
           {headerLabel !== null && (
             <div className={headerWrapper}>
               <EditableConversationTitle conv={convEntity ?? null} fallback={headerLabel} />
+              <ProjectChip projectId={convEntity?.project_id ?? null} className="mr-auto" />
               <MembersAvatarStack
                 typeId={new TypeId(Conversation.type, conversationId)}
               />

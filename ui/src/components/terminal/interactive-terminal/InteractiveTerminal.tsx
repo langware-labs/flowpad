@@ -1390,6 +1390,22 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [inputDirInfo, openSideTab],
   );
 
+  // Simple-chat composer image paste — same upload + Files-tab-open behaviour as
+  // the PTY paste/drop handlers, but returns the reference line(s) so the chat
+  // composer can splice them into the next prompt (instead of sending to a PTY).
+  const handleChatPasteImages = useCallback(
+    async (files: File[]): Promise<string[]> => {
+      if (!inputDirInfo || !files.length) return [];
+      const uploads = await fsStore
+        .getState()
+        .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
+      await Promise.all(uploads.map((u) => u.waitForCompletion()));
+      openSideTab(SideTabId.Files);
+      return files.map((file) => `File ${file.name} is available here: ${inputDirInfo.absPath}/${file.name}`);
+    },
+    [inputDirInfo, openSideTab],
+  );
+
   // Compute synthetic shell-pane active state for the ribbon
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
   const ribbonActiveSideTab = activePane === 'shell' && sidecarShellId ? SideTabId.Shell : activeSideTab;
@@ -1664,7 +1680,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           onOpenLastPlan={handleOpenLastPlan}
           markdownDocs={markdownDocs}
           onOpenMarkdown={handleOpenMarkdown}
-          composer={showSimpleChat && process ? <ChatComposerBar process={process} /> : undefined}
+          composer={
+            showSimpleChat && process ? (
+              <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} />
+            ) : undefined
+          }
           chatActive={showSimpleChat}
           onToggleView={
             canToggleView ? () => setChatUiOverride(showSimpleChat ? 'terminal' : 'chat') : undefined
