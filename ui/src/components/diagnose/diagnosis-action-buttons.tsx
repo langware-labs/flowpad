@@ -3,10 +3,11 @@ import { deriveConversationTitle } from '@src/components/conversation/conversati
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { EyeOff, Forward } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 interface DiagnosisActionButtonsProps {
-  /** The suggested support conversation — "Report issue" sends here; excluded from the Forward list. */
+  /** The support conversation — excluded from the Forward list (you don't forward
+   *  a report back into the conversation that already holds it). */
   suggestedConversationId?: string;
   busy?: boolean;
   error?: string;
@@ -14,15 +15,22 @@ interface DiagnosisActionButtonsProps {
   showDismiss?: boolean;
   /** Dismiss the diagnosis surface (Feed card: dismiss the entry; modal: close). */
   onDismiss: () => void;
-  /** Send the report to a conversation — used by both "Report issue" and a Forward pick. */
-  onReport: (conversationId: string) => void;
+  /** "Report issue" — email the diagnosis to the Flowpad team. */
+  onReportIssue: () => void;
+  /** Whether reporting is available (a diagnosis id is known). Defaults to true. */
+  canReport?: boolean;
+  /** "Forward" — post the formatted report into the chosen conversation. */
+  onForward: (conversationId: string) => void;
+  /** Extra control rendered right-most on the button row (e.g. the feed's View button). */
+  trailing?: ReactNode;
 }
 
 /**
  * The action row at the bottom of a diagnosis surface: Dismiss / Report issue /
  * Forward (with a recent-conversation picker). Shared between the Home-Feed
  * `FeedEntryCard` and the UI diagnose modals so both render and behave identically;
- * the data/mutation wiring lives in each caller's `onDismiss` / `onReport`.
+ * the data/mutation wiring lives in each caller's `onDismiss` / `onReportIssue` /
+ * `onForward`. "Report issue" emails the team; "Forward" posts into a conversation.
  */
 export function DiagnosisActionButtons({
   suggestedConversationId,
@@ -30,7 +38,10 @@ export function DiagnosisActionButtons({
   error,
   showDismiss = true,
   onDismiss,
-  onReport,
+  onReportIssue,
+  canReport = true,
+  onForward,
+  trailing,
 }: DiagnosisActionButtonsProps) {
   const [forwardOpen, setForwardOpen] = useState(false);
   // Forward target list: most recent conversations, fetched only while open. The
@@ -57,8 +68,8 @@ export function DiagnosisActionButtons({
         <Button
           type="button"
           size="sm"
-          disabled={busy || !suggestedConversationId}
-          onClick={() => suggestedConversationId && onReport(suggestedConversationId)}
+          disabled={busy || !canReport}
+          onClick={onReportIssue}
           className="h-6 px-2 text-xs"
         >
           Report issue
@@ -76,6 +87,7 @@ export function DiagnosisActionButtons({
           <Forward className="h-3.5 w-3.5" />
           Forward
         </Button>
+        {trailing && <div className="ml-auto flex items-center">{trailing}</div>}
       </div>
 
       {forwardOpen && (
@@ -88,7 +100,7 @@ export function DiagnosisActionButtons({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => onReport(conv.id)}
+                  onClick={() => onForward(conv.id)}
                   className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
                   data-testid={`feed-forward-conv-${conv.id}`}
                 >

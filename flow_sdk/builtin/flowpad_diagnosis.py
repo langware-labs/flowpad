@@ -29,3 +29,11 @@ class FlowpadDiagnosis(Entity):
     summary: Optional[str] = APIField(
         None, description="One-paragraph plain-language summary of the diagnosis."
     )
+    user_report: Optional[str] = APIField(
+        None,
+        description=(
+            "The user's own free-text description of the issue, typed when they ran "
+            "the diagnosis (empty for a full sweep). Distinct from ``symptoms``, "
+            "which is what the agent observed — this is the raw text the user wrote."
+        ),
+    )

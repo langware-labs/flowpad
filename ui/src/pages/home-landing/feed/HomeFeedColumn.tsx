@@ -4,6 +4,7 @@ import {
   QueryRequest,
   UserNote,
   sendDiagnosisReport,
+  sendDiagnosisEmailReport,
   type EntityFeedData,
 } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -58,16 +59,15 @@ export function HomeFeedColumn() {
     [dismiss],
   );
 
-  const handleReportMessageSuggest = useCallback(
-    async (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => {
+  // "Report issue" — email the diagnosis to the Flowpad team (via the backend
+  // `report` action → hub → SendGrid). Does NOT dismiss the card (only eye-off does).
+  const handleReportIssue = useCallback(
+    async (entry: FeedEntry, suggest: MessageSuggest) => {
+      if (!suggest.diagnosis_id) return;
       setBusyId(entry.id ?? null);
       setSendError(null);
       try {
-        await sendDiagnosisReport(conversationId, {
-          flowMessageId: suggest.flow_message_id ?? undefined,
-          fallbackText: suggest.message_text ?? '',
-        });
-        await dismiss(entry);
+        await sendDiagnosisEmailReport(suggest.diagnosis_id);
       } catch (err: unknown) {
         setSendError({
           entryId: entry.id ?? '',
@@ -77,7 +77,30 @@ export function HomeFeedColumn() {
         setBusyId(null);
       }
     },
-    [dismiss],
+    [],
+  );
+
+  // "Forward" — post the formatted report into the chosen conversation.
+  const handleForwardMessageSuggest = useCallback(
+    async (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => {
+      setBusyId(entry.id ?? null);
+      setSendError(null);
+      try {
+        await sendDiagnosisReport(conversationId, {
+          flowMessageId: suggest.flow_message_id ?? undefined,
+          fallbackText: suggest.message_text ?? '',
+        });
+        // Report/Forward no longer dismiss the card — only the eye-off button does.
+      } catch (err: unknown) {
+        setSendError({
+          entryId: entry.id ?? '',
+          message: err instanceof Error ? err.message : 'Failed to send report',
+        });
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [],
   );
 
   const handleCreateNote = useCallback(
@@ -156,8 +179,9 @@ export function HomeFeedColumn() {
                 busy={busyId === entry.id}
                 error={sendError?.entryId === entry.id ? sendError.message : undefined}
                 onDismiss={(item) => void handleDismiss(item)}
-                onReportMessageSuggest={(item, suggest, conversationId) =>
-                  void handleReportMessageSuggest(item, suggest, conversationId)
+                onReportIssue={(item, suggest) => void handleReportIssue(item, suggest)}
+                onForwardMessageSuggest={(item, suggest, conversationId) =>
+                  void handleForwardMessageSuggest(item, suggest, conversationId)
                 }
               />
             ))}

@@ -1,7 +1,13 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
-import { ActionInfo, dataManager, FlowpadDiagnosis, sendDiagnosisReport } from '@sdk';
+import {
+  ActionInfo,
+  dataManager,
+  FlowpadDiagnosis,
+  sendDiagnosisEmailReport,
+  sendDiagnosisReport,
+} from '@sdk';
 import { streamDiagnose, type DiagnoseEvent } from '@src/components/diagnose/diagnose-stream';
 import { CheckCircle2, Info, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -140,7 +146,23 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   // formatted diagnostic report into the chosen conversation (the same send path
   // the Feed card uses), then close. The body comes from the recorded support
   // FlowMessage; the diagnosis summary is only the no-message fallback.
-  const handleReport = useCallback(
+  // "Report issue" — email the diagnosis to the Flowpad team.
+  const handleReportIssue = useCallback(async () => {
+    if (!done?.diagnosisId) return;
+    setReporting(true);
+    setReportError(undefined);
+    try {
+      await sendDiagnosisEmailReport(done.diagnosisId);
+      handleClose();
+    } catch (e) {
+      setReportError(e instanceof Error ? e.message : 'Failed to send report');
+    } finally {
+      setReporting(false);
+    }
+  }, [done, handleClose]);
+
+  // "Forward" — post the formatted report into the chosen conversation.
+  const handleForward = useCallback(
     async (conversationId: string) => {
       if (!done?.diagnosisId) return;
       setReporting(true);
@@ -266,10 +288,12 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
           {done?.ok && !handedToFeed && done.conversationId && (
             <DiagnosisActionButtons
               suggestedConversationId={done.conversationId}
+              canReport={!!done.diagnosisId}
               busy={reporting}
               error={reportError}
               onDismiss={handleClose}
-              onReport={(conversationId) => void handleReport(conversationId)}
+              onReportIssue={() => void handleReportIssue()}
+              onForward={(conversationId) => void handleForward(conversationId)}
             />
           )}
 
