@@ -23,15 +23,6 @@ vi.mock('@src/hooks/use-all-projects', () => ({
   useAllProjects: vi.fn(),
 }));
 
-// The action strip's worker icons come from the shared WorkerToolbar, whose
-// layout depends on view mode: Dev → every worker icon up front ('all'),
-// Standard → last-used + a chevron ('lastOpened'). Force Dev so all worker
-// icons (claude_code, codex, copilot) render directly and deterministically.
-vi.mock('@src/components/view-mode', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@src/components/view-mode')>()),
-  useIsDev: () => true,
-}));
-
 const mockUseTabProjectBuckets = vi.mocked(useTabProjectBuckets);
 const mockUseAllProjects = vi.mocked(useAllProjects);
 
@@ -122,7 +113,7 @@ describe('ProjectsCounterChip', () => {
     render(<ProjectsCounterChip currentProjectId={projectA} onLaunchProjectPath={onLaunchProjectPath} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
     // Clicking the worker icon on the row arms it and opens the picker.
-    await userEvent.click(screen.getByTestId('projects-counter-open-launch-claude_code'));
+    await userEvent.click(screen.getByTestId('projects-counter-open-claude'));
 
     // Already-open project is filtered out of the picker.
     expect(screen.getByTestId('projects-counter-picker')).toBeTruthy();
@@ -143,7 +134,7 @@ describe('ProjectsCounterChip', () => {
 
     render(<ProjectsCounterChip currentProjectId={projectA} onLaunchProjectPath={onLaunchProjectPath} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
-    await userEvent.click(screen.getByTestId('projects-counter-open-launch-codex'));
+    await userEvent.click(screen.getByTestId('projects-counter-open-codex'));
     await userEvent.click(screen.getByText('fresh-project'));
 
     expect(onLaunchProjectPath).toHaveBeenCalledWith('/tmp/fresh-project', 'codex');
@@ -156,7 +147,7 @@ describe('ProjectsCounterChip', () => {
     render(<ProjectsCounterChip currentProjectId={projectA} onOpenHistory={onOpenHistory} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
     // Without a launch callback the strip carries only the history button.
-    expect(screen.queryByTestId('projects-counter-open-launch-claude_code')).toBeNull();
+    expect(screen.queryByTestId('projects-counter-open-claude')).toBeNull();
     await userEvent.click(screen.getByTestId('projects-counter-open-history'));
 
     expect(onOpenHistory).toHaveBeenCalledTimes(1);
@@ -174,8 +165,8 @@ describe('ProjectsCounterChip', () => {
 
     // All actions live inside the strip — no label lines.
     const strip = screen.getByTestId('projects-counter-actions');
-    expect(strip.contains(screen.getByTestId('projects-counter-open-launch-claude_code'))).toBe(true);
-    expect(strip.contains(screen.getByTestId('projects-counter-open-launch-codex'))).toBe(true);
+    expect(strip.contains(screen.getByTestId('projects-counter-open-claude'))).toBe(true);
+    expect(strip.contains(screen.getByTestId('projects-counter-open-codex'))).toBe(true);
     const historyButton = screen.getByTestId('projects-counter-open-history');
     expect(strip.contains(historyButton)).toBe(true);
     expect(screen.queryByText('Open another project…')).toBeNull();

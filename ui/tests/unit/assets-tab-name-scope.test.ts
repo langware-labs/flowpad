@@ -5,7 +5,6 @@
  * `options` is the dock's scope serialization (`?user=&projects=` / `all=true`).
  */
 import { DataManager, TypeId } from '@sdk';
-import { allScope, filterScope, projectScope, scopeFilterToDockOptions, userScope } from '@src/lib/scope-filter';
 import { describe, expect, it } from 'vitest';
 
 // Project ids are real UUIDs (TypeId rejects non-UUID ids).
@@ -20,16 +19,13 @@ function dm(): DataManager<any> {
   return d;
 }
 
-// Options are the dock's scope serialization. Build them through the codec
-// (`scopeFilterToDockOptions`) from explicit, mode-first ScopeFilters rather
-// than hand-writing `scope-*` keys, so the test tracks the codec automatically.
 const CASES: Array<{ label: string; options: Record<string, string> | undefined; expected: string | null }> = [
-  { label: 'project (cached)', options: scopeFilterToDockOptions(projectScope(PROJECT_ID)), expected: "Acme's Assets" },
-  { label: 'project (uncached)', options: scopeFilterToDockOptions(projectScope(OTHER_ID)), expected: 'Assets' },
-  { label: 'user', options: scopeFilterToDockOptions(userScope()), expected: 'My Assets' },
-  { label: 'global (all)', options: scopeFilterToDockOptions(allScope()), expected: null },
+  { label: 'project (cached)', options: { user: 'false', projects: PROJECT_ID }, expected: "Acme's Assets" },
+  { label: 'project (uncached)', options: { user: 'false', projects: OTHER_ID }, expected: 'Assets' },
+  { label: 'user', options: { user: 'true', projects: '' }, expected: 'My Assets' },
+  { label: 'global (all)', options: { all: 'true' }, expected: null },
   { label: 'no scope', options: undefined, expected: null },
-  { label: 'multi-project', options: scopeFilterToDockOptions(filterScope(false, [PROJECT_ID, OTHER_ID])), expected: null },
+  { label: 'multi-project', options: { user: 'false', projects: `${PROJECT_ID},${OTHER_ID}` }, expected: null },
 ];
 
 describe('getTabName — assets title follows scope', () => {
@@ -39,7 +35,7 @@ describe('getTabName — assets title follows scope', () => {
 
   it('title is independent of the in-tab sub-pointer', () => {
     const d = dm();
-    const opts = scopeFilterToDockOptions(projectScope(PROJECT_ID));
+    const opts = { user: 'false', projects: PROJECT_ID };
     expect(d.getTabName({ viewType: 'assets', pointer: 'list/skill', options: opts })).toBe("Acme's Assets");
     expect(d.getTabName({ viewType: 'assets', pointer: 'editor/skill/vfs/x', options: opts })).toBe("Acme's Assets");
     expect(d.getTabName({ viewType: 'assets', pointer: '', options: opts })).toBe("Acme's Assets");
