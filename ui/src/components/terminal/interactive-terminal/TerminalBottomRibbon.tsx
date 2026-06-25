@@ -4,7 +4,7 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, ChevronDown, FileText, MessageSquare, SquareTerminal } from 'lucide-react';
+import { BookMarked, ChevronDown, FileText, Loader2, MessageSquare, SquareTerminal } from 'lucide-react';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { SideTabTooltipContent } from './LastPromptTooltip';
@@ -33,12 +33,17 @@ interface TerminalBottomRibbonProps {
   chatActive?: boolean;
   /** Flip chat⇄terminal (saved override). When omitted, the status dot is shown instead. */
   onToggleView?: () => void;
+  /** True while a chat⇄terminal switch is in flight — disables the toggle and
+   *  shows a connect spinner (PTY spawn/teardown is no longer instant). */
+  switching?: boolean;
 }
 
 const RIBBON_TABS: SideTabIdType[] = [
   SideTabId.Context,
   SideTabId.Git,
   SideTabId.Prompts,
+  SideTabId.Analysis,
+  SideTabId.SkillsAgents,
   SideTabId.Files,
   SideTabId.Dir,
   // The prompt QUEUE side-tab (previously URL-only) — paired with the
@@ -62,6 +67,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   composer,
   chatActive = false,
   onToggleView,
+  switching = false,
 }) => {
   const isAdvanced = useIsAdvanced();
   // Skin layer: in Standard view, power-user tabs (flagged advancedOnly on
@@ -84,14 +90,25 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                   variant="ghost"
                   size="sm"
                   onClick={onToggleView}
+                  disabled={switching}
                   aria-label={chatActive ? 'Switch to terminal view' : 'Switch to chat view'}
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                 >
-                  {chatActive ? <SquareTerminal className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                  {switching ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : chatActive ? (
+                    <SquareTerminal className="h-4 w-4" />
+                  ) : (
+                    <MessageSquare className="h-4 w-4" />
+                  )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs">
-                {chatActive ? 'Switch to terminal view' : 'Switch to chat view'}
+                {switching
+                  ? 'Switching…'
+                  : chatActive
+                    ? 'Switch to terminal view'
+                    : 'Switch to chat view'}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

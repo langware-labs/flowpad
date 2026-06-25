@@ -39,11 +39,13 @@ import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
 import { SimpleChatPane } from './SimpleChatPane';
+import { notify } from '@src/notifications/notify';
 import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
+  AnalysisPanel,
   GitPanel,
   InputFilesPanel,
   PromptIndexPanel,
@@ -51,6 +53,7 @@ import {
   SIDE_TABS,
   SideTabId,
   SimpleDirTree,
+  SkillsAgentsPanel,
   parseSideTabId,
   usePromptsForProcess,
   type PromptEntry,
@@ -272,6 +275,19 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     firstPromptReportedRef.current = false;
   }, [process?.id]);
   const [cellHeight, setCellHeight] = useState(0);
+  // cellHeight is derived from the observed xterm container's own offsetHeight and
+  // flows back into overlays inside that container — so writing it unconditionally
+  // from the ResizeObserver re-lays-out the container and re-fires the observer
+  // (a self-referential ResizeObserver→setState→relayout loop that pegs the UI
+  // when a sibling panel, e.g. the Analysis expand, perturbs the shared layout).
+  // Commit only on a meaningful (>0.5px) change so the cycle converges and stops.
+  const lastCellHeightRef = useRef(0);
+  const commitCellHeight = useCallback((next: number) => {
+    if (!Number.isFinite(next) || next <= 0) return;
+    if (Math.abs(next - lastCellHeightRef.current) < 0.5) return;
+    lastCellHeightRef.current = next;
+    setCellHeight(next);
+  }, []);
   const [traceFilters, setTraceFiltersState] = useState<TraceFilters>(() => loadTraceFilters());
   const [gutterExpanded, setGutterExpanded] = useState(false);
   const [colVis, setColVisState] = useState<ColVisibility>(() => loadColVis());
@@ -654,7 +670,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         fit.fit();
         const container = xtermContainerRef.current;
         if (container?.offsetHeight && term.rows > 0) {
-          setCellHeight(container.offsetHeight / term.rows);
+          commitCellHeight(container.offsetHeight / term.rows);
         }
       } catch {
         // ignore
@@ -690,7 +706,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           try {
             fit.fit();
             if (term.rows > 0 && xtermContainerRef.current?.offsetHeight) {
-              setCellHeight(xtermContainerRef.current.offsetHeight / term.rows);
+              commitCellHeight(xtermContainerRef.current.offsetHeight / term.rows);
             }
             const shell = shellRef.current;
             if (shell?.connected) {
@@ -827,7 +843,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             fit.fit();
             const h = container.offsetHeight;
             const r = term.rows;
-            if (h && r > 0) setCellHeight(h / r);
+            if (h && r > 0) commitCellHeight(h / r);
 
             // Initialize pty-sync session (adapter + VirtualTerminal)
             ptySyncRef.current.initialize(term);
@@ -1271,7 +1287,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             fit.fit();
             const container = xtermContainerRef.current;
             if (container?.offsetHeight && term.rows > 0) {
-              setCellHeight(container.offsetHeight / term.rows);
+              commitCellHeight(container.offsetHeight / term.rows);
             }
             // Send updated dimensions to the new PTY
             const shell = shellRef.current;
@@ -1298,6 +1314,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
     const container = xtermContainerRef.current;
 
+    // Circuit-breaker for the self-referential RO loop: fit()/rebuild()/setCellHeight
+    // all mutate DOM *inside* the container but leave the container's own box size
+    // unchanged. So we act ONLY when the observed box actually changed from the last
+    // size we fit to — fit()'s own writes (and a sibling panel / modal that perturbs
+    // the page, e.g. a portal toggling body overflow) can re-fire the observer but
+    // find the box unchanged and bail, converging in one pass instead of pegging.
+    let lastW = -1;
+    let lastH = -1;
+
     const observer = new ResizeObserver(() => {
       if (!active) return;
       if (isTransitioningRef.current) return;
@@ -1306,6 +1331,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       const fit = fitAddonRef.current;
       if (!term || !fit) return;
 
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (Math.abs(w - lastW) < 1 && Math.abs(h - lastH) < 1) return;
+      lastW = w;
+      lastH = h;
+
       try {
         fit.fit();
       } catch {
@@ -1313,7 +1344,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
 
       if (container.offsetHeight && term.rows > 0) {
-        setCellHeight(container.offsetHeight / term.rows);
+        commitCellHeight(container.offsetHeight / term.rows);
       }
 
       // Rebuild VirtualTerminal with new dimensions and replay stored chunks
@@ -1406,6 +1437,45 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [inputDirInfo, openSideTab],
   );
 
+  // ── Chat ⇄ Terminal mode switch (mutually-exclusive execution modes) ───────
+  // Chat = headless print-mode (no PTY); Terminal = interactive PTY. The toggle
+  // is a real lifecycle action now, not just a view flip: →terminal spawns +
+  // resumes the PTY (switchToTerminal); →chat kills the PTY worker, keeping the
+  // session, and reverts to headless routing (switchToChat). Both reconcile the
+  // transcript (clear + force-reload) so the destination view shows turns the
+  // other mode produced. The backend 409s a mid-turn switch; `switching` guards
+  // against double-trigger and drives the connect spinner.
+  const [switching, setSwitching] = useState(false);
+  const handleToggleView = useCallback(async () => {
+    if (!process || switching) return;
+    const toChat = !showSimpleChat; // currently terminal → go chat
+    setSwitching(true);
+    try {
+      if (toChat) {
+        await process.switchToChat();
+        setChatUiOverride('chat');
+      } else {
+        const dims = terminalRef.current
+          ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows }
+          : undefined;
+        await process.switchToTerminal(dims);
+        setChatUiOverride('terminal');
+      }
+      // Reconcile: pull in turns the other mode produced. clear() alone leaves
+      // `_historyLoaded` set, so force the reload.
+      process.flowDataStream.clear();
+      await process.loadHistory({ force: true });
+    } catch (err) {
+      console.error('[InteractiveTerminal] mode switch failed', err);
+      notify.error({
+        title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setSwitching(false);
+    }
+  }, [process, switching, showSimpleChat]);
+
   // Compute synthetic shell-pane active state for the ribbon
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
   const ribbonActiveSideTab = activePane === 'shell' && sidecarShellId ? SideTabId.Shell : activeSideTab;
@@ -1436,6 +1506,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         <div className="h-full overflow-y-auto p-3">
           <EntityContextPanel entity={process} />
         </div>
+      );
+      panels[SideTabId.Analysis] = <AnalysisPanel process={process} />;
+      panels[SideTabId.SkillsAgents] = (
+        <SkillsAgentsPanel
+          workerType={process.worker_type ?? null}
+          sessionId={process.session_id ?? null}
+        />
       );
     }
     if (inputDirInfo) {
@@ -1686,9 +1763,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             ) : undefined
           }
           chatActive={showSimpleChat}
-          onToggleView={
-            canToggleView ? () => setChatUiOverride(showSimpleChat ? 'terminal' : 'chat') : undefined
-          }
+          switching={switching}
+          onToggleView={canToggleView ? () => void handleToggleView() : undefined}
         />
       )}
     </div>

@@ -1,3 +1,7 @@
+---
+id: 3602c19b-4412-527d-892e-2f408e14a09c
+---
+
 # WikiTip
 
 WikiTip is a small, bidirectional connector between an inline UI element and a
