@@ -7,6 +7,7 @@ import CodeEditor from '@src/components/code-editor/CodeEditor';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetRoutingMethod, EDITOR_TYPES, editorForType } from '@src/navigation/asset-doc-types';
 import { EntityResolutionGate } from './EntityResolutionGate';
+import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
@@ -58,7 +59,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     ptr && ptr.editor !== AssetEditor.CODE && ptr.method === AssetRoutingMethod.TYPEID
       ? new TypeId(ptr.value)
       : null;
-  const { data: typeIdEntity } = useEntity(typeId);
+  const { data: typeIdEntity, isLoading: entityLoading, isError: entityError, refetch: refetchEntity } = useEntity(typeId);
   const { computeNode } = useAgentContext();
 
   // Derive the FSRef + the record type for this asset in ONE unconditional memo
@@ -105,6 +106,28 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
   // code: file-only, no entity. CodeEditor parses the compute-node-rooted path.
   if (ptr.editor === AssetEditor.CODE) {
     return <CodeEditor activePath={ptr.value} />;
+  }
+
+  // A typeid pointer whose entity has SETTLED with nothing usable (404 /
+  // fetch error / resolved-but-no-asset_ref — e.g. a tab pointing at a
+  // markdown that was never materialized) is terminal, not "still
+  // connecting". Surface the shared missing-asset card instead of spinning
+  // forever — the `!derived` guard below otherwise conflates this with the
+  // genuine loading state. (Only the loading window keeps the spinner.)
+  if (
+    typeId &&
+    ptr.method === AssetRoutingMethod.TYPEID &&
+    !entityLoading &&
+    (entityError || !assetRef)
+  ) {
+    return (
+      <MissingAssetCard
+        typeLabel={typeId.type}
+        fsRef={new FSRef(typeId.toString(), computeNode?.typeId ?? typeId)}
+        onRetry={() => void refetchEntity()}
+        entity={typeIdEntity ?? null}
+      />
+    );
   }
 
   if (!derived) return <ConnectingFallback />;
