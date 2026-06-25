@@ -6,7 +6,7 @@ tags: ''
 allowed-tools: Read, Write, Bash, Grep, Glob
 output-dir: .flow/skills/agent-trace/_results
 instructions-file: .flow/skills/agent-trace/instructions.md
-version: 2
+version: 3
 ---
 
 # Agent Trace Analyzer
