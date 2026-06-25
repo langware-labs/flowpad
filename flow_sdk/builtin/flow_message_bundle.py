@@ -271,6 +271,47 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     )
 
 
+async def _pack_markdown_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/markdown-@<id>/document.md`` (the markdown source).
+
+    Body-bearing like SPEC: the receiver restores the ``.md`` and reindexes so
+    the MARKDOWN row materializes with the SAME id (frontmatter ``id``). Prefer
+    a verbatim copy of the source file (preserves all frontmatter); fall back to
+    reconstructing from the entity's content when there's no source on disk.
+    Without this a shared markdown asset never transfers — the chip can't resolve
+    and the receiver's Download button never clears.
+
+    Markdown is FS-derived (no registered entity class), so we read the local
+    record folder's ``metadata.json`` directly — the same folder + ``asset_ref``
+    the materialization check (``_type_id_record_materialized``) probes."""
+    from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
+
+    mtype = EntityType.MARKDOWN.value
+    meta = get_default_records_root() / mtype / record_stem(mtype, entry_id) / "metadata.json"
+    if not meta.exists():
+        return
+    try:
+        data = json.loads(meta.read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError):
+        return
+    md_dir = attachment_dir / f"{mtype}-@{entry_id}"
+    md_dir.mkdir(parents=True, exist_ok=True)
+    dest = md_dir / "document.md"
+    src = data.get("asset_ref")
+    if src and Path(src).exists():
+        rewritten = _inject_id_into_frontmatter_text(Path(src).read_text(encoding="utf-8"), entry_id)
+        if rewritten is None:
+            shutil.copy2(Path(src), dest)  # source already carries the id → verbatim
+        else:
+            dest.write_text(rewritten, encoding="utf-8")
+        return
+    # Fallback: no source file on disk — reconstruct from the record metadata.
+    # Prefer ``body`` (pure markdown) over ``content`` (body + appended links).
+    title = data.get("title") or data.get("name") or "Untitled"
+    body = data.get("body") or data.get("content") or ""
+    dest.write_text(f'---\nid: {entry_id}\ntitle: "{title}"\n---\n{body}', encoding="utf-8")
+
+
 async def _pack_conversation_attachment(
     entry_id: str, flow_message: "FlowMessage", attachment_dir: Path,
 ) -> None:
@@ -364,6 +405,8 @@ async def _pack_attachment_entry(
         await _pack_git_branch_attachment(entry_id, attachment_dir)
     elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
         await _pack_flowpad_diagnosis_attachment(entry_id, attachment_dir)
+    elif entry_type == EntityType.MARKDOWN.value:
+        await _pack_markdown_attachment(entry_id, attachment_dir)
     elif entry_type in _FS_ROOTED_TYPES:
         await _pack_fs_rooted_attachment(entry_type, entry_id, attachment_dir)
 
@@ -537,6 +580,37 @@ async def _reindex_project_root(root: Path) -> None:
     from flow_sdk.fs_store.record_types import RecordType
 
     await _reindex_root(root, RecordType.REAL_PROJECT_CWD, types=(RecordType.SPEC,))
+
+
+async def _reindex_markdown_root(docs_root: Path) -> None:
+    """Index a restored shared-markdown ``docs/`` root as a project-cwd container
+    so ``markdown_in_folder_fn`` materializes the MARKDOWN row from its real
+    ``.md``. Scoped to MARKDOWN and pointed at the ``docs/`` subdir ONLY — never
+    the whole staging root — so it can't also re-index restored ``specs/*.md`` as
+    plain-markdown duplicates (the inverse of ``_reindex_project_root``'s guard).
+    """
+    from flow_sdk.fs_store.record_types import RecordType
+
+    await _reindex_root(docs_root, RecordType.REAL_PROJECT_CWD, types=(RecordType.MARKDOWN,))
+
+
+def _restore_markdown_source(md_file: Path, entry_id: str, staging_root: Path) -> None:
+    """Restore a bundle markdown ``.md`` into ``<staging>/docs/markdown-@<id>/``.
+
+    The post-loop MARKDOWN reindex (over the ``docs/`` subdir) materializes the
+    row from this real file. Entity identity comes from the frontmatter ``id``
+    (``markdown_id`` prefers it), copied verbatim when present, else the shared
+    ``entry_id`` is injected so the SAME row materializes rather than a
+    uuid5(path) duplicate. The folder is under ``docs/`` (not a typed-record dir),
+    so ``markdown_in_folder_fn`` indexes it.
+    """
+    dest = staging_root / "docs" / f"{EntityType.MARKDOWN.value}-@{entry_id}" / "document.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    rewritten = _inject_id_into_frontmatter_text(md_file.read_text(encoding="utf-8"), entry_id)
+    if rewritten is None:
+        shutil.copy2(md_file, dest)  # bundle already carries the id → verbatim
+    else:
+        dest.write_text(rewritten, encoding="utf-8")
 
 
 def _restore_spec_source(spec_file: Path, entry_id: str, staging_root: Path) -> None:
@@ -1008,6 +1082,7 @@ async def unpack_bundle(
         task_id: str = ""
         fs_rooted_restored = False
         indexable_restored = False
+        markdown_restored = False
         # Staging destination for source-backed shared entities (spec, …): the
         # conversation's OWN data folder. Sources are restored there verbatim,
         # then indexed as a project-cwd root (`spec_project_fn` scans
@@ -1059,6 +1134,16 @@ async def unpack_bundle(
                         # when the bundle carries the id.
                         _restore_spec_source(spec_file, entry_id, staging_root)
                         indexable_restored = True
+
+                elif entry_type == EntityType.MARKDOWN.value:
+                    # Shared markdown asset: restore the .md into the staging
+                    # ``docs/`` dir, then let the post-loop MARKDOWN reindex
+                    # materialize the row (``extract_markdown`` → ``from_record``)
+                    # so the receiver's chip resolves and body_downloaded clears.
+                    md_file = entry_dir / "document.md"
+                    if md_file.exists() and staging_root is not None:
+                        _restore_markdown_source(md_file, entry_id, staging_root)
+                        markdown_restored = True
 
                 elif entry_type == BuiltinEntityType.TASK.value:
                     task_data = _read_entity_header(entry_dir)
@@ -1247,6 +1332,10 @@ async def unpack_bundle(
         # content-less stub. Skipped (zero-cost) when nothing was restored.
         if indexable_restored and staging_root is not None:
             await _reindex_project_root(staging_root)
+        # Markdown reindex is scoped to the ``docs/`` subdir (see
+        # _reindex_markdown_root) so it can't re-index restored specs/*.md.
+        if markdown_restored and staging_root is not None:
+            await _reindex_markdown_root(staging_root / "docs")
 
         # 5. Resolve FILE attachment paths and materialize the top-level FlowMessage
         # via the unified write path. ``materialize_flow_message`` saves the
