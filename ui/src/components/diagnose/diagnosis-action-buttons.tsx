@@ -91,7 +91,10 @@ export function DiagnosisActionButtons({
       </div>
 
       {forwardOpen && (
-        <ul className="mt-2 flex flex-col gap-1" data-testid="feed-forward-conversations">
+        <ul
+          className="mt-2 flex min-h-0 max-h-48 flex-col gap-1 overflow-y-auto overscroll-contain"
+          data-testid="feed-forward-conversations"
+        >
           {conversations.length === 0 ? (
             <li className="px-2 py-1 text-xs text-muted-foreground">No conversations yet.</li>
           ) : (
