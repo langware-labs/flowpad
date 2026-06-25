@@ -478,12 +478,15 @@ export function ConversationView({
         </div>
       )}
 
-      {draftMessages.length === 0 && (
-        <MessageComposer
-          conversationId={conversationId}
-          onSent={() => void refetch()}
-        />
-      )}
+      {/* Always render the reply composer. A pending draft (e.g. an "Approve &
+          Execute" auto-reply awaiting review) renders above as its own editable
+          bubble with Send/Discard — but it must not block composing a fresh reply.
+          The plain composer never auto-creates a draft, so there's no duplication
+          loop. */}
+      <MessageComposer
+        conversationId={conversationId}
+        onSent={() => void refetch()}
+      />
 
       {executeTarget && (
         <ExecutePromptDialog
