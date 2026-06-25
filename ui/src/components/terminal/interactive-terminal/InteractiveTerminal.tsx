@@ -472,8 +472,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         : rawAnnotationElements.filter((el) => el.kind !== 'prompt'),
     [rawAnnotationElements, traceFilters.promptAnnotations],
   );
-  const showAnnotationGutter = !!process?.session_id && colVis.annotations;
-  const reserveAnnotationSpace = colVis.annotations;
+  const showAnnotationGutter = isAdvanced && !!process?.session_id && colVis.annotations;
+  const reserveAnnotationSpace = isAdvanced && colVis.annotations;
 
   // Single source of truth: the entity's persisted ``plan_path``.
   // listen.py's ExitPlanMode hook + the PTY-trigger getPlan() flow both
