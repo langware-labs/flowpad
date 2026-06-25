@@ -648,23 +648,7 @@ def start_server(port: int):
     Args:
         port: Port number to listen on
     """
-    # Tests run this in a daemon thread that is never joined; on Linux the
-    # native uvicorn deps (uvloop's C event loop, httptools' C HTTP parser)
-    # segfault when that thread is killed at interpreter shutdown (exit 139
-    # after all tests pass). Force the pure-Python loop + HTTP parser under
-    # tests so teardown is clean (the default `websockets` impl is already
-    # pure-Python). Production keeps the fast C defaults ("auto").
-    if os.environ.get("TESTING") == "true":
-        uvicorn.run(
-            app,
-            host="127.0.0.1",
-            port=port,
-            log_level="warning",
-            loop="asyncio",
-            http="h11",
-        )
-    else:
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
 def wait_for_login_callback(timeout_sec: int = None):
