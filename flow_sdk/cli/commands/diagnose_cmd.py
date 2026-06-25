@@ -147,7 +147,11 @@ class _Renderer:
 
 
 async def _post_home_feed_entry(
-    *, summary: str, conversation_id: str | None = None, flow_message_id: str | None = None
+    *,
+    summary: str,
+    conversation_id: str | None = None,
+    flow_message_id: str | None = None,
+    diagnosis_id: str | None = None,
 ) -> str | None:
     """Post the Home-Feed card for a recorded diagnosis, SDK-direct.
 
@@ -182,6 +186,7 @@ async def _post_home_feed_entry(
             message_text=(summary or "").strip(),
             conversation_id=conversation_id,
             flow_message_id=flow_message_id,
+            diagnosis_id=diagnosis_id,
         )
         suggest = await suggest.save(user.typeid)
         feed = FeedEntry(
@@ -450,6 +455,21 @@ async def _run_diagnose(
             conv_id = recorded.get("conversation_id")
             msg_id = recorded.get("flow_message_id")
             has_issue = bool(conv_id and msg_id)
+
+            # Stamp the user's own free-text description onto the record. report.py
+            # (run by the agent) only ever sees the agent-observed ``symptoms`` — the
+            # raw text the user typed lives only here in the CLI runner — so we persist
+            # it now, after the record exists, where the "Report issue" email reads it.
+            if did and message:
+                with contextlib.suppress(Exception):
+                    from flow_sdk.fs_store.fs_record import FSRecord
+
+                    rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
+                    if rec is not None:
+                        rec.save_metadata_field("user_report", message)
+                        rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
+                        if rec is not None:
+                            await rec.sync_to_db()
             if callable(create_feed_entry):
                 want_feed = create_feed_entry(has_issue)
             else:
@@ -480,7 +500,10 @@ async def _run_diagnose(
             if want_feed:
                 summary = (getattr(diag, "summary", None) or getattr(diag, "title", None) or "") if diag else ""
                 feed_entry_id = await _post_home_feed_entry(
-                    summary=summary, conversation_id=conv_id, flow_message_id=msg_id
+                    summary=summary,
+                    conversation_id=conv_id,
+                    flow_message_id=msg_id,
+                    diagnosis_id=did,
                 )
             emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
             emit({

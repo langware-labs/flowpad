@@ -71,7 +71,8 @@ export interface ViewerMeta {
     | 'GitGraph'
     | 'BrainCircuit'
     | 'Users'
-    | 'Inbox';
+    | 'Inbox'
+    | 'Stethoscope';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -348,6 +349,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.GRAPH_CONTEXT]: {
     title: 'Context',
     iconName: 'BrainCircuit',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.DIAGNOSIS]: {
+    title: 'Diagnosis',
+    iconName: 'Stethoscope',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },

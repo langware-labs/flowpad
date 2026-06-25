@@ -1,5 +1,6 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
-import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
+import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
+import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { AgentTrace, FlowMessage, MessageSuggest, UsageReport, UserNote, type FeedEntry } from '@sdk';
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
@@ -15,7 +16,10 @@ interface FeedEntryCardProps {
   busy: boolean;
   error?: string;
   onDismiss: (entry: FeedEntry) => void;
-  onReportMessageSuggest: (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => void;
+  /** "Report issue" — email the diagnosis to the Flowpad team. */
+  onReportIssue: (entry: FeedEntry, suggest: MessageSuggest) => void;
+  /** "Forward" — post the report into the chosen conversation. */
+  onForwardMessageSuggest: (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => void;
 }
 
 export function FeedEntryCard({
@@ -23,7 +27,8 @@ export function FeedEntryCard({
   busy,
   error,
   onDismiss,
-  onReportMessageSuggest,
+  onReportIssue,
+  onForwardMessageSuggest,
 }: FeedEntryCardProps) {
   const feedData = useMemo(() => FeedData.fromEntry(entry), [entry]);
   const targetTypeId = feedData.targetTypeId;
@@ -71,7 +76,8 @@ export function FeedEntryCard({
         error={error}
         feedData={feedData}
         onDismiss={onDismiss}
-        onReport={onReportMessageSuggest}
+        onReportIssue={onReportIssue}
+        onForward={onForwardMessageSuggest}
       />
     );
   }
@@ -172,7 +178,8 @@ interface MessageSuggestFeedEntryCardProps {
   error?: string;
   feedData: FeedData;
   onDismiss: (entry: FeedEntry) => void;
-  onReport: (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => void;
+  onReportIssue: (entry: FeedEntry, suggest: MessageSuggest) => void;
+  onForward: (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => void;
 }
 
 function MessageSuggestFeedEntryCard({
@@ -182,12 +189,30 @@ function MessageSuggestFeedEntryCard({
   error,
   feedData,
   onDismiss,
-  onReport,
+  onReportIssue,
+  onForward,
 }: MessageSuggestFeedEntryCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
   const title = suggest.text ?? 'Flowpad diagnostics';
   const body = suggest.message_text ?? '';
   const expandable = body.length > 80 || body.includes('\n');
+  const isDiagnosis = suggest.kind !== 'draft_reply';
+
+  const viewButton =
+    isDiagnosis && suggest.diagnosis_id ? (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={busy}
+        onClick={() => setViewOpen(true)}
+        className="h-6 gap-1 px-2 text-xs"
+      >
+        <Eye className="h-3.5 w-3.5" />
+        View
+      </Button>
+    ) : null;
 
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
@@ -257,16 +282,36 @@ function MessageSuggestFeedEntryCard({
           draftFlowMessageId={suggest.flow_message_id}
           onDone={() => onDismiss(entry)}
         />
-      ) : suggest.conversation_id ? (
-        <DiagnosisActionButtons
-          suggestedConversationId={suggest.conversation_id}
-          busy={busy}
-          error={error}
-          showDismiss={false}
-          onDismiss={() => onDismiss(entry)}
-          onReport={(conversationId) => onReport(entry, suggest, conversationId)}
-        />
-      ) : null}
+      ) : (
+        <>
+          {/* View opens the diagnosis popup, right-most on the Report/Forward row.
+              Report/Forward never dismiss the card (only the frame's eye-off does). */}
+          {isDiagnosis && suggest.conversation_id ? (
+            <DiagnosisActionButtons
+              suggestedConversationId={suggest.conversation_id}
+              busy={busy}
+              error={error}
+              showDismiss={false}
+              canReport={!!suggest.diagnosis_id}
+              onDismiss={() => onDismiss(entry)}
+              onReportIssue={() => onReportIssue(entry, suggest)}
+              onForward={(conversationId) => onForward(entry, suggest, conversationId)}
+              trailing={viewButton}
+            />
+          ) : (
+            viewButton && <div className="mt-2 flex justify-end">{viewButton}</div>
+          )}
+          {isDiagnosis && suggest.diagnosis_id && (
+            <DiagnosisReportModal
+              open={viewOpen}
+              diagnosisId={suggest.diagnosis_id}
+              conversationId={suggest.conversation_id ?? undefined}
+              flowMessageId={suggest.flow_message_id ?? undefined}
+              onClose={() => setViewOpen(false)}
+            />
+          )}
+        </>
+      )}
     </FeedEntryFrame>
   );
 }

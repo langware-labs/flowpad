@@ -46,6 +46,14 @@ class FlowpadDiagnosisMetadata(BaseMeta):
         default=None,
         description="One-paragraph plain-language summary of the diagnosis, shown to the user.",
     )
+    user_report: Optional[str] = Field(
+        default=None,
+        description=(
+            "The user's own free-text description of the issue, typed when running "
+            "the diagnosis. Raw user words — distinct from the agent-observed "
+            "``symptoms``. Empty when the user asked for a full sweep."
+        ),
+    )
 
 
 FLOWPAD_DIAGNOSIS = TypeMetadata(
