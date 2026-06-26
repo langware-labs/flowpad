@@ -69,7 +69,12 @@ const navItems: readonly NavItem[] = [
   { title: 'Inbox', icon: Inbox, viewType: ViewType.INBOX, vis: ALL_VISIBLE },
   { title: 'Shell', icon: MessageSquare, viewType: ViewType.SHELL, vis: ALL_VISIBLE },
   // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW, vis: ALL_VISIBLE },
-  { title: 'Assets', icon: BookOpen, viewType: ViewType.ASSETS, vis: ALL_VISIBLE },
+  {
+    title: 'Assets',
+    icon: BookOpen,
+    viewType: ViewType.ASSETS,
+    vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'visible', [ViewMode.Dev]: 'visible' },
+  },
   // { title: 'Editor', icon: Code, viewType: ViewType.EDITOR, vis: ALL_VISIBLE },
   {
     title: 'Triggers',
