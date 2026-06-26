@@ -82,7 +82,8 @@ EXPECTED = {
     "AGENT_TRACE": "agent_trace", "TAB": "tab",
     # GraphContext entity (0.2.67-fixes) — additive member; existing values stay frozen.
     "GRAPH_CONTEXT": "graph_context",
-    # UsageReport entity (daily usage analysis) — additive member; existing values stay frozen.
+    # Usage-report feature (16b7936e) — additive member; brand-new type, no
+    # existing value changed, so no migration. Existing values stay frozen.
     "USAGE_REPORT": "usage_report",
 }
 

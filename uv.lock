@@ -888,7 +888,7 @@ requires-dist = [
     { name = "ptyprocess", marker = "sys_platform != 'win32'" },
     { name = "pybars3", specifier = "~=0.9.7" },
     { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pydantic-ai-slim" },
+    { name = "pydantic-ai-slim", specifier = ">=1.62,<2" },
     { name = "python-dotenv" },
     { name = "pywinpty", marker = "sys_platform == 'win32'" },
     { name = "requests" },

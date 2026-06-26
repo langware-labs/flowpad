@@ -240,9 +240,10 @@ class TestEntityRecordCwdSync:
         legacy_id = Project.derive_id_for_path(cwd)
         canonical_entity_id = "22222222-3333-4444-8555-666666666666"
 
-        # The entity-table read (get_cached_projects) returns the real Project
-        # row: its `id` is canonical; `project_id` carries the legacy derived id
-        # for back-compat row matching.
+        # resolve_project_scope sources the by-id/by-record maps from the cached
+        # entity read (get_cached_projects) and enriches via the entity-table GET
+        # (get_known_projects) — NOT the footer FETCH (get_all_projects). Patch the
+        # seams the hot path actually calls (see search_filters.resolve_project_scope).
         async def fake_get_cached_projects(*_args, **_kwargs):
             return [
                 SimpleNamespace(
