@@ -27,7 +27,7 @@ import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import type { ProcessKind } from './process-types';
-import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
   TranscriptSource as TranscriptSourceType,
@@ -2167,53 +2167,40 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Toggle CHAT → TERMINAL: materialise (resume) the interactive PTY for this
-   * session. Chat and terminal are mutually-exclusive execution modes of ONE
-   * logical session — chat runs headless (print-mode, no PTY); terminal is the
-   * interactive xterm. This is just ``start({visible:true})`` (the backend
-   * ``open`` sets ``visible=True`` and resumes the session via the worker's
-   * resume logic), plus the ``restarted`` event so the terminal clears + attaches.
-   * The caller disables the toggle mid-turn (mutual exclusion); the backend
-   * open-lock prevents a double-spawn.
+   * Standardized transport switch — the single way to flip a session between the
+   * interactive PTY terminal (`WorkerMode.Interactive`) and headless CLI /
+   * JSON-stream (`WorkerMode.CLI`). One logical session (one `session_id` /
+   * transcript); routing stays `headless == !visible`, and the durable `pty_mode`
+   * intent is persisted so a reload keeps the chosen transport.
+   *
+   * Frontend → backend: the CLI direction calls the `switch-mode` action (kill
+   * PTY, visible=False, pty_mode=False); the PTY direction routes through the
+   * canonical `start()`/`open` path (which the backend `switch-mode` INTERACTIVE
+   * branch mirrors for non-UI callers) so the live PTY attach happens, plus the
+   * `restarted` event so the terminal clears + re-attaches. Rejected mid-turn
+   * (backend 409); the caller disables the toggle while a turn is in flight.
    */
-  async switchToTerminal(opts?: { cols?: number; rows?: number }): Promise<boolean> {
-    // Durable transport intent — kept in lock-step with `visible`. The backend
-    // `open` action persists `pty_mode=true` when it sets `visible=true`, so a
-    // later reload stays in terminal mode; mirror it optimistically here.
-    this.pty_mode = true;
-    const ok = await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
-    this.emit('restarted', { process: this });
-    return ok;
-  }
-
-  /**
-   * Toggle TERMINAL → CHAT: close the PTY worker and revert to headless routing
-   * (``visible=False``), keeping ``session_id`` + transcript so the next
-   * ``prompt()`` resumes the same session headless. Mirrors {@link exit}'s
-   * optimistic CLOSING + user-stop guard, but routes through the dedicated
-   * ``switch-to-chat`` action (which also resets ``visible`` — ``exit`` alone
-   * leaves it True so a plain restart stays in terminal mode). Rejected by the
-   * backend (409) if a turn is in flight.
-   */
-  async switchToChat(): Promise<void> {
-    const { Shell } = await import('../entities/shell');
+  async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
+    if (mode === WorkerMode.Interactive) {
+      this.pty_mode = true;
+      await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
+      this.emit('restarted', { process: this });
+      return;
+    }
+    // CLI: one `switch-mode` round-trip. Mirror exit()'s optimistic CLOSING +
+    // user-stop guard. Do NOT emit 'restarted' — it drives re-attachPty, wrong
+    // after the PTY is killed; the view's toggle handler owns the chat reconcile.
     this._userInitiatedStop = true;
     const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
     if (shell) {
       shell.status = ShellStatus.CLOSING;
       dataManager.notifyEntityChanged(shell);
     }
-    const actionInfo = new ActionInfo('switch-to-chat', AgenticProcess.type, this.id, 'POST');
+    const actionInfo = new ActionInfo('switch-mode', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { mode };
     await dataManager.callAction(actionInfo);
     this.visible = false;
-    // Durable transport intent — the `switch-to-chat` action persists
-    // `pty_mode=false` so the loader keeps this session headless across reload.
     this.pty_mode = false;
-    // Deliberately do NOT emit 'restarted' here: that event drives the
-    // InteractiveTerminal to re-``attachPty`` — correct for →terminal (a new PTY
-    // to attach), but →chat has just KILLED the PTY, so re-attaching the dead
-    // shell throws "PTY not found" on a loop. The chat reconcile (clear +
-    // loadHistory) is owned by the view's toggle handler, not this event.
   }
 
   /**
