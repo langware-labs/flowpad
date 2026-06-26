@@ -1,8 +1,9 @@
 ---
-id: "9ad58753-7eb4-501a-a8d2-65001e264330"
-name: "skillit"
-description: "Skill quality lens — review a skill against skill-writing best practices,"
-tags: ""
+id: 9ad58753-7eb4-501a-a8d2-65001e264330
+name: skillit
+description: Skill quality lens — review a skill against skill-writing best practices,
+tags: ''
+version: 2
 ---
 
 # Skillit — review & correct skills
@@ -53,4 +54,3 @@ whole folder — SKILL.md plus everything it routes to.
 * After any edit, audit the touched files against `structure.md #1` (indexes
   stay thin) and `structure.md #6` (every routing reference resolves, every
   file reachable). If the audit fails, revert the edit.
-
