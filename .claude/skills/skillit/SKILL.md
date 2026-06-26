@@ -3,7 +3,7 @@ id: 9ad58753-7eb4-501a-a8d2-65001e264330
 name: skillit
 description: Skill quality lens — review a skill against skill-writing best practices,
 tags: ''
-version: 2
+version: 4
 ---
 
 # Skillit — review & correct skills
