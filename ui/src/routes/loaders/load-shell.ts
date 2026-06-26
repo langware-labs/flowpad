@@ -32,6 +32,7 @@ import {
   TypeId,
 } from '@sdk';
 import { closeTerminalTab } from '@src/tabs/useTabs';
+import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, DockPointer } from '@src/navigation';
@@ -124,6 +125,10 @@ export async function loadShell(shellId: string): Promise<Shell> {
   // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
   // must stay fast; the in-cache bump above is the synchronous seed.
   void shell.activate().catch(() => {});
+  // Stamp recency on the Tab too — the close-resolver reads Tab.last_active_at,
+  // not the Shell row, so without this close-to-most-recently-active falls back
+  // to tab_order.
+  stampTabRecencyForTarget(Shell.type, shell.id);
   dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   return shell;
