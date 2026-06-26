@@ -12,6 +12,7 @@ import { notify } from '@src/notifications';
 import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
+import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { useChatHistory } from './useChatHistory';
 import { ChatsFilterBar } from './ChatsFilterBar';
 import { ChatsList } from './ChatsList';
@@ -20,14 +21,15 @@ import { ChatsList } from './ChatsList';
  * Chats left-menu — the navigator (Zone B) for the Shell/chat view. Lists past
  * chats (the existing worker-history list) grouped into time buckets, with the
  * scope filter pinned in the header like every other side menu (Assets/Triggers).
- * Clicking a chat opens/resumes it via `openShellProcess` (URL-first); star and
- * delete are per-row side effects. Implements the planned
+ * Clicking a chat opens/resumes it by `worker_id` via the `getByWorkerId` heal
+ * (URL-first); star and delete are per-row side effects. Implements the planned
  * `navigatorRegistry: [ViewType.SHELL]: ChatsNavigator`.
  */
 export function ChatsNavigator() {
   const { navigation, currentDock } = useDockNavigation();
   const { project } = useProject();
   const { activeTerminalTargetTypeId } = useContext();
+  const { resumeInTerminal } = useResumeInTerminal();
 
   const [search, setSearch] = useState('');
   const [workers, setWorkers] = useState<string[]>([]);
@@ -61,17 +63,20 @@ export function ChatsNavigator() {
     setWorkers((prev) => (prev.includes(value) ? prev.filter((w) => w !== value) : [...prev, value]));
   }, []);
 
+  // Open/resume by the durable `worker_id` (the on-disk session), NOT the
+  // lazily-materialized AgenticProcess entity: `getByWorkerId` heals/materializes
+  // the process from the transcript and attaches the live PTY. Gating on
+  // `agentic_process_id` stranded on-disk-resumable sessions never opened through
+  // this instance; it's now only a render hint (active-row highlight / favorite).
   const handleSelect = useCallback(
     (entry: WorkerHistoryEntry) => {
-      if (!entry.agentic_process_id) {
+      if (!entry.worker_id) {
         notify.error({ title: 'Cannot open', message: 'This chat has no resumable session.' });
         return;
       }
-      void navigation.openShellProcess(entry.agentic_process_id).then((opened) => {
-        if (!opened) notify.error({ title: 'Chat unavailable', message: 'That chat is no longer in your workspace.' });
-      });
+      resumeInTerminal(entry.worker_id, undefined, undefined, entry.worker_type);
     },
-    [navigation],
+    [resumeInTerminal],
   );
 
   const handleToggleFavorite = useCallback((entry: WorkerHistoryEntry) => {
