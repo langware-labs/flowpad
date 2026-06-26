@@ -48,7 +48,7 @@ export interface CleanupRecord {
 }
 
 export type LoadedNext =
-  | { kind: 'process'; process: AgenticProcess; shell: Shell }
+  | { kind: 'process'; process: AgenticProcess; shell: Shell | null }
   | { kind: 'shell'; shell: Shell };
 
 export interface LoadNextProcessOptions {

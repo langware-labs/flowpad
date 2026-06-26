@@ -356,10 +356,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     workerType: 'claude_code' | 'codex' | 'copilot',
     prompt?: string,
     project?: { id?: string; fs_storage_mount_path?: string | null } | null,
+    opts?: { ptyMode?: boolean },
   ): Promise<AgenticProcess> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.openTab] No local compute node');
     const proj = project ?? dataContext.project;
+    // Transport intent: default PTY (today's behaviour). `ptyMode:false` →
+    // headless launch: `visible:false` so the backend skips the PTY auto-start;
+    // the seeded first prompt drains headlessly server-side.
+    const ptyMode = opts?.ptyMode !== false;
     // Seed the prompt onto the queue via createProcess (`launchPrompt`), which
     // enqueues it server-side BEFORE the visible auto-start. The worker then
     // boots with the queued head as its launch instruction — deterministic,
@@ -372,7 +377,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         ...(proj?.id ? { projectId: proj.id } : {}),
         workerType,
       },
-      { visible: true, watchProcess: false, ...(prompt ? { launchPrompt: prompt } : {}) },
+      { visible: ptyMode, pty_mode: ptyMode, watchProcess: false, ...(prompt ? { launchPrompt: prompt } : {}) },
     );
     process.openTerminalDock();
     return process;
@@ -415,9 +420,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
      *  `useProcessesForTarget` find this process later (e.g. the analyzer for a
      *  received transcript, keyed `claude_session/<sessionId>`). */
     target?: string;
+    /** Transport intent: true → interactive PTY (default), false → headless
+     *  JSON-stream (no PTY/xterm). */
+    ptyMode?: boolean;
   }): Promise<AgenticProcess> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
+    const ptyMode = opts.ptyMode !== false;
     const process = await computeNode.createProcess(
       {
         workdir: opts.workdir,
@@ -428,7 +437,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         ...(opts.processType ? { processType: opts.processType } : {}),
         ...(opts.target ? { targetVfsPath: opts.target } : {}),
       },
-      { visible: true, watchProcess: false, ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}) },
+      { visible: ptyMode, pty_mode: ptyMode, watchProcess: false, ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}) },
     );
     process.openTerminalDock();
     return process;
@@ -2168,6 +2177,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * open-lock prevents a double-spawn.
    */
   async switchToTerminal(opts?: { cols?: number; rows?: number }): Promise<boolean> {
+    // Durable transport intent — kept in lock-step with `visible`. The backend
+    // `open` action persists `pty_mode=true` when it sets `visible=true`, so a
+    // later reload stays in terminal mode; mirror it optimistically here.
+    this.pty_mode = true;
     const ok = await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
     this.emit('restarted', { process: this });
     return ok;
@@ -2193,6 +2206,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const actionInfo = new ActionInfo('switch-to-chat', AgenticProcess.type, this.id, 'POST');
     await dataManager.callAction(actionInfo);
     this.visible = false;
+    // Durable transport intent — the `switch-to-chat` action persists
+    // `pty_mode=false` so the loader keeps this session headless across reload.
+    this.pty_mode = false;
     // Deliberately do NOT emit 'restarted' here: that event drives the
     // InteractiveTerminal to re-``attachPty`` — correct for →terminal (a new PTY
     // to attach), but →chat has just KILLED the PTY, so re-attaching the dead

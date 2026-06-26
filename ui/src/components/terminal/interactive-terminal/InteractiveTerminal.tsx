@@ -194,7 +194,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const isAdvanced = useIsAdvanced();
   const chatOverride = useChatUiOverride();
   const wantChat = chatOverride != null ? chatOverride === 'chat' : !isAdvanced;
-  const showSimpleChat = wantChat && !embedded && !!process;
+  // Headless (`pty_mode === false`): there is no PTY/xterm to skin — the chat
+  // pane is the ONLY view. Force it on regardless of the chat/terminal skin
+  // override, and (in the render) skip mounting the xterm container entirely so
+  // no PtySync attach is attempted for a process that has no shell.
+  const isHeadless = !embedded && !!process && process.pty_mode === false;
+  const showSimpleChat = isHeadless || (wantChat && !embedded && !!process);
   const canToggleView = !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
@@ -1630,28 +1635,34 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   paddingRight: showAnnotationGutter || reserveAnnotationSpace ? 24 : 0,
                 }}
               >
-                <div
-                  ref={xtermContainerRef}
-                  className="relative min-h-0 min-w-0 flex-1"
-                  onClick={handleContainerClick}
-                  tabIndex={0}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    void handleFileDrop(e);
-                  }}
-                >
-                  {searchOpen && (
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <TerminalSearchBar
-                        searchAddon={searchAddonRef.current}
-                        onClose={() => {
-                          setSearchOpen(false);
-                          terminalRef.current?.focus();
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
+                {/* Headless (pty_mode=false): don't render the xterm container at
+                    all → the mount effect early-returns on the missing ref, so no
+                    XTerm/PtySync is created. SimpleChatPane (absolute overlay
+                    below) is the whole view. */}
+                {!isHeadless && (
+                  <div
+                    ref={xtermContainerRef}
+                    className="relative min-h-0 min-w-0 flex-1"
+                    onClick={handleContainerClick}
+                    tabIndex={0}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      void handleFileDrop(e);
+                    }}
+                  >
+                    {searchOpen && (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <TerminalSearchBar
+                          searchAddon={searchAddonRef.current}
+                          onClose={() => {
+                            setSearchOpen(false);
+                            terminalRef.current?.focus();
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               {/* Gutters — absolutely positioned over padded areas */}
               {showGutter && (

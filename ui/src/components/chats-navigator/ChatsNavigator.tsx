@@ -13,6 +13,7 @@ import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useChatHistory } from './useChatHistory';
 import { ChatsFilterBar } from './ChatsFilterBar';
 import { ChatsList } from './ChatsList';
@@ -30,6 +31,7 @@ export function ChatsNavigator() {
   const { project } = useProject();
   const { activeTerminalTargetTypeId } = useContext();
   const { resumeInTerminal } = useResumeInTerminal();
+  const isAdvanced = useIsAdvanced();
 
   const [search, setSearch] = useState('');
   const [workers, setWorkers] = useState<string[]>([]);
@@ -111,11 +113,12 @@ export function ChatsNavigator() {
   }, [pendingDelete]);
 
   const handleNewChat = useCallback(() => {
-    void AgenticProcess.openTab('claude_code').catch((err) => {
+    // Standard → headless chat (no PTY); Advanced → interactive PTY terminal.
+    void AgenticProcess.openTab('claude_code', undefined, null, { ptyMode: isAdvanced }).catch((err) => {
       console.error('[ChatsNavigator] new chat failed', err);
       notify.error({ title: 'Could not start chat', message: err instanceof Error ? err.message : String(err) });
     });
-  }, []);
+  }, [isAdvanced]);
 
   const descriptor: NavigatorDescriptor = useMemo(
     () => ({
