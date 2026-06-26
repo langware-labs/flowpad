@@ -66,8 +66,8 @@ type NavItem = {
 
 const navItems: readonly NavItem[] = [
   { title: 'Home', icon: Home, viewType: null, vis: ALL_VISIBLE },
+  { title: 'Chats', icon: MessageSquare, viewType: ViewType.SHELL, vis: ALL_VISIBLE },
   { title: 'Inbox', icon: Inbox, viewType: ViewType.INBOX, vis: ALL_VISIBLE },
-  { title: 'Shell', icon: MessageSquare, viewType: ViewType.SHELL, vis: ALL_VISIBLE },
   // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW, vis: ALL_VISIBLE },
   {
     title: 'Assets',
