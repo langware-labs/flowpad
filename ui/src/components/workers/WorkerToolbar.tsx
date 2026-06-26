@@ -12,6 +12,14 @@ import { useLastWorkerType } from '@src/components/terminal/openers/useLastWorke
 export type WorkerToolbarMode = 'lastOpened' | 'all';
 export type WorkerToolbarVariant = 'icon-row' | 'menu-list';
 
+/**
+ * Canonical compact icon-button style for worker-launch surfaces. Shared so
+ * sibling affordances (e.g. the markdown editor's Run button) sit inline with
+ * the worker icons at the same size. Icons inside use `h-3.5 w-3.5`.
+ */
+export const WORKER_ICON_BUTTON_CLASS =
+  'inline-flex h-7 w-7 items-center justify-center rounded border border-border text-foreground transition-colors hover:bg-muted disabled:opacity-50';
+
 interface WorkerToolbarProps {
   /** Launch the chosen worker. The toolbar persists it as the last opener. */
   onLaunch: (worker: WorkerType) => void | Promise<void>;
@@ -139,7 +147,7 @@ export function WorkerToolbar({
             disabled={starting}
             data-testid={`${testIdPrefix}-launch-${worker}`}
             title={`Start ${workerLabel(worker)}`}
-            className="inline-flex h-7 w-7 items-center justify-center rounded border border-border text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+            className={WORKER_ICON_BUTTON_CLASS}
           >
             <Icon className="h-3.5 w-3.5" />
           </button>
