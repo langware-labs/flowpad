@@ -36,7 +36,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     get_driver,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
-from flow_sdk.builtin.agentic_process.status_predicates import is_process_startable, is_ready_for_input
+from flow_sdk.builtin.agentic_process.status_predicates import WorkerMode, is_process_startable, is_ready_for_input
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
@@ -1201,18 +1201,15 @@ class AgenticProcess(Entity):
             await self.save()
             return ApiFailResponse(message=str(e))
 
-    @action.post(action_name="switch-to-chat")
-    async def switch_to_chat(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Toggle TERMINAL → CHAT: close the PTY worker, keep the session.
+    async def _enter_cli_mode(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Switch to CLI (headless) transport: kill the PTY worker, keep the session.
 
-        Chat and terminal are mutually-exclusive execution modes of ONE logical
-        session (one ``session_id``, one transcript). The CHAT → TERMINAL
-        direction is just ``start_pty(visible=True)`` (existing ``open`` action,
-        resumes the session interactively). This is the inverse: it kills the
-        interactive worker via :meth:`exit` (which preserves ``shell_id`` +
-        ``session_id`` + transcript) and flips ``visible=False`` so the next
-        :meth:`prompt` runs headless and resumes the very same session.
-        ``exit()`` alone can't reset ``visible`` — a plain ``restart``
+        PTY and CLI are mutually-exclusive transports of ONE logical session (one
+        ``session_id``, one transcript). This kills the interactive worker via
+        :meth:`exit` (which preserves ``shell_id`` + ``session_id`` + transcript)
+        and flips ``visible=False`` + ``pty_mode=False`` so the next :meth:`prompt`
+        runs headless and resumes the very same session, and a reload stays
+        headless. ``exit()`` alone can't reset ``visible`` — a plain ``restart``
         (exit+start) must keep it True — so the reset lives here, the explicit
         mode-switch. Rejected mid-turn so two workers never share the transcript.
         """
@@ -1242,6 +1239,35 @@ class AgenticProcess(Entity):
                 "session_id": fresh.session_id,
             }
         )
+
+    @action.post(action_name="switch-mode")
+    async def switch_mode(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Standardized transport switch — the single backend seam the frontend
+        ``AgenticProcess.switchMode(mode)`` (and the ribbon chat⇄terminal toggle)
+        calls. POST body: ``{"mode": "interactive" | "cli"[, cols, rows]}`` —
+        ``WorkerMode`` values (``interactive`` is the PTY worker).
+
+          - ``cli``         → headless JSON-stream (kill PTY, visible=False, pty_mode=False)
+          - ``interactive`` → PTY terminal (spawn PTY, visible=True, pty_mode=True)
+
+        Both are the SAME logical session (one ``session_id``/transcript); routing
+        stays ``headless == !visible``. Rejected mid-turn (409).
+        """
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        raw = str(body.get("mode", "")).lower()
+        try:
+            mode = WorkerMode(raw)
+        except ValueError:
+            return ApiFailResponse(
+                message=f"unknown mode {raw!r} (expected {WorkerMode.INTERACTIVE!r} or {WorkerMode.CLI!r})"
+            )
+        if mode is WorkerMode.CLI:
+            return await self._enter_cli_mode()
+        # INTERACTIVE (PTY): the canonical open path — spawns the PTY and sets
+        # ``visible=True`` (which persists ``pty_mode=True`` in the open tail).
+        return await self._perform_open(instruction=None, visible=True, retry=True)
 
     @action.post(action_name="restart")
     async def http_restart(self) -> ApiSuccessResponse | ApiFailResponse:

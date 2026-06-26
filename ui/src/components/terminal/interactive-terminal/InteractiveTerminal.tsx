@@ -10,6 +10,7 @@ import {
   fsStore,
   ProcessStatus,
   Shell,
+  WorkerMode,
   type AgenticProcess,
   type MarkdownDoc,
 } from '@sdk';
@@ -1444,12 +1445,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   // ── Chat ⇄ Terminal mode switch (mutually-exclusive execution modes) ───────
   // Chat = headless print-mode (no PTY); Terminal = interactive PTY. The toggle
-  // is a real lifecycle action now, not just a view flip: →terminal spawns +
-  // resumes the PTY (switchToTerminal); →chat kills the PTY worker, keeping the
-  // session, and reverts to headless routing (switchToChat). Both reconcile the
-  // transcript (clear + force-reload) so the destination view shows turns the
-  // other mode produced. The backend 409s a mid-turn switch; `switching` guards
-  // against double-trigger and drives the connect spinner.
+  // is a real lifecycle action now, not just a view flip — one standardized
+  // `switchMode(WorkerMode.Interactive|CLI)`: →terminal spawns + resumes the PTY;
+  // →chat kills the PTY worker, keeping the session, and reverts to headless
+  // routing. Both reconcile the transcript (clear + force-reload) so the
+  // destination view shows turns the other mode produced. The backend 409s a
+  // mid-turn switch; `switching` guards against double-trigger + drives the spinner.
   const [switching, setSwitching] = useState(false);
   const handleToggleView = useCallback(async () => {
     if (!process || switching) return;
@@ -1457,13 +1458,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     setSwitching(true);
     try {
       if (toChat) {
-        await process.switchToChat();
+        await process.switchMode(WorkerMode.CLI);
         setChatUiOverride('chat');
       } else {
         const dims = terminalRef.current
           ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows }
           : undefined;
-        await process.switchToTerminal(dims);
+        await process.switchMode(WorkerMode.Interactive, dims);
         setChatUiOverride('terminal');
       }
       // Reconcile: pull in turns the other mode produced. clear() alone leaves
