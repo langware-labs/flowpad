@@ -113,3 +113,34 @@ no clarifying questions, no progress check-ins.** Just write the test, run it, a
 * **`IMPOSSIBLE`** — no proven root cause exists this session, or the bug genuinely cannot be
   captured without a slower/heavier (e.g. e2e) harness than is warranted. Report why, and what
   layer it *would* take.
+
+## Close the loop — confirm against the REAL symptom (mandatory)
+
+A green test is **necessary, not sufficient.** A test reproduces a *layer*; it can pass while
+the original failure still happens, because the switch you toggled was a proxy or only one of
+several causes. So before claiming a root cause is fixed, you must drive the **fix** through the
+**original scenario** — not just the test — and toggle it **both directions there**:
+
+1. Apply the fix. Confirm the test goes green.
+2. **Reproduce the original failure with the fix in place** (same surface the user reported —
+   the real page / command / flow, not the test). It must be **gone**.
+3. **Revert the fix** and reproduce again. The failure must **come back**.
+   Same backend / same state for both directions — change only the one lever, so instance state
+   or caches can't masquerade as the switch.
+
+Use a backend-recorded ground-truth signal where you can (a git commit landing, a row written,
+a log line) rather than a UI/idle heuristic — screenshot "still loading" / network-idle waits
+lie when the app holds persistent connections. Verify the surface actually reached the failing
+code (e.g. the editor really mounted) before trusting an absence-of-symptom as success.
+
+### RCA rejection mode
+
+If step 2 fails — **test green but the original scenario still reproduces** — you have NOT found
+the root cause. Declare **RCA rejection** and:
+
+1. **Undo your code changes** (the fix, and any source seams/exports added only to enable the
+   test). Leave the tree as you found it.
+2. **Restart RCA mode from scratch**, carrying the rejection as evidence: the proven-toggled
+   switch was real but *not the cause of this symptom*, so the true cause is upstream of — or
+   parallel to — what you toggled. Re-reproduce and trace again from there. Do not re-propose the
+   rejected switch.
