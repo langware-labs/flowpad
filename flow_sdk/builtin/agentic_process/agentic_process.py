@@ -3456,12 +3456,18 @@ class AgenticProcess(Entity):
             return WorkerStatus.INITIALIZING
         path = self.driver.transcript_path(self)
         if path is None:
-            if self.status in {
-                ProcessStatus.STARTING.value,
-                ProcessStatus.RUNNING.value,
-                ProcessStatus.STOPPING.value,
-            } and (self.session_id or self.shell_id):
+            # No transcript on disk yet, and the ``_turn_in_flight`` short-circuit
+            # above already ruled out a turn spinning up. So STARTING is the real
+            # lifecycle boot (INITIALIZING), while RUNNING with no in-flight turn
+            # is a spawned-and-idle worker waiting for its first prompt (IDLE) —
+            # reporting INITIALIZING there is what pinned never-prompted sessions
+            # on the spinner forever.
+            if not (self.session_id or self.shell_id):
+                return None
+            if self.status == ProcessStatus.STARTING.value:
                 derived: WorkerStatus | None = WorkerStatus.INITIALIZING
+            elif self.status == ProcessStatus.RUNNING.value:
+                derived = WorkerStatus.IDLE
             else:
                 return None
         else:
