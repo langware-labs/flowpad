@@ -431,6 +431,18 @@ class AgenticProcess(Entity):
             "membership is the ``Tab`` entity (docs/tab-management.md)."
         ),
     )
+    pty_mode: bool = APIField(
+        default=True,
+        persist=Persist.TRUE,
+        description=(
+            "Transport intent for this session. True → interactive PTY "
+            "(``visible`` drives a live terminal, today's behaviour). False → "
+            "headless JSON-stream (``-p``/stream-json, no PTY, no xterm); the "
+            "loader skips the PTY attach so the choice is durable across reload. "
+            "Routing stays ``headless == !visible``; ``pty_mode`` seeds ``visible`` "
+            "at launch and the chat⇄terminal toggle keeps the two in lock-step."
+        ),
+    )
     # last_active_at moved to base Entity (epoch-ms, tab-management.md Part 3).
     auto_rename: bool = APIField(
         default=True,

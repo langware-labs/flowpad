@@ -168,6 +168,10 @@ export interface IAgenticProcess extends IEntity {
   shell_id?: string | null;
   /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
   visible?: boolean;
+  /** Transport intent: true → interactive PTY (default, today's behaviour);
+   *  false → headless JSON-stream (no PTY/xterm). Seeds `visible` at launch and
+   *  is kept durable across reload by the loader. Routing stays headless==!visible. */
+  pty_mode?: boolean;
   /** tabbed / tab_order / last_active_at come from IEntity (base-Entity fields). */
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
@@ -765,6 +769,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
   visible?: boolean;
 
+  /** Transport intent: true → interactive PTY (default); false → headless
+   *  JSON-stream (no PTY/xterm). Durable across reload; seeds `visible` at launch. */
+  pty_mode?: boolean;
+
   /** Tab-strip membership (base-Entity field; see IEntity.tabbed). */
   tabbed?: boolean;
 
@@ -1181,6 +1189,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.process_type = entity.process_type ?? null;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
+    // Default true so an entity that predates the field (or any caller that
+    // doesn't set it) behaves exactly as today (PTY). Only an explicit `false`
+    // selects headless.
+    this.pty_mode = entity.pty_mode ?? true;
     this.tabbed = entity.tabbed ?? entity.visible ?? false;
     this.tab_order = entity.tab_order ?? 0;
     this.last_active_at = entity.last_active_at ?? null;
