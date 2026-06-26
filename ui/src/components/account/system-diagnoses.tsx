@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState, type ComponentType } from 'react';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -15,9 +15,28 @@ import {
   TableHeader,
   TableRow,
 } from '@src/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@src/components/ui/dropdown-menu';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { Stethoscope, Trash2 } from 'lucide-react';
-import { systemTools, FlowpadDiagnosis } from '@sdk';
+import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
+import { diagnosisToText } from '@src/components/diagnose/diagnosis-details';
+import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
+import { useRecentConversations } from '@src/hooks/use-recent-conversations';
+import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { notify } from '@src/notifications';
+import { Copy, Eye, Flag, Forward, Stethoscope, Trash2 } from 'lucide-react';
+import {
+  systemTools,
+  copyToClipboard,
+  sendDiagnosisReport,
+  sendDiagnosisEmailReport,
+  FlowpadDiagnosis,
+  QueryRequest,
+} from '@sdk';
 
 /** Format a record's `created_date` (ISO string or Date) as a local date+time (or em-dash). */
 function formatRecorded(value?: string | Date): string {
@@ -27,37 +46,175 @@ function formatRecorded(value?: string | Date): string {
 }
 
 /**
+ * An icon button that drops down the most-recent conversations and forwards the
+ * diagnosis report to the picked one (via `sendDiagnosisReport`). Used by the
+ * Forward action; "Report" emails the team instead and needs no picker.
+ */
+function ConvPickerButton({
+  icon: Icon,
+  label,
+  onPick,
+  disabled,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  onPick: (conversationId: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const conversations = useRecentConversations(open);
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 w-7 p-0"
+          aria-label={label}
+          title={label}
+          disabled={disabled}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Icon className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        {conversations.length === 0 ? (
+          <DropdownMenuItem disabled>No conversations yet.</DropdownMenuItem>
+        ) : (
+          conversations.map((conv) => (
+            <DropdownMenuItem key={conv.id} onSelect={() => onPick(conv.id)}>
+              <span className="truncate">{deriveConversationTitle(conv)}</span>
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Per-row action icons: View, Report, Forward, Copy-all, Dismiss (delete). */
+function DiagnosisRowActions({
+  diag,
+  onView,
+  onDelete,
+}: {
+  diag: FlowpadDiagnosis;
+  onView: () => void;
+  onDelete: () => void;
+}) {
+  // "Report issue" — email the diagnosis to the Flowpad team (no conversation).
+  const handleReport = useCallback(async () => {
+    try {
+      await sendDiagnosisEmailReport(diag.id);
+      notify.success({ title: 'Diagnosis reported to the Flowpad team' });
+    } catch (e) {
+      notify.error({
+        title: 'Could not report diagnosis',
+        message: e instanceof Error ? e.message : 'Report failed.',
+      });
+    }
+  }, [diag]);
+
+  // "Forward" — post the formatted report into the chosen conversation.
+  const handleForward = useCallback(
+    async (conversationId: string) => {
+      try {
+        await sendDiagnosisReport(conversationId, {
+          fallbackText: diag.summary || diag.title || '',
+        });
+        notify.success({ title: 'Diagnosis forwarded' });
+      } catch (e) {
+        notify.error({
+          title: 'Could not forward diagnosis',
+          message: e instanceof Error ? e.message : 'Send failed.',
+        });
+      }
+    },
+    [diag],
+  );
+
+  const handleCopy = useCallback(async () => {
+    await copyToClipboard(diagnosisToText(diag));
+    notify.success({ title: 'Diagnosis copied to clipboard' });
+  }, [diag]);
+
+  return (
+    <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
+      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label="View diagnosis" title="View" onClick={onView}>
+        <Eye className="h-4 w-4" />
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 w-7 p-0"
+        aria-label="Report issue"
+        title="Report issue"
+        onClick={() => void handleReport()}
+      >
+        <Flag className="h-4 w-4" />
+      </Button>
+      <ConvPickerButton icon={Forward} label="Forward" onPick={(id) => void handleForward(id)} />
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 w-7 p-0"
+        aria-label="Copy all"
+        title="Copy all"
+        onClick={() => void handleCopy()}
+      >
+        <Copy className="h-4 w-4" />
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+        aria-label="Delete diagnosis"
+        title="Delete"
+        onClick={onDelete}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
+/**
  * Account-settings entry point for the recorded `flowpad_diagnosis` entities.
- * The button opens a dialog with a table of all diagnoses (title / symptoms /
- * root-cause / fix) and a per-row delete. Backed by
- * `systemTools.getDiagnoses()` / `systemTools.deleteDiagnosis()`.
+ * The button opens a dialog with a reactive table of all diagnoses; each row opens
+ * the diagnosis viewer popup on click and carries View / Report / Forward /
+ * Copy-all / Delete actions. The list is a live entity query, so deletes and newly
+ * recorded diagnoses reflect automatically.
  */
 export function SystemDiagnoses() {
   const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<FlowpadDiagnosis[]>([]);
-  const [loading, setLoading] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [viewId, setViewId] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setRows(await systemTools.getDiagnoses());
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (open) void refresh();
-  }, [open, refresh]);
-
-  const handleDelete = useCallback(
-    async (id: string) => {
-      await systemTools.deleteDiagnosis(id);
-      await refresh();
-    },
-    [refresh],
+  // Reactive list of all recorded diagnoses — subscribes to the entity store, so a
+  // delete (or a freshly recorded diagnosis) updates the table without a manual
+  // refetch. Only queried while the dialog is open.
+  const request = useMemo(
+    () => new QueryRequest({ type: FlowpadDiagnosis.type, scope: [] }),
+    [],
   );
+  const { data, isLoading } = useEntitiesQuery<FlowpadDiagnosis>(request, { enabled: open });
+  const rows = useMemo(
+    () =>
+      [...(data ?? [])].sort(
+        (a, b) =>
+          new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime(),
+      ),
+    [data],
+  );
+  const loading = isLoading && rows.length === 0;
+
+  // Delete via dataManager (systemTools.deleteDiagnosis) — the store update flows
+  // back through the query above, so the row disappears on its own.
+  const handleDelete = useCallback(async (id: string) => {
+    await systemTools.deleteDiagnosis(id);
+  }, []);
 
   return (
     <>
@@ -67,11 +224,11 @@ export function SystemDiagnoses() {
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>System Diagnoses</DialogTitle>
             <DialogDescription>
-              Issue diagnoses recorded by the assistant — title, symptoms, root cause, and fix.
+              Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis.
             </DialogDescription>
           </DialogHeader>
 
@@ -81,36 +238,37 @@ export function SystemDiagnoses() {
             <p className="p-4 text-sm text-muted-foreground">No diagnoses recorded.</p>
           ) : (
             <div className="max-h-[60vh] overflow-y-auto rounded-lg border">
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[160px]">Title</TableHead>
-                    <TableHead className="w-[150px]">Recorded</TableHead>
-                    <TableHead>Symptoms</TableHead>
-                    <TableHead>Root cause</TableHead>
-                    <TableHead>Fix</TableHead>
-                    <TableHead className="w-[60px] text-right">Actions</TableHead>
+                    <TableHead className="w-[28%]">Title</TableHead>
+                    <TableHead className="w-[22%]">Recorded</TableHead>
+                    <TableHead className="w-[28%]">Summary</TableHead>
+                    <TableHead className="w-[22%] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((d) => (
-                    <TableRow key={d.id}>
-                      <TableCell className="align-top font-medium">{d.title || d.name || '—'}</TableCell>
-                      <TableCell className="align-top whitespace-nowrap text-xs text-muted-foreground">
+                    <TableRow
+                      key={d.id}
+                      className="cursor-pointer"
+                      onClick={() => setViewId(d.id)}
+                    >
+                      <TableCell className="truncate font-medium" title={d.title || d.name || ''}>
+                        {d.title || d.name || '—'}
+                      </TableCell>
+                      <TableCell className="truncate whitespace-nowrap text-xs text-muted-foreground">
                         {formatRecorded(d.created_date)}
                       </TableCell>
-                      <TableCell className="align-top whitespace-pre-wrap text-xs">{d.symptoms || '—'}</TableCell>
-                      <TableCell className="align-top whitespace-pre-wrap text-xs">{d.rca || '—'}</TableCell>
-                      <TableCell className="align-top whitespace-pre-wrap text-xs">{d.fix || '—'}</TableCell>
-                      <TableCell className="text-right align-top">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label="Delete diagnosis"
-                          onClick={() => setConfirmId(d.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                      <TableCell className="truncate text-xs" title={d.summary || ''}>
+                        {d.summary || '—'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DiagnosisRowActions
+                          diag={d}
+                          onView={() => setViewId(d.id)}
+                          onDelete={() => setConfirmId(d.id)}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -120,6 +278,12 @@ export function SystemDiagnoses() {
           )}
         </DialogContent>
       </Dialog>
+
+      <DiagnosisReportModal
+        open={viewId !== null}
+        diagnosisId={viewId ?? undefined}
+        onClose={() => setViewId(null)}
+      />
 
       <ConfirmDialog
         open={confirmId !== null}

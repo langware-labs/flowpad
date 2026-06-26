@@ -151,6 +151,6 @@ async def diagnose_post_feed() -> ApiResponse:
         summary = (getattr(diag, "summary", None) or getattr(diag, "title", None) or "") if diag else ""
 
     feed_entry_id = await _post_home_feed_entry(
-        summary=summary, conversation_id=conv_id, flow_message_id=msg_id
+        summary=summary, conversation_id=conv_id, flow_message_id=msg_id, diagnosis_id=diag_id
     )
     return ApiSuccessResponse(data={"feed_entry_id": feed_entry_id})

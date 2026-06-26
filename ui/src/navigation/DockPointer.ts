@@ -755,6 +755,14 @@ export class DockPointer implements IDockPointer {
     return new DockPointer(ViewType.GRAPH_CONTEXT, id, undefined, layout);
   }
 
+  /**
+   * Create a DockPointer for the diagnosis viewer at `/dock/diagnosis/<id>`.
+   * `id` is the FlowpadDiagnosis entity's UUID.
+   */
+  static forDiagnosis(id: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.DIAGNOSIS, id, undefined, layout);
+  }
+
   /** Split a GRAPH pointer into its `{ type, id }` parts. */
   static parseGraphPointer(pointer: string | undefined): { type: string; id: string } | null {
     if (!pointer) return null;

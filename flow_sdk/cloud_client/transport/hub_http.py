@@ -86,6 +86,18 @@ def hub_base_url() -> Optional[str]:
     return url.rstrip("/") if url else None
 
 
+def hub_public_url(sub_path: str) -> Optional[str]:
+    """Full hub URL for a PUBLIC (non-graph, unauthenticated) API route — e.g.
+    ``health/version`` or ``diagnosis-report`` — or None if the hub isn't
+    configured. The non-graph sibling of ``hub_graph_url``: "public" marks that it
+    targets routes outside ``/graph`` that need no bearer (callable signed-out)."""
+    base = hub_base_url()
+    if not base:
+        return None
+    from flow_sdk.api.api_request import APIRequest
+    return f"{base}{APIRequest.api_prefix}/{sub_path.lstrip('/')}"
+
+
 async def get_info() -> Optional[dict[str, Any]]:
     """Fetch lightweight info about the configured hub.
 
@@ -97,11 +109,9 @@ async def get_info() -> Optional[dict[str, Any]]:
     works even when the user is signed out. Returns ``None`` when the hub is
     not configured (``FLOWPAD_HUB_URL`` unset) or unreachable.
     """
-    base = hub_base_url()
-    if not base:
+    url = hub_public_url("health/version")
+    if not url:
         return None
-    from flow_sdk.api.api_request import APIRequest
-    url = f"{base}{APIRequest.api_prefix}/health/version"
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, timeout=httpx.Timeout(8))

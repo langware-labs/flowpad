@@ -1,8 +1,11 @@
-import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
+import { DiagnosisDetails } from '@src/components/diagnose/diagnosis-details';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { FlowpadDiagnosis, sendDiagnosisReport } from '@sdk';
-import { Loader2, Stethoscope } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { FlowpadDiagnosis, TypeId } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { Maximize2, Stethoscope } from 'lucide-react';
+import { useMemo } from 'react';
 
 interface DiagnosisReportModalProps {
   open: boolean;
@@ -14,16 +17,12 @@ interface DiagnosisReportModalProps {
   onClose: () => void;
 }
 
-interface Field {
-  label: string;
-  value?: string;
-}
-
 /**
- * The "View diagnosis" popup, opened from the finished-diagnose modal in place of
- * it. Shows the full recorded diagnosis (title / summary / symptoms / root cause /
- * fix) and — for a real issue — the same report buttons as a Feed entry, wired to
- * the diagnosis's support conversation.
+ * The "View diagnosis" popup. Shows the recorded diagnosis (title / summary /
+ * symptoms / root cause / fix) via the shared `DiagnosisDetails` body — Copy and,
+ * for a real issue, the same Report/Forward buttons as a Feed entry. The expand
+ * arrow promotes the popup into the full URL tab (`/dock/diagnosis/<id>`), closing
+ * the overlay — the same content, now a first-class entity view.
  */
 export function DiagnosisReportModal({
   open,
@@ -32,94 +31,49 @@ export function DiagnosisReportModal({
   flowMessageId,
   onClose,
 }: DiagnosisReportModalProps) {
-  const [diag, setDiag] = useState<FlowpadDiagnosis | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [reporting, setReporting] = useState(false);
-  const [reportError, setReportError] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    if (!open || !diagnosisId) return;
-    let cancelled = false;
-    setLoading(true);
-    setReportError(undefined);
-    void FlowpadDiagnosis.getById<FlowpadDiagnosis>(diagnosisId)
-      .then((d) => {
-        if (!cancelled) setDiag(d ?? null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, diagnosisId]);
-
-  const handleReport = useCallback(
-    async (targetConversationId: string) => {
-      setReporting(true);
-      setReportError(undefined);
-      try {
-        await sendDiagnosisReport(targetConversationId, {
-          flowMessageId,
-          fallbackText: diag?.summary || diag?.title || '',
-        });
-        onClose();
-      } catch (e) {
-        setReportError(e instanceof Error ? e.message : 'Failed to send report');
-      } finally {
-        setReporting(false);
-      }
-    },
-    [diag, flowMessageId, onClose],
+  const { navigation } = useDockNavigation();
+  const typeId = useMemo(
+    () => (diagnosisId ? new TypeId(FlowpadDiagnosis.type, diagnosisId) : null),
+    [diagnosisId],
   );
+  const { data: diag } = useEntity<FlowpadDiagnosis>(typeId, { enabled: open && !!typeId });
 
-  const fields: Field[] = [
-    { label: 'Summary', value: diag?.summary },
-    { label: 'Symptoms', value: diag?.symptoms },
-    { label: 'Root cause', value: diag?.rca },
-    { label: 'Fix', value: diag?.fix },
-  ];
+  const handleExpand = () => {
+    if (!diagnosisId) return;
+    navigation.openDock(DockPointer.forDiagnosis(diagnosisId));
+    onClose();
+  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Stethoscope className="h-4 w-4" />
-            {diag?.title || 'Diagnosis'}
+        <DialogHeader className="min-w-0">
+          <DialogTitle className="flex items-center gap-2 pr-6">
+            <Stethoscope className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{diag?.title || 'Diagnosis'}</span>
+            <button
+              type="button"
+              onClick={handleExpand}
+              disabled={!diagnosisId}
+              title="Open as a tab"
+              aria-label="Open diagnosis as a tab"
+              className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </button>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3">
-          {loading ? (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>Loading diagnosis…</span>
+        <div className="min-w-0 space-y-3">
+          {diagnosisId && (
+            <div className="max-h-[55vh] overflow-y-auto overflow-x-hidden pr-1">
+              <DiagnosisDetails
+                diagnosisId={diagnosisId}
+                conversationId={conversationId}
+                flowMessageId={flowMessageId}
+                onActionDone={onClose}
+              />
             </div>
-          ) : (
-            <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
-              {fields
-                .filter((f) => f.value)
-                .map((f) => (
-                  <div key={f.label}>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {f.label}
-                    </p>
-                    <p className="whitespace-pre-wrap break-words text-xs text-foreground">{f.value}</p>
-                  </div>
-                ))}
-            </div>
-          )}
-
-          {/* Same report buttons as a Feed entry — only when there's an issue to report. */}
-          {conversationId && (
-            <DiagnosisActionButtons
-              suggestedConversationId={conversationId}
-              busy={reporting}
-              error={reportError}
-              onDismiss={onClose}
-              onReport={(targetConversationId) => void handleReport(targetConversationId)}
-            />
           )}
 
           <div className="flex justify-end">

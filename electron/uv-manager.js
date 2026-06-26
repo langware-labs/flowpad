@@ -69,6 +69,12 @@ function parseNetstatPids(stdout, port) {
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
 
+// Python interpreter flowpad's tool venv must run on. flowpad requires >=3.10,
+// but uv would otherwise pick the system default (e.g. 3.12). Pin every
+// `uv tool install` to 3.10 so the backend always runs on the supported
+// interpreter; uv auto-downloads a managed CPython 3.10 if none is present.
+const PYTHON_VERSION = '3.10';
+
 const API_PREFIX = '/api/v1';
 
 
@@ -530,7 +536,7 @@ class UvManager {
   async installLatest() {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
     await this._killStaleToolProcesses();
-    await this._uv(['tool', 'install', PYPI_PACKAGE, '--force'], { timeout: 120000 });
+    await this._uv(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--force'], { timeout: 120000 });
     await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
@@ -1003,59 +1009,109 @@ class UvManager {
   }
 
   /**
+   * Standalone, dependency-free update verdict for the pre-start prompt: just
+   * compare the installed version to the latest on PyPI.
+   *
+   * This is the PRIMARY check before the backend boots, where the cloud
+   * `/check-update` and `flow upgrade --info` paths are both unavailable or
+   * unreliable. It needs neither: `getInstalledVersionSync` reads `_version.py`
+   * as text (no Python, so it works even on a venv that can't import
+   * `flow_sdk`), and `getLatestPypiVersion` hits PyPI directly. So it behaves
+   * identically for healthy, broken, and offline-from-cloud installs.
+   *
+   * `required` is true when PyPI is strictly newer, or when the installed
+   * version can't be read at all (a partial/corrupt install worth repairing by
+   * upgrade). Returns null when PyPI is unreachable, so an offline machine
+   * never shows a prompt it can't act on.
+   */
+  async _pypiUpdateStatus() {
+    const latestVersion = await this.getLatestPypiVersion();
+    if (!latestVersion) return null;
+    const currentVersion = this.getInstalledVersionSync() || null;
+    const required = !currentVersion || isNewer(currentVersion, latestVersion);
+    if (!required) return null;
+    this.log.info(
+      `[uv] Pre-start update check: installed=${currentVersion || 'unknown'}, ` +
+      `latest=${latestVersion} → offering upgrade`
+    );
+    return { currentVersion, latestVersion, required: true };
+  }
+
+  /**
    * Run a background update check after the UI is loaded.
    * Non-blocking — failures are logged and silently ignored.
    * Shows a native OS dialog if an update is required.
    */
-  async checkForUpdatesInBackground(mainWindow, { sendStatus, waitForBackend, backendUrl, cloudUrl }) {
+  async checkForUpdatesInBackground(
+    mainWindow,
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false }
+  ) {
     try {
-      const status = await this.getUpdateStatus(cloudUrl);
-      if (!status || !status.required || !status.latestVersion) return;
+      // Pre-start: the backend is down and the install may even be broken, so
+      // decide with the standalone PyPI-vs-installed check — no cloud, no CLI,
+      // so it behaves the same for healthy, broken, and offline-from-cloud
+      // installs (offer the upgrade whenever PyPI is newer). Post-boot: the
+      // running backend can answer the cloud `/check-update` policy, so defer
+      // to that verdict.
+      const status = beforeBackendStart
+        ? await this._pypiUpdateStatus()
+        : await this.getUpdateStatus(cloudUrl);
+      if (!status || !status.required || !status.latestVersion) return false;
 
       const latest = status.latestVersion;
-      this.log.info(`[uv] Update available: ${status.currentVersion} → ${latest}`);
+      this.log.info(`[uv] Update available: ${status.currentVersion || 'unknown'} → ${latest}`);
 
-      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (!mainWindow || mainWindow.isDestroyed()) return false;
 
       const { response } = await require('electron').dialog.showMessageBox(mainWindow, {
         type: 'info',
         title: 'Update Available',
         message: `A new version of FlowPad is available (${latest}).`,
-        detail: `You are running version ${status.currentVersion}.`,
+        detail: status.currentVersion
+          ? `You are running version ${status.currentVersion}.`
+          : 'Your current installation could not be verified and may be incomplete.',
         buttons: ['Upgrade', 'Later'],
         defaultId: 0,
       });
+      if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
 
-      if (response === 0 && mainWindow && !mainWindow.isDestroyed()) {
-        // User chose Upgrade — show loading screen and wait for it to be ready
-        const loadingPath = require('path').join(__dirname, 'loading.html');
-        await mainWindow.loadFile(loadingPath);
+      // User chose Upgrade — show loading screen and wait for its IPC listener.
+      const loadingPath = require('path').join(__dirname, 'loading.html');
+      await mainWindow.loadFile(loadingPath);
+      await new Promise(r => setTimeout(r, 200));
 
-        // Small delay to ensure the renderer's IPC listener is registered
-        await new Promise(r => setTimeout(r, 200));
-
+      // Pre-start: nothing is running yet, so skip the stop. Post-boot: stop the
+      // live backend before reinstalling over it.
+      if (!beforeBackendStart) {
         if (sendStatus) sendStatus('Stopping server');
         await this.stop();
         this.isShuttingDown = false;
-
-        if (sendStatus) sendStatus('Upgrading Flowpad');
-        await this.upgrade();
-
-        if (sendStatus) sendStatus('Starting server');
-        await this.start();
-
-        if (sendStatus) sendStatus('Waiting for server');
-        // 120s window — matches the upgrade() subprocess ceiling and gives
-        // the freshly-installed backend room to boot before the user sees
-        // a false "failed to start" error.
-        if (waitForBackend) await waitForBackend({ maxChecks: 240 });
-
-        if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
-          mainWindow.loadURL(backendUrl);
-        }
       }
+
+      if (sendStatus) sendStatus('Upgrading Flowpad');
+      await this.upgrade();
+
+      // Pre-start: hand back to startApp's normal start path to boot the
+      // upgraded backend — calling start()/loadURL here would double-start the
+      // backend and load the main UI prematurely.
+      if (beforeBackendStart) return true;
+
+      if (sendStatus) sendStatus('Starting server');
+      await this.start();
+
+      if (sendStatus) sendStatus('Waiting for server');
+      // 120s window — matches the upgrade() subprocess ceiling and gives
+      // the freshly-installed backend room to boot before the user sees
+      // a false "failed to start" error.
+      if (waitForBackend) await waitForBackend({ maxChecks: 240 });
+
+      if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
+        mainWindow.loadURL(backendUrl);
+      }
+      return true;
     } catch (err) {
       this.log.warn(`[uv] Background update check failed: ${err.message}`);
+      return false;
     }
   }
 
@@ -1065,7 +1121,7 @@ class UvManager {
   async upgrade() {
     this.log.info('[uv] Upgrading flowpad...');
     await this._killStaleToolProcesses();
-    await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--force'], { timeout: 120000 });
+    await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', PYTHON_VERSION, '--force'], { timeout: 120000 });
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
@@ -1081,7 +1137,7 @@ class UvManager {
   async reinstall() {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
     await this._killStaleToolProcesses();
-    await this._uv(['tool', 'install', PYPI_PACKAGE, '--reinstall', '--force'], { timeout: 120000 });
+    await this._uv(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--reinstall', '--force'], { timeout: 120000 });
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
