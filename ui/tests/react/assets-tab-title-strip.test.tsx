@@ -1,11 +1,14 @@
 /**
- * React render: the assets tab chip in the REAL strip is titled by SCOPE —
- * "<project>'s Assets" / "My Assets" / "Assets" (global, via the registry
+ * React render: an INACTIVE assets tab chip in the REAL strip is titled by SCOPE
+ * — "<project>'s Assets" / "My Assets" / "Assets" (global, via the registry
  * fallback). Same harness as conversation-tab-opens: a real `TabRow` whose
- * `name = dataManager.getTabName(dock)`, fed through the real
- * `useTabStripItems` → `<TabStrip>`. No mocks of the strip or label resolution.
+ * `name = dataManager.getTabName(dock)`, fed through the real `useTabStripItems`
+ * → `<TabStrip>`. No mocks of the strip or label resolution. (The ACTIVE assets
+ * tab is overlaid with its focused asset's name — `useTabStripItems` reads the
+ * current dock; here the router sits at "/" so no assets tab is active.)
  */
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { dataManager, Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -20,9 +23,19 @@ import { useTabStripItems } from '@src/tabs/tab-row-item';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 
-function Strip({ tabs }: { tabs: Tab[] }) {
+function StripInner({ tabs }: { tabs: Tab[] }) {
   const items = useTabStripItems(tabs);
   return <TabStrip items={items} activeKey="" onSelect={() => {}} onClose={() => {}} />;
+}
+
+// `useTabStripItems` reads the current dock (useDockNavigation → react-router),
+// so the strip must render under a Router. "/" → no active assets tab.
+function Strip({ tabs }: { tabs: Tab[] }) {
+  return (
+    <MemoryRouter>
+      <StripInner tabs={tabs} />
+    </MemoryRouter>
+  );
 }
 
 // A real Tab entity (not a plain row): the registry "Assets" fallback for the
