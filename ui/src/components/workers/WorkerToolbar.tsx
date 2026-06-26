@@ -159,10 +159,7 @@ export function WorkerToolbar({
           onClick={() => setExpanded(true)}
           data-testid={`${testIdPrefix}-launch-more`}
           title="Show other workers"
-          className={cn(
-            'inline-flex h-7 w-7 items-center justify-center rounded border border-border',
-            'text-muted-foreground transition-colors hover:bg-muted',
-          )}
+          className={cn(WORKER_ICON_BUTTON_CLASS, 'text-muted-foreground')}
         >
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
