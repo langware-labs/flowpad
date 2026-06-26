@@ -12,10 +12,10 @@ import { History } from 'lucide-react';
 import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, TypeId, looksBinaryText } from '@sdk';
+import { FSRef, TypeId, copyToClipboard, looksBinaryText } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
@@ -624,6 +624,8 @@ function MarkdownEditorContent({
         </div>
       )}
 
+      {viewMode === 'view' && <ViewToolbar body={body} />}
+
       <div className="min-h-0 flex-1 overflow-hidden">
         {viewMode === 'learning' && learningPanel ? (
           <div className="h-full overflow-hidden">{learningPanel}</div>
@@ -663,6 +665,33 @@ function MarkdownEditorContent({
           </EditorWithSidePanel>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── View toolbar ─────────────────────────────────────────────────────────────
+// Slim toolbar shown only in read-only "view" mode. For now a single action:
+// copy the raw markdown body to the clipboard.
+function ViewToolbar({ body }: { body: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    await copyToClipboard(body);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [body]);
+
+  return (
+    <div className="flex h-9 flex-shrink-0 items-center gap-1 border-b px-2">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+        onClick={handleCopy}
+        title="Copy content to clipboard"
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? 'Copied' : 'Copy'}
+      </Button>
     </div>
   );
 }
