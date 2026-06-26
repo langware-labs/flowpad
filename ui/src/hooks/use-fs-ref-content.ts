@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+/** Default compare-normalizer: identity. Module-level so the `dirty` memo's
+ *  deps stay stable (a fresh inline closure would defeat the memo). */
+const IDENTITY = (s: string) => s;
 
 /**
  * Minimal file I/O abstraction — passed to useFSRefContent.
@@ -45,6 +49,13 @@ export interface FsRefContentState {
 interface Options {
   autoSave?: boolean;
   autoSaveMs?: number;
+  /**
+   * Optional canonicalizer for the dirty comparison. Content whose normalized
+   * form equals the on-disk normalized form is NOT dirty — so reformatting the
+   * save would re-normalize away (e.g. a rich editor that re-serializes the
+   * loaded content on mount) never marks a phantom edit. Defaults to identity.
+   */
+  normalize?: (content: string) => string;
 }
 
 /**
@@ -64,6 +75,7 @@ interface Options {
 export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefContentState {
   const autoSave = options?.autoSave ?? true;
   const autoSaveMs = options?.autoSaveMs ?? 3000;
+  const normalize = options?.normalize ?? IDENTITY;
 
   const [content, setContentState] = useState('');
   const [remoteContent, setRemoteContent] = useState('');
@@ -93,7 +105,12 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
   const pendingSaveRef = useRef(false);  // another save was requested while one was in-flight
   const saveRef = useRef<() => Promise<void>>(() => Promise.resolve()); // always current save fn
 
-  const dirty = loaded && content !== remoteContent;
+  // Memoized so `remoteContent` (changes only on load/save) isn't re-normalized
+  // on every keystroke-driven render — recomputes only when an input changes.
+  const dirty = useMemo(
+    () => loaded && normalize(content) !== normalize(remoteContent),
+    [loaded, content, remoteContent, normalize],
+  );
 
   // ── Load ──────────────────────────────────────────────────────────────────
   // Keyed on `path` (stable string) + `reloadTrigger`, NOT the fsRef object —
