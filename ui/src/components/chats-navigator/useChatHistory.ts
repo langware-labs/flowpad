@@ -15,10 +15,6 @@ export interface ChatHistoryFilters {
   scope: ScopeFilter;
   /** Free-text search over title / last prompt / project. */
   search: string;
-  /** Worker vendors to include; empty = all. */
-  workers: readonly string[];
-  /** Show only starred (AgenticProcess.favorite_index != null) chats. */
-  favoritesOnly: boolean;
 }
 
 export interface ChatBucket {
@@ -82,11 +78,8 @@ export function useChatHistory(filters: ChatHistoryFilters, limit = 50) {
 
   const buckets = useMemo<ChatBucket[]>(() => {
     const q = filters.search.trim().toLowerCase();
-    const workers = filters.workers;
     const filtered = entries.filter((e) => {
       if (!matchesScope(e, filters.scope)) return false;
-      if (workers.length > 0 && !workers.includes(e.worker_type)) return false;
-      if (filters.favoritesOnly && !isFavorite(e)) return false;
       if (q) {
         const title = pickHistoryTitle(processFor(e), e);
         const hay = `${title} ${e.last_prompt ?? ''} ${e.project_name ?? ''}`.toLowerCase();

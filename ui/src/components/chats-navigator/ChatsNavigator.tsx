@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Plus } from 'lucide-react';
 import { AgenticProcess } from '@sdk';
 import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
@@ -10,7 +9,7 @@ import { useProject } from '@src/hooks/useProject';
 import { useContext } from '@src/hooks/useContext';
 import { notify } from '@src/notifications';
 import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
-import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
+import type { WorkerHistoryEntry, WorkerType } from '@src/hooks/useWorkerHistory';
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -34,8 +33,6 @@ export function ChatsNavigator() {
   const isAdvanced = useIsAdvanced();
 
   const [search, setSearch] = useState('');
-  const [workers, setWorkers] = useState<string[]>([]);
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
 
   const scope = useMemo<ScopeFilter>(
@@ -43,10 +40,7 @@ export function ChatsNavigator() {
     [currentDock, project?.id],
   );
 
-  const filters = useMemo(
-    () => ({ scope, search, workers, favoritesOnly }),
-    [scope, search, workers, favoritesOnly],
-  );
+  const filters = useMemo(() => ({ scope, search }), [scope, search]);
   const { buckets, total, isLoading } = useChatHistory(filters);
 
   // Active row = the process the Shell URL currently targets (URL-first).
@@ -60,10 +54,6 @@ export function ChatsNavigator() {
     },
     [currentDock, navigation],
   );
-
-  const toggleWorker = useCallback((value: string) => {
-    setWorkers((prev) => (prev.includes(value) ? prev.filter((w) => w !== value) : [...prev, value]));
-  }, []);
 
   // Open/resume by the durable `worker_id` (the on-disk session), NOT the
   // lazily-materialized AgenticProcess entity: `getByWorkerId` heals/materializes
@@ -112,13 +102,18 @@ export function ChatsNavigator() {
     }
   }, [pendingDelete]);
 
-  const handleNewChat = useCallback(() => {
-    // Standard → headless chat (no PTY); Advanced → interactive PTY terminal.
-    void AgenticProcess.openTab('claude_code', undefined, null, { ptyMode: isAdvanced }).catch((err) => {
-      console.error('[ChatsNavigator] new chat failed', err);
-      notify.error({ title: 'Could not start chat', message: err instanceof Error ? err.message : String(err) });
-    });
-  }, [isAdvanced]);
+  const handleNewChat = useCallback(
+    (worker: WorkerType) => {
+      // `claude` is the `claude_code` harness; codex/copilot map 1:1.
+      const workerType = worker === 'claude' ? 'claude_code' : worker;
+      // Standard → headless chat (no PTY); Advanced → interactive PTY terminal.
+      void AgenticProcess.openTab(workerType, undefined, null, { ptyMode: isAdvanced }).catch((err) => {
+        console.error('[ChatsNavigator] new chat failed', err);
+        notify.error({ title: 'Could not start chat', message: err instanceof Error ? err.message : String(err) });
+      });
+    },
+    [isAdvanced],
+  );
 
   const descriptor: NavigatorDescriptor = useMemo(
     () => ({
@@ -126,15 +121,6 @@ export function ChatsNavigator() {
       header: {
         title: 'Chats',
         countBadge: total,
-        toolbar: [
-          {
-            id: 'new-chat',
-            icon: <Plus className="h-4 w-4" />,
-            label: 'New chat',
-            run: handleNewChat,
-            visibleWhen: 'always',
-          },
-        ],
         filterBar: (
           <ChatsFilterBar
             search={search}
@@ -143,10 +129,7 @@ export function ChatsNavigator() {
             currentProjectId={project?.id ?? null}
             currentProjectName={project?.getDisplayName() ?? project?.name ?? null}
             onScopeChange={handleScopeChange}
-            workers={workers}
-            onToggleWorker={toggleWorker}
-            favoritesOnly={favoritesOnly}
-            onToggleFavorites={() => setFavoritesOnly((v) => !v)}
+            onNewChat={handleNewChat}
           />
         ),
       },
@@ -168,9 +151,6 @@ export function ChatsNavigator() {
       scope,
       project,
       handleScopeChange,
-      workers,
-      toggleWorker,
-      favoritesOnly,
       buckets,
       isLoading,
       activeProcessId,
