@@ -21,7 +21,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
 import { useSyncTranscriptTabName } from '@src/tabs/useTabs';
 
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { WorkerToolbar, WORKER_ICON_BUTTON_CLASS } from '@src/components/workers/WorkerToolbar';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { ViewModeToggle } from '../ViewModeToggle';
 import { AnalysisSidePanel, useAnalysisControls } from './AnalysisControls';
@@ -614,7 +614,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
               <button
                 type="button"
                 onClick={handleOpenInTerminal}
-                className="inline-flex h-7 w-7 items-center justify-center rounded border border-border text-foreground transition-colors hover:bg-muted"
+                className={WORKER_ICON_BUTTON_CLASS}
                 title={`Open ${workerLabel(workerType)} in terminal`}
                 data-testid="transcript-open-in-terminal"
               >
