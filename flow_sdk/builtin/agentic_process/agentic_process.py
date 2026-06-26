@@ -919,6 +919,13 @@ class AgenticProcess(Entity):
             if visible is not None and self.visible != visible:
                 self.visible = visible
                 reattach_changed = True
+            # Lock-step the durable transport intent: opening a PTY (visible=True)
+            # is a terminal session, so persist ``pty_mode=True`` (saved in the
+            # open tail) — a reload then stays in terminal mode instead of falling
+            # back to headless. Headless never reaches here (the loader skips
+            # ``start`` when ``pty_mode is False``).
+            if visible is True:
+                self.pty_mode = True
 
             shell = await self.shell() if self.shell_id else None
             if shell is not None:
@@ -1222,12 +1229,16 @@ class AgenticProcess(Entity):
         # context_data) rather than overwriting it from a stale snapshot.
         fresh = await AgenticProcess.get_by_id(self.id) or self
         fresh.visible = False
+        # Persist the durable transport intent so a reload keeps this session
+        # headless (the loader reads ``pty_mode`` to decide whether to attach a PTY).
+        fresh.pty_mode = False
         await fresh.save()
         return ApiSuccessResponse(
             data={
                 "id": fresh.id,
                 "status": fresh.status,
                 "visible": fresh.visible,
+                "pty_mode": fresh.pty_mode,
                 "session_id": fresh.session_id,
             }
         )

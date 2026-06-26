@@ -133,7 +133,7 @@ export function describeProcessStartError(error: unknown): { title: string; desc
  */
 export async function loadProcess(
   processId: string,
-): Promise<{ process: AgenticProcess; shell: Shell }> {
+): Promise<{ process: AgenticProcess; shell: Shell | null }> {
   // ── Entity phase (hard errors only) ────────────────────────────────────
   // Split the fetch catch so a real network failure (timeout, abort,
   // non-404 5xx) reports as ``network_error`` instead of being silently
@@ -192,20 +192,25 @@ export async function loadProcess(
   }
 
   // ── Runtime phase (soft errors — entity is fine, runtime isn't) ────────
+  // Headless (`pty_mode === false`): no PTY attach and no Shell — the chat
+  // streams over `flowDataStream`. Skip the PTY runtime phase entirely so the
+  // choice is durable across reload (the loader no longer forces visible:true).
   let shell: Shell | null = null;
-  try {
-    const cols = estimateCols(window.innerWidth);
-    const rows = estimateRows(window.innerHeight);
-    await perfTime('process.start (PTY attach)', () =>
-      process.start({ visible: true, cols, rows }),
-    );
-    shell = await perfTime('process.shell()', () => process.shell());
-  } catch (cause) {
-    throw classifyRuntimeFailure(processId, process, cause);
-  }
+  if (process.pty_mode !== false) {
+    try {
+      const cols = estimateCols(window.innerWidth);
+      const rows = estimateRows(window.innerHeight);
+      await perfTime('process.start (PTY attach)', () =>
+        process.start({ visible: true, cols, rows }),
+      );
+      shell = await perfTime('process.shell()', () => process.shell());
+    } catch (cause) {
+      throw classifyRuntimeFailure(processId, process, cause);
+    }
 
-  if (!shell) {
-    throw new ProcessLoadError('shell_entity_missing', processId, process.shell_id ?? null);
+    if (!shell) {
+      throw new ProcessLoadError('shell_entity_missing', processId, process.shell_id ?? null);
+    }
   }
 
   // The strip self-populates from the live `Tab` entity query (useTerminalTabs);
@@ -213,7 +218,8 @@ export async function loadProcess(
   // Tab. No imperative strip fetch needed.
 
   await perfTime('dataContext sync setters (shellId/target/workdir)', async () => {
-    dataContext.setActiveShellId(shell!.id);
+    // Headless: '' clears any stale active shell (same sentinel as load-shell).
+    dataContext.setActiveShellId(shell?.id ?? '');
     dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
     // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
     // must stay fast; the in-cache bump above is the synchronous seed.
@@ -223,7 +229,7 @@ export async function loadProcess(
     // falls back to tab_order.
     stampTabRecencyForTarget(AgenticProcess.type, processId);
     dataContext.setWorkdir(
-      process!.workdir ?? shell!.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
+      process!.workdir ?? shell?.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
     );
   });
   await perfTime('setContextEntityTypeId(CurrentProcessTypeId)', () =>

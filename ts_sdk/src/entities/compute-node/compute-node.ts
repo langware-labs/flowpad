@@ -144,6 +144,12 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       watchProcess?: boolean;
       visible?: boolean;
       /**
+       * Transport intent for the new session: true → interactive PTY (default
+       * when omitted), false → headless JSON-stream (no PTY/xterm). Omitted →
+       * the backend defaults to true, preserving today's behaviour.
+       */
+      pty_mode?: boolean;
+      /**
        * First prompt to seed onto the process's queue server-side, BEFORE the
        * visible auto-start. The worker then boots with it as its launch
        * instruction (deterministic — no post-spawn stdin race). Used by
@@ -160,6 +166,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       context: serializeAgenticContext(context),
       ...(options?.result ? { result: { uname: options.result.uname, resultType: options.result.resultType, sourceSessionId: options.result.sourceSessionId } } : {}),
       ...(options?.visible !== undefined ? { visible: options.visible } : {}),
+      ...(options?.pty_mode !== undefined ? { pty_mode: options.pty_mode } : {}),
       ...(options?.launchPrompt ? { launch_prompt: options.launchPrompt } : {}),
     };
 
