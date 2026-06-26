@@ -17,6 +17,7 @@ import {
   TypeId,
 } from '@sdk';
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
+import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
 import { perfLog, perfTime } from './_perf';
 import { loadProject } from './load-project';
 
@@ -217,6 +218,10 @@ export async function loadProcess(
     // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
     // must stay fast; the in-cache bump above is the synchronous seed.
     void process.activate().catch(() => {});
+    // Stamp recency on the Tab too — the close-resolver reads Tab.last_active_at,
+    // not the AgenticProcess row, so without this close-to-most-recently-active
+    // falls back to tab_order.
+    stampTabRecencyForTarget(AgenticProcess.type, processId);
     dataContext.setWorkdir(
       process!.workdir ?? shell!.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
     );
