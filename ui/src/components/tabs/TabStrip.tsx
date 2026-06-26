@@ -437,9 +437,11 @@ export const TabStrip: React.FC<TabStripProps> = ({
           </span>
         )}
 
-        {/* Open-external is an Advanced/Dev affordance; Standard mode keeps the
-            chip minimal (close button only). */}
-        {onPopout && isAdvanced && (
+        {/* Hover-only affordance (opacity-0 until group-hover), rendered in
+            every view mode so the chip's width is mode-invariant. Gating it on
+            isAdvanced made Advanced chips ~24px wider than Standard ones, which
+            reflowed the strip and shifted the selected tab when toggling View. */}
+        {onPopout && (
           <button
             onClick={(e) => {
               e.stopPropagation();
