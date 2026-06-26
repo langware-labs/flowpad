@@ -125,8 +125,13 @@ export function useAssetsModel() {
   }, [effectivePointer]);
   const openAssetId = openAssetTypeId?.toString() ?? null;
   const { data: openAsset } = useEntity(openAssetTypeId);
+  // Single typed view of the resolved entity's optional fs fields (the SDK
+  // entity type is generic here); reused for scope-bucketing and tree addressing.
+  const openAssetFields = openAsset as
+    | { asset_ref?: string; scope?: string | null; project_id?: string | null }
+    | null;
   const openAssetBucket = useMemo<AssetScopeBucket>(
-    () => assetScopeBucket(openAsset as { scope?: string | null; project_id?: string | null } | null),
+    () => assetScopeBucket(openAssetFields),
     [openAsset],
   );
   const [suppressedAssetId, setSuppressedAssetId] = useState<string | null>(null);
@@ -174,10 +179,21 @@ export function useAssetsModel() {
 
   const treeActivePointer = useMemo<DockPointer | null>(() => {
     if (isProjectView) {
+      // The sidebar tree (markdown folder tree especially) is vfs-keyed, but an
+      // asset editor URL addresses the doc by its stable typeid
+      // (`editor/<t>/typeid/<id>`). Once the open entity is resolved, re-address
+      // it to the tree by its vfs `asset_ref` so the (vfs) tree can auto-expand
+      // + highlight it via its existing path resolution. Falls back to the raw
+      // pointer until the entity resolves (or for non-typeid/vfs pointers).
+      const assetRef = openAssetFields?.asset_ref;
+      if (assetRef && openAssetTypeId) {
+        // forAssetEditor already returns a ViewType.ASSETS editor pointer.
+        return DockPointer.forAssetEditor(openAssetTypeId.type, assetRef);
+      }
       return new DockPointer(ViewType.ASSETS, effectivePointer || undefined);
     }
     return currentDock ?? null;
-  }, [isProjectView, effectivePointer, currentDock]);
+  }, [isProjectView, effectivePointer, currentDock, openAsset, openAssetTypeId]);
 
   const handleScanComplete = useCallback(() => {
     setRefreshKey((k) => k + 1);
