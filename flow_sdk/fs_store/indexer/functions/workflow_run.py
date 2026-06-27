@@ -58,16 +58,12 @@ def _run_id(data: dict, path: Path) -> str:
 
 
 def workflow_run_id(ref: FSRef) -> str:
-    """Cheap id: stable uuid5 from the provider runId (a stable natural key)."""
+    """Stable uuid5 from the provider runId (a stable natural key). Doubles as
+    the gen_uuid_fn: the journal is provider-owned (read-only), so — unlike
+    agent_trace — we never write an id back; uuid5(runId) is stable across
+    rescans without persistence."""
     data = _load_journal(ref._path)
     return mint_uuid(_run_id(data, ref._path))
-
-
-def workflow_run_gen_id(ref: FSRef) -> str:
-    """Mint a stable id. The journal is provider-owned (read-only) so, unlike
-    agent_trace, we never write an id back into it — uuid5(runId) is stable
-    across rescans without persistence."""
-    return workflow_run_id(ref)
 
 
 def extract_workflow_run(ref: FSRef) -> list[FSRecord]:

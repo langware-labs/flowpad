@@ -7,7 +7,7 @@ from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 from flow_sdk.fs_store.indexer.functions.workflow_run import (
     extract_workflow_run,
-    workflow_run_gen_id,
+    workflow_run_id,
 )
 
 
@@ -25,7 +25,7 @@ class WorkflowRunMeta(BaseMeta):
 WORKFLOW_RUN = TypeMetadata(
     type=EntityType.WORKFLOW_RUN,
     from_disk_fn=extract_workflow_run,
-    gen_uuid_fn=workflow_run_gen_id,
+    gen_uuid_fn=workflow_run_id,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     creatable=False,

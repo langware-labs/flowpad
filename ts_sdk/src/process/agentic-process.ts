@@ -591,6 +591,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @returns The AgenticProcess entity, or `null` if no on-disk session matches.
    */
   static async getByWorkerId(workerId: string, workerType?: string | null): Promise<AgenticProcess | null> {
+    // Workflow runs (id `wf_<runId>`) are not worker sessions and never have a
+    // backing AgenticProcess — short-circuit so callers (status indicators,
+    // shell/worker deep-link recovery) don't fire a guaranteed 404.
+    if (workerId.startsWith('wf_')) return null;
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.getByWorkerId] No compute node');
 
