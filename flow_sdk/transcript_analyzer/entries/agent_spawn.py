@@ -23,6 +23,7 @@ class AgentSpawnEntry(TranscriptEntry):
         description: str | None = None,
         tool_name: str = "",
         tool_use_id: str = "",
+        children: list[TranscriptEntry] | None = None,
         **base: Any,
     ) -> None:
         super().__init__(**base)
@@ -31,6 +32,14 @@ class AgentSpawnEntry(TranscriptEntry):
         self.description = description
         self.tool_name = tool_name
         self.tool_use_id = tool_use_id
+        # The spawned sub-agent's parsed entries, stitched on by
+        # ``assembly.assemble_tree`` (joined on ``tool_use_id`` ==
+        # subagent ``meta.toolUseId``). Empty until a transcript is
+        # assembled — the streaming reader leaves this alone.
+        self.children: list[TranscriptEntry] = children or []
+
+    def iter_children(self) -> list[TranscriptEntry]:
+        return self.children
 
     def to_flow_data(self) -> list:
         return self._tool_flow_data(
@@ -46,6 +55,10 @@ class AgentSpawnEntry(TranscriptEntry):
             "description": self.description,
             "tool_name": self.tool_name,
             "tool_use_id": self.tool_use_id,
+            # Recursive — the sub-agent's subtree serializes inline so the
+            # transcript doc carries the whole nested run. Empty list when
+            # the transcript wasn't assembled.
+            "children": [c.to_dict() for c in self.children],
         }
 
     def _body_lines(self) -> list[str]:
@@ -56,4 +69,6 @@ class AgentSpawnEntry(TranscriptEntry):
             out.append(f"tool_use_id: {self.tool_use_id}")
         if self.prompt:
             out.extend(render_block("prompt", self.prompt))
+        if self.children:
+            out.append(f"children: {len(self.children)} sub-agent entries")
         return out

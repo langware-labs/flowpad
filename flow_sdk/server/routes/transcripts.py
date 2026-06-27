@@ -16,6 +16,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from flow_sdk.transcript_analyzer.assembly import assemble_tree
 from flow_sdk.transcript_analyzer.entries import MetaEntry
 from flow_sdk.transcript_analyzer.resolver import (
     TranscriptNotFoundError,
@@ -47,6 +48,20 @@ def _error(status_code: int, code: str, message: str) -> JSONResponse:
         status_code=status_code,
         content={"ok": False, "error_code": code, "error": message},
     )
+
+
+def _assemble_subagents(transcript: AgentTranscriptFile) -> None:
+    """Best-effort: nest spawned sub-agents under their AgentSpawnEntry.
+
+    Static-doc step — stitches each sub-agent's separate transcript onto the
+    spawn's ``children`` so the serialized doc carries the whole nested run. A
+    sub-agent parse hiccup must never fail the main transcript response, so this
+    is swallowed (the doc just renders without nesting).
+    """
+    try:
+        assemble_tree(transcript)
+    except Exception:  # noqa: BLE001 — nesting is additive; never 500 over it
+        logger.exception("transcripts: sub-agent assembly failed for %s", transcript.path)
 
 
 def _build_header(transcript: AgentTranscriptFile) -> dict:
@@ -139,6 +154,7 @@ async def get_transcript(worker_type: str, path: str = ""):
         logger.exception("transcripts: parse failed for %s", path)
         return _error(500, "PARSE_FAILED", str(exc))
 
+    _assemble_subagents(transcript)
     return {
         "ok": True,
         "worker_type": worker_type,
@@ -261,6 +277,7 @@ async def get_worker_session_transcript(worker_type: str, session_id: str):
         logger.exception("transcripts: parse failed for %s", path)
         return _error(500, "PARSE_FAILED", str(exc))
 
+    _assemble_subagents(transcript)
     return {
         "ok": True,
         "worker_type": worker_type,
