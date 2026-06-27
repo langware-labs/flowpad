@@ -1,0 +1,6 @@
+{"type":"started","key":"v2:5e60999d4ee3f802b08d51ff3728023f338c4b107e0a95cef427143785d57651","agentId":"a8a90c1e46758b013"}
+{"type":"started","key":"v2:ee3984ef806b7a5f595b14d0a3a42a28b52c9dc8eb44c09f54f05bc72581853e","agentId":"a0d619e157c825cdb"}
+{"type":"result","key":"v2:5e60999d4ee3f802b08d51ff3728023f338c4b107e0a95cef427143785d57651","agentId":"a8a90c1e46758b013","result":{"word":"gather2"}}
+{"type":"result","key":"v2:ee3984ef806b7a5f595b14d0a3a42a28b52c9dc8eb44c09f54f05bc72581853e","agentId":"a0d619e157c825cdb","result":{"word":"gather1"}}
+{"type":"started","key":"v2:8388145009aee6230fdc688f420128b67c1f05bef53362060bb5be8bc9b63d39","agentId":"aaea6ae7db7421a89"}
+{"type":"result","key":"v2:8388145009aee6230fdc688f420128b67c1f05bef53362060bb5be8bc9b63d39","agentId":"aaea6ae7db7421a89","result":{"word":"summary"}}

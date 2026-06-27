@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   Info,
+  Layers,
   Scissors,
   Square,
   Terminal,
@@ -441,6 +442,22 @@ export function TranscriptEntryItem({
           </div>
           <InfoButton onInfo={onInfo} onInfoHover={onInfoHover} onInfoHoverEnd={onInfoHoverEnd} className="ml-auto" />
         </div>
+      </div>
+    );
+  }
+
+  // ── Workflow phase — full-width section divider grouping the agents below it ──
+  if (entry.role === 'meta' && entry.subtype === 'workflow_phase') {
+    const phaseIndex = entry.payload?.index as number | undefined;
+    const phaseTitle = (entry.payload?.title as string | undefined) ?? '';
+    return (
+      <div className="flex min-w-0 items-center gap-2 border-t border-border bg-muted/40 p-2 text-xs">
+        <Layers className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
+        <span className="font-medium text-foreground">
+          {phaseIndex != null ? `Phase ${phaseIndex}` : 'Phase'}{phaseTitle ? ` · ${phaseTitle}` : ''}
+        </span>
+        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{timestamp}</span>
+        <InfoButton onInfo={onInfo} onInfoHover={onInfoHover} onInfoHoverEnd={onInfoHoverEnd} />
       </div>
     );
   }

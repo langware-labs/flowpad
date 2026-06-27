@@ -600,7 +600,7 @@ class FSRecord(Generic[M]):
             # in one place rather than mirrored here.
             target = info.asset_ref_for(base / safe)
         else:
-            target = base / f"{safe}.md"
+            target = base / f"{safe}{info.main_ext}"
         return FSRef(target)
 
     @staticmethod

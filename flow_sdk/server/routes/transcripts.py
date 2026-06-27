@@ -17,7 +17,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from flow_sdk.transcript_analyzer.assembly import assemble_tree
-from flow_sdk.transcript_analyzer.entries import MetaEntry
+from flow_sdk.transcript_analyzer.entries import AgentSpawnEntry, MetaEntry
 from flow_sdk.transcript_analyzer.resolver import (
     TranscriptNotFoundError,
     received_transcript_dest,
@@ -40,7 +40,7 @@ def _is_received(worker_type: str, session_id: str, resolved: Path) -> bool:
 router = APIRouter()
 
 
-_SUPPORTED_WORKERS: frozenset[str] = frozenset({"claude", "codex", "copilot"})
+_SUPPORTED_WORKERS: frozenset[str] = frozenset({"claude", "codex", "copilot", "workflow"})
 
 
 def _error(status_code: int, code: str, message: str) -> JSONResponse:
@@ -62,6 +62,30 @@ def _assemble_subagents(transcript: AgentTranscriptFile) -> None:
         assemble_tree(transcript)
     except Exception:  # noqa: BLE001 — nesting is additive; never 500 over it
         logger.exception("transcripts: sub-agent assembly failed for %s", transcript.path)
+
+
+def _stamp_workflow_child_paths(transcript: AgentTranscriptFile, journal: Path) -> None:
+    """Workflow runs only: stamp each AgentSpawnEntry with the absolute path to
+    its spawned agent's own transcript, so the UI can drill into the child.
+
+    The journal lives at ``…/<sid>/workflows/wf_<runId>.json``; a spawned agent's
+    transcript is ``…/<sid>/subagents/workflows/<runId>/agent-<agentId>.jsonl``
+    (agentId == the spawn's ``tool_use_id``). Stamped only when the child exists,
+    so the affordance appears only when openable. Additive + best-effort — a
+    failure must never fail the main response.
+    """
+    if transcript.worker_type != "workflow":
+        return
+    try:
+        run_id = transcript.session_id or journal.stem
+        child_dir = journal.parent.parent / "subagents" / "workflows" / run_id
+        for e in transcript.entries:
+            if isinstance(e, AgentSpawnEntry) and e.tool_use_id:
+                child = child_dir / f"agent-{e.tool_use_id}.jsonl"
+                if child.exists():
+                    e.child_transcript_path = str(child)
+    except Exception:  # noqa: BLE001 — drill-in is additive; never 500 over it
+        logger.exception("transcripts: workflow child-path stamp failed for %s", journal)
 
 
 def _build_header(transcript: AgentTranscriptFile) -> dict:
@@ -155,6 +179,7 @@ async def get_transcript(worker_type: str, path: str = ""):
         return _error(500, "PARSE_FAILED", str(exc))
 
     _assemble_subagents(transcript)
+    _stamp_workflow_child_paths(transcript, p)
     return {
         "ok": True,
         "worker_type": worker_type,
@@ -278,6 +303,7 @@ async def get_worker_session_transcript(worker_type: str, session_id: str):
         return _error(500, "PARSE_FAILED", str(exc))
 
     _assemble_subagents(transcript)
+    _stamp_workflow_child_paths(transcript, path)
     return {
         "ok": True,
         "worker_type": worker_type,

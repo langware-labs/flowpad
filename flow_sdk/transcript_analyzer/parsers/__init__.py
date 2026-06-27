@@ -7,11 +7,13 @@ from .base import Parser
 from .claude import ClaudeParser
 from .codex import CodexParser, CodexRolloutParser, CodexStreamParser
 from .copilot import CopilotEventsParser, CopilotParser, CopilotStreamParser
+from .workflow import WorkflowParser
 
 _REGISTRY: dict[str, type[Parser]] = {
     "claude": ClaudeParser,
     "codex": CodexParser,
     "copilot": CopilotParser,
+    "workflow": WorkflowParser,
 }
 
 
@@ -49,5 +51,6 @@ __all__ = [
     "CopilotEventsParser",
     "CopilotParser",
     "CopilotStreamParser",
+    "WorkflowParser",
     "get_parser_class",
 ]
