@@ -173,7 +173,11 @@ async function tabIds(page: Page): Promise<string[]> {
  */
 async function renameTab(page: Page, tabTestId: string, newName: string) {
   const tab = page.locator(`[data-testid="${tabTestId}"]`);
-  const nameSpan = tab.locator('span').first();
+  // The editable title span carries `truncate font-medium` + onDoubleClick. On an
+  // ACTIVE tab, `span.first()` is instead the absolutely-positioned accent bar
+  // (pointer-events-none) — dblclicking it never opens the rename input. Target
+  // the title span explicitly.
+  const nameSpan = tab.locator('span.font-medium').first();
   await nameSpan.dispatchEvent('dblclick');
   const input = tab.locator('input[type="text"]');
   await expect(input).toBeVisible({ timeout: 5_000 });
@@ -266,6 +270,10 @@ test.describe('Interactive tabs / project filtering matrix', () => {
   test('test 5: Refresh on /dock/shell (no pointer) resolves a default tab', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
+    // Bare /dock/shell resolves a default among EXISTING tabs; it no longer
+    // auto-spawns a shell from nothing, so seed one first.
+    const { projectId } = await bootstrapIds(rq);
+    await createShell(rq, projectId);
     await gotoDockShell(page);
     await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
     const target = page.url().match(/shell-[0-9a-f-]+/)![0];
@@ -286,13 +294,17 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     await page.locator(tabSel).nth(1).click();
     await page.waitForTimeout(400);
-    const active = page.url().match(/(shell|agentic_process)-[0-9a-f-]+/)![0];
     await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)').click();
     await page.waitForURL(/\/$/, { timeout: 15_000 });
     await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-message-square)').click();
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
+    // All three tabs survive the round-trip ("keeps tabs alive"). Re-entry via the
+    // Chats rail goes to bare /dock/shell, whose loader resolves a default among
+    // the live tabs — so assert it lands on one of the strip's actual tabs, not a
+    // specific prior selection (the rail does not carry a remembered pointer).
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
-    expect(page.url()).toContain(active);
+    const resolved = page.url().match(/(?:shell|agentic_process)-[0-9a-f-]+/)![0];
+    expect(await tabIds(page)).toContain(`tab-shell|${resolved}`);
     await commonValidation(page);
     await rq.dispose();
   });
@@ -449,7 +461,10 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.locator('[data-testid="close-all-tabs-button"]').click();
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(0);
     await page.reload();
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    // After close-all the strip is empty; bare /dock/shell no longer auto-spawns
+    // a shell, so there is no terminal-panels to wait on — wait for the app shell
+    // (#root) instead and assert no prior tab is resurrected.
+    await page.locator('#root').waitFor({ state: 'attached', timeout: 30_000 });
     await page.waitForTimeout(2_000);
     // None of the prior 4 return; allow zero or a single fresh default.
     const after = await tabIds(page);
@@ -687,6 +702,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
   test('test 29: Footer label fallback chain', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
+    // Seed a shell so bare /dock/shell resolves a default (no auto-spawn).
+    const { projectId } = await bootstrapIds(rq);
+    await createShell(rq, projectId);
     await gotoDockShell(page);
     await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
     // Footer reflects project path/name initially.
@@ -704,6 +722,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
   test('test 30: "Select Project" red pill — tab spawn flow', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
+    // Seed a shell so bare /dock/shell resolves a default (no auto-spawn).
+    const { projectId } = await bootstrapIds(rq);
+    await createShell(rq, projectId);
     await gotoDockShell(page);
     await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
     await page.evaluate(() =>
@@ -849,6 +870,10 @@ test.describe('Interactive tabs / project filtering matrix', () => {
   test('test 41: Spawn each type from + / opener menu', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
+    // Seed one shell so bare /dock/shell resolves a default tab (it no longer
+    // auto-spawns from an empty strip); the opener-menu spawns are layered on top.
+    const { projectId } = await bootstrapIds(rq);
+    await createShell(rq, projectId);
     await gotoDockShell(page);
     await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
     const start = (await tabIds(page)).length;
