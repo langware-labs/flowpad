@@ -30,7 +30,7 @@ test('clicking shell tab from agentic process view updates URL to shell session'
   const shellSessionId = shellSessionMatch ? shellSessionMatch[1] : null;
   if (!shellSessionId) throw new Error('Could not determine shell session ID from URL');
 
-  const initialTabCount = await page.locator('[data-testid^="tab-shell-"]').count();
+  const initialTabCount = await page.locator('[data-testid^="tab-shell|"]').count();
 
   // Start Claude via the always-present "+" tab-opener menu.
   await page.locator('[data-testid="opener-plus-button"]').click();
@@ -38,10 +38,10 @@ test('clicking shell tab from agentic process view updates URL to shell session'
   await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 20_000 });
 
   // Wait for PTY tab to appear (confirms agentic process PTY started)
-  await expect(page.locator('[data-testid^="tab-shell-"]')).toHaveCount(initialTabCount + 1, { timeout: 30_000 });
+  await expect(page.locator('[data-testid^="tab-shell|"]')).toHaveCount(initialTabCount + 1, { timeout: 30_000 });
 
   // We're now in agentic_process view — click the original shell tab
-  const shellTab = page.locator(`[data-testid="tab-${shellSessionId}"]`);
+  const shellTab = page.locator(`[data-testid="tab-shell|${shellSessionId}"]`);
   await shellTab.waitFor({ state: 'visible', timeout: 5_000 });
   await shellTab.click();
 
