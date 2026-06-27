@@ -1,4 +1,4 @@
-import { Agent, AgentTrace, FSRef, Skill, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
+import { Agent, AgentTrace, DynamicWorkflow, FSRef, Skill, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
@@ -12,6 +12,7 @@ import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
 import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
+import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAssetEditor';
 import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
@@ -168,6 +169,15 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           fsRef={fsRef}
           typeLabel="agent trace"
           render={(trace) => <AgentTraceAssetEditor fsRef={fsRef!} trace={trace} />}
+        />
+      );
+    case AssetEditor.DYNAMIC_WORKFLOW:
+      return (
+        <EntityResolutionGate<DynamicWorkflow>
+          type={DynamicWorkflow.type}
+          fsRef={fsRef}
+          typeLabel="dynamic workflow"
+          render={(workflow) => <DynamicWorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />}
         />
       );
     case AssetEditor.USAGE_REPORT:

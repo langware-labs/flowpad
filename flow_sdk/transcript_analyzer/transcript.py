@@ -105,6 +105,11 @@ class AgentTranscriptFile:
         if not self.path.exists():
             return self.entries
 
+        # Whole-document workers (e.g. workflow run journals) are a single JSON
+        # object, not JSONL — read the file once and feed the parsed object.
+        if getattr(self._parser, "whole_document", False):
+            return self._read_whole_document()
+
         try:
             file_size = self.path.stat().st_size
         except OSError as exc:
@@ -158,6 +163,36 @@ class AgentTranscriptFile:
         # fold would feed back into the next fold's input — producing duplicated
         # joined text and other re-mutation artifacts. We fold over shallow
         # copies so ``self._unfolded`` stays pristine across delta boundaries.
+        snapshot = [copy.copy(e) for e in self._unfolded]
+        folded = self._fold_assistant_messages(snapshot)
+        self.entries = self._fold_tool_results(folded)
+        return self.entries
+
+    def _read_whole_document(self) -> list[TranscriptEntry]:
+        """Single-JSON-document path: read the entire file, parse it once, and
+        feed the parsed object to the (whole-document) parser. Re-parses only when
+        the file size changes since the last read (``_byte_offset`` doubles as the
+        last-seen size sentinel here). Used for workflow run journals.
+        """
+        try:
+            file_size = self.path.stat().st_size
+        except OSError as exc:
+            logger.debug("AgentTranscriptFile: stat failed %s: %s", self.path, exc)
+            return self.entries
+        if self.entries and file_size == self._byte_offset:
+            return self.entries  # unchanged — idempotent
+        try:
+            text = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            logger.debug("AgentTranscriptFile: read failed %s: %s", self.path, exc)
+            return self.entries
+        try:
+            obj = json.loads(text)
+        except json.JSONDecodeError:
+            logger.debug("AgentTranscriptFile: malformed JSON document %s", self.path)
+            return self.entries
+        self._unfolded = list(self._parser.feed(obj, 0))
+        self._byte_offset = file_size
         snapshot = [copy.copy(e) for e in self._unfolded]
         folded = self._fold_assistant_messages(snapshot)
         self.entries = self._fold_tool_results(folded)

@@ -220,6 +220,12 @@ export interface AgentSpawnEntry extends BaseEntry {
   description: string | null;
   tool_name: string;
   tool_use_id: string;
+  /**
+   * Absolute path to the spawned agent's own transcript JSONL, present only for
+   * workflow-run spawns whose child transcript exists on disk (stamped by the
+   * transcripts route). Drives the "open sub-agent transcript" affordance.
+   */
+  child_transcript_path?: string | null;
 }
 
 /**

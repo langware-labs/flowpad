@@ -32,6 +32,7 @@ import { useTranscriptMode, type TranscriptMode } from '../use-transcript-mode';
 import { ChatEntryItem } from './ChatEntryItem';
 import { TranscriptEntryItem } from './TranscriptEntryItem';
 import { TranscriptStats } from './TranscriptStats';
+import { WorkflowRunSummary } from './WorkflowRunSummary';
 import { groupEntriesByTurn } from './group-entries';
 import { collectToolKeys, formatAgo, formatDuration, operationFilterKey, resolveEntryTimestamp, workerIcon, workerLabel } from './transcript-utils';
 import type { UnifiedEntry } from './types';
@@ -70,6 +71,13 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   const sessionId = data?.session_id ?? null;
   const header = data?.header ?? {};
 
+  // Workflow-run envelope (only the workflow worker emits a session_meta entry).
+  // Surfaced as a summary header strip and dropped from the entry list below.
+  const workflowMeta = useMemo(
+    () => entries.find((e) => e.role === 'meta' && e.subtype === 'session_meta') ?? null,
+    [entries],
+  );
+
   // A received transcript (shared from another machine) never ran here and is
   // not resumable: hide the "open in terminal" affordance and instead offer a
   // worker that loads + summarises it via transcript_analyzer.
@@ -87,13 +95,15 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   // separate spinner here.
   const [statusProcessId, setStatusProcessId] = useState<string | null>(null);
   useEffect(() => {
-    if (!sessionId) { setStatusProcessId(null); return; }
+    // A workflow run has no backing AgenticProcess (its id is a runId, not a
+    // worker session) — skip the lookup so it doesn't 404.
+    if (!sessionId || workerType === 'workflow') { setStatusProcessId(null); return; }
     let cancelled = false;
     void AgenticProcess.getByWorkerId(sessionId)
       .then((p) => { if (!cancelled) setStatusProcessId(p?.id ?? null); })
       .catch(() => { if (!cancelled) setStatusProcessId(null); });
     return () => { cancelled = true; };
-  }, [sessionId]);
+  }, [sessionId, workerType]);
 
   const { data: statusProcess } = useEntity<AgenticProcess>(
     statusProcessId ? new TypeId(AgenticProcess.type, statusProcessId) : null,
@@ -139,6 +149,10 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   // `isAdvanced` here only gates the chrome (mode toggle, scroll clock) on/off.
   const [viewMode, setViewMode] = useTranscriptMode();
   const isAdvanced = useIsAdvanced();
+  // A workflow run has no chat turns (only phase + agent_spawn rows), and the
+  // callstack/execution synthesizers assume a claude/codex session — so always
+  // render it as the flat entry list.
+  const effectiveMode: TranscriptMode = workerType === 'workflow' ? 'trace' : viewMode;
 
   // ── Initialize tool filters on first load (run once per `entries` identity) ─
   const initializedForRef = useRef<UnifiedEntry[] | null>(null);
@@ -344,6 +358,8 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   const filteredEntries = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return entries.filter((entry) => {
+      // The workflow envelope renders as the summary header strip, not a row.
+      if (entry === workflowMeta) return false;
       if (entry.role === 'user') {
         if (!showUser) return false;
         return !query || entry.searchHaystack.includes(query);
@@ -361,7 +377,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
       if (!showUser && !showAssistant) return false;
       return !query || entry.searchHaystack.includes(query);
     });
-  }, [entries, showUser, showAssistant, toolFilters, searchQuery]);
+  }, [entries, workflowMeta, showUser, showAssistant, toolFilters, searchQuery]);
 
   // Chat mode is a quick agent ↔ user view. Operations (tool calls / file
   // writes / shell commands) live in trace mode only — chat stays simple.
@@ -646,11 +662,15 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
         )}
       </div>
 
-      {viewMode === 'callstack' ? (
+      {workflowMeta && (
+        <WorkflowRunSummary payload={workflowMeta.payload ?? {}} label={workerLabel(workerType)} />
+      )}
+
+      {effectiveMode === 'callstack' ? (
         <CallStackView workerType={workerType} sessionId={sessionId} />
-      ) : viewMode === 'execution' ? (
+      ) : effectiveMode === 'execution' ? (
         <ExecutionView controls={analysisControls} workerType={workerType} sessionId={sessionId} />
-      ) : viewMode === 'chat' ? (
+      ) : effectiveMode === 'chat' ? (
         <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
           {chatEntries.map((entry, idx) => {
             const ts = resolveEntryTimestamp(entry);

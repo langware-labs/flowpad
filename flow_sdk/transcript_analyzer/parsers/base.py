@@ -15,6 +15,10 @@ from ..entry import TranscriptEntry
 class Parser(Protocol):
     worker_type: str
     session_id: str  # populated lazily by lines that carry it; "" until then
+    # When True the source is a single JSON document (not JSONL): the owning
+    # ``AgentTranscriptFile`` reads the whole file and calls ``feed`` once with
+    # the parsed object. Defaults False — line-based workers are unaffected.
+    whole_document: bool = False
 
     def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
         """Translate one raw JSONL dict into zero or more entries.

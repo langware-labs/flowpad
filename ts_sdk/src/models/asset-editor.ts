@@ -14,6 +14,7 @@ export enum AssetEditor {
   WORKFLOW = 'workflow',
   WHITEBOARD = 'whiteboard',
   AGENT_TRACE = 'agent_trace',
+  DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',
 }
 
@@ -34,6 +35,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.WORKFLOW]: [RecordType.WORKFLOW],
   [AssetEditor.WHITEBOARD]: [RecordType.WHITEBOARD],
   [AssetEditor.AGENT_TRACE]: [RecordType.AGENT_TRACE],
+  [AssetEditor.DYNAMIC_WORKFLOW]: [RecordType.DYNAMIC_WORKFLOW],
   [AssetEditor.USAGE_REPORT]: [RecordType.USAGE_REPORT],
 };
 

@@ -85,6 +85,10 @@ EXPECTED = {
     # Usage-report feature (16b7936e) — additive member; brand-new type, no
     # existing value changed, so no migration. Existing values stay frozen.
     "USAGE_REPORT": "usage_report",
+    # Additive members; brand-new types, no existing value changed, so no
+    # migration. DYNAMIC_WORKFLOW's adding commit missed this freeze; WORKFLOW_RUN
+    # is the workflow-run-as-transcript feature.
+    "DYNAMIC_WORKFLOW": "dynamic_workflow", "WORKFLOW_RUN": "workflow_run",
 }
 
 
