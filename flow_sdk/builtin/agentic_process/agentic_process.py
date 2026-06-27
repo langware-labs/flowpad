@@ -141,6 +141,13 @@ EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "agent"]
 _PROMPT_LOCKS: dict[str, asyncio.Lock] = {}
 _PROMPT_WORKERS: dict[str, Any] = {}
 
+# Accepted per-turn ``permission_mode`` overrides (e.g. chat plan mode). Mirrors
+# the values ``ClaudeCliOptions`` knows how to translate to a CLI flag; gates
+# client input so an arbitrary string can't reach the spawn args.
+_VALID_PERMISSION_MODES = frozenset(
+    {"plan", "default", "acceptEdits", "bypassPermissions", "askUser"}
+)
+
 # Per-process serialization for the ``open``/``start`` lifecycle so two
 # concurrent refresh-driven calls can't both run recovery on the same process.
 _OPEN_LOCKS: dict[str, asyncio.Lock] = {}
@@ -1956,6 +1963,15 @@ class AgenticProcess(Entity):
         if not message:
             return ApiFailResponse(message="message is required")
 
+        # Per-turn permission-mode override (e.g. chat "plan mode"): the UI sends
+        # ``permission_mode`` to make THIS turn read-only ("plan") or to run the
+        # approved plan in the process's normal mode (no override). Whitelisted so
+        # a client can't pass an arbitrary CLI flag value; ``None`` ⇒ fall back to
+        # the persisted ``cli_config`` default below.
+        _turn_permission_mode = body.get("permission_mode")
+        if _turn_permission_mode is not None and _turn_permission_mode not in _VALID_PERMISSION_MODES:
+            return ApiFailResponse(message=f"invalid permission_mode: {_turn_permission_mode!r}")
+
         if self.status in (ProcessStatus.STOPPING.value, ProcessStatus.FAILED.value):
             return ApiFailResponse(
                 message=f"process not sendable (status={self.status})",
@@ -2010,7 +2026,8 @@ class AgenticProcess(Entity):
             workdir=self.workdir,
             env_vars=env_vars,
             model=(self.cli_config or {}).get("model"),
-            permission_mode=(self.cli_config or {}).get("permission_mode", "bypassPermissions"),
+            permission_mode=_turn_permission_mode
+            or (self.cli_config or {}).get("permission_mode", "bypassPermissions"),
             effort=(self.cli_config or {}).get("effort"),
             add_dirs=list(self.resolved_add_dirs or []),
             session_id=self.session_id if (self.session_id and not resumable) else None,
@@ -3395,6 +3412,16 @@ class AgenticProcess(Entity):
         """
         return get_driver(self.worker_type)
 
+    def _supports_plan_mode(self) -> bool:
+        """Driver capability flag surfaced on the entity for the chat plan
+        toggle. Defensive: a driver predating the capability resolves False
+        rather than 500-ing the serializer."""
+        try:
+            fn = getattr(self.driver, "supports_plan_mode", None)
+            return bool(fn(self)) if fn else False
+        except Exception:
+            return False
+
     @property
     def cli_options(self) -> "ClaudeCliOptions":
         """Deserialize cli_config into a live ``WorkerCLIOptions`` via the driver.
@@ -3420,6 +3447,7 @@ class AgenticProcess(Entity):
         d["ready_for_input"] = ready
         d["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         d["queue"] = self._queue_state()
+        d["supports_plan_mode"] = self._supports_plan_mode()
         return d
 
     @model_serializer(mode="wrap")
@@ -3435,6 +3463,7 @@ class AgenticProcess(Entity):
         data["ready_for_input"] = ready
         data["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         data["queue"] = self._queue_state()
+        data["supports_plan_mode"] = self._supports_plan_mode()
         # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
         # cli_options -> transcript_descriptor -> get_claude_session, i.e. live
         # worker work with disk I/O — which must never run inside a model_dump()

@@ -9,11 +9,14 @@
 import type { ProcessKind } from './process-types';
 
 /**
- * Permission mode for instruction execution
+ * Permission mode for instruction execution. Mirrors Claude Code's
+ * `--permission-mode` values plus the legacy app aliases.
  * - 'bypassPermissions': Skip permission checks (for automated execution)
  * - 'askUser': Prompt user for permission on sensitive operations
+ * - 'plan': Read-only plan mode — model produces a plan, cannot edit files
+ * - 'acceptEdits': Auto-apply file edits, still gate other sensitive ops
  */
-export type PermissionMode = 'bypassPermissions' | 'askUser';
+export type PermissionMode = 'bypassPermissions' | 'askUser' | 'plan' | 'acceptEdits';
 
 /**
  * Context for AgenticProcess execution.

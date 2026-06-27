@@ -172,6 +172,9 @@ export interface IAgenticProcess extends IEntity {
    *  false → headless JSON-stream (no PTY/xterm). Seeds `visible` at launch and
    *  is kept durable across reload by the loader. Routing stays headless==!visible. */
   pty_mode?: boolean;
+  /** Backend-computed driver capability: this worker supports CLI plan mode
+   *  (`--permission-mode plan`). Drives the headless-chat plan toggle. */
+  supports_plan_mode?: boolean;
   /** tabbed / tab_order / last_active_at come from IEntity (base-Entity fields). */
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
@@ -782,6 +785,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *  JSON-stream (no PTY/xterm). Durable across reload; seeds `visible` at launch. */
   pty_mode?: boolean;
 
+  /** Backend-computed driver capability (claude only, for now). */
+  supports_plan_mode?: boolean;
+
   /** Tab-strip membership (base-Entity field; see IEntity.tabbed). */
   tabbed?: boolean;
 
@@ -1202,6 +1208,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // doesn't set it) behaves exactly as today (PTY). Only an explicit `false`
     // selects headless.
     this.pty_mode = entity.pty_mode ?? true;
+    this.supports_plan_mode = entity.supports_plan_mode ?? false;
     this.tabbed = entity.tabbed ?? entity.visible ?? false;
     this.tab_order = entity.tab_order ?? 0;
     this.last_active_at = entity.last_active_at ?? null;
@@ -1726,7 +1733,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * PTY-interactive processes (visible=true) will 409 on this action — they
    * use ``inject``/``executeInstruction`` instead.
    */
-  async prompt(text: string, abortController?: AbortController): Promise<void> {
+  async prompt(
+    text: string,
+    abortController?: AbortController,
+    opts?: { permissionMode?: PermissionMode },
+  ): Promise<void> {
     const { FlowStreamProcessor } = await import('../flow_processing/flow-stream-processor');
     const { FlowEvents } = await import('../flow_processing/flow-events');
 
@@ -1744,7 +1755,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       true, // streaming
       ctrl.signal,
     );
-    actionInfo.bodyParameters = { message: text };
+    actionInfo.bodyParameters = {
+      message: text,
+      ...(opts?.permissionMode ? { permission_mode: opts.permissionMode } : {}),
+    };
 
     const response = await dataManager.callAction<unknown, Response>(actionInfo);
     if (!response || !response.body) {

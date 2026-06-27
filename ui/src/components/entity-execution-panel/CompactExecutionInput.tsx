@@ -16,6 +16,10 @@ interface CompactExecutionInputProps {
   onStop?: () => void | Promise<void>;
   /** Drop the container's top border + background so it nests inside another ribbon. */
   bare?: boolean;
+  /** Optional node rendered at the start of the row (e.g. a mode pill). */
+  leadingSlot?: ReactNode;
+  /** Shift+Tab handler (e.g. toggle plan mode). Intercepted before the textarea. */
+  onShiftTab?: () => void;
   /**
    * Handle pasted image files (upload to the process input dir, open the Files
    * side tab, etc). Returns one reference line per uploaded image — these are
@@ -41,6 +45,8 @@ export function CompactExecutionInput({
   onStop,
   bare = false,
   onPasteImages,
+  leadingSlot,
+  onShiftTab,
 }: CompactExecutionInputProps) {
   const [value, setValue] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -97,12 +103,18 @@ export function CompactExecutionInput({
 
   return (
     <div className={cn('flex items-end gap-2', !bare && 'border-t bg-background px-3 py-2.5', className)}>
+      {leadingSlot}
       <textarea
         ref={taRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onPaste={handlePaste}
         onKeyDown={(e) => {
+          if (onShiftTab && e.key === 'Tab' && e.shiftKey) {
+            e.preventDefault();
+            onShiftTab();
+            return;
+          }
           if (e.key === 'Enter' && !e.shiftKey && (!e.nativeEvent.isComposing || e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             void send();
