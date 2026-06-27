@@ -38,7 +38,11 @@ describe('strip width containment (live-QA regression, 2026-06-11)', () => {
       resolve(__dirname, '../../src/components/tabs/TabStrip.tsx'),
       'utf-8',
     );
-    expect(tabStripSource).toContain('flex min-w-0 max-w-full items-center');
+    // Assert the width-containment invariant only (min-w-0/max-w-full so the
+    // strip never sizes its host to content) — NOT the cross-axis alignment,
+    // which is a free layout choice (currently items-end) and must not pin
+    // this regression test.
+    expect(tabStripSource).toContain('flex min-w-0 max-w-full');
   });
 
   it('flow-page main column carries min-w-0', () => {

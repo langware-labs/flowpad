@@ -45,9 +45,14 @@ def _cn_url(boot: dict, sub: str) -> str:
 
 async def _markdown_total(client, boot, project_id: str) -> int:
     cn_id = boot["data"]["default_compute_node"]["id"]
+    # Filter-only browse ``total`` is the post-limit, post-scope-filter result
+    # count — NOT a global COUNT(*). Under the session-shared DB other tests'
+    # markdown rows are present, so a small limit would browse rows outside this
+    # project and the scope filter would drop them, undercounting projA. Use a
+    # limit large enough to include projA's row in the browsed page.
     resp = await client.get(
         f"/api/v1/graph/compute_node/{cn_id}/fs-records/search"
-        f"?record_type=markdown&projects={project_id}&user=false&limit=1"
+        f"?record_type=markdown&projects={project_id}&user=false&limit=500"
     )
     assert resp.status_code == 200, resp.text
     return resp.json()["data"]["total"]
@@ -91,6 +96,10 @@ async def test_orphan_delete_keeps_live_project_markdown(bootstrapped_client, tm
         f"{index_url}?type=markdown&projects={pid}&user=false&orphan_action=delete"
     )
     assert r2.status_code == 200, r2.text
+    # A project-scoped orphan sweep must touch ONLY projA-scoped orphans. projA's
+    # doc.md is on disk (not an orphan) → orphans_db_removed must be 0 even when
+    # the shared DB carries unscoped orphans from sibling tests (a None-scope row
+    # of a scoped type is out of any project scope; see _scope_filtered_orphans).
     assert r2.json()["data"]["orphans_db_removed"] == 0, (
         f"live record false-orphaned: {r2.json()['data']}"
     )
