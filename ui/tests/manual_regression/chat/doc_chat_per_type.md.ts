@@ -19,7 +19,7 @@ import * as path from 'path';
 
 const API = apiBase();
 const PANEL = '[data-testid="entity-execution-panel"]';
-const TEXTAREA = 'textarea[placeholder="Ask about this doc…"]';
+const TEXTAREA = '[data-testid="entity-execution-input"]';
 
 /**
  * Canonical AssetDocPointer grammar (load-asset.ts):
@@ -159,6 +159,7 @@ test.describe('doc-chat per type', () => {
 
   test('test 1: panel mounts on every doc-type with an asset_ref-resolved target', async ({ page }) => {
     test.setTimeout(60_000);
+    await page.addInitScript(() => localStorage.setItem('viewMode', 'advanced'));
     await dismissSetupModal(page);
 
     for (const { type, editor, machinePath } of DOCS) {
@@ -188,6 +189,7 @@ test.describe('doc-chat per type', () => {
 
   test('test 4: target changes when switching between doc-type editors (in-app nav)', async ({ page }) => {
     test.setTimeout(60_000);
+    await page.addInitScript(() => localStorage.setItem('viewMode', 'advanced'));
     await dismissSetupModal(page);
 
     // skill → agent editor: the target string must change type.
