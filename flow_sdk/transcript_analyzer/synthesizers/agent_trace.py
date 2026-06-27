@@ -46,6 +46,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..assembly import assemble_tree
 from ..callable_taxonomy import classify_callable
 from ..entries import (
     AgentSpawnEntry,
@@ -371,24 +372,6 @@ def _lane_dict(
         "segments": _segments(lane_id, entries, transcript),
     }
     return lane, _lane_events(lane_id, entries), _lane_markers(lane_id, entries)
-
-
-def _subagent_files(jsonl_path: Path, session_id: str) -> list[tuple[Path, dict]]:
-    """(agent jsonl, parsed meta) pairs under ``<dir>/<sid>/subagents/``."""
-    sub_dir = jsonl_path.parent / session_id / "subagents"
-    if not sub_dir.is_dir():
-        return []
-    out: list[tuple[Path, dict]] = []
-    for meta_path in sorted(sub_dir.glob("agent-*.meta.json")):
-        jsonl = meta_path.with_name(meta_path.name.replace(".meta.json", ".jsonl"))
-        if not jsonl.is_file():
-            continue
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            meta = {}
-        out.append((jsonl, meta if isinstance(meta, dict) else {}))
-    return out
 
 
 _CONTAINER_KINDS = frozenset({"session", "skill", "subagent"})
@@ -868,6 +851,10 @@ def _build_outline(
 def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict:
     path = resolve_session_jsonl(worker_type, session_id)
     transcript = AgentTranscriptFile(worker_type, path, session_id=session_id)
+    # Stitch each spawned sub-agent's separate transcript onto its
+    # AgentSpawnEntry.children (joined on tool_use_id). This also resolves each
+    # sub-agent's true parent lane from the flat subagents/ dir.
+    tree = assemble_tree(transcript, session_id=session_id)
     root_entries = [e for e in transcript.entries if not e.is_sidechain]
 
     lanes: list[dict] = []
@@ -877,7 +864,9 @@ def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict
     # against the exact transcript each frame draws from.
     entries_by_lane: dict[str, list] = {}
     transcripts_by_lane: dict[str, AgentTranscriptFile] = {}
-    total_cost = transcript.cost()
+    # One deep walk for the headline total (every stitched sub-agent included);
+    # each lane below carries its own shallow cost so the breakdown sums to this.
+    total_cost = transcript.cost_deep()
 
     lane, ev, mk = _lane_dict("root", "root", transcript, root_entries)
     lanes.append(lane)
@@ -891,25 +880,28 @@ def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict
         for e in transcript.entries
         if isinstance(e, AgentSpawnEntry) and e.tool_use_id
     }
-    for jsonl, meta in _subagent_files(path, transcript.session_id or session_id):
-        sub = AgentTranscriptFile(worker_type, jsonl)
+    # nodes carry true parent_lane_id; orphans (no matching spawn) are still
+    # surfaced as root-parented lanes rather than dropped.
+    for node in [*tree.nodes, *tree.orphans]:
+        sub = node.transcript
         if not sub.entries:
             continue
-        lane_id = jsonl.stem  # agent-<id>
-        spawn = spawns_by_tuid.get(meta.get("toolUseId") or "")
+        lane_id = node.lane_id  # agent-<id>
+        meta = node.meta
+        spawn = spawns_by_tuid.get(node.spawn_tool_use_id)
         lane, ev, mk = _lane_dict(
             lane_id, "subagent", sub, list(sub.entries),
             agent_type=meta.get("agentType") or (spawn.agent_type if spawn else None),
             description=meta.get("description") or (spawn.description if spawn else None),
-            parent_lane_id="root",
-            spawn_tool_use_id=meta.get("toolUseId"),
+            parent_lane_id=node.parent_lane_id,
+            spawn_tool_use_id=node.spawn_tool_use_id or None,
         )
+        lane["cost_usd"] = round(sub.cost(), 6)  # this sub-agent's own (shallow) cost
         lanes.append(lane)
         events.extend(ev)
         markers.extend(mk)
         entries_by_lane[lane_id] = list(sub.entries)
         transcripts_by_lane[lane_id] = sub
-        total_cost += sub.cost()
 
     all_ms = [m for lane in lanes for m in (_ts_ms(lane["start_ts"] or ""), _ts_ms(lane["end_ts"] or "")) if m]
     tool_call_count = sum(len(s["tool_calls"]) for lane in lanes for s in lane["segments"])

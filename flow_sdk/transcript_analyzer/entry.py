@@ -8,7 +8,7 @@ The class hierarchy under ``entries/`` is the canonical type discriminator —
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
@@ -102,6 +102,32 @@ class TranscriptEntry:
         tool_use + thinking) yields multiple ``FlowData`` items in one shot.
         """
         return []
+
+    # ── tree traversal ───────────────────────────────────────────────────────
+    # Most entries are leaves. ``AgentSpawnEntry`` is the only composite node —
+    # it carries the spawned sub-agent's entries as ``children`` once a
+    # transcript has been assembled (see ``assembly.assemble_tree``). The
+    # streaming reader never populates children, so ``walk()`` over an
+    # un-assembled transcript is identical to flat iteration.
+
+    def iter_children(self) -> list["TranscriptEntry"]:
+        """Direct child entries; empty for leaves. Composites override."""
+        return []
+
+    def walk(self, _seen: set[int] | None = None) -> Iterator["TranscriptEntry"]:
+        """Yield self then recurse children, depth-first.
+
+        ``id()``-guarded so a malformed cycle (a spawn whose subtree loops
+        back) can't spin forever — each object is yielded at most once.
+        """
+        seen = _seen if _seen is not None else set()
+        oid = id(self)
+        if oid in seen:
+            return
+        seen.add(oid)
+        yield self
+        for child in self.iter_children():
+            yield from child.walk(seen)
 
     def _tool_flow_data(
         self,
