@@ -25,12 +25,12 @@ test.describe('switch between sessions', () => {
     await expect(firstTab).toBeVisible({ timeout: 15_000 });
 
     // Open a second tab.
-    const tabsBefore = await page.locator('[data-testid^="tab-shell-"]').count();
+    const tabsBefore = await page.locator('[data-testid^="tab-shell|"]').count();
     await addTerminalTab(page);
-    await expect(page.locator('[data-testid^="tab-shell-"]')).toHaveCount(tabsBefore + 1, { timeout: 15_000 });
+    await expect(page.locator('[data-testid^="tab-shell|"]')).toHaveCount(tabsBefore + 1, { timeout: 15_000 });
 
     // The newly-opened tab id (the one that is NOT firstId).
-    const ids = await page.locator('[data-testid^="tab-shell-"]').evaluateAll((els) =>
+    const ids = await page.locator('[data-testid^="tab-shell|"]').evaluateAll((els) =>
       els.map((e) => e.getAttribute('data-testid')!.replace(/^tab-/, '')),
     );
     const secondId = ids.find((id) => id !== firstId);
