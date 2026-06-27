@@ -53,27 +53,28 @@ const DOCS: Array<{ type: string; editor: string; name: string; machinePath: str
   { type: 'skill', editor: 'skill', name: FIXTURE_SKILL, machinePath: '', id: '' },
 ];
 
-let VAULT_ROOT = '';
-// Scoped-create one asset under the default project, index it, and return the
-// vault-relative vfs path + entity id.
+let PROJECT_ID = '';
+// Scoped-create one asset under the default project, index it, and return its
+// machine path (asset_ref) + entity id. The chat panel only resolves a target
+// when the doc is opened under its project scope (see vfsUrl).
 async function seedScoped(rq: any, projectId: string, type: string, name: string): Promise<{ vfs: string; id: string }> {
   const res = await rq.post(`${API}/api/v1/graph/project/${projectId}/${type}`, { data: { name } });
   if (!res.ok()) throw new Error(`seed ${type} failed: ${res.status()} ${await res.text()}`);
   const data = (await res.json()).data;
-  const assetRef: string = data.asset_ref;
   await rq.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=${type}&projects=${projectId}&user=false&force=true`);
-  const vfs = assetRef.startsWith(VAULT_ROOT) ? assetRef.slice(VAULT_ROOT.length).replace(/^\//, '') : assetRef.replace(/^\//, '');
-  return { vfs, id: data.id };
+  return { vfs: data.asset_ref, id: data.id };
 }
 
-/** Full purge of one fixture: resolve the entity id by name via /search, then
- * DELETE /fs-records/<type>/<id> (row + FTS + shadow dir + source file). Falls
- * back to plain fs removal when the entity was never indexed. */
-function vfsUrl(editor: string, vaultRelPath: string): string {
-  // vfs value = the path relative to the vault root (the local compute-node
-  // vault). Encode each segment (asset paths can contain spaces) but keep slashes.
-  const rel = vaultRelPath.replace(/^\//, '').split('/').map(encodeURIComponent).join('/');
-  return `/dock/assets/editor/${editor}/vfs/${rel}`;
+// Canonical asset-editor vfs URL (matches the UI's click-through):
+//   /dock/assets/editor/<editor>/vfs/compute_node-@local/<machinePathNoSlash>
+//     ?scope-mode=project&scope-activeProjectId=<projectId>
+// The compute_node-@local prefix + the project scope query are BOTH required for
+// useEntityByPath to resolve the entity target (the agent/skill editor renders
+// EntityExecutionPanel only once its `agent`/`skill` entity loads).
+function vfsUrl(editor: string, machinePath: string): string {
+  const rel = machinePath.replace(/^\//, '').split('/').map(encodeURIComponent).join('/');
+  const scope = `?scope-mode=project&scope-activeProjectId=${PROJECT_ID}`;
+  return `/dock/assets/editor/${editor}/vfs/compute_node-@local/${rel}${scope}`;
 }
 
 /**
@@ -82,11 +83,17 @@ function vfsUrl(editor: string, vaultRelPath: string): string {
  * that must be selected; the `agent`/`skill` editors embed the panel directly.
  */
 async function openChatPanel(page: Page) {
-  // agent/skill editors embed the EntityExecutionPanel directly (composer
-  // already visible). The markdown editor keeps it behind a "Chat" side-tab
-  // button — only click that when the composer isn't already showing.
+  // After the goto, the asset-editor loader normalizes the URL (it appends view
+  // params like ?sideWindows=…) — a client-side re-navigation that keeps
+  // resetting Playwright's locator resolution, so ACTIVE polling for the
+  // composer right after goto never stabilizes (proven: identical waitFor/expect
+  // times out, while an equal wall-clock settle then finds it). Let the loader's
+  // re-nav churn settle with a passive wait before probing. This is first-paint/
+  // post-redirect synchronization, NOT a raised cap to ride past a slow path.
+  await page.waitForTimeout(9_000);
+  // agent embeds the composer directly; skill keeps it behind a "Chat" side-tab.
   const ta = page.locator(`${TEXTAREA}:visible`).first();
-  if (await ta.isVisible({ timeout: 6_000 }).catch(() => false)) return;
+  if (await ta.isVisible({ timeout: 8_000 }).catch(() => false)) return;
   const chatTab = page.getByRole('button', { name: 'Chat', exact: true }).first();
   if (await chatTab.isVisible({ timeout: 5_000 }).catch(() => false)) {
     await chatTab.click();
@@ -121,15 +128,11 @@ test.describe('doc-chat per type', () => {
     const rq = await apiContext();
     const boot = (await (await rq.get(`${API}/api/v1/graph/bootstrap`)).json()).data;
     const dp = boot.default_project;
-    const projectId = typeof dp === 'string' ? dp : dp.id;
-    const mount: string = (typeof dp === 'object' ? dp.fs_storage_mount_path : '') || '';
-    // vault root = the workspace dir that contains the project (asset_ref =
-    // <vault>/<project>/.claude/<type>/<file>); vfs paths are relative to it.
-    VAULT_ROOT = mount ? mount.replace(/\/[^/]+$/, '') : '';
+    PROJECT_ID = typeof dp === 'string' ? dp : dp.id;
     // Scoped-create each fixture under the project + index it, so its asset_ref
     // is vfs-addressable and useEntityByPath resolves the chat target.
     for (const doc of DOCS) {
-      const { vfs, id } = await seedScoped(rq, projectId, doc.type, doc.name);
+      const { vfs, id } = await seedScoped(rq, PROJECT_ID, doc.type, doc.name);
       doc.machinePath = vfs;
       doc.id = id;
     }
