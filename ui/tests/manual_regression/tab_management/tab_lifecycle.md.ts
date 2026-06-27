@@ -37,7 +37,7 @@ async function visibleTabs(page: Page): Promise<Array<{ pointer: string; visible
       if (p && p.startsWith('{')) {
         try {
           const o = JSON.parse(p);
-          return `${o.viewType ?? ''}|${o.pointer ?? ''}`;
+          return o.tabHash ?? `${o.viewType ?? ""}|${o.pointer ?? ""}`;
         } catch {
           return p;
         }
@@ -56,25 +56,25 @@ test.describe('Tab Management — content tab lifecycle', () => {
   // ── 1. open → a content surface becomes a persistent visible Tab ──────────
   test('open Assets materializes a visible Tab chip', async ({ page }) => {
     await page.goto('/dock/assets');
-    await expect(page.locator('[data-testid="tab-content-assets|"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="tab-content-assets|all"]')).toBeVisible({ timeout: 10_000 });
     const rows = await visibleTabs(page);
-    expect(rows.find((r) => r.pointer === 'assets|')?.visible).toBe(true);
+    expect(rows.find((r) => r.pointer === 'assets|all')?.visible).toBe(true);
   });
 
   // ── 2. coexist — opening Terminals does NOT evict Assets (the reported bug) ─
   test('Assets and Terminals coexist in the strip', async ({ page }) => {
     await page.goto('/dock/assets');
-    await expect(page.locator('[data-testid="tab-content-assets|"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="tab-content-assets|all"]')).toBeVisible({ timeout: 10_000 });
     await page.goto('/dock/shell');
     // The Assets content chip must still be present after navigating to shell.
-    await expect(page.locator('[data-testid="tab-content-assets|"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="tab-content-assets|all"]')).toBeVisible({ timeout: 10_000 });
   });
 
   // ── 3. select — clicking a content chip is URL-first ──────────────────────
   test('clicking the Assets chip navigates back (URL-first)', async ({ page }) => {
     await page.goto('/dock/assets');
     await page.goto('/dock/search');
-    await page.locator('[data-testid="tab-content-assets|"]').click();
+    await page.locator('[data-testid="tab-content-assets|all"]').click();
     await expect(page).toHaveURL(/\/dock\/assets/, { timeout: 10_000 });
   });
 
@@ -98,7 +98,7 @@ test.describe('Tab Management — content tab lifecycle', () => {
   test('reopening reuses the same Tab row (no duplicate)', async ({ page }) => {
     await page.goto('/dock/assets');
     await page.goto('/dock/assets'); // navigate twice
-    const rows = (await visibleTabs(page)).filter((r) => r.pointer === 'assets|');
+    const rows = (await visibleTabs(page)).filter((r) => r.pointer === 'assets|all');
     expect(rows.length).toBeLessThanOrEqual(1);
     expect(rows[0]?.visible).toBe(true);
   });
