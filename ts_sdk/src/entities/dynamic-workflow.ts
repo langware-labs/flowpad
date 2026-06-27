@@ -4,6 +4,7 @@ import { FSRef } from '../fs/FSRef';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { AgenticProcess } from '../process/agentic-process';
+import { ProcessKind } from '../process/process-types';
 
 /**
  * DynamicWorkflow entity — an authored dynamic-workflow script asset (the
@@ -56,17 +57,29 @@ export class DynamicWorkflow extends APIEntity<DynamicWorkflow> {
 
   /**
    * Run THIS workflow by launching a Claude worker that executes its script via
-   * the Workflow tool. Reuses the existing worker launcher (slick P4 — no
-   * parallel launch action): `ptyMode:true` opens a visible terminal with the
-   * prompt pre-filled; `ptyMode:false` runs headlessly in the background. The
-   * execution produces a WorkflowRun once its journal lands on disk.
+   * the Workflow tool. Reuses `AgenticProcess.launch` (slick P4 — no parallel
+   * launch action) and tags the process with `target_typeid_str = this.typeId`
+   * + `process_type = Execution`, so the run shows up in this workflow's
+   * `EntityExecutionPanel` (`useProcessesForTarget`) — the same "runs of this
+   * entity" surface the Agent/Skill/Workflow editors use. `ptyMode:true` opens a
+   * visible terminal; `ptyMode:false` runs headlessly. The execution produces a
+   * WorkflowRun once its journal lands on disk.
    */
   async run(
     project?: { id?: string; fs_storage_mount_path?: string | null } | null,
     opts?: { ptyMode?: boolean },
   ): Promise<AgenticProcess> {
+    const proj = project ?? dataContext.project;
     const where = this.asset_ref ? `the workflow script at ${this.asset_ref}` : `the workflow "${this.name}"`;
-    const prompt = `Run ${where} using the Workflow tool (pass it via scriptPath if a path is given).`;
-    return AgenticProcess.openTab('claude_code', prompt, project, { ptyMode: opts?.ptyMode !== false });
+    const launchPrompt = `Run ${where} using the Workflow tool (pass it via scriptPath if a path is given).`;
+    return AgenticProcess.launch({
+      workerType: 'claude_code',
+      workdir: proj?.fs_storage_mount_path ?? '',
+      projectId: proj?.id ?? null,
+      launchPrompt,
+      processType: ProcessKind.Execution,
+      target: this.typeId.toString(),
+      ptyMode: opts?.ptyMode !== false,
+    });
   }
 }

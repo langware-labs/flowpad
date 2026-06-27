@@ -35,6 +35,16 @@ function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
 
+/** Source workflow file + owning skill (when bundled) derived from scriptPath. */
+function sourceOf(scriptPath: string | undefined): { file: string; skill?: string } | null {
+  if (!scriptPath) return null;
+  const parts = scriptPath.split('/');
+  const file = parts[parts.length - 1] || scriptPath;
+  const si = parts.indexOf('skills');
+  const skill = si >= 0 && parts[si - 1] === '.claude' && parts[si + 1] ? parts[si + 1] : undefined;
+  return { file, skill };
+}
+
 interface Props {
   payload: Record<string, unknown>;
   /** Worker label, e.g. "Workflow" → rendered as "Workflow run". */
@@ -45,6 +55,7 @@ export function WorkflowRunSummary({ payload, label }: Props) {
   const workflowName = (payload.workflowName as string | undefined) || (payload.runId as string | undefined) || '';
   const status = payload.status as string | undefined;
   const modelProvider = payload.model_provider as string | undefined;
+  const source = sourceOf(payload.scriptPath as string | undefined);
 
   return (
     <div className="shrink-0 border-b border-border bg-muted/30 p-3">
@@ -59,6 +70,13 @@ export function WorkflowRunSummary({ payload, label }: Props) {
         )}
         {modelProvider && <span className="ml-auto shrink-0 truncate text-[11px] text-muted-foreground">{modelProvider}</span>}
       </div>
+      {source && (
+        <div className="mb-2 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="wf-run-source">
+          <span className="shrink-0">Source:</span>
+          <span className="min-w-0 truncate font-medium text-foreground">{source.file}</span>
+          {source.skill && <span className="shrink-0">· skill: {source.skill}</span>}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatTile label="Agents" value={formatNumber(num(payload.agentCount))} />
         <StatTile label="Tokens" value={formatNumber(num(payload.totalTokens))} />

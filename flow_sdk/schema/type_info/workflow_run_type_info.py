@@ -20,6 +20,9 @@ class WorkflowRunMeta(BaseMeta):
     total_tool_calls: Optional[int] = None
     duration_ms: Optional[int] = None
     default_model: Optional[str] = None
+    source_path: Optional[str] = None
+    dynamic_workflow_id: Optional[str] = None
+    skill_id: Optional[str] = None
 
 
 WORKFLOW_RUN = TypeMetadata(
@@ -31,7 +34,7 @@ WORKFLOW_RUN = TypeMetadata(
     creatable=False,
     icon="Workflow",
     api_visible=True,
-    index_fields=["name", "workflow_name", "status"],
+    index_fields=["name", "workflow_name", "status", "dynamic_workflow_id", "skill_id"],
     # Read-only, provider-owned journal: asset_ref is set directly by the
     # extractor (FSRef(..., read_only=True)), like claude_session — no folder
     # layout / main_file materialization here.
