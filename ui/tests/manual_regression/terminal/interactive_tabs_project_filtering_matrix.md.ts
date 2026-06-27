@@ -36,23 +36,38 @@ async function createProject(rq: APIRequestContext, name: string, mount: string)
   return (await r.json()).data.id;
 }
 
+/**
+ * Post-Tab-cutover a strip chip IS a `Tab` entity, created URL-first on
+ * navigation; a bare REST shell/AP create no longer produces one. This is the
+ * single place that mints a tab the way navigation would — DockPointer JSON
+ * pointer with tabHash `shell|<target>` → testid `tab-shell|<target>` — so the
+ * chip renders without navigating to each session. (`createContentTab` keeps its
+ * own legacy `editor|...` pointer shape.)
+ */
+async function createTab(
+  rq: APIRequestContext,
+  opts: { target: string; targetType: string; projectId?: string; iconKey?: string },
+): Promise<void> {
+  await rq.post(`${API}/api/v1/graph/tab`, {
+    data: {
+      pointer: JSON.stringify({ viewType: 'shell', pointer: opts.target }),
+      target_type: opts.targetType,
+      target_id: opts.target.replace(/^(shell|agentic_process)-/, ''),
+      project_id: opts.projectId,
+      ...(opts.iconKey ? { icon_key: opts.iconKey } : {}),
+      visible: true,
+    },
+  });
+}
+
 async function createShell(rq: APIRequestContext, projectId?: string): Promise<string> {
   const r = await rq.post(`${API}/api/v1/graph/shell`, { data: projectId ? { project_id: projectId } : {} });
   expect(r.status()).toBe(200);
   const shell = (await r.json()).data;
-  // Post-Tab-cutover a strip chip IS a `Tab` entity (created URL-first on
-  // navigation); a bare `POST /graph/shell` no longer produces one. Create the
-  // matching shell Tab so the chip renders without navigating to each shell —
-  // shape mirrors a navigation-created shell tab (pointer = DockPointer JSON,
-  // tabHash `shell|shell-<id>` → testid `tab-shell|shell-<id>`).
-  await rq.post(`${API}/api/v1/graph/tab`, {
-    data: {
-      pointer: JSON.stringify({ viewType: 'shell', pointer: `shell-${shell.id}` }),
-      target_type: 'shell',
-      target_id: shell.id,
-      project_id: shell.project_id ?? projectId,
-      visible: true,
-    },
+  await createTab(rq, {
+    target: `shell-${shell.id}`,
+    targetType: 'shell',
+    projectId: shell.project_id ?? projectId,
   });
   return shell.id;
 }
@@ -80,24 +95,14 @@ async function createProcess(rq: APIRequestContext, projectId: string, worker: '
   // AP defaults visible=false → filtered from strip; PATCH visible=true so it surfaces.
   await rq.patch(`${API}/api/v1/graph/agentic_process/${id}`, { data: { visible: true } });
   const got = (await (await rq.get(`${API}/api/v1/graph/agentic_process/${id}`)).json()).data;
-  // Post-Tab-cutover a strip chip IS a `Tab` entity, created URL-first on
-  // navigation. A bare REST AP create produces no Tab, so a /dock/shell (no
-  // pointer) visit never renders its chip. Create the matching AP Tab so the
-  // chip surfaces without navigating to the process — shape mirrors a
-  // navigation-created AP tab (pointer = DockPointer JSON, tabHash
-  // `shell|agentic_process-<id>` → testid `tab-shell|agentic_process-<id>`).
-  await rq.post(`${API}/api/v1/graph/tab`, {
-    data: {
-      pointer: JSON.stringify({ viewType: 'shell', pointer: `agentic_process-${id}` }),
-      target_type: 'agentic_process',
-      target_id: id,
-      project_id: got.project_id ?? projectId,
-      // icon_key is the resolved provider kind the chip renders its glyph from
-      // (data-provider). The navigation path resolves it from the worker; a raw
-      // REST create must supply it or the chip falls back to the shell glyph.
-      icon_key: worker === 'codex' ? 'codex' : 'claude',
-      visible: true,
-    },
+  // icon_key is the resolved provider kind the chip renders its glyph from
+  // (data-provider) — navigation resolves it from the worker; a raw REST create
+  // must supply it or the chip falls back to the shell glyph.
+  await createTab(rq, {
+    target: `agentic_process-${id}`,
+    targetType: 'agentic_process',
+    projectId: got.project_id ?? projectId,
+    iconKey: worker === 'codex' ? 'codex' : 'claude',
   });
   return { id, shellId: got.shell_id };
 }
@@ -164,6 +169,37 @@ async function gotoUrl(page: Page, path: string) {
 
 async function tabIds(page: Page): Promise<string[]> {
   return page.locator(tabSel).evaluateAll((els) => els.map((el) => el.getAttribute('data-testid') ?? '').filter(Boolean));
+}
+
+/**
+ * After a close-all the strip auto-switches off the now-empty project to one that
+ * still has tabs. Poll for that SETTLED state (the switch lands a beat after the
+ * closed project's tabs drop to 0): none of `closedIds` remain, every shown tab
+ * belongs to `survivorIds`, and the count equals `expected`.
+ */
+async function expectSwitchedAfterCloseAll(
+  page: Page,
+  closedIds: string[],
+  survivorIds: string[],
+  expected: number,
+) {
+  await expect
+    .poll(
+      async () => {
+        const t = await tabIds(page);
+        const closedLeft = t.filter((x) => closedIds.some((id) => x.includes(id))).length;
+        const survivorsShown = t.filter((x) => survivorIds.some((id) => x.includes(id))).length;
+        return closedLeft === 0 && survivorsShown === t.length ? t.length : -1;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(expected);
+}
+
+/** Click a left-rail icon button (Home or the Chats/shell view). */
+async function clickRail(page: Page, target: 'home' | 'chats') {
+  const glyph = target === 'home' ? 'lucide-house' : 'lucide-message-square';
+  await page.locator(`button[data-sidebar="menu-button"]:has(svg.${glyph})`).click();
 }
 
 /**
@@ -303,9 +339,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     await page.locator(tabSel).nth(1).click();
     await page.waitForTimeout(400);
-    await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)').click();
+    await clickRail(page, 'home');
     await page.waitForURL(/\/$/, { timeout: 15_000 });
-    await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-message-square)').click();
+    await clickRail(page, 'chats');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     // All three tabs survive the round-trip ("keeps tabs alive"). Re-entry via the
     // Chats rail goes to bare /dock/shell, whose loader resolves a default among
@@ -350,7 +386,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(2);
     const targetUrl = `/dock/shell/shell-${ids[1]}`;
-    await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)').click();
+    await clickRail(page, 'home');
     await page.waitForURL(/\/$/, { timeout: 15_000 });
     await gotoUrl(page, targetUrl);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
@@ -444,19 +480,8 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.locator('[data-testid="close-all-tabs-button"]').click();
     // Close-all closes ONLY the current project's (Proj-A) tabs; the strip then
     // auto-switches to a project that still has tabs (Proj-B) rather than
-    // stranding on an empty project. Poll for the SETTLED state (the switch to
-    // Proj-B's 2 tabs lands a beat after Proj-A's tabs drop to 0).
-    await expect
-      .poll(
-        async () => {
-          const t = await tabIds(page);
-          const aLeft = t.filter((x) => aIds.some((id) => x.includes(id))).length;
-          const bShown = t.filter((x) => bIds.some((id) => x.includes(id))).length;
-          return aLeft === 0 && bShown === t.length ? t.length : -1;
-        },
-        { timeout: 15_000 },
-      )
-      .toBe(2);
+    // stranding on an empty project.
+    await expectSwitchedAfterCloseAll(page, aIds, bIds, 2);
     await rq.dispose();
   });
 
@@ -680,19 +705,8 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     await page.locator('[data-testid="close-all-tabs-button"]').click();
     // Proj-A ends with zero tabs; rather than strand on the now-empty project the
-    // strip auto-switches to Proj-B (which still has its 2 tabs). Poll for the
-    // settled state (switch lands a beat after Proj-A's tabs drop to 0).
-    await expect
-      .poll(
-        async () => {
-          const t = await tabIds(page);
-          const aLeft = t.filter((x) => aIds.some((id) => x.includes(id))).length;
-          const bShown = t.filter((x) => bIds.some((id) => x.includes(id))).length;
-          return aLeft === 0 && bShown === t.length ? t.length : -1;
-        },
-        { timeout: 15_000 },
-      )
-      .toBe(2);
+    // strip auto-switches to Proj-B (which still has its 2 tabs).
+    await expectSwitchedAfterCloseAll(page, aIds, bIds, 2);
     await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-b/i, { timeout: 10_000 });
     await rq.dispose();
   });
@@ -1012,9 +1026,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // exact prior selection — the rail carries no remembered pointer — so the tab
     // is re-activated by clicking it, as a user would. Idempotent across rounds.)
     for (let r = 0; r < 2; r++) {
-      await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)').click();
+      await clickRail(page, 'home');
       await page.waitForURL(/\/$/, { timeout: 15_000 });
-      await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-message-square)').click();
+      await clickRail(page, 'chats');
       await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
       await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
       expect(await tabIds(page)).toEqual(before);
@@ -1061,7 +1075,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.locator(tabSel).nth(1).click();
     await page.waitForTimeout(400);
     const target = page.url().match(/(shell|agentic_process)-[0-9a-f-]+/)![0];
-    await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)').click();
+    await clickRail(page, 'home');
     await page.waitForURL(/\/$/, { timeout: 15_000 });
     await page.goBack();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(target);
@@ -1093,9 +1107,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
-    await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)').click();
+    await clickRail(page, 'home');
     await page.waitForURL(/\/$/, { timeout: 15_000 });
-    await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-message-square)').click();
+    await clickRail(page, 'chats');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     await page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`).click();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(`agentic_process-${id}`);
