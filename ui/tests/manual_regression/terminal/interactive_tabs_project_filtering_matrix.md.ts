@@ -705,14 +705,21 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 3; i++) await createShell(rq, a);
     for (let i = 0; i < 2; i++) await createShell(rq, b);
     const list = (await pureShells(rq));
-    const bShells = list.filter((s: { project_id: string }) => s.project_id === b).sort((x: { tab_order: number }, y: { tab_order: number }) => (x.tab_order ?? 0) - (y.tab_order ?? 0));
-    const aShells = list.filter((s: { project_id: string }) => s.project_id === a);
+    const bIds = list.filter((s) => s.project_id === b).map((s) => s.id);
+    const aShells = list.filter((s) => s.project_id === a);
     await gotoUrl(page, `/dock/shell/shell-${aShells[1].id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await page.locator('[data-testid="projects-counter-chip"]').first().click();
     await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
     await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-B/).first().click();
-    await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(`shell-${bShells[0].id}`);
+    // The switch auto-selects Proj-B's FIRST tab in strip order (the strip is
+    // ordered by the Tab entity's tab_order, which is the authority — not the
+    // shell row's tab_order, which can diverge). Assert the URL lands on the
+    // first tab the strip actually renders, and that it is one of Proj-B's shells.
+    await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(2);
+    const firstTab = (await tabIds(page))[0].replace('tab-shell|shell-', '');
+    expect(bIds).toContain(firstTab);
+    await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(`shell-${firstTab}`);
     await rq.dispose();
   });
 
