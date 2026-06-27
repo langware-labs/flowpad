@@ -46,23 +46,14 @@ const TWO_BOXES_ARROW = [
 ];
 
 test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
-  test('C1: quick-create via asset-list opens the editor', async ({ page }) => {
+  test('C1: create opens the whiteboard editor', async ({ page, request }) => {
     test.setTimeout(60_000);
     await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-    await page.goto('/dock/assets/list/whiteboard');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-    // The browseable toolbar exposes a "New Whiteboard" affordance.
-    const newBtn = page.locator('[data-testid="browseable-toolbar-new:whiteboard"]');
-    await expect(newBtn).toBeVisible({ timeout: 15_000 });
-    await newBtn.click();
-
-    // A name dialog appears: a [role="dialog"] with a placeholder="Name" input
-    // and a "Create" button.
-    const dialog = page.locator('[role="dialog"]').filter({ has: page.locator('input[placeholder="Name"]') });
-    await expect(dialog).toBeVisible({ timeout: 10_000 });
-    await dialog.locator('input[placeholder="Name"]').fill(`c1-board-${Math.floor(1000 + Math.random() * 9000)}`);
-    await dialog.getByRole('button', { name: 'Create' }).click();
-
+    // Whiteboards are created via the API/editor route (the asset-browser tree
+    // renders a curated root set — agent/skill/markdown/spec — and does not offer
+    // a whiteboard quick-create toolbar entry). Create then open the editor.
+    const { id } = await createWhiteboard(request, `c1-board-${Math.floor(1000 + Math.random() * 9000)}`);
+    await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
     await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 15_000 });
     expect(page.url()).toContain('/dock/assets/editor/whiteboard/');
   });
