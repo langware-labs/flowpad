@@ -9,8 +9,11 @@ import { useEntity } from '@sdk/react/hooks';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import { CompactExecutionInput } from '@src/components/entity-execution-panel/CompactExecutionInput';
 import { useDerivedWorkerStatus } from '@src/components/entity-execution-panel/hooks/useDerivedWorkerStatus';
+import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications/notify';
+import { ScrollText } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { useChatPlanMode } from './chat-plan-mode-context';
 
 interface ChatComposerBarProps {
   /** The interactive tab's live PTY AgenticProcess. */
@@ -32,13 +35,15 @@ interface ChatComposerBarProps {
  */
 export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps) {
   const [sending, setSending] = useState(false);
+  const plan = useChatPlanMode();
 
   const handleSend = useCallback(
     async (text: string) => {
       if (sending) return;
       setSending(true);
       try {
-        await process.prompt(text);
+        // Plan toggle on → send this turn read-only (`--permission-mode plan`).
+        await process.prompt(text, undefined, plan.planPending ? { permissionMode: 'plan' } : undefined);
       } catch (err) {
         console.error('[ChatComposerBar] prompt failed', err);
         notify.error({ title: 'Message not sent', message: err instanceof Error ? err.message : String(err) });
@@ -46,7 +51,7 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
         setSending(false);
       }
     },
-    [process, sending],
+    [process, sending, plan.planPending],
   );
 
   const handleStop = useCallback(async () => {
@@ -83,7 +88,28 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       running={busy}
       onStop={handleStop}
       onPasteImages={onPasteImages}
-      placeholder="Message the agent…"
+      placeholder={plan.planPending ? 'Plan mode — describe what to plan…' : 'Message the agent…'}
+      onShiftTab={plan.enabled ? plan.togglePlan : undefined}
+      leadingSlot={
+        plan.enabled ? (
+          <button
+            type="button"
+            onClick={plan.togglePlan}
+            title="Toggle plan mode (Shift+Tab)"
+            data-testid="plan-mode-pill"
+            aria-pressed={plan.planPending}
+            className={cn(
+              'mb-1 inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] transition-colors',
+              plan.planPending
+                ? 'border-blue-400 bg-blue-400/15 text-blue-300'
+                : 'border-border/60 text-muted-foreground hover:border-blue-400/50 hover:text-foreground',
+            )}
+          >
+            <ScrollText className="h-3.5 w-3.5" />
+            Plan
+          </button>
+        ) : undefined
+      }
       statusSlot={
         <span
           title={getStatusLabel(indicatorProcess)}

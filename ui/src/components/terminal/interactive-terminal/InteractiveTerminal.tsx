@@ -39,6 +39,7 @@ import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
+import { ChatPlanModeProvider } from './chat-plan-mode-context';
 import { SimpleChatPane } from './SimpleChatPane';
 import { notify } from '@src/notifications/notify';
 import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
@@ -1564,6 +1565,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   );
 
   return (
+    <ChatPlanModeProvider process={process}>
     <div className={`relative flex h-full flex-col ${className}`} onDragOver={(e) => e.preventDefault()}>
       {/* Top bar — ProcessToolbar (Claude pane) or PaneBar (Shell pane) */}
       {process && activePane === 'claude' && (
@@ -1780,6 +1782,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         />
       )}
     </div>
+    </ChatPlanModeProvider>
   );
 };
 

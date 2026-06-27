@@ -275,6 +275,10 @@ class CodexDriver:
     def has_resumable_session(self, process: "AgenticProcess") -> bool:
         return bool(process.session_id) and find_codex_session_jsonl(process.session_id) is not None
 
+    def supports_plan_mode(self, process: "AgenticProcess") -> bool:
+        # Codex has no CLI plan-mode equivalent yet; tracked as a follow-up.
+        return False
+
     # ── History materialisation ──────────────────────────────────────────────
 
     def load_history(self, process: "AgenticProcess") -> list["FlowData"]:

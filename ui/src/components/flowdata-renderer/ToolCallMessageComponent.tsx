@@ -34,6 +34,8 @@ const FRIENDLY_TOOL_DESCRIPTIONS: Record<string, string> = {
   Task: 'Running task',
   WebFetch: 'Fetching URL',
   WebSearch: 'Searching web',
+  ExitPlanMode: 'Plan ready',
+  AskUserQuestion: 'Asking a question',
 };
 
 export function describeToolName(toolName: string): string {

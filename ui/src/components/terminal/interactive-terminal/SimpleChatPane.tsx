@@ -6,6 +6,7 @@ import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { cn } from '@src/lib/utils';
 import { MessageSquare } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
+import { PlanInteractionBar } from './PlanInteractionBar';
 
 interface SimpleChatPaneProps {
   /** The interactive tab's live PTY AgenticProcess. */
@@ -62,6 +63,7 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
           </div>
         )}
       </AutoScrollContainer>
+      <PlanInteractionBar items={items} />
     </div>
   );
 }

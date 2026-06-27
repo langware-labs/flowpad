@@ -234,6 +234,10 @@ class CopilotDriver:
     def has_resumable_session(self, process: "AgenticProcess") -> bool:
         return self._has_session(process)
 
+    def supports_plan_mode(self, process: "AgenticProcess") -> bool:
+        # Copilot has no CLI plan-mode equivalent yet; tracked as a follow-up.
+        return False
+
     def load_history(self, process: "AgenticProcess") -> list["FlowData"]:
         descriptor = self.transcript_descriptor(process)
         if descriptor is not None:
