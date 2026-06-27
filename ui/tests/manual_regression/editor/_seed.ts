@@ -20,5 +20,12 @@ export async function ensureProjectMarkdown(request: APIRequestContext): Promise
     data: { name },
   });
   if (!r.ok()) throw new Error(`seed markdown failed: ${r.status()} ${await r.text()}`);
+  // The browseable tree lists INDEXED records and indexing is explicit-only (no
+  // auto-index on create). Index the new doc under its project so "the first .md
+  // leaf" actually surfaces in the tree.
+  const idx = await request.post(
+    `${API}/api/v1/graph/compute_node/@local/fs-records/index?type=markdown&projects=${projectId}&user=false&force=true`,
+  );
+  if (!idx.ok()) throw new Error(`index markdown after seed failed: ${idx.status()}`);
   return `${name}.md`;
 }
