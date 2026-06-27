@@ -123,11 +123,13 @@ test.describe('Git Status Panel', () => {
     await expect(mlAuto).toBeVisible({ timeout: 15_000 });
 
     // Right section: Context(0), Git(1), Prompts(2), Files(3), Dir(4), Queue(5)
-    // + Prompt Library (on a live process) = 7 buttons (Queue + Library added 55a71046).
+    // + Prompt Library, … — the ribbon keeps gaining buttons (Queue+Library
+    // 55a71046; more since). Assert the Git button (the subject of this test) is
+    // present and the ribbon carries at least the documented core set — robust to
+    // additions, still catches a regression that DROPS buttons.
     await expect(mlAuto.locator("button").nth(1)).toBeVisible({ timeout: 5_000 });
-
-    // Validate all 7 buttons are present
-    await expect(mlAuto.locator('button')).toHaveCount(7, { timeout: 5_000 });
+    const ribbonButtons = await mlAuto.locator('button').count();
+    expect(ribbonButtons).toBeGreaterThanOrEqual(7);
   });
 
   // ---------------------------------------------------------------------------
