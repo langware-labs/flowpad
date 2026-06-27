@@ -71,7 +71,10 @@ export interface LoadNextProcessResult {
 
 // ── per-error cleanup dispatchers (preserve current behaviour) ──────────────
 
-function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
+// Exported: also the direct-link cleanup mapper used by load-shell's route loader
+// (single source of truth — both the in-loader recovery path and the direct-link
+// route map a ProcessLoadError to the same CleanupRecord).
+export function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
   switch (e.kind) {
     case 'entity_not_found':
       return {
@@ -91,7 +94,8 @@ function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
       };
     }
     case 'runtime_terminated':
-    case 'pty_attach_failed': {
+    case 'pty_attach_failed':
+    case 'failed_to_start': {
       const desc = describeProcessStartError(e.cause ?? e);
       return {
         kind: 'process_start_failed',
@@ -117,6 +121,20 @@ function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
         title: 'Project not found',
         description: 'Could not recover this session’s project.',
       };
+    default: {
+      // Exhaustiveness guard: a missing kind type-errors here; at runtime it
+      // returns a generic record rather than undefined (which would crash
+      // handleCleanups on `.title`).
+      const _exhaustive: never = e.kind;
+      void _exhaustive;
+      return {
+        kind: 'process_start_failed',
+        processId: e.processId,
+        shellId: e.shellId ?? undefined,
+        title: 'Session unavailable',
+        description: 'Failed to restore this session.',
+      };
+    }
   }
 }
 
