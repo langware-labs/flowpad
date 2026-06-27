@@ -40,6 +40,13 @@ Element.prototype.scrollIntoView = function () {
   // No-op for jsdom
 };
 
+// Mock scrollTo for jsdom (used by use-auto-scroll on transcript/chat panes;
+// jsdom doesn't implement Element.scrollTo and would throw, white-screening the
+// rendered view via the router ErrorBoundary).
+Element.prototype.scrollTo = function () {
+  // No-op for jsdom
+};
+
 // Mock hasPointerCapture for jsdom (used by Radix UI components)
 Element.prototype.hasPointerCapture = function () {
   return false;

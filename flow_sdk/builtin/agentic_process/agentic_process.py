@@ -2047,8 +2047,13 @@ class AgenticProcess(Entity):
                             logger.warning("prompt: lifecycle save failed", exc_info=True)
 
                     async for fd in worker.execute(prompt=composed_prompt, context=context):
-                        await handler.on_flow_data(fd)
-                        # Persist session_id on first capture so subsequent turns resume.
+                        # Persist session_id on first capture so subsequent turns
+                        # resume. Do this BEFORE forwarding the frame: the worker
+                        # captures the id up-front (e.g. codex's leading
+                        # ``thread.started``), but a client that breaks on the
+                        # first flow frame closes the stream and cancels this turn
+                        # — saving after ``on_flow_data`` races that disconnect and
+                        # loses the id, breaking headless multi-turn resume.
                         # Adopt-on-change (not only when unset): workers report the id
                         # from structured CLI events, and the worker's actual id must
                         # win when a preassigned id failed to stick or the CLI rotates
@@ -2069,6 +2074,7 @@ class AgenticProcess(Entity):
                                 await self.save()
                             except Exception:
                                 logger.warning("prompt: session_id save failed", exc_info=True)
+                        await handler.on_flow_data(fd)
             except Exception as e:
                 logger.exception("prompt: worker error")
                 await handler.add_str_to_queue(Exception(f"prompt error: {e}"))

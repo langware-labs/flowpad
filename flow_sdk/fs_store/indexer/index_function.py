@@ -26,7 +26,7 @@ from flow_sdk.fs_store.indexer.progress_table import (
 )
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.server.search_filters import ScopeFilter
+from flow_sdk.server.search_filters import SCOPED_RECORD_TYPES, ScopeFilter
 
 
 # DFS waypoints the walker visits to reach leaf record types. Either they
@@ -212,6 +212,19 @@ def _read_disk_record_scope(
     return (str(data.get("scope") or ""), str(data.get("project_id") or ""))
 
 
+def _empty_scope_keeps(type_name: str) -> bool:
+    """Whether an empty/None-scope row of ``type_name`` survives a scope filter.
+
+    Single source of truth shared by the disk- and DB-orphan predicates, mirroring
+    the search scope clause (``sqlite_driver._scope_sql_clause``): an empty-scope
+    row of a SCOPED record type can never be surfaced under a user/project filter,
+    so a narrowing DELETE must NOT reap it either — otherwise an unscoped orphan
+    bleeds across into a project-scoped sweep. Non-scoped record types keep the
+    always-match behaviour.
+    """
+    return type_name not in SCOPED_RECORD_TYPES
+
+
 def _scope_filter_keeps(
     sf: ScopeFilter,
     type_name: str,
@@ -235,7 +248,8 @@ def _scope_filter_keeps(
     if scope == "project":
         record_projects = tuple(getattr(sf, "record_projects", ()) or ())
         return pid in set((*sf.projects, *record_projects))
-    return True
+    # Genuinely-empty scope (scope == "" or other falsy).
+    return _empty_scope_keeps(type_name)
 
 
 def _db_missing_orphans(
@@ -283,7 +297,8 @@ def _scope_filtered_orphans(
             return sf.user
         if scope == "project":
             return str(pid or "") in sf_projects
-        return True
+        # Empty/None scope.
+        return _empty_scope_keeps(type_name)
 
     return [
         eid for eid in missing
