@@ -270,7 +270,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const active = page.url().match(/(shell|agentic_process)-[0-9a-f-]+/)![0];
     await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)').click();
     await page.waitForURL(/\/$/, { timeout: 15_000 });
-    await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-terminal)').click();
+    await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-message-square)').click();
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
     expect(page.url()).toContain(active);
@@ -911,7 +911,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let r = 0; r < 2; r++) {
       await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)').click();
       await page.waitForURL(/\/$/, { timeout: 15_000 });
-      await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-terminal)').click();
+      await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-message-square)').click();
       await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
       await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
       expect(page.url()).toContain(active);
@@ -989,7 +989,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     expect(page.url()).toContain(`agentic_process-${id}`);
     await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)').click();
     await page.waitForURL(/\/$/, { timeout: 15_000 });
-    await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-terminal)').click();
+    await page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-message-square)').click();
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     await page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`).click();
     await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(`agentic_process-${id}`);
