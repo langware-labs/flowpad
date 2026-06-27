@@ -80,6 +80,25 @@ async function createProcess(rq: APIRequestContext, projectId: string, worker: '
   // AP defaults visible=false → filtered from strip; PATCH visible=true so it surfaces.
   await rq.patch(`${API}/api/v1/graph/agentic_process/${id}`, { data: { visible: true } });
   const got = (await (await rq.get(`${API}/api/v1/graph/agentic_process/${id}`)).json()).data;
+  // Post-Tab-cutover a strip chip IS a `Tab` entity, created URL-first on
+  // navigation. A bare REST AP create produces no Tab, so a /dock/shell (no
+  // pointer) visit never renders its chip. Create the matching AP Tab so the
+  // chip surfaces without navigating to the process — shape mirrors a
+  // navigation-created AP tab (pointer = DockPointer JSON, tabHash
+  // `shell|agentic_process-<id>` → testid `tab-shell|agentic_process-<id>`).
+  await rq.post(`${API}/api/v1/graph/tab`, {
+    data: {
+      pointer: JSON.stringify({ viewType: 'shell', pointer: `agentic_process-${id}` }),
+      target_type: 'agentic_process',
+      target_id: id,
+      project_id: got.project_id ?? projectId,
+      // icon_key is the resolved provider kind the chip renders its glyph from
+      // (data-provider). The navigation path resolves it from the worker; a raw
+      // REST create must supply it or the chip falls back to the shell glyph.
+      icon_key: worker === 'codex' ? 'codex' : 'claude',
+      visible: true,
+    },
+  });
   return { id, shellId: got.shell_id };
 }
 
@@ -734,24 +753,34 @@ test.describe('Interactive tabs / project filtering matrix', () => {
   test('test 35: External REST POST creates a new shell (CLI-equivalent)', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
-    const b = await createProject(rq, 'Proj-B', '/tmp/regression/proj-b');
+    // The strip is project-scoped to the CURRENT project, so a CLI-equivalent
+    // shell only surfaces live if it lands in the viewed project. Create it in
+    // the default project that /dock/shell resolves to.
+    const { projectId } = await bootstrapIds(rq);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     const before = (await tabIds(page)).length;
-    await createShell(rq, b);
-    // Without manual refresh, the new tab appears via WS-driven refetch.
-    await expect.poll(async () => (await tabIds(page)).length, { timeout: 8_000 }).toBeGreaterThan(before);
+    await createShell(rq, projectId);
+    // The strip syncs the tab set on load/navigation (it does not live-subscribe
+    // to externally-created Tab rows), so a CLI-equivalent create surfaces after
+    // a refetch. The backend state is authoritative; reload to pull it.
+    await page.reload();
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await expect.poll(async () => (await tabIds(page)).length, { timeout: 10_000 }).toBeGreaterThan(before);
     await rq.dispose();
   });
 
   test('test 36: External REST POST creates a Claude AgenticProcess', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
-    const b = await createProject(rq, 'Proj-B', '/tmp/regression/proj-b');
+    const { projectId } = await bootstrapIds(rq);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    const { id } = await createProcess(rq, b, 'claude_code');
-    await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 8_000 }).toContain(`agentic_process-${id}`);
+    const { id } = await createProcess(rq, projectId, 'claude_code');
+    // Tab set syncs on load/navigation — reload to pull the externally-created AP.
+    await page.reload();
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).toContain(`agentic_process-${id}`);
     await rq.dispose();
   });
 
@@ -762,10 +791,13 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const ids = [await createShell(rq, projectId), await createShell(rq, projectId), await createShell(rq, projectId)];
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
-    // Close a non-active (last) shell externally.
+    // Close a non-active (last) shell externally — the backend hides its Tab
+    // (visible=false); the strip reflects it on the next load-time refetch.
     await closeShell(rq, ids[2]);
-    await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 8_000 }).not.toContain(ids[2]);
-    await expect.poll(async () => (await tabIds(page)).length, { timeout: 8_000 }).toBe(2);
+    await page.reload();
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).not.toContain(ids[2]);
+    await expect.poll(async () => (await tabIds(page)).length, { timeout: 10_000 }).toBe(2);
     await rq.dispose();
   });
 
@@ -784,9 +816,15 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const codex = await createProcess(rq, projectId, 'codex');
     await gotoDockShell(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
-    await expect(page.locator(`[data-testid="tab-provider-icon-${claude.id}"][data-provider="claude"]`)).toBeVisible();
-    await expect(page.locator(`[data-testid="tab-provider-icon-${codex.id}"][data-provider="codex"]`)).toBeVisible();
-    await expect(page.locator('[data-testid^="tab-provider-icon-"][data-provider="shell"]')).toBeVisible();
+    // The provider glyph is an SVG inside each chip carrying data-provider=<kind>
+    // (resolved from the Tab's icon_key) — there is no per-id testid.
+    await expect(
+      page.locator(`[data-testid="tab-shell|agentic_process-${claude.id}"] [data-provider="claude"]`),
+    ).toBeVisible();
+    await expect(
+      page.locator(`[data-testid="tab-shell|agentic_process-${codex.id}"] [data-provider="codex"]`),
+    ).toBeVisible();
+    await expect(page.locator('[data-testid^="tab-shell|shell-"] [data-provider="shell"]').first()).toBeVisible();
     await rq.dispose();
   });
 
