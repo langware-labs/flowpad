@@ -528,8 +528,13 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const rq = await api();
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
-    for (let i = 0; i < 4; i++) await createShell(rq, projectId);
-    await gotoDockShell(page);
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i++) ids.push(await createShell(rq, projectId));
+    // Navigate to a concrete shell pointer (deterministic) rather than bare
+    // /dock/shell, whose default-tab resolution can momentarily leave the strip
+    // empty on a cold worker.
+    await gotoUrl(page, `/dock/shell/shell-${ids[0]}`);
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(4);
     const before = await tabIds(page);
     const secondTab = page.locator(`[data-testid="${before[1]}"]`);
