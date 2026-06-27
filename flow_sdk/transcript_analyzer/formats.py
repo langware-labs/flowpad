@@ -16,8 +16,6 @@ class TranscriptFormat(StrEnum):
     CODEX_ROLLOUT = "codex_rollout"
     COPILOT_STREAM = "copilot_stream"
     COPILOT_EVENTS = "copilot_events"
-    # Single JSON document (not JSONL): a workflow run journal, wf_<runId>.json.
-    WORKFLOW_JOURNAL = "workflow_journal"
 
 
 class TranscriptSource(StrEnum):

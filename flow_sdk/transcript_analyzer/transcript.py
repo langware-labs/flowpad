@@ -163,6 +163,11 @@ class AgentTranscriptFile:
         # fold would feed back into the next fold's input — producing duplicated
         # joined text and other re-mutation artifacts. We fold over shallow
         # copies so ``self._unfolded`` stays pristine across delta boundaries.
+        return self._refold()
+
+    def _refold(self) -> list[TranscriptEntry]:
+        """Refold ``self._unfolded`` (over shallow copies, so the retained list
+        stays pristine across delta boundaries) into ``self.entries``."""
         snapshot = [copy.copy(e) for e in self._unfolded]
         folded = self._fold_assistant_messages(snapshot)
         self.entries = self._fold_tool_results(folded)
@@ -193,10 +198,7 @@ class AgentTranscriptFile:
             return self.entries
         self._unfolded = list(self._parser.feed(obj, 0))
         self._byte_offset = file_size
-        snapshot = [copy.copy(e) for e in self._unfolded]
-        folded = self._fold_assistant_messages(snapshot)
-        self.entries = self._fold_tool_results(folded)
-        return self.entries
+        return self._refold()
 
     def _reset_state(self) -> None:
         """Reset delta state + parser; preserves the resolved session_id so the

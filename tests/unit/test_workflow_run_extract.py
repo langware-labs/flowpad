@@ -13,7 +13,7 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.functions.workflow_run import (
     extract_workflow_run,
-    workflow_run_gen_id,
+    workflow_run_id,
 )
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
@@ -33,7 +33,7 @@ def test_extract_workflow_run_envelope():
     # Stable v5 id minted from the provider runId.
     assert rec.id == mint_uuid(RUN_ID)
     assert is_valid_entity_id(rec.id)
-    assert workflow_run_gen_id(FSRef(_JOURNAL)) == rec.id
+    assert workflow_run_id(FSRef(_JOURNAL)) == rec.id
 
     assert rec.run_id == RUN_ID
     assert rec.name == "anatomy-probe"

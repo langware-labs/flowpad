@@ -105,18 +105,18 @@ class WorkflowParser:
         # The journal lists all phases first, then all agents (each tagged with
         # phaseIndex). Regroup so each phase divider is followed by its own
         # agents — a faithful regroup via the journal's phaseIndex linkage, so
-        # the stream reads as agents grouped under their phase.
-        if phases:
-            for ph in phases:
-                out.append(_phase_entry(ph))
-                for ag in agents:
-                    if ag.get("phaseIndex") == ph.get("index"):
-                        out.append(_agent_entry(ag))
-            seen_phase_ids = {ph.get("index") for ph in phases}
-            for ag in agents:
-                if ag.get("phaseIndex") not in seen_phase_ids:
-                    out.append(_agent_entry(ag))
-        else:
-            for ag in agents:
-                out.append(_agent_entry(ag))
+        # the stream reads as agents grouped under their phase. Bucket agents by
+        # phaseIndex in one pass; agents with no matching phase trail at the end.
+        if not phases:
+            return out + [_agent_entry(ag) for ag in agents]
+        phase_indices = {ph.get("index") for ph in phases}
+        by_phase: dict = {}
+        orphans: list = []
+        for ag in agents:
+            idx = ag.get("phaseIndex")
+            (by_phase.setdefault(idx, []) if idx in phase_indices else orphans).append(ag)
+        for ph in phases:
+            out.append(_phase_entry(ph))
+            out.extend(_agent_entry(ag) for ag in by_phase.get(ph.get("index"), []))
+        out.extend(_agent_entry(ag) for ag in orphans)
         return out
