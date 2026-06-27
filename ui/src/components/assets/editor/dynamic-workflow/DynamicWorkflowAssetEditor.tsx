@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { DynamicWorkflow, FSRef } from '@sdk';
+import { DynamicWorkflow, FSRef, ProcessKind } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
+import { EntityExecutionPanel } from '@src/components/entity-execution-panel/EntityExecutionPanel';
 import { Button } from '@src/components/ui/button';
 import { notify } from '@src/notifications';
 import { Boxes, Play, Save, Zap } from 'lucide-react';
@@ -92,7 +93,7 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
         }
       />
 
-      <div className="flex flex-1 flex-col overflow-hidden p-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
         {workflow.description && (
           <p className="mb-3 flex items-center gap-1.5 text-sm text-muted-foreground">
             <Boxes className="h-4 w-4" />
@@ -109,6 +110,18 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
             setScript(e.target.value);
             setDirty(true);
           }}
+        />
+      </div>
+
+      {/* "Runs of this workflow" — the same EntityExecutionPanel the Agent/Skill
+          editors mount, keyed by this workflow's typeId. Runs launched via the
+          Run buttons are tagged target_typeid_str=Execution, so they appear here. */}
+      <div className="h-[280px] flex-shrink-0 border-t" data-testid="dw-runs">
+        <EntityExecutionPanel
+          target={workflow.typeId.toString()}
+          processType={ProcessKind.Execution}
+          headerLabel="Workflow runs"
+          className="h-full"
         />
       </div>
     </div>

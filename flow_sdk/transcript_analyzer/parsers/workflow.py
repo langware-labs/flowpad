@@ -72,6 +72,9 @@ class WorkflowParser:
                 "totalToolCalls": raw.get("totalToolCalls"),
                 "durationMs": raw.get("durationMs"),
                 "model_provider": raw.get("defaultModel"),
+                # Lineage: the source `.js` path (incl. the owning
+                # `.claude/skills/<name>/` when bundled) so the run can link back.
+                "scriptPath": raw.get("scriptPath"),
             },
             **_base(f"{sid or 'workflow'}:meta", str(raw.get("timestamp") or "")),
         ))

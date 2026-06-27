@@ -41,16 +41,22 @@ def _meta_field(head: str, key: str) -> str:
 # ── Walker ───────────────────────────────────────────────────────────────────
 
 def dynamic_workflows_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
-    """Emit DYNAMIC_WORKFLOW for every ``*.js`` in ``<root>/.claude/workflows/``.
-    Mirrors ``workflow_fn`` (the ``*.md`` AMD sibling). Register on
-    USER_HOME_FOLDER / REAL_PROJECT_CWD / CWD_ROOT; scope inherits via FSRef."""
+    """Emit DYNAMIC_WORKFLOW for every ``*.js`` workflow script — both the
+    top-level ``<root>/.claude/workflows/*.js`` and skill-bundled
+    ``<root>/.claude/skills/<name>/*.js`` (the documented "pack a workflow as a
+    skill" layout). Mirrors ``workflow_fn`` (the ``*.md`` AMD sibling). Register
+    on USER_HOME_FOLDER / REAL_PROJECT_CWD / CWD_ROOT; scope inherits via FSRef.
+
+    Safe alongside the skill walker: ``skill_fn`` emits the skill *folder* and
+    ``skill_asset_hash`` only touches SKILL.md/skill.yaml — nothing else claims
+    these ``.js`` files, so no double-index."""
     out: list[FSRef] = []
     seen: set[str] = set()
     for node in nodes:
-        workflows = Path(node.path) / ".claude" / "workflows"
-        if not workflows.is_dir():
+        claude = Path(node.path) / ".claude"
+        if not claude.is_dir():
             continue
-        for js in sorted(workflows.glob("*.js")):
+        for js in sorted([*claude.glob("workflows/*.js"), *claude.glob("skills/*/*.js")]):
             key = str(js.resolve())
             if key in seen:
                 continue

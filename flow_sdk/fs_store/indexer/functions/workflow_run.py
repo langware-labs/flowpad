@@ -57,6 +57,18 @@ def _run_id(data: dict, path: Path) -> str:
     return str(data.get("runId") or path.stem)
 
 
+def _skill_id_from_path(script_path: str) -> str | None:
+    """The owning skill's id when ``script_path`` is a ``.claude/skills/<name>/*.js``.
+
+    Reuses the skill extractor's own id logic (frontmatter id → uuid5(name)) by
+    handing it the ``<name>`` folder (the script's parent)."""
+    skill_dir = Path(script_path).parent
+    if skill_dir.parent.name != "skills" or skill_dir.parent.parent.name != ".claude" or not skill_dir.is_dir():
+        return None
+    from flow_sdk.fs_store.indexer.functions.skill import skill_id as _skill_id  # noqa: PLC0415
+    return _skill_id(FSRef(skill_dir))
+
+
 def workflow_run_id(ref: FSRef) -> str:
     """Stable uuid5 from the provider runId (a stable natural key). Doubles as
     the gen_uuid_fn: the journal is provider-owned (read-only), so — unlike
@@ -78,6 +90,18 @@ def extract_workflow_run(ref: FSRef) -> list[FSRecord]:
     workflow_name = str(data.get("workflowName") or run_id)
     status = str(data.get("status") or "")
 
+    # Lineage: the journal records the source workflow's `.js` path (incl. the
+    # owning `.claude/skills/<name>/` when bundled in a skill). Derive the
+    # DynamicWorkflow id (path-derived, so it matches even if the workflow isn't
+    # indexed) and the owning skill id.
+    script_path = str(data.get("scriptPath") or "") or None
+    dynamic_workflow_id = None
+    skill_id = None
+    if script_path:
+        from flow_sdk.fs_store.indexer.functions.dynamic_workflows import _id_for_path  # noqa: PLC0415
+        dynamic_workflow_id = _id_for_path(Path(script_path))
+        skill_id = _skill_id_from_path(script_path)
+
     content_parts = [p for p in (workflow_name, status) if p]
     rec = FSRecord(
         type=RecordType.WORKFLOW_RUN,
@@ -91,6 +115,9 @@ def extract_workflow_run(ref: FSRef) -> list[FSRecord]:
         total_tool_calls=data.get("totalToolCalls") or 0,
         duration_ms=data.get("durationMs"),
         default_model=str(data.get("defaultModel") or "") or None,
+        source_path=script_path,
+        dynamic_workflow_id=dynamic_workflow_id,
+        skill_id=skill_id,
         content="\n".join(content_parts),
     )
     rec.source_file = str(path)

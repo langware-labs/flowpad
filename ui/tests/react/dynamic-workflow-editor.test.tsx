@@ -12,14 +12,27 @@ vi.mock('@src/components/assets/editor/AssetEditorHeader', () => ({
   AssetEditorHeader: ({ actions }: { actions?: React.ReactNode }) => <div>{actions}</div>,
 }));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
+// The "runs of this entity" panel is the shared surface (Agent/Skill reuse it) —
+// mock it to record the props this editor mounts it with.
+const panelProps: Record<string, unknown> = {};
+vi.mock('@src/components/entity-execution-panel/EntityExecutionPanel', () => ({
+  EntityExecutionPanel: (props: Record<string, unknown>) => {
+    Object.assign(panelProps, props);
+    return <div data-testid="exec-panel" />;
+  },
+}));
 
+import { ProcessKind } from '@sdk';
 import { DynamicWorkflowAssetEditor } from '@src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor';
 
 function stubs(script: string) {
   const write = vi.fn().mockResolvedValue(undefined);
   const run = vi.fn().mockResolvedValue(undefined);
   const fsRef = { path: '/p/.claude/workflows/demo.js', read: vi.fn().mockResolvedValue(script), write } as never;
-  const workflow = { id: 'dw1', name: 'demo', description: 'a demo', run } as never;
+  const workflow = {
+    id: 'dw1', name: 'demo', description: 'a demo', run,
+    typeId: { toString: () => 'dynamic_workflow-dw1' },
+  } as never;
   return { fsRef, workflow, write, run };
 }
 
@@ -40,5 +53,13 @@ describe('DynamicWorkflowAssetEditor', () => {
 
     fireEvent.click(screen.getByTestId('dw-run-headless'));
     await waitFor(() => expect(run).toHaveBeenCalledWith(undefined, { ptyMode: false }));
+  });
+
+  it('mounts the shared runs panel keyed by the workflow typeId (Execution)', async () => {
+    const { fsRef, workflow } = stubs('export const meta = {}');
+    render(<DynamicWorkflowAssetEditor fsRef={fsRef} workflow={workflow} />);
+    await screen.findByTestId('exec-panel');
+    expect(panelProps.target).toBe('dynamic_workflow-dw1');
+    expect(panelProps.processType).toBe(ProcessKind.Execution);
   });
 });
