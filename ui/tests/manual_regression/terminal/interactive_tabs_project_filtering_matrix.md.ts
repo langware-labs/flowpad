@@ -178,9 +178,18 @@ async function renameTab(page: Page, tabTestId: string, newName: string) {
   // (pointer-events-none) — dblclicking it never opens the rename input. Target
   // the title span explicitly.
   const nameSpan = tab.locator('span.font-medium').first();
-  await nameSpan.dispatchEvent('dblclick');
+  await nameSpan.waitFor({ state: 'visible', timeout: 10_000 });
   const input = tab.locator('input[type="text"]');
-  await expect(input).toBeVisible({ timeout: 5_000 });
+  // A single dispatched dblclick occasionally doesn't register React's
+  // onDoubleClick (event timing vs the strip's re-render). Retry the dispatch
+  // until the rename input actually appears — the interaction, not a timeout, is
+  // what's unreliable.
+  await expect(async () => {
+    if (!(await input.isVisible().catch(() => false))) {
+      await nameSpan.dispatchEvent('dblclick');
+    }
+    await expect(input).toBeVisible({ timeout: 1_500 });
+  }).toPass({ timeout: 12_000 });
   await input.fill(newName);
   await input.press('Enter');
 }
