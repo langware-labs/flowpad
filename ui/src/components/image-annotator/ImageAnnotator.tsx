@@ -87,7 +87,7 @@ export function ImageAnnotator({ open, file, onSave, onCancel }: ImageAnnotatorP
         ctx.lineTo(to.x, to.y);
         ctx.stroke();
         const angle = Math.atan2(to.y - from.y, to.x - from.x);
-        const head = s.width * 4; // arrowhead length scales with line width
+        const head = s.width * 6; // arrowhead length scales with line width (~150% of the base size)
         for (const offset of [Math.PI * 0.85, -Math.PI * 0.85]) {
           ctx.beginPath();
           ctx.moveTo(to.x, to.y);
