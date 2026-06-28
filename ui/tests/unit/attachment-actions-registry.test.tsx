@@ -10,6 +10,7 @@ import {
 import type { AttachmentActionHandlers } from '@src/components/conversation/attachment-actions';
 
 const SPEC_ID = 'c3c3c3c3-0000-4000-8000-000000000003';
+const PLAN_ID = 'd4d4d4d4-0000-4000-8000-000000000004';
 const PROMPT_ID = 'e5e5e5e5-0000-4000-8000-000000000005';
 
 function fmWith(attachments: Attachment[], extra: Partial<FlowMessage> = {}): FlowMessage {
@@ -32,6 +33,12 @@ const entityPrompt = (approved = false): Attachment => ({
 const specAttachment: Attachment = {
   attachment_type: AttachmentType.TYPE_ID,
   data: `spec-${SPEC_ID}`,
+};
+
+// A shared plan-mode artifact (type='plan') rides the SAME affordances as a spec.
+const planAttachment: Attachment = {
+  attachment_type: AttachmentType.TYPE_ID,
+  data: `plan-${PLAN_ID}`,
 };
 
 function actionsFor(
@@ -94,21 +101,34 @@ describe('attachment-action registry visibility', () => {
     );
   });
 
-  it('spec-bearing message from the other user → View + Implement (no session)', () => {
+  it('spec-bearing message from the other user → View + Open Spec (no session)', () => {
     const { actions } = actionsFor(fmWith([specAttachment]), fullHandlers, { hasPlanSession: false });
     const ids = actions.map((a) => a.id);
-    expect(ids).toEqual(['spec.view-plan', 'spec.implement-plan']);
+    expect(ids).toEqual(['spec.view-plan', 'spec.open-spec']);
   });
 
-  it('existing plan session swaps Implement for Open', () => {
+  it('PLAN-bearing message rides the SAME affordances as a spec → View + Open Spec', () => {
+    const { actions } = actionsFor(fmWith([planAttachment]), fullHandlers, { hasPlanSession: false });
+    const ids = actions.map((a) => a.id);
+    expect(ids).toEqual(['spec.view-plan', 'spec.open-spec']);
+  });
+
+  it('Open Spec label + read-review title (not "Implement")', () => {
+    const { actions } = actionsFor(fmWith([planAttachment]), fullHandlers, { hasPlanSession: false });
+    const open = actions.find((a) => a.id === 'spec.open-spec')!;
+    expect(open.label).toBe('Open Spec');
+    expect(open.title.toLowerCase()).not.toContain('implement');
+  });
+
+  it('existing session swaps Open Spec for Open Spec Session', () => {
     const { actions } = actionsFor(fmWith([specAttachment]), fullHandlers, { hasPlanSession: true });
     const ids = actions.map((a) => a.id);
-    expect(ids).toEqual(['spec.view-plan', 'spec.open-plan-session']);
+    expect(ids).toEqual(['spec.view-plan', 'spec.open-spec-session']);
   });
 
   it('prompt + spec on one message renders approve before spec CTAs', () => {
     const { actions } = actionsFor(fmWith([entityPrompt(), specAttachment]), fullHandlers);
-    expect(actions.map((a) => a.id)).toEqual(['prompt.approve-execute', 'spec.view-plan', 'spec.implement-plan']);
+    expect(actions.map((a) => a.id)).toEqual(['prompt.approve-execute', 'spec.view-plan', 'spec.open-spec']);
   });
 
   it('composer preview → Edit only (tolerates fm == null)', () => {
