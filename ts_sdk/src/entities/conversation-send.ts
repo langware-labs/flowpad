@@ -184,6 +184,9 @@ export async function createConversationForShare(
       project_id: params.project_id,
       participants: params.participants,
       title: params.title,
+      // Let the backend derive the owning project from the shared entity
+      // (deterministic), with ``project_id`` as the ambient fallback.
+      shared_context_entities: params.shared_context_entities,
     });
     conversationId = r.conversation_id;
   }

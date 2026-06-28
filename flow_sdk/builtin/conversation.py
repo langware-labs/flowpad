@@ -152,6 +152,37 @@ class Conversation(Entity):
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str | None] = "MessageSquare"
 
+    @classmethod
+    async def resolve_project_id(
+        cls,
+        shared_context_entities: Optional[list] = None,
+        *,
+        fallback: Optional[str] = None,
+    ) -> Optional[str]:
+        """Deterministically derive a conversation's owning ``project_id``, ONCE.
+
+        The project follows the SHARED/TARGET entity, never the ambient "active
+        project" in the client's context: the first ``shared_context_entities``
+        ref whose target entity carries a ``project_id`` wins, via the shared
+        ``Entity.project_id_of`` primitive (the same one Tab project derivation
+        uses). This is the single resolver every conversation init point (local
+        create, share, hub receive) calls so the assignment is identical and
+        computed exactly once at init.
+
+        Falls back to ``fallback`` (an explicit request/scope ``project_id``)
+        when no shared entity resolves, and to ``None`` for a pure entity-less
+        cross-user chat — which is left project-less by design (the receiver
+        maps a project only in that one case).
+        """
+        for ref in (shared_context_entities or []):
+            tid = _coerce_context_typeid(ref)
+            if tid is None or not tid.id:
+                continue
+            proj = await cls.project_id_of(tid.type, tid.id)
+            if proj:
+                return proj
+        return fallback
+
     async def share(self, recipients: Optional[List[str]] = None) -> "Conversation":
         """Push to hub + invite recipients via the standard hub pattern.
 

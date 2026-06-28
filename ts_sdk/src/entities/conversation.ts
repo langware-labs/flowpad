@@ -277,6 +277,12 @@ export interface CreateProjectConversationParams {
   participants: ConversationParticipant[];
   /** Optional display name. Backend falls back to a participants summary when absent. */
   title?: string;
+  /** Serialized TypeIds (e.g. ``"markdown-<uuid>"``) shared into this
+   *  conversation. The backend DERIVES the owning project from the first one
+   *  that has a project, falling back to ``project_id`` (the ambient default)
+   *  when none resolves — so the project follows the shared entity, not the
+   *  client's active project. */
+  shared_context_entities?: string[];
 }
 
 export interface CreateProjectConversationResult {
