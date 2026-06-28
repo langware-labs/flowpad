@@ -3,7 +3,8 @@
 # Deploy flowpad to GitHub and PyPI
 #
 # This script:
-#   1. Increments the patch version in _version.py
+#   1. Bumps the version in _version.py (patch by default; --minor / --major /
+#      --version X.Y.Z select a different bump)
 #   2. Signs the standalone flow-rs binaries (unless --skip-flow-rs-sign):
 #      signs the host-OS binary locally and triggers the other OS's signing
 #      workflow in langware-labs/flowpad-desktop, then downloads both into
@@ -15,6 +16,7 @@
 #   7. Validates the installed version
 #
 # Usage: ./scripts/deploy_to_github.sh [--skip-tests] [--no-pypi] [--skip-flow-rs-sign]
+#                                      [--minor | --major | --version X.Y.Z]
 #
 # After deployment, install with:
 #   pip install flowpad
@@ -42,6 +44,8 @@ SKIP_TESTS=false
 NO_PYPI=false
 SKIP_FLOW_RS_SIGN=false
 FORCE_FLOW_RS_SIGN=false
+BUMP_LEVEL="patch"          # patch (default) | minor | major
+EXPLICIT_VERSION=""         # set by --version X.Y.Z; overrides BUMP_LEVEL
 while [[ $# -gt 0 ]]; do
     case $1 in
         --skip-tests)
@@ -60,14 +64,39 @@ while [[ $# -gt 0 ]]; do
             FORCE_FLOW_RS_SIGN=true
             shift
             ;;
+        --patch)
+            BUMP_LEVEL="patch"
+            shift
+            ;;
+        --minor)
+            BUMP_LEVEL="minor"
+            shift
+            ;;
+        --major)
+            BUMP_LEVEL="major"
+            shift
+            ;;
+        --version)
+            EXPLICIT_VERSION="$2"
+            if [[ ! "$EXPLICIT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo -e "${RED}--version expects X.Y.Z (got '${EXPLICIT_VERSION}')${NC}"
+                exit 1
+            fi
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 [--skip-tests] [--no-pypi] [--skip-flow-rs-sign] [--force-flow-rs-sign]"
+            echo "          [--patch | --minor | --major | --version X.Y.Z]"
             echo ""
             echo "Options:"
             echo "  --skip-tests          Skip running tests before deployment"
             echo "  --no-pypi             Skip publishing to PyPI"
             echo "  --skip-flow-rs-sign   Skip building/signing the standalone flow-rs binaries"
             echo "  --force-flow-rs-sign  Re-sign flow-rs even when the Rust crate source is unchanged"
+            echo "  --patch               Bump the patch component (default): X.Y.Z -> X.Y.(Z+1)"
+            echo "  --minor               Bump the minor component: X.Y.Z -> X.(Y+1).0"
+            echo "  --major               Bump the major component: X.Y.Z -> (X+1).0.0"
+            echo "  --version X.Y.Z       Publish this exact version (no bump)"
             echo "  -h, --help            Show this help message"
             exit 0
             ;;
@@ -83,12 +112,18 @@ get_current_version() {
     grep -o '"[0-9]*\.[0-9]*\.[0-9]*"' "$VERSION_FILE" | tr -d '"'
 }
 
-# Function to increment patch version
-increment_patch_version() {
-    local version="$1"
+# Function to bump a version. Args: <version> <level: patch|minor|major>
+# patch: X.Y.Z -> X.Y.(Z+1)   minor: X.Y.Z -> X.(Y+1).0   major: X.Y.Z -> (X+1).0.0
+bump_version() {
+    local version="$1" level="$2"
     local major minor patch
     IFS='.' read -r major minor patch <<< "$version"
-    patch=$((patch + 1))
+    case "$level" in
+        major) major=$((major + 1)); minor=0; patch=0 ;;
+        minor) minor=$((minor + 1)); patch=0 ;;
+        patch) patch=$((patch + 1)) ;;
+        *) echo "bump_version: unknown level '$level'" >&2; return 1 ;;
+    esac
     echo "${major}.${minor}.${patch}"
 }
 
@@ -113,13 +148,21 @@ if [[ ! -f "$VERSION_FILE" ]]; then
     exit 1
 fi
 
-# Get current and new version
+# Get current and new version (explicit --version wins over the bump level)
 CURRENT_VERSION=$(get_current_version)
-NEW_VERSION=$(increment_patch_version "$CURRENT_VERSION")
+NEW_VERSION="${EXPLICIT_VERSION:-$(bump_version "$CURRENT_VERSION" "$BUMP_LEVEL")}"
+[[ -n "$EXPLICIT_VERSION" ]] && BUMP_LABEL="explicit" || BUMP_LABEL="${BUMP_LEVEL} bump"
 
 echo -e "Current version: ${YELLOW}${CURRENT_VERSION}${NC}"
-echo -e "New version:     ${GREEN}${NEW_VERSION}${NC}"
+echo -e "New version:     ${GREEN}${NEW_VERSION}${NC} (${BUMP_LABEL})"
 echo ""
+
+# Guard: never go backwards or sideways. New version must sort strictly above current.
+if [[ "$NEW_VERSION" == "$CURRENT_VERSION" ]] || \
+   [[ "$(printf '%s\n%s\n' "$CURRENT_VERSION" "$NEW_VERSION" | sort -V | tail -1)" != "$NEW_VERSION" ]]; then
+    echo -e "${RED}Error: new version ${NEW_VERSION} is not greater than current ${CURRENT_VERSION}.${NC}"
+    exit 1
+fi
 
 # Get current branch
 CURRENT_BRANCH=$(git branch --show-current)

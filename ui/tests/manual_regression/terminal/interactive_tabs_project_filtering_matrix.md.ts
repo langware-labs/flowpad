@@ -344,9 +344,10 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await clickRail(page, 'chats');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     // All three tabs survive the round-trip ("keeps tabs alive"). Re-entry via the
-    // Chats rail goes to bare /dock/shell, whose loader resolves a default among
-    // the live tabs — so assert it lands on one of the strip's actual tabs, not a
-    // specific prior selection (the rail does not carry a remembered pointer).
+    // Chats rail goes to /dock/shell (scope-seeded to the active project, like the
+    // Files/Assets rails), whose loader resolves a default among the live tabs — so
+    // assert it lands on one of the strip's actual tabs, not a specific prior
+    // selection (the rail does not carry a remembered pointer).
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
     const resolved = page.url().match(/(?:shell|agentic_process)-[0-9a-f-]+/)![0];
     expect(await tabIds(page)).toContain(`tab-shell|${resolved}`);

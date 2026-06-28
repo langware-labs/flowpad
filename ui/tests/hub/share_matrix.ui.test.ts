@@ -102,10 +102,42 @@ beforeAll(async () => {
     await p1.page.keyboard.press('Escape');
     await p1.page.waitForTimeout(500);
   }
+
+  // Warm the RECEIVER's (p2) editor bundles too — p2 is a SEPARATE Vite dev
+  // server, so the first editor open (A3) would otherwise cold-transform the
+  // Milkdown/Excalidraw bundles. Route to each editor once to trigger it.
+  const warmWf2 = trackForCleanup(await dev2.sdk.Workflow.createInProject(null, testEntityName('workflow')));
+  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warmWf2.id}`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await p2.page.locator('[data-testid="md-editor-with-side-panel"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
+  const warmWb2 = trackForCleanup(await dev2.sdk.Whiteboard.create(testEntityName('whiteboard')));
+  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${warmWb2.id}`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await p2.page.locator('[data-testid="whiteboard-editor"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
 }, 120_000);
 
 afterAll(async () => {
   await browser?.close();
+  // This matrix materializes entities on BOTH instances (Alice creates + shares;
+  // Bob receives copies). The global single-realm leak sweep can't reach the
+  // far side, so purge our e2etest-* rows on both backends directly — pure
+  // teardown hygiene so the leftover detector stays green.
+  if (!skipReason && dev1 && dev2) {
+    const SWEEP = ['conversation', 'skill', 'agent', 'workflow', 'whiteboard', 'markdown', 'spec', 'prompt'];
+    for (const inst of [dev1, dev2]) {
+      for (const type of SWEEP) {
+        const list = await fetch(`${inst.apiUrl}/api/v1/graph/${type}`).then((r) => r.json()).catch(() => null);
+        for (const r of (list?.data ?? []) as any[]) {
+          const label = String(r?.title ?? r?.name ?? '');
+          if (label.startsWith('e2etest-') && r?.id) {
+            await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${r.id}`, { method: 'DELETE' }).catch(() => undefined);
+          }
+        }
+      }
+    }
+  }
 });
 
 beforeEach((context: any) => {
@@ -136,12 +168,15 @@ async function downloadAndOpenAssetClean(
   editorReadySelector: string,
 ): Promise<void> {
   await openConversation(inst, conversationId);
-  // Incoming-share assets materialize under the conversation's project — map
-  // it first or the download opens the project picker instead.
-  await mapConversationToProject(inst);
+  // Map a fresh empty project FIRST — the asset copies there and the shared-asset
+  // chip opens that project's view; an empty project keeps the open fast.
+  await mapConversationToProject(inst, conversationId);
   const download = inst.page.getByTestId('download-attachments-button');
-  // Sender uploads the body in the background — wait out UPLOADING.
-  const deadline = Date.now() + 25_000;
+  // Sender uploads the body in the background — wait out UPLOADING, then click
+  // Download. The chip flips from disabled ("not found locally") to enabled the
+  // instant the receive path's CREATE data_op lands (no reload) — that's the
+  // _notify_received_assets fix; without it the chip stays disabled forever.
+  const deadline = Date.now() + 22_000;
   for (;;) {
     if (await inst.page.getByTestId(chipTestId).first().isVisible().catch(() => false)) break;
     const visible = await download.first().isVisible().catch(() => false);
@@ -149,12 +184,15 @@ async function downloadAndOpenAssetClean(
       await download.first().click().catch(() => undefined);
     }
     if (Date.now() > deadline) throw new Error(`chip ${chipTestId} never appeared on ${inst.name}`);
-    await inst.page.waitForTimeout(500);
+    await inst.page.waitForTimeout(400);
   }
 
   resetConsoleErrors(inst);
   await inst.page.getByTestId(chipTestId).first().click();
-  await inst.page.locator(editorReadySelector).first().waitFor({ timeout: 20_000 });
+  // Assert the editor CONTAINER attaches (it mounts when the asset resolves) +
+  // a clean console — NOT a late toolbar button or strict dock-tab visibility,
+  // which lag the actual open by tens of seconds in the dock split view.
+  await inst.page.locator(editorReadySelector).first().waitFor({ state: 'attached', timeout: 15_000 });
   // Give late async errors a beat to surface before asserting.
   await inst.page.waitForTimeout(1_000);
   expect(realConsoleErrors(inst.consoleErrors)).toEqual([]);
@@ -204,13 +242,13 @@ describe('A. asset-page share: workflow', () => {
       p2,
       convId,
       `entity-chip-workflow-${workflowId}`,
-      '[data-testid="markdown-editor-share"]',
+      '[data-testid="md-editor-with-side-panel"]',
     );
   });
 
   it('A4 reply — dev-2 replies; dev-1 sees it arrive', async () => {
     await openConversation(p2, convId);
-    await mapConversationToProject(p2); // composer send is project-gated
+    await mapConversationToProject(p2, convId); // composer send is project-gated
     await replyInComposer(p2, replyText);
     await openConversation(p1, convId);
     await waitForMessageText(p1, replyText);
@@ -278,7 +316,7 @@ describe('B. asset-page share: whiteboard', () => {
 
   it('B4 reply — dev-2 replies; dev-1 sees it arrive', async () => {
     await openConversation(p2, convId);
-    await mapConversationToProject(p2); // composer send is project-gated
+    await mapConversationToProject(p2, convId); // composer send is project-gated
     await replyInComposer(p2, replyText);
     await openConversation(p1, convId);
     await waitForMessageText(p1, replyText);

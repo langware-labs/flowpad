@@ -1838,27 +1838,10 @@ class FsRecordsActionsMixin:
                     await rec.sync_to_db()
                 except Exception as e:
                     logging.debug(f"[fs-records] sync_to_db skipped on create: {e}")
-                # Stamp scope from the resolved asset path so HTTP-created
-                # records match indexer-discovered ones; otherwise the entity
-                # is born scope=None and search_filters treats it as
-                # unscoped (cluster #4 regression). asset_ref is populated
-                # only after sync_to_db (via Entity._prepare_for_storage),
-                # so this fires post-sync and patches the entity in place.
-                try:
-                    from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
-                    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-                    info = SchemaRegistry.get(str(record_type))
-                    entity_cls = info.entity_cls if info is not None else None
-                    if entity_cls is not None:
-                        entity = await entity_cls.get_one({"id": rec.id})
-                        if entity is not None and getattr(entity, "scope", None) in (None, ""):
-                            asset_path = getattr(entity, "asset_ref", None)
-                            inferred = classify_path(asset_path) if asset_path else None
-                            if inferred:
-                                entity.scope = inferred
-                                await entity.save(notify=False)
-                except Exception as e:
-                    logging.debug(f"[fs-records] scope-stamp skipped on create: {e}")
+                # scope is stamped from the resolved asset path inside
+                # Entity._prepare_for_storage (the single save chokepoint), so
+                # HTTP-created records are born with a scope just like
+                # indexer-discovered ones — no post-create patch needed here.
                 await self._broadcast_fs_record_op("create", record_type, rec.id, rec.meta_dict())
                 return ApiSuccessResponse(data=rec.meta_dict())
 

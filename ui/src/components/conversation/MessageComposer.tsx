@@ -15,6 +15,7 @@ import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } f
 import { useLocalUser } from './useLocalUser';
 import { discardDraftFlowMessage } from './flow-message-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
@@ -190,12 +191,18 @@ export function MessageComposer({
     handlers: { edit: () => setShowPromptDialog(true) },
   });
 
-  const addFiles = (incoming: FileList | File[] | null) => {
-    if (!incoming) return;
+  // Returns how many files survived (0 when every image's markup was cancelled),
+  // so paste can decide whether to also insert accompanying text.
+  const addFiles = async (incoming: FileList | File[] | null): Promise<number> => {
+    if (!incoming) return 0;
+    // Offer markup on captured images before attaching. Size cap is applied
+    // after annotation since the flattened PNG may be larger than the original.
+    const annotated = await annotateImageFiles(Array.from(incoming));
+    if (annotated.length === 0) return 0; // markup cancelled → do nothing
     const tooBig: string[] = [];
     setFiles((prev) => {
       const next = [...prev];
-      for (const f of Array.from(incoming)) {
+      for (const f of annotated) {
         if (f.size > MAX_FILE_SIZE_BYTES) {
           tooBig.push(f.name);
           continue;
@@ -211,6 +218,7 @@ export function MessageComposer({
           ? `"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
           : `${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
     );
+    return annotated.length;
   };
 
   const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index));
@@ -326,25 +334,29 @@ export function MessageComposer({
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    if (!isDisabled) addFiles(e.dataTransfer.files);
+    if (!isDisabled) void addFiles(e.dataTransfer.files);
   };
 
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (isDisabled) return;
     const pastedImages = imageFilesFromClipboardData(e.clipboardData);
     if (pastedImages.length === 0) return;
 
     e.preventDefault();
-    addFiles(pastedImages);
 
+    // Capture everything off the (pooled) event synchronously — the annotator
+    // popup is awaited below and `e` is unusable after the first await.
     const pastedText = e.clipboardData.getData('text/plain');
-    if (!pastedText) return;
-
     const textarea = e.currentTarget;
-    const start = textarea.selectionStart ?? textarea.value.length;
+    const value = textarea.value;
+    const start = textarea.selectionStart ?? value.length;
     const end = textarea.selectionEnd ?? start;
-    const next = `${textarea.value.slice(0, start)}${pastedText}${textarea.value.slice(end)}`;
-    setText(next);
+
+    // If the markup is cancelled, do nothing at all — not even the text paste.
+    const added = await addFiles(pastedImages);
+    if (added === 0 || !pastedText) return;
+
+    setText(`${value.slice(0, start)}${pastedText}${value.slice(end)}`);
     requestAnimationFrame(() => {
       textarea.selectionStart = start + pastedText.length;
       textarea.selectionEnd = start + pastedText.length;
@@ -364,7 +376,7 @@ export function MessageComposer({
       className="sr-only"
       disabled={isDisabled}
       onChange={(e) => {
-        addFiles(e.target.files);
+        void addFiles(e.target.files);
         e.target.value = '';
       }}
     />
@@ -537,7 +549,7 @@ export function MessageComposer({
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
+              onPaste={(e) => void handlePaste(e)}
               placeholder={dragging ? 'Drop files here' : 'Edit your draft…'}
               rows={Math.max(2, Math.min(10, text.split('\n').length + 1))}
               disabled={isDisabled}
@@ -590,7 +602,7 @@ export function MessageComposer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
+          onPaste={(e) => void handlePaste(e)}
           placeholder={dragging ? 'Drop files here' : 'Reply to sender…'}
           rows={1}
           disabled={isDisabled}
