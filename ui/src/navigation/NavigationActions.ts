@@ -498,13 +498,17 @@ export class NavigationActions {
   }
 
   /**
-   * Open plan viewer with file path
-   * @param agenticProcessTypeId - TypeId of the owning AgenticProcess
+   * Open the plan viewer for a plan file. Addresses the plan by its **VFS path**
+   * (race-free — independent of the fs-records scanner having minted the PLAN
+   * entity, and of the owning process still being alive). The originating
+   * process — needed only for Execute/Update — is read from the current process
+   * context entity, not the URL. `agenticProcessTypeId` is retained in the
+   * signature so the live call sites stay unchanged; it is intentionally unused.
+   * @param _agenticProcessTypeId - (unused) TypeId of the owning AgenticProcess
    * @param filePath - Absolute path to plan .md file
    */
-  openPlan(agenticProcessTypeId: TypeId, filePath: string): void {
-    const pointer = DockPointer.forPlan(agenticProcessTypeId, filePath);
-    this.openDock(pointer);
+  openPlan(_agenticProcessTypeId: TypeId, filePath: string): void {
+    this.openDock(DockPointer.forPlanByPath(filePath));
   }
 
   openDiff(checkpointHash: string): void {

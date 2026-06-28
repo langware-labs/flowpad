@@ -23,10 +23,8 @@ import {
   editorForType,
   isAssetEditor,
   isAssetRoutingMethod,
+  LOCAL_COMPUTE_NODE,
 } from './asset-doc-types';
-
-/** Default compute-node root used when a caller only has a machine path. */
-const LOCAL_COMPUTE_NODE = new TypeId('compute_node', DEFAULT_WIKI_SPACE);
 
 export class AssetDocPointer {
   private constructor(

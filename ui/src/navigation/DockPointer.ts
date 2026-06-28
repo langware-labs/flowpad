@@ -4,7 +4,7 @@ import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
 import { isValidView } from './validators';
 import { AssetDocPointer } from './AssetDocPointer';
-import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType } from './asset-doc-types';
+import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import {
   ALL_SCOPE_FILTER,
   dockOptionsToScopeFilter,
@@ -279,35 +279,69 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for plan viewer
-   * @param agenticProcessTypeId - TypeId of the owning AgenticProcess
-   * @param filePath - Absolute file path to plan .md file
+   * Create dock pointer for the plan viewer, addressed by the **stable PLAN
+   * entity id** — the canonical, process-independent form (bookmarks).
+   * Reuses the asset ref grammar: `typeid/<plan-uuid>`.
+   * @param planTypeId - TypeId of the PLAN entity (`plan-<uuid>`)
    */
-  static forPlan(agenticProcessTypeId: TypeId, filePath: string, layout: Layout = Layout.DOCK): DockPointer {
-    // Strip filePath's leading "/" so the typeid<->path delimiter isn't an
-    // embedded "//" in the URL (react-router normalizes "//" to "/",
-    // which would silently demote the absolute path to a relative one).
-    // parsePlanPointer re-adds it.
-    const relPath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
-    const pointer = `${agenticProcessTypeId.toString()}/${relPath}`;
+  static forPlan(planTypeId: TypeId, layout: Layout = Layout.DOCK): DockPointer {
+    const pointer = `${AssetRoutingMethod.TYPEID}/${planTypeId.toString()}`;
     return new DockPointer(ViewType.PLAN, pointer, undefined, layout);
   }
 
   /**
-   * Parse a plan pointer into its agentic process TypeId and file path parts.
-   * Plan pointer format: "agentic_process-<uuid>/<absolute-file-path-without-leading-slash>"
-   * Returns null if the pointer doesn't start with a valid agentic_process TypeId.
+   * Create dock pointer for the plan viewer, addressed by **VFS path** — the
+   * race-free form for the live "open plan" button (no dependency on the
+   * fs-records scanner having minted the PLAN entity yet). The explicit `vfs`
+   * method segment means the path can never be mistaken for a TypeId, so there
+   * is no embedded-`//` hazard. `vfs/<compute_node-id>/<relPath>`.
+   * @param absPath - Absolute machine path to the plan .md file
+   * @param computeNode - Compute node the file lives on (default: local @local)
    */
-  static parsePlanPointer(pointer: string): { agenticProcessTypeId: TypeId; filePath: string } | null {
-    if (!DockPointer.isAgenticProcessPointer(pointer)) return null;
-    // Find the first "/" after the type-id prefix "agentic_process-<uuid>"
+  static forPlanByPath(
+    absPath: string,
+    computeNode: TypeId = LOCAL_COMPUTE_NODE,
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const absVfs = VFSPath.fromMachinePath(absPath, computeNode).absVfsPath;
+    const pointer = `${AssetRoutingMethod.VFS}/${absVfs}`;
+    return new DockPointer(ViewType.PLAN, pointer, undefined, layout);
+  }
+
+  /**
+   * Parse a plan pointer into its addressing method. Pure/sync — no network,
+   * no `new TypeId` on a vfs value. Three shapes:
+   *   - `typeid/<plan-uuid>`              → `{ kind: 'typeid', planTypeId }`
+   *   - `vfs/<compute_node-id>/<relPath>` → `{ kind: 'vfs', vfsValue }`
+   *   - `agentic_process-<id>/<path>`     → `{ kind: 'legacy', ... }` (old form;
+   *     the loader resolves + redirects it to the canonical `vfs` form)
+   * Returns null on anything else.
+   */
+  static parsePlanPointer(
+    pointer: string,
+  ):
+    | { kind: 'typeid'; planTypeId: TypeId }
+    | { kind: 'vfs'; vfsValue: string }
+    | { kind: 'legacy'; agenticProcessTypeId: TypeId; filePath: string }
+    | null {
+    if (!pointer) return null;
     const firstSlash = pointer.indexOf('/');
     if (firstSlash < 0) return null;
-    const rawTypeId = pointer.slice(0, firstSlash);
-    const relPath = pointer.slice(firstSlash + 1); // skip the delimiter "/"
-    if (!relPath) return null;
-    // forPlan stripped the leading "/" — plan file paths are always absolute.
-    return { agenticProcessTypeId: new TypeId(rawTypeId), filePath: `/${relPath}` };
+    const method = pointer.slice(0, firstSlash);
+    const value = pointer.slice(firstSlash + 1);
+    if (!value) return null;
+    // Legacy form: "agentic_process-<uuid>/<absolute-file-path-without-leading-slash>".
+    // Here `method` is the whole "agentic_process-<uuid>" typeid and `value` the rel path.
+    if (DockPointer.isAgenticProcessPointer(pointer)) {
+      return { kind: 'legacy', agenticProcessTypeId: new TypeId(method), filePath: `/${value}` };
+    }
+    if (method === AssetRoutingMethod.TYPEID) {
+      return { kind: 'typeid', planTypeId: new TypeId(value) };
+    }
+    if (method === AssetRoutingMethod.VFS) {
+      return { kind: 'vfs', vfsValue: value };
+    }
+    return null;
   }
 
   /**
@@ -1091,6 +1125,12 @@ export class DockPointer implements IDockPointer {
   get targetTypeId(): TypeId | null {
     const pointer = this.pointer;
     if (!pointer) return null;
+    // A PLAN dock addresses its PLAN entity directly in the `typeid/<plan-id>`
+    // form; the `vfs/<path>` form is path-resolved and carries no typeid target.
+    if (this.viewType === ViewType.PLAN) {
+      const parsed = DockPointer.parsePlanPointer(pointer);
+      return parsed?.kind === 'typeid' ? parsed.planTypeId : null;
+    }
     // A claude-transcript lens (`claude/transcript/<sessionId>`) targets its
     // ClaudeSession entity (id = session id). Surfacing it here puts lens on the
     // same entity rail as every other dock: the tab mint resolves the session's
