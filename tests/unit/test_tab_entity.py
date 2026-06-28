@@ -228,6 +228,70 @@ async def test_agentic_process_close_hides_its_terminal_tab() -> None:
 
 
 @pytest.mark.asyncio
+async def test_known_session_is_recoverable_via_existing_worker_session_path() -> None:
+    # ISSUE 1 ("we already had fromWorkerSessionId"): a process that can't be found
+    # by id must still be recoverable through the existing worker-session resolver,
+    # so the load/reap path should consult it BEFORE declaring "not found" — only a
+    # genuinely session-less target falls through to the issue-2 reap below.
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    session_id = f"sess-{uuid.uuid4()}"
+    live = AgenticProcess(
+        id=str(uuid.uuid4()), worker_type="claude_code", session_id=session_id
+    )
+    await live.save()
+
+    # A stale/foreign process id is NOT resolvable by getById — the exact 404 the
+    # loader hits today (the agentic_process-4c29… "not found" RCA)...
+    stale_id = str(uuid.uuid4())
+    assert await AgenticProcess.get_one({"id": stale_id}) is None
+
+    # ...but the SAME worker session resolves via the existing resolver. This is
+    # the recovery the loader/reaper must call before treating the URL as dead.
+    recovered = await AgenticProcess.get_by_session_id(session_id)
+    assert recovered is not None and recovered.id == live.id, (
+        "the existing worker-session resolver must recover the live process for a "
+        "known session — the load path should call this before 404-falling-back"
+    )
+
+
+@pytest.mark.asyncio
+async def test_orphan_agentic_process_tab_is_reaped_when_target_missing() -> None:
+    # ISSUE 2 (proven this session — the agentic_process-4c29… "not found" RCA):
+    # a Tab denormalized onto an agentic_process whose entity row does NOT exist
+    # (a bare FS stub never synced to the DB, or a process removed out from under
+    # the tab) is never reaped. The list path's only reaper,
+    # ``_delete_tabs_for_missing_projects`` (inside ``_visible_tabs_sorted``),
+    # removes tabs for missing PROJECTS — there is no missing-TARGET reaping — so
+    # the chip lingers and clicking it 404s on ``getById`` ("not found"). When the
+    # target session is not found, the dangling tab must be removed.
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    ghost_id = str(uuid.uuid4())  # an agentic_process id with NO DB row (and no session)
+    assert await AgenticProcess.get_one({"id": ghost_id}) is None, "precondition: target absent"
+
+    tab = await ensure_tab(
+        f"shell/agentic_process-{ghost_id}",
+        target_type=AgenticProcess.get_type(),
+        target_id=ghost_id,
+        project_id=None,  # projectless: the missing-PROJECT reaper must NOT mask this
+    )
+    assert tab.visible is True
+
+    listed = await _build_tab_list(None)
+    assert tab.id not in {t.id for t in listed}, (
+        "a tab whose agentic_process target has no resolvable entity (and no "
+        "recoverable session) must be reaped from the list, not rendered as a "
+        "broken chip that 404s on click"
+    )
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is None or reloaded.visible is False, (
+        "the dangling tab row must be removed/hidden"
+    )
+
+
+@pytest.mark.asyncio
 async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
     # `list_all` is the GLOBAL projection (every visible tab, all projects) that the
     # footer chip + sessions view need; the project-scoped `list(pid)` is

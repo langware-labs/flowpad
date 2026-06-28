@@ -191,6 +191,7 @@ async def _visible_tabs_sorted() -> list[Tab]:
     the deterministic tiebreak so legacy ``tab_order==0`` rows never reshuffle)."""
     tabs = await Tab.get_all({"visible": True})
     tabs = await _delete_tabs_for_missing_projects(tabs)
+    tabs = await _delete_tabs_for_missing_targets(tabs)
     tabs.sort(key=lambda t: (getattr(t, "tab_order", 0) or 0, t.id))
     return tabs
 
@@ -259,6 +260,46 @@ async def _delete_tabs_for_missing_projects(tabs: list[Tab]) -> list[Tab]:
                 continue
             deleted_ids.add(tab.id)
     if deleted_ids:
+        await broadcast_tabs_changed()
+    return [t for t in tabs if t.id not in deleted_ids]
+
+
+async def _delete_tabs_for_missing_targets(tabs: list[Tab]) -> list[Tab]:
+    """Hard-delete dangling agentic_process tabs whose target row no longer exists
+    — a bare FS stub that never synced, or a process removed out from under the
+    tab. The delete→orphan-Tab cleanup in ``Entity.delete`` never fired (there was
+    no delete) and the missing-PROJECT reaper skips it (its project still exists),
+    so the chip lingers, titled with its raw pointer, and 404s on click. Like that
+    reaper this removes only the stale row (``Tab.delete`` — never ``Tab.close``,
+    so no teardown of a target that isn't there).
+
+    Restricted to ``agentic_process``: those rows are always DB-backed, so absence
+    == orphan, whereas a missing ``markdown``/asset target is a valid
+    unindexed-but-on-disk row (see ``_backfill_tab_projects``) that must NOT be
+    reaped.
+    """
+    ap_type = EntityType.AGENTIC_PROCESS.value
+    candidates = [t for t in tabs if t.target_type == ap_type and t.target_id]
+    if not candidates:
+        return tabs
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+    deleted_ids: set[str] = set()
+    for tab in candidates:
+        try:
+            if await AgenticProcess.get_one({"id": str(tab.target_id)}) is not None:
+                continue
+        except Exception:
+            # Fail open: a transient lookup problem must not hard-delete tabs.
+            continue
+        try:
+            await tab.delete()
+        except Exception:
+            continue
+        deleted_ids.add(tab.id)
+    if deleted_ids:
+        # Background reap (no user navigation) — ping clients so the dangling chip
+        # drops live instead of waiting for the next list fetch.
         await broadcast_tabs_changed()
     return [t for t in tabs if t.id not in deleted_ids]
 
