@@ -1,8 +1,6 @@
 import { Search } from 'lucide-react';
-import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { WorkerIcon } from '@src/components/entity-execution-panel/history-row';
 import { WORKER_TYPES, type WorkerType } from '@src/hooks/useWorkerHistory';
-import type { ScopeFilter } from '@src/lib/scope-filter';
 
 /** Vendor labels — derived from the worker-history value space (single source). */
 const WORKER_LABELS: Record<WorkerType, string> = { claude: 'Claude', codex: 'Codex', copilot: 'Copilot' };
@@ -10,30 +8,21 @@ const WORKER_LABELS: Record<WorkerType, string> = { claude: 'Claude', codex: 'Co
 interface ChatsFilterBarProps {
   search: string;
   onSearchChange: (value: string) => void;
-  scope: ScopeFilter;
-  currentProjectId: string | null;
-  currentProjectName: string | null;
-  onScopeChange: (scope: ScopeFilter) => void;
   /** Start a fresh chat with the given vendor. */
   onNewChat: (worker: WorkerType) => void;
 }
 
 /**
- * The Chats navigator header controls, stacked one-per-row:
+ * The Chats navigator header controls below the title row, stacked one-per-row:
  *   1. search box
- *   2. project scope — the shared ScopeFilterIconBar on its own full row, same
- *      placement/shape as the Assets side menu
- *   3. a "New" launcher row — one icon per vendor that starts a fresh chat
+ *   2. a "New" launcher row — one icon per vendor that starts a fresh chat
  *      (Claude/Codex/Copilot), replacing the lone "+".
- * Pure controlled inputs — all state lives in the navigator.
+ * The scope filter lives in the title row (`header.headerRight`) like every
+ * other navigator. Pure controlled inputs — all state lives in the navigator.
  */
 export function ChatsFilterBar({
   search,
   onSearchChange,
-  scope,
-  currentProjectId,
-  currentProjectName,
-  onScopeChange,
   onNewChat,
 }: ChatsFilterBarProps) {
   return (
@@ -49,12 +38,6 @@ export function ChatsFilterBar({
           data-testid="chats-search"
         />
       </div>
-      <ScopeFilterIconBar
-        scope={scope}
-        currentProjectId={currentProjectId}
-        currentProjectName={currentProjectName}
-        onScopeChange={onScopeChange}
-      />
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">New</span>
         <div className="flex items-center gap-0.5">
