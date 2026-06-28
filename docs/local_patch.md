@@ -198,10 +198,14 @@ matches the release.**
 
 ### Step 0 — which half is actually patched? (`git diff` decides)
 
+The release baseline is the **latest** `release/vX.Y` line, not a hardcoded `0.2` —
+resolve it dynamically and diff against `$REL`:
+
 ```bash
-git fetch origin release/v0.2
-git diff --stat origin/release/v0.2 -- electron                # Electron shell divergence
-git diff --stat origin/release/v0.2 -- flow_sdk ui ts_sdk      # SDK / backend+UI divergence
+git fetch origin --prune                                 # refreshes every origin/* (incl. the release lines)
+REL=$(git branch -r | grep -oE 'release/v[0-9]+\.[0-9]+' | sort -V | tail -1)  # e.g. release/v0.2
+git diff --stat "origin/$REL" -- electron                # Electron shell divergence
+git diff --stat "origin/$REL" -- flow_sdk ui ts_sdk      # SDK / backend+UI divergence
 ```
 
 Empty output = that half is **identical to release** → use the pristine release artifact, stamp the
@@ -296,7 +300,7 @@ The shell and the SDK are **independently versioned** — keep their numbers on 
 > release (`0.2.78`) will still and *should* win — the local patch is ephemeral by design.
 
 The suffix is **per-half and conditional**: it appears ONLY on the half that `git diff
-origin/release/v0.2` shows as diverged (Step 0). A half that matches the release stays **plain** —
+origin/$REL` (the latest release line) shows as diverged (Step 0). A half that matches the release stays **plain** —
 adding `-patch`/`+local` to an unchanged half is a lie about what's running. The Electron bundle
 moves only on a desktop/`electron/` release; the SDK moves on every PyPI cut. **Never stamp the shell
 with the SDK/PyPI number** (`0.2.64-patch1` on a `0.2.28` shell was the 2026-06-17 bug), and never
@@ -338,7 +342,7 @@ Stamp it in **two** places: the packed `app.asar/package.json` `version` (author
    entitlements (they grant `allow-jit` / `disable-library-validation`, which Electron's
    helpers need): result flags should read `adhoc,runtime`.
 4. **Transplant only `main.js`, from the source that matches your intent (Step 0).** If the shell
-   has **no** local code (`ELE_LOCAL=0`) ship `git show origin/release/v0.2:electron/main.js`
+   has **no** local code (`ELE_LOCAL=0`) ship `git show origin/$REL:electron/main.js`
    (release code, for backend compat — stamp stays **plain**). Only when you are deliberately
    shipping **local** shell work (`ELE_LOCAL=1`) ship your own `main.js` (`git show HEAD:electron/main.js`)
    and stamp `-patchN`. Either way transplant **only `main.js`** — never the working tree wholesale
@@ -379,13 +383,14 @@ ASARBIN="$PWD/electron/node_modules/.bin/asar"
 # 0a. STEP 0 — which half is patched? git diff vs release decides (mark ONLY what diverges).
 #     Merge release FIRST if you want local code on top of the latest release — then this
 #     diff reflects only your real local work (and the SDK base picks up the release version).
-git fetch origin release/v0.2
-git diff --quiet origin/release/v0.2 -- flow_sdk ui ts_sdk && SDK_LOCAL=0 || SDK_LOCAL=1   # 1 = SDK has local code
-git diff --quiet origin/release/v0.2 -- electron            && ELE_LOCAL=0 || ELE_LOCAL=1   # 1 = shell has local code
+git fetch origin --prune                                                        # refreshes every origin/* (incl. the release lines)
+REL=$(git branch -r | grep -oE 'release/v[0-9]+\.[0-9]+' | sort -V | tail -1)   # latest release line, e.g. release/v0.2
+git diff --quiet "origin/$REL" -- flow_sdk ui ts_sdk && SDK_LOCAL=0 || SDK_LOCAL=1   # 1 = SDK has local code
+git diff --quiet "origin/$REL" -- electron           && ELE_LOCAL=0 || ELE_LOCAL=1   # 1 = shell has local code
 ELECTRON_BASE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$SRC/Contents/Info.plist")  # shell axis, e.g. 0.2.28
 
 # SDK base = max(checkout _version, PyPI latest) — NEVER just the checkout's _version. The
-# checkout (== release after a merge) can LAG PyPI (release/v0.2 _version.py is bumped on the
+# checkout (== release after a merge) can LAG PyPI ($REL _version.py is bumped on the
 # release branch, but a concurrent deploy can publish a higher patch first). If you stamp
 # +local on the lower base, the triple is smaller and the backend self-updater REINSTALLS the
 # published version straight over your patch (see "auto-update override" pitfall below).
@@ -428,7 +433,7 @@ TREE=$(mktemp -d)/app
 # main.js source: ELE_LOCAL=1 → your local shell code; ELE_LOCAL=0 → release main.js (compat only — the
 # shipped 0.2.28 main.js may be too old for the new backend; this is release code, so STAMP stays plain).
 [ "$ELE_LOCAL" = 1 ] && git show HEAD:electron/main.js > "$TREE/main.js" \
-                     || git show origin/release/v0.2:electron/main.js > "$TREE/main.js"
+                     || git show "origin/$REL:electron/main.js" > "$TREE/main.js"
 python3 -c 'import json,sys; p,v=sys.argv[1:3]; d=json.load(open(p)); d["version"]=v; json.dump(d,open(p,"w"),indent=2)' \
         "$TREE/package.json" "$STAMP"                                # stamp app.getVersion() (plain or -patchN per Step 0)
 rm -f "$ASAR"; "$ASARBIN" pack "$TREE" "$ASAR"                        # repack (no --unpack: this build has 0 unpacked entries)
