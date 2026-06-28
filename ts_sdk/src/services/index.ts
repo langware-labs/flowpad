@@ -8,6 +8,7 @@ export * from './soundService';
 export * from './cloud_login';
 export * from './cloud_status';
 export * from './privacy_mode';
+export * from './toplog';
 export * from './funcService';
 export * from './authService';
 export * from './jobService';

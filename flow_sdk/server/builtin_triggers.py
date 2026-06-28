@@ -28,20 +28,30 @@ _log = logging.getLogger(__name__)
 
 @trigger_callbacks.register(
     "builtin_toplog_filter_apply",
-    meaning="Fired when the per-instance toplog.json filter changes. "
-            "Re-applies log level/disabled flags to topic loggers and broadcasts "
-            "the new state to UI clients. Stub while toplog Slice A is parked — "
-            "the trigger's counter still increments on every fire.",
+    meaning="Fired when the per-instance toplog.json changes. Re-derives the "
+            "in-memory topic state from the file and broadcasts the new state to "
+            "all UI clients. This is the single broadcaster for toplog — every "
+            "writer (backend, frontend-via-route, worker, human edit) converges "
+            "through the file and this callback.",
 )
 async def _toplog_filter_apply(trigger: Trigger, changes: list[ChangeEvent]) -> None:
-    # When toplog Slice A lands, this re-reads the filter and applies it to
-    # `logging.getLogger("toplog.*")` + broadcasts over WS. Until then the fire
-    # path itself (counter bump → entity update → WS) is the demonstration surface.
-    for ch in changes:
-        _log.info(
-            "builtin_toplog_filter_apply: %s changed (%s); toplog Slice A parked",
-            ch.path, ch.change_type,
+    # The file is authority: re-derive this process's in-memory state, then push
+    # it to every connected client. Runs in the server's async context, so it is
+    # the one place allowed to await broadcast(); the sync toplog mutators never
+    # touch the event loop.
+    from flow_sdk import toplog
+
+    toplog._apply_from_file()
+    try:
+        from flow_sdk.api.messages import ToplogStateMessage
+        from flow_sdk.server.routes.websocket import broadcast
+
+        st = toplog.state()
+        await broadcast(
+            ToplogStateMessage(enabled=st["enabled"], filter=st["filter"]).model_dump_json()
         )
+    except Exception:
+        _log.exception("toplog: failed to broadcast state after file change")
 
 
 # ── Spec list ────────────────────────────────────────────────────────────────
@@ -187,11 +197,14 @@ async def set_service_triggers() -> None:
     for spec in _service_trigger_specs():
         await _upsert_one(spec)
 
-    # Seed any missing watched files so awatch attaches cleanly on boot.
+    # Seed the watched toplog.json so awatch attaches cleanly on boot. The master
+    # switch is seeded from the instance setting (on in dev, off in prod); after
+    # this the file is authority. The seed write happens BEFORE fsop_watcher.start(),
+    # so no trigger fires for it — seed_file also re-derives the in-memory state so
+    # the dev/prod default takes effect immediately on first boot.
     settings = get_instance_settings()
-    if not settings.toplog_config_path.exists():
-        try:
-            settings.toplog_config_path.parent.mkdir(parents=True, exist_ok=True)
-            settings.toplog_config_path.write_text('{"filter":{}}\n')
-        except Exception:
-            _log.exception("Failed to seed initial toplog.json")
+    try:
+        from flow_sdk import toplog
+        toplog.seed_file(settings.toplog_enabled)
+    except Exception:
+        _log.exception("Failed to seed/apply initial toplog state")
