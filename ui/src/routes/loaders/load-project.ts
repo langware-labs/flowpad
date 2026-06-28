@@ -294,7 +294,7 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
   if (tabTypeId.type === 'agentic_process') {
     try {
       const { shell } = await loadProcess(tabTypeId.id);
-      if (roomId) await tagShellWithRoom(shell, roomId);
+      if (roomId && shell) await tagShellWithRoom(shell, roomId);
     } catch (e) {
       if (!(e instanceof ProcessLoadError)) throw e;
       throw processLoadErrorToDockError(e, 'project');

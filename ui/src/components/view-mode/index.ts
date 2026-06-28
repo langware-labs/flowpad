@@ -16,5 +16,6 @@ export {
   useIsAdvanced,
   useIsDev,
   setViewMode,
+  setDev,
   getViewMode,
 } from '@src/contexts/view-mode-context';

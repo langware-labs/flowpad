@@ -15,7 +15,7 @@
  * the value only arrives after the async fetch.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { dataManager } from '@sdk';
 import apiClient from '@sdk/client';
@@ -47,6 +47,12 @@ describe('useAssetTypes — folder_backed is available synchronously', () => {
     // race — the only way folder_backed can be set on first render is the sync
     // registry path (the fix).
     vi.spyOn(apiClient, 'get').mockImplementation(() => new Promise(() => {}) as never);
+  });
+
+  // Restore the never-resolving apiClient.get mock so the end-of-file leak-sweep
+  // afterAll (../_cleanup) doesn't call into it and hang to a 15s hook timeout.
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('marks skill folder_backed on the first render, before the fetch resolves', () => {

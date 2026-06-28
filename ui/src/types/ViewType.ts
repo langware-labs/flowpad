@@ -113,7 +113,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: false,
   },
   [ViewType.SHELL]: {
-    title: 'Shell',
+    title: 'Worker',
     iconName: 'Terminal',
     tabLocation: 'overview',
     canAddAsTab: true,

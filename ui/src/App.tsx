@@ -8,6 +8,7 @@ import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, DiagnoseErrorModal, initNotificationIngest } from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
+import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
@@ -100,6 +101,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <InputPromptModal />
         <Spotlight />
         <ActivityProgressModalRoot />
+        <WikiModalRoot />
         <GlobalEvents />
         <GitHubDeviceFlowModal />
         <MigrateLegacyKeychain />

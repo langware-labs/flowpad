@@ -28,6 +28,14 @@ async function ensureAsset(page: Page, type: 'agent' | 'skill', name: string): P
     data: { name },
   });
   expect(res.status(), `seed ${type} "${name}"`).toBe(200);
+
+  // The asset tree lists INDEXED records and indexing is explicit-only (no
+  // auto-index on create). Without this the created asset never surfaces as a
+  // tree row. Index the just-created type under its project scope.
+  const idx = await page.request.post(
+    `/api/v1/graph/compute_node/@local/fs-records/index?type=${type}&projects=${projectId}&user=false&force=true`,
+  );
+  expect(idx.status(), `index ${type} after seed`).toBe(200);
 }
 
 /** Guarantee at least one agent (tree target) and one skill (attach candidate). */

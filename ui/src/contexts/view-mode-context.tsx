@@ -65,7 +65,7 @@ defineGlobal('getView', getViewMode);
 
 // --- Dev mode globals (overrides any shim registration) ---
 
-function setDev(val?: boolean): void {
+export function setDev(val?: boolean): void {
   if (val === undefined) {
     // No-arg = toggle: Dev ↔ Advanced
     setViewMode(_mode === ViewMode.Dev ? ViewMode.Advanced : ViewMode.Dev);

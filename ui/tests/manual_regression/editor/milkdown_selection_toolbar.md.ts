@@ -95,7 +95,7 @@ async function selectFirstChars(page: Page, n: number, container = '.ProseMirror
 test.describe('Milkdown selection toolbar', () => {
   test('selection toolbar appears above a non-empty selection in editor mode', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => { localStorage.setItem('llm-setup-modal-seen', 'true'); localStorage.setItem('viewMode', 'advanced'); });
     await openFirstMarkdownDoc(page);
     await setMode(page, 'editor');
     await expect(page.locator('.ProseMirror[contenteditable="true"]')).toBeVisible({ timeout: 10_000 });
@@ -128,7 +128,7 @@ test.describe('Milkdown selection toolbar', () => {
   // ── Test 2 ──────────────────────────────────────────────────────────────────
   test('Bold button formats the selected text', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => { localStorage.setItem('llm-setup-modal-seen', 'true'); localStorage.setItem('viewMode', 'advanced'); });
     await openFirstMarkdownDoc(page);
     await setMode(page, 'editor');
 
@@ -155,7 +155,7 @@ test.describe('Milkdown selection toolbar', () => {
   // ── Test 3 ──────────────────────────────────────────────────────────────────
   test('selection toolbar disappears when the selection collapses', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => { localStorage.setItem('llm-setup-modal-seen', 'true'); localStorage.setItem('viewMode', 'advanced'); });
     await openFirstMarkdownDoc(page);
     await setMode(page, 'editor');
 
@@ -174,7 +174,7 @@ test.describe('Milkdown selection toolbar', () => {
   // ── Test 4 ──────────────────────────────────────────────────────────────────
   test('selection toolbar is hidden in view and review modes', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => { localStorage.setItem('llm-setup-modal-seen', 'true'); localStorage.setItem('viewMode', 'advanced'); });
     await openFirstMarkdownDoc(page);
 
     const toolbar = page.locator('[data-testid="selection-toolbar"]');
@@ -198,7 +198,7 @@ test.describe('Milkdown selection toolbar', () => {
   // ── Test 5 ──────────────────────────────────────────────────────────────────
   test('selection toolbar is suppressed while the LinkPopup is open', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => { localStorage.setItem('llm-setup-modal-seen', 'true'); localStorage.setItem('viewMode', 'advanced'); });
     await openFirstMarkdownDoc(page);
     await setMode(page, 'editor');
 
@@ -224,7 +224,7 @@ test.describe('Milkdown selection toolbar', () => {
   // ── Test 6 ──────────────────────────────────────────────────────────────────
   test('selection toolbar reuses the same FormatButton as the static toolbar', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => { localStorage.setItem('llm-setup-modal-seen', 'true'); localStorage.setItem('viewMode', 'advanced'); });
     await openFirstMarkdownDoc(page);
     await setMode(page, 'editor');
 

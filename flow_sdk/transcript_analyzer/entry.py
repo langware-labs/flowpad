@@ -8,7 +8,7 @@ The class hierarchy under ``entries/`` is the canonical type discriminator —
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
@@ -102,6 +102,72 @@ class TranscriptEntry:
         tool_use + thinking) yields multiple ``FlowData`` items in one shot.
         """
         return []
+
+    # ── tree traversal ───────────────────────────────────────────────────────
+    # Most entries are leaves. ``AgentSpawnEntry`` is the only composite node —
+    # it carries the spawned sub-agent's entries as ``children`` once a
+    # transcript has been assembled (see ``assembly.assemble_tree``). The
+    # streaming reader never populates children, so ``walk()`` over an
+    # un-assembled transcript is identical to flat iteration.
+
+    def iter_children(self) -> list["TranscriptEntry"]:
+        """Direct child entries; empty for leaves. Composites override."""
+        return []
+
+    def walk(self, _seen: set[int] | None = None) -> Iterator["TranscriptEntry"]:
+        """Yield self then recurse children, depth-first.
+
+        ``id()``-guarded so a malformed cycle (a spawn whose subtree loops
+        back) can't spin forever — each object is yielded at most once.
+        """
+        seen = _seen if _seen is not None else set()
+        oid = id(self)
+        if oid in seen:
+            return
+        seen.add(oid)
+        yield self
+        for child in self.iter_children():
+            yield from child.walk(seen)
+
+    def _tool_flow_data(
+        self,
+        args: dict,
+        *,
+        default_name: str = "Tool",
+        extra: dict | None = None,
+    ) -> list["FlowData"]:
+        """Build a single TOOL_CALL ``FlowData`` carrying the fields the UI needs
+        to name the tool (``tool-name`` attr) and pair it with its result
+        (``tool_call_id`` in flow_value). Semantic tool entries delegate here so
+        replayed tools render identically to the live stream.
+        """
+        from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+            FlowData,
+            FlowDataType,
+            FlowElementType,
+        )
+
+        name = getattr(self, "tool_name", "") or default_name
+        tuid = getattr(self, "tool_use_id", "") or ""
+        flow_value = {
+            "tool_name": name,
+            "tool_use_id": tuid,
+            "tool_call_id": tuid,
+            "input": args,
+            "args": args,
+        }
+        if extra:
+            flow_value.update(extra)
+        return [FlowData(
+            flow_value=flow_value,
+            created_time=self.timestamp,
+            attributes={
+                "element-type": FlowElementType.TOOL_CALL,
+                "data-type": FlowDataType.OBJECT,
+                "tool-name": name,
+                "tool-use-id": tuid,
+            },
+        )]
 
     def to_dict(self) -> dict:
         """Serialize the envelope fields for REST round-trip.

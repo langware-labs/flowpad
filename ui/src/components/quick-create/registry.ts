@@ -1,6 +1,6 @@
-import { Agent, Markdown, Project, Skill, Task, Whiteboard, Workflow } from '@sdk';
+import { Agent, DynamicWorkflow, Layout, Markdown, Project, Skill, Task, Whiteboard, Workflow } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { Bot, CheckSquare, FileText, Palette, Sparkles, Workflow as WorkflowIcon, type LucideIcon } from 'lucide-react';
+import { Bot, Boxes, CheckSquare, FileText, Palette, Sparkles, Workflow as WorkflowIcon, type LucideIcon } from 'lucide-react';
 import type { HarnessKind, ScopeKind } from './ScopeSelection';
 
 /**
@@ -82,7 +82,11 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Skill.createInProject(project, name, folderVfsPath);
       return {
-        pointer: saved.asset_ref ? DockPointer.forAssetEditor('skill', saved.asset_ref) : undefined,
+        // Open a freshly-created skill ready to type into: edit mode, caret on the
+        // line right after the auto-inserted `# <name>` headline (body line 2).
+        pointer: saved.asset_ref
+          ? DockPointer.forAssetEditor('skill', saved.asset_ref, Layout.DOCK, { editorMode: 'editor', initialLine: '2' })
+          : undefined,
         toastTitle: 'Skill created',
       };
     },
@@ -99,7 +103,11 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Agent.createInProject(project, name, folderVfsPath);
       return {
-        pointer: saved.asset_ref ? DockPointer.forAssetEditor('agent', saved.asset_ref) : undefined,
+        // Open a freshly-created agent ready to type into: edit mode, caret at the
+        // start of the (empty) system-prompt body, right after the headline.
+        pointer: saved.asset_ref
+          ? DockPointer.forAssetEditor('agent', saved.asset_ref, Layout.DOCK, { editorMode: 'editor', initialLine: '2' })
+          : undefined,
         toastTitle: 'Agent created',
       };
     },
@@ -116,6 +124,21 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
       return {
         pointer: saved.asset_ref ? DockPointer.forAssetEditor('workflow', saved.asset_ref) : undefined,
         toastTitle: 'Workflow created',
+      };
+    },
+  },
+  {
+    type: 'dynamic_workflow',
+    label: 'Dynamic Workflow',
+    Icon: Boxes,
+    defaultSubFolder: '.claude/workflows',
+    create: async ({ project, name }) => {
+      const saved = await DynamicWorkflow.createInProject(project, name);
+      return {
+        pointer: saved.asset_ref
+          ? DockPointer.forAssetEditor('dynamic_workflow', saved.asset_ref)
+          : undefined,
+        toastTitle: 'Dynamic workflow created',
       };
     },
   },

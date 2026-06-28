@@ -9,6 +9,10 @@
  * adds what a full RouterProvider boot additionally touches.
  */
 import { afterAll } from 'vitest';
+import { installCleanup } from '../_cleanup';
+
+// Guaranteed teardown + leak sweep for any test-created entities (skills, etc.).
+installCleanup({ sweepTypes: ['skill'] });
 
 // 1. WebSocket — jsdom ships none. Node 22 has a real global WebSocket (undici);
 //    expose it on `window` so the SDK's `new WebSocket(ws_url)` opens a REAL

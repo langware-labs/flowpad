@@ -8,13 +8,15 @@ interface Props {
   entry: UnifiedEntry;
   isExpanded: boolean;
   onToggle: () => void;
+  /** Advanced/Dev view shows per-turn token + cost chips; Standard hides them. */
+  isAdvanced: boolean;
 }
 
 function needsTruncation(text: string): boolean {
   return text.split('\n').length > 3 || text.length > 280;
 }
 
-export function ChatEntryItem({ entry, isExpanded, onToggle }: Props) {
+export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props) {
   const [showThinking, setShowThinking] = useState(false);
   const timestamp = formatEntryTime(entry);
 
@@ -79,13 +81,13 @@ export function ChatEntryItem({ entry, isExpanded, onToggle }: Props) {
               {entry.isSidechain && (
                 <span className="rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">sidechain</span>
               )}
-              {entry.usage && totalTokens > 0 && (
+              {isAdvanced && entry.usage && totalTokens > 0 && (
                 <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground">
                   <Zap className="h-2.5 w-2.5" />
                   {formatNumber(totalTokens)}
                 </span>
               )}
-              {entry.usage?.costUsd != null && entry.usage.costUsd > 0 && (
+              {isAdvanced && entry.usage?.costUsd != null && entry.usage.costUsd > 0 && (
                 <span
                   className="shrink-0 text-[10px] font-medium tabular-nums text-foreground/80"
                   data-testid="turn-cost-usd"

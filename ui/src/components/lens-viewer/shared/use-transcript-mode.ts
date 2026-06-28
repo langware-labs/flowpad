@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 
+import { useIsAdvanced } from '@src/components/view-mode';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { patchTranscriptDockOptions } from './transcript-dock-options';
 
@@ -37,12 +38,18 @@ function readStored(): TranscriptMode {
  * URL is shareable + back-button-restorable, matching ?editorMode and ?runId
  * on the workflow editor surface. localStorage is mirrored so links without
  * the query param keep the user's last choice.
+ *
+ * Standard view sees the plain chat view only — the trace / callstack / execution
+ * modes belong to Advanced/Dev. The read path is forced to 'chat' when not
+ * advanced; the persisted preference is left untouched (skin-layer rule), so it
+ * returns when the user switches up to Advanced.
  */
 export function useTranscriptMode() {
   const { navigation, currentDock } = useDockNavigation();
+  const isAdvanced = useIsAdvanced();
   const urlMode = normalizeMode(currentDock?.options?.[URL_PARAM]);
   const [localMode, setLocalMode] = useState<TranscriptMode>(readStored);
-  const mode: TranscriptMode = urlMode ?? localMode;
+  const mode: TranscriptMode = isAdvanced ? (urlMode ?? localMode) : 'chat';
 
   const setMode = useCallback(
     (m: TranscriptMode) => {

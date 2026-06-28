@@ -16,7 +16,7 @@ test.describe('closing a chat — no 401', () => {
     await gotoShell(page);
 
     // At least one terminal tab is present.
-    const tabs = page.locator('[data-testid^="tab-shell-"]');
+    const tabs = page.locator('[data-testid^="tab-shell|"]');
     await expect(tabs.first()).toBeVisible({ timeout: 15_000 });
 
     // Close the active tab via its X (aria-label="Close tab").

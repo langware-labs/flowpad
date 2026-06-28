@@ -271,6 +271,58 @@ async def test_set_label_changes_tab_name_without_touching_target() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tab_project_id_follows_target_entity_project_change() -> None:
+    # ROOT CAUSE (proven this session): tab.project_id is a write-once snapshot of
+    # the target entity's project, taken at tab creation. When the target entity's
+    # project_id later changes (e.g. a conversation is assigned to a project),
+    # nothing reconciles the dependent Tab — so the tab keeps rendering its stale
+    # project color ("stays blue"). This is the project-change sibling of the
+    # orphan-close hook that already exists for Entity.delete
+    # (test_deleting_target_soft_closes_its_tabs) but is MISSING for a project change.
+    p1 = str(uuid.uuid4())
+    probe = _TabTargetProbe(id=str(uuid.uuid4()), project_id=p1)
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/proj-follow#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+        project_id=p1,
+    )
+    assert tab.project_id == p1
+
+    # The target entity is reassigned to a different project (the user's action).
+    p2 = str(uuid.uuid4())
+    probe.project_id = p2
+    await probe.save()
+
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is not None
+    assert reloaded.project_id == p2, (
+        "tab.project_id must follow its target entity's project change "
+        "(currently stale → tab keeps the old project color / stays blue)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_reopen_clears_project_to_match_target() -> None:
+    # ISSUE 2 (refresh/reopen cannot clear-to-null): ensure_tab's reopen path
+    # refreshes the denormalized project_id only `if val is not None`, so it can
+    # never CLEAR a stale project back to null when the target is now projectless.
+    # A refresh that re-resolves project_id=None from the target therefore leaves
+    # the tab pinned to the old project.
+    p = f"dock/reopen-clear#{uuid.uuid4()}"
+    p1 = str(uuid.uuid4())
+    tab = await ensure_tab(p, target_type="markdown", target_id="md-x", project_id=p1)
+    assert tab.project_id == p1
+
+    # Reopen with the target's CURRENT (now projectless) project_id.
+    reopened = await ensure_tab(p, target_type="markdown", target_id="md-x", project_id=None)
+    assert reopened.project_id is None, (
+        "reopen must re-derive project_id from the target, including clearing to null"
+    )
+
+
+@pytest.mark.asyncio
 async def test_rename_reflects_onto_target_generically() -> None:
     # Tab.rename → target.rename: a plain entity (no override) still mirrors the
     # new label onto its own ``name`` via the generic Entity.rename.

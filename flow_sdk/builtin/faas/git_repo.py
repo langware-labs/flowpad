@@ -312,15 +312,34 @@ class GitRepo:
         m = re.search(r"\bv(\d+)\b", message)
         return int(m.group(1)) if m else None
 
+    def _scope_pathspec(self, file_path: str) -> tuple[str, bool]:
+        """Git pathspec for this asset's revisions/diff, and whether ``--follow``
+        applies. A folder-backed asset (skill — ``workdir`` IS the asset folder)
+        versions and diffs across the WHOLE folder, so internal-file edits show up
+        as revisions; everything else stays file-scoped. ``--follow`` (rename
+        tracking) only works for a single file, so it is dropped for folder scope.
+        """
+        try:
+            from flow_sdk.actions.fs.asset_scope import is_folder_asset_dir
+
+            if is_folder_asset_dir(self.work_dir):
+                return "'.'", False
+        except Exception:  # noqa: BLE001 — scope resolution must never break the route
+            logger.debug("scope-pathspec resolve failed; file-scoped", exc_info=True)
+        return f"'{file_path}'", True
+
     async def get_file_revisions(self, file_path: str) -> GitRevisionList:
-        """Commit history for a single file, newest first.
+        """Commit history for an asset, newest first — a single file, or the whole
+        folder for a folder-backed asset (skill).
 
         Each record carries the running ``version`` parsed from its commit
         message (encoded as ``v{n}`` by the auto-version hook). The list's
         top-level ``version`` is the newest revision's.
         """
+        pathspec, follow = self._scope_pathspec(file_path)
         fmt = "--format=%H%x1f%an%x1f%aI%x1f%s"
-        out, _ = await self._run_git("log", "--follow", fmt, "--", f"'{file_path}'")
+        log_args = ["log", *(["--follow"] if follow else []), fmt, "--", pathspec]
+        out, _ = await self._run_git(*log_args)
         revisions: list[GitRevision] = []
         for line in out.splitlines():
             if not line.strip():
@@ -344,7 +363,7 @@ class GitRepo:
         # `rev-parse @{u}` probe is needed.
         unpushed = 0
         cnt_out, cnt_rc = await self._run_git(
-            "rev-list", "--count", "@{u}..HEAD", "--", f"'{file_path}'"
+            "rev-list", "--count", "@{u}..HEAD", "--", pathspec
         )
         if cnt_rc == 0:
             try:
@@ -354,9 +373,12 @@ class GitRepo:
         return GitRevisionList(revisions=revisions, version=current, unpushed=unpushed)
 
     async def compare_file_revision(self, file_path: str, commit_hash: str) -> GitFileDiff:
-        """Unified diff of a file between a past revision and the working tree."""
+        """Unified diff of an asset between a past revision and the working tree —
+        a single file, or the whole folder for a folder-backed asset (skill), so
+        internal-file changes are shown."""
+        pathspec, _ = self._scope_pathspec(file_path)
         diff, _ = await self._run_git(
-            "diff", shlex.quote(commit_hash), "HEAD", "--", f"'{file_path}'"
+            "diff", shlex.quote(commit_hash), "HEAD", "--", pathspec
         )
         return GitFileDiff(diff=diff)
 
@@ -379,14 +401,16 @@ class GitRepo:
         return GitFileContent(content=content)
 
     async def restore_file(self, file_path: str, commit_hash: str) -> GitRestoreResult:
-        """Check out a single file at a past revision (working-tree mutation).
+        """Check out an asset at a past revision (working-tree mutation).
 
-        Scoped to the one file (``git checkout <hash> -- <file>``); other files
-        in the shared working tree are untouched. The restore itself is a content
-        change, so the next save re-versions it as a fresh revision.
+        Scoped to the asset — the one file, or the whole folder for a folder-backed
+        asset (skill) so its internal files are restored together; files outside the
+        asset in the shared working tree are untouched. The restore itself is a
+        content change, so the next save re-versions it as a fresh revision.
         """
+        pathspec, _ = self._scope_pathspec(file_path)
         _, err, rc = await self._run_git_io(
-            "checkout", shlex.quote(commit_hash), "--", f"'{file_path}'"
+            "checkout", shlex.quote(commit_hash), "--", pathspec
         )
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Restore failed").strip())

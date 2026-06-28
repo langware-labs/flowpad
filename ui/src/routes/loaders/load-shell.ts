@@ -32,6 +32,7 @@ import {
   TypeId,
 } from '@sdk';
 import { closeTerminalTab } from '@src/tabs/useTabs';
+import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, DockPointer } from '@src/navigation';
@@ -44,6 +45,7 @@ import {
 } from './load-process';
 import { loadProject } from './load-project';
 import {
+  buildProcessCleanup,
   loadNextProcess,
   type CleanupRecord,
   type LoadedNext,
@@ -124,6 +126,10 @@ export async function loadShell(shellId: string): Promise<Shell> {
   // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
   // must stay fast; the in-cache bump above is the synchronous seed.
   void shell.activate().catch(() => {});
+  // Stamp recency on the Tab too — the close-resolver reads Tab.last_active_at,
+  // not the Shell row, so without this close-to-most-recently-active falls back
+  // to tab_order.
+  stampTabRecencyForTarget(Shell.type, shell.id);
   dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   return shell;
@@ -238,7 +244,7 @@ async function routeProcessPointer(processId: string, shellUrl: ShellUrlBuilder)
 
     // Hard failure — the URL itself is dead. Fall back to the next
     // candidate and ``replace()`` so BACK doesn't re-trigger this loader.
-    const directCleanup = buildProcessCleanupForRoute(e);
+    const directCleanup = buildProcessCleanup(e);
     const next = await loadNextProcess({
       excludeIds: new Set([processId]),
       projectId: dataContext.project?.id ?? null,
@@ -330,28 +336,8 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
   }
 }
 
-// Lightweight versions of buildProcessCleanup / buildShellCleanup for direct-link
-// failures that originated outside `loadNextProcess`. Phrasing matches.
-function buildProcessCleanupForRoute(e: ProcessLoadError): CleanupRecord {
-  switch (e.kind) {
-    case 'entity_not_found':
-      return { kind: 'process_not_found', processId: e.processId, title: 'Session not found', description: 'Agentic process does not exist.' };
-    case 'network_error': {
-      const desc = describeProcessStartError(e.cause ?? e);
-      return { kind: 'process_start_failed', processId: e.processId, shellId: e.shellId ?? undefined, title: 'Couldn’t reach backend', description: desc.description };
-    }
-    case 'runtime_terminated':
-    case 'pty_attach_failed': {
-      const desc = describeProcessStartError(e.cause ?? e);
-      return { kind: 'process_start_failed', processId: e.processId, shellId: e.shellId ?? undefined, title: desc.title, description: desc.description };
-    }
-    case 'shell_entity_missing':
-      return { kind: 'process_no_shell', processId: e.processId, shellId: e.shellId ?? undefined, title: 'Session unavailable', description: 'No shell is linked to this process.' };
-    case 'project_missing':
-      return { kind: 'process_project_missing', processId: e.processId, shellId: e.shellId ?? undefined, title: 'Project not found', description: 'Could not recover this session’s project.' };
-  }
-}
-
+// buildProcessCleanup (the direct-link process mapper) is imported from
+// load-next-process — single source of truth shared with the in-loader path.
 async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupRecord> {
   switch (e.kind) {
     case 'not_found':

@@ -9,6 +9,7 @@ import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPa
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -59,6 +60,9 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
 
   const { open: openSideWindow } = useSideWindows();
 
+  // Run is an advanced-only affordance; only fetch its run history when shown.
+  const isAdvanced = useIsAdvanced();
+
   const { runWithAsset, isStarting, processEntry, mcpModal } = useRunOnFile({
     targetVfsPath: chatTarget,
     filePath: assetRef ?? fsRef.path,
@@ -66,7 +70,7 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   });
 
   const { processes: pastRunProcesses } = useProcessesForTarget(chatTarget ?? '', {
-    enabled: !!chatTarget,
+    enabled: !!chatTarget && isAdvanced,
     processType: ProcessKind.Execution,
   });
 
@@ -88,17 +92,20 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   const toolbar = (
     <>
       <DiscussDocButtons fsRef={fsRef} />
-      <AssetPickerPopover
-        trigger={
-          <RunButton
-            isRunning={isRunning}
-            isStarting={isStarting}
-            disabled={!chatTarget}
-            title={!chatTarget ? 'No backing entity yet' : undefined}
-          />
-        }
-        onPick={(d) => void runWithAsset(d)}
-      />
+      {isAdvanced && (
+        <AssetPickerPopover
+          trigger={
+            <RunButton
+              iconOnly
+              isRunning={isRunning}
+              isStarting={isStarting}
+              disabled={!chatTarget}
+              title={!chatTarget ? 'No backing entity yet' : undefined}
+            />
+          }
+          onPick={(d) => void runWithAsset(d)}
+        />
+      )}
     </>
   );
 

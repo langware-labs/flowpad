@@ -106,6 +106,20 @@ def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
     """
     pe = ProcessEntry(transcript_entry=entry, observation_kind=observation_kind)
     kind = entry.kind.value
+    # Tool / operation entries carry their structured fields (tool-name,
+    # tool_call_id, args/input) via their own ``to_flow_data()`` — delegate so a
+    # replayed tool names + pairs with its result exactly like the live stream
+    # does. Without this the chat shows a nameless "Using Tool" chip and an
+    # orphan "tool result (no matching call)". Messages keep the text path below.
+    if kind not in ("user_message", "assistant_message"):
+        own = entry.to_flow_data()
+        if own:
+            fd = own[0]
+            fd.attributes.setdefault("data-type", FlowDataType.OBJECT)
+            fd.attributes["subtype"] = kind
+            fd.attributes["observation-kind"] = observation_kind
+            fd.process_entry = pe.to_dict()
+            return fd
     attributes = {
         "element-type": _element_type_for_kind(kind),
         "data-type": FlowDataType.OBJECT,
@@ -116,6 +130,10 @@ def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
     text = getattr(entry, "text", None)
     if kind == "user_message":
         attributes["role"] = getattr(entry, "role", "user")
+        # Framework-injected (isMeta) user lines — skill bodies, command
+        # expansions, system reminders — collapse to a chip in the UI.
+        if getattr(entry, "is_meta", False):
+            attributes["is-meta"] = "true"
         if isinstance(text, str):
             flow_value = text
             attributes["data-type"] = FlowDataType.TEXT

@@ -276,6 +276,11 @@ class TypeInfo:
     # (spec); False ⇒ asset_ref is the bare folder and the default body is
     # materialized into ``<folder>/<main_file>`` (skill). Runtime-only.
     main_file_is_asset_ref: bool = False
+    # File extension for ``main_layout == "file"`` types — the suffix
+    # ``compute_asset_ref`` appends to ``<subdir>/<name>``. Defaults to ``.md``
+    # (the markdown-asset family); a ``.js``/``.py``/… asset overrides it so its
+    # backing file matches the indexer's glob. Runtime-only.
+    main_ext: str = ".md"
 
     def asset_ref_for(self, folder: Path) -> Path:
         """Where a folder-layout type's asset_ref points, given its folder.
@@ -468,6 +473,8 @@ class SchemaRegistry:
                 existing.main_file = info.main_file
             if info.main_file_is_asset_ref:
                 existing.main_file_is_asset_ref = True
+            if info.main_ext != ".md":
+                existing.main_ext = info.main_ext
             if info.post_sync_fn is not None:
                 existing.post_sync_fn = info.post_sync_fn
             if info.from_disk_fn is not None:

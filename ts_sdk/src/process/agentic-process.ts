@@ -27,7 +27,7 @@ import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import type { ProcessKind } from './process-types';
-import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
   TranscriptSource as TranscriptSourceType,
@@ -168,6 +168,13 @@ export interface IAgenticProcess extends IEntity {
   shell_id?: string | null;
   /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
   visible?: boolean;
+  /** Transport intent: true → interactive PTY (default, today's behaviour);
+   *  false → headless JSON-stream (no PTY/xterm). Seeds `visible` at launch and
+   *  is kept durable across reload by the loader. Routing stays headless==!visible. */
+  pty_mode?: boolean;
+  /** Backend-computed driver capability: this worker supports CLI plan mode
+   *  (`--permission-mode plan`). Drives the headless-chat plan toggle. */
+  supports_plan_mode?: boolean;
   /** tabbed / tab_order / last_active_at come from IEntity (base-Entity fields). */
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
@@ -352,10 +359,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     workerType: 'claude_code' | 'codex' | 'copilot',
     prompt?: string,
     project?: { id?: string; fs_storage_mount_path?: string | null } | null,
+    opts?: { ptyMode?: boolean },
   ): Promise<AgenticProcess> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.openTab] No local compute node');
     const proj = project ?? dataContext.project;
+    // Transport intent: default PTY (today's behaviour). `ptyMode:false` →
+    // headless launch: `visible:false` so the backend skips the PTY auto-start;
+    // the seeded first prompt drains headlessly server-side.
+    const ptyMode = opts?.ptyMode !== false;
     // Seed the prompt onto the queue via createProcess (`launchPrompt`), which
     // enqueues it server-side BEFORE the visible auto-start. The worker then
     // boots with the queued head as its launch instruction — deterministic,
@@ -368,7 +380,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         ...(proj?.id ? { projectId: proj.id } : {}),
         workerType,
       },
-      { visible: true, watchProcess: false, ...(prompt ? { launchPrompt: prompt } : {}) },
+      { visible: ptyMode, pty_mode: ptyMode, watchProcess: false, ...(prompt ? { launchPrompt: prompt } : {}) },
     );
     process.openTerminalDock();
     return process;
@@ -411,9 +423,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
      *  `useProcessesForTarget` find this process later (e.g. the analyzer for a
      *  received transcript, keyed `claude_session/<sessionId>`). */
     target?: string;
+    /** Transport intent: true → interactive PTY (default), false → headless
+     *  JSON-stream (no PTY/xterm). */
+    ptyMode?: boolean;
   }): Promise<AgenticProcess> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
+    const ptyMode = opts.ptyMode !== false;
     const process = await computeNode.createProcess(
       {
         workdir: opts.workdir,
@@ -424,7 +440,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         ...(opts.processType ? { processType: opts.processType } : {}),
         ...(opts.target ? { targetVfsPath: opts.target } : {}),
       },
-      { visible: true, watchProcess: false, ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}) },
+      { visible: ptyMode, pty_mode: ptyMode, watchProcess: false, ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}) },
     );
     process.openTerminalDock();
     return process;
@@ -575,6 +591,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @returns The AgenticProcess entity, or `null` if no on-disk session matches.
    */
   static async getByWorkerId(workerId: string, workerType?: string | null): Promise<AgenticProcess | null> {
+    // Workflow runs (id `wf_<runId>`) are not worker sessions and never have a
+    // backing AgenticProcess — short-circuit so callers (status indicators,
+    // shell/worker deep-link recovery) don't fire a guaranteed 404.
+    if (workerId.startsWith('wf_')) return null;
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.getByWorkerId] No compute node');
 
@@ -764,6 +784,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
   visible?: boolean;
+
+  /** Transport intent: true → interactive PTY (default); false → headless
+   *  JSON-stream (no PTY/xterm). Durable across reload; seeds `visible` at launch. */
+  pty_mode?: boolean;
+
+  /** Backend-computed driver capability (claude only, for now). */
+  supports_plan_mode?: boolean;
 
   /** Tab-strip membership (base-Entity field; see IEntity.tabbed). */
   tabbed?: boolean;
@@ -1181,6 +1208,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.process_type = entity.process_type ?? null;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
+    // Default true so an entity that predates the field (or any caller that
+    // doesn't set it) behaves exactly as today (PTY). Only an explicit `false`
+    // selects headless.
+    this.pty_mode = entity.pty_mode ?? true;
+    this.supports_plan_mode = entity.supports_plan_mode ?? false;
     this.tabbed = entity.tabbed ?? entity.visible ?? false;
     this.tab_order = entity.tab_order ?? 0;
     this.last_active_at = entity.last_active_at ?? null;
@@ -1705,7 +1737,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * PTY-interactive processes (visible=true) will 409 on this action — they
    * use ``inject``/``executeInstruction`` instead.
    */
-  async prompt(text: string, abortController?: AbortController): Promise<void> {
+  async prompt(
+    text: string,
+    abortController?: AbortController,
+    opts?: { permissionMode?: PermissionMode },
+  ): Promise<void> {
     const { FlowStreamProcessor } = await import('../flow_processing/flow-stream-processor');
     const { FlowEvents } = await import('../flow_processing/flow-events');
 
@@ -1723,7 +1759,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       true, // streaming
       ctrl.signal,
     );
-    actionInfo.bodyParameters = { message: text };
+    actionInfo.bodyParameters = {
+      message: text,
+      ...(opts?.permissionMode ? { permission_mode: opts.permissionMode } : {}),
+    };
 
     const response = await dataManager.callAction<unknown, Response>(actionInfo);
     if (!response || !response.body) {
@@ -1752,6 +1791,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async cancelPrompt(): Promise<void> {
     const actionInfo = new ActionInfo('cancel-prompt', AgenticProcess.type, this.id, 'POST');
     await dataManager.callAction(actionInfo);
+  }
+
+  /**
+   * Interrupt the in-flight turn from a single call site. For a visible PTY
+   * process this sends Ctrl-C (``\x03``, no trailing newline) to the same PTY
+   * the xterm types into; for a print-mode process it cancels the streaming
+   * subprocess via ``cancelPrompt``. Lets both the chat pane and the floating
+   * assistant share one "stop generating" handler.
+   */
+  async interruptTurn(): Promise<void> {
+    if (this.visible && this.shell_id) {
+      const pty = this.ptyConnection ?? (await Shell.getById<Shell>(this.shell_id))?.ptyConnection;
+      if (pty) {
+        await pty.sendInput('\x03');
+        return;
+      }
+    }
+    await this.cancelPrompt();
   }
 
   async executeInstruction(
@@ -2125,6 +2182,43 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (this.shell_id) await this.stop();
     await this.start();
     this.emit('restarted', { process: this });
+  }
+
+  /**
+   * Standardized transport switch — the single way to flip a session between the
+   * interactive PTY terminal (`WorkerMode.Interactive`) and headless CLI /
+   * JSON-stream (`WorkerMode.CLI`). One logical session (one `session_id` /
+   * transcript); routing stays `headless == !visible`, and the durable `pty_mode`
+   * intent is persisted so a reload keeps the chosen transport.
+   *
+   * Frontend → backend: the CLI direction calls the `switch-mode` action (kill
+   * PTY, visible=False, pty_mode=False); the PTY direction routes through the
+   * canonical `start()`/`open` path (which the backend `switch-mode` INTERACTIVE
+   * branch mirrors for non-UI callers) so the live PTY attach happens, plus the
+   * `restarted` event so the terminal clears + re-attaches. Rejected mid-turn
+   * (backend 409); the caller disables the toggle while a turn is in flight.
+   */
+  async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
+    if (mode === WorkerMode.Interactive) {
+      this.pty_mode = true;
+      await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
+      this.emit('restarted', { process: this });
+      return;
+    }
+    // CLI: one `switch-mode` round-trip. Mirror exit()'s optimistic CLOSING +
+    // user-stop guard. Do NOT emit 'restarted' — it drives re-attachPty, wrong
+    // after the PTY is killed; the view's toggle handler owns the chat reconcile.
+    this._userInitiatedStop = true;
+    const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
+    if (shell) {
+      shell.status = ShellStatus.CLOSING;
+      dataManager.notifyEntityChanged(shell);
+    }
+    const actionInfo = new ActionInfo('switch-mode', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { mode };
+    await dataManager.callAction(actionInfo);
+    this.visible = false;
+    this.pty_mode = false;
   }
 
   /**

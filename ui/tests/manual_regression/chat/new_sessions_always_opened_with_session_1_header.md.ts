@@ -12,7 +12,7 @@ import { dismissSetupModal } from './helpers';
 import { gotoShell, addTerminalTab } from '../terminal/helpers';
 
 async function tabNames(page: import('@playwright/test').Page): Promise<string[]> {
-  return page.locator('[data-testid^="tab-shell-"]').evaluateAll((els) =>
+  return page.locator('[data-testid^="tab-shell|"]').evaluateAll((els) =>
     els.map((e) => (e.querySelector('span')?.textContent || '').trim()).filter(Boolean),
   );
 }
@@ -27,9 +27,9 @@ test.describe('incremented tab names', () => {
     expect(before.length).toBeGreaterThanOrEqual(1);
     const firstName = before[0];
 
-    const tabsBefore = await page.locator('[data-testid^="tab-shell-"]').count();
+    const tabsBefore = await page.locator('[data-testid^="tab-shell|"]').count();
     await addTerminalTab(page);
-    await expect(page.locator('[data-testid^="tab-shell-"]')).toHaveCount(tabsBefore + 1, { timeout: 15_000 });
+    await expect(page.locator('[data-testid^="tab-shell|"]')).toHaveCount(tabsBefore + 1, { timeout: 15_000 });
 
     // The two tabs have distinct, incremented names (e.g. "Tab 1" + "Tab 2").
     await expect(async () => {

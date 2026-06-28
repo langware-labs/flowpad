@@ -36,7 +36,7 @@ import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
 import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
-import { setChatUiMode, useChatUiMode } from '@src/contexts/chat-ui-mode-context';
+import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 
 interface ProcessToolbarProps {
@@ -58,7 +58,7 @@ interface ProcessToolbarProps {
 export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, embedded, onClose, shell }: ProcessToolbarProps) {
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
-  const chatUiMode = useChatUiMode();
+  const chatOverride = useChatUiOverride();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
   const [showCommandStatus, setShowCommandStatus] = useState(false);
@@ -301,17 +301,17 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs text-muted-foreground">Chat mode</DropdownMenuLabel>
-            {/* Experimental simple-chat view. Terminal is the default for every
-                process; the chat ("ui") view is not stable enough for users, so
-                this debug-menu toggle is the ONLY way to reach it. */}
+            {/* The bottom-ribbon toggle is the primary control; this mirrors it.
+                Checked = force the chat ("ui") view; unchecked = follow View mode
+                (Standard ⇒ chat, Advanced ⇒ terminal). See chat-ui-mode-context. */}
             <DropdownMenuCheckboxItem
-              checked={chatUiMode}
+              checked={chatOverride === 'chat'}
               onSelect={(e) => e.preventDefault()}
-              onCheckedChange={(v) => setChatUiMode(v)}
+              onCheckedChange={(v) => setChatUiOverride(v ? 'chat' : null)}
             >
               <span className="text-xs">
-                <span className="font-medium text-amber-400">Chat UI (experimental)</span>
-                <span className="ml-1 text-muted-foreground">— {chatUiMode ? 'ui' : 'terminal'} mode</span>
+                <span className="font-medium">Force chat UI</span>
+                <span className="ml-1 text-muted-foreground">— {chatOverride ?? 'auto'}</span>
               </span>
             </DropdownMenuCheckboxItem>
           </DropdownMenuContent>

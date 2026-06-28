@@ -19,6 +19,7 @@ import { AgenticProcess, ConnectionManager, dataManager, ProcessStatus, Shell, T
 import { v4 as uuidv4 } from 'uuid';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, createAgenticProcess, getTestSignupInfo } from '../utils/test-utils';
+import { trackForCleanup } from '../_cleanup';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -79,7 +80,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       nodeName: `pty-lifecycle-${Date.now()}`,
       model: 'claude-haiku-4-5-20251001',
     });
-    const process = await createIdleProcess();
+    const process = trackForCleanup(await createIdleProcess());
 
     // Before open: no shell
     expect(process.shell_id).toBeFalsy();
@@ -99,7 +100,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       nodeName: `pty-status-${Date.now()}`,
       model: 'claude-haiku-4-5-20251001',
     });
-    const process = await createIdleProcess();
+    const process = trackForCleanup(await createIdleProcess());
 
     // Idle before PTY
     expect(process.resolvedStatus).toBe(ProcessorStatus.IDLE);
@@ -117,7 +118,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       nodeName: `pty-prompt-${Date.now()}`,
       model: 'claude-haiku-4-5-20251001',
     });
-    const process = await createIdleProcess();
+    const process = trackForCleanup(await createIdleProcess());
     await process.start();
     const shellId = process.shell_id;
 
@@ -145,7 +146,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       nodeName: `pty-prompt2-${Date.now()}`,
       model: 'claude-haiku-4-5-20251001',
     });
-    const process = await createIdleProcess();
+    const process = trackForCleanup(await createIdleProcess());
     await process.start();
     const shellId = process.shell_id;
 
@@ -207,7 +208,7 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
       nodeName: `pty-restore-${Date.now()}`,
       model: 'claude-haiku-4-5-20251001',
     });
-    const process = await createIdleProcess();
+    const process = trackForCleanup(await createIdleProcess());
     await process.start();
     const shellId = process.shell_id;
     const workerSessionId = process.session_id;

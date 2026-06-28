@@ -4,22 +4,23 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 
 /**
- * Hook that resumes a Claude/Codex worker session in a ProcessTerminal.
- * Backend auto-discovers worker_type via AgenticProcess.getByWorkerId.
+ * Hook that resumes a Claude/Codex worker session in a ProcessTerminal via
+ * AgenticProcess.getByWorkerId. Pass `workerType` to skip the cross-vendor disk
+ * probe; the backend auto-discovers it when omitted.
  */
 export function useResumeInTerminal() {
   const { navigation } = useDockNavigation();
   const creatingRef = useRef(false);
 
   const resumeInTerminal = useCallback(
-    (workerId: string, _cwd?: string, timestamp?: string) => {
+    (workerId: string, _cwd?: string, timestamp?: string, workerType?: string | null) => {
       if (!workerId || creatingRef.current) return;
 
       creatingRef.current = true;
 
       void (async () => {
         try {
-          const p = await AgenticProcess.getByWorkerId(workerId);
+          const p = await AgenticProcess.getByWorkerId(workerId, workerType ?? null);
           if (!p) {
             notify.error({ title: 'Session not found', message: `Session ${workerId} is not in Claude, Codex, or Copilot history.`, id: `session-not-found:${workerId}` });
             return;
