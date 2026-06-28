@@ -636,7 +636,7 @@ class FlowMessage(Entity):
     async def download_body(
         self,
         *,
-        asset_dest_root: Path | None = None,
+        overwrite: bool = False,
         on_progress: Optional[ProgressCallback] = None,
     ) -> "FlowMessage":
         """Download the body from the hub and unpack it locally.
@@ -644,8 +644,17 @@ class FlowMessage(Entity):
         Refuses (BodyNotReadyError) when body_status != READY — receivers
         must wait for the hub to fan out the body_status UPDATE first.
         Reuses the standard unpack_bundle path so all attachment kinds
-        (FILE, PROMPT-file, TYPE_ID, FS-rooted records) restore identically
-        to the receive-on-inbox flow.
+        (FILE, PROMPT-file, TYPE_ID, file-backed records) restore identically
+        to the receive-on-inbox flow. File-backed assets land in the
+        conversation's mapped PROJECT (resolved inside unpack_bundle).
+
+        ``overwrite`` — when a different asset already occupies a restored
+        record's target path, the unpack raises ``FlowMessageExistsError``
+        (surfaced so the caller can prompt "asset already exists — overwrite?").
+        Re-invoking with ``overwrite=True`` replaces the on-disk asset.
+
+        Raises ``FlowMessageNoProjectError`` when the conversation has no project
+        mapped (the explicit path) so the caller can prompt + re-download.
 
         ``on_progress`` — optional async callback fired as download bytes
         land; receives (bytes_done, bytes_total). Drives the receiver's bar.
@@ -659,9 +668,14 @@ class FlowMessage(Entity):
 
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
         filename = self.attachment_filename or BODY_FILENAME
+        # This is the explicit download path: a real collision propagates
+        # (FlowMessageExistsError) and a missing project propagates
+        # (FlowMessageNoProjectError) for the caller to handle, rather than being
+        # logged-and-dropped like the implicit sync callers.
         ok = await _download_and_unpack_bundle(
             self.id, filename, body_status=self.body_status,
-            asset_dest_root=asset_dest_root, on_progress=on_progress,
+            overwrite=overwrite, raise_on_conflict=True,
+            raise_on_no_project=True, on_progress=on_progress,
         )
         if not ok:
             raise RuntimeError(f"download_body failed for fm={self.id}")

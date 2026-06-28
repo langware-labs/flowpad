@@ -114,7 +114,10 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            expected = f"attachment/spec-@{spec_id}/spec.md"
+            # New unified layout: attachment/<type>-@<id>/<main_subdir>/<leaf>.
+            # Spec is folder-layout (specs/<name>/spec.md); the DB-backed mock
+            # (no on-disk asset_ref) renders via default_body_fn.
+            expected = f"attachment/spec-@{spec_id}/specs/My_Spec/spec.md"
             assert expected in names
             content = zf.read(expected).decode("utf-8")
             assert "My Spec" in content
@@ -324,7 +327,8 @@ class TestPromptAttachmentRoundtrip:
             zip_path = await pack_bundle(fm, dest_dir=tmp_path)
 
         with zipfile.ZipFile(zip_path, "r") as zf:
-            expected = f"attachment/prompt-@{_PROMPT_UUID}/prompt.md"
+            # New unified layout: prompts/<name>.md (file-layout, prompts subdir).
+            expected = f"attachment/prompt-@{_PROMPT_UUID}/prompts/Fix_the_bug.md"
             assert expected in zf.namelist()
             content = zf.read(expected).decode("utf-8")
             assert "Fix the bug in auth." in content
@@ -332,9 +336,11 @@ class TestPromptAttachmentRoundtrip:
             assert "use_count: 2" in content
 
     @pytest.mark.asyncio
-    async def test_unpack_creates_prompt_entity(self, tmp_path):
-        """unpack_bundle materializes a library Prompt (user scope) from prompt.md."""
-        from flow_sdk.builtin.prompt import Prompt
+    async def test_unpack_parks_file_backed_asset_without_project(self, tmp_path):
+        """A file-backed asset (prompt) with no project mapped is PARKED — not
+        copied/indexed — and the FlowMessage still materializes. (The
+        copy-into-project happy path is covered by the hub integration matrix.)"""
+        from flow_sdk.builtin.conversation import Conversation
         from flow_sdk.builtin.user import User
 
         fm_id = "abab8888-0000-4000-8000-000000000008"
@@ -354,14 +360,8 @@ class TestPromptAttachmentRoundtrip:
         }
         zip_path = _write_flowmsg_zip(
             tmp_path, fm_data,
-            {f"attachment/prompt-@{_PROMPT_UUID}/prompt.md": prompt_md.encode("utf-8")},
+            {f"attachment/prompt-@{_PROMPT_UUID}/prompts/Fix_the_bug.md": prompt_md.encode("utf-8")},
         )
-
-        saved: dict = {}
-
-        async def capture_save(self, *args, **kwargs):  # noqa: ANN001
-            saved["prompt"] = self
-            return self
 
         saved_fm = FlowMessage(text="carrier")
         saved_fm.id = fm_id
@@ -370,24 +370,22 @@ class TestPromptAttachmentRoundtrip:
             patch.object(User, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
-            patch.object(Prompt, "get_one", new=AsyncMock(return_value=None)),
-            patch.object(Prompt, "save", new=capture_save),
+            patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)),
             patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
         ):
-            await unpack_bundle(zip_path, "local-user-id")
+            # No conversation/project → asset parked; raise_on_no_project defaults
+            # False so unpack returns the FM rather than raising.
+            result = await unpack_bundle(zip_path, "local-user-id")
 
-        prompt = saved.get("prompt")
-        assert prompt is not None, "unpack must materialize the Prompt entity"
-        assert prompt.id == _PROMPT_UUID
-        assert prompt.name == "Fix the bug"
-        assert prompt.text == "Fix the bug in auth."
-        assert prompt.use_count == 2
-        assert prompt.project_id is None  # receiver-side: user scope
+        assert result is not None
+        assert result.id == fm_id
 
     @pytest.mark.asyncio
-    async def test_unpack_prompt_create_once(self, tmp_path):
-        """An existing receiver-side Prompt is NOT clobbered by a re-unpack."""
-        from flow_sdk.builtin.prompt import Prompt
+    async def test_unpack_raises_no_project_when_requested(self, tmp_path):
+        """The explicit download path (raise_on_no_project=True) surfaces
+        FlowMessageNoProjectError when a file-backed asset can't be placed."""
+        from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.flow_message_bundle import FlowMessageNoProjectError
         from flow_sdk.builtin.user import User
 
         fm_id = "cdcd9999-0000-4000-8000-000000000009"
@@ -395,28 +393,26 @@ class TestPromptAttachmentRoundtrip:
             "id": fm_id,
             "type": "flow_message",
             "text": "carrier",
-            "shared_context_entities": [],
-            "attachment": [],
+            "conversation_id": _CONV_UUID,
+            "shared_context_entities": [{"type": "conversation", "id": _CONV_UUID}],
+            "attachment": [{"attachment_type": "type_id", "data": f"prompt-{_PROMPT_UUID}"}],
         }
         zip_path = _write_flowmsg_zip(
             tmp_path, fm_data,
-            {f"attachment/prompt-@{_PROMPT_UUID}/prompt.md": b"---\nname: x\n---\n\nx\n"},
+            {f"attachment/prompt-@{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
         )
 
-        existing = Prompt(name="receiver edit", text="edited locally")
-        existing.id = _PROMPT_UUID
-        prompt_save = AsyncMock()
-        saved_fm = FlowMessage(text="carrier")
-        saved_fm.id = fm_id
+        # Conversation exists but has no project_id → no project root.
+        mock_conv = Conversation(shared_context_entities=[])
+        mock_conv.id = _CONV_UUID
+        saved_fm = FlowMessage.model_validate(fm_data)
 
         with (
             patch.object(User, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
-            patch.object(Prompt, "get_one", new=AsyncMock(return_value=existing)),
-            patch.object(Prompt, "save", new=prompt_save),
+            patch.object(Conversation, "get_one", new=AsyncMock(return_value=mock_conv)),
             patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
         ):
-            await unpack_bundle(zip_path, "local-user-id")
-
-        prompt_save.assert_not_called()
+            with pytest.raises(FlowMessageNoProjectError):
+                await unpack_bundle(zip_path, "local-user-id", raise_on_no_project=True)

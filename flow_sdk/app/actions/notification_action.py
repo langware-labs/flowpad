@@ -152,7 +152,8 @@ async def _attach_prompt(
     ``AttachmentType.PROMPT`` files so the UI renders them inline as pictures
     rather than decoding the bytes into a garbage prompt. Prompts thus behave
     like every other entity attachment — they ride the body bundle
-    (``_pack_prompt_attachment``) and land in the receiver's library. Legacy
+    (the unified ``_pack_file_backed_attachment``) and land in the receiver's
+    project library. Legacy
     ``AttachmentType.PROMPT`` messages
     keep working read-side; new sends are entity-backed.
     """
