@@ -1,9 +1,11 @@
-"""Receiver-side unpack: a restored spec source materializes — and HEALS a
-content-less stub — via the generic restore→reindex path. This is the
-blank-shared-plan fix (no create-once skip, body-aware, idempotent).
+"""Receiver-side unpack: a copied file-backed asset (spec) materializes — and
+HEALS a content-less stub — via the generic restore→reindex path. This is the
+blank-shared-plan fix (body-aware, idempotent), now through the UNIFIED family
+path: ``_restore_file_backed_entry`` copies the bundle's ``<main_subdir>/<leaf>``
+subtree into the PROJECT, then ``_reindex_received_assets`` materializes the row.
 
 No mocks: real test DB + real FSIndexer. Exercises exactly what unpack_bundle
-runs for a spec attachment (``_restore_spec_source`` + ``_reindex_project_root``).
+runs for a file-backed asset entry.
 """
 import pytest
 
@@ -11,10 +13,11 @@ import pytest
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
 from flow_sdk.builtin.flow_message_bundle import (
-    _reindex_project_root,
-    _restore_spec_source,
+    _reindex_received_assets,
+    _restore_file_backed_entry,
 )
 from flow_sdk.builtin.spec import Spec
+from flow_sdk.fs_store.record_types import RecordType
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -45,25 +48,31 @@ def _embedded_storage():
         shutil.rmtree(blob_root, ignore_errors=True)
 
 
-def _bundle_spec_md(tmp_path, with_id: bool):
-    """The bundle's ``attachment/spec-@<id>/spec.md`` (old bundles omit id)."""
-    p = tmp_path / "bundle_spec.md"
-    fm = "---\n"
-    if with_id:
-        fm += f"id: {SPEC_ID}\n"
-    fm += 'title: "Plan: Hello World in Python"\nspec_type: "plan"\n---\n'
-    p.write_text(fm + f"# Plan\n\n{SENTINEL}\n", encoding="utf-8")
-    return p
+def _bundle_entry_dir(tmp_path):
+    """Build a bundle attachment entry the unified packer would produce:
+    ``attachment/spec-@<id>/specs/<name>/spec.md`` with the sender id pinned
+    into the frontmatter (the packer always pins it now)."""
+    entry_dir = tmp_path / "attachment" / f"spec-@{SPEC_ID}"
+    spec_md = entry_dir / "specs" / "hello-world" / "spec.md"
+    spec_md.parent.mkdir(parents=True, exist_ok=True)
+    spec_md.write_text(
+        f'---\nid: {SPEC_ID}\ntitle: "Plan: Hello World in Python"\nspec_type: "plan"\n---\n'
+        f"# Plan\n\n{SENTINEL}\n",
+        encoding="utf-8",
+    )
+    return entry_dir
 
 
 async def test_restored_spec_materializes_with_content(tmp_path):
-    staging = tmp_path / "conversation-@1bec1cfc"
-    staging.mkdir(parents=True)
-    _restore_spec_source(_bundle_spec_md(tmp_path, with_id=True), SPEC_ID, staging)
-    # Restored at the deterministic spec-@<id> dir (no creative slug).
-    assert (staging / "specs" / f"spec-@{SPEC_ID}" / "spec.md").exists()
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
 
-    await _reindex_project_root(staging)
+    copied = _restore_file_backed_entry(_bundle_entry_dir(tmp_path), project_root, overwrite=False)
+    assert copied
+    # Copied at the canonical <project>/specs/<name>/spec.md location.
+    assert (project_root / "specs" / "hello-world" / "spec.md").exists()
+
+    await _reindex_received_assets(project_root, (RecordType.SPEC,))
 
     spec = await Spec.get_one({"id": SPEC_ID})
     assert spec is not None, "reindex did not materialize the spec row"
@@ -79,13 +88,12 @@ async def test_restore_heals_content_less_stub(tmp_path):
     pre = await Spec.get_one({"id": SPEC_ID})
     assert pre is not None and not (pre.content or "").strip(), "precondition: empty stub"
 
-    # Receiver restores the bundle source (legacy bundle: no id in frontmatter →
-    # id injected from the attachment dir name) and reindexes. No create-once
-    # skip → the body lands on the SAME row.
-    staging = tmp_path / "conversation-@1bec1cfc"
-    staging.mkdir(parents=True)
-    _restore_spec_source(_bundle_spec_md(tmp_path, with_id=False), SPEC_ID, staging)
-    await _reindex_project_root(staging)
+    # Receiver copies the bundle source into the project and reindexes. The
+    # body lands on the SAME row (the pinned frontmatter id resolves to it).
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    _restore_file_backed_entry(_bundle_entry_dir(tmp_path), project_root, overwrite=False)
+    await _reindex_received_assets(project_root, (RecordType.SPEC,))
 
     healed = await Spec.get_one({"id": SPEC_ID})
     assert healed is not None

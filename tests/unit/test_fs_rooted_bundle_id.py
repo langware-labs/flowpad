@@ -17,7 +17,6 @@ import pytest
 
 from flow_sdk.builtin.flow_message_bundle import (
     _ASSET_PACK_IGNORE,
-    _FS_ROOTED_TYPES,
     _ensure_id_in_md_frontmatter,
     _extended_length_path,
 )
@@ -28,11 +27,14 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 ENTITY_ID = "7ce48c47-abab-4c9c-9780-a7198d12a260"
 
 
-def test_workflow_and_whiteboard_are_fs_rooted():
-    # Both must be in the pack/restore dispatch set — else their bytes never
-    # ride the bundle and the receiver has nothing to materialize.
-    assert EntityType.WORKFLOW.value in _FS_ROOTED_TYPES
-    assert EntityType.WHITEBOARD.value in _FS_ROOTED_TYPES
+def test_workflow_and_whiteboard_are_file_backed():
+    # The unified packer routes by the FAMILY predicate (TypeInfo.main_subdir is
+    # not None), not a hardcoded type set — else their bytes never ride the
+    # bundle and the receiver has nothing to materialize.
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    for t in (EntityType.WORKFLOW.value, EntityType.WHITEBOARD.value):
+        info = SchemaRegistry.get(t)
+        assert info is not None and info.main_subdir is not None, f"{t} must be file-backed"
 
 
 def test_injects_id_into_doc_without_frontmatter(tmp_path):
