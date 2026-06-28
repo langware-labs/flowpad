@@ -4,6 +4,7 @@ import { ActionInfo } from '../models';
 import { IDockPointer } from '../models/DockPointer';
 import { EntityTypes } from '../schema/types';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { Project } from './project';
 
 /** A terminal target's display fields, read off the (cached/resolved) entity. */
 interface TerminalTargetFields {
@@ -275,7 +276,10 @@ export class Tab extends APIEntity<Tab> implements ITab {
         : dock.vfsPath
           ? await dataManager.getEntityByPath<APIEntity<any>>(dock.vfsPath.machinePath)
           : null
-    ) as (APIEntity<any> & TerminalTargetFields & { project_id?: string | null }) | null;
+    ) as
+      | (APIEntity<any> &
+          TerminalTargetFields & { project_id?: string | null; cwd?: string | null; workdir?: string | null })
+      | null;
     if (!targetTypeId && target) targetTypeId = target.typeId;
 
     // A target-less dock (assets list/folder) has no entity to inherit a project
@@ -284,10 +288,23 @@ export class Tab extends APIEntity<Tab> implements ITab {
     // tab attach to its project (and render project-colored) instead of global.
     const scope = dockOptionsToScopeFilter(dock.options);
     const scopeProjectId = scope?.mode === 'project' ? (scope.activeProjectId ?? null) : null;
-    const projectId =
-      targetTypeId?.type === EntityTypes.Project
-        ? targetTypeId.id // a project belongs to itself
-        : (target?.project_id ?? scopeProjectId ?? null);
+    // Project resolution precedence: a project IS its own; else the target's
+    // denormalized project_id; else — for a cwd-bearing target whose entity was
+    // never stamped (codex/copilot session, received transcript, shell) — the
+    // project that OWNS its cwd/workdir, via the same getProjectByPath the
+    // loaders use; else a project-pinned scope; else null. Without the cwd
+    // fallback the tab renders project-less even though the loader resolves the
+    // active project from the same cwd.
+    let projectId: string | null;
+    if (targetTypeId?.type === EntityTypes.Project) {
+      projectId = targetTypeId.id;
+    } else if (target?.project_id) {
+      projectId = target.project_id;
+    } else {
+      const cwd = target?.cwd ?? target?.workdir ?? null;
+      const byPath = cwd ? await Project.getProjectByPath(cwd) : null;
+      projectId = byPath?.id ?? scopeProjectId ?? null;
+    }
 
     const { iconKey, worktree } = displayForTarget(targetTypeId?.type ?? null, target);
 

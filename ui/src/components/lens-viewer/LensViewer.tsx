@@ -46,7 +46,8 @@ export function LensViewer() {
   switch (lensKey) {
     case 'claude/transcript':
     case 'codex/transcript':
-    case 'copilot/transcript': {
+    case 'copilot/transcript':
+    case 'workflow/transcript': {
       // Three URL forms collapse onto the worker-agnostic TranscriptViewer:
       //   1. canonical form   `<sessionId>`                     → server resolves the JSONL
       //   2. absolute path    `<urlEncodedAbsolutePath>`        → useTranscript fetches via ?path=
@@ -54,7 +55,7 @@ export function LensViewer() {
       // (1) is what `process.transcriptDockPointer` emits today. (2) is the
       // power-user / debug form. (3) is kept for bookmarks emitted by the
       // pre-Phase-9 transcriptDockPointer shape.
-      const workerType = lensParts.category as 'claude' | 'codex' | 'copilot';
+      const workerType = lensParts.category as 'claude' | 'codex' | 'copilot' | 'workflow';
       const ref = lensParts.ref;
       const decoded = (() => {
         try { return decodeURIComponent(ref); } catch { return ref; }

@@ -28,6 +28,7 @@ import { config, dataContext } from '@sdk';
 import { Conversation } from '@sdk/entities/conversation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { testEntityName, trackForCleanup } from '../_cleanup';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import { hubConversationTitle, hubLogin } from './_hub';
 import {
@@ -85,7 +86,7 @@ describe('hub: rename two-process — ALICE (owner: HTTP + WS reflect, hub-verif
     await clearRendezvous();
     for (const f of [JOINED, HTTP_DONE, HTTP_CONFIRMED, WS_DONE]) await fsp.unlink(f).catch(() => {});
 
-    const conv = new Conversation({ title: `rename-2p-${Date.now()}` });
+    const conv = trackForCleanup(new Conversation({ title: testEntityName('conv') }));
     await conv.save();
     await conv.share([bobEmail!]);
     expect(conv.remote).toBe(true);

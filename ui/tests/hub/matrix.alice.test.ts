@@ -24,6 +24,7 @@ import { Conversation } from '@sdk/entities/conversation';
 import { ConversationEvents, FlowMessage, type IFlowMessage } from '@sdk/entities/flow-message';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { testEntityName, trackForCleanup } from '../_cleanup';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import { getBobCreds } from './_hub';
 import {
@@ -87,7 +88,7 @@ describe('hub: matrix two-process — ALICE', () => {
     await clearRendezvous();
 
     // ── Step 1: create + share the conversation (real SDK). ───────────────
-    const conv = new Conversation({ title: `matrix-2p-${Date.now()}` });
+    const conv = trackForCleanup(new Conversation({ title: testEntityName('conv') }));
     await conv.save();
     await conv.share([bobEmail!]);
     expect(conv.remote).toBe(true);

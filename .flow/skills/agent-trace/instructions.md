@@ -30,3 +30,12 @@ learnings at the bottom; keep each one a single dated bullet.
   bills cumulative increments (reset-aware) with non-overlapping dims (codex
   input INCLUDES cached; output INCLUDES reasoning); validated 0.00% across 10
   sessions / 4 models (gpt-5.5, 5.4, 5.3-codex, 5.2-codex).
+
+- 2026-06-25: A 404 `No claude transcript JSONL found` can be correct, not a
+  bug. If the session id resolves to a live *interactive* Claude process
+  (`ps aux | grep <sid>` shows `--session-id <sid>` WITHOUT `-p` and no prompt),
+  it's an idle REPL that never took a turn → no projects/*.jsonl written yet.
+  Verify with `find ~/.claude/projects -name '<sid>*.jsonl'` (empty) and
+  `lsof -p <pid> | grep jsonl` (no open transcript). Do NOT fabricate a trace —
+  report "no execution to analyze" and stop. Confirm the endpoint itself is fine
+  by skeleton-ing a known-good session first.

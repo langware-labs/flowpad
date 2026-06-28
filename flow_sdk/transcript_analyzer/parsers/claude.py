@@ -454,4 +454,8 @@ class ClaudeParser:
                 exit_code=exit_code,
                 **base,
             )
-        return UserMessageEntry(text=extract_text(content), **base)
+        return UserMessageEntry(
+            text=extract_text(content),
+            is_meta=bool(raw.get("isMeta", False)),
+            **base,
+        )

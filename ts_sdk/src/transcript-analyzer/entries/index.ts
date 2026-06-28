@@ -1,5 +1,6 @@
 /** Concrete TranscriptEntry subclasses, one file per kind. */
 
+export { AgentSpawnEntry, type AgentSpawnEntryData } from './agent_spawn';
 export { AssistantMessageEntry, type AssistantMessageEntryData } from './assistant_message';
 export { ExitPlanModeEntry } from './exit_plan_mode';
 export { MetaEntry, type MetaEntryData } from './meta';

@@ -12,7 +12,7 @@ import { dismissSetupModal, gotoShell, addTerminalTab } from './helpers';
 
 async function tabIds(page: import('@playwright/test').Page): Promise<string[]> {
   return page
-    .locator('[data-testid^="tab-shell-"]')
+    .locator('[data-testid^="tab-shell|"]')
     .evaluateAll((els) => els.map((el) => el.getAttribute('data-testid') ?? '').filter(Boolean));
 }
 

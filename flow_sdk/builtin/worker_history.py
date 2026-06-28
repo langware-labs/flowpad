@@ -31,6 +31,48 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# Claude/codex/copilot all append bookkeeping lines on resume/attach
+# (``mode`` / ``permission-mode`` for Claude; ``token_count`` / ``shutdown``
+# for the others). Those lines bump the file mtime without representing real
+# user activity, so a session untouched for days reads as "just now" if the row
+# uses mtime. Derive "last active" from the last line that actually carries a
+# content ``timestamp`` instead. Tail-only read keeps this cheap across the
+# whole candidate slice; the mtime fallback covers the rare case where the
+# final message is larger than the tail window (mtime is the best signal then).
+_LAST_TS_TAIL_BYTES = 65536
+
+
+def _last_content_timestamp(path: Path, mtime: float) -> datetime:
+    """Last in-content ``timestamp`` for a worker JSONL, falling back to mtime."""
+    import json  # noqa: PLC0415
+
+    try:
+        with open(path, "rb") as fh:
+            size = fh.seek(0, 2)  # seek to end → file size, no extra stat()
+            if size > _LAST_TS_TAIL_BYTES:
+                fh.seek(-_LAST_TS_TAIL_BYTES, 2)
+                chunk = fh.read()
+                # First line is likely truncated mid-JSON; drop it.
+                chunk = chunk.split(b"\n", 1)[1] if b"\n" in chunk else b""
+            else:
+                fh.seek(0)
+                chunk = fh.read()
+        for line in reversed(chunk.split(b"\n")):
+            line = line.strip()
+            if not line or b"timestamp" not in line:
+                continue
+            try:
+                raw = json.loads(line)
+            except Exception:
+                continue
+            dt = _coerce_datetime(raw.get("timestamp"))
+            if dt:
+                return dt
+    except OSError:
+        pass
+    return datetime.fromtimestamp(mtime, tz=timezone.utc)
+
+
 class WorkerType(str, Enum):
     CLAUDE = "claude"
     CODEX = "codex"
@@ -338,7 +380,7 @@ def _collect_claude_entries_sync(
                 project_id=_project_id_for(cwd, project_encoded),
                 project_name=_basename(cwd) or (project_encoded or None),
                 project_cwd=cwd,
-                last_active_time=datetime.fromtimestamp(mtime, tz=timezone.utc),
+                last_active_time=_last_content_timestamp(jsonl_path, mtime),
                 name=name,
                 last_prompt=last_prompt,
                 git_branch=git_branch,
@@ -419,7 +461,7 @@ def _collect_codex_entries_sync(
                 project_id=_project_id_for(cwd, None),
                 project_name=_basename(cwd),
                 project_cwd=cwd,
-                last_active_time=datetime.fromtimestamp(mtime, tz=timezone.utc),
+                last_active_time=_last_content_timestamp(jsonl_path, mtime),
                 name=ap_name,
                 last_prompt=last_prompt,
                 git_branch=None,
@@ -476,7 +518,7 @@ def _collect_copilot_entries_sync(
                 project_id=_project_id_for(cwd, None),
                 project_name=_basename(cwd),
                 project_cwd=cwd,
-                last_active_time=datetime.fromtimestamp(mtime, tz=timezone.utc),
+                last_active_time=_last_content_timestamp(jsonl_path, mtime),
                 name=ap_name,
                 last_prompt=last_prompt,
                 git_branch=None,

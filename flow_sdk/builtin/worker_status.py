@@ -510,6 +510,13 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     # Granular active states (only when file is still being written)
     if last_type == "system" and last_subtype == "api_error":
         return WorkerStatus.API_ERROR
+    # ``system:init`` is Claude's first JSONL line — it means the worker booted,
+    # established the session, and is now sitting at the prompt waiting for the
+    # first user turn. Nothing after it = idle/ready, NOT "still initialising"
+    # and NOT an unrecognised type. (Once a turn starts, later lines override
+    # this on the next tail read.)
+    if last_type == "system" and last_subtype == "init":
+        return WorkerStatus.IDLE
     if last_type == "assistant" and last_stop_reason is None:
         return WorkerStatus.THINKING
     if last_type == "assistant" and last_stop_reason == "tool_use":

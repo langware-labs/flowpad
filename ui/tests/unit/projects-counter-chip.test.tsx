@@ -51,6 +51,11 @@ describe('ProjectsCounterChip', () => {
     mockUseTabProjectBuckets.mockReset();
     mockUseAllProjects.mockReset();
     mockUseAllProjects.mockReturnValue({ projects: [], isLoading: false });
+    // WorkerToolbar persists the last-launched worker (rememberWorker) and reads
+    // the view mode from localStorage. Clear it so every test starts in the
+    // standard `lastOpened` mode with `claude_code` as the primary worker —
+    // otherwise a test that launches codex would make codex primary in the next.
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -112,8 +117,10 @@ describe('ProjectsCounterChip', () => {
 
     render(<ProjectsCounterChip currentProjectId={projectA} onLaunchProjectPath={onLaunchProjectPath} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
-    // Clicking the worker icon on the row arms it and opens the picker.
-    await userEvent.click(screen.getByTestId('projects-counter-open-claude'));
+    // Clicking the (primary) Claude worker icon arms it and opens the picker.
+    // The launch buttons come from the shared WorkerToolbar, whose testids are
+    // `<prefix>-launch-<workerType>` (claude_code is the default primary).
+    await userEvent.click(screen.getByTestId('projects-counter-open-launch-claude_code'));
 
     // Already-open project is filtered out of the picker.
     expect(screen.getByTestId('projects-counter-picker')).toBeTruthy();
@@ -134,7 +141,10 @@ describe('ProjectsCounterChip', () => {
 
     render(<ProjectsCounterChip currentProjectId={projectA} onLaunchProjectPath={onLaunchProjectPath} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
-    await userEvent.click(screen.getByTestId('projects-counter-open-codex'));
+    // In standard (lastOpened) mode only the primary worker shows up front;
+    // codex lives behind the "more" chevron. Expand, then arm codex.
+    await userEvent.click(screen.getByTestId('projects-counter-open-launch-more'));
+    await userEvent.click(screen.getByTestId('projects-counter-open-launch-codex'));
     await userEvent.click(screen.getByText('fresh-project'));
 
     expect(onLaunchProjectPath).toHaveBeenCalledWith('/tmp/fresh-project', 'codex');
@@ -146,8 +156,9 @@ describe('ProjectsCounterChip', () => {
 
     render(<ProjectsCounterChip currentProjectId={projectA} onOpenHistory={onOpenHistory} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
-    // Without a launch callback the strip carries only the history button.
-    expect(screen.queryByTestId('projects-counter-open-claude')).toBeNull();
+    // Without a launch callback the WorkerToolbar isn't rendered — the strip
+    // carries only the history button.
+    expect(screen.queryByTestId('projects-counter-open-launch-toolbar')).toBeNull();
     await userEvent.click(screen.getByTestId('projects-counter-open-history'));
 
     expect(onOpenHistory).toHaveBeenCalledTimes(1);
@@ -163,14 +174,21 @@ describe('ProjectsCounterChip', () => {
     );
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
 
-    // All actions live inside the strip — no label lines.
+    // All actions live inside the strip — no label lines. The worker-launch
+    // affordance is the shared WorkerToolbar (primary worker + "more" chevron);
+    // the history icon button sits beside it.
     const strip = screen.getByTestId('projects-counter-actions');
-    expect(strip.contains(screen.getByTestId('projects-counter-open-claude'))).toBe(true);
-    expect(strip.contains(screen.getByTestId('projects-counter-open-codex'))).toBe(true);
+    expect(strip.contains(screen.getByTestId('projects-counter-open-launch-toolbar'))).toBe(true);
+    expect(strip.contains(screen.getByTestId('projects-counter-open-launch-claude_code'))).toBe(true);
+    expect(strip.contains(screen.getByTestId('projects-counter-open-launch-more'))).toBe(true);
     const historyButton = screen.getByTestId('projects-counter-open-history');
     expect(strip.contains(historyButton)).toBe(true);
     expect(screen.queryByText('Open another project…')).toBeNull();
     expect(screen.queryByText('Open from history…')).toBeNull();
+
+    // Codex is reachable once the chevron expands the toolbar.
+    await userEvent.click(screen.getByTestId('projects-counter-open-launch-more'));
+    expect(strip.contains(screen.getByTestId('projects-counter-open-launch-codex'))).toBe(true);
 
     await userEvent.click(historyButton);
     expect(onOpenHistory).toHaveBeenCalledTimes(1);

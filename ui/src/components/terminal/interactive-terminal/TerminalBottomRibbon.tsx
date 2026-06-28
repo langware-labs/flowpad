@@ -4,7 +4,7 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, ChevronDown, FileText } from 'lucide-react';
+import { BookMarked, ChevronDown, FileText, Loader2, MessageSquare, SquareTerminal } from 'lucide-react';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { SideTabTooltipContent } from './LastPromptTooltip';
@@ -27,12 +27,23 @@ interface TerminalBottomRibbonProps {
   onOpenMarkdown?: (path: string) => void;
   /** Enables the Prompt Library button (prompt → queue needs a process). */
   process?: AgenticProcess | null;
+  /** Chat composer rendered as the top tier of the ribbon (Standard/chat only). */
+  composer?: React.ReactNode;
+  /** True when the chat UI is currently shown (vs the xterm terminal). */
+  chatActive?: boolean;
+  /** Flip chat⇄terminal (saved override). When omitted, the status dot is shown instead. */
+  onToggleView?: () => void;
+  /** True while a chat⇄terminal switch is in flight — disables the toggle and
+   *  shows a connect spinner (PTY spawn/teardown is no longer instant). */
+  switching?: boolean;
 }
 
 const RIBBON_TABS: SideTabIdType[] = [
   SideTabId.Context,
   SideTabId.Git,
   SideTabId.Prompts,
+  SideTabId.Analysis,
+  SideTabId.SkillsAgents,
   SideTabId.Files,
   SideTabId.Dir,
   // The prompt QUEUE side-tab (previously URL-only) — paired with the
@@ -53,6 +64,10 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   markdownDocs = [],
   onOpenMarkdown,
   process = null,
+  composer,
+  chatActive = false,
+  onToggleView,
+  switching = false,
 }) => {
   const isAdvanced = useIsAdvanced();
   // Skin layer: in Standard view, power-user tabs (flagged advancedOnly on
@@ -60,12 +75,46 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   // leaving Prompts + Files. See docs/viewmodes.md.
   const ribbonTabs = isAdvanced ? RIBBON_TABS : RIBBON_TABS.filter((id) => !SIDE_TABS[id].advancedOnly);
   return (
-    <div className="flex items-center border-t bg-muted/30 px-4 py-1.5">
-      {/* Left: process status LED */}
+    <div className="flex flex-col border-t bg-muted/30">
+      {/* Top tier: chat composer (Standard/chat only) — one ribbon, not two rows. */}
+      {composer && <div className="px-4 pb-1 pt-2">{composer}</div>}
+      {/* Controls strip: status LED + plan/doc chips + side-tab launchers. */}
+      <div className="flex items-center px-4 py-1.5">
+      {/* Left: chat⇄terminal toggle (falls back to a status LED when no toggle). */}
       <div className="flex items-center gap-2">
-        <span
-          className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`}
-        />
+        {onToggleView ? (
+          <TooltipProvider delayDuration={400}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onToggleView}
+                  disabled={switching}
+                  aria-label={chatActive ? 'Switch to terminal view' : 'Switch to chat view'}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                >
+                  {switching ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : chatActive ? (
+                    <SquareTerminal className="h-4 w-4" />
+                  ) : (
+                    <MessageSquare className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                {switching
+                  ? 'Switching…'
+                  : chatActive
+                    ? 'Switch to terminal view'
+                    : 'Switch to chat view'}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : (
+          <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
+        )}
         {hasLastPlan && onOpenLastPlan && (
           <TooltipProvider delayDuration={400}>
             <Tooltip>
@@ -165,6 +214,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
             />
           )}
         </TooltipProvider>
+      </div>
       </div>
     </div>
   );

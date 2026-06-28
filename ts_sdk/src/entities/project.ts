@@ -282,6 +282,30 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
+   * Resolve a filesystem path (cwd / workdir) → the owning Project by
+   * longest-prefix match on `fs_storage_mount_path`.
+   *
+   * The single cross-worker, cross-platform FE primitive for "which project
+   * owns this path" — used by both `resolveProjectContext` (loader active-project
+   * resolution) and `Tab.getFromDockPointer` (tab project denormalization), so a
+   * claude/codex/copilot session, shell, or agentic-process target whose entity
+   * lacks `project_id` still resolves to the same real Project entity. Returns
+   * the matched Project, or null when no project contains the path.
+   */
+  static async getProjectByPath(path: string | null | undefined): Promise<Project | null> {
+    if (!path) return null;
+    const projects = await Project.query<Project>(new QueryRequest({ type: Project.type, scope: [] }));
+    const candidates = projects.filter(
+      (p) => p.fs_storage_mount_path && path.startsWith(p.fs_storage_mount_path),
+    );
+    return (
+      candidates.sort(
+        (a, b) => (b.fs_storage_mount_path?.length ?? 0) - (a.fs_storage_mount_path?.length ?? 0),
+      )[0] ?? null
+    );
+  }
+
+  /**
    * Resolve a shareable session_code → project. Used by the join flow.
    * Uses a dedicated FastAPI route at /api/v1/project/resolve/{code}.
    */

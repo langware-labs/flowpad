@@ -62,7 +62,7 @@ test.describe('open shell from process workdir', () => {
     // The original Claude tab is still present alongside the new plain shell —
     // every tab (Shell or AgenticProcess) carries a `tab-shell-` testid, so two
     // tabs now exist.
-    expect(await page.locator('[data-testid^="tab-shell-"]').count()).toBeGreaterThanOrEqual(2);
+    expect(await page.locator('[data-testid^="tab-shell|"]').count()).toBeGreaterThanOrEqual(2);
   });
 
   test('test 2: Open Terminal available without a Claude session (default cwd shell)', async ({ page }) => {

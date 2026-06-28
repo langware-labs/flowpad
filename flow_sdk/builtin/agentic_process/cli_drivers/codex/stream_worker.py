@@ -12,8 +12,12 @@ line is:
 Session continuity:
 - Captures the ``thread_id`` from the first ``thread.started`` event onto
   ``self._session_id`` so the AgenticProcess can persist it.
-- ``--ephemeral`` is set so codex does not persist its own session JSONL —
-  the process-local transcript is the source of truth.
+- Codex persists its own rollout under ``~/.codex/sessions/`` (NOT ``--ephemeral``)
+  so a subsequent turn can ``codex exec ... resume <thread_id>``: that's the only
+  store ``has_resumable_session``/``find_codex_session_jsonl`` can see, and it's
+  the SAME rollout the PTY path writes — so headless multi-turn resumes, and a
+  headless⇄PTY toggle keeps one continuous session. (We still tee the events into
+  the process-local transcript for our own readers.)
 
 Cancel semantics: ``close_session()`` sends SIGTERM → 5 s grace → SIGKILL,
 matching the Claude worker's contract.
@@ -209,7 +213,12 @@ class CodexCLIStreamWorker(AgenticWorker):
             session_id=context.resume_session_id,
             resume=bool(context.resume_session_id),
             json_stream=True,
-            ephemeral=True,
+            # NOT ephemeral: persist codex's rollout so the NEXT headless turn (or
+            # a headless→PTY toggle) can resume this thread. Mirrors the PTY path
+            # (driver.cmd_line sets ephemeral=False for visible). Without a rollout,
+            # find_codex_session_jsonl misses → has_resumable_session=False → every
+            # turn mints a fresh session_id (the headless multi-turn resume bug).
+            ephemeral=False,
         )
         argv, env_from_opts = opts.to_spawn_args()
 

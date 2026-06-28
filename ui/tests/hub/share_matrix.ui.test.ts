@@ -32,6 +32,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
+import { testEntityName, trackForCleanup, trackTypeId } from '../_cleanup';
 import { hubAvailable } from './_hub';
 import {
   getInstance,
@@ -84,7 +85,7 @@ beforeAll(async () => {
   // Warm the editor routes once: the Vite dev server cold-transforms the
   // Milkdown/Monaco/Excalidraw bundles on first hit, which would otherwise
   // eat A1/B1's 30s budget. This is fixture warming, not a timeout bump.
-  const warm = await dev1.sdk.Workflow.createInProject(null, `warm-wf-${ts}`);
+  const warm = trackForCleanup(await dev1.sdk.Workflow.createInProject(null, testEntityName('workflow')));
   await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warm.id}`, {
     waitUntil: 'domcontentloaded',
   });
@@ -170,8 +171,10 @@ describe('A. asset-page share: workflow', () => {
   let convId: string;
   const replyText = `wf-reply-${ts}`;
 
+  const convTitle = testEntityName('conv');
+
   it('A1 share — dev-1 shares from the workflow editor UI', async () => {
-    const wf = await dev1.sdk.Workflow.createInProject(null, `matrix-wf-${ts}`);
+    const wf = trackForCleanup(await dev1.sdk.Workflow.createInProject(null, testEntityName('workflow')));
     workflowId = wf.id!;
     await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${workflowId}`, {
       waitUntil: 'domcontentloaded',
@@ -180,9 +183,10 @@ describe('A. asset-page share: workflow', () => {
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a workflow ${ts}`,
-      title: `matrix-wf-conv-${ts}`,
+      title: convTitle,
     });
-    convId = await conversationIdByTitle(dev1, `matrix-wf-conv-${ts}`);
+    convId = await conversationIdByTitle(dev1, convTitle);
+    trackTypeId('conversation', convId);
     expect(convId).toBeTruthy();
   });
 
@@ -219,9 +223,11 @@ describe('B. asset-page share: whiteboard', () => {
   let wbId: string;
   let convId: string;
   const replyText = `wb-reply-${ts}`;
+  const wbName = testEntityName('whiteboard');
+  const convTitle = testEntityName('conv');
 
   it('B1 share — dev-1 shares from the whiteboard editor UI', async () => {
-    const wb = await dev1.sdk.Whiteboard.create(`matrix-wb-${ts}`);
+    const wb = trackForCleanup(await dev1.sdk.Whiteboard.create(wbName));
     wbId = wb.id!;
     // Whiteboard files materialize lazily on first editor persist; a fresh
     // entity has an empty folder and the board.json read never settles. Seed
@@ -235,7 +241,7 @@ describe('B. asset-page share: whiteboard', () => {
         `${assetRef}/board.json`,
         JSON.stringify({ kind: 'excalidraw', version: 1, data: { elements: [] } }),
       );
-      await nodeFs.writeFile(`${assetRef}/WHITE_BOARD.md`, `# matrix-wb-${ts}\n`);
+      await nodeFs.writeFile(`${assetRef}/WHITE_BOARD.md`, `# ${wbName}\n`);
     }
     await p1.page.goto(`${p1.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${wbId}`, {
       waitUntil: 'domcontentloaded',
@@ -248,9 +254,10 @@ describe('B. asset-page share: whiteboard', () => {
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a whiteboard ${ts}`,
-      title: `matrix-wb-conv-${ts}`,
+      title: convTitle,
     });
-    convId = await conversationIdByTitle(dev1, `matrix-wb-conv-${ts}`);
+    convId = await conversationIdByTitle(dev1, convTitle);
+    trackTypeId('conversation', convId);
     expect(convId).toBeTruthy();
   });
 
@@ -283,11 +290,12 @@ describe('B. asset-page share: whiteboard', () => {
 describe('C. forward a message', () => {
   let srcConvId: string;
   let fwdConvId: string;
+  const fwdDstTitle = testEntityName('conv');
 
   it('C1 seed — dev-1 has a conversation with a sent message', async () => {
     // Seed a source conversation with a text message via the SDK (the entry
     // point under test is the FORWARD UI, not this send).
-    const conv = new dev1.sdk.Conversation({ title: `matrix-fwd-src-${ts}` });
+    const conv = trackForCleanup(new dev1.sdk.Conversation({ title: testEntityName('conv') }));
     await conv.save();
     await conv.share([dev2.email]);
     const r = await fetch(`${dev1.apiUrl}/api/v1/graph/conversation/${conv.id}/add_message`, {
@@ -305,9 +313,10 @@ describe('C. forward a message', () => {
     await p1.page.getByTestId('message-forward').first().click({ timeout: 15_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
-      title: `matrix-fwd-dst-${ts}`,
+      title: fwdDstTitle,
     });
-    fwdConvId = await conversationIdByTitle(dev1, `matrix-fwd-dst-${ts}`);
+    fwdConvId = await conversationIdByTitle(dev1, fwdDstTitle);
+    trackTypeId('conversation', fwdConvId);
     expect(fwdConvId).not.toBe(srcConvId);
   });
 

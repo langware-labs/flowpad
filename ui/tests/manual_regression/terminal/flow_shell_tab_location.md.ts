@@ -22,7 +22,7 @@ test.describe('Flow Shell tab location', () => {
     await gotoShell(page);
 
     // Record the first tab's testid — this is the Flow shell tab.
-    const tabSelector = '[data-testid^="tab-shell-"]';
+    const tabSelector = '[data-testid^="tab-shell|"]';
     await expect(page.locator(tabSelector).first()).toBeVisible({ timeout: 15_000 });
     const flowTabId = await page.locator(tabSelector).first().getAttribute('data-testid');
     expect(flowTabId, 'first (Flow) tab testid').toBeTruthy();

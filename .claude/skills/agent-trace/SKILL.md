@@ -2,16 +2,11 @@
 id: ca5d82f9-b6ba-57e6-8438-a8129197ddf7
 name: agent-trace
 description: Analyze an agentic execution from its session transcript and produce
-  an AgentTrace record — goals, subgoals, divergences, issues, stucks, skill loads/fails
-  on a multi-lane timeline. Input is a session id; output is a saved AgentTrace entity
-  viewable in the timeline visualizer.
-tags:
-- analysis
-- transcript
-- review
+tags: ''
 allowed-tools: Read, Write, Bash, Grep, Glob
 output-dir: .flow/skills/agent-trace/_results
 instructions-file: .flow/skills/agent-trace/instructions.md
+version: 3
 ---
 
 # Agent Trace Analyzer
@@ -64,17 +59,23 @@ jq '[.lanes[].segments[] | select(.severity=="attention") | {id, label, start_ts
 
 For each attention segment / marker cluster, read the relevant transcript span to understand what actually happened (use the root JSONL for `root` lane, the matching `subagents/agent-<id>.jsonl` for subagent lanes). Look for:
 
-- **Goals / subgoals** — what was the agent trying to achieve, per segment span? Root lane goals usually come from user prompts (already segment labels); subgoals from todo updates and assistant statements.
-- **Divergences** — goal drift, wrong-tool loops, work on something the user didn't ask for, abandoning a goal silently.
-- **Issues beyond the deterministic ones** — wrong conclusions, false claims of success, masked failures, retried flakiness.
-- **Stucks** — the synthesizer marks ≥3 identical failing commands; add judgment-level stucks (spinning across *different* commands on one problem, long unproductive spans).
-- **Skill performance** — for every `skill_load` event, judge the span that follows: did the skill's instructions get followed? Where did they mislead or under-specify? This feedback is the product — be precise about which instruction needs adjusting.
+* **Goals / subgoals** — what was the agent trying to achieve, per segment span? Root lane goals usually come from user prompts (already segment labels); subgoals from todo updates and assistant statements.
+
+* **Divergences** — goal drift, wrong-tool loops, work on something the user didn't ask for, abandoning a goal silently.
+
+* **Issues beyond the deterministic ones** — wrong conclusions, false claims of success, masked failures, retried flakiness.
+
+* **Stucks** — the synthesizer marks ≥3 identical failing commands; add judgment-level stucks (spinning across *different* commands on one problem, long unproductive spans).
+
+* **Skill performance** — for every `skill_load` event, judge the span that follows: did the skill's instructions get followed? Where did they mislead or under-specify? This feedback is the product — be precise about which instruction needs adjusting.
 
 **Per-asset attribution (the product's structured form).** When a divergence or issue is caused by a *skill's* instructions — not the environment, not the user — attribute it to that skill so the fix half (skillit) can consume it per-asset. On that finding set:
 
-- `skill` — the **name** of the loaded skill it implicates (from the `skill_load` event / the owning skill lane's `skill_name`). This is the routing key: skillit resolves a target skill by name.
-- `section_hint` — *where in that skill's files the fix belongs* — quote a **verbatim substring** of the skill text (a heading or instruction line), not a paraphrase with `...` ellipses. The backend resolves your quotes against the skill folder; a quote that exists nowhere is flagged `unresolved_anchors` (a stale anchor), so keep it literal and current.
-- `evidence` — `{"quote": "<verbatim transcript excerpt>", "ts": "<ISO-8601 Z>"}` proving the finding from the run itself. **A finding with no run evidence is a guess, not a finding** — the same bar review mode applies to its context citations. This quote is what the verify step (below) and skillit check against.
+* `skill` — the **name** of the loaded skill it implicates (from the `skill_load` event / the owning skill lane's `skill_name`). This is the routing key: skillit resolves a target skill by name.
+
+* `section_hint` — *where in that skill's files the fix belongs* — quote a **verbatim substring** of the skill text (a heading or instruction line), not a paraphrase with `...` ellipses. The backend resolves your quotes against the skill folder; a quote that exists nowhere is flagged `unresolved_anchors` (a stale anchor), so keep it literal and current.
+
+* `evidence` — `{"quote": "<verbatim transcript excerpt>", "ts": "<ISO-8601 Z>"}` proving the finding from the run itself. **A finding with no run evidence is a guess, not a finding** — the same bar review mode applies to its context citations. This quote is what the verify step (below) and skillit check against.
 
 A finding with no `skill` is **session-level** (goal drift, a wrong conclusion, a flaky retry that no skill caused) — leave `skill` unset; it stays for the human, never goes to a fixer. Prefer one structured attributed finding over a prose `notes` line: `notes` is for context that isn't a per-skill defect; anything actionable on a skill belongs in a `divergence`/`issue` with `skill` + `section_hint` + `evidence` set.
 
@@ -108,8 +109,9 @@ Your findings are hypotheses until the transcript backs them. Before you create 
 
 For each finding in `annotations.by_skill[*].findings`, launch ONE `model: haiku` agent from `agents/finding-verifier.md`, filled with the finding, its `evidence` quote, the session id, and the loaded skill body (`agent_trace --loaded-skills <SESSION_ID>` — the body the run actually used). It returns `{substantiated, quote, reason}`:
 
-- **substantiated** → keep the finding.
-- **refuted** → move it out of `divergences`/`issues` into a top-level `refuted` list in your annotations (label, skill, reason) — flag it, never silently drop. It does not go to skillit; it goes back as signal that the finding was wrong.
+* **substantiated** → keep the finding.
+
+* **refuted** → move it out of `divergences`/`issues` into a top-level `refuted` list in your annotations (label, skill, reason) — flag it, never silently drop. It does not go to skillit; it goes back as signal that the finding was wrong.
 
 Run verifiers concurrently (they're independent). A finding whose `evidence` is empty, or whose `judged_against` is `disk` while `summary.skill_drift[<skill>]` is true (graded against text the run never saw), should be treated as refuted unless the refuter still substantiates it from the transcript.
 
@@ -127,6 +129,8 @@ Response: `{ok, id, asset_ref, summary}`.
 
 ### 5. Verify
 
-- The POST response carries the entity `id` and `asset_ref`; `test -f` the asset_ref and `jq .summary` it.
-- `curl -sf "$API_URL/api/v1/graph/agent_trace/<id>"` returns the summary fields (verdict, counts) — `trace` itself must NOT be in the GET response (blob).
-- Report to the user: verdict + reason, issue/divergence counts, the viewer URL `/dock/assets/editor/agent_trace/typeid/agent_trace-<id>`, and your skill-performance notes.
+* The POST response carries the entity `id` and `asset_ref`; `test -f` the asset\_ref and `jq .summary` it.
+
+* `curl -sf "$API_URL/api/v1/graph/agent_trace/<id>"` returns the summary fields (verdict, counts) — `trace` itself must NOT be in the GET response (blob).
+
+* Report to the user: verdict + reason, issue/divergence counts, the viewer URL `/dock/assets/editor/agent_trace/typeid/agent_trace-<id>`, and your skill-performance notes.

@@ -1275,41 +1275,52 @@ async def index_system_content() -> None:
         await compute_node._index_system_assets()
     except Exception as e:
         logging.warning(f"[startup-index] Failed to index system assets (non-fatal): {e}")
-    # Seed the one-shot Welcome favorite now that the markdown index has landed.
-    # This used to run inline in the bootstrap request, where it polled the
-    # not-yet-ready index for up to 2.5s — the single biggest cold-bootstrap
+    # Seed the one-shot onboarding assets now that the markdown index has
+    # landed. This used to run inline in the bootstrap request, where it polled
+    # the not-yet-ready index for up to 2.5s — the single biggest cold-bootstrap
     # cost. Here the Welcome doc is already indexed, so it's a cheap lookup.
     try:
-        await _ensure_welcome_favorite(user)
+        await create_onboarding_assets(user)
     except Exception as e:
-        logging.warning(f"[startup-index] Failed to seed Welcome favorite (non-fatal): {e}")
+        logging.warning(f"[startup-index] Failed to seed onboarding assets (non-fatal): {e}")
 
 
-async def _ensure_welcome_favorite(user: User) -> None:
-    """One-shot onboarding: drop a favorite bookmark to the Welcome markdown
-    onto the user's home view the first time the server boots.
+# Bookmark.source value tagging the onboarding favorite (used to find/delete it
+# on reset). FeedEntry onboarding assets are tagged by ``data.kind == "wiki_tip"``.
+_ONBOARDING_SOURCE = "onboarding"
+
+
+async def create_onboarding_assets(user: User) -> None:
+    """One-shot onboarding seed for the user's home view:
+
+    1. a favorite **bookmark** to the Welcome markdown, and
+    2. a Welcome **WikiTip feed entry** (``data.kind == "wiki_tip"`` →
+       WikiTipFeedEntryCard; see docs/wikitip.md).
 
     Idempotent via ``user.onboarded``. Runs at the tail of
     ``index_system_content`` (after the markdown index has landed), so the
     Welcome doc is a plain lookup — no polling. If it's still not found, leave
-    ``onboarded`` False so the next process restart retries.
+    ``onboarded`` False so the next process restart retries. Re-run after
+    clearing ``onboarded`` (see ``/api/v1/onboarding/reset``) to re-seed.
     """
     if getattr(user, "onboarded", False):
         return
 
     from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
     from flow_sdk.builtin.claude_memory_entities import Docs  # noqa: PLC0415
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus  # noqa: PLC0415
 
     candidates = await Docs.get_all({"name": "Welcome"})
     if not candidates:
-        logging.info("[bootstrap] Welcome markdown not indexed; skipping favorite seed for now")
+        logging.info("[bootstrap] Welcome markdown not indexed; skipping onboarding seed for now")
         return
     welcome = candidates[0]
 
+    # 1) Favorite bookmark to the Welcome page on the home view.
     favorite = Bookmark(
         bookmark_type=BookmarkType.FAVORITE.value,
         title="Welcome",
-        source="onboarding",
+        source=_ONBOARDING_SOURCE,
         data={
             "entity_type": "markdown",
             "entity_id": str(welcome.typeid),
@@ -1321,9 +1332,55 @@ async def _ensure_welcome_favorite(user: User) -> None:
     )
     await favorite.save(owner=user)
 
+    # 2) WikiTip Home Feed entry pointing at the Welcome page.
+    feed_entry = FeedEntry(
+        feed_status=FeedStatus.NEW.value,
+        data={"type_id": str(welcome.typeid), "kind": "wiki_tip", "wiki": "Welcome"},
+    )
+    await feed_entry.save(user.typeid)
+
     user.onboarded = True
     await user.save()
-    logging.info(f"[bootstrap] Seeded Welcome favorite for user {user.typeid}")
+    logging.info(f"[bootstrap] Seeded onboarding assets (favorite + WikiTip feed) for user {user.typeid}")
+
+
+async def _delete_onboarding_assets(user: User) -> int:
+    """Remove the seeded onboarding assets (favorite bookmark + WikiTip feed
+    entry) for ``user``. Returns the count removed."""
+    from flow_sdk.builtin.bookmark import Bookmark  # noqa: PLC0415
+    from flow_sdk.builtin.feed_entry import FeedEntry  # noqa: PLC0415
+
+    removed = 0
+    for bm in await Bookmark.get_all(source_entity=user.typeid):
+        if getattr(bm, "source", None) == _ONBOARDING_SOURCE:
+            await bm.delete()
+            removed += 1
+    for fe in await FeedEntry.get_all(source_entity=user.typeid):
+        if (fe.data or {}).get("kind") == "wiki_tip":
+            await fe.delete()
+            removed += 1
+    return removed
+
+
+@router.get("/api/v1/onboarding/status")
+async def onboarding_status() -> ApiSuccessResponse[dict]:
+    """Whether onboarding assets have been seeded for the local user. Surfaced
+    in profile settings next to Dev mode."""
+    user = await get_or_create_local_user()
+    return ApiSuccessResponse[dict](data={"onboarded": getattr(user, "onboarded", False)})
+
+
+@router.post("/api/v1/onboarding/reset")
+async def onboarding_reset() -> ApiSuccessResponse[dict]:
+    """Reset onboarding: delete the seeded assets, clear ``onboarded``, and
+    re-seed fresh. A dev/testing affordance surfaced in profile settings."""
+    user = await get_or_create_local_user()
+    removed = await _delete_onboarding_assets(user)
+    user.onboarded = False
+    await user.save()
+    await create_onboarding_assets(user)
+    logging.info(f"[onboarding/reset] removed {removed} asset(s), re-seeded for user {user.typeid}")
+    return ApiSuccessResponse[dict](data={"onboarded": getattr(user, "onboarded", False)})
 
 
 # ---------------------------------------------------------------------------

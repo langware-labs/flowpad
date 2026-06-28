@@ -22,6 +22,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { setupLiveBackend, bootApp } from './_harness';
+import { trackForCleanup, testEntityName } from '../_cleanup';
 
 const backend = setupLiveBackend('[skill edit]');
 
@@ -41,67 +42,75 @@ describe('skill edit round-trip via the UI (no mocks)', () => {
     console.log(mark(`[skill edit] realm booted against ${backend.current.apiUrl}`));
 
     // 1. Create the skill purely via the SDK.
-    const name = `app-edit-skill-${Date.now()}`;
-    const created = await sdk.Skill.create(name, 'created by the app edit round-trip test');
+    const name = testEntityName('skill');
+    const created = trackForCleanup(await sdk.Skill.create(name, 'created by the app edit round-trip test'));
     const id = created.id;
     expect(id).toBeTruthy();
     console.log(mark(`[skill edit] created skill ${id} (isEval=${created.isEval})`));
 
+    // Teardown is handled by the cleanup registry (trackForCleanup above →
+    // installCleanup's afterEach in headless/_setup.ts): it full-purges the
+    // skill (row + asset_ref folder) on pass OR fail. No in-band delete here —
+    // a plain delete() leaves the on-disk folder, which the indexer would
+    // re-surface (see ../_cleanup.ts).
+
+    // The eval toggle lives in the markdown editor's Advanced-only header slot
+    // (MarkdownEditor renders `{advanced && nameExtras}`; the toggle is in
+    // nameExtras). Skill-management controls only surface in Advanced view
+    // mode, so drive the app there — set on the SAME realm bootApp will mount,
+    // before any render, via the context's own API (no hardcoded storage key).
+    const { setViewMode, ViewMode } = await import('@src/contexts/view-mode-context');
+    setViewMode(ViewMode.Advanced);
+
+    // 2. Open the full app (router fresh from the same realm) and navigate to
+    //    this skill's editor.
+    const { container, router } = await bootApp();
+    console.log(mark('[skill edit] app booted'));
+
+    const { DockPointer } = await import('@src/navigation/DockPointer');
+    const editorUrl = DockPointer.forAssetEditorByTypeId('skill', new sdk.TypeId('skill', id)).toUrl();
+
+    await act(async () => {
+      await router.navigate(editorUrl);
+    });
+
+    // 3. The skill editor mounted → its eval toggle is present.
+    let toggle: HTMLElement;
     try {
-      // 2. Open the full app (router fresh from the same realm) and navigate to
-      //    this skill's editor.
-      const { container, router } = await bootApp();
-      console.log(mark('[skill edit] app booted'));
-
-      const { DockPointer } = await import('@src/navigation/DockPointer');
-      const editorUrl = DockPointer.forAssetEditorByTypeId('skill', new sdk.TypeId('skill', id)).toUrl();
-
-      await act(async () => {
-        await router.navigate(editorUrl);
-      });
-
-      // 3. The skill editor mounted → its eval toggle is present.
-      let toggle: HTMLElement;
-      try {
-        toggle = await screen.findByTestId(
-          'skill-eval-toggle',
-          {},
-          { timeout: 18000 }, // do not increase timeout without approval
-        );
-      } catch (e) {
-        const testids = Array.from(container.querySelectorAll('[data-testid]'))
-          .map((el) => el.getAttribute('data-testid'))
-          .slice(0, 40);
-        console.error('[skill edit][DEBUG] toggle not found. data-testids on screen:', testids);
-        console.error('[skill edit][DEBUG] headings:', screen.queryAllByRole('heading').map((h) => h.textContent));
-        console.error('[skill edit][DEBUG] body text (first 800):', (container.textContent ?? '').slice(0, 800));
-        throw e;
-      }
-      const before = toggle.getAttribute('aria-pressed') === 'true';
-      console.log(mark(`[skill edit] editor open, eval toggle present (pressed=${before})`));
-
-      // 4. Edit via the UI: click the toggle.
-      fireEvent.click(toggle);
-
-      // The UI reflects the flip immediately (optimistic frontmatter + entity save).
-      await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe(String(!before)));
-      console.log(mark('[skill edit] toggled in UI'));
-
-      // 5. Fetch the skill again via the SDK and validate the edit is visible.
-      await waitFor(
-        async () => {
-          const refetched = await sdk.Skill.getById(id);
-          expect(refetched?.isEval).toBe(!before);
-        },
-        { timeout: 15000 }, // do not increase timeout without approval
+      toggle = await screen.findByTestId(
+        'skill-eval-toggle',
+        {},
+        { timeout: 18000 }, // do not increase timeout without approval
       );
-
-      const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
-      console.log(`[skill edit] ✅ round-trip validated: eval ${before} → ${!before}; total ${elapsed}s`);
-    } finally {
-      // Best-effort cleanup so reruns don't pile up skills on the backend.
-      // `delete()` is by id, so the create-time handle is fine (no refetch).
-      await created.delete().catch(() => {});
+    } catch (e) {
+      const testids = Array.from(container.querySelectorAll('[data-testid]'))
+        .map((el) => el.getAttribute('data-testid'))
+        .slice(0, 40);
+      console.error('[skill edit][DEBUG] toggle not found. data-testids on screen:', testids);
+      console.error('[skill edit][DEBUG] headings:', screen.queryAllByRole('heading').map((h) => h.textContent));
+      console.error('[skill edit][DEBUG] body text (first 800):', (container.textContent ?? '').slice(0, 800));
+      throw e;
     }
+    const before = toggle.getAttribute('aria-pressed') === 'true';
+    console.log(mark(`[skill edit] editor open, eval toggle present (pressed=${before})`));
+
+    // 4. Edit via the UI: click the toggle.
+    fireEvent.click(toggle);
+
+    // The UI reflects the flip immediately (optimistic frontmatter + entity save).
+    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe(String(!before)));
+    console.log(mark('[skill edit] toggled in UI'));
+
+    // 5. Fetch the skill again via the SDK and validate the edit is visible.
+    await waitFor(
+      async () => {
+        const refetched = await sdk.Skill.getById(id);
+        expect(refetched?.isEval).toBe(!before);
+      },
+      { timeout: 15000 }, // do not increase timeout without approval
+    );
+
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+    console.log(`[skill edit] ✅ round-trip validated: eval ${before} → ${!before}; total ${elapsed}s`);
   });
 });

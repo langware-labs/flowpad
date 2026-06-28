@@ -129,11 +129,13 @@ export interface PrivacyModeMessage extends BaseMessage {
 export interface UiCommandMessage extends BaseMessage {
   message_type: 'ui_command';
   /** Discriminator for the specific action the UI should perform. */
-  kind: 'navigate_entity' | string;
+  kind: 'navigate_entity' | 'navigate_vfs' | string;
   /** For `navigate_entity`: the entity's type (e.g. "shell", "project"). */
   type?: string;
   /** For `navigate_entity`: the entity's id. */
   id?: string;
+  /** For `navigate_vfs`: the absolute file path to open in the asset editor. */
+  path?: string;
 }
 
 export interface LlmConfigMessage extends BaseMessage {

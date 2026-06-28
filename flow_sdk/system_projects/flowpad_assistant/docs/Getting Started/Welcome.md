@@ -11,3 +11,7 @@ in the Docs sidebar — its folder name comes straight from the directory on dis
 This sentence contains a wiki link back to [Welcome](/dock/assets/wiki/Welcome) —
 clicking it should reload this same page. That demonstrates that wiki linking
 resolves names to records.
+
+And the reverse direction: [click here to highlight the feedentry](/?highlight=Welcome) —
+this routes back home and highlights the Welcome feed entry. The highlight rides
+in the URL (`?highlight=Welcome`), so it is shareable and survives reload.

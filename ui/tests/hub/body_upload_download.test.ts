@@ -18,6 +18,7 @@ import {
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { testEntityName, trackForCleanup } from '../_cleanup';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import {
   HUB_URL,
@@ -69,7 +70,7 @@ async function hubGetFm(fmId: string): Promise<IFlowMessage> {
 
 describe('hub: FlowMessage body upload/download', () => {
   it('text-only addMessage → body_status=NA, hasBody()=false', async () => {
-    const conv = new Conversation({ title: `body-text-${Date.now()}` });
+    const conv = trackForCleanup(new Conversation({ title: testEntityName('conv') }));
     await conv.save();
     await conv.share([bobEmail!]);
     expect(conv.remote).toBe(true);
@@ -90,7 +91,7 @@ describe('hub: FlowMessage body upload/download', () => {
   it(
     'attachment-bearing message → hub stamps UPLOADING; uploadBody() flips to READY',
     async () => {
-      const conv = new Conversation({ title: `body-attach-${Date.now()}` });
+      const conv = trackForCleanup(new Conversation({ title: testEntityName('conv') }));
       await conv.save();
       await conv.share([bobEmail!]);
 
@@ -125,7 +126,7 @@ describe('hub: FlowMessage body upload/download', () => {
   );
 
   it('has_body local-backend action mirrors the Python predicate', async () => {
-    const conv = new Conversation({ title: `body-has-${Date.now()}` });
+    const conv = trackForCleanup(new Conversation({ title: testEntityName('conv') }));
     await conv.save();
     await conv.share([bobEmail!]);
     const data = await conv.addMessage('plain');
