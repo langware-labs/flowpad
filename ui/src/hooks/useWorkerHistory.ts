@@ -22,16 +22,26 @@ export interface WorkerHistoryEntry {
   agentic_process_id: string | null;
 }
 
-export function useWorkerHistory(limit = 10, options?: { enabled?: boolean }) {
+export function useWorkerHistory(
+  limit = 10,
+  options?: { enabled?: boolean; projectIds?: string[] },
+) {
   const enabled = options?.enabled ?? true;
   const { computeNode } = useContext();
+
+  // Stable key so the memo doesn't refire on a fresh-but-equal array each render.
+  const projectIdsKey = options?.projectIds?.length ? [...options.projectIds].sort().join(',') : '';
 
   const actionInfo = useMemo(() => {
     if (!computeNode?.typeId?.id) return null;
     const info = new ActionInfo('worker-history', 'compute_node', computeNode.typeId.id, 'GET');
-    info.queryParameters = { limit: String(limit) };
+    // When a project scope is active, pass it so the backend caps per-project
+    // (an under-active project isn't squeezed out of a global top-N).
+    info.queryParameters = projectIdsKey
+      ? { limit: String(limit), project_ids: projectIdsKey }
+      : { limit: String(limit) };
     return info;
-  }, [computeNode?.typeId?.id, limit]);
+  }, [computeNode?.typeId?.id, limit, projectIdsKey]);
 
   const { data, isLoading, refetch } = useAction<WorkerHistoryEntry[]>(actionInfo, {
     enabled: enabled && !!computeNode?.typeId?.id,
