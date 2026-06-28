@@ -89,14 +89,17 @@ class ClaudeParser:
 
     def __init__(self, session_id: str = "") -> None:
         self.session_id = session_id
-        # Track unique message ids whose usage has already been emitted.
-        # Claude Code writes some assistant messages multiple times in the
-        # JSONL (streaming snapshot + finalized snapshot share message.id).
-        # Without dedup, downstream cost summation double-counts every
-        # repeated message — observed inflation 1.78×-2.95× depending on
-        # how many turns got snapshotted. Each unique message.id is billed
-        # once by Anthropic, so we emit usage once per message.id.
-        self._usage_seen_msg_ids: set[str] = set()
+        # Per-message usage dedup, KEEP-LAST. Claude Code writes an assistant
+        # message multiple times in the JSONL as it streams (streaming snapshots
+        # + finalized snapshot all share message.id). cache_read/input/
+        # cache_creation are constant across snapshots, but ``output_tokens``
+        # GROWS — only the final snapshot carries the true (billed) output.
+        # Keeping the FIRST snapshot under-counts output (partial, sometimes 0);
+        # summing ALL over-counts. So on a repeated message.id we zero the
+        # superseded entries and re-emit from the latest snapshot — matching
+        # what Anthropic bills (and ccusage). ``_usage_entries_by_msg_id`` holds
+        # the live entry objects so a later snapshot can null them in place.
+        self._usage_entries_by_msg_id: dict[str, list[UsageEntry]] = {}
 
     def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
         rtype = raw.get("type") or ""
@@ -224,13 +227,14 @@ class ClaudeParser:
         usage = message.get("usage")
         if not isinstance(usage, dict):
             return []
-        # Dedup by message.id: see note in __init__. If this message.id was
-        # already billed in an earlier line, drop this duplicate usage block.
+        # Keep-last dedup by message.id (see note in __init__). A repeated
+        # message.id is a later streaming snapshot of the same billed message —
+        # null the earlier snapshot's entries (count=0, so they cost nothing and
+        # add no tokens) and re-emit from this, the latest, snapshot.
         msg_id = str(message.get("id") or "") or None
-        if msg_id and msg_id in self._usage_seen_msg_ids:
-            return []
-        if msg_id:
-            self._usage_seen_msg_ids.add(msg_id)
+        if msg_id and msg_id in self._usage_entries_by_msg_id:
+            for prior in self._usage_entries_by_msg_id[msg_id]:
+                prior.count = 0
         out: list[UsageEntry] = []
         base_id = base["id"]
         base_envelope = {k: v for k, v in base.items() if k != "id"}
@@ -294,6 +298,8 @@ class ClaudeParser:
                 count=stu.get("web_fetch_requests") or 0,
                 io="input", unit="request", tool="web_fetch",
             )
+        if msg_id is not None:
+            self._usage_entries_by_msg_id[msg_id] = out
         return out
 
     def _build_semantic_tool_entry(
