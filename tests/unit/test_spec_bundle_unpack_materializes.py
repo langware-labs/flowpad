@@ -7,12 +7,15 @@ subtree into the PROJECT, then ``_reindex_received_assets`` materializes the row
 No mocks: real test DB + real FSIndexer. Exercises exactly what unpack_bundle
 runs for a file-backed asset entry.
 """
+import filecmp
+
 import pytest
 
 # Ensure SPEC TypeInfo (main_subdir/extractor/owns) is registered.
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
 from flow_sdk.builtin.flow_message_bundle import (
+    FlowMessageExistsError,
     _reindex_received_assets,
     _restore_file_backed_entry,
 )
@@ -98,3 +101,129 @@ async def test_restore_heals_content_less_stub(tmp_path):
     healed = await Spec.get_one({"id": SPEC_ID})
     assert healed is not None
     assert healed.content and SENTINEL in healed.content, "stub was NOT healed (blank plan)"
+
+
+# ---------------------------------------------------------------------------
+# Restore-edge coverage: collision / idempotency / overwrite — drives the
+# filecmp + conflict + overwrite branches of ``_restore_file_backed_entry``
+# directly (real files, no DB), mirroring the helper style above.
+# ---------------------------------------------------------------------------
+
+
+def _spec_bundle_entry_dir(tmp_path, spec_id, body):
+    """A spec bundle attachment entry with a custom id + body, laid out at the
+    canonical ``specs/<name>/spec.md`` the unified packer produces."""
+    entry_dir = tmp_path / "attachment" / f"spec-@{spec_id}"
+    spec_md = entry_dir / "specs" / "hello-world" / "spec.md"
+    spec_md.parent.mkdir(parents=True, exist_ok=True)
+    spec_md.write_text(
+        f'---\nid: {spec_id}\ntitle: "Plan: Hello World in Python"\nspec_type: "plan"\n---\n'
+        f"# Plan\n\n{body}\n",
+        encoding="utf-8",
+    )
+    return entry_dir
+
+
+async def test_restore_raises_on_genuine_byte_collision(tmp_path):
+    # [UNPACK-COLLISION] A DIFFERENT-bytes file already sits where the entry
+    # would write; overwrite=False must refuse and preserve the local bytes.
+    entry_dir = _bundle_entry_dir(tmp_path)
+    project_root = tmp_path / "project"
+    dest = project_root / "specs" / "hello-world" / "spec.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    local_bytes = b"---\nid: local\n---\n# LOCAL EDIT do not clobber\n"
+    dest.write_bytes(local_bytes)
+
+    with pytest.raises(FlowMessageExistsError) as exc_info:
+        _restore_file_backed_entry(entry_dir, project_root, overwrite=False)
+
+    # PATH-shaped conflict (not the {type,id} shape the top-level FM uses).
+    assert exc_info.value.conflicts == [{"path": str(dest)}]
+    # The pre-existing local file was NOT touched.
+    assert dest.read_bytes() == local_bytes
+
+
+async def test_restore_byte_identical_existing_is_idempotent_noop(tmp_path):
+    # [UNPACK-IDEMPOTENT] Re-receiving the SAME asset is a no-op, not a conflict.
+    entry_dir = _bundle_entry_dir(tmp_path)
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+
+    assert _restore_file_backed_entry(entry_dir, project_root, overwrite=False) is True
+    dest = project_root / "specs" / "hello-world" / "spec.md"
+    src = entry_dir / "specs" / "hello-world" / "spec.md"
+    assert filecmp.cmp(src, dest, shallow=False), "precondition: dest == source bytes"
+    before = dest.read_bytes()
+
+    # Second restore from the byte-identical source: no raise, nothing copied.
+    assert _restore_file_backed_entry(entry_dir, project_root, overwrite=False) is False
+    assert dest.read_bytes() == before  # unchanged
+
+
+async def test_overwrite_replaces_existing_on_disk_asset(tmp_path):
+    # [UNPACK-OVERWRITE] overwrite=True replaces a stale local body; the
+    # reindexed Spec reflects the replacement; a later overwrite=False restore
+    # against the now-identical dest is a no-op (not a conflict).
+    ow_spec_id = "b2c3d4e5-1111-4aaa-9bbb-0123456789ab"
+    new_body = "SENTINEL-overwrite-fresh-body"
+    entry_dir = _spec_bundle_entry_dir(tmp_path, ow_spec_id, new_body)
+
+    project_root = tmp_path / "project"
+    dest = project_root / "specs" / "hello-world" / "spec.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        f'---\nid: {ow_spec_id}\ntitle: "stale"\nspec_type: "plan"\n---\n# Old\n\nSTALE-old-body\n',
+        encoding="utf-8",
+    )
+
+    assert _restore_file_backed_entry(entry_dir, project_root, overwrite=True) is True
+    text = dest.read_text(encoding="utf-8")
+    assert new_body in text and "STALE-old-body" not in text, "overwrite did not replace bytes"
+
+    await _reindex_received_assets(project_root, (RecordType.SPEC,))
+    spec = await Spec.get_one({"id": ow_spec_id})
+    assert spec is not None, "reindex did not materialize the overwritten spec"
+    assert spec.content and new_body in spec.content, f"reindex kept stale body: {spec.content!r}"
+
+    # Now dest is byte-identical to the bundle source → overwrite=False no-op,
+    # NOT a conflict.
+    assert _restore_file_backed_entry(entry_dir, project_root, overwrite=False) is False
+
+
+async def test_restored_single_file_markdown_materializes_same_pinned_id(tmp_path):
+    # [UNPACK-IDPIN] A SINGLE-FILE markdown-family asset (main_layout="file",
+    # main_subdir="docs") with a pinned frontmatter id must materialize the SAME
+    # id at the receiver-canonical <project>/docs/<leaf> path — not a uuid5(path)
+    # duplicate.
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    md_id = "c3d4e5f6-2222-4ccc-8ddd-aabbccddeeff"
+    body = "SENTINEL-markdown-single-file-body"
+    entry_dir = tmp_path / "attachment" / f"markdown-@{md_id}"
+    leaf = entry_dir / "docs" / "shared-note.md"
+    leaf.parent.mkdir(parents=True, exist_ok=True)
+    leaf.write_text(
+        f'---\nid: {md_id}\ntitle: "Shared Note"\n---\n# Shared Note\n\n{body}\n',
+        encoding="utf-8",
+    )
+
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+
+    assert _restore_file_backed_entry(entry_dir, project_root, overwrite=False) is True
+    canonical = project_root / "docs" / "shared-note.md"
+    assert canonical.exists(), "single-file markdown not restored at <project>/docs/<leaf>"
+
+    await _reindex_received_assets(project_root, (RecordType.MARKDOWN,))
+
+    md_cls = SchemaRegistry.get_entity_cls("markdown")
+    assert md_cls is not None, "markdown entity class not registered"
+    ent = await md_cls.get_one({"id": md_id})
+    assert ent is not None, "reindex minted a uuid5(path) duplicate, not the pinned id"
+    # asset_ref points at the receiver-canonical path (same materialized leaf).
+    assert ent.asset_ref and canonical.samefile(ent.asset_ref), (
+        f"materialized at wrong path: {ent.asset_ref!r}"
+    )
+
+    # Re-run restore byte-identical → idempotent no-op (re-receive path).
+    assert _restore_file_backed_entry(entry_dir, project_root, overwrite=False) is False
