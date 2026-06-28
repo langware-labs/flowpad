@@ -278,23 +278,10 @@ async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> 
 
 async def _project_of_target(target_type: str, target_id: str) -> str | None:
     """The owning ``project_id`` of a tab's target, resolved SERVER-SIDE so the
-    chip never depends on a client cache read that can miss. Goes through the
-    entity's ``get_by_id`` — which for a claude session includes the on-disk
-    recovery for unindexed sessions — and returns its ``project_id``. Best-effort:
-    ``None`` when the type/target is unknown or the target is genuinely projectless."""
-    try:
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-        model = SchemaRegistry.get_entity_cls(target_type)
-        if model is None:
-            return None
-        target = await model.get_by_id(str(target_id))
-        return getattr(target, "project_id", None) if target is not None else None
-    except Exception:
-        logging.getLogger(__name__).debug(
-            "ensure_tab: project-of-target failed for %s/%s", target_type, target_id, exc_info=True
-        )
-        return None
+    chip never depends on a client cache read that can miss. Thin alias over the
+    entity-agnostic ``Entity.project_id_of`` primitive (shared with
+    ``Conversation.resolve_project_id``)."""
+    return await Entity.project_id_of(target_type, target_id)
 
 
 async def ensure_tab(

@@ -2080,6 +2080,30 @@ class Entity(DBEntity):
             return [TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)]
         return []
 
+    @staticmethod
+    async def project_id_of(entity_type: str, entity_id: str) -> "str | None":
+        """The owning ``project_id`` of any entity, resolved SERVER-SIDE.
+
+        Looks the type up in the registry and goes through its ``get_by_id``
+        (which for some types includes on-disk recovery for unindexed rows),
+        returning the target's ``project_id``. Best-effort: ``None`` when the
+        type/target is unknown or the target is genuinely project-less. This is
+        the single, entity-agnostic "what project owns this thing" primitive —
+        used by tab project derivation and ``Conversation.resolve_project_id``.
+        """
+        try:
+            model = SchemaRegistry.get_entity_cls(entity_type)
+            if model is None:
+                return None
+            target = await model.get_by_id(str(entity_id))
+            return getattr(target, "project_id", None) if target is not None else None
+        except Exception:
+            import logging  # noqa: PLC0415
+            logging.getLogger(__name__).debug(
+                "project_id_of: failed for %s/%s", entity_type, entity_id, exc_info=True
+            )
+            return None
+
     @computed_field
     @property
     def private_context_entities(self) -> List[TypeId]:
