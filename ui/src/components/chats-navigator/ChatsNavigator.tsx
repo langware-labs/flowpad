@@ -33,7 +33,12 @@ export function ChatsNavigator() {
   const isAdvanced = useIsAdvanced();
 
   const [search, setSearch] = useState('');
-  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    workerId: string;
+    workerType: string | null;
+    processId: string | null;
+    title: string;
+  } | null>(null);
 
   const scope = useMemo<ScopeFilter>(
     () => currentDock?.scopeFilter ?? defaultScopeFilter(project?.id ?? null),
@@ -41,7 +46,7 @@ export function ChatsNavigator() {
   );
 
   const filters = useMemo(() => ({ scope, search }), [scope, search]);
-  const { buckets, total, isLoading } = useChatHistory(filters);
+  const { buckets, total, isLoading, refetch } = useChatHistory(filters);
 
   // Active row = the process the Shell URL currently targets (URL-first).
   const activeProcessId =
@@ -83,24 +88,44 @@ export function ChatsNavigator() {
     });
   }, []);
 
+  // Delete keys off the durable `worker_id` (the on-disk session), NOT the
+  // lazily-materialized AgenticProcess entity — same identity inversion the open
+  // path already fixed. Gating on `agentic_process_id` made any chat never opened
+  // through this instance (agentic_process_id == null) undeletable: the dialog
+  // never opened. The process id is kept only as a fast-path cache hint.
   const requestDelete = useCallback((entry: WorkerHistoryEntry) => {
-    if (!entry.agentic_process_id) return;
-    const process = AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id);
-    setPendingDelete({ id: entry.agentic_process_id, title: pickHistoryTitle(process ?? null, entry) });
+    if (!entry.worker_id) return;
+    const process = entry.agentic_process_id
+      ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id)
+      : null;
+    setPendingDelete({
+      workerId: entry.worker_id,
+      workerType: entry.worker_type,
+      processId: entry.agentic_process_id,
+      title: pickHistoryTitle(process, entry),
+    });
   }, []);
 
   const confirmDelete = useCallback(async () => {
     if (!pendingDelete) return;
-    const process = AgenticProcess.getByIdFromCache<AgenticProcess>(pendingDelete.id);
+    const { processId, workerId, workerType } = pendingDelete;
     setPendingDelete(null);
-    if (!process) return;
     try {
+      // Prefer the cached entity; for on-disk-only sessions resolve the durable
+      // worker_id through the heal (`getByWorkerId`), exactly like the open path.
+      // `delete()` tombstones the transcript, so the worker-history entry — which
+      // both read paths re-derive from that file — disappears too.
+      const process =
+        (processId ? AgenticProcess.getByIdFromCache<AgenticProcess>(processId) : null) ??
+        (await AgenticProcess.getByWorkerId(workerId, workerType));
+      if (!process) return;
       await process.delete();
+      refetch();
     } catch (err) {
       console.error('[ChatsNavigator] delete failed', err);
       notify.error({ title: 'Could not delete', message: err instanceof Error ? err.message : String(err) });
     }
-  }, [pendingDelete]);
+  }, [pendingDelete, refetch]);
 
   const handleNewChat = useCallback(
     (worker: WorkerType) => {
