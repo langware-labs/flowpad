@@ -9,7 +9,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFS } from '@src/hooks/useFS';
 import {
   ArrowUp,
-  Box,
   ChevronRight,
   ClipboardPaste,
   Copy,
@@ -21,9 +20,6 @@ import {
   FileText,
   Folder,
   FolderPlus,
-  HardDrive,
-  PanelLeft,
-  PanelLeftClose,
   RefreshCw,
   Scissors,
   Trash2,
@@ -32,8 +28,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { fileShareSource } from '@src/hooks/share-sources';
-import { DirectoryTree, ItemHandler } from '../directory-tree';
-import { FilterName } from './filters';
 import { FileItem, SimpleFileManagerProps, SortDirection, SortField } from './types';
 
 function formatFileSize(bytes: number): string {
@@ -253,12 +247,9 @@ export function SimpleFileManager({
   onPathChange,
   filterDefinitions,
   enabledFilters,
-  onEnabledFiltersChange,
   compact = false,
   className = '',
-  homePath,
-  workspacePath,
-  projectPath,
+  onFsMutated,
 }: SimpleFileManagerProps) {
   const { navigation } = useDockNavigation();
   const [currentPath, setCurrentPath] = useState(() => normalizeFsPath(initialPath));
@@ -268,11 +259,8 @@ export function SimpleFileManager({
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [clipboard, setClipboard] = useState<{ items: FileItem[]; operation: 'copy' | 'cut' } | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(true);
-  const [rootFolders, setRootFolders] = useState<FSItem[]>([]);
   // Absolute node path of the file being shared; non-null opens the dialog.
   const [sharePath, setSharePath] = useState<string | null>(null);
-  const effectiveHomePath = homePath || workspacePath || null;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typeidObj = useMemo(() => new TypeId(typeId.type, typeId.id), [typeId.type, typeId.id]);
@@ -307,39 +295,6 @@ export function SimpleFileManager({
     setSelectedItems(new Set());
   }, [initialPath]);
 
-  // Load root folders for directory tree - Computer and Project roots
-  useEffect(() => {
-    const loadRootFolders = () => {
-      const roots: FSItem[] = [];
-
-      // Create "Computer" root folder item representing the VFS root
-      // Use "." as path since FSItem regex requires non-empty path after slash
-      const computerItem = new FSItem({
-        is_dir: true,
-        vfs_abs_path: `${typeidObj.toString()}/.`,
-        size: 0,
-        display_name: 'Computer',
-      });
-      roots.push(computerItem);
-
-      // Add dedicated "Project" root if a project path is available
-      const normalizedProjectPath = projectPath?.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
-      if (normalizedProjectPath) {
-        const projectItem = new FSItem({
-          is_dir: true,
-          vfs_abs_path: `${typeidObj.toString()}/${normalizedProjectPath}`,
-          size: 0,
-          display_name: 'Project',
-        });
-        roots.push(projectItem);
-      }
-
-      setRootFolders(roots);
-    };
-
-    loadRootFolders();
-  }, [typeidObj, projectPath]);
-
   // Dialogs
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [showNewFileDialog, setShowNewFileDialog] = useState(false);
@@ -351,21 +306,6 @@ export function SimpleFileManager({
   const [newItemName, setNewItemName] = useState('');
   // Target folder for tree actions (when creating file/folder via hover action)
   const [targetFolderPath, setTargetFolderPath] = useState<string | null>(null);
-
-  // Convert FileItem-based filter definitions to FSItem-based for DirectoryTree
-  const fsItemFilterDefinitions = useMemo(() => {
-    if (!filterDefinitions) return undefined;
-
-    return filterDefinitions.map((filterDef) => ({
-      name: filterDef.name,
-      label: filterDef.label,
-      filterFn: (fsItem: FSItem) => {
-        // Convert FSItem to FileItem and apply the original filter
-        const fileItem = fsItemToFileItem(fsItem, currentPath);
-        return filterDef.filterFn(fileItem);
-      },
-    }));
-  }, [filterDefinitions, currentPath]);
 
   // Ensure files are loaded for the current directory (uses cache if available)
   const ensureFilesLoaded = useCallback(async () => {
@@ -533,13 +473,12 @@ export function SimpleFileManager({
       // Invalidate browse cache for the parent folder
       fsStore.getState().invalidate(typeidObj, basePath, 'browse');
       await ensureFilesLoaded();
-      // Refresh tree by updating rootFolders reference
-      setRootFolders((prev) => [...prev]);
+      onFsMutated?.(basePath);
     } catch (err) {
       console.error('[SimpleFileManager] Failed to create folder:', err);
       setError(formatFsErrorMessage(err, 'Failed to create folder'));
     }
-  }, [newFolderName, currentPath, targetFolderPath, typeidObj, ensureFilesLoaded]);
+  }, [newFolderName, currentPath, targetFolderPath, typeidObj, ensureFilesLoaded, onFsMutated]);
 
   const handleNewFile = useCallback(async () => {
     if (!newFileName.trim()) return;
@@ -554,13 +493,12 @@ export function SimpleFileManager({
       // Invalidate browse cache for the parent folder
       fsStore.getState().invalidate(typeidObj, basePath, 'browse');
       await ensureFilesLoaded();
-      // Refresh tree by updating rootFolders reference
-      setRootFolders((prev) => [...prev]);
+      onFsMutated?.(basePath);
     } catch (err) {
       console.error('[SimpleFileManager] Failed to create file:', err);
       setError(formatFsErrorMessage(err, 'Failed to create file'));
     }
-  }, [newFileName, currentPath, targetFolderPath, typeidObj, ensureFilesLoaded]);
+  }, [newFileName, currentPath, targetFolderPath, typeidObj, ensureFilesLoaded, onFsMutated]);
 
   const handleRename = useCallback(async () => {
     if (!renameItem || !newItemName.trim()) return;
@@ -572,11 +510,12 @@ export function SimpleFileManager({
       // Invalidate browse cache for the current folder
       fsStore.getState().invalidate(typeidObj, currentPath, 'browse');
       await ensureFilesLoaded();
+      onFsMutated?.(currentPath);
     } catch (err) {
       console.error('[SimpleFileManager] Failed to rename:', err);
       setError(formatFsErrorMessage(err, 'Failed to rename'));
     }
-  }, [renameItem, newItemName, typeidObj, currentPath, ensureFilesLoaded]);
+  }, [renameItem, newItemName, typeidObj, currentPath, ensureFilesLoaded, onFsMutated]);
 
   const handleDelete = useCallback(async () => {
     const itemsToDelete = sortedFiles.filter((f) => selectedItems.has(f.id));
@@ -590,11 +529,12 @@ export function SimpleFileManager({
       // Invalidate browse cache for the current folder
       fsStore.getState().invalidate(typeidObj, currentPath, 'browse');
       await ensureFilesLoaded();
+      onFsMutated?.(currentPath);
     } catch (err) {
       console.error('[SimpleFileManager] Failed to delete:', err);
       setError(formatFsErrorMessage(err, 'Failed to delete'));
     }
-  }, [selectedItems, sortedFiles, typeidObj, currentPath, ensureFilesLoaded]);
+  }, [selectedItems, sortedFiles, typeidObj, currentPath, ensureFilesLoaded, onFsMutated]);
 
   const handleUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -608,6 +548,7 @@ export function SimpleFileManager({
         // Invalidate browse cache to refresh file list
         fsStore.getState().invalidate(typeidObj, currentPath, 'browse');
         await ensureFilesLoaded();
+        onFsMutated?.(currentPath);
       } catch (err) {
         console.error('[SimpleFileManager] Failed to upload:', err);
         setError(formatFsErrorMessage(err, 'Failed to upload'));
@@ -617,7 +558,7 @@ export function SimpleFileManager({
         }
       }
     },
-    [typeidObj, currentPath, ensureFilesLoaded],
+    [typeidObj, currentPath, ensureFilesLoaded, onFsMutated],
   );
 
   const handleDownload = useCallback(async () => {
@@ -671,20 +612,13 @@ export function SimpleFileManager({
       // Invalidate destination folder
       fsStore.getState().invalidate(typeidObj, currentPath, 'browse');
       await ensureFilesLoaded();
+      sourceParentPaths.forEach((path) => onFsMutated?.(path));
+      onFsMutated?.(currentPath);
     } catch (err) {
       console.error('[SimpleFileManager] Failed to paste:', err);
       setError(formatFsErrorMessage(err, 'Failed to paste'));
     }
-  }, [clipboard, currentPath, typeidObj, ensureFilesLoaded]);
-
-  const handleOpenFolder = useCallback(async (pathToOpen: string = currentPath) => {
-    try {
-      await fsManager.open(typeidObj, normalizeFsPath(pathToOpen));
-    } catch (err) {
-      console.error('[SimpleFileManager] Failed to open folder:', err);
-      setError(formatFsErrorMessage(err, 'Failed to open folder'));
-    }
-  }, [typeidObj, currentPath]);
+  }, [clipboard, currentPath, typeidObj, ensureFilesLoaded, onFsMutated]);
 
   const handleOpenInEditor = useCallback(
     (item: FileItem) => {
@@ -718,68 +652,11 @@ export function SimpleFileManager({
   const hasSelection = selectedCount > 0;
   const selectedFile = selectedCount === 1 ? sortedFiles.find((f) => selectedItems.has(f.id)) : null;
 
-  // ItemHandler for DirectoryTree with file/folder actions
-  const itemHandler = useMemo(
-    () =>
-      new ItemHandler({
-        renderIcon: (item) => {
-          const isRoot = rootFolders.some((root) => root.vfsPath.equals(item.vfsPath));
-          if (isRoot) {
-            // Root entries use non-folder icons so they are visually distinct from folders.
-            if (item.vfs_abs_path.endsWith('/.')) {
-              return <HardDrive className="h-3 w-3 flex-shrink-0 text-muted-foreground" />;
-            }
-            return <Box className="h-3 w-3 flex-shrink-0 text-muted-foreground" />;
-          }
-          if (item.is_dir) {
-            return <Folder className="h-3 w-3 flex-shrink-0 text-muted-foreground" />;
-          }
-          return <File className="h-3 w-3 flex-shrink-0 text-muted-foreground" />;
-        },
-        actions: [
-          ItemHandler.createFileAction((item, e) => {
-            e.stopPropagation();
-            setTargetFolderPath(item.relativePath || '/');
-            setShowNewFileDialog(true);
-          }),
-          ItemHandler.createFolderAction((item, e) => {
-            e.stopPropagation();
-            setTargetFolderPath(item.relativePath || '/');
-            setShowNewFolderDialog(true);
-          }),
-          ItemHandler.refreshAction((_item, e) => {
-            e.stopPropagation();
-            void refreshFiles();
-            setRootFolders((prev) => [...prev]);
-          }),
-          // Delete is handled by DirectoryTree's built-in delete (enableBuiltInDelete=true)
-        ],
-      }),
-    [refreshFiles, rootFolders],
-  );
-
   return (
     <div className={`flex h-full flex-col bg-background ${className}`}>
       {/* Toolbar */}
       <div className="flex items-center gap-1 border-b bg-muted/30 px-2 py-1">
         <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                data-testid="file-manager-drawer-toggle-button"
-                variant="ghost"
-                size="icon"
-                className={`h-7 w-7 ${drawerOpen ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}`}
-                onClick={() => setDrawerOpen(!drawerOpen)}
-              >
-                {drawerOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{drawerOpen ? 'Hide tree' : 'Show tree'}</TooltipContent>
-          </Tooltip>
-
-          <div className="mx-1 h-4 w-px bg-border" />
-
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -995,55 +872,8 @@ export function SimpleFileManager({
         </div>
       )}
 
-      {/* Main content area with drawer */}
+      {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Directory tree drawer */}
-        {drawerOpen && (
-          <div className="w-64 border-r bg-background">
-            <DirectoryTree
-              rootFolders={rootFolders}
-              selectedPath={currentPath}
-              homePath={effectiveHomePath}
-              filterDefinitions={fsItemFilterDefinitions}
-              enabledFilters={enabledFilters?.map((f) => String(f))}
-              itemHandler={itemHandler}
-              events={{
-                onSelect: (item) => {
-                  if (item) {
-                    const path = item.relativePath || '/';
-                    // Only navigate to directories, call onFileSelect for files
-                    if (item.is_dir) {
-                      navigateToPath(path);
-                    } else {
-                      onFileSelect?.(buildVfsPath(path));
-                    }
-                  } else {
-                    // Always navigate to VFS root '/' when clicking root folder
-                    navigateToPath('/');
-                  }
-                },
-                onNavigateHome: effectiveHomePath
-                  ? () => {
-                      navigateToPath(effectiveHomePath);
-                    }
-                  : undefined,
-                onOpenExternal: () => {
-                  void handleOpenFolder(effectiveHomePath || currentPath);
-                },
-                onEnabledFiltersChange: onEnabledFiltersChange
-                  ? (filters: string[]) => {
-                      onEnabledFiltersChange(filters as FilterName[]);
-                    }
-                  : undefined,
-                onItemDeleted: () => {
-                  void refreshFiles();
-                  setRootFolders((prev) => [...prev]);
-                },
-              }}
-            />
-          </div>
-        )}
-
         {/* File list */}
         <ScrollArea className="flex-1">
           <Table>
