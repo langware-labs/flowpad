@@ -229,6 +229,22 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel }: Im
     onCancel();
   }, [isDirty, onCancel]);
 
+  // Enter saves (Esc cancels). Document-level so it works regardless of which
+  // control is focused; skipped while editing a text box (there Enter commits
+  // the text, Shift+Enter adds a line). stopPropagation so a focused button
+  // doesn't also activate.
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey || text.editingId != null || !isDirty) return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleSave();
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [open, text.editingId, isDirty, handleSave]);
+
   return (
     <>
       <Dialog open={open} onOpenChange={(o) => !o && requestClose()}>
