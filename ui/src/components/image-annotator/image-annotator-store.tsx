@@ -65,10 +65,13 @@ if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__annotateImage = annotateImage;
 }
 
-async function writeImageToClipboard(file: File): Promise<void> {
+async function writeImageToClipboard(blob: Promise<Blob>): Promise<void> {
   try {
     if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') return;
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': file })]);
+    // ClipboardItem accepts a Promise<Blob>; navigator.clipboard.write is invoked
+    // synchronously by the caller (inside the Save gesture), so the write keeps
+    // its user activation while the blob is still being produced.
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
   } catch {
     // Clipboard write can fail (permissions / focus) — surface, never block.
     notify.error({ title: 'Clipboard not updated', message: 'The annotated image was attached but could not be copied to the clipboard.' });
@@ -81,10 +84,8 @@ export function ImageAnnotatorRoot() {
     <ImageAnnotator
       open={open}
       file={file}
-      onSave={(annotated) => {
-        void writeImageToClipboard(annotated);
-        settle(annotated);
-      }}
+      onClipboard={(blob) => void writeImageToClipboard(blob)}
+      onSave={(annotated) => settle(annotated)}
       onCancel={() => {
         // Dismissed without saving → abort: resolve null so the capture is
         // dropped entirely (image not attached, caller does nothing further).
