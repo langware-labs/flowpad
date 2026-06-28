@@ -1,3 +1,7 @@
+---
+id: 9fb012f7-e604-5a89-ac22-ac19d765461e
+---
+
 # Toplog — topic-based runtime logging
 
 Toplog is a lightweight **debug-logging tool keyed by freeform _topics_** (keywords). Sprinkle
