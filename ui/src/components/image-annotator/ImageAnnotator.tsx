@@ -26,11 +26,18 @@ export interface ImageAnnotatorProps {
   file: File | null;
   /** User saved: receives the flattened PNG File (image/png). */
   onSave: (annotated: File) => void;
+  /**
+   * Called synchronously within the Save click with a promise of the flattened
+   * PNG, so a clipboard write keeps the user activation even though toBlob is
+   * async (a slow toBlob on a large image would otherwise outlast the gesture
+   * and the clipboard would silently keep the un-annotated original).
+   */
+  onClipboard: (blob: Promise<Blob>) => void;
   /** User dismissed without saving — capture is aborted (image dropped). */
   onCancel: () => void;
 }
 
-export function ImageAnnotator({ open, file, onSave, onCancel }: ImageAnnotatorProps) {
+export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel }: ImageAnnotatorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
@@ -200,11 +207,19 @@ export function ImageAnnotator({ open, file, onSave, onCancel }: ImageAnnotatorP
     if (!canvas || !ctx || !file) return;
     redraw(); // base image + strokes
     bakeTextBoxes(ctx, text.textBoxes); // flatten text overlays into the canvas
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      onSave(new File([blob], toPngName(file.name), { type: 'image/png', lastModified: Date.now() }));
-    }, 'image/png');
-  }, [file, onSave, redraw, text.textBoxes]);
+    // One blob, two consumers: the clipboard write must be kicked off
+    // synchronously here (still inside the Save click) so it keeps the user
+    // activation; the upload happens once the blob resolves.
+    const blobPromise = new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('toBlob returned null'))), 'image/png');
+    });
+    onClipboard(blobPromise);
+    blobPromise
+      .then((blob) => onSave(new File([blob], toPngName(file.name), { type: 'image/png', lastModified: Date.now() })))
+      .catch(() => {
+        /* toBlob failure is rare; nothing to attach */
+      });
+  }, [file, onClipboard, onSave, redraw, text.textBoxes]);
 
   const requestClose = useCallback(() => {
     if (isDirty) {
