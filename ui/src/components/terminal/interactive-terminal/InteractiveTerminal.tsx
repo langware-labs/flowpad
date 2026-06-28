@@ -433,6 +433,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         await Promise.all(
           uploads.map((upload: { waitForCompletion: () => Promise<unknown> }) => upload.waitForCompletion()),
         );
+        // By now the annotated PNG is on the system clipboard (written inside the
+        // Save gesture; the upload above outlasts that write). Re-emit the empty
+        // bracketed paste that an image paste produces — the exact signal the CLI
+        // reads the system clipboard on — so it inlines the ANNOTATED image. The
+        // original paste-time signal was suppressed (capture-phase paste listener),
+        // so the CLI never saw the pre-annotation original.
+        await shellRef.current?.sendInput('\x1b[200~\x1b[201~');
+        // Full-resolution fallback: the inline copy the CLI keeps may be downsized,
+        // so also reference the file by path.
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
         await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
         openSideTab(SideTabId.Files);
