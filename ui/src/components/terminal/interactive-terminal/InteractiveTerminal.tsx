@@ -72,6 +72,7 @@ import { useTimeGutter } from './use-time-gutter';
 import { useTraceGutter } from './use-trace-gutter';
 import { EntityContextPanel } from '@src/components/entity-context';
 import { imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 export interface TraceFilters {
   events: boolean;
@@ -408,8 +409,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (!inputDirInfo) return;
       try {
         const items = await navigator.clipboard.read();
-        const [file] = await imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' });
-        if (!file) return;
+        const [captured] = await imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' });
+        if (!captured) return;
+        // Offer markup before the screenshot is attached.
+        const [file] = await annotateImageFiles([captured]);
 
         const uploads = await fsStore
           .getState()
@@ -1432,8 +1435,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // the PTY paste/drop handlers, but returns the reference line(s) so the chat
   // composer can splice them into the next prompt (instead of sending to a PTY).
   const handleChatPasteImages = useCallback(
-    async (files: File[]): Promise<string[]> => {
-      if (!inputDirInfo || !files.length) return [];
+    async (incoming: File[]): Promise<string[]> => {
+      if (!inputDirInfo || !incoming.length) return [];
+      // Offer markup before the pasted image(s) are attached.
+      const files = await annotateImageFiles(incoming);
       const uploads = await fsStore
         .getState()
         .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
