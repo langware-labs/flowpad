@@ -128,17 +128,25 @@ export function ImageAnnotator({ open, file, onSave, onCancel }: ImageAnnotatorP
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       if (!imgRef.current) return;
-      const p = toCanvasPoint(e.clientX, e.clientY);
-      if (tool === 'text') {
-        text.addTextBox(p.x, p.y, color, defaultFontPx());
-        return;
-      }
+      if (tool === 'text') return; // text boxes are placed on click, not drag
       e.currentTarget.setPointerCapture(e.pointerId);
+      const p = toCanvasPoint(e.clientX, e.clientY);
       // Arrow keeps just [start, end]; pen accumulates the freehand trail.
       drawingRef.current = { tool, color, width: penWidth(), points: [p, p] };
       redraw();
     },
-    [color, defaultFontPx, penWidth, redraw, text, toCanvasPoint, tool],
+    [color, penWidth, redraw, toCanvasPoint, tool],
+  );
+
+  // Text placement uses a discrete click (reliable across mouse/touch/pen),
+  // rather than the pointerdown the drawing tools need.
+  const onCanvasClick = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (tool !== 'text' || !imgRef.current) return;
+      const p = toCanvasPoint(e.clientX, e.clientY);
+      text.addTextBox(p.x, p.y, color, defaultFontPx());
+    },
+    [color, defaultFontPx, text, toCanvasPoint, tool],
   );
 
   const onPointerMove = useCallback(
@@ -242,6 +250,7 @@ export function ImageAnnotator({ open, file, onSave, onCancel }: ImageAnnotatorP
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerLeave={onPointerUp}
+                onClick={onCanvasClick}
                 className="block max-h-[78vh] max-w-full touch-none"
                 style={{ cursor: tool === 'text' ? 'text' : 'crosshair' }}
               />
