@@ -36,7 +36,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     get_driver,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
-from flow_sdk.builtin.agentic_process.status_predicates import is_process_startable, is_ready_for_input
+from flow_sdk.builtin.agentic_process.status_predicates import WorkerMode, is_process_startable, is_ready_for_input
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
@@ -140,6 +140,13 @@ EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "agent"]
 # Drivers register their in-flight worker here so cancel-prompt can find it.
 _PROMPT_LOCKS: dict[str, asyncio.Lock] = {}
 _PROMPT_WORKERS: dict[str, Any] = {}
+
+# Accepted per-turn ``permission_mode`` overrides (e.g. chat plan mode). Mirrors
+# the values ``ClaudeCliOptions`` knows how to translate to a CLI flag; gates
+# client input so an arbitrary string can't reach the spawn args.
+_VALID_PERMISSION_MODES = frozenset(
+    {"plan", "default", "acceptEdits", "bypassPermissions", "askUser"}
+)
 
 # Per-process serialization for the ``open``/``start`` lifecycle so two
 # concurrent refresh-driven calls can't both run recovery on the same process.
@@ -429,6 +436,18 @@ class AgenticProcess(Entity):
             "Whether this process is shown as a terminal tab. Set on open "
             "(True) / close (False). No longer a membership flag — the strip's "
             "membership is the ``Tab`` entity (docs/tab-management.md)."
+        ),
+    )
+    pty_mode: bool = APIField(
+        default=True,
+        persist=Persist.TRUE,
+        description=(
+            "Transport intent for this session. True → interactive PTY "
+            "(``visible`` drives a live terminal, today's behaviour). False → "
+            "headless JSON-stream (``-p``/stream-json, no PTY, no xterm); the "
+            "loader skips the PTY attach so the choice is durable across reload. "
+            "Routing stays ``headless == !visible``; ``pty_mode`` seeds ``visible`` "
+            "at launch and the chat⇄terminal toggle keeps the two in lock-step."
         ),
     )
     # last_active_at moved to base Entity (epoch-ms, tab-management.md Part 3).
@@ -728,10 +747,16 @@ class AgenticProcess(Entity):
     async def _get_local_compute_node(self):
         """Return the local compute node used for shell creation and recovery.
 
-        Retry once on None — the @local compute_node is bootstrap-created and
-        never deleted, so a None result is always a transient cache/DB-contention
-        miss under heavy parallel writes (see Cluster #10 in debug_log.md). The
-        retry invalidates any stale uname_cache entry before the second lookup.
+        Resolve, then RECOVER. First retry on None invalidates any stale
+        uname_cache entry (covers a transient cache/DB-contention miss under
+        heavy parallel writes — see Cluster #10 in debug_log.md). If the row is
+        still absent it is genuinely gone: the @local compute_node is a fileless
+        singleton that a compute-node sweep can delete out from under a running
+        session, and (unlike the @local user/project) it is only otherwise
+        re-seeded by the app-boot ``bootstrap()``. So recreate it on demand via
+        the same idempotent seed ``bootstrap()`` uses, rather than returning None
+        and letting the launch strand the session with a permanent
+        ``start_failure`` latch.
         """
         from flow_sdk.builtin.faas.compute_node import ComputeNode
 
@@ -740,6 +765,17 @@ class AgenticProcess(Entity):
             from flow_sdk.core.cache.entity_cache import uname_cache
             uname_cache.invalidate("compute_node", "local")
             cn = await ComputeNode.get_by_uname("local")
+        if cn is None:
+            from flow_sdk.server.routes.bootstrap import (
+                get_or_create_local_compute_node,
+                get_or_create_local_project,
+                get_or_create_local_user,
+            )
+            user = await get_or_create_local_user()
+            project = await get_or_create_local_project(desktop_user=user)
+            cn = await get_or_create_local_compute_node(
+                local_project=project, desktop_user=user
+            )
         return cn
 
     def _adopt_shell_tab_order(self, shell: "Shell | None") -> None:
@@ -907,6 +943,13 @@ class AgenticProcess(Entity):
             if visible is not None and self.visible != visible:
                 self.visible = visible
                 reattach_changed = True
+            # Lock-step the durable transport intent: opening a PTY (visible=True)
+            # is a terminal session, so persist ``pty_mode=True`` (saved in the
+            # open tail) — a reload then stays in terminal mode instead of falling
+            # back to headless. Headless never reaches here (the loader skips
+            # ``start`` when ``pty_mode is False``).
+            if visible is True:
+                self.pty_mode = True
 
             shell = await self.shell() if self.shell_id else None
             if shell is not None:
@@ -1181,6 +1224,74 @@ class AgenticProcess(Entity):
             self.status = ProcessStatus.FAILED.value
             await self.save()
             return ApiFailResponse(message=str(e))
+
+    async def _enter_cli_mode(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Switch to CLI (headless) transport: kill the PTY worker, keep the session.
+
+        PTY and CLI are mutually-exclusive transports of ONE logical session (one
+        ``session_id``, one transcript). This kills the interactive worker via
+        :meth:`exit` (which preserves ``shell_id`` + ``session_id`` + transcript)
+        and flips ``visible=False`` + ``pty_mode=False`` so the next :meth:`prompt`
+        runs headless and resumes the very same session, and a reload stays
+        headless. ``exit()`` alone can't reset ``visible`` — a plain ``restart``
+        (exit+start) must keep it True — so the reset lives here, the explicit
+        mode-switch. Rejected mid-turn so two workers never share the transcript.
+        """
+        if _get_prompt_lock(self.id).locked():
+            return ApiFailResponse(
+                message="a prompt turn is in flight; cannot switch mode",
+                status_code=409,
+            )
+        if self.shell_id and await self.is_running():
+            exit_result = await self.exit()
+            if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
+                return exit_result
+        # Reload so the visible reset rides on the row exit() just saved (status,
+        # context_data) rather than overwriting it from a stale snapshot.
+        fresh = await AgenticProcess.get_by_id(self.id) or self
+        fresh.visible = False
+        # Persist the durable transport intent so a reload keeps this session
+        # headless (the loader reads ``pty_mode`` to decide whether to attach a PTY).
+        fresh.pty_mode = False
+        await fresh.save()
+        return ApiSuccessResponse(
+            data={
+                "id": fresh.id,
+                "status": fresh.status,
+                "visible": fresh.visible,
+                "pty_mode": fresh.pty_mode,
+                "session_id": fresh.session_id,
+            }
+        )
+
+    @action.post(action_name="switch-mode")
+    async def switch_mode(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Standardized transport switch — the single backend seam the frontend
+        ``AgenticProcess.switchMode(mode)`` (and the ribbon chat⇄terminal toggle)
+        calls. POST body: ``{"mode": "interactive" | "cli"[, cols, rows]}`` —
+        ``WorkerMode`` values (``interactive`` is the PTY worker).
+
+          - ``cli``         → headless JSON-stream (kill PTY, visible=False, pty_mode=False)
+          - ``interactive`` → PTY terminal (spawn PTY, visible=True, pty_mode=True)
+
+        Both are the SAME logical session (one ``session_id``/transcript); routing
+        stays ``headless == !visible``. Rejected mid-turn (409).
+        """
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        raw = str(body.get("mode", "")).lower()
+        try:
+            mode = WorkerMode(raw)
+        except ValueError:
+            return ApiFailResponse(
+                message=f"unknown mode {raw!r} (expected {WorkerMode.INTERACTIVE!r} or {WorkerMode.CLI!r})"
+            )
+        if mode is WorkerMode.CLI:
+            return await self._enter_cli_mode()
+        # INTERACTIVE (PTY): the canonical open path — spawns the PTY and sets
+        # ``visible=True`` (which persists ``pty_mode=True`` in the open tail).
+        return await self._perform_open(instruction=None, visible=True, retry=True)
 
     @action.post(action_name="restart")
     async def http_restart(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -1869,6 +1980,15 @@ class AgenticProcess(Entity):
         if not message:
             return ApiFailResponse(message="message is required")
 
+        # Per-turn permission-mode override (e.g. chat "plan mode"): the UI sends
+        # ``permission_mode`` to make THIS turn read-only ("plan") or to run the
+        # approved plan in the process's normal mode (no override). Whitelisted so
+        # a client can't pass an arbitrary CLI flag value; ``None`` ⇒ fall back to
+        # the persisted ``cli_config`` default below.
+        _turn_permission_mode = body.get("permission_mode")
+        if _turn_permission_mode is not None and _turn_permission_mode not in _VALID_PERMISSION_MODES:
+            return ApiFailResponse(message=f"invalid permission_mode: {_turn_permission_mode!r}")
+
         if self.status in (ProcessStatus.STOPPING.value, ProcessStatus.FAILED.value):
             return ApiFailResponse(
                 message=f"process not sendable (status={self.status})",
@@ -1895,7 +2015,14 @@ class AgenticProcess(Entity):
         if self.visible:
             return self._run_pty_prompt(message)
 
-        had_session = bool(self.session_id)
+        # Resume ONLY when the worker actually has a resumable session on disk
+        # for this id — NOT merely "session_id is set". A ``session_id`` that
+        # the worker never wrote a resumable transcript for (a fresh chat tab, or
+        # a PTY session whose id was reconciled but killed before finalising a
+        # rollout) makes ``codex exec resume <id>`` / ``claude --resume <id>``
+        # exit with "no rollout/transcript found". The mode toggle (PTY⇄chat)
+        # makes that case routine, so this must be a real check, worker-agnostic.
+        resumable = self.driver.has_resumable_session(self)
         if not self.session_id and bool(getattr(self.driver, "preassign_interactive_session_id", False)):
             self.session_id = str(uuid4())
             try:
@@ -1909,17 +2036,19 @@ class AgenticProcess(Entity):
             env_vars = dict((self.cli_config or {}).get("env_vars") or {})
 
         # Context for the worker, reconstructed from the AgenticProcess entity.
-        # Fresh preassigned sessions must be passed as ``session_id``; only
-        # existing sessions should be sent as ``resume_session_id``.
+        # Non-resumable sessions start fresh WITH the id (workers that accept a
+        # caller-provided ``--session-id``, e.g. claude/copilot); only a real
+        # resumable session is sent as ``resume_session_id``.
         context = _AgenticContext(
             workdir=self.workdir,
             env_vars=env_vars,
             model=(self.cli_config or {}).get("model"),
-            permission_mode=(self.cli_config or {}).get("permission_mode", "bypassPermissions"),
+            permission_mode=_turn_permission_mode
+            or (self.cli_config or {}).get("permission_mode", "bypassPermissions"),
             effort=(self.cli_config or {}).get("effort"),
             add_dirs=list(self.resolved_add_dirs or []),
-            session_id=self.session_id if self.session_id and not had_session else None,
-            resume_session_id=self.session_id if had_session else None,
+            session_id=self.session_id if (self.session_id and not resumable) else None,
+            resume_session_id=self.session_id if resumable else None,
         )
 
         # Inline embedded-agent definitions (and persona directive when a single
@@ -1952,8 +2081,13 @@ class AgenticProcess(Entity):
                             logger.warning("prompt: lifecycle save failed", exc_info=True)
 
                     async for fd in worker.execute(prompt=composed_prompt, context=context):
-                        await handler.on_flow_data(fd)
-                        # Persist session_id on first capture so subsequent turns resume.
+                        # Persist session_id on first capture so subsequent turns
+                        # resume. Do this BEFORE forwarding the frame: the worker
+                        # captures the id up-front (e.g. codex's leading
+                        # ``thread.started``), but a client that breaks on the
+                        # first flow frame closes the stream and cancels this turn
+                        # — saving after ``on_flow_data`` races that disconnect and
+                        # loses the id, breaking headless multi-turn resume.
                         # Adopt-on-change (not only when unset): workers report the id
                         # from structured CLI events, and the worker's actual id must
                         # win when a preassigned id failed to stick or the CLI rotates
@@ -1974,6 +2108,7 @@ class AgenticProcess(Entity):
                                 await self.save()
                             except Exception:
                                 logger.warning("prompt: session_id save failed", exc_info=True)
+                        await handler.on_flow_data(fd)
             except Exception as e:
                 logger.exception("prompt: worker error")
                 await handler.add_str_to_queue(Exception(f"prompt error: {e}"))
@@ -3294,6 +3429,57 @@ class AgenticProcess(Entity):
         """
         return get_driver(self.worker_type)
 
+    async def delete(self):
+        """Tombstone the on-disk session transcript, then delete the entity.
+
+        The AgenticProcess DB row is only an index. Both on-disk read paths —
+        ``worker_history``'s Claude/Codex/Copilot collectors (the Chats
+        side-menu) and ``scan_actions._resolve_session_record`` behind
+        ``getByWorkerId`` (``terminals/get_by_worker_id``) — re-derive a session
+        straight from its ``<session_id>.jsonl`` on disk. Deleting only the
+        entity leaves that file, so a "deleted" chat re-appears in the list and
+        stays resolvable by its worker session id (effectively undeletable).
+
+        Renaming the transcript to ``<name>.deleted`` tombstones it: the
+        ``*.jsonl`` discovery globs and the exact-``<sid>.jsonl`` resolver both
+        skip it, while the data stays recoverable (no destructive unlink).
+        Best-effort — a tombstone failure never blocks the entity delete.
+        """
+        self._tombstone_session_transcript()
+        return await super().delete()
+
+    def _tombstone_session_transcript(self) -> None:
+        """Rename this process's on-disk transcript to ``<name>.deleted`` so the
+        on-disk read paths stop re-deriving the deleted session. No-op when there
+        is no session id or no transcript on disk."""
+        if not self.session_id:
+            return
+        try:
+            path = self.driver.transcript_path(self)
+        except Exception as e:
+            logger.debug("tombstone: transcript_path lookup failed for %s: %s", self.session_id, e)
+            return
+        if path is None or not path.exists():
+            return
+        tomb = path.with_name(path.name + ".deleted")
+        try:
+            if tomb.exists():
+                tomb.unlink()
+            path.rename(tomb)
+            logger.info("tombstoned deleted session transcript %s -> %s", path.name, tomb.name)
+        except OSError as e:
+            logger.warning("tombstone of %s failed: %s", path, e)
+
+    def _supports_plan_mode(self) -> bool:
+        """Driver capability flag surfaced on the entity for the chat plan
+        toggle. Defensive: a driver predating the capability resolves False
+        rather than 500-ing the serializer."""
+        try:
+            fn = getattr(self.driver, "supports_plan_mode", None)
+            return bool(fn(self)) if fn else False
+        except Exception:
+            return False
+
     @property
     def cli_options(self) -> "ClaudeCliOptions":
         """Deserialize cli_config into a live ``WorkerCLIOptions`` via the driver.
@@ -3319,6 +3505,7 @@ class AgenticProcess(Entity):
         d["ready_for_input"] = ready
         d["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         d["queue"] = self._queue_state()
+        d["supports_plan_mode"] = self._supports_plan_mode()
         return d
 
     @model_serializer(mode="wrap")
@@ -3334,6 +3521,7 @@ class AgenticProcess(Entity):
         data["ready_for_input"] = ready
         data["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         data["queue"] = self._queue_state()
+        data["supports_plan_mode"] = self._supports_plan_mode()
         # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
         # cli_options -> transcript_descriptor -> get_claude_session, i.e. live
         # worker work with disk I/O — which must never run inside a model_dump()
@@ -3410,12 +3598,18 @@ class AgenticProcess(Entity):
             return WorkerStatus.INITIALIZING
         path = self.driver.transcript_path(self)
         if path is None:
-            if self.status in {
-                ProcessStatus.STARTING.value,
-                ProcessStatus.RUNNING.value,
-                ProcessStatus.STOPPING.value,
-            } and (self.session_id or self.shell_id):
+            # No transcript on disk yet, and the ``_turn_in_flight`` short-circuit
+            # above already ruled out a turn spinning up. So STARTING is the real
+            # lifecycle boot (INITIALIZING), while RUNNING with no in-flight turn
+            # is a spawned-and-idle worker waiting for its first prompt (IDLE) —
+            # reporting INITIALIZING there is what pinned never-prompted sessions
+            # on the spinner forever.
+            if not (self.session_id or self.shell_id):
+                return None
+            if self.status == ProcessStatus.STARTING.value:
                 derived: WorkerStatus | None = WorkerStatus.INITIALIZING
+            elif self.status == ProcessStatus.RUNNING.value:
+                derived = WorkerStatus.IDLE
             else:
                 return None
         else:
@@ -3878,6 +4072,16 @@ class AgenticProcess(Entity):
                 ancestor = await Project.get_ancestor(self.typeid)
                 if ancestor:
                     self._bind_project_id(ancestor.id)
+
+        # Before the @local catch-all, derive the project from this process's
+        # own workdir (received/recovered processes have a cwd but no DB
+        # ancestry). Reuses the same cwd→Project primitive as the indexer stamp
+        # and recover_project_action, so a worker binds the real project that
+        # owns its directory instead of falling through to @local.
+        if not self.project_id and self.workdir:
+            project = await Project.recover_by_path(self.workdir)
+            if project:
+                self._bind_project_id(project.id)
 
         # Fall back to @local project when no ancestor project is found
         if not self.project_id:

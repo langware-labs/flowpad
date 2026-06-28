@@ -40,12 +40,21 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _yaml_load,
 )
 
+def _is_appledouble(name: str) -> bool:
+    """True for macOS AppleDouble sidecars (``._foo.md``) — binary
+    resource-fork files that share a ``.md`` extension but never hold real
+    markdown. Indexing them only raises a UnicodeDecodeError downstream."""
+    return name.startswith("._")
+
+
 def _emit_md_rglob(
     root: Path, parent: FSRef, out: list[FSRef], seen: set[str],
 ) -> None:
     if not root.is_dir():
         return
     for md in sorted(root.rglob("*.md")):
+        if _is_appledouble(md.name):
+            continue
         key = str(md.resolve())
         if key in seen:
             continue
@@ -105,6 +114,8 @@ def markdown_in_folder_fn(
         except OSError:
             continue
         for md in entries:
+            if _is_appledouble(md.name):
+                continue
             try:
                 if not md.is_file():
                     continue
@@ -313,6 +324,11 @@ def extract_markdown(ref: FSRef) -> list[FSRecord]:
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
+        return []
+    except UnicodeDecodeError:
+        # Not real markdown — binary content under a .md extension (e.g. macOS
+        # AppleDouble ``._*`` sidecars, or a mislabeled binary). Skip cleanly
+        # rather than raising into the indexer's error counter.
         return []
     data = parse_markdown_text(text, path=path)
     data["type"] = RecordType.MARKDOWN

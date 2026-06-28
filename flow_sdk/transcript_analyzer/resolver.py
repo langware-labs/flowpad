@@ -50,6 +50,7 @@ def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:
         "claude": _resolve_claude,
         "codex": _resolve_codex,
         "copilot": _resolve_copilot,
+        "workflow": _resolve_workflow,
     }
     resolver = _resolvers.get(wt)
     if resolver is None:
@@ -94,6 +95,24 @@ def _resolve_codex(session_id: str) -> Path:
     if not matches:
         raise TranscriptNotFoundError(
             f"No codex rollout JSONL found for session_id={session_id}"
+        )
+    if len(matches) > 1:
+        matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return matches[0]
+
+
+def _resolve_workflow(run_id: str) -> Path:
+    # Workflow run journals live at
+    # ``~/.claude/projects/<slug>/<sessionId>/workflows/wf_<runId>.json``.
+    projects = _claude_projects_dir()
+    if not projects.is_dir():
+        raise TranscriptNotFoundError(
+            f"~/.claude/projects/ not found; cannot resolve workflow run {run_id}"
+        )
+    matches = list(projects.glob(f"*/*/workflows/{run_id}.json"))
+    if not matches:
+        raise TranscriptNotFoundError(
+            f"No workflow run journal found for run_id={run_id}"
         )
     if len(matches) > 1:
         matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)

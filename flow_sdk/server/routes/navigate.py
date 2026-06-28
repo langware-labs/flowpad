@@ -10,7 +10,8 @@ and performs the actual in-app navigation.
 """
 
 import json
-from typing import Optional
+import os
+from typing import Optional, Union
 from uuid import uuid4
 
 from fastapi import APIRouter
@@ -18,6 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.type_id import TypeId, is_named_id
 
 from .websocket import (
@@ -25,7 +27,6 @@ from .websocket import (
     get_active_connection_info,
     get_connection_infos,
     send_personal_message,
-    ConnectionInfo,
 )
 
 router = APIRouter()
@@ -51,6 +52,35 @@ def _error(status_code: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content={"ok": False, "error_code": code, "error": message},
+    )
+
+
+def _pick_target(connection_id: Optional[str]) -> Union[tuple, JSONResponse]:
+    """Resolve the target browser tab for a UI command.
+
+    Explicit ``connection_id`` if supplied (404 if it isn't open), else the
+    active (most-visible/focused, recency tiebreak) tab (409 if none open).
+    Returns ``(connection_id, ws)`` or a ready-to-return error response.
+    Shared by every ``navigate/*`` route so targeting stays identical.
+    """
+    if connection_id:
+        info = get_connection_infos().get(connection_id)
+        if info is None:
+            return _error(404, "CONNECTION_NOT_FOUND", f"Connection not found: {connection_id}")
+        return connection_id, info.ws
+    active = get_active_connection()
+    if active is None:
+        return _error(409, "NO_ACTIVE_TAB", "No active tab")
+    return active
+
+
+async def _send_ui_command(ws, kind: str, **fields) -> None:
+    """Send a targeted ``ui_command`` WS frame (adds ``message_type`` + id)."""
+    await send_personal_message(
+        json.dumps(
+            {"message_type": "ui_command", "message_id": str(uuid4()), "kind": kind, **fields}
+        ),
+        ws,
     )
 
 
@@ -125,34 +155,14 @@ async def navigate_entity(req: NavigateEntityRequest):
             f"Entity not found: {typeid.type}-{typeid.id}",
         )
 
-    # Pick the target tab: explicit connection_id if provided, else the active tab
-    if req.connection_id:
-        infos = get_connection_infos()
-        info = infos.get(req.connection_id)
-        if info is None:
-            return _error(
-                404,
-                "CONNECTION_NOT_FOUND",
-                f"Connection not found: {req.connection_id}",
-            )
-        connection_id = req.connection_id
-        ws = info.ws
-    else:
-        active = get_active_connection()
-        if active is None:
-            return _error(409, "NO_ACTIVE_TAB", "No active tab")
-        connection_id, ws = active
+    target = _pick_target(req.connection_id)
+    if isinstance(target, JSONResponse):
+        return target
+    connection_id, ws = target
 
     # Send a targeted UI command. The UI listener resolves the entity on its
     # side (so it benefits from the local cache) and invokes the navigation.
-    message = {
-        "message_type": "ui_command",
-        "message_id": str(uuid4()),
-        "kind": "navigate_entity",
-        "type": typeid.type,
-        "id": typeid.id,
-    }
-    await send_personal_message(json.dumps(message), ws)
+    await _send_ui_command(ws, "navigate_entity", type=typeid.type, id=typeid.id)
 
     return {
         "ok": True,
@@ -160,6 +170,59 @@ async def navigate_entity(req: NavigateEntityRequest):
         "type": typeid.type,
         "id": typeid.id,
     }
+
+
+class NavigateFileRequest(BaseModel):
+    """Body for POST /api/v1/agent/navigate/file.
+
+    ``path`` is a filesystem path (absolute or ``~``-relative). ``connection_id``
+    optionally targets a specific browser tab; omitted = the active tab.
+    """
+
+    path: str
+    connection_id: Optional[str] = None
+
+
+@router.post("/api/v1/agent/navigate/file")
+async def navigate_file(req: NavigateFileRequest):
+    """Navigate the active browser tab to a file by path.
+
+    Two-step resolution (the ``flow navigate file`` behaviour):
+      1. If the path is already an indexed asset (an entity owns it via
+         ``asset_ref``), navigate to that entity's stable view — same
+         ``navigate_entity`` command the typeid route uses, so the UI lands on
+         the entity's bespoke editor.
+      2. Otherwise fall back to a raw VFS open (``navigate_vfs``) — the asset
+         editor opens the path directly, no entity / indexer required. This is
+         what makes "agent writes hello.md, then opens it" work immediately.
+    """
+    raw = (req.path or "").strip()
+    if not raw:
+        return _error(400, "INVALID_PATH", "Missing path")
+    path = canonical_posix_path(os.path.abspath(os.path.expanduser(raw)))
+
+    target = _pick_target(req.connection_id)
+    if isinstance(target, JSONResponse):
+        return target
+    connection_id, ws = target
+
+    # Step 1 — prefer the entity-backed asset when the path is already indexed.
+    entity = await Entity.get_by_asset_ref(path)
+    if entity is not None and getattr(entity, "id", None):
+        await _send_ui_command(ws, "navigate_entity", type=entity.get_type(), id=entity.id)
+        return {
+            "ok": True,
+            "connection_id": connection_id,
+            "mode": "entity",
+            "path": path,
+            "type": entity.get_type(),
+            "id": entity.id,
+        }
+
+    # Step 2 — fall back to a raw VFS open. The client builds the asset-editor
+    # dock pointer for the path (editor chosen by extension) and navigates.
+    await _send_ui_command(ws, "navigate_vfs", path=path)
+    return {"ok": True, "connection_id": connection_id, "mode": "vfs", "path": path}
 
 
 @router.get("/api/v1/agent/context")

@@ -16,6 +16,7 @@ from flow_sdk.fs_store.record_types import RecordType
 # Used by rebuild mode in the index handler to know what to clear.
 INDEXABLE_TYPES: list[RecordType] = [
     RecordType.CLAUDE_SESSION,
+    RecordType.DYNAMIC_WORKFLOW,
     RecordType.PROJECT,
     RecordType.CODEX_SESSION,
     RecordType.CODEX_PROJECT,
@@ -52,6 +53,7 @@ def build_default_indexer() -> FSIndexer:
     # Import locally to keep this module import-light at package-init time.
     from flow_sdk.fs_store.indexer.functions.claude_projects import claude_projects_fn
     from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
+    from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
     from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
@@ -65,6 +67,7 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.skill import skill_fn
     from flow_sdk.fs_store.indexer.functions.whiteboard import whiteboard_fn
     from flow_sdk.fs_store.indexer.functions.agent_trace import agent_trace_fn
+    from flow_sdk.fs_store.indexer.functions.workflow_run import workflow_run_fn
     from flow_sdk.fs_store.indexer.functions.usage_report import usage_report_fn
     from flow_sdk.fs_store.indexer.functions.agent import agent_fn
     from flow_sdk.fs_store.indexer.functions.workflow import (
@@ -116,9 +119,13 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.USER_HOME_FOLDER, whiteboard_fn, RecordType.WHITEBOARD)
     idx.add_function(RecordType.USER_HOME_FOLDER, agent_trace_fn, RecordType.AGENT_TRACE)
+    # Workflow run journals live at ~/.claude/projects/<slug>/<sid>/workflows/wf_*.json.
+    idx.add_function(RecordType.USER_HOME_FOLDER, workflow_run_fn, RecordType.WORKFLOW_RUN)
     idx.add_function(RecordType.USER_HOME_FOLDER, usage_report_fn, RecordType.USAGE_REPORT)
     idx.add_function(RecordType.USER_HOME_FOLDER, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.USER_HOME_FOLDER, workflow_fn, RecordType.WORKFLOW)
+    # Dynamic workflows (.js) live beside the .md AMD workflows in .claude/workflows/.
+    idx.add_function(RecordType.USER_HOME_FOLDER, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.USER_HOME_FOLDER, command_fn, RecordType.COMMAND)
     idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn, RecordType.MARKDOWN)
     # Hook indexing is two-stage (recursive into-file walk):
@@ -155,6 +162,7 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, usage_report_fn, RecordType.USAGE_REPORT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, workflow_fn, RecordType.WORKFLOW)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.REAL_PROJECT_CWD, task_fn, RecordType.TASK)
     idx.add_function(RecordType.REAL_PROJECT_CWD, dataset_fn, RecordType.DATASET)
@@ -175,6 +183,7 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.CWD_ROOT, whiteboard_fn, RecordType.WHITEBOARD)
     idx.add_function(RecordType.CWD_ROOT, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.CWD_ROOT, workflow_fn, RecordType.WORKFLOW)
+    idx.add_function(RecordType.CWD_ROOT, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.CWD_ROOT, command_fn, RecordType.COMMAND)
     idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.CWD_ROOT, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)

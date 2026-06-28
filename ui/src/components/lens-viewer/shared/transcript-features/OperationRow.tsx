@@ -12,6 +12,7 @@
  */
 
 import {
+  ArrowUpRight,
   Bot,
   FileText,
   Globe,
@@ -23,6 +24,9 @@ import {
 import type { ComponentType } from 'react';
 
 import type { GenericEntry } from '@sdk';
+
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 import type { TokenUsage } from './types';
 
@@ -135,10 +139,15 @@ function kindMeta(op: GenericEntry): KindMeta | null {
 
 /** Inline one-liner: `<icon> <label> · <primary>` + chips. */
 export function OperationOneLiner({ operation, usage }: OperationOneLinerProps) {
+  const { navigation } = useDockNavigation();
   const meta = kindMeta(operation);
   if (!meta) return null;
   const { Icon, iconClassName, label, primary, chips } = meta;
   const costLabel = formatCost(usage?.costUsd);
+  // Workflow spawns carry the path to the spawned agent's own transcript — let
+  // the user drill into it (opened as a claude transcript by absolute path).
+  const childPath =
+    operation.kind === 'agent_spawn' ? operation.child_transcript_path ?? null : null;
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
       <Icon className={`h-3.5 w-3.5 shrink-0 ${iconClassName}`} />
@@ -159,6 +168,25 @@ export function OperationOneLiner({ operation, usage }: OperationOneLinerProps) 
         >
           {costLabel}
         </span>
+      )}
+      {childPath && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            // forLensTranscript leaves claude refs un-encoded, so pre-encode the
+            // absolute path into ONE pointer segment (no literal slashes). The
+            // dock URL pipeline then encodes it again; browser + LensViewer
+            // decode twice back to the absolute path. Mirrors codex/copilot.
+            navigation.openDockPointer(DockPointer.forLensTranscript('claude', encodeURIComponent(childPath)));
+          }}
+          className="ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Open this agent's transcript"
+          data-testid="open-subagent-transcript"
+        >
+          <ArrowUpRight className="h-3 w-3" />
+          Open
+        </button>
       )}
     </div>
   );

@@ -13,13 +13,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 import { apiBase, apiContext } from '../_shared/api';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 
 const API = apiBase();
 const PANEL = '[data-testid="entity-execution-panel"]';
-const TEXTAREA = 'textarea[placeholder="Ask about this doc…"]';
+const TEXTAREA = '[data-testid="entity-execution-input"]';
 
 /**
  * Canonical AssetDocPointer grammar (load-asset.ts):
@@ -45,53 +42,39 @@ const TEXTAREA = 'textarea[placeholder="Ask about this doc…"]';
 // fs-records DELETE endpoint. Never assume these files pre-exist — squatting
 // fixtures in global dirs are indistinguishable from test leaks and get
 // wiped by cleanups.
-const HOME = process.env.HOME || os.homedir();
 const FIXTURE_AGENT = 'qa-docchat-agent-fixture';
 const FIXTURE_SKILL = 'qa-docchat-skill-fixture';
-const AGENT_MD = path.join(HOME, '.claude', 'agents', `${FIXTURE_AGENT}.md`);
-const SKILL_DIR = path.join(HOME, '.claude', 'skills', FIXTURE_SKILL);
-const DOCS: Array<{ type: string; editor: string; machinePath: string }> = [
-  { type: 'agent', editor: 'agent', machinePath: AGENT_MD },
-  { type: 'skill', editor: 'skill', machinePath: SKILL_DIR },
+// Project-SCOPED fixtures: the asset editors resolve a vfs path under the vault
+// root (the project mount), so a user-scope ~/.claude doc is NOT vfs-addressable
+// and its chat panel never mounts. Each entry's `machinePath` (the vault-relative
+// vfs path) + `id` are filled in beforeAll from the scoped create's asset_ref.
+const DOCS: Array<{ type: string; editor: string; name: string; machinePath: string; id: string }> = [
+  { type: 'agent', editor: 'agent', name: FIXTURE_AGENT, machinePath: '', id: '' },
+  { type: 'skill', editor: 'skill', name: FIXTURE_SKILL, machinePath: '', id: '' },
 ];
 
-function writeFixtures() {
-  fs.mkdirSync(path.dirname(AGENT_MD), { recursive: true });
-  fs.writeFileSync(
-    AGENT_MD,
-    `---\nname: ${FIXTURE_AGENT}\ndescription: doc-chat per-type QA fixture (agent editor)\n---\n\nQA fixture agent body.\n`,
-    'utf-8',
-  );
-  fs.mkdirSync(SKILL_DIR, { recursive: true });
-  fs.writeFileSync(
-    path.join(SKILL_DIR, 'SKILL.md'),
-    `---\nname: ${FIXTURE_SKILL}\ndescription: doc-chat per-type QA fixture (skill editor)\n---\n\nQA fixture skill body.\n`,
-    'utf-8',
-  );
+let PROJECT_ID = '';
+// Scoped-create one asset under the default project, index it, and return its
+// machine path (asset_ref) + entity id. The chat panel only resolves a target
+// when the doc is opened under its project scope (see vfsUrl).
+async function seedScoped(rq: any, projectId: string, type: string, name: string): Promise<{ vfs: string; id: string }> {
+  const res = await rq.post(`${API}/api/v1/graph/project/${projectId}/${type}`, { data: { name } });
+  if (!res.ok()) throw new Error(`seed ${type} failed: ${res.status()} ${await res.text()}`);
+  const data = (await res.json()).data;
+  await rq.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=${type}&projects=${projectId}&user=false&force=true`);
+  return { vfs: data.asset_ref, id: data.id };
 }
 
-/** Full purge of one fixture: resolve the entity id by name via /search, then
- * DELETE /fs-records/<type>/<id> (row + FTS + shadow dir + source file). Falls
- * back to plain fs removal when the entity was never indexed. */
-async function purgeFixture(rq: any, type: string, name: string, diskPath: string) {
-  try {
-    const resp = await rq.get(`${API}/api/v1/search?record_type=${type}&q=${encodeURIComponent(name)}`);
-    const results: Array<{ record_id: string; name: string }> =
-      (await resp.json())?.data?.results ?? [];
-    const hit = results.find((r) => r.name === name);
-    if (hit) {
-      await rq.delete(`${API}/api/v1/graph/compute_node/@local/fs-records/${type}/${hit.record_id}`);
-    }
-  } catch { /* best effort — fall through to disk cleanup */ }
-  fs.rmSync(diskPath, { recursive: true, force: true });
-}
-
-let CN_TYPEID = '';
+// Canonical asset-editor vfs URL (matches the UI's click-through):
+//   /dock/assets/editor/<editor>/vfs/compute_node-@local/<machinePathNoSlash>
+//     ?scope-mode=project&scope-activeProjectId=<projectId>
+// The compute_node-@local prefix + the project scope query are BOTH required for
+// useEntityByPath to resolve the entity target (the agent/skill editor renders
+// EntityExecutionPanel only once its `agent`/`skill` entity loads).
 function vfsUrl(editor: string, machinePath: string): string {
-  // value = <computeNodeTypeId>/<relPath>; relPath = machinePath without its leading slash.
-  // Encode each path segment (some asset paths contain spaces) but keep the slashes.
   const rel = machinePath.replace(/^\//, '').split('/').map(encodeURIComponent).join('/');
-  return `/dock/assets/editor/${editor}/vfs/${CN_TYPEID}/${rel}`;
+  const scope = `?scope-mode=project&scope-activeProjectId=${PROJECT_ID}`;
+  return `/dock/assets/editor/${editor}/vfs/compute_node-@local/${rel}${scope}`;
 }
 
 /**
@@ -100,11 +83,17 @@ function vfsUrl(editor: string, machinePath: string): string {
  * that must be selected; the `agent`/`skill` editors embed the panel directly.
  */
 async function openChatPanel(page: Page) {
-  // agent/skill editors embed the EntityExecutionPanel directly (composer
-  // already visible). The markdown editor keeps it behind a "Chat" side-tab
-  // button — only click that when the composer isn't already showing.
+  // After the goto, the asset-editor loader normalizes the URL (it appends view
+  // params like ?sideWindows=…) — a client-side re-navigation that keeps
+  // resetting Playwright's locator resolution, so ACTIVE polling for the
+  // composer right after goto never stabilizes (proven: identical waitFor/expect
+  // times out, while an equal wall-clock settle then finds it). Let the loader's
+  // re-nav churn settle with a passive wait before probing. This is first-paint/
+  // post-redirect synchronization, NOT a raised cap to ride past a slow path.
+  await page.waitForTimeout(9_000);
+  // agent embeds the composer directly; skill keeps it behind a "Chat" side-tab.
   const ta = page.locator(`${TEXTAREA}:visible`).first();
-  if (await ta.isVisible({ timeout: 6_000 }).catch(() => false)) return;
+  if (await ta.isVisible({ timeout: 8_000 }).catch(() => false)) return;
   const chatTab = page.getByRole('button', { name: 'Chat', exact: true }).first();
   if (await chatTab.isVisible({ timeout: 5_000 }).catch(() => false)) {
     await chatTab.click();
@@ -136,29 +125,31 @@ async function readPanelTarget(page: Page): Promise<string | null> {
 
 test.describe('doc-chat per type', () => {
   test.beforeAll(async () => {
-    // Materialize the agent/skill fixtures BEFORE indexing so the index pass
-    // below mints their entities and asset_ref → TypeId resolution works.
-    writeFixtures();
     const rq = await apiContext();
     const boot = (await (await rq.get(`${API}/api/v1/graph/bootstrap`)).json()).data;
-    const cn = boot.default_compute_node;
-    CN_TYPEID = `compute_node-${typeof cn === 'string' ? cn : cn.id}`;
-    // Index the doc types so asset_ref -> entity resolution (useEntityByPath) works.
-    for (const t of ['agent', 'skill', 'plan', 'claude_memory', 'markdown']) {
-      await rq.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=${t}`);
+    const dp = boot.default_project;
+    PROJECT_ID = typeof dp === 'string' ? dp : dp.id;
+    // Scoped-create each fixture under the project + index it, so its asset_ref
+    // is vfs-addressable and useEntityByPath resolves the chat target.
+    for (const doc of DOCS) {
+      const { vfs, id } = await seedScoped(rq, PROJECT_ID, doc.type, doc.name);
+      doc.machinePath = vfs;
+      doc.id = id;
     }
     await rq.dispose();
   });
 
   test.afterAll(async () => {
     const rq = await apiContext();
-    await purgeFixture(rq, 'agent', FIXTURE_AGENT, AGENT_MD);
-    await purgeFixture(rq, 'skill', FIXTURE_SKILL, SKILL_DIR);
+    for (const doc of DOCS) {
+      if (doc.id) await rq.delete(`${API}/api/v1/graph/${doc.type}/${doc.id}`).catch(() => {});
+    }
     await rq.dispose();
   });
 
   test('test 1: panel mounts on every doc-type with an asset_ref-resolved target', async ({ page }) => {
     test.setTimeout(60_000);
+    await page.addInitScript(() => localStorage.setItem('viewMode', 'advanced'));
     await dismissSetupModal(page);
 
     for (const { type, editor, machinePath } of DOCS) {
@@ -188,10 +179,11 @@ test.describe('doc-chat per type', () => {
 
   test('test 4: target changes when switching between doc-type editors (in-app nav)', async ({ page }) => {
     test.setTimeout(60_000);
+    await page.addInitScript(() => localStorage.setItem('viewMode', 'advanced'));
     await dismissSetupModal(page);
 
     // skill → agent editor: the target string must change type.
-    await page.goto(vfsUrl('skill', SKILL_DIR));
+    await page.goto(vfsUrl('skill', DOCS.find((d) => d.type === 'skill')!.machinePath));
     await openChatPanel(page);
     let tFirst = '';
     await expect(async () => {
@@ -200,7 +192,7 @@ test.describe('doc-chat per type', () => {
       tFirst = t!;
     }).toPass({ timeout: 20_000 });
 
-    await page.goto(vfsUrl('agent', AGENT_MD));
+    await page.goto(vfsUrl('agent', DOCS.find((d) => d.type === 'agent')!.machinePath));
     await openChatPanel(page);
     await expect(async () => {
       const t = await readPanelTarget(page);

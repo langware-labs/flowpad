@@ -39,6 +39,13 @@ from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
 
+# Sentinel for ``ensure_tab(project_id=...)``: distinguishes "caller didn't pass
+# a project hint" (keep the existing value on reopen) from an EXPLICIT ``None``
+# (the target is now projectless → clear the stale snapshot). A plain ``None``
+# default could only mean the former, which is why a re-derived projectless tab
+# never cleared.
+_UNSET: object = object()
+
 
 def _pointer_to_hash(pointer: str) -> str:
     """Extract the canonical 'viewType|sub' identity string from either format:
@@ -269,12 +276,33 @@ async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> 
     return wrote
 
 
+async def _project_of_target(target_type: str, target_id: str) -> str | None:
+    """The owning ``project_id`` of a tab's target, resolved SERVER-SIDE so the
+    chip never depends on a client cache read that can miss. Goes through the
+    entity's ``get_by_id`` — which for a claude session includes the on-disk
+    recovery for unindexed sessions — and returns its ``project_id``. Best-effort:
+    ``None`` when the type/target is unknown or the target is genuinely projectless."""
+    try:
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        model = SchemaRegistry.get_entity_cls(target_type)
+        if model is None:
+            return None
+        target = await model.get_by_id(str(target_id))
+        return getattr(target, "project_id", None) if target is not None else None
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "ensure_tab: project-of-target failed for %s/%s", target_type, target_id, exc_info=True
+        )
+        return None
+
+
 async def ensure_tab(
     pointer: str,
     *,
     target_type: str | None = None,
     target_id: str | None = None,
-    project_id: str | None = None,
+    project_id: "str | None" = _UNSET,  # type: ignore[assignment]
     name: str | None = None,
     icon_key: str | None = None,
     worktree: bool | None = None,
@@ -290,6 +318,17 @@ async def ensure_tab(
     ``ensure_file_entity``.
     """
     tid = tab_id_for(pointer)
+    # Backend authority for the chip's project: the client computes ``project_id``
+    # from a cache-first target read that MISSES on a cold/bare open (e.g. an
+    # unindexed claude-session lens — the row only resolves via on-disk recovery),
+    # so it passes null and the chip renders project-less ("stays blue") even
+    # though the target HAS a project. When the client didn't supply a usable
+    # project, resolve it from the target entity server-side (``reconcile_tab_project``
+    # keeps it fresh on later target-project changes).
+    if (project_id is _UNSET or not project_id) and target_type and target_id:
+        resolved = await _project_of_target(target_type, target_id)
+        if resolved:
+            project_id = resolved
     # Reconcile by the natural key (``pointer``), NOT just the derived id. The id
     # is ``tab_id_for(pointer)`` (uuid5) — a derivation, not the identity. A row
     # minted under the old client-side scheme carries a random uuid4 id that never
@@ -318,11 +357,18 @@ async def ensure_tab(
         for attr, val in (
             ("target_type", target_type),
             ("target_id", target_id),
-            ("project_id", project_id),
         ):
             if val is not None and getattr(existing, attr) != val:
                 setattr(existing, attr, val)
                 dirty = True
+        # ``project_id`` is re-derived from the target on every (re)open, so an
+        # EXPLICIT value — including ``None`` when the target is now projectless —
+        # must overwrite the stale snapshot. Only ``_UNSET`` (no hint passed)
+        # preserves it. Without the null-clearing case the tab kept its old
+        # project color forever.
+        if project_id is not _UNSET and existing.project_id != project_id:
+            existing.project_id = project_id
+            dirty = True
         # Backfill display primitives ONLY when the row has none — a null name
         # was never a user rename, and a null icon_key/worktree predates the
         # field, so filling heals legacy rows on next open without clobbering a
@@ -357,7 +403,7 @@ async def ensure_tab(
         pointer=pointer,
         target_type=target_type,
         target_id=target_id,
-        project_id=project_id,
+        project_id=None if project_id is _UNSET else project_id,
         name=name,
         icon_key=icon_key,
         worktree=bool(worktree),
@@ -373,6 +419,17 @@ async def ensure_tab(
     return tab
 
 
+async def _tabs_for_target(target_type: str, target_id: str) -> list["Tab"]:
+    """All Tabs denormalized onto a target entity (the reverse lookup shared by
+    every target-driven tab maintenance hook). Best-effort: returns [] if the Tab
+    type is absent (e.g. a pytest env without ``register_all``), so callers never
+    have to guard the query themselves."""
+    try:
+        return await Tab.get_all({"target_type": target_type, "target_id": str(target_id)})
+    except Exception:
+        return []
+
+
 async def hide_tabs_for_target(target_type: str, target_id: str) -> None:
     """Membership-only soft-close of every visible Tab denormalized onto a
     target entity (``target_type`` + ``target_id``): flip ``visible=False`` and
@@ -385,12 +442,8 @@ async def hide_tabs_for_target(target_type: str, target_id: str) -> None:
     underway at the call site, so routing through ``Tab.close`` here would
     re-enter that teardown — hence the direct flag flip.
     """
-    try:
-        tabs = await Tab.get_all({"target_type": target_type, "target_id": str(target_id)})
-    except Exception:
-        return
     hid = False
-    for tab in tabs:
+    for tab in await _tabs_for_target(target_type, target_id):
         if getattr(tab, "visible", False):
             tab.visible = False
             await tab.save()
@@ -399,6 +452,29 @@ async def hide_tabs_for_target(target_type: str, target_id: str) -> None:
         # Background death (worker stop / orphan cleanup) — ping clients to refetch
         # so the chip drops without waiting for the next navigation.
         await broadcast_tabs_changed()
+
+
+async def reconcile_tab_project(target_type: str, target_id: str, project_id: str | None) -> int:
+    """Re-derive the denormalized ``project_id`` of every Tab pointing at a target
+    entity after that entity's project changes, and ping clients. Returns the
+    number of tabs updated.
+
+    ``tab.project_id`` is a snapshot of the target's project taken at tab
+    creation; nothing else re-derives it, so a (re)assignment — e.g. a
+    conversation moved into a project — would otherwise leave the tab rendering
+    its stale project color ("stays blue"). This is the project-change sibling of
+    the orphan-close hook in ``Entity.delete``; it is driven generically from
+    ``Entity.save``.
+    """
+    changed = 0
+    for tab in await _tabs_for_target(target_type, target_id):
+        if tab.project_id != project_id:
+            tab.project_id = project_id
+            await tab.save()
+            changed += 1
+    if changed:
+        await broadcast_tabs_changed()
+    return changed
 
 
 # ── Backend-owned tab list (the single render source) ──────────────────────────
@@ -450,12 +526,71 @@ async def _populate_tab_statuses(tabs: list[Tab]) -> None:
         tab.is_disabled = tab.status == "closing"
 
 
+async def _project_from_pointer(pointer: str | None) -> str | None:
+    """The owning project NAMED by a project-scoped dock pointer
+    (``viewType:"project"`` → ``<project_id>/...``). A tab opened under
+    ``/dock/project/<id>/...`` belongs to that project even when its target row is
+    missing/unindexed (an editor on a not-yet-indexed markdown) — the URL itself
+    is the authority. Returns the id only when it's a valid entity id AND the
+    project still exists, so a stale pointer to a deleted project never stamps a
+    dangling id."""
+    if not pointer:
+        return None
+    try:
+        data = _json.loads(pointer)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or data.get("viewType") != "project":
+        return None
+    candidate = str(data.get("pointer") or "").split("/", 1)[0].strip()
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+
+    if not is_valid_entity_id(candidate):
+        return None
+    return candidate if await _project_exists(candidate) else None
+
+
+async def _backfill_tab_projects(tabs: list[Tab]) -> None:
+    """Backfill a null ``project_id`` server-side, so the chip renders
+    project-colored even for a row the FE re-shows WITHOUT re-minting — an
+    existing tab persisted projectless before its project was resolvable (an
+    unindexed claude-session lens, an editor on an unindexed markdown), or minted
+    by an older client. The list is the single source the strip draws from, so
+    resolving here heals every chip on plain navigation, no ``new_tab`` re-mint
+    needed. Persisted so it sticks (and so the project-filter routes the chip to
+    its real project's view).
+
+    Resolution order: the target entity's own project (authoritative — includes
+    the claude-session on-disk recovery), else the project a project-scoped dock
+    URL itself declares (``/dock/project/<id>/...``)."""
+    for tab in tabs:
+        if tab.project_id:
+            continue
+        resolved: str | None = None
+        if tab.target_type and tab.target_id:
+            resolved = await _project_of_target(tab.target_type, tab.target_id)
+        if not resolved:
+            resolved = await _project_from_pointer(tab.pointer)
+        if not resolved:
+            continue
+        tab.project_id = resolved
+        try:
+            await tab.save()
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "tab project backfill save failed for %s", tab.id, exc_info=True
+            )
+
+
 async def _build_tab_list(project: str | None) -> list[Tab]:
     """The ordered, project-filtered list of Tabs with runtime status resolved.
     Global order filtered to ``{project OR projectless}`` (decision 3), each Tab
     fully populated with status/is_disabled. The Tab objects are serialized
     directly for API responses — no separate projection."""
     tabs = await _visible_tabs_sorted()
+    # Heal projectless chips BEFORE filtering, so a backfilled tab routes to its
+    # real project's view rather than staying in the projectless bucket.
+    await _backfill_tab_projects(tabs)
     order_ids = [t.id for t in tabs]
     project_of: dict[str, str | None] = {t.id: t.project_id for t in tabs}
     filtered = filter_for_project(order_ids, project_of, _normalize_project(project))
@@ -590,6 +725,7 @@ async def _http_list_all(cls):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs = await _visible_tabs_sorted()
+    await _backfill_tab_projects(tabs)
     await _populate_tab_statuses(tabs)
     return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 

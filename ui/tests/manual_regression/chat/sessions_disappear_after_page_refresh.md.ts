@@ -23,6 +23,6 @@ test.describe('sessions persist across navigation', () => {
     await page.waitForTimeout(3_000);
 
     // At least one terminal tab is still present (sessions did not disappear).
-    await expect(page.locator('[data-testid^="tab-shell-"]').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid^="tab-shell|"]').first()).toBeVisible({ timeout: 30_000 });
   });
 });

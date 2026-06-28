@@ -33,6 +33,7 @@ import {
 import { Skill } from '@sdk/entities/skill';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { testEntityName, trackForCleanup } from '../_cleanup';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import {
   HUB_URL,
@@ -103,10 +104,10 @@ describe('hub: sharing a skill keeps it a skill folder', () => {
     'skill TYPE_ID → READY bundle carrying the .claude/skills/<name>/ folder, not a flat file',
     async () => {
       // A real skill on alice's disk (server creates ~/.claude/skills/<name>/SKILL.md).
-      const skill = await Skill.create(`hub-test-skill-${Date.now()}`, 'shared in a hub test');
+      const skill = trackForCleanup(await Skill.create(testEntityName('skill'), 'shared in a hub test'));
       expect(skill.id).toBeTruthy();
 
-      const conv = new Conversation({ title: `skill-share-${Date.now()}` });
+      const conv = trackForCleanup(new Conversation({ title: testEntityName('conv') }));
       await conv.save();
       await conv.share([bobEmail!]); // share = create conversation + invite the email
       expect(conv.remote).toBe(true);

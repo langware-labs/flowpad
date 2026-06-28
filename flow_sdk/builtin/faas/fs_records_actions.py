@@ -1102,17 +1102,16 @@ class FsRecordsActionsMixin:
                 status_code=400,
             )
 
-        # Resolve ScopeFilter → narrowed roots. When the filter is None,
-        # fall back to the indexer's default_roots() (full walk).
+        # Resolve ScopeFilter → indexer roots.
         #
-        # Orphan-aware runs (orphan_action != INDEX) intentionally walk the
-        # full root set even when a scope is selected: orphan-ness is defined
-        # globally (a record is orphan iff its source is missing anywhere),
-        # so ``seen_ids`` must cover all references. The scope filter is then
-        # re-applied inside the indexer to narrow which orphans get reported
-        # and acted on. Without this, a record physically inside project A
-        # but referenced from project B would be falsely flagged as orphan
-        # when the user picks scope=A.
+        # Orphan-aware runs (orphan_action != INDEX) walk the FULL all-projects
+        # root set even when a narrower scope is selected: orphan-ness is
+        # defined globally (a record is orphan iff its source is missing
+        # anywhere), so ``seen_ids`` must cover all references. The scope
+        # filter is re-applied inside the indexer to narrow which orphans get
+        # reported and acted on. Without the global walk, a record physically
+        # inside project A but referenced from project B — or any project not
+        # in the selected scope — would be falsely flagged as orphan.
         # Path-scoped run: a single explicit path short-circuits all root
         # resolution — walk just that file's directory. Cheap and bounded.
         if index_path:
@@ -1132,10 +1131,23 @@ class FsRecordsActionsMixin:
                     project_id=Project.derive_id_for_path(_root_dir),
                 ),
             )
-        elif orphan_action != OrphanAction.INDEX:
-            custom_roots = None
         else:
-            custom_roots = await self._resolve_scoped_roots(scope_filter)
+            # Orphan-aware runs (orphan_action != INDEX) must walk EVERY source
+            # so ``seen_ids`` is global — a record is orphan iff its source is
+            # missing *anywhere*. ``default_roots()`` (the old
+            # ``custom_roots = None``) only covers USER_HOME's targeted
+            # expanders + the backend CWD + system; it does NOT descend the
+            # registered project file trees, so every project record went
+            # unseen and was mass-deleted as a false orphan. Resolve the FULL
+            # all-projects root set for orphan runs; INDEX runs use the
+            # requested scope. Either way ``scope_filter`` is still passed to
+            # the indexer (opts.scope_filter) to narrow which orphans are acted on.
+            roots_scope = (
+                await get_all_scope_filter(create_missing=False)
+                if orphan_action != OrphanAction.INDEX
+                else scope_filter
+            )
+            custom_roots = await self._resolve_scoped_roots(roots_scope)
             if isinstance(custom_roots, ApiFailResponse):
                 return custom_roots
 
@@ -1154,11 +1166,17 @@ class FsRecordsActionsMixin:
 
         driver = get_db_driver()
 
-        # Rebuild mode: clear DB + FTS for target types first
+        # Rebuild mode: clear DB + FTS + on-disk .hash sentinels for target
+        # types first. Clearing sentinels is essential: rebuild drops the DB
+        # rows, and a leftover sentinel would let skip-fresh treat a now-missing
+        # row as "fresh" and never re-create it (the same poisoning DELETE
+        # avoids via clear_hashes_for_type). Mirrors the DELETE /index path.
         if rebuild:
+            from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
             targets = types_filter or INDEXABLE_TYPES
             for t in targets:
                 await driver.delete_entities_by_type(str(t))
+                FSRecord.clear_hashes_for_type(str(t))
             if not filter_type:
                 # Only full-clear FTS on aggregate rebuild; per-type rebuild
                 # already cleared matching FTS rows via delete_entities_by_type

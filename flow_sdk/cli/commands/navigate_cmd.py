@@ -45,6 +45,39 @@ EXIT_ENTITY_NOT_FOUND = 4
 EXIT_CONNECTION_ERROR = 5
 
 
+def _navigate(url: str, body: dict, success_keys: list[str], error_mapping: dict) -> None:
+    """POST a navigate request, echo the success fields, exit-map failures.
+
+    The two subcommands differ only in the URL, request body, the response
+    fields echoed on success, and the error_code→exit_code mapping — everything
+    else (transport errors, non-JSON responses, the 200/ok branch) is identical.
+    """
+    try:
+        resp = requests.post(url, json=body, timeout=5)
+    except requests.exceptions.RequestException as e:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
+        return  # unreachable — _fail raises typer.Exit
+
+    # Non-JSON body = a connection-layer failure (5xx with HTML, proxy error, …).
+    try:
+        rbody = resp.json()
+    except ValueError:
+        _fail(
+            EXIT_CONNECTION_ERROR,
+            "CONNECTION_ERROR",
+            f"Unexpected server response (status {resp.status_code}): {resp.text[:200]}",
+        )
+        return
+
+    if resp.status_code == 200 and rbody.get("ok"):
+        _ok({k: rbody.get(k) for k in success_keys})
+        return
+
+    error_code = str(rbody.get("error_code") or "UNKNOWN")
+    error_msg = str(rbody.get("error") or f"HTTP {resp.status_code}")
+    _fail(error_mapping.get(error_code, EXIT_CONNECTION_ERROR), error_code, error_msg)
+
+
 @navigate_app.command(
     "entity",
     help="Navigate the active browser tab to an entity's view. Argument is a canonical TypeId (e.g. 'shell-<uuid>', 'project-@local').",
@@ -69,42 +102,59 @@ def navigate_entity(
         _fail(EXIT_INVALID_ARG, "INVALID_TYPEID", f"Not a TypeId: {typeid!r}")
 
     port = _discover_port()
-    url = f"http://127.0.0.1:{port}/api/v1/agent/navigate/entity"
-
     body = {"typeid": typeid}
     if connection_id:
         body["connection_id"] = connection_id
 
-    try:
-        resp = requests.post(url, json=body, timeout=5)
-    except requests.exceptions.RequestException as e:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
-        return  # unreachable — _fail raises typer.Exit
+    _navigate(
+        f"http://127.0.0.1:{port}/api/v1/agent/navigate/entity",
+        body,
+        ["connection_id", "type", "id"],
+        {
+            "NO_ACTIVE_TAB": EXIT_NO_ACTIVE_TAB,
+            "ENTITY_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
+            "CONNECTION_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
+            "INVALID_TYPEID": EXIT_INVALID_ARG,
+        },
+    )
 
-    # Parse JSON body; if the server returned something non-JSON, treat it as
-    # a connection-layer failure (5xx with HTML, proxy error, etc.).
-    try:
-        body = resp.json()
-    except ValueError:
-        _fail(
-            EXIT_CONNECTION_ERROR,
-            "CONNECTION_ERROR",
-            f"Unexpected server response (status {resp.status_code}): {resp.text[:200]}",
-        )
-        return
 
-    if resp.status_code == 200 and body.get("ok"):
-        _ok({"connection_id": body.get("connection_id"), "type": body.get("type"), "id": body.get("id")})
-        return
+@navigate_app.command(
+    "file",
+    help="Navigate the active browser tab to a file by path. Opens the indexed "
+    "asset if the path is known, else a raw VFS view (no indexing required).",
+)
+def navigate_file(
+    path: Annotated[
+        str,
+        typer.Argument(help="File path, absolute or ~-relative (e.g. '~/Flowpad workspace/proj/hello.md')"),
+    ],
+    connection_id: Annotated[
+        Optional[str],
+        typer.Option("--connection-id", "-c", help="Target a specific WS connection by id."),
+    ] = None,
+) -> None:
+    """POST to /api/v1/agent/navigate/file and surface the server's verdict.
 
-    error_code = str(body.get("error_code") or "UNKNOWN")
-    error_msg = str(body.get("error") or f"HTTP {resp.status_code}")
+    The server resolves the path to an asset entity when one exists (stable
+    entity view), otherwise tells the browser to open the raw VFS path. The CLI
+    just translates the outcome into agent-friendly exit codes.
+    """
+    if not path or not path.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_PATH", "Empty path")
 
-    mapping = {
-        "NO_ACTIVE_TAB": EXIT_NO_ACTIVE_TAB,
-        "ENTITY_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
-        "CONNECTION_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
-        "INVALID_TYPEID": EXIT_INVALID_ARG,
-    }
-    exit_code = mapping.get(error_code, EXIT_CONNECTION_ERROR)
-    _fail(exit_code, error_code, error_msg)
+    port = _discover_port()
+    body: dict = {"path": path}
+    if connection_id:
+        body["connection_id"] = connection_id
+
+    _navigate(
+        f"http://127.0.0.1:{port}/api/v1/agent/navigate/file",
+        body,
+        ["connection_id", "mode", "path", "type", "id"],
+        {
+            "NO_ACTIVE_TAB": EXIT_NO_ACTIVE_TAB,
+            "CONNECTION_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
+            "INVALID_PATH": EXIT_INVALID_ARG,
+        },
+    )

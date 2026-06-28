@@ -2,7 +2,8 @@
  * The assets tab is scope-keyed, so its title follows the SCOPE (not the in-tab
  * menu): single project → "<project>'s Assets"; user → "My Assets"; global /
  * all / multi-select → null (the strip then shows the registry "Assets" title).
- * `options` is the dock's scope serialization (`?user=&projects=` / `all=true`).
+ * `options` is the dock's scope serialization via the namespaced SCOPE_CODEC
+ * (`scope-mode=…` keys, as produced by `scopeFilterToDockOptions`).
  */
 import { DataManager, TypeId } from '@sdk';
 import { describe, expect, it } from 'vitest';
@@ -20,12 +21,12 @@ function dm(): DataManager<any> {
 }
 
 const CASES: Array<{ label: string; options: Record<string, string> | undefined; expected: string | null }> = [
-  { label: 'project (cached)', options: { user: 'false', projects: PROJECT_ID }, expected: "Acme's Assets" },
-  { label: 'project (uncached)', options: { user: 'false', projects: OTHER_ID }, expected: 'Assets' },
-  { label: 'user', options: { user: 'true', projects: '' }, expected: 'My Assets' },
-  { label: 'global (all)', options: { all: 'true' }, expected: null },
+  { label: 'project (cached)', options: { 'scope-mode': 'project', 'scope-activeProjectId': PROJECT_ID }, expected: "Acme's Assets" },
+  { label: 'project (uncached)', options: { 'scope-mode': 'project', 'scope-activeProjectId': OTHER_ID }, expected: 'Assets' },
+  { label: 'user', options: { 'scope-mode': 'user' }, expected: 'My Assets' },
+  { label: 'global (all)', options: { 'scope-mode': 'all' }, expected: null },
   { label: 'no scope', options: undefined, expected: null },
-  { label: 'multi-project', options: { user: 'false', projects: `${PROJECT_ID},${OTHER_ID}` }, expected: null },
+  { label: 'multi-project', options: { 'scope-mode': 'filter', 'scope-user': 'false', 'scope-projects': `${PROJECT_ID},${OTHER_ID}` }, expected: null },
 ];
 
 describe('getTabName — assets title follows scope', () => {
@@ -35,7 +36,7 @@ describe('getTabName — assets title follows scope', () => {
 
   it('title is independent of the in-tab sub-pointer', () => {
     const d = dm();
-    const opts = { user: 'false', projects: PROJECT_ID };
+    const opts = { 'scope-mode': 'project', 'scope-activeProjectId': PROJECT_ID };
     expect(d.getTabName({ viewType: 'assets', pointer: 'list/skill', options: opts })).toBe("Acme's Assets");
     expect(d.getTabName({ viewType: 'assets', pointer: 'editor/skill/vfs/x', options: opts })).toBe("Acme's Assets");
     expect(d.getTabName({ viewType: 'assets', pointer: '', options: opts })).toBe("Acme's Assets");

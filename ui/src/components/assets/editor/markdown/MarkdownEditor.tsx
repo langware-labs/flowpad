@@ -9,13 +9,13 @@ import { useAssetRevisionStatus } from '@src/hooks/use-asset-revision-status';
 import { AssetGitPill } from './AssetGitPill';
 import { RevisionsPanel } from '@src/components/assets/editor/revisions/RevisionsPanel';
 import { History } from 'lucide-react';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, TypeId, looksBinaryText } from '@sdk';
+import { FSRef, TypeId, copyToClipboard, looksBinaryText } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
@@ -33,6 +33,10 @@ type ViewMode = EditorMode;
 
 const MODE_STORAGE_KEY = 'markdownEditor.mode';
 const EDITOR_MODE_PARAM = 'editorMode';
+// Optional 1-indexed body line to drop the caret on at first mount (e.g. a
+// freshly-created skill opens with the caret right after its `# <name>`
+// headline). Once the user moves the caret, that live position takes over.
+const INITIAL_LINE_PARAM = 'initialLine';
 const DEFAULT_MODE: ViewMode = 'view';
 
 function isEditorMode(value: string | undefined | null): value is ViewMode {
@@ -334,7 +338,16 @@ function MarkdownEditorContent({
   const handleEditorLineChange = useCallback((bodyLine: number) => {
     setCursorLine(bodyStartLineRef.current + bodyLine - 1);
   }, []);
-  const initialBodyLine = cursorLine != null ? cursorLine - bodyStartLine + 1 : null;
+  // Seed the caret from `?initialLine=N` on a fresh open (no user caret yet) —
+  // body-line space, so it survives frontmatter changes. Cleared once the user
+  // clicks/types and `cursorLine` becomes the source of truth.
+  const initialLineParam = useMemo(() => {
+    const raw = currentDock?.options?.[INITIAL_LINE_PARAM];
+    if (raw == null) return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [currentDock?.options]);
+  const initialBodyLine = cursorLine != null ? cursorLine - bodyStartLine + 1 : initialLineParam;
 
   const setBodyRef = useRef(setBody);
   setBodyRef.current = setBody;
@@ -371,6 +384,15 @@ function MarkdownEditorContent({
   }, [onDelete, deleteLabel, fileName]);
 
   const handleLinkClick = useCallback((href: string) => {
+    // WikiTip backward link: `/?highlight=<wikiword>` routes home and highlights
+    // the matching feed entry. URL-carried so it is shareable + back-safe — see
+    // docs/wikitip.md. Checked first since it isn't a slug/wiki/asset href.
+    const highlight = new URL(href, window.location.origin).searchParams.get(HIGHLIGHT_PARAM);
+    if (highlight) {
+      navigation.highlight(highlight);
+      return;
+    }
+
     const slug = isSlugLink(href);
     if (slug !== null) {
       goToSlug(slug);
@@ -602,6 +624,8 @@ function MarkdownEditorContent({
         </div>
       )}
 
+      {viewMode === 'view' && <ViewToolbar body={body} />}
+
       <div className="min-h-0 flex-1 overflow-hidden">
         {viewMode === 'learning' && learningPanel ? (
           <div className="h-full overflow-hidden">{learningPanel}</div>
@@ -641,6 +665,33 @@ function MarkdownEditorContent({
           </EditorWithSidePanel>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── View toolbar ─────────────────────────────────────────────────────────────
+// Slim toolbar shown only in read-only "view" mode. For now a single action:
+// copy the raw markdown body to the clipboard.
+function ViewToolbar({ body }: { body: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    await copyToClipboard(body);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [body]);
+
+  return (
+    <div className="flex h-9 flex-shrink-0 items-center gap-1 border-b px-2">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+        onClick={handleCopy}
+        title="Copy content to clipboard"
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? 'Copied' : 'Copy'}
+      </Button>
     </div>
   );
 }

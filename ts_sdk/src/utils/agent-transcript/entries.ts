@@ -24,6 +24,7 @@ export type EntryKind =
   | 'web_fetch'
   | 'todo_update'
   | 'agent_spawn'
+  | 'skill_call'
   | 'system'
   | 'summary'
   | 'meta'
@@ -219,6 +220,26 @@ export interface AgentSpawnEntry extends BaseEntry {
   description: string | null;
   tool_name: string;
   tool_use_id: string;
+  /**
+   * Absolute path to the spawned agent's own transcript JSONL, present only for
+   * workflow-run spawns whose child transcript exists on disk (stamped by the
+   * transcripts route). Drives the "open sub-agent transcript" affordance.
+   */
+  child_transcript_path?: string | null;
+}
+
+/**
+ * A skill invocation, normalized across workers (Claude/Copilot native Skill
+ * tool, Codex SKILL.md file-load). Mirrors backend
+ * `flow_sdk/transcript_analyzer/entries/skill_call.py`.
+ */
+export interface SkillCallEntry extends BaseEntry {
+  kind: 'skill_call';
+  skill_name: string;
+  /** 'tool' (native Skill tool) | 'file_load' (SKILL.md read). */
+  invocation_kind: string;
+  tool_name: string;
+  tool_use_id: string;
 }
 
 export type GenericEntry =
@@ -234,6 +255,7 @@ export type GenericEntry =
   | WebFetchEntry
   | TodoUpdateEntry
   | AgentSpawnEntry
+  | SkillCallEntry
   | SystemEntry
   | SummaryEntry
   | MetaEntry
@@ -254,6 +276,7 @@ export const isSearch = (e: GenericEntry): e is SearchEntry => e.kind === 'searc
 export const isWebFetch = (e: GenericEntry): e is WebFetchEntry => e.kind === 'web_fetch';
 export const isTodoUpdate = (e: GenericEntry): e is TodoUpdateEntry => e.kind === 'todo_update';
 export const isAgentSpawn = (e: GenericEntry): e is AgentSpawnEntry => e.kind === 'agent_spawn';
+export const isSkillCall = (e: GenericEntry): e is SkillCallEntry => e.kind === 'skill_call';
 export const isSystem = (e: GenericEntry): e is SystemEntry => e.kind === 'system';
 export const isSummary = (e: GenericEntry): e is SummaryEntry => e.kind === 'summary';
 export const isMeta = (e: GenericEntry): e is MetaEntry => e.kind === 'meta';

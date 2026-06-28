@@ -44,7 +44,7 @@ export function useAnalysisControls(
     });
   };
 
-  return { action, panelOpen, setPanelOpen, autoPrompt, analysisTarget, startAnalysis };
+  return { action, panelOpen, setPanelOpen, autoPrompt, analysisTarget, startAnalysis, traces };
 }
 
 export type AnalysisControls = ReturnType<typeof useAnalysisControls>;

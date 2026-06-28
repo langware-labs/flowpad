@@ -1,14 +1,16 @@
 import type { LucideIcon } from 'lucide-react';
-import { FolderTree, GitBranch, Layers, ListOrdered, MessageSquare, Paperclip, SquareTerminal } from 'lucide-react';
+import { Activity, FolderTree, GitBranch, Layers, ListOrdered, MessageSquare, Paperclip, Sparkles, SquareTerminal } from 'lucide-react';
 
 export const SideTabId = {
-  Shell:   'shell',
-  Git:     'git',
-  Prompts: 'prompts',
-  Queue:   'queue',
-  Files:   'files',
-  Dir:     'dir',
-  Context: 'context',
+  Shell:        'shell',
+  Git:          'git',
+  Prompts:      'prompts',
+  Queue:        'queue',
+  Files:        'files',
+  Dir:          'dir',
+  Context:      'context',
+  Analysis:     'analysis',
+  SkillsAgents: 'skills-agents',
 } as const;
 export type SideTabId = (typeof SideTabId)[keyof typeof SideTabId];
 
@@ -29,6 +31,8 @@ export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
   files:   { id: 'files',   label: 'Files',   icon: Paperclip,      description: 'Input files attached to this session' },
   dir:     { id: 'dir',     label: 'Dir',     icon: FolderTree,     description: 'Browse the working directory', advancedOnly: true },
   context: { id: 'context', label: 'Context', icon: Layers,         description: 'Context entities attached to this process — plans, skills, project, …', advancedOnly: true },
+  analysis:{ id: 'analysis',label: 'Analysis',icon: Activity,       description: 'Analyses (AgentTrace) of this session — run, list and open' },
+  'skills-agents': { id: 'skills-agents', label: 'Skills', icon: Sparkles, description: 'Skills and sub-agents invoked in this session', advancedOnly: true },
 };
 
 /** Narrow any string to a valid SideTabId, returning null if it's not one. */

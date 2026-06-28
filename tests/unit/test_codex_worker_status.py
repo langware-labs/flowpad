@@ -188,10 +188,23 @@ def test_codex_driver_falls_back_to_recent_rollout_by_workdir(
     assert CodexDriver().transcript_path(proc) == rollout
 
 
-def test_agentic_process_running_missing_transcript_is_initializing(
+def test_agentic_process_running_missing_transcript_is_idle(
     isolated_instance_paths: Path,
 ):
+    # A RUNNING worker with no transcript yet is spawned-and-idle, waiting for
+    # its first prompt — IDLE, not INITIALIZING. Reporting INITIALIZING here is
+    # what pinned never-prompted sessions on the spinner forever (fix 45898129).
     proc = AgenticProcess(worker_type=WorkerType.CODEX, session_id="missing")
     proc.status = ProcessStatus.RUNNING.value
+
+    assert proc._discover_status_from_transcript() == WorkerStatus.IDLE
+
+
+def test_agentic_process_starting_missing_transcript_is_initializing(
+    isolated_instance_paths: Path,
+):
+    # STARTING with no transcript is the real lifecycle boot → INITIALIZING.
+    proc = AgenticProcess(worker_type=WorkerType.CODEX, session_id="missing")
+    proc.status = ProcessStatus.STARTING.value
 
     assert proc._discover_status_from_transcript() == WorkerStatus.INITIALIZING

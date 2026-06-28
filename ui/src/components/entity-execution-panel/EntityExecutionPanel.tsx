@@ -28,6 +28,7 @@ import { History, MessageSquarePlus, Settings, Trash2, X } from 'lucide-react';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
+import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
 import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
@@ -356,10 +357,21 @@ export function EntityExecutionPanel({
       await proc.prompt(text);
     } catch (err) {
       console.error('[EntityExecutionPanel] prompt failed', err);
+      notify.error({ title: 'Message not sent', message: err instanceof Error ? err.message : String(err) });
     } finally {
       setSending(false);
     }
   }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport]);
+
+  const handleStop = useCallback(async () => {
+    if (!activeProcess) return;
+    try {
+      await activeProcess.interruptTurn();
+    } catch (err) {
+      console.error('[EntityExecutionPanel] interrupt failed', err);
+      notify.error({ title: 'Could not stop', message: err instanceof Error ? err.message : String(err) });
+    }
+  }, [activeProcess]);
 
   // Host-injected prompt (Run/Rerun/Refresh analysis). Nonce-gated so the
   // same object can sit in props without re-firing on unrelated renders.
@@ -525,11 +537,12 @@ export function EntityExecutionPanel({
           </div>
         )}
         {dense
-          ? <TurnGroupsList groups={turnGroups} />
+          ? <TurnGroupsList groups={turnGroups} worker={activeProcess?.worker_type ?? undefined} />
           : messages.map((m) => (
               <ExecutionMessage
                 key={m.id ?? m.timestamp}
                 flowData={m}
+                worker={activeProcess?.worker_type ?? undefined}
                 isUser={
                   m.elementType === FlowElementTypes.USER_MESSAGE ||
                   (m.attributes && m.attributes.role === 'user')
@@ -537,7 +550,7 @@ export function EntityExecutionPanel({
               />
             ))}
       </AutoScrollContainer>
-      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} statusSlot={statusSlot} placeholder={placeholder} />
+      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} running={busy} onStop={handleStop} statusSlot={statusSlot} placeholder={placeholder} />
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => { if (!o) setPendingDelete(null); }}

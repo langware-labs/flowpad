@@ -21,7 +21,10 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
 vi.mock('@src/components/floating-chat', () => ({ FlowpadAssistantButton: () => null }));
 vi.mock('@src/pages/flow-page/content-panel/user-dropdown/user-dropdown', () => ({ UserDropdown: () => null }));
-vi.mock('@src/components/view-mode', () => ({ DevOnly: () => null }));
+vi.mock('@src/components/view-mode', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/view-mode')>()),
+  DevOnly: () => null,
+}));
 vi.mock('@src/contexts/dev-mode-context', () => ({ useDevMode: () => false }));
 vi.mock('@src/hooks/use-navigation-state', () => ({
   useNavigationState: () => ({ goBack: vi.fn(), canGoBack: false }),

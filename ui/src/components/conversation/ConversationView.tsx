@@ -10,7 +10,6 @@ import {
   TypeId,
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
-import { ProjectChip } from '@src/components/project/ProjectChip';
 import type { ITask } from '@sdk/entities/task';
 import { ConversationKind } from '@sdk/entities/conversation';
 import { syncConversationMessages } from '@src/components/inbox-view/inbox-api';
@@ -395,7 +394,6 @@ export function ConversationView({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-end gap-1">
-        <ProjectChip projectId={conversation?.project_id ?? null} className="mr-auto" />
         {canPickup && (
           <button
             type="button"
