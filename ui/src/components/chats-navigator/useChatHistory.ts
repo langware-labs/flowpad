@@ -74,7 +74,13 @@ function bucketize(sorted: WorkerHistoryEntry[]): ChatBucket[] {
 }
 
 export function useChatHistory(filters: ChatHistoryFilters, limit = 50) {
-  const { entries, isLoading, refetch } = useWorkerHistory(limit);
+  // When scoped to one-or-more projects, push the project_ids to the backend so
+  // the per-project cap is computed there — otherwise an under-active project's
+  // sessions never make it into the response to be filtered client-side.
+  const projectIds = isAllScope(filters.scope) ? undefined : scopeProjectIds(filters.scope);
+  const { entries, isLoading, refetch } = useWorkerHistory(limit, {
+    projectIds: projectIds?.length ? projectIds : undefined,
+  });
 
   const buckets = useMemo<ChatBucket[]>(() => {
     const q = filters.search.trim().toLowerCase();

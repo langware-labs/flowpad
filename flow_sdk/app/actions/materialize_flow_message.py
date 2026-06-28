@@ -76,6 +76,14 @@ async def ensure_conversation_entity(
     conv = await Conversation.get_one({"id": conversation_id})
     title_clean = (title or "").strip() or None
     if conv is None:
+        # Derive the owning project from the shared/target entity (the parent
+        # Task here), deterministically and once — the same rule the local
+        # create path uses. Falls back to a caller-supplied ``project_id``; a
+        # pure entity-less cross-user chat stays project-less (None) by design.
+        if parent_typeid is not None:
+            project_id = await Conversation.resolve_project_id(
+                [str(parent_typeid)], fallback=project_id
+            )
         payload: dict = {"id": conversation_id}
         if created_by:
             payload["created_by"] = created_by

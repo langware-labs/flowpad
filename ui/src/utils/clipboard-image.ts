@@ -48,6 +48,18 @@ export function isImageFile(file: Pick<File, 'name' | 'type'>): boolean {
   return file.type.toLowerCase().startsWith('image/') || isImagePath(file.name);
 }
 
+// Raster image MIME types a <canvas> 2D context can decode and re-encode —
+// every type in IMAGE_MIME_EXTENSIONS except SVG (vector; canvas tainting +
+// fidelity loss). Single source of truth so a new format is added in one place.
+const RASTERIZABLE_IMAGE_MIMES = new Set(
+  Object.keys(IMAGE_MIME_EXTENSIONS).filter((mime) => mime !== 'image/svg+xml'),
+);
+
+/** True when the file is an image the canvas can rasterize (excludes SVG). */
+export function isRasterizableImage(file: Pick<File, 'type'>): boolean {
+  return RASTERIZABLE_IMAGE_MIMES.has(file.type.toLowerCase());
+}
+
 export function clipboardImageFilename(
   file: Pick<File, 'name' | 'type'>,
   index: number,
@@ -85,6 +97,11 @@ export function imageFileFromClipboardBlob(
   const type = blob.type || 'image/png';
   const filename = clipboardImageFilename({ name: '', type }, index, now, options);
   return new File([blob], filename, { type, lastModified: now.getTime() });
+}
+
+/** True when a paste/drop's clipboard data carries at least one image item. */
+export function clipboardDataHasImage(clipboardData: DataTransfer | null): boolean {
+  return Array.from(clipboardData?.items ?? []).some((it) => it.type.toLowerCase().startsWith('image/'));
 }
 
 export function imageFilesFromClipboardData(

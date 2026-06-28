@@ -18,6 +18,10 @@ WHITEBOARD = TypeMetadata(
     index_fields=["description"],
     main_subdir=".claude/whiteboards",
     main_layout="folder",
+    # The folder's main doc — drives the share id-pin (TypeInfo.main_file) and
+    # stabilizes asset_ref/hash (without it asset_ref was the bare folder and the
+    # index hash oscillated, making receive intermittent).
+    main_file="WHITE_BOARD.md",
     from_disk_fn=extract_whiteboard,
     gen_uuid_fn=whiteboard_gen_id,
     asset_hash_fn=whiteboard_asset_hash,

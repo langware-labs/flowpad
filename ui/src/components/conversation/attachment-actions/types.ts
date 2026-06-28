@@ -25,8 +25,11 @@ export interface AttachmentActionContext {
   messageId?: string;
   isFromOther: boolean;
   isComposerPreview: boolean;
-  /** Resolved spec TypeId on this message, or null. */
-  specTypeId: TypeId | null;
+  /** Resolved spec OR plan TypeId on this message (spec wins), or null. A
+   *  shared plan (the `.claude/plans` plan-mode artifact) rides the same
+   *  View / Open Spec / session affordances as a spec, so descriptors read
+   *  this one unified field. */
+  specOrPlanTypeId: TypeId | null;
   /** Resolved GitBranch (shared repo) TypeId on this message, or null. */
   gitBranchTypeId: TypeId | null;
   /** First prompt-entity TYPE_ID attachment's TypeId, or null. */

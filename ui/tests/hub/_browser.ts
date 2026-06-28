@@ -214,20 +214,42 @@ export async function openConversation(inst: InstancePage, conversationId: strin
 }
 
 /**
- * Receiver-side: map an incoming (remote) conversation to a local project.
- * Attachment downloads materialize assets under the conversation's project, so
- * a download with no project mapped opens this picker first. Clicks "Set
- * project" and selects the first available project. No-op if already mapped
- * (the button is gone). Must be called with the conversation already open.
+ * Receiver-side: map an incoming (remote) conversation to a fresh, EMPTY project
+ * and wait for the mapping to persist. Attachment downloads materialize assets
+ * under the conversation's project, and a shared-asset chip opens that project's
+ * view — mapping to a big existing project makes the project tree + editor load
+ * eat the open budget, while the UI picker's optimistic PUT races the next
+ * download. A dedicated empty project keeps the open fast and deterministic.
+ * Mechanics use the instance's backend API (same `inst.apiUrl` probe
+ * `acceptInvitationInUI` uses) — no browser injection. Returns the project dir.
  */
-export async function mapConversationToProject(inst: InstancePage): Promise<void> {
-  const setProject = inst.page.getByRole('button', { name: 'Set project' });
-  if (!(await setProject.isVisible().catch(() => false))) return;
-  await setProject.click().catch(() => undefined);
-  const firstRow = inst.page.locator('[data-testid^="project-selector-row-"]').first();
-  await firstRow.waitFor({ state: 'visible', timeout: 10_000 });
-  await firstRow.click();
-  await inst.page.waitForTimeout(1_000);
+export async function mapConversationToProject(
+  inst: InstancePage,
+  conversationId: string,
+): Promise<string> {
+  const { mkdtempSync } = await import('node:fs');
+  const os = await import('node:os');
+  const nodePath = await import('node:path');
+  const dir = mkdtempSync(nodePath.join(os.tmpdir(), 'flowpad-mx-'));
+  const created = await fetch(`${inst.apiUrl}/api/v1/graph/project`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: nodePath.basename(dir), fs_storage_mount_path: dir }),
+  }).then((r) => r.json());
+  const projectId = created?.data?.id as string;
+  await fetch(`${inst.apiUrl}/api/v1/graph/conversation/${conversationId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId }),
+  });
+  for (let i = 0; i < 40; i++) {
+    const r = await fetch(`${inst.apiUrl}/api/v1/graph/conversation/${conversationId}`)
+      .then((x) => x.json())
+      .catch(() => null);
+    if (r?.data?.project_id === projectId) break;
+    await inst.page.waitForTimeout(250);
+  }
+  return dir;
 }
 
 /** Type into the conversation composer ("Reply to sender…") and send. Enter

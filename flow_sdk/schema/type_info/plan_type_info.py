@@ -14,6 +14,7 @@ PLAN = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     index_fields=["name"],
+    main_subdir=".claude/plans",
     from_disk_fn=extract_claude_plan,
     gen_uuid_fn=claude_plan_gen_id,
 )

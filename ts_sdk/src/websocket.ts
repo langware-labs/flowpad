@@ -28,6 +28,7 @@ type MessageType =
   | 'cloud_login_status_msg'
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
+  | 'toplog_state_msg'
   | 'ui_command'
   | 'recovered_msg';
 
@@ -118,6 +119,12 @@ export interface CloudConnectionStatusMessage extends BaseMessage {
 export interface PrivacyModeMessage extends BaseMessage {
   message_type: 'privacy_mode_msg';
   privacy_mode: 'local' | 'connected';
+}
+
+export interface ToplogStateMessage extends BaseMessage {
+  message_type: 'toplog_state_msg';
+  enabled: boolean;
+  filter: Record<string, boolean>;
 }
 
 /**
@@ -499,6 +506,9 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
     }
+    if (data.message_type === 'toplog_state_msg') {
+      return this.onToplogStateMessage(data as ToplogStateMessage);
+    }
     if (data.message_type === 'ui_command') {
       return this.onUiCommandMessage(data as UiCommandMessage);
     }
@@ -524,6 +534,10 @@ export class ConnectionManager extends EventEmitter {
 
   onPrivacyModeMessage(data: PrivacyModeMessage) {
     this.emit('on_privacy_mode_msg', data);
+  }
+
+  onToplogStateMessage(data: ToplogStateMessage) {
+    this.emit('on_toplog_state_msg', data);
   }
 
   onUiCommandMessage(data: UiCommandMessage) {
