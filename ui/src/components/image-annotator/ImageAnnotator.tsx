@@ -1,6 +1,6 @@
 /**
  * Simple WhatsApp-style image markup, shown BEFORE an image is attached/sent.
- * A freehand pen over a <canvas> rendering of the image — pen + a few colors +
+ * Freehand pen + arrow over a <canvas> rendering of the image — a few colors +
  * undo/clear. Save is disabled until the user actually draws; closing while
  * dirty asks to discard. Output is a flattened PNG File (image/png MIME so it
  * passes the fsService binary-upload guard).
@@ -9,18 +9,21 @@
  * ./image-annotator-store drives it; surfaces never mount it directly.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Eraser, Pen, Undo2, X } from 'lucide-react';
+import { ArrowUpRight, Check, Eraser, Pen, Undo2, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { cn } from '@src/lib/utils';
 
 const COLORS = ['#ef4444', '#eab308', '#22c55e', '#3b82f6', '#111827', '#ffffff'] as const;
 
+type Tool = 'pen' | 'arrow';
+
 interface Point {
   x: number;
   y: number;
 }
 interface Stroke {
+  tool: Tool;
   color: string;
   width: number;
   points: Point[];
@@ -49,6 +52,7 @@ export function ImageAnnotator({ open, file, onSave, onCancel }: ImageAnnotatorP
   const drawingRef = useRef<Stroke | null>(null);
 
   const [color, setColor] = useState<string>(COLORS[0]);
+  const [tool, setTool] = useState<Tool>('pen');
   const [strokeCount, setStrokeCount] = useState(0); // drives dirty + re-render of toolbar
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
@@ -74,6 +78,24 @@ export function ImageAnnotator({ open, file, onSave, onCancel }: ImageAnnotatorP
       if (s.points.length === 0) return;
       ctx.strokeStyle = s.color;
       ctx.lineWidth = s.width;
+      if (s.tool === 'arrow') {
+        // Straight shaft from first to last point, plus a two-line arrowhead.
+        const from = s.points[0];
+        const to = s.points[s.points.length - 1];
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        const angle = Math.atan2(to.y - from.y, to.x - from.x);
+        const head = s.width * 4; // arrowhead length scales with line width
+        for (const offset of [Math.PI * 0.85, -Math.PI * 0.85]) {
+          ctx.beginPath();
+          ctx.moveTo(to.x, to.y);
+          ctx.lineTo(to.x + head * Math.cos(angle + offset), to.y + head * Math.sin(angle + offset));
+          ctx.stroke();
+        }
+        return;
+      }
       ctx.beginPath();
       ctx.moveTo(s.points[0].x, s.points[0].y);
       for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
@@ -126,16 +148,21 @@ export function ImageAnnotator({ open, file, onSave, onCancel }: ImageAnnotatorP
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       if (!imgRef.current) return;
       e.currentTarget.setPointerCapture(e.pointerId);
-      drawingRef.current = { color, width: penWidth(), points: [toCanvasPoint(e)] };
+      const start = toCanvasPoint(e);
+      // Arrow keeps just [start, end]; pen accumulates the freehand trail.
+      drawingRef.current = { tool, color, width: penWidth(), points: [start, start] };
       redraw();
     },
-    [color, penWidth, redraw, toCanvasPoint],
+    [color, penWidth, redraw, toCanvasPoint, tool],
   );
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (!drawingRef.current) return;
-      drawingRef.current.points.push(toCanvasPoint(e));
+      const s = drawingRef.current;
+      if (!s) return;
+      const point = toCanvasPoint(e);
+      if (s.tool === 'arrow') s.points[1] = point; // move the end point
+      else s.points.push(point);
       redraw();
     },
     [redraw, toCanvasPoint],
@@ -144,7 +171,10 @@ export function ImageAnnotator({ open, file, onSave, onCancel }: ImageAnnotatorP
   const onPointerUp = useCallback(() => {
     const s = drawingRef.current;
     drawingRef.current = null;
-    if (s && s.points.length > 0) {
+    // Drop a degenerate arrow (a tap with no drag — start === end).
+    const isDegenerateArrow =
+      s?.tool === 'arrow' && s.points[0].x === s.points[1].x && s.points[0].y === s.points[1].y;
+    if (s && s.points.length > 0 && !isDegenerateArrow) {
       strokesRef.current.push(s);
       setStrokeCount(strokesRef.current.length);
     }
@@ -197,13 +227,29 @@ export function ImageAnnotator({ open, file, onSave, onCancel }: ImageAnnotatorP
         >
           <DialogTitle className="sr-only">Annotate image</DialogTitle>
           <DialogDescription className="sr-only">
-            Draw on the image with the pen, then Save to attach the annotated copy.
+            Draw on the image with the pen or arrow, then Save to attach the annotated copy.
           </DialogDescription>
           {/* Toolbar on top, WhatsApp-style. */}
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Pen className="h-4 w-4" />
+            <div className="flex items-center gap-0.5">
+              {([['pen', Pen, 'Pen'], ['arrow', ArrowUpRight, 'Arrow']] as const).map(([t, Icon, label]) => (
+                <button
+                  key={t}
+                  type="button"
+                  title={label}
+                  onClick={() => setTool(t)}
+                  className={cn(
+                    'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
+                    tool === t
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                </button>
+              ))}
             </div>
+            <div className="mx-1 h-6 w-px bg-border" />
             <div className="flex items-center gap-1">
               {COLORS.map((c) => (
                 <button
