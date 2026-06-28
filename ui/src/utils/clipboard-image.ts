@@ -99,6 +99,11 @@ export function imageFileFromClipboardBlob(
   return new File([blob], filename, { type, lastModified: now.getTime() });
 }
 
+/** True when a paste/drop's clipboard data carries at least one image item. */
+export function clipboardDataHasImage(clipboardData: DataTransfer | null): boolean {
+  return Array.from(clipboardData?.items ?? []).some((it) => it.type.toLowerCase().startsWith('image/'));
+}
+
 export function imageFilesFromClipboardData(
   clipboardData: DataTransfer | null,
   now = new Date(),
