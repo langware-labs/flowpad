@@ -17,6 +17,7 @@ export {
   isProcessStartable,
   isWorkerRunning,
   isWorkerTerminal,
+  isAwaitingUserInput,
   hasWorkerStarted,
   isReadyForInput,
   isBusy,

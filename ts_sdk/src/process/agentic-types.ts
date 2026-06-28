@@ -132,6 +132,29 @@ const READY_WORKER_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.INTERRUPTED,
 ]);
 
+/**
+ * Statuses in which the worker has yielded the floor and is waiting for the
+ * user's next message — i.e. "your turn". Superset of READY_WORKER_STATUSES
+ * with PENDING_USER (the explicit "turn ended, waiting for next user message"
+ * state, surfaced to the user as "Waiting for you").
+ *
+ * This is the gate for the chat⇄terminal view toggle: switching mode is only
+ * sensible (and only accepted by the backend — a mid-turn switchMode is 409'd)
+ * when no turn is in flight. The set is deliberately a strict complement of the
+ * mid-turn states, so enabling the toggle on this set never triggers a 409.
+ */
+const AWAITING_USER_INPUT_STATUSES = new Set<WorkerStatus>([
+  WorkerStatus.IDLE,
+  WorkerStatus.COMPLETE,
+  WorkerStatus.INTERRUPTED,
+  WorkerStatus.PENDING_USER,
+]);
+
+/** True when the worker is idle between turns, waiting for the user's input. */
+export function isAwaitingUserInput(status: WorkerStatus | undefined): boolean {
+  return status !== undefined && AWAITING_USER_INPUT_STATUSES.has(status);
+}
+
 /** True while the worker is mid-turn (WAITING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR). */
 export function isWorkerRunning(status: WorkerStatus): boolean {
   return WORKER_RUNNING_STATUSES.has(status);
