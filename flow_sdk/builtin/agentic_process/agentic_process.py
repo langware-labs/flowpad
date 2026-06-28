@@ -3429,6 +3429,47 @@ class AgenticProcess(Entity):
         """
         return get_driver(self.worker_type)
 
+    async def delete(self):
+        """Tombstone the on-disk session transcript, then delete the entity.
+
+        The AgenticProcess DB row is only an index. Both on-disk read paths —
+        ``worker_history``'s Claude/Codex/Copilot collectors (the Chats
+        side-menu) and ``scan_actions._resolve_session_record`` behind
+        ``getByWorkerId`` (``terminals/get_by_worker_id``) — re-derive a session
+        straight from its ``<session_id>.jsonl`` on disk. Deleting only the
+        entity leaves that file, so a "deleted" chat re-appears in the list and
+        stays resolvable by its worker session id (effectively undeletable).
+
+        Renaming the transcript to ``<name>.deleted`` tombstones it: the
+        ``*.jsonl`` discovery globs and the exact-``<sid>.jsonl`` resolver both
+        skip it, while the data stays recoverable (no destructive unlink).
+        Best-effort — a tombstone failure never blocks the entity delete.
+        """
+        self._tombstone_session_transcript()
+        return await super().delete()
+
+    def _tombstone_session_transcript(self) -> None:
+        """Rename this process's on-disk transcript to ``<name>.deleted`` so the
+        on-disk read paths stop re-deriving the deleted session. No-op when there
+        is no session id or no transcript on disk."""
+        if not self.session_id:
+            return
+        try:
+            path = self.driver.transcript_path(self)
+        except Exception as e:
+            logger.debug("tombstone: transcript_path lookup failed for %s: %s", self.session_id, e)
+            return
+        if path is None or not path.exists():
+            return
+        tomb = path.with_name(path.name + ".deleted")
+        try:
+            if tomb.exists():
+                tomb.unlink()
+            path.rename(tomb)
+            logger.info("tombstoned deleted session transcript %s -> %s", path.name, tomb.name)
+        except OSError as e:
+            logger.warning("tombstone of %s failed: %s", path, e)
+
     def _supports_plan_mode(self) -> bool:
         """Driver capability flag surfaced on the entity for the chat plan
         toggle. Defensive: a driver predating the capability resolves False
