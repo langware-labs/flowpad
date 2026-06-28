@@ -13,6 +13,7 @@ import type { WorkerHistoryEntry, WorkerType } from '@src/hooks/useWorkerHistory
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { useChatHistory } from './useChatHistory';
 import { ChatsFilterBar } from './ChatsFilterBar';
 import { ChatsList } from './ChatsList';
@@ -146,14 +147,18 @@ export function ChatsNavigator() {
       header: {
         title: 'Chats',
         countBadge: total,
-        filterBar: (
-          <ChatsFilterBar
-            search={search}
-            onSearchChange={setSearch}
+        headerRight: (
+          <ScopeFilterIconBar
             scope={scope}
             currentProjectId={project?.id ?? null}
             currentProjectName={project?.getDisplayName() ?? project?.name ?? null}
             onScopeChange={handleScopeChange}
+          />
+        ),
+        filterBar: (
+          <ChatsFilterBar
+            search={search}
+            onSearchChange={setSearch}
             onNewChat={handleNewChat}
           />
         ),

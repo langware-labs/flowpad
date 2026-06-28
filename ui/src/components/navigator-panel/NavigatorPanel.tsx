@@ -140,16 +140,17 @@ export function NavigatorPanel({
                 <PanelLeftClose className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
               {header.title && (
-                <span className="truncate text-xs font-medium text-muted-foreground">{header.title}</span>
+                <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{header.title}</span>
               )}
               {header.countBadge != null && header.countBadge > 0 && (
                 <span className="rounded-full bg-muted px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">
                   {header.countBadge}
                 </span>
               )}
-              {header.toolbar && header.toolbar.length > 0 && (
-                <div className="ml-auto flex items-center gap-0.5">
-                  {header.toolbar.map((a) => (
+              {(header.headerRight || (header.toolbar && header.toolbar.length > 0)) && (
+                <div className="ml-auto flex flex-shrink-0 items-center gap-0.5">
+                  {header.headerRight}
+                  {header.toolbar?.map((a) => (
                     <ToolbarButton key={a.id} action={a} />
                   ))}
                 </div>
