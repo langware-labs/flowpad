@@ -747,10 +747,16 @@ class AgenticProcess(Entity):
     async def _get_local_compute_node(self):
         """Return the local compute node used for shell creation and recovery.
 
-        Retry once on None — the @local compute_node is bootstrap-created and
-        never deleted, so a None result is always a transient cache/DB-contention
-        miss under heavy parallel writes (see Cluster #10 in debug_log.md). The
-        retry invalidates any stale uname_cache entry before the second lookup.
+        Resolve, then RECOVER. First retry on None invalidates any stale
+        uname_cache entry (covers a transient cache/DB-contention miss under
+        heavy parallel writes — see Cluster #10 in debug_log.md). If the row is
+        still absent it is genuinely gone: the @local compute_node is a fileless
+        singleton that a compute-node sweep can delete out from under a running
+        session, and (unlike the @local user/project) it is only otherwise
+        re-seeded by the app-boot ``bootstrap()``. So recreate it on demand via
+        the same idempotent seed ``bootstrap()`` uses, rather than returning None
+        and letting the launch strand the session with a permanent
+        ``start_failure`` latch.
         """
         from flow_sdk.builtin.faas.compute_node import ComputeNode
 
@@ -759,6 +765,17 @@ class AgenticProcess(Entity):
             from flow_sdk.core.cache.entity_cache import uname_cache
             uname_cache.invalidate("compute_node", "local")
             cn = await ComputeNode.get_by_uname("local")
+        if cn is None:
+            from flow_sdk.server.routes.bootstrap import (
+                get_or_create_local_compute_node,
+                get_or_create_local_project,
+                get_or_create_local_user,
+            )
+            user = await get_or_create_local_user()
+            project = await get_or_create_local_project(desktop_user=user)
+            cn = await get_or_create_local_compute_node(
+                local_project=project, desktop_user=user
+            )
         return cn
 
     def _adopt_shell_tab_order(self, shell: "Shell | None") -> None:
