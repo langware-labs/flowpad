@@ -37,6 +37,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (_event, data) => callback(data)),
   upgradeFlowpad: () => ipcRenderer.invoke('upgrade-flowpad'),
 
+  // Startup-timeout recovery panel (loading.html): show the panel, copy the
+  // recovery commands to the clipboard, and quit from the panel.
+  onStartupError: (callback) => ipcRenderer.on('startup-error', (_event, data) => callback(data)),
+  copyToClipboard: (text) => ipcRenderer.invoke('copy-to-clipboard', text),
+  quitApp: () => ipcRenderer.send('quit-app'),
+
   // Provision the per-instance Fernet sod-key in the OS keychain via the
   // bundled signed flow-rs binary, and return the value so the renderer
   // can hand it to Python via /api/v1/secrets/seed-key. Keeps the keychain
