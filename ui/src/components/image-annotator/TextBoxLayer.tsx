@@ -68,6 +68,9 @@ export function TextBoxLayer({
             className={cn(
               'block min-w-[1ch] whitespace-pre font-semibold leading-tight outline-none',
               (selectedId === b.id || editingId === b.id) && 'ring-1 ring-blue-500',
+              // Hint for an empty box (generated content — not part of textContent,
+              // so it is never baked into the saved image).
+              b.text === '' && "before:content-['Text'] before:opacity-40",
             )}
             style={{ color: b.color, fontSize: b.fontPx * scale, fontFamily: 'sans-serif' }}
           />
