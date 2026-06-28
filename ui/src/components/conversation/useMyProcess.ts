@@ -75,7 +75,9 @@ export async function buildReceiverContextPrompt(
     });
   const transcriptPath = transcript ? (transcript.local_path ?? transcript.data) : null;
 
-  const specTypeId = task.firstContextOfType('spec');
+  // A shared "plan" is either a Spec(spec_type=plan) or the plan-mode artifact
+  // (type='plan'); both carry the body the worker should read. Spec wins.
+  const specTypeId = task.firstContextOfType('spec') ?? task.firstContextOfType('plan');
   const spec = specTypeId
     ? await dataManager.getByTypeId<Spec>(
         specTypeId,
@@ -151,7 +153,7 @@ export async function buildReceiverContextPrompt(
       '',
       isSession
         ? 'We are about to assist a user who encountered the following issue. Please read through the above session and conversation carefully and acknowledge you have everything you need.'
-        : 'Please read through the above plan and conversation carefully and implement the required changes. If anything is unclear, ask before proceeding.',
+        : 'Please read through the above spec/plan and the conversation carefully to get oriented. Do NOT make any changes yet — review it and tell the user what you understand, then wait for their go-ahead before doing anything.',
     );
   }
   return parts.join('\n');
