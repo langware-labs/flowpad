@@ -72,7 +72,7 @@ import { getAnchors, useAnnotationGutter } from './use-annotation-gutter';
 import { useTimeGutter } from './use-time-gutter';
 import { useTraceGutter } from './use-trace-gutter';
 import { EntityContextPanel } from '@src/components/entity-context';
-import { imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
+import { clipboardDataHasImage, imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 export interface TraceFilters {
@@ -109,6 +109,11 @@ export interface ColVisibility {
 const EMPTY_DOCS: MarkdownDoc[] = [];
 const DEFAULT_COL_VIS: ColVisibility = { trace: true, time: true, annotations: true };
 const COL_VIS_LS_KEY = 'colVisibility';
+
+// An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
+// signal an image paste delivers to the PTY, which the CLI reads the system
+// clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
+const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
 
 function loadColVis(): ColVisibility {
   try {
@@ -328,8 +333,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [searchOpen, setSearchOpen] = useState(false);
   const [activePane, setActivePane] = useState<'claude' | 'shell'>('claude');
   const handlePasteRef = useRef<() => Promise<void>>(async () => {});
-  // Removes the capture-phase image-paste suppressor (see initializeTerminal).
-  const domPasteCleanupRef = useRef<(() => void) | null>(null);
 
   // Open/close/select/toggle delegate to the shared hook (single URL writer).
   // Re-exposed under this surface's SideTabId-typed names so the JSX below is
@@ -435,11 +438,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         );
         // By now the annotated PNG is on the system clipboard (written inside the
         // Save gesture; the upload above outlasts that write). Re-emit the empty
-        // bracketed paste that an image paste produces — the exact signal the CLI
-        // reads the system clipboard on — so it inlines the ANNOTATED image. The
-        // original paste-time signal was suppressed (capture-phase paste listener),
-        // so the CLI never saw the pre-annotation original.
-        await shellRef.current?.sendInput('\x1b[200~\x1b[201~');
+        // bracketed paste so the CLI re-reads the clipboard and inlines the
+        // ANNOTATED image. The original paste-time signal was suppressed (the
+        // capture-phase paste listener), so the CLI never saw the original.
+        await shellRef.current?.sendInput(EMPTY_BRACKETED_PASTE);
         // Full-resolution fallback: the inline copy the CLI keeps may be downsized,
         // so also reference the file by path.
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
@@ -779,6 +781,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       return;
     }
 
+    // Suppress IMAGE pastes from reaching xterm/the PTY. The Cmd+V keydown handler
+    // already routes image pastes through `handlePasteRef` (annotate → upload →
+    // re-emit the paste). Letting the browser's native `paste` event also flow into
+    // xterm would forward a bracketed paste to the PTY at paste-time, making the CLI
+    // read the system clipboard before annotation — i.e. the pre-annotation original.
+    // Eating image pastes here keeps the annotated image the single source of truth.
+    // Text pastes pass through.
+    const onDomPaste = (e: ClipboardEvent) => {
+      if (clipboardDataHasImage(e.clipboardData)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    };
+
     let disposed = false;
     let fitTimeoutId: ReturnType<typeof setTimeout> | null = null;
     let dimensionCheckTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -845,25 +861,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         term.open(container);
         terminalRef.current = term;
         fitAddonRef.current = fit;
-
-        // Suppress IMAGE pastes from reaching xterm/the PTY. The Cmd+V keydown
-        // handler already routes image pastes through `handlePasteRef` (annotate
-        // → upload → send the file path). If we ALSO let the browser's native
-        // `paste` event flow into xterm, it forwards a bracketed paste to the
-        // PTY, which makes the CLI (Claude Code) read the *system clipboard* —
-        // i.e. the ORIGINAL screenshot captured before annotation. That stale
-        // original then shows up as the inline image while the file-by-path is
-        // the annotated one. Eating image pastes here keeps the annotated file
-        // (via path) as the single source of truth. Text pastes pass through.
-        const onDomPaste = (e: ClipboardEvent) => {
-          const items = Array.from(e.clipboardData?.items ?? []);
-          if (items.some((it) => it.type.startsWith('image/'))) {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-          }
-        };
         container.addEventListener('paste', onDomPaste, true);
-        domPasteCleanupRef.current = () => container.removeEventListener('paste', onDomPaste, true);
         if (active) {
           const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
           if (t0 !== undefined)
@@ -935,8 +933,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     return () => {
       disposed = true;
 
-      domPasteCleanupRef.current?.();
-      domPasteCleanupRef.current = null;
+      container.removeEventListener('paste', onDomPaste, true);
 
       if (dimensionCheckTimeout) {
         clearTimeout(dimensionCheckTimeout);
