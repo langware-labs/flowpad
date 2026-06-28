@@ -32,11 +32,16 @@ let pendingDockNavigationUrl: string | null = null;
 
 // View types whose dock adopts the current project's scope when opened without an
 // explicit one (see openDock). These are the project-aware browser surfaces: the
-// minted Tab attaches to the active project (project tab) or stays global.
+// minted Tab attaches to the active project (project tab) or stays global. SHELL
+// is included so the Chats/worker rail seeds the active project's scope onto the
+// URL — the ChatsNavigator reads currentDock.scopeFilter to filter history, exactly
+// like assets/explorer/triggers (SHELL's tabHash ignores scope, so the open
+// session's identity is unaffected).
 const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
   ViewType.TRIGGERS,
   ViewType.EXPLORER,
+  ViewType.SHELL,
 ]);
 
 /**
