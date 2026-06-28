@@ -169,6 +169,12 @@ class BaseInstanceSettings:
     # action returns external=[] while disabled. ----
     external_worker_scan_enabled: bool = False
 
+    # ---- Toplog master switch: the INITIAL value seeded into toplog.json on
+    # first boot only. After seeding, toplog.json is the authority (runtime
+    # toplog.enable()/disable() mutate the file). Defaults ON in dev, OFF in
+    # prod (set to ``is_dev`` in _build_from_env). ----
+    toplog_enabled: bool = False
+
     # ---- Process info (filled at boot, optional) ----
     server_pid: int | None = None
 
@@ -241,6 +247,8 @@ class BaseInstanceSettings:
             conversation_last_sync_path=instance_dir / "conversation_sync.json",
             transcript_cursors_path=instance_dir / "transcript_cursors.json",
             toplog_config_path=instance_dir / "toplog.json",
+            # On in dev, off in prod/named/test — only the initial seed value.
+            toplog_enabled=is_dev,
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
             user_home=Path.home(),
             claude_home=claude_home,
