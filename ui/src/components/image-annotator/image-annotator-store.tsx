@@ -3,11 +3,12 @@
  * input-prompt-modal pattern (module-level store + singleton mounted at the app
  * root). Any capture surface can do:
  *
- *   const result = await annotateImage(file);  // File (possibly annotated) or original
+ *   const result = await annotateImage(file);  // annotated File on Save, null on Cancel
  *
  * On Save the annotated PNG is also written back to the system clipboard, so the
  * user's clipboard matches what was attached (WhatsApp-style). Clipboard failure
- * never blocks the attach.
+ * never blocks the attach. Cancel resolves `null` — the capture is aborted
+ * entirely (the image is NOT attached and the caller does nothing further).
  */
 import { useSyncExternalStore } from 'react';
 import { notify } from '@src/notifications';
@@ -16,7 +17,7 @@ import { ImageAnnotator } from './ImageAnnotator';
 interface AnnotatorState {
   open: boolean;
   file: File | null;
-  resolve: ((result: File) => void) | null;
+  resolve: ((result: File | null) => void) | null;
 }
 
 let state: AnnotatorState = { open: false, file: null, resolve: null };
@@ -37,7 +38,7 @@ function getSnapshot(): AnnotatorState {
   return state;
 }
 
-function settle(result: File) {
+function settle(result: File | null) {
   const resolve = state.resolve;
   state = { open: false, file: null, resolve: null };
   emit();
@@ -46,13 +47,13 @@ function settle(result: File) {
 
 /**
  * Open the annotator for `file` and resolve once the user saves or dismisses.
- * Resolves with the flattened PNG on Save, or the original `file` if dismissed.
+ * Resolves with the flattened PNG on Save, or `null` on Cancel (abort).
  */
-export function annotateImage(file: File): Promise<File> {
-  // A second call while one is open would orphan the first promise — settle it
-  // with its own original so nothing hangs.
-  if (state.open) state.resolve?.(state.file!);
-  return new Promise<File>((resolve) => {
+export function annotateImage(file: File): Promise<File | null> {
+  // A second call while one is open would orphan the first promise — cancel it
+  // (resolve null) so nothing hangs.
+  if (state.open) state.resolve?.(null);
+  return new Promise<File | null>((resolve) => {
     state = { open: true, file, resolve };
     emit();
   });
@@ -85,8 +86,9 @@ export function ImageAnnotatorRoot() {
         settle(annotated);
       }}
       onCancel={() => {
-        // Dismissed without saving → original passes through unchanged.
-        if (file) settle(file);
+        // Dismissed without saving → abort: resolve null so the capture is
+        // dropped entirely (image not attached, caller does nothing further).
+        settle(null);
       }}
     />
   );

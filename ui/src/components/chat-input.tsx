@@ -201,6 +201,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
     async (incoming: File[]) => {
       // Let the user mark up captured images before they're attached.
       const files = await annotateImageFiles(incoming);
+      // Cancelling the markup aborts the capture — nothing to upload.
+      if (files.length === 0) return;
       const fileItems = files.map((file) => ({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
         file,
