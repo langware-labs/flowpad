@@ -76,6 +76,13 @@ _SELF_RESTART_GRACE_S = 0.5
 # restart).
 INSTANT_EXIT_WINDOW_SECONDS = 5.0
 
+# The exact ``start_failure`` message latched when the @local compute_node
+# singleton is missing at launch. Single source of truth: it is both RAISED at
+# the launch site and SUBSTRING-MATCHED by ``_latched_failure_recovered`` to
+# decide a refresh can self-heal. Keep them sharing this constant — a reword
+# would otherwise silently break recovery.
+LOCAL_COMPUTE_NODE_MISSING_FAILURE = "Compute node not found for local shell session (@local)"
+
 
 # ── Asset descriptors ──────────────────────────────────────────────────────────
 # Read-side surface for ``AgenticProcess.get_asset_descriptors`` — see plan
@@ -778,6 +785,26 @@ class AgenticProcess(Entity):
             )
         return cn
 
+    async def _latched_failure_recovered(self) -> bool:
+        """True iff the current ``start_failure`` latch names a cause we can
+        PROVE is now satisfiable, so a non-retry (refresh-driven) open may
+        self-heal the latch instead of refusing.
+
+        Conservative by design: only the @local-compute-node-missing cause is
+        recognised. That node is a fileless singleton a sweep can delete out
+        from under a session and bootstrap re-seeds; once it is resolvable
+        again the launch that latched this can succeed. Every other latch —
+        notably the instant-exit ``"Worker exited Ns after launch"`` — returns
+        False and stays paused, preserving the spawn→die→respawn loop breaker.
+        """
+        latch = (self.start_failure or "").lower()
+        if LOCAL_COMPUTE_NODE_MISSING_FAILURE.lower() in latch:
+            try:
+                return await self._get_local_compute_node() is not None
+            except Exception:
+                return False
+        return False
+
     def _adopt_shell_tab_order(self, shell: "Shell | None") -> None:
         """One-time adoption: the AP owns its tab_order (base Entity) across
         shell-transport swaps / worker restarts — no context_data carry-over.
@@ -915,9 +942,15 @@ class AgenticProcess(Entity):
             # instant-exit window. Refuse to respawn — the auto-recovery
             # sweep and route loaders call open() unconditionally, and
             # honoring them here is what produced the spawn→die→respawn
-            # loop. Only an explicit user retry (retry=True) re-arms.
+            # loop. Only an explicit user retry (retry=True) re-arms — UNLESS
+            # the latched cause is one we can prove is now satisfiable again
+            # (e.g. the @local compute_node was swept out and has since been
+            # re-seeded). Such a latch must self-heal on an ordinary
+            # refresh-driven open, or a transient environmental fault strands
+            # the session forever behind a manual Retry. Genuine instant-exit
+            # latches stay paused — that's the loop breaker.
             if self.start_failure:
-                if not retry:
+                if not retry and not await self._latched_failure_recovered():
                     return ApiFailResponse(
                         message=(
                             f"Process failed to start: {self.start_failure} "
@@ -925,8 +958,9 @@ class AgenticProcess(Entity):
                         ),
                     )
                 logger.info(
-                    "AgenticProcess %s: user retry — clearing start_failure latch (%s)",
+                    "AgenticProcess %s: clearing start_failure latch (%s) — %s",
                     self.id, self.start_failure,
+                    "user retry" if retry else "latched cause auto-recovered on refresh",
                 )
                 self.start_failure = None
                 cleared_start_failure = True
@@ -4470,7 +4504,7 @@ class AgenticProcess(Entity):
             )
         cn = await self._get_local_compute_node()
         if cn is None:
-            raise RuntimeError("Compute node not found for local shell session (@local)")
+            raise RuntimeError(LOCAL_COMPUTE_NODE_MISSING_FAILURE)
         shell_kwargs = {
             "compute_node_id": str(cn.id),
             "compute_node_uname": getattr(cn, "uname", None),
