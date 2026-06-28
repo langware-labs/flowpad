@@ -36,6 +36,10 @@ interface TerminalBottomRibbonProps {
   /** True while a chat⇄terminal switch is in flight — disables the toggle and
    *  shows a connect spinner (PTY spawn/teardown is no longer instant). */
   switching?: boolean;
+  /** False when the worker is mid-turn — the toggle is shown but disabled, since
+   *  a mode switch is only sensible (and only accepted by the backend) while the
+   *  agent is awaiting user input. Defaults to true for non-AP callers. */
+  toggleEnabled?: boolean;
 }
 
 const RIBBON_TABS: SideTabIdType[] = [
@@ -68,12 +72,20 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   chatActive = false,
   onToggleView,
   switching = false,
+  toggleEnabled = true,
 }) => {
   const isAdvanced = useIsAdvanced();
   // Skin layer: in Standard view, power-user tabs (flagged advancedOnly on
   // their SIDE_TABS descriptor) and the Prompt Library button are hidden,
   // leaving Prompts + Files. See docs/viewmodes.md.
   const ribbonTabs = isAdvanced ? RIBBON_TABS : RIBBON_TABS.filter((id) => !SIDE_TABS[id].advancedOnly);
+  // Single source for the toggle's label — reused by both the aria-label and the
+  // tooltip (the latter overlays 'Switching…' while a switch is in flight).
+  const toggleLabel = !toggleEnabled
+    ? 'Available when the agent is waiting for your input'
+    : chatActive
+      ? 'Switch to terminal view'
+      : 'Switch to chat view';
   return (
     <div className="flex flex-col border-t bg-muted/30">
       {/* Top tier: chat composer (Standard/chat only) — one ribbon, not two rows. */}
@@ -86,29 +98,29 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
           <TooltipProvider delayDuration={400}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onToggleView}
-                  disabled={switching}
-                  aria-label={chatActive ? 'Switch to terminal view' : 'Switch to chat view'}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                >
-                  {switching ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : chatActive ? (
-                    <SquareTerminal className="h-4 w-4" />
-                  ) : (
-                    <MessageSquare className="h-4 w-4" />
-                  )}
-                </Button>
+                {/* span wrapper keeps the tooltip working while the button is
+                    disabled (a disabled <button> swallows pointer events). */}
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onToggleView}
+                    disabled={switching || !toggleEnabled}
+                    aria-label={toggleLabel}
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                  >
+                    {switching ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : chatActive ? (
+                      <SquareTerminal className="h-4 w-4" />
+                    ) : (
+                      <MessageSquare className="h-4 w-4" />
+                    )}
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs">
-                {switching
-                  ? 'Switching…'
-                  : chatActive
-                    ? 'Switch to terminal view'
-                    : 'Switch to chat view'}
+                {switching ? 'Switching…' : toggleLabel}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

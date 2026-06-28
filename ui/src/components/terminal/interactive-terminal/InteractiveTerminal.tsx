@@ -8,6 +8,7 @@ import {
   dataContext,
   FlowDataSource,
   fsStore,
+  isAwaitingUserInput,
   ProcessStatus,
   Shell,
   WorkerMode,
@@ -247,6 +248,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // not reactive, so subscribe via useEntity and surface the banner here.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const liveStartFailure = liveProcess?.start_failure ?? null;
+  // The chat⇄terminal toggle is only enabled while the agent is awaiting the
+  // user's input (IDLE/COMPLETE/INTERRUPTED/PENDING_USER). A mode switch
+  // mid-turn is 409'd by the backend, so gating on the (reactive) worker status
+  // keeps the toggle in lock-step with the AP and never lands on a 409 hole.
+  // `liveProcess` is the reactive entity; the loader `process` is the fallback
+  // for the first render before the subscription resolves.
+  const awaitingUserInput = isAwaitingUserInput(
+    liveProcess?.workerStatus ?? process?.workerStatus,
+  );
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({
@@ -1459,7 +1469,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // mid-turn switch; `switching` guards against double-trigger + drives the spinner.
   const [switching, setSwitching] = useState(false);
   const handleToggleView = useCallback(async () => {
-    if (!process || switching) return;
+    // Mirror the ribbon's disabled gate: never attempt a switch mid-turn (the
+    // backend 409s it). The button is disabled in that state; this is the
+    // belt-and-suspenders guard for any non-click caller.
+    if (!process || switching || !awaitingUserInput) return;
     const toChat = !showSimpleChat; // currently terminal → go chat
     setSwitching(true);
     try {
@@ -1486,7 +1499,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     } finally {
       setSwitching(false);
     }
-  }, [process, switching, showSimpleChat]);
+  }, [process, switching, showSimpleChat, awaitingUserInput]);
 
   // Compute synthetic shell-pane active state for the ribbon
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
@@ -1783,6 +1796,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           }
           chatActive={showSimpleChat}
           switching={switching}
+          toggleEnabled={awaitingUserInput}
           onToggleView={canToggleView ? () => void handleToggleView() : undefined}
         />
       )}
