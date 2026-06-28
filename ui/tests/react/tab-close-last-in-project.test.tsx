@@ -1,20 +1,18 @@
 /**
- * Reproduces: closing the LAST tab in the active project navigates to home
- * (closeDock) instead of switching to the most-recently-active tab in ANOTHER
- * project.
+ * Closing the LAST tab in the active project shows the empty/no-tabs page
+ * (`navigation.closeDock()` → Home) — it does NOT skip to a tab in ANOTHER
+ * project, even if that other tab is more recently active.
  *
- * Proven lever (unified-tab-strip.tsx handleClose): the next-tab pick uses the
- * project-SCOPED `rows` (current project + projectless), not the global
- * `allRows`. When the closed tab is the project's last, the scoped resolve is
- * null → `navigation.closeDock()` (home). Falling back to `allRows` would
- * resolve the other project's tab.
+ * Proven lever (unified-tab-strip.tsx handleClose → resolveNextTab with the
+ * current `projectId`): the next-tab pick is CONFINED to the project scope
+ * (current project + projectless tabs). When the closed tab is the project's
+ * last, the scoped resolve is null → `navigation.closeDock()` (home). The pick
+ * never falls back to the global list, so another project's tab is never chosen.
  *
- * Faithful render: real <UnifiedTabStrip> + real handleClose/resolveNextTabRow
- * over the real all-tabs-store. Boundaries are stubbed, not the logic under
- * test: useDockNavigation (so we control the active dock + capture nav calls)
- * and useTerminalStripController (the leading/trailing chrome). Regression
- * guard: close now resolves over the GLOBAL list (preferring the current
- * project), so the project's last tab skips to project B instead of Home.
+ * Faithful render: real <UnifiedTabStrip> + real handleClose/resolveNextTab over
+ * the real all-tabs-store. Boundaries are stubbed, not the logic under test:
+ * useDockNavigation (so we control the active dock + capture nav calls) and
+ * useTerminalStripController (the leading/trailing chrome).
  */
 import { render, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -84,7 +82,7 @@ afterEach(async () => {
 });
 
 describe('closing the last tab in a project', () => {
-  it('switches to the most-recently-active tab in another project (not home)', async () => {
+  it('shows the no-tabs page (home) instead of jumping to another project', async () => {
     const tabA = shellTab(SHELL_A, PROJ_A, 1000, 'Tab A');
     const tabB = shellTab(SHELL_B, PROJ_B, 2000, 'Tab B'); // other project, more recent
     applyAllTabRows([tabA, tabB]);
@@ -112,10 +110,9 @@ describe('closing the last tab in a project', () => {
     // platform-derived modKey matches in jsdom).
     fireEvent.keyDown(window, { key: 'w', ctrlKey: true, altKey: true, metaKey: true });
 
-    // Expected: navigate to project B's tab. (Today: closeDock → home.)
-    expect(h.openDock).toHaveBeenCalledWith(
-      expect.objectContaining({ pointer: `shell-${SHELL_B}` }),
-    );
-    expect(h.closeDock).not.toHaveBeenCalled();
+    // Expected: closeDock → home (the project has no tabs left); project B's
+    // tab is NOT chosen.
+    await waitFor(() => expect(h.closeDock).toHaveBeenCalled());
+    expect(h.openDock).not.toHaveBeenCalled();
   });
 });
