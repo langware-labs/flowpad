@@ -328,6 +328,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [searchOpen, setSearchOpen] = useState(false);
   const [activePane, setActivePane] = useState<'claude' | 'shell'>('claude');
   const handlePasteRef = useRef<() => Promise<void>>(async () => {});
+  // Removes the capture-phase image-paste suppressor (see initializeTerminal).
+  const domPasteCleanupRef = useRef<(() => void) | null>(null);
 
   // Open/close/select/toggle delegate to the shared hook (single URL writer).
   // Re-exposed under this surface's SideTabId-typed names so the JSX below is
@@ -834,6 +836,25 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         term.open(container);
         terminalRef.current = term;
         fitAddonRef.current = fit;
+
+        // Suppress IMAGE pastes from reaching xterm/the PTY. The Cmd+V keydown
+        // handler already routes image pastes through `handlePasteRef` (annotate
+        // → upload → send the file path). If we ALSO let the browser's native
+        // `paste` event flow into xterm, it forwards a bracketed paste to the
+        // PTY, which makes the CLI (Claude Code) read the *system clipboard* —
+        // i.e. the ORIGINAL screenshot captured before annotation. That stale
+        // original then shows up as the inline image while the file-by-path is
+        // the annotated one. Eating image pastes here keeps the annotated file
+        // (via path) as the single source of truth. Text pastes pass through.
+        const onDomPaste = (e: ClipboardEvent) => {
+          const items = Array.from(e.clipboardData?.items ?? []);
+          if (items.some((it) => it.type.startsWith('image/'))) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          }
+        };
+        container.addEventListener('paste', onDomPaste, true);
+        domPasteCleanupRef.current = () => container.removeEventListener('paste', onDomPaste, true);
         if (active) {
           const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
           if (t0 !== undefined)
@@ -904,6 +925,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
     return () => {
       disposed = true;
+
+      domPasteCleanupRef.current?.();
+      domPasteCleanupRef.current = null;
 
       if (dimensionCheckTimeout) {
         clearTimeout(dimensionCheckTimeout);
