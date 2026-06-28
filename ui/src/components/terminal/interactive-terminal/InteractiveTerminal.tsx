@@ -421,8 +421,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         const items = await navigator.clipboard.read();
         const [captured] = await imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' });
         if (!captured) return;
-        // Offer markup before the screenshot is attached.
+        // Offer markup before the screenshot is attached. Cancel aborts.
         const [file] = await annotateImageFiles([captured]);
+        if (!file) return;
 
         const uploads = await fsStore
           .getState()
@@ -1447,8 +1448,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const handleChatPasteImages = useCallback(
     async (incoming: File[]): Promise<string[]> => {
       if (!inputDirInfo || !incoming.length) return [];
-      // Offer markup before the pasted image(s) are attached.
+      // Offer markup before the pasted image(s) are attached. Cancel aborts.
       const files = await annotateImageFiles(incoming);
+      if (!files.length) return [];
       const uploads = await fsStore
         .getState()
         .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
