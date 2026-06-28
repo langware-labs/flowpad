@@ -15,6 +15,7 @@ import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } f
 import { useLocalUser } from './useLocalUser';
 import { discardDraftFlowMessage } from './flow-message-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
@@ -190,12 +191,15 @@ export function MessageComposer({
     handlers: { edit: () => setShowPromptDialog(true) },
   });
 
-  const addFiles = (incoming: FileList | File[] | null) => {
+  const addFiles = async (incoming: FileList | File[] | null) => {
     if (!incoming) return;
+    // Offer markup on captured images before attaching. Size cap is applied
+    // after annotation since the flattened PNG may be larger than the original.
+    const annotated = await annotateImageFiles(Array.from(incoming));
     const tooBig: string[] = [];
     setFiles((prev) => {
       const next = [...prev];
-      for (const f of Array.from(incoming)) {
+      for (const f of annotated) {
         if (f.size > MAX_FILE_SIZE_BYTES) {
           tooBig.push(f.name);
           continue;
@@ -326,7 +330,7 @@ export function MessageComposer({
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    if (!isDisabled) addFiles(e.dataTransfer.files);
+    if (!isDisabled) void addFiles(e.dataTransfer.files);
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -335,7 +339,7 @@ export function MessageComposer({
     if (pastedImages.length === 0) return;
 
     e.preventDefault();
-    addFiles(pastedImages);
+    void addFiles(pastedImages);
 
     const pastedText = e.clipboardData.getData('text/plain');
     if (!pastedText) return;
@@ -364,7 +368,7 @@ export function MessageComposer({
       className="sr-only"
       disabled={isDisabled}
       onChange={(e) => {
-        addFiles(e.target.files);
+        void addFiles(e.target.files);
         e.target.value = '';
       }}
     />

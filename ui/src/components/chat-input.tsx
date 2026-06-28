@@ -1,5 +1,6 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { FileUploadIndicator, FileUploadItem } from '@src/components/file-upload-indicator';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 import { useInputHistory } from '@src/hooks/use-input-history';
 import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
@@ -197,7 +198,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   }, [someone, chatOptions]);
 
   const addUploadingFiles = useCallback(
-    async (files: File[]) => {
+    async (incoming: File[]) => {
+      // Let the user mark up captured images before they're attached.
+      const files = await annotateImageFiles(incoming);
       const fileItems = files.map((file) => ({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
         file,
