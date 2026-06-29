@@ -1,4 +1,5 @@
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, TypeId } from '@sdk';
+import { useMemo } from 'react';
 import { cn } from '@src/lib/utils';
 import { MessageSquare, Star, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
@@ -8,6 +9,7 @@ import {
   timeAgo,
 } from '@src/components/entity-execution-panel/history-row';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
+import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { ChatPromptsPopover } from './ChatPromptsPopover';
 
 /**
@@ -28,9 +30,20 @@ interface ChatHistoryRowProps {
 
 export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, onDelete }: ChatHistoryRowProps) {
   const { t } = useLingui();
-  const process = entry.agentic_process_id
+  // Subscribe to the backing process so a rename (tab/process) re-renders this
+  // row instead of leaving a stale title. Gate `enabled` on a cached hit so we
+  // only watch already-materialized processes (open-tab sessions) — never fire a
+  // fetch per history row for on-disk-only sessions. `useEntity` returns the
+  // cached instance and subscribes to its data-ops without an extra API call.
+  const cached = entry.agentic_process_id
     ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null
     : null;
+  const typeId = useMemo(
+    () => (entry.agentic_process_id ? new TypeId(AgenticProcess.type, entry.agentic_process_id) : null),
+    [entry.agentic_process_id],
+  );
+  const { data: watched } = useEntity<AgenticProcess>(typeId, { enabled: !!cached });
+  const process = watched ?? cached;
   const title = pickHistoryTitle(process, entry);
   // Project · branch survive only as a hover tooltip on the row (no visible subline).
   const meta = [entry.project_name, entry.git_branch].filter(Boolean).join(' · ');
