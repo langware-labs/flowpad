@@ -10,10 +10,8 @@ import { useMemo } from 'react';
 interface DiagnosisReportModalProps {
   open: boolean;
   diagnosisId?: string;
-  /** The suggested support conversation for the report buttons (present for a real issue). */
+  /** The support conversation — excluded from the Forward picker (present for a real issue). */
   conversationId?: string;
-  /** The recorded support FlowMessage — its text is the full formatted report sent on Forward. */
-  flowMessageId?: string;
   onClose: () => void;
 }
 
@@ -28,7 +26,6 @@ export function DiagnosisReportModal({
   open,
   diagnosisId,
   conversationId,
-  flowMessageId,
   onClose,
 }: DiagnosisReportModalProps) {
   const { navigation } = useDockNavigation();
@@ -70,7 +67,6 @@ export function DiagnosisReportModal({
               <DiagnosisDetails
                 diagnosisId={diagnosisId}
                 conversationId={conversationId}
-                flowMessageId={flowMessageId}
                 onActionDone={onClose}
               />
             </div>
