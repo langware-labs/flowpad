@@ -1,11 +1,28 @@
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
 import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
 import { subscribeRefresh } from './refresh-store';
+import { TreeSelectionContext, type TreeSelectionApi } from './useTreeSelection';
+
+/** Walk a root's currently-visible (expanded) subtree in render order,
+ *  collecting the selectable rows. Powers Shift-range + Cmd/Ctrl+A. */
+function collectVisibleSelectable(
+  root: Browseable,
+  tree: ReturnType<typeof useBrowseableTree>,
+): Browseable[] {
+  const out: Browseable[] = [];
+  const walk = (node: Browseable) => {
+    if (node.selectable && node.selectionKey) out.push(node);
+    if (tree.isExpanded(node.id)) for (const c of tree.getChildren(node.id)) walk(c);
+  };
+  // Roots themselves aren't selectable; start from their visible children.
+  if (tree.isExpanded(root.id)) for (const c of tree.getChildren(root.id)) walk(c);
+  return out;
+}
 
 /**
  * Generic Notion-like tree menu.
@@ -38,6 +55,36 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   const tree = useBrowseableTree(roots, { persistKey, defaultExpandedIds });
   const lastResolvedRef = useRef<string | null>(null);
   const [dragData, setDragData] = useState<BrowseableDragData | null>(null);
+
+  // Multi-select (a second cursor, orthogonal to URL-first navigation). Null
+  // when no provider wraps the tree (popover menu, or a navigator without a
+  // bulkActions resolver) → the tree behaves exactly as before. Read via a ref
+  // in the effects below so they key only on structure, not on the selection
+  // api's identity (which changes on every selection mutation).
+  const selection = useContext(TreeSelectionContext);
+  const selectionRef = useRef<TreeSelectionApi | null>(selection);
+  selectionRef.current = selection;
+
+  // Keep the selection's per-root visible order in sync so Shift-range and
+  // Cmd/Ctrl+A operate over what's actually on screen. Keyed on structure only
+  // (roots + tree expansion/load state) — selection mutations don't change what's
+  // visible, so they must not re-run this all-roots walk.
+  useEffect(() => {
+    const sel = selectionRef.current;
+    if (!sel) return;
+    for (const root of roots) {
+      sel.setVisibleOrder(root.id, collectVisibleSelectable(root, tree));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roots, tree.state]);
+
+  // Clear selection when the set of roots changes identity (scope/filter change
+  // — root ids carry the filter signature — or the type list changes). Mirrors
+  // HistoryModal's de-select-on-change.
+  const rootIdsKey = roots.map((r) => r.id).join('|');
+  useEffect(() => {
+    selectionRef.current?.clear();
+  }, [rootIdsKey]);
 
   const handleNavigate = useCallback(
     (pointer: DockPointer) => {
@@ -118,7 +165,9 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             key={root.id}
             node={root}
             level={0}
+            rootId={root.id}
             tree={tree}
+            selection={selection}
             activePointer={activePointer}
             activeKey={activeKey}
             onNavigate={handleNavigate}
@@ -135,7 +184,10 @@ export function BrowseableTree(props: BrowseableTreeProps) {
 interface RowProps {
   node: Browseable;
   level: number;
+  /** Id of the top-level root this row lives under — the multi-select scope. */
+  rootId: string;
   tree: ReturnType<typeof useBrowseableTree>;
+  selection: TreeSelectionApi | null;
   activePointer: DockPointer | null;
   activeKey?: string | null;
   onNavigate: (p: DockPointer) => void;
@@ -144,7 +196,7 @@ interface RowProps {
   onDragEnd: () => void;
 }
 
-function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate, dragData, onDragStart, onDragEnd }: RowProps) {
+function BrowseableRow({ node, level, rootId, tree, selection, activePointer, activeKey, onNavigate, dragData, onDragStart, onDragEnd }: RowProps) {
   const { t } = useLingui();
   const expanded = tree.isExpanded(node.id);
   const loadState = tree.getLoadState(node.id);
@@ -178,20 +230,44 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
 
   const hasChildrenHint = node.hasChildren === true || (node.hasChildren === 'unknown' && !!node.listChildren);
 
-  const handleRowClick = useCallback(() => {
-    // Inline rename in progress — a click commits via the input's own handlers;
-    // never navigate/toggle underneath it.
-    if (editing) return;
-    // Toggle expand on the row click for nodes that have children AND
-    // navigate if the node has a pointer. Matches Notion's behavior where
-    // clicking a page both navigates AND expands.
-    if (hasChildrenHint) {
-      void tree.toggleExpand(node);
-    }
-    if (node.pointer) {
-      onNavigate(node.pointer);
-    }
-  }, [editing, hasChildrenHint, node, tree, onNavigate]);
+  const canSelect = !!(selection && node.selectable && node.selectionKey);
+  const multiSelected = canSelect && selection!.isSelected(node.selectionKey);
+
+  const handleRowClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Inline rename in progress — a click commits via the input's own handlers;
+      // never navigate/toggle underneath it.
+      if (editing) return;
+
+      // Multi-select gestures take precedence on selectable rows. A modifier
+      // click only mutates the selection — it never navigates or toggles
+      // expansion. A plain click clears the set + primes the range anchor, then
+      // falls through to the normal navigate/expand behavior below.
+      if (canSelect) {
+        // Cmd (mac) or Ctrl (win/linux) toggles; matches the modifier convention
+        // used across the app's keyboard handlers.
+        const mod = e.metaKey || e.ctrlKey;
+        if (mod || e.shiftKey) {
+          e.preventDefault();
+          if (e.shiftKey) selection!.selectRange(node, rootId);
+          else selection!.toggle(node, rootId);
+          return;
+        }
+        selection!.anchorAndClear(node, rootId);
+      }
+
+      // Toggle expand on the row click for nodes that have children AND
+      // navigate if the node has a pointer. Matches Notion's behavior where
+      // clicking a page both navigates AND expands.
+      if (hasChildrenHint) {
+        void tree.toggleExpand(node);
+      }
+      if (node.pointer) {
+        onNavigate(node.pointer);
+      }
+    },
+    [editing, canSelect, selection, rootId, hasChildrenHint, node, tree, onNavigate],
+  );
 
   // Inline rename: double-click a *selected* row to edit its label in place.
   const handleDoubleClick = useCallback(() => {
@@ -279,13 +355,18 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
       <div
         className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-colors ${
           isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
-        } ${node.pointer ? 'cursor-pointer' : 'cursor-default'} ${node.dragData ? 'active:cursor-grabbing' : ''} ${
+        } ${
+          // Multi-select ring — distinct from, and composable with, the active
+          // (bg-accent) fill: a row can be both the open editor and selected.
+          multiSelected ? 'ring-2 ring-inset ring-primary' : ''
+        } ${node.pointer || canSelect ? 'cursor-pointer' : 'cursor-default'} ${node.dragData ? 'active:cursor-grabbing' : ''} ${
           isDropTarget ? 'bg-primary/10 ring-1 ring-primary/40' : ''
         } ${isDropping ? 'opacity-60' : ''} ${node.rowClassName ?? ''}`}
         style={{ marginLeft: `${level * 14}px` }}
         role="treeitem"
         aria-level={level + 1}
         aria-selected={isSelected}
+        data-multi-selected={multiSelected || undefined}
         aria-expanded={hasChildrenHint ? expanded : undefined}
         draggable={!!node.dragData}
         onDragStart={handleDragStart}
@@ -391,7 +472,9 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
               key={child.id}
               node={child}
               level={level + 1}
+              rootId={rootId}
               tree={tree}
+              selection={selection}
               activePointer={activePointer}
               activeKey={activeKey}
               onNavigate={onNavigate}

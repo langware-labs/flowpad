@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { Link, Trash2 } from 'lucide-react';
 import {
   AssetDocPointer,
 } from '@src/navigation/AssetDocPointer';
@@ -16,6 +17,7 @@ import { useSystemTools } from '@src/hooks/use-system-tools';
 import { assetScopeBucket, defaultScopeFilter, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import {
   markdownFolderNodeId,
@@ -23,7 +25,8 @@ import {
   type MarkdownDragItem,
   type MarkdownFolderTarget,
 } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
-import type { BrowseableRoot } from '@src/components/browseable-tree/types';
+import type { Browseable, BrowseableRoot } from '@src/components/browseable-tree/types';
+import type { MultiSelectAction } from '@src/components/navigator-panel/types';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
 
@@ -175,6 +178,67 @@ export function useAssetsModel() {
       navigation.openDock(p.withScopeFilter(urlScope));
     },
     [navigation, urlScope],
+  );
+
+  // Multi-select toolbar resolver. Content adapts to the current selection: every
+  // row that carries a `bulkDelete` (its adapter owns the actual delete) can be
+  // deleted, while "Copy links" applies to entity rows only — so selecting a
+  // skill-folder file vs. an agent surfaces a different toolbar. A bulk delete
+  // shows ONE confirmation, deletes in parallel, then refreshes the distinct
+  // owning nodes so removed rows drop out.
+  const bulkActions = useCallback(
+    (selected: Browseable[]): MultiSelectAction[] => {
+      const deleteAction: MultiSelectAction = {
+        id: 'delete',
+        icon: <Trash2 />,
+        label: selected.length > 1 ? `Delete ${selected.length}` : 'Delete',
+        variant: 'destructive',
+        run: (items, ctx) => {
+          const deletable = items.filter((n) => n.bulkDelete);
+          if (deletable.length === 0) return;
+          showDeleteAssetModal({
+            name: deletable.length > 1 ? `${deletable.length} items` : deletable[0]?.label ?? 'item',
+            description:
+              deletable.length > 1
+                ? `This permanently deletes ${deletable.length} selected items. This cannot be undone.`
+                : undefined,
+            onConfirm: async () => {
+              await Promise.all(deletable.map((n) => n.bulkDelete!.run()));
+            },
+            onAfterDelete: () => {
+              const ids = new Set(deletable.map((n) => n.bulkDelete!.refreshId));
+              if (ctx.scopeRootId) ids.add(ctx.scopeRootId);
+              ids.forEach((nodeId) => refreshNode(nodeId));
+              ctx.clearSelection();
+            },
+          });
+        },
+      };
+
+      const copyLinksAction: MultiSelectAction = {
+        id: 'copy-links',
+        icon: <Link />,
+        label: 'Copy links',
+        // Entity rows only — folder files have no shareable deep link.
+        enabledWhen: (items) => items.length > 0 && items.every((n) => n.selectionType !== 'file'),
+        run: async (items, ctx) => {
+          const urls = items
+            .map((n) => (n.pointer ? navigation.getDockUrl(n.pointer) : null))
+            .filter((u): u is string => !!u);
+          if (urls.length === 0) return;
+          try {
+            await navigator.clipboard.writeText(urls.join('\n'));
+            notify.success({ title: `Copied ${urls.length} link${urls.length > 1 ? 's' : ''}` });
+          } catch {
+            notify.error({ title: 'Failed to copy links' });
+          }
+          ctx.clearSelection();
+        },
+      };
+
+      return [copyLinksAction, deleteAction];
+    },
+    [navigation],
   );
 
   const treeActivePointer = useMemo<DockPointer | null>(() => {
@@ -382,6 +446,7 @@ export function useAssetsModel() {
     scopeProjectName,
     handleScopeChange,
     navigateAsset,
+    bulkActions,
     // dialogs
     newTypeTarget,
     newTypeDialogOpen,
