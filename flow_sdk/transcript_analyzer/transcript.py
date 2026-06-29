@@ -105,6 +105,11 @@ class AgentTranscriptFile:
         if not self.path.exists():
             return self.entries
 
+        # Whole-document workers (e.g. workflow run journals) are a single JSON
+        # object, not JSONL — read the file once and feed the parsed object.
+        if getattr(self._parser, "whole_document", False):
+            return self._read_whole_document()
+
         try:
             file_size = self.path.stat().st_size
         except OSError as exc:
@@ -158,10 +163,42 @@ class AgentTranscriptFile:
         # fold would feed back into the next fold's input — producing duplicated
         # joined text and other re-mutation artifacts. We fold over shallow
         # copies so ``self._unfolded`` stays pristine across delta boundaries.
+        return self._refold()
+
+    def _refold(self) -> list[TranscriptEntry]:
+        """Refold ``self._unfolded`` (over shallow copies, so the retained list
+        stays pristine across delta boundaries) into ``self.entries``."""
         snapshot = [copy.copy(e) for e in self._unfolded]
         folded = self._fold_assistant_messages(snapshot)
         self.entries = self._fold_tool_results(folded)
         return self.entries
+
+    def _read_whole_document(self) -> list[TranscriptEntry]:
+        """Single-JSON-document path: read the entire file, parse it once, and
+        feed the parsed object to the (whole-document) parser. Re-parses only when
+        the file size changes since the last read (``_byte_offset`` doubles as the
+        last-seen size sentinel here). Used for workflow run journals.
+        """
+        try:
+            file_size = self.path.stat().st_size
+        except OSError as exc:
+            logger.debug("AgentTranscriptFile: stat failed %s: %s", self.path, exc)
+            return self.entries
+        if self.entries and file_size == self._byte_offset:
+            return self.entries  # unchanged — idempotent
+        try:
+            text = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            logger.debug("AgentTranscriptFile: read failed %s: %s", self.path, exc)
+            return self.entries
+        try:
+            obj = json.loads(text)
+        except json.JSONDecodeError:
+            logger.debug("AgentTranscriptFile: malformed JSON document %s", self.path)
+            return self.entries
+        self._unfolded = list(self._parser.feed(obj, 0))
+        self._byte_offset = file_size
+        return self._refold()
 
     def _reset_state(self) -> None:
         """Reset delta state + parser; preserves the resolved session_id so the
@@ -309,6 +346,19 @@ class AgentTranscriptFile:
     def __len__(self) -> int:
         return len(self.entries)
 
+    def walk(self) -> Iterator[TranscriptEntry]:
+        """Depth-first over top-level entries AND nested sub-agent children.
+
+        Identical to flat iteration unless the transcript was assembled
+        (:func:`flow_sdk.transcript_analyzer.assembly.assemble_tree`), which
+        stitches each spawned sub-agent's entries onto
+        ``AgentSpawnEntry.children``. A shared ``id()`` guard (in
+        ``TranscriptEntry.walk``) makes a malformed cycle terminate.
+        """
+        seen: set[int] = set()
+        for e in self.entries:
+            yield from e.walk(seen)
+
     def filter(
         self,
         *,
@@ -370,7 +420,12 @@ class AgentTranscriptFile:
 
     @property
     def usage(self) -> list[UsageEntry]:
-        """All per-dim usage entries in this transcript, in source order.
+        """Top-level (this file's) per-dim usage entries, in source order.
+
+        Deliberately SHALLOW — it backs span attribution
+        (:meth:`usage_in_span`) and per-lane cost, which must charge each lane
+        only its own usage. For a whole-session total that includes stitched
+        sub-agents, use :meth:`cost_deep` / :meth:`usage_deep`.
 
         Each entry represents one chargeable stream (tokens or requests)
         from a single assistant turn — see :class:`UsageEntry`. Pairing
@@ -380,21 +435,41 @@ class AgentTranscriptFile:
         """
         return [e for e in self.entries if isinstance(e, UsageEntry)]
 
-    def cost(self, pricing: dict[str, "ModelPricing"] | None = None) -> float:
-        """Sum USD cost across all usage entries.
+    def usage_deep(self) -> list[UsageEntry]:
+        """Usage entries across the whole assembled tree (incl. sub-agents).
 
-        Per-entry pricing is resolved by ``entry.model`` via
-        :func:`flow_sdk.transcript_analyzer.pricing.pricing_for`. The
-        optional ``pricing`` arg overrides the default lookup (useful for
-        testing or applying a custom rate table).
+        Each sub-agent file's usage was de-duplicated by its own parser
+        (``_usage_seen_msg_ids`` is per-file); we never re-dedup across files,
+        so concatenating is correct and never double-counts.
         """
+        return [e for e in self.walk() if isinstance(e, UsageEntry)]
+
+    def _sum_cost(
+        self,
+        entries: Iterator[UsageEntry] | list[UsageEntry],
+        pricing: dict[str, "ModelPricing"] | None,
+    ) -> float:
+        """Sum USD cost of ``entries``, resolving per-entry pricing by model."""
         from .pricing import pricing_for as _pricing_for
 
         total = 0.0
-        for e in self.usage:
+        for e in entries:
             table = pricing[e.model] if (pricing and e.model in pricing) else _pricing_for(e.model, self.worker_type)
             total += table.cost_of(e)
         return total
+
+    def cost(self, pricing: dict[str, "ModelPricing"] | None = None) -> float:
+        """Sum USD cost of this file's own usage (SHALLOW — no sub-agents).
+
+        Mirrors :attr:`usage`; for the whole-session total use :meth:`cost_deep`.
+        Per-entry pricing is resolved by ``entry.model``; the optional ``pricing``
+        arg overrides the default lookup.
+        """
+        return self._sum_cost(self.usage, pricing)
+
+    def cost_deep(self, pricing: dict[str, "ModelPricing"] | None = None) -> float:
+        """Whole-session cost including every stitched sub-agent (see :meth:`usage_deep`)."""
+        return self._sum_cost(self.usage_deep(), pricing)
 
     def usage_in_span(self, enter_ts: str, done_ts: str) -> list[UsageEntry]:
         """Usage entries whose ``timestamp`` falls in ``[enter_ts, done_ts]``.
@@ -414,13 +489,7 @@ class AgentTranscriptFile:
         pricing: dict[str, "ModelPricing"] | None = None,
     ) -> float:
         """USD cost for usage entries within the time span. See :meth:`usage_in_span`."""
-        from .pricing import pricing_for as _pricing_for
-
-        total = 0.0
-        for e in self.usage_in_span(enter_ts, done_ts):
-            table = pricing[e.model] if (pricing and e.model in pricing) else _pricing_for(e.model, self.worker_type)
-            total += table.cost_of(e)
-        return total
+        return self._sum_cost(self.usage_in_span(enter_ts, done_ts), pricing)
 
     @property
     def latest_plan(self) -> ToolUseEntry | None:

@@ -440,10 +440,11 @@ def test_tail_status_expands_past_envelope_run_beyond_4kb(tmp_path: Path):
 class _FakeProcess:
     """Minimal stand-in for AgenticProcess in the predicate truth-table."""
 
-    def __init__(self, status: ProcessStatus, worker: WorkerStatus | None = None, session_id: str | None = None):
+    def __init__(self, status: ProcessStatus, worker: WorkerStatus | None = None, session_id: str | None = None, turn_in_flight: bool = False):
         self.status = status.value
         self._worker = worker
         self.session_id = session_id
+        self._turn_in_flight = turn_in_flight
 
     def fetch_worker_status(self) -> WorkerStatus | None:
         return self._worker
@@ -480,16 +481,20 @@ def test_is_ready_for_input_truth_table(process_status, worker_status, expected)
     assert is_ready_for_input(proc, worker_status) is expected
 
 
-def test_is_ready_for_input_none_worker_with_session(tmp_path):
-    """No transcript yet AND session_id set → worker was just launched → not ready."""
-    proc = _FakeProcess(ProcessStatus.RUNNING, None, session_id="sess-123")
+def test_is_ready_for_input_none_worker_turn_in_flight(tmp_path):
+    """No transcript yet AND a turn is genuinely in flight → worker is busy.
+    (Readiness gates on ``_turn_in_flight``, not ``session_id`` presence — the
+    driver mints a session_id eagerly, so it can't mean "busy".)"""
+    proc = _FakeProcess(ProcessStatus.RUNNING, None, session_id="sess-123", turn_in_flight=True)
     assert is_ready_for_input(proc) is False
 
 
-def test_is_ready_for_input_none_worker_without_session():
-    """No transcript yet AND no session_id → never prompted → ready."""
-    proc = _FakeProcess(ProcessStatus.RUNNING, None, session_id=None)
-    assert is_ready_for_input(proc) is True
+def test_is_ready_for_input_none_worker_no_turn_is_ready():
+    """No transcript yet AND no turn in flight → spawned-and-idle, ready for the
+    first prompt — even with a session_id already assigned. Regression: this used
+    to read busy forever, pinning new sessions on the 'Initializing' spinner."""
+    assert is_ready_for_input(_FakeProcess(ProcessStatus.RUNNING, None, session_id="sess-123")) is True
+    assert is_ready_for_input(_FakeProcess(ProcessStatus.RUNNING, None, session_id=None)) is True
 
 
 # ── WorkerMode derivation ────────────────────────────────────────────────────

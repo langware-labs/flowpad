@@ -2,45 +2,30 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fsStore, type FSItem } from '@sdk';
+import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { BrowseableTree } from '@src/components/browseable-tree';
-import { markdownFolderRoot } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
+import {
+  markdownFolderRoot,
+  __resetVaultFilesCacheForTests,
+} from '@src/components/browseable-tree/adapters/markdownFolderRoot';
 import type { AssetTypeInfo, AssetTypeVault } from '@src/hooks/use-asset-types';
 
-// ---------- filesystem mock ----------
+// ---------- markdown-files walk mock ----------
+//
+// The adapter no longer lists per-folder via fsStore.listDirectory. It fetches
+// the COMPLETE gitignore-aware walk of a vault once via
+// `apiClient.get('/assets/markdown-files?root=…')` and derives folders/files
+// in-memory. The endpoint returns vault-root-relative POSIX paths and is
+// markdown-only (non-.md files are filtered server-side), so tests stage a flat
+// list of .md paths; folders are inferred from path segments.
 
-type FakeEntry = { name: string; is_dir: boolean };
-
-function item(name: string, is_dir = false): FakeEntry {
-  return { name, is_dir };
-}
-
-function stageFilesystem(tree: Record<string, FakeEntry[]>) {
-  // Return a spy on fsStore.listDirectory that resolves from the staged tree.
-  // Key is `typeid:relPath` (relPath '' or '/' both map to the vault root).
-  const spy = vi.fn(async (typeid: { toString(): string }, path: string) => {
-    const tid = typeid.toString();
-    const norm = (path || '').replace(/^\/+/, '').replace(/\/+$/, '');
-    const key = `${tid}:${norm}`;
-    const entries = tree[key] ?? [];
-    return {
-      items: entries.map((e) => ({
-        name: e.name,
-        is_dir: e.is_dir,
-        vfs_abs_path: `${tid}/${norm ? norm + '/' : ''}${e.name}`,
-      })) as unknown as FSItem[],
-      path: norm,
-      totalSize: 0,
-      itemCount: entries.length,
-      fetchedAt: new Date(),
-    };
-  });
-  vi.spyOn(fsStore, 'getState').mockReturnValue({
-    listDirectory: spy,
-    // minimal shape: unused fields default to undefined
-  } as unknown as ReturnType<typeof fsStore.getState>);
+function stageVaultFiles(files: string[]) {
+  // Resolve every markdown-files request to the same staged walk. The single
+  // VAULT fixture means root never varies across one test.
+  const spy = vi.fn(async (_path: string) => ({ files }));
+  vi.spyOn(apiClient, 'get').mockImplementation(spy as never);
   return spy;
 }
 
@@ -71,11 +56,14 @@ function chevronTestId(node: { id: string }): string {
 describe('markdownFolderRoot adapter', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    // The walk is memoised per vault root at module scope; clear it so each
+    // case re-fetches against its own staged file list.
+    __resetVaultFilesCacheForTests();
   });
 
   describe('vault enumeration', () => {
     it('lists vaults as children of the Markdown root', async () => {
-      stageFilesystem({});
+      stageVaultFiles([]);
       const user = userEvent.setup();
       const root = markdownFolderRoot(makeType([VAULT]), {
         indexType: vi.fn(async () => ({ indexed: 0 })),
@@ -88,7 +76,7 @@ describe('markdownFolderRoot adapter', () => {
     });
 
     it('markdown root without vaults renders with no children', async () => {
-      stageFilesystem({});
+      stageVaultFiles([]);
       const user = userEvent.setup();
       const root = markdownFolderRoot(makeType([]), {
         indexType: vi.fn(async () => ({ indexed: 0 })),
@@ -100,13 +88,9 @@ describe('markdownFolderRoot adapter', () => {
   });
 
   describe('folder expansion + listChildren', () => {
-    it('expanding a vault calls fsStore.listDirectory and renders files/folders', async () => {
-      const spy = stageFilesystem({
-        'compute_node-@local:Users/alice/docs': [
-          item('architecture', true),
-          item('readme.md'),
-        ],
-      });
+    it('expanding a vault fetches the markdown walk and renders files/folders', async () => {
+      // `architecture/` is INFERRED from the path segment of a file beneath it.
+      const spy = stageVaultFiles(['architecture/intro.md', 'readme.md']);
       const user = userEvent.setup();
       const root = markdownFolderRoot(makeType([VAULT]), {
         indexType: vi.fn(async () => ({ indexed: 0 })),
@@ -125,15 +109,11 @@ describe('markdownFolderRoot adapter', () => {
       expect(spy).toHaveBeenCalled();
     });
 
-    it('filters out non-markdown files', async () => {
-      stageFilesystem({
-        'compute_node-@local:Users/alice/docs': [
-          item('README.md'),
-          item('image.png'),
-          item('subdir', true),
-          item('note.md'),
-        ],
-      });
+    it('renders only the markdown walk (non-.md filtered server-side)', async () => {
+      // The /assets/markdown-files endpoint is markdown-only, so a non-.md file
+      // like image.png never reaches the client. `subdir/` is inferred from a
+      // file beneath it.
+      stageVaultFiles(['README.md', 'note.md', 'subdir/guide.md']);
       const user = userEvent.setup();
       const root = markdownFolderRoot(makeType([VAULT]), {
         indexType: vi.fn(),
@@ -152,14 +132,8 @@ describe('markdownFolderRoot adapter', () => {
     });
 
     it('sorts folders first then files alphabetically', async () => {
-      stageFilesystem({
-        'compute_node-@local:Users/alice/docs': [
-          item('zeta.md'),
-          item('alpha', true),
-          item('alpha.md'),
-          item('beta', true),
-        ],
-      });
+      // alpha/ and beta/ are inferred from files beneath them.
+      stageVaultFiles(['zeta.md', 'alpha/a.md', 'alpha.md', 'beta/b.md']);
       const user = userEvent.setup();
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
@@ -189,7 +163,7 @@ describe('markdownFolderRoot adapter', () => {
     });
 
     it('shows empty state when a folder has no matching children', async () => {
-      stageFilesystem({ 'compute_node-@local:Users/alice/docs': [] });
+      stageVaultFiles([]);
       const user = userEvent.setup();
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
@@ -202,9 +176,7 @@ describe('markdownFolderRoot adapter', () => {
 
   describe('click → navigation', () => {
     it('clicking a folder navigates with forAssetFolder pointer', async () => {
-      stageFilesystem({
-        'compute_node-@local:Users/alice/docs': [item('architecture', true)],
-      });
+      stageVaultFiles(['architecture/intro.md']);
       const user = userEvent.setup();
       const onNavigate = vi.fn();
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
@@ -218,9 +190,7 @@ describe('markdownFolderRoot adapter', () => {
     });
 
     it('clicking a .md file navigates with forAssetEditor pointer', async () => {
-      stageFilesystem({
-        'compute_node-@local:Users/alice/docs': [item('readme.md')],
-      });
+      stageVaultFiles(['readme.md']);
       const user = userEvent.setup();
       const onNavigate = vi.fn();
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
@@ -245,10 +215,7 @@ describe('markdownFolderRoot adapter', () => {
 
   describe('deep-link auto-expand', () => {
     it('activePointer = editor/markdown/<abs> auto-expands vault + intermediate folders + leaf', async () => {
-      stageFilesystem({
-        'compute_node-@local:Users/alice/docs': [item('architecture', true)],
-        'compute_node-@local:Users/alice/docs/architecture': [item('backend.md')],
-      });
+      stageVaultFiles(['architecture/backend.md']);
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       // Canonical grammar via the factory (editor/<editor>/vfs/<typeid>/<relPath>).
       const deepPointer = DockPointer.forAssetEditor(
@@ -268,9 +235,7 @@ describe('markdownFolderRoot adapter', () => {
     });
 
     it('activePointer = folder/markdown/<typeid>/<rel> auto-expands to that folder', async () => {
-      stageFilesystem({
-        'compute_node-@local:Users/alice/docs': [item('architecture', true)],
-      });
+      stageVaultFiles(['architecture/intro.md']);
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       const ptr = new DockPointer(
         ViewType.ASSETS,
@@ -290,12 +255,7 @@ describe('markdownFolderRoot adapter', () => {
       // Deep-link targets the vault root (the folder pointer equals the vault's relPath).
       // Expectation: the vault row is marked aria-expanded="true" and its
       // children (subfolders + .md files) render at aria-level=3.
-      stageFilesystem({
-        'compute_node-@local:Users/alice/docs': [
-          item('architecture', true),
-          item('readme.md'),
-        ],
-      });
+      stageVaultFiles(['architecture/intro.md', 'readme.md']);
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       const ptr = new DockPointer(
         ViewType.ASSETS,
@@ -341,7 +301,7 @@ describe('markdownFolderRoot adapter', () => {
 
   describe('toolbar', () => {
     it('Scan toolbar action calls indexType + onScanComplete', async () => {
-      stageFilesystem({});
+      stageVaultFiles([]);
       const user = userEvent.setup();
       const indexType = vi.fn(async () => ({ indexed: 42 }));
       const onScanComplete = vi.fn();
@@ -354,7 +314,7 @@ describe('markdownFolderRoot adapter', () => {
     });
 
     it('New toolbar action calls onNew', async () => {
-      stageFilesystem({});
+      stageVaultFiles([]);
       const user = userEvent.setup();
       const onNew = vi.fn();
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn(), onNew });

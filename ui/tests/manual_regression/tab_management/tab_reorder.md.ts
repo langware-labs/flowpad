@@ -31,7 +31,7 @@ async function backendTabs(page: Page): Promise<Array<{ pointer: string; order: 
       if (p && p.startsWith('{')) {
         try {
           const o = JSON.parse(p);
-          return `${o.viewType ?? ''}|${o.pointer ?? ''}`;
+          return o.tabHash ?? `${o.viewType ?? ""}|${o.pointer ?? ""}`;
         } catch {
           return p;
         }
@@ -75,9 +75,9 @@ test.describe('Tab Management — drag reorder persists to the backend', () => {
     // the terminal HOST, not a tab — only a session-pointer shell gets a chip —
     // so two content surfaces give a deterministic, PTY-free two-chip strip.)
     await page.goto('/dock/assets');
-    await expect(page.locator('[data-terminal-target="assets|"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-terminal-target="assets|all"]')).toBeVisible({ timeout: 15_000 });
     await page.goto('/dock/search');
-    const assets = page.locator('[data-terminal-target="assets|"]');
+    const assets = page.locator('[data-terminal-target="assets|all"]');
     const search = page.locator('[data-terminal-target="search|"]');
     await expect(assets).toBeVisible({ timeout: 15_000 });
     await expect(search).toBeVisible({ timeout: 15_000 });
@@ -85,10 +85,10 @@ test.describe('Tab Management — drag reorder persists to the backend', () => {
     // Order-agnostic: read the rendered order, then drag the RIGHT chip to the
     // front and assert it lands before the (former) left chip — DOM and backend.
     const before = await domOrder(page);
-    const ai = before.indexOf('assets|');
+    const ai = before.indexOf('assets|all');
     const si = before.indexOf('search|');
-    const leftPtr = ai < si ? 'assets|' : 'search|';
-    const rightPtr = ai < si ? 'search|' : 'assets|';
+    const leftPtr = ai < si ? 'assets|all' : 'search|';
+    const rightPtr = ai < si ? 'search|' : 'assets|all';
     const left = page.locator(`[data-terminal-target="${leftPtr}"]`);
     const right = page.locator(`[data-terminal-target="${rightPtr}"]`);
 

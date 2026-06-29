@@ -1,8 +1,6 @@
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
-import { Checkbox } from '@src/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { isAllScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import { ActionInfo, dataManager, type ITrigger } from '@sdk';
 import { HelpCircle, Plus } from 'lucide-react';
@@ -17,15 +15,12 @@ interface Props {
   onOpenLog: (trigger: ITrigger) => void;
   onNewSchedule: () => void;
   isCreatingSchedule: boolean;
-  /** Seeds the ScopeFilterIconBar's Project chip and pre-selects the current
-   *  project in the picker. */
-  currentProjectId: string | null;
-  /** Current project display name — shown in the Project icon's tooltip. */
-  currentProjectName?: string | null;
-  /** URL-first scope filter (read from the dock options by the host) plus its
-   *  writer. The scope lives in the URL — this component is fully controlled. */
+  /** URL-first scope filter (read from the dock options by the host). The scope
+   *  lives in the URL — this component is fully controlled. */
   scope: ScopeFilter;
-  onScopeChange: (scope: ScopeFilter) => void;
+  /** Whether system triggers are shown — owned by the navigator (the header
+   *  filter bar writes it), threaded here to drive `filterTriggers`. */
+  includeSystem: boolean;
 }
 
 const SCOPE_ORDER = ['system', 'user', 'project'] as const;
@@ -77,13 +72,9 @@ export function TriggersList({
   onOpenLog,
   onNewSchedule,
   isCreatingSchedule,
-  currentProjectId,
-  currentProjectName,
   scope,
-  onScopeChange,
+  includeSystem,
 }: Props) {
-  const [includeSystem, setIncludeSystem] = useState(false);
-
   const visibleTriggers = useMemo(
     () => filterTriggers(triggers, scope, includeSystem),
     [triggers, scope, includeSystem],
@@ -97,41 +88,8 @@ export function TriggersList({
   const scheduleGrouped = groupByScope(scheduleTriggers);
   const fsopGrouped = groupByScope(fsopTriggers);
 
-  const hiddenSystemCount = includeSystem
-    ? 0
-    : triggers.filter((t) => (t.scope || 'user') === 'system').length;
-
   return (
     <div>
-      {/* Top filter row: canonical icon scope bar (All/User/Project/Selected,
-          same as the Assets sidebar) plus a separate "Include system" checkbox.
-          Scope is URL-first — `scope`/`onScopeChange` come from the dock URL. */}
-      <div className="flex flex-col gap-1.5 border-b px-3 py-2">
-        <ScopeFilterIconBar
-          scope={scope}
-          currentProjectId={currentProjectId}
-          currentProjectName={currentProjectName}
-          onScopeChange={onScopeChange}
-        />
-        <div className="flex items-center gap-1.5">
-          <Checkbox
-            id="triggers-include-system"
-            checked={includeSystem}
-            onCheckedChange={(v) => setIncludeSystem(v === true)}
-            className="h-3 w-3"
-          />
-          <label
-            htmlFor="triggers-include-system"
-            className="cursor-pointer select-none text-[10px] text-muted-foreground"
-          >
-            Include system
-            {hiddenSystemCount > 0 && (
-              <span className="ml-1 text-muted-foreground/60">({hiddenSystemCount})</span>
-            )}
-          </label>
-        </div>
-      </div>
-
       {/* Schedule Triggers section (always rendered — empty state shows a "Create one" affordance). */}
       <TypeSection
         title="Schedule Triggers"

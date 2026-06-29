@@ -110,6 +110,51 @@ async def test_indexer_skips_fresh_on_second_run(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_stale_sentinel_without_db_row_reindexes(tmp_path: Path) -> None:
+    """A fresh on-disk sentinel must NOT mask a missing DB row.
+
+    Regression for the "only 3 of 589 markdowns show" bug: a DB clear/rebuild
+    drops rows but leaves the shadow store's ``.hash`` sentinels. Skip-fresh
+    must require the entity row to exist — not just a matching sentinel — or it
+    skips re-creating the row forever and the records stay invisible.
+    """
+    root = tmp_path / "proj"
+    docs = root / ".claude" / "docs"
+    docs.mkdir(parents=True)
+    (docs / "a.md").write_text("# a\n", encoding="utf-8")
+    (docs / "b.md").write_text("# b\n", encoding="utf-8")
+
+    driver = get_db_driver()
+    idx = FSIndexer()
+    idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
+    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
+    await driver.delete_entities_by_type(str(RecordType.MARKDOWN))
+
+    # First run: rows + sentinels created.
+    r1 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
+    assert r1.per_type[RecordType.MARKDOWN].indexed == 2
+    rows = await driver.list_entity_sources_by_type(str(RecordType.MARKDOWN))
+    assert len(rows) == 2
+
+    # Simulate a DB clear/rebuild that leaves the shadow store intact:
+    # delete_entities_by_type drops rows (+FTS) but does NOT touch the on-disk
+    # .hash sentinels (only the DELETE /index handler / clear_hashes_for_type
+    # does). So the sentinels are now stale — fresh-looking, but no row.
+    await driver.delete_entities_by_type(str(RecordType.MARKDOWN))
+    assert len(await driver.list_entity_sources_by_type(str(RecordType.MARKDOWN))) == 0
+    # Sentinels still report the sources as fresh (sources unchanged).
+    assert FSRecord(type="markdown", id="t-x", asset_ref=FSRef(docs / "a.md")).record_hash
+
+    # Second run (NO force): sentinels match but rows are gone → must re-index,
+    # not skip-fresh.
+    r2 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
+    per2 = r2.per_type[RecordType.MARKDOWN]
+    assert per2.indexed == 2, f"expected re-index of both, got indexed={per2.indexed} skipped={per2.skipped}"
+    assert per2.skipped == 0
+    assert len(await driver.list_entity_sources_by_type(str(RecordType.MARKDOWN))) == 2
+
+
+@pytest.mark.asyncio
 async def test_force_reindexes_everything(tmp_path: Path) -> None:
     """`force` (Full mode) bypasses the sentinel and re-indexes unchanged files."""
     root = tmp_path / "proj"

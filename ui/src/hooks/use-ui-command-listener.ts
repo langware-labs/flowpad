@@ -1,6 +1,7 @@
-import { ConnectionManager, DockPointerData, dataManager, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
+import { AssetEditor, ConnectionManager, DockPointerData, dataManager, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
 import { useEffect } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 
 /**
  * Listen for server-side `ui_command` WS messages and execute them.
@@ -18,6 +19,15 @@ import { DockPointer } from '@src/navigation/DockPointer';
 export function useUiCommandListener(): void {
   useEffect(() => {
     const cm = ConnectionManager.getInstance();
+
+    // Rewrite the URL to a dock pointer — react-router's createBrowserRouter
+    // listens for popstate. Shared by every ui_command handler.
+    const navigateTo = (pointer: IDockPointer) => {
+      const fullUrl = new DockPointer(pointer).toUrl(window.location.pathname);
+      if (fullUrl === window.location.pathname + window.location.search) return;
+      window.history.pushState(null, '', fullUrl);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    };
 
     const handleNavigateEntity = async (msg: UiCommandMessage) => {
       if (!msg.type || !msg.id) {
@@ -49,26 +59,33 @@ export function useUiCommandListener(): void {
         }
       }
 
-      let pointer: IDockPointer;
-      if (entity && entity.dockPointer && entity.dockPointer.viewType) {
-        pointer = entity.dockPointer;
-      } else {
-        pointer = new DockPointerData(ViewType.HOME, typeId.toString());
+      const pointer: IDockPointer =
+        entity && entity.dockPointer && entity.dockPointer.viewType
+          ? entity.dockPointer
+          : new DockPointerData(ViewType.HOME, typeId.toString());
+      navigateTo(pointer);
+    };
+
+    // `navigate_vfs`: open a raw file path in the asset editor — no entity
+    // required (the server fell back to this because the path isn't indexed).
+    // Editor is chosen by extension; the path is the unique vfs address.
+    const handleNavigateVfs = (msg: UiCommandMessage) => {
+      if (!msg.path) {
+        console.warn('[ui_command] navigate_vfs missing path', msg);
+        return;
       }
-
-      const fullUrl = new DockPointer(pointer).toUrl(window.location.pathname);
-
-      if (fullUrl === window.location.pathname + window.location.search) return;
-
-      // createBrowserRouter listens for popstate — this is how we navigate
-      // without needing a react-router hook.
-      window.history.pushState(null, '', fullUrl);
-      window.dispatchEvent(new PopStateEvent('popstate'));
+      const ext = msg.path.split('.').pop()?.toLowerCase();
+      const editor = ext === 'md' || ext === 'markdown' ? AssetEditor.MARKDOWN : AssetEditor.CODE;
+      navigateTo(AssetDocPointer.forVfs(editor, msg.path).toDockPointer());
     };
 
     const onUiCommand = (msg: UiCommandMessage) => {
       if (msg.kind === 'navigate_entity') {
         void handleNavigateEntity(msg);
+        return;
+      }
+      if (msg.kind === 'navigate_vfs') {
+        handleNavigateVfs(msg);
         return;
       }
       // Forward-compat: log unknown kinds but don't crash.

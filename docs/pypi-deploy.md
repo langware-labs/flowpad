@@ -20,25 +20,31 @@ id: 684208ee-360e-50e6-a71e-b642ca95ac57
 > branch/PyPI versions would drift apart (a real bug we've hit).
 
 This is the canonical release operation. It takes the current dev branch, lands
-it on the release branch, publishes the new patch to PyPI, and names the dev
+it on the release branch, publishes the new version to PyPI, and names the dev
 branch after the version just deployed. The release-branch steps run in an
 **isolated git worktree** so they never disturb the shared main checkout —
 concurrent sessions commit onto whatever branch is checked out there, so we must
 not `git checkout` the release branch in the main working tree.
 
+> **The baseline is always the *latest* release line, never a hardcoded `0.2`.**
+> Derive the release branch (`release/vX.Y`) and the PyPI-latest version at deploy
+> time; the steps below use `$RELEASE_BRANCH` / `$NEW` so they work for whatever
+> `vX.Y` is current. A **patch** stays on the existing `$RELEASE_BRANCH`; a **minor
+> or major** opens a new one first — see *[Cutting a minor / major](#cutting-a-minor--major-new-release-line)*.
+
 > **Branch-naming invariant: the dev branch is named after the *most recently
-> deployed* version.** After publishing `0.2.<NEW>`, the dev branch is
-> `0.2.<NEW>-fixes` — it holds the fixes that will become the *next* release.
-> The next run bumps to `0.2.<NEW+1>` at deploy time and only **then** renames
-> the branch to `0.2.<NEW+1>-fixes`. So in the common steady state the dev branch
-> already equals `0.2.<NEW>-fixes` after the bump and step 4's rename is a no-op;
-> it only actually renames when the deploy crossed into a new patch number. Do
-> **not** pre-name the dev branch one ahead of what's on PyPI.
+> deployed* version `$NEW`.** After publishing `$NEW` (e.g. `0.2.79` or `0.3.0`),
+> the dev branch is `$NEW-fixes` — it holds the fixes that will become the *next*
+> release. The next run bumps `$NEW` again at deploy time and only **then** renames
+> the branch. So in the common steady state the dev branch already equals
+> `$NEW-fixes` after the bump and step 4's rename is a no-op; it only actually
+> renames when the deploy crossed into a new version number. Do **not** pre-name
+> the dev branch one ahead of what's on PyPI.
 
 ```bash
 DEV_BRANCH=$(git branch --show-current)          # e.g. 0.2.68-fixes
 git fetch origin --prune
-RELEASE_BRANCH=$(git branch -r | grep -oE 'release/v[0-9]+\.[0-9]+' | sort -t. -k2,2n -u | tail -1)
+RELEASE_BRANCH=$(git branch -r | grep -oE 'release/v[0-9]+\.[0-9]+' | sort -V -u | tail -1)
 
 # --- 1. COMMIT: land any working-tree changes on the dev branch, then push.
 git add -A                                        # include untracked unless told otherwise
@@ -67,9 +73,12 @@ fi
 # (below) and STOP — unless the user has explicitly said publish anyway.
 
 # --- 3. DEPLOY: bump + build + publish from an isolated worktree on the release branch.
-#     Pick the new patch off the HIGHER of PyPI and the branch (never go backwards).
+#     Pick the new version off the HIGHER of PyPI and the branch (never go backwards).
 PYPI=$(curl -s https://pypi.org/pypi/flowpad/json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])")
-NEW=0.2.X                                          # = max(PyPI, branch) patch + 1
+# Patch (default): max(PyPI, branch), bump the patch component.
+# Minor: bump the minor and reset patch to 0 (e.g. 0.2.79 -> 0.3.0); see the
+#        "Cutting a minor / major" section — $RELEASE_BRANCH must be the NEW line.
+NEW=X.Y.Z                                          # computed from the baseline above
 WT=$(mktemp -d)/release-wt
 git worktree add "$WT" "origin/$RELEASE_BRANCH"
 ln -s "$(pwd)/ui/node_modules" "$WT/ui/node_modules"   # reuse deps so build_ui.py is fast
@@ -100,6 +109,49 @@ a throwaway worktree — so the main working tree stays on the dev branch the wh
 time. Only step 4 (`git branch -m`) touches it, renaming the branch in place to
 `$NEW-fixes` (the version just deployed; same commit, new name) and merging in
 the release bump.
+
+## Cutting a minor / major (new release line)
+
+The Quick Deploy above bumps the **patch** on the existing `$RELEASE_BRANCH`. A
+**minor** (`0.2.79 → 0.3.0`) or **major** starts a *new* release line, so the only
+extra step is creating its `release/vX.Y` branch before deploying — everything
+else (PR + merge, test gate, worktree build, dev-branch rename) is identical.
+
+> **Releases are a continuum — a new line ALWAYS branches off the *previous*
+> release tip, never off the dev branch.** Every `release/vX.Y` descends from the
+> one before it, so version lineage and tags stay continuous and the new line
+> never drops a fix that already shipped on the old one. Branching a new line off
+> the dev branch instead would (a) fork history away from the release continuum
+> and (b) make the dev→new-line PR empty (same commit), which in turn leaves the
+> test gate with no merged PR to read. Cutting off the prior release keeps the
+> dev→new-line PR a real diff and the gate a real merged PR — so the flow really
+> is identical to a patch.
+
+```bash
+# 1. Baseline = the current highest release line (derived, never hardcoded).
+git fetch origin --prune                           # refreshes every origin/* (incl. the release lines)
+PREV_REL=$(git branch -r | grep -oE 'release/v[0-9]+\.[0-9]+' | sort -V | tail -1)
+
+# 2. Decide the new version and its release branch.
+NEW=0.3.0                                          # the X.(Y+1).0 (or (X+1).0.0) you're cutting
+NEW_REL=release/v${NEW%.*}                         # release/v0.3  (strip the patch component)
+
+# 3. Cut the new release line off the PREVIOUS release tip (the continuum) —
+#    NOT off the dev branch. The dev work lands on it via the normal step-2 PR.
+git branch "$NEW_REL" "origin/$PREV_REL"
+git push -u origin "$NEW_REL"
+```
+
+Then run the **Quick Deploy** flow exactly as above with `RELEASE_BRANCH=$NEW_REL`
+and `NEW=0.3.0`: step 2 PRs the dev branch into `$NEW_REL` (a real diff, since the
+new line started at the prior release tip), step 2b's gate reads that merged PR,
+the worktree bump writes `0.3.0` to `_version.py`, the tag is `v0.3.0`, and step 4
+renames the dev branch to `0.3.0-fixes`.
+
+> Using the automated `scripts/deploy_to_github.sh`? Switch to the new release
+> branch first (cut off the prior release per step 3 above), then
+> `./scripts/deploy_to_github.sh --minor` (or `--version 0.3.0`). A plain patch
+> deploy can never reach `0.3.0` — `patch+1` from `0.2.x` stays in the `0.2` line.
 
 ## Test gate (publishing requires the release PR's tests to have passed)
 

@@ -28,6 +28,7 @@ type MessageType =
   | 'cloud_login_status_msg'
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
+  | 'toplog_state_msg'
   | 'ui_command'
   | 'recovered_msg';
 
@@ -120,6 +121,12 @@ export interface PrivacyModeMessage extends BaseMessage {
   privacy_mode: 'local' | 'connected';
 }
 
+export interface ToplogStateMessage extends BaseMessage {
+  message_type: 'toplog_state_msg';
+  enabled: boolean;
+  filter: Record<string, boolean>;
+}
+
 /**
  * Server → client directive to drive the UI (navigate, open, etc.).
  * Emitted by the local Flowpad server when an agent invokes a `flow navigate ...`
@@ -129,11 +136,13 @@ export interface PrivacyModeMessage extends BaseMessage {
 export interface UiCommandMessage extends BaseMessage {
   message_type: 'ui_command';
   /** Discriminator for the specific action the UI should perform. */
-  kind: 'navigate_entity' | string;
+  kind: 'navigate_entity' | 'navigate_vfs' | string;
   /** For `navigate_entity`: the entity's type (e.g. "shell", "project"). */
   type?: string;
   /** For `navigate_entity`: the entity's id. */
   id?: string;
+  /** For `navigate_vfs`: the absolute file path to open in the asset editor. */
+  path?: string;
 }
 
 export interface LlmConfigMessage extends BaseMessage {
@@ -497,6 +506,9 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
     }
+    if (data.message_type === 'toplog_state_msg') {
+      return this.onToplogStateMessage(data as ToplogStateMessage);
+    }
     if (data.message_type === 'ui_command') {
       return this.onUiCommandMessage(data as UiCommandMessage);
     }
@@ -522,6 +534,10 @@ export class ConnectionManager extends EventEmitter {
 
   onPrivacyModeMessage(data: PrivacyModeMessage) {
     this.emit('on_privacy_mode_msg', data);
+  }
+
+  onToplogStateMessage(data: ToplogStateMessage) {
+    this.emit('on_toplog_state_msg', data);
   }
 
   onUiCommandMessage(data: UiCommandMessage) {

@@ -3,7 +3,12 @@ import { expect, test } from '@playwright/test';
 test.describe('Creating content in skills view + nav home does not crash (FLOWPAD-1623)', () => {
   test('skills view renders, New Skill is reachable, and home loads without crash', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+      // Post-clear bootstrap returns never_indexed=true → the WelcomeModal
+      // overlay intercepts pointer events and blocks the New Skill button.
+      localStorage.setItem('flowpad-index-approved', '1');
+    });
 
     const errors: string[] = [];
     page.on('console', (msg) => {
@@ -16,8 +21,12 @@ test.describe('Creating content in skills view + nav home does not crash (FLOWPA
     const newSkill = page.locator('[data-testid="browseable-toolbar-new:skill"]');
     await expect(newSkill).toBeVisible({ timeout: 15_000 });
 
-    // Trigger the create affordance — the regression was a crash with a missing agent_id.
-    await newSkill.click().catch(() => {});
+    // Trigger the create affordance — the regression was a crash with a missing
+    // agent_id. This is a crash-guard test (the assertion is "home still loads
+    // below"), so force the click with a short cap: the New Skill toolbar button
+    // can be geometrically overlapped by a tree row in the headless viewport, and
+    // a plain click would otherwise burn the whole test budget on actionability.
+    await newSkill.click({ force: true, timeout: 10_000 }).catch(() => {});
     await page.waitForTimeout(2_000);
 
     // Navigate to home — the app must still be mounted (no white-screen crash).

@@ -9,7 +9,7 @@ import {
  * Worker types the generic transcript viewer supports. Mirrors the server
  * route's whitelist in `flow_sdk/server/routes/transcripts.py`.
  */
-export type WorkerType = 'claude' | 'codex' | 'copilot';
+export type WorkerType = 'claude' | 'codex' | 'copilot' | 'workflow';
 
 interface UseTranscriptArgs {
   workerType: WorkerType;

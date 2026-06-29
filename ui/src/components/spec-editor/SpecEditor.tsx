@@ -13,16 +13,16 @@
  * so useContext() provides the agenticProcess for FS access and navigation.
  */
 
-import { AgenticProcess, Bookmark, QueryRequest, Spec, TypeId } from '@sdk';
+import { AgenticProcess, Bookmark, BookmarkType, Plan, QueryRequest, Spec, TypeId, VFSPath } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { useContext, useEntity } from '@sdk/react/hooks';
 import { EditorWithSidePanel } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 import { Button } from '@src/components/ui/button';
 import { useFS } from '@src/hooks/useFS';
-import { useShell } from '@src/hooks/useShell';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { Bookmark as BookmarkIcon, Copy, FolderOpen, Save, Send, ShieldOff, StickyNote, X } from 'lucide-react';
@@ -54,27 +54,70 @@ const PlanFileEditor: React.FC = () => {
   const { agenticProcess } = useContext() as { agenticProcess: AgenticProcess | null };
   const { navigation, currentDock } = useDockNavigation();
 
-  // Extract file path from the dock pointer
-  // Pointer format: "agentic_process-<uuid>/<absolute-file-path>"
-  const filePath = useMemo(
-    () => (currentDock?.pointer ? (DockPointer.parsePlanPointer(currentDock.pointer)?.filePath ?? '') : ''),
+  // The plan is addressed by a stable ref in the dock pointer — independent of
+  // any (possibly-dead) process: `typeid/plan-<uuid>` or `vfs/<node>/<path>`.
+  const parsedRef = useMemo(
+    () => (currentDock?.pointer ? DockPointer.parsePlanPointer(currentDock.pointer) : null),
     [currentDock?.pointer],
   );
-  const { shell } = useShell(agenticProcess?.shell_id);
 
-  const computeNodeTypeId = useMemo(() => shell?.computeNodeTypeId ?? null, [shell?.compute_node_id]);
-  const fs = useFS(computeNodeTypeId);
+  // typeid form → resolve the PLAN entity (its asset_ref is the abs file path).
+  const planTypeId = useMemo(
+    () => (parsedRef?.kind === 'typeid' ? parsedRef.planTypeId : null),
+    [parsedRef],
+  );
+  const { data: plan } = useEntity<Plan>(planTypeId);
+
+  // Resolve the abs file path + the compute node that hosts it, from the ref:
+  //  - typeid: path = plan.asset_ref, node = local @local
+  //  - vfs:    path = VFSPath.machinePath, node = the vfs compute-node root
+  const { filePath, computeNodeTypeId } = useMemo(() => {
+    if (parsedRef?.kind === 'vfs') {
+      const v = VFSPath.parse(parsedRef.vfsValue);
+      return { filePath: v.machinePath, computeNodeTypeId: v.typeId ?? null };
+    }
+    if (parsedRef?.kind === 'typeid') {
+      return { filePath: plan?.asset_ref ?? '', computeNodeTypeId: LOCAL_COMPUTE_NODE };
+    }
+    return { filePath: '', computeNodeTypeId: null as TypeId | null };
+  }, [parsedRef, plan?.asset_ref]);
+
+  const fs = useFS(computeNodeTypeId ?? undefined);
+
+  // Explicit fetch state — `fs.content()` returns null for BOTH "still loading"
+  // and "fetch failed", so it can't drive a not-found vs spinner decision on its
+  // own. We track the refetch promise outcome to turn an unreadable file into a
+  // clear "not found" instead of an infinite spinner.
+  const [fetchState, setFetchState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
 
   // Get file content from cache
   const cached = filePath && computeNodeTypeId ? fs?.content(filePath) : null;
   const fileContent = (cached?.content as string) || '';
   const isDirty = cached?.isDirty || false;
 
+  // Execute/Update target the live process from context — only valid when a
+  // process is in context AND it owns THIS plan file (so an unrelated ambient
+  // session can't run the wrong plan against this file).
+  const canRunPlan = !!agenticProcess && !!filePath && agenticProcess.plan_path === filePath;
+
   // Frontmatter: strip YAML header from display and read executed flag
   const { executed: isExecuted, body: displayContent } = useMemo(() => parseFrontmatter(fileContent), [fileContent]);
 
   // State
   const [isExecuting, setIsExecuting] = useState(false);
+
+  // Shared run/update button state — the two Execute buttons and Update Plan all
+  // gate on a runnable process; only the trailing title clause differs.
+  const executeDisabled = isExecuting || isExecuted || !canRunPlan;
+  const updateDisabled = isExecuting || !canRunPlan;
+  const executeTitle = (clearContext: boolean) =>
+    !canRunPlan
+      ? 'Open this plan from its session to run it'
+      : isExecuted
+        ? 'Plan already executed'
+        : clearContext
+          ? 'Execute the plan, clearing context first. Full trust mode ON.'
+          : 'Execute the plan. Full trust mode ON.';
   const [showShareDialog, setShowShareDialog] = useState(false);
   // Share the plan like any other entity: the .md file rides as a FILE
   // attachment. No Spec/Task is minted. Stable while the dialog is open.
@@ -92,7 +135,7 @@ const PlanFileEditor: React.FC = () => {
   useEffect(() => {
     if (!filePath) return;
     void Bookmark.query(new QueryRequest({ type: 'bookmark', query: null, scope: [] })).then((all) =>
-      setPlanBookmark(all.find((b) => b.bookmark_type === 'plan' && b.data?.file_path === filePath) ?? null),
+      setPlanBookmark(all.find((b) => b.bookmark_type === BookmarkType.PLAN && b.data?.file_path === filePath) ?? null),
     );
   }, [filePath]);
 
@@ -100,10 +143,13 @@ const PlanFileEditor: React.FC = () => {
     if (planBookmark) {
       await planBookmark.delete();
       setPlanBookmark(null);
-    } else if (agenticProcess) {
-      const planPointer = DockPointer.forPlan(agenticProcess.typeId, filePath).pointer;
+    } else if (filePath) {
+      // Prefer the stable typeid form when the PLAN entity is resolved; fall
+      // back to the (still process-independent) vfs path form otherwise.
+      const planPointer = (plan?.typeId ? DockPointer.forPlan(plan.typeId) : DockPointer.forPlanByPath(filePath))
+        .pointer;
       const b = new Bookmark({
-        bookmark_type: 'plan',
+        bookmark_type: BookmarkType.PLAN,
         title: filePath.split('/').pop()?.replace(/\.md$/, '') ?? 'Plan',
         data: { file_path: filePath, navigation_path: `/dock/plan/${planPointer}` },
         status: 'open',
@@ -111,17 +157,25 @@ const PlanFileEditor: React.FC = () => {
       await b.save([]);
       setPlanBookmark(b);
     }
-  }, [planBookmark, filePath, agenticProcess]);
+  }, [planBookmark, filePath, plan?.typeId]);
 
-  // Refetch on every nav — Update Plan rewrites the file via the agent.
+  // Refetch on nav — Update Plan rewrites the file via the agent. Drives the
+  // explicit fetch-state machine: loading → loaded | error. Runs once per
+  // (computeNode, filePath) so entity hydration re-renders don't re-toast /
+  // re-discard dirty edits.
   const fsRef = useRef(fs);
   fsRef.current = fs;
   const computeNodeId = computeNodeTypeId?.id ?? null;
   useEffect(() => {
     if (!filePath || !computeNodeId || !fsRef.current) return;
-    void fsRef.current.refetch(filePath).catch((error) => {
-      console.error('[SpecEditor] Error refetching plan:', filePath, error);
-    });
+    setFetchState('loading');
+    void fsRef.current
+      .refetch(filePath)
+      .then(() => setFetchState('loaded'))
+      .catch((error) => {
+        console.error('[SpecEditor] Error refetching plan:', filePath, error);
+        setFetchState('error');
+      });
   }, [filePath, computeNodeId]);
 
   // Stable onChange ref — MilkdownEditor's useEditor depends on [onChange],
@@ -154,22 +208,22 @@ const PlanFileEditor: React.FC = () => {
     [agenticProcess, filePath, fs, isDirty, navigation],
   );
 
-  // Cancel — discard dirty cache and navigate back
+  // Cancel — discard dirty cache and navigate back. Prefer the owning process'
+  // terminal; fall back to the inbox when the plan was opened without a process
+  // (bookmark / stale link) so Cancel is never a silent no-op.
   const handleCancel = useCallback(() => {
     if (filePath && fs) fs.invalidate(filePath, 'content');
-    if (agenticProcess) navigation.openDock(agenticProcess.terminalDockPointer);
+    navigation.openDock(agenticProcess ? agenticProcess.terminalDockPointer : DockPointer.forInbox());
   }, [filePath, fs, agenticProcess, navigation]);
 
-  if (!filePath || !agenticProcess) {
-    const message =
-      !filePath && !agenticProcess
-        ? 'No plan file or agentic process'
-        : !filePath
-          ? 'No plan file selected'
-          : 'No agentic process in context';
+  // File path not yet known. In typeid form the loader already guaranteed the
+  // PLAN entity exists, so an empty path just means it's still hydrating →
+  // a brief spinner (never an infinite one: a missing entity is a render_error
+  // page from the loader, a missing file is the `error` state below).
+  if (!filePath) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
-        <div>{message}</div>
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
       </div>
     );
   }
@@ -211,12 +265,10 @@ const PlanFileEditor: React.FC = () => {
           <Button
             size="sm"
             variant="outline"
-            disabled={isExecuting || isExecuted}
-            onClick={() => saveAndRun(() => agenticProcess.executePlan(filePath, { clearContext: true }))}
-            title={
-              isExecuted ? 'Plan already executed' : 'Execute the plan, clearing context first. Full trust mode ON.'
-            }
-            className={cn((isExecuting || isExecuted) && 'opacity-50')}
+            disabled={executeDisabled}
+            onClick={() => saveAndRun(() => agenticProcess!.executePlan(filePath, { clearContext: true }))}
+            title={executeTitle(true)}
+            className={cn(executeDisabled && 'opacity-50')}
           >
             <ShieldOff className="mr-2 h-4 w-4 text-amber-500" />
             Execute Plan (clear context)
@@ -226,10 +278,10 @@ const PlanFileEditor: React.FC = () => {
           <Button
             size="sm"
             variant="outline"
-            disabled={isExecuting || isExecuted}
-            onClick={() => saveAndRun(() => agenticProcess.executePlan(filePath, { clearContext: false }))}
-            title={isExecuted ? 'Plan already executed' : 'Execute the plan. Full trust mode ON.'}
-            className={cn((isExecuting || isExecuted) && 'opacity-50')}
+            disabled={executeDisabled}
+            onClick={() => saveAndRun(() => agenticProcess!.executePlan(filePath, { clearContext: false }))}
+            title={executeTitle(false)}
+            className={cn(executeDisabled && 'opacity-50')}
           >
             <ShieldOff className="mr-2 h-4 w-4 text-amber-500" />
             Execute Plan
@@ -239,10 +291,10 @@ const PlanFileEditor: React.FC = () => {
           <Button
             size="sm"
             variant="outline"
-            disabled={isExecuting}
-            onClick={() => saveAndRun(() => agenticProcess.updatePlan(filePath))}
-            title="Update plan based on <plan-note> sections"
-            className={cn(isExecuting && 'opacity-50')}
+            disabled={updateDisabled}
+            onClick={() => saveAndRun(() => agenticProcess!.updatePlan(filePath))}
+            title={!canRunPlan ? 'Open this plan from its session to update it' : 'Update plan based on <plan-note> sections'}
+            className={cn(updateDisabled && 'opacity-50')}
           >
             <StickyNote className="mr-2 h-4 w-4" />
             Update Plan
@@ -303,6 +355,13 @@ const PlanFileEditor: React.FC = () => {
               editorMode="editor"
               plugins={planNotePlugins}
             />
+          ) : fetchState === 'error' ? (
+            // The file couldn't be read (deleted on disk, unreadable). Clear
+            // message instead of an infinite spinner.
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
+              <div className="text-base font-semibold text-foreground">Plan file not found</div>
+              <div className="font-mono text-xs">{filePath}</div>
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />

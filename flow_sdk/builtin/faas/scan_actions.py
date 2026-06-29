@@ -282,6 +282,11 @@ class ScanActionsMixin:
                 context_raw = {}
 
             visible = bool(body.get("visible", False))
+            # Transport intent for the new session: True → interactive PTY
+            # (default), False → headless JSON-stream (no PTY/xterm). The UI passes
+            # False for a Standard chat tab; omitted → True so every existing
+            # caller (tests, automations) keeps today's PTY behaviour.
+            pty_mode = bool(body.get("pty_mode", True))
             # Optional first prompt to seed onto the queue BEFORE the visible
             # auto-start below, so the worker boots with it as its launch arg
             # (``_perform_open`` pops the head). Enqueuing here — pre-start —
@@ -420,6 +425,7 @@ class ScanActionsMixin:
                 context_data=context_data,
                 workdir=workdir,
                 visible=visible,
+                pty_mode=pty_mode,
                 additional_dirs=additional_dirs,
                 project_id=project_id or None,
                 target_typeid_str=target_typeid_str or None,
@@ -519,6 +525,13 @@ class ScanActionsMixin:
 
                 if isinstance(start_resp, ApiFailResponse):
                     return start_resp
+            elif launch_prompt and str(launch_prompt).strip():
+                # Headless launch (visible=False) with a seeded first prompt: PTY
+                # drains the queue head via ``start_pty`` above, but headless has no
+                # PTY — so kick the drain explicitly. Fire-and-forget (same wrapper
+                # ``_enqueue_action`` uses) so the createProcess response never
+                # blocks on the turn; it also logs any drain-task exception.
+                process._schedule_queue_drain("enqueue")
 
             return ApiSuccessResponse(
                 data={

@@ -310,6 +310,11 @@ class ClaudeDriver:
 
         return bool(process.session_id) and get_claude_session(process.session_id) is not None
 
+    def supports_plan_mode(self, process: "AgenticProcess") -> bool:
+        """Claude supports CLI plan mode (``--permission-mode plan`` + the
+        ``ExitPlanMode``/``AskUserQuestion`` tools) in headless turns."""
+        return True
+
     # ── History materialisation ──────────────────────────────────────────────
 
     def load_history(self, process: "AgenticProcess") -> list["FlowData"]:

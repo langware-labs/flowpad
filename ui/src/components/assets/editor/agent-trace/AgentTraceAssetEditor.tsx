@@ -7,8 +7,11 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { CallStackView } from '@src/components/lens-viewer/shared/transcript-features/CallStackView';
 import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@src/components/ui/tabs';
+import { useIsAdvanced } from '@src/components/view-mode';
 import type { WorkerType } from '@src/hooks/use-transcript';
 import { useAgentTraceDoc } from './useAgentTraceDoc';
+import { SimpleSessionReport } from './simple/SimpleSessionReport';
 
 interface AgentTraceAssetEditorProps {
   fsRef: FSRef;
@@ -30,6 +33,7 @@ function normalizeWorker(workerType?: string | null): WorkerType {
 export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorProps) {
   const { doc } = useAgentTraceDoc(fsRef);
   const { navigation } = useDockNavigation();
+  const advanced = useIsAdvanced();
   const analyzedProcessTypeId = useMemo(() => {
     return trace.analyzed_process_id
       ? new TypeId(AgenticProcess.type, trace.analyzed_process_id)
@@ -78,10 +82,16 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
   const fileName = fsRef.path.split('/').pop() ?? 'trace.json';
   const dirPath = fsRef.path.slice(0, -fileName.length - 1);
 
+  // Header reads "Agent analysis: <the analyzed process's name>" — the watched
+  // process load above makes this reliable even when the row wasn't cached.
+  // Falls back to the raw trace name until that name resolves.
+  const processName = analyzedProcess?.displayName?.trim();
+  const headerTitle = processName ? `Agent analysis: ${processName}` : trace.name || fileName;
+
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="agent-trace-editor">
       <AssetEditorHeader
-        fileName={trace.name || fileName}
+        fileName={headerTitle}
         dirPath={dirPath}
         actions={
           <button
@@ -98,13 +108,42 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
         }
       />
 
-      <CallStackView
-        workerType={normalizeWorker(trace.worker_type)}
-        sessionId={trace.session_id}
-        skillIssues={skillIssues}
-        zoom={zoom}
-        onZoomChange={setZoom}
-      />
+      {/* Non-technical users get the plain-language report only. The dense
+          developer timeline (CallStackView) is gated behind Advanced mode, via a
+          Summary | Timeline toggle that defaults to Summary. */}
+      {!advanced ? (
+        <SimpleSessionReport trace={trace} doc={doc} />
+      ) : (
+        <Tabs defaultValue="summary" className="flex min-h-0 flex-1 flex-col">
+          <TabsList className="mx-3 mt-2 h-8 self-start">
+            <TabsTrigger value="summary" className="py-0.5 text-xs">
+              Summary
+            </TabsTrigger>
+            <TabsTrigger value="timeline" className="py-0.5 text-xs">
+              Timeline
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent
+            value="summary"
+            className="mt-1 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+          >
+            <SimpleSessionReport trace={trace} doc={doc} />
+          </TabsContent>
+          <TabsContent
+            value="timeline"
+            forceMount
+            className="mt-1 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+          >
+            <CallStackView
+              workerType={normalizeWorker(trace.worker_type)}
+              sessionId={trace.session_id}
+              skillIssues={skillIssues}
+              zoom={zoom}
+              onZoomChange={setZoom}
+            />
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }

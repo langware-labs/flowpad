@@ -755,11 +755,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         return null;
       }
     };
-    // Assets is a single scope-keyed tab — its title follows the SCOPE, not the
-    // (in-tab) sub-pointer: single project → "<project>'s Assets"; user → "My
-    // Assets"; global / all / multi-select → null (chip falls back to the
+    // Assets is a single scope-keyed tab — its STORED title follows the SCOPE,
+    // not the (in-tab) sub-pointer: single project → "<project>'s Assets"; user
+    // → "My Assets"; global / all / multi-select → null (chip falls back to the
     // registry "Assets" title). Runs before the empty-pointer guard because a
-    // scoped assets dock normalizes its pointer to ''.
+    // scoped assets dock normalizes its pointer to ''. (The strip overlays the
+    // ACTIVE assets tab with the focused asset's own name + icon at render time
+    // — see `useTabStripItems` — so this scope title shows for inactive tabs.)
     if (dock?.viewType === 'assets') {
       const scope = dockOptionsToScopeFilter(dock.options);
       if (scope?.mode === 'project' && scope.activeProjectId) {

@@ -19,6 +19,7 @@ export function workerLabel(worker: string | undefined): string {
   if (key.startsWith('claude')) return 'Claude';
   if (key.startsWith('codex')) return 'Codex';
   if (key.startsWith('copilot')) return 'Copilot';
+  if (key.startsWith('workflow')) return 'Workflow';
   // Capitalize unknown worker keys for a sensible default.
   return key.charAt(0).toUpperCase() + key.slice(1);
 }

@@ -8,6 +8,7 @@
  */
 
 import {
+  AgentSpawnEntry,
   AssistantMessageEntry,
   ExitPlanModeEntry,
   MetaEntry,
@@ -23,6 +24,7 @@ import { EntryKind, TranscriptEntry } from './entry';
 
 export { extract_text, extract_thinking, first_block_of_type, flatten_tool_result } from './_helpers';
 export {
+  AgentSpawnEntry,
   AssistantMessageEntry,
   CodexUsageEntry,
   ExitPlanModeEntry,
@@ -34,6 +36,7 @@ export {
   UnknownEntry,
   UsageEntry,
   UserMessageEntry,
+  type AgentSpawnEntryData,
   type AssistantMessageEntryData,
   type CodexUsageEntryData,
   type MetaEntryData,
@@ -70,6 +73,11 @@ export function fromJson(raw: Record<string, unknown>): TranscriptEntry {
       return new ToolUseEntry(raw as never);
     case EntryKind.TOOL_RESULT:
       return new ToolResultEntry(raw as never);
+    case EntryKind.AGENT_SPAWN: {
+      // Recurse: the sub-agent's subtree is hydrated then handed to the spawn.
+      const childrenRaw = (raw['children'] as Record<string, unknown>[]) ?? [];
+      return new AgentSpawnEntry(raw as never, childrenRaw.map(fromJson));
+    }
     case EntryKind.META:
       return new MetaEntry(raw as never);
     case EntryKind.TOKEN_USAGE:

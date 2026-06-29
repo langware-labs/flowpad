@@ -31,6 +31,9 @@ _WALK_IGNORED: frozenset[str] = frozenset({
     ".git", "node_modules", ".venv", "venv", "__pycache__",
     ".tox", "dist", "build", ".eggs", ".mypy_cache", ".pytest_cache",
     ".ruff_cache", ".next", ".nuxt", "coverage", ".cache",
+    # macOS zip-extraction junk: __MACOSX holds only AppleDouble (._*)
+    # resource-fork sidecars — binary, never real content.
+    "__MACOSX",
 })
 
 

@@ -1083,7 +1083,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             limit = int(limit_raw) if limit_raw else 10
         except (TypeError, ValueError):
             limit = 10
-        entries = await get_worker_history(limit)
+        # Optional active scope — a comma-separated list of project_ids. When
+        # present the limit is applied per-project, so a scoped client sees that
+        # project's sessions instead of whatever survived a global top-N cut.
+        project_ids_raw = request_info.get_param("project_ids") if request_info else None
+        project_ids = (
+            {p for p in project_ids_raw.split(",") if p.strip()} if project_ids_raw else None
+        )
+        entries = await get_worker_history(limit, project_ids)
         return ApiSuccessResponse(data=[e.model_dump(mode="json") for e in entries])
 
     @action.get(action_name="git-ops")

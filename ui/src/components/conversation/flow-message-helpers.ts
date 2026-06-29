@@ -1,4 +1,4 @@
-import { Spec, TypeId, type FlowMessage } from '@sdk';
+import { Plan, Spec, TypeId, type FlowMessage } from '@sdk';
 import { AttachmentType } from '@sdk/entities/flow-message';
 
 /**
@@ -19,6 +19,23 @@ export function flowMessageHasSpec(fm: FlowMessage | null | undefined): boolean 
  */
 export function flowMessageSpecTypeId(fm: FlowMessage | null | undefined): TypeId | null {
   return flowMessageTypeIdOfType(fm, Spec.type);
+}
+
+/**
+ * Return the first Plan TypeId (the plan-mode artifact, `type='plan'`, living
+ * at `.claude/plans/*.md`) carried by this FlowMessage, or null. A shared plan
+ * arrives as a `plan-<id>` TYPE_ID attachment; the conversation chip uses this
+ * to offer the SAME "Open Spec" worker affordance a shared spec gets, so a
+ * received plan isn't treated as a plain markdown doc.
+ */
+export function flowMessagePlanTypeId(fm: FlowMessage | null | undefined): TypeId | null {
+  return flowMessageTypeIdOfType(fm, Plan.type);
+}
+
+/** The spec OR plan TypeId on this message (spec wins), or null. Both ride the
+ *  same "Open Spec" / View / session-restore affordances. */
+export function flowMessageSpecOrPlanTypeId(fm: FlowMessage | null | undefined): TypeId | null {
+  return flowMessageSpecTypeId(fm) ?? flowMessagePlanTypeId(fm);
 }
 
 /** GitBranch entity type — the wire vehicle for a shared git repo. No TS

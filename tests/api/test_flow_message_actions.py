@@ -9,8 +9,14 @@ import json
 import uuid
 import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
+
+# Ensure the file-backed TypeInfo registrations (spec main_subdir / entity_cls /
+# default_body_fn) are loaded so pack_bundle's SchemaRegistry lookups resolve
+# even when run in isolation. Mirrors the unit-suite sibling tests.
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
 
 def _new_id() -> str:
@@ -295,3 +301,235 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
     with zipfile.ZipFile(buf, "r") as zf:
         names = zf.namelist()
     assert "header.json" in names, f"header.json missing from zip. Files: {names}"
+
+
+# ---------------------------------------------------------------------------
+# File-backed asset (spec) restore via the upload endpoint
+#
+# These drive the UNIFIED file-backed family path end-to-end through the real
+# upload route: build a .flowmsg with ``pack_bundle`` carrying a spec
+# attachment, then upload it for a conversation whose project IS mapped so
+# ``_resolve_project_root_for_conv`` resolves. The receiver must copy the
+# asset onto disk at ``<project>/<main_subdir>/<leaf>`` and reindex it into a
+# real entity row.
+# ---------------------------------------------------------------------------
+
+_SPEC_TITLE = "My Spec"
+# default_body_fn / _safe_entity_name turn "My Spec" into this leaf folder.
+_SPEC_LEAF_REL = Path("specs") / "My_Spec" / "spec.md"
+
+
+@pytest.fixture
+def _spec_blob_storage(tmp_path):
+    """Spec.content is a blob → reindex must save it to embedded storage. The
+    in-process ASGI test harness has no request-scoped storage (middleware
+    wiring is intentionally disabled), so install the SAME dev storage fallback
+    the production ``get_embedded_storage`` falls back to (real on-disk
+    LocalStorageDriver — not a mock). Mirrors the unit-suite spec fixture."""
+    import shutil
+    from flow_sdk.storage.local_fs_driver import LocalStorageDriver
+    from flow_sdk.request_context import methods as _ctx
+    from flow_sdk.config import default_service_config
+
+    blob_root = tmp_path / "spec_blobs"
+    blob_root.mkdir(parents=True, exist_ok=True)
+    prev_dev = default_service_config.development
+    default_service_config.development = True
+    _ctx.set_default_test_storage_fallback(LocalStorageDriver(str(blob_root)))
+    try:
+        yield
+    finally:
+        _ctx.set_default_test_storage_fallback(None)
+        default_service_config.development = prev_dev
+        shutil.rmtree(blob_root, ignore_errors=True)
+
+
+async def _setup_mapped_conversation(tmp_path: Path, subdir: str = "proj"):
+    """Create a real Project (on-disk mount) + a Conversation pointed at it, so
+    ``_resolve_project_root_for_conv`` returns the project's mount path.
+
+    Returns ``(conv_id, project_root)`` where ``project_root`` is the canonical
+    on-disk path the receiver will copy assets into (read back from the saved
+    Project so it matches whatever canonicalization the entity applied)."""
+    from flow_sdk.builtin.user import User
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.builtin.conversation import Conversation
+
+    local_user = await User.get_one({"uname": "local"})
+    owner_typeid = local_user.typeid if local_user else None
+
+    mount = tmp_path / subdir
+    project = Project(
+        name=f"fb-share-{uuid.uuid4().hex[:8]}",
+        fs_storage_mount_path=str(mount),
+    )
+    await project.save(owner_typeid)
+    project = await Project.get_one({"id": project.id})
+    assert project is not None and project.fs_storage_mount_path, "project mount missing"
+    project_root = Path(project.fs_storage_mount_path)
+
+    conv_id = _new_id()
+    conv = Conversation(project_id=project.id)
+    conv.id = conv_id
+    await conv.save(owner_typeid)
+
+    # Sanity: the resolver the receiver runs must agree with our project_root.
+    from flow_sdk.builtin.flow_message_bundle import _resolve_project_root_for_conv
+    resolved = await _resolve_project_root_for_conv(conv_id)
+    assert resolved == project_root, f"resolver {resolved} != {project_root}"
+    return conv_id, project_root
+
+
+async def _build_spec_bundle(
+    tmp_path: Path, conv_id: str, spec_id: str, fm_id: str, body: str,
+) -> bytes:
+    """pack_bundle a FlowMessage carrying a single file-backed spec attachment.
+
+    The spec is provided in-memory (its ``get_one`` is patched for the PACK
+    side only — the established roundtrip-test convention); the bytes produced
+    are a real .flowmsg the unpack path then processes fully unmocked."""
+    from unittest.mock import AsyncMock, patch
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+    from flow_sdk.builtin.flow_message_bundle import pack_bundle
+    from flow_sdk.builtin.spec import Spec
+
+    fm = FlowMessage(
+        text="here is the plan",
+        conversation_id=conv_id,
+        shared_context_entities=[{"type": "conversation", "id": conv_id}],
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"spec-{spec_id}")],
+        sender_name="Alice",
+    )
+    fm.id = fm_id
+
+    mock_spec = Spec(title=_SPEC_TITLE, content=body, spec_type="plan")
+    mock_spec.id = spec_id
+
+    with patch.object(Spec, "get_one", new=AsyncMock(return_value=mock_spec)):
+        zip_path = await pack_bundle(fm, dest_dir=tmp_path / "bundle")
+
+    # Confirm the packer actually placed the file-backed asset (else the rest
+    # of the test would be vacuous).
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        arc = f"attachment/spec-@{spec_id}/specs/My_Spec/spec.md"
+        assert arc in zf.namelist(), f"spec not packed: {zf.namelist()}"
+    return zip_path.read_bytes()
+
+
+@pytest.mark.asyncio
+async def test_upload_file_backed_asset_materializes_in_mapped_project(
+    bootstrapped_client, tmp_path, _spec_blob_storage,
+):
+    """[UNPACK-FB-RESTORE] A file-backed spec is copied to
+    ``<project>/specs/<leaf>`` on disk AND reindexed into a real entity row."""
+    from flow_sdk.builtin.spec import Spec
+
+    conv_id, project_root = await _setup_mapped_conversation(tmp_path)
+    spec_id = _new_id()
+    fm_id = _new_id()
+    sentinel = "RESTORE-SENTINEL-body-line"
+    flowmsg_bytes = await _build_spec_bundle(
+        tmp_path, conv_id, spec_id, fm_id, body=f"# Plan\n\n{sentinel}\n",
+    )
+
+    response = await bootstrapped_client.post(
+        "/api/v1/graph/flow-message-upload",
+        files={"file": ("share.flowmsg", flowmsg_bytes, "application/zip")},
+    )
+    assert response.status_code == 200, f"upload failed: {response.text}"
+    assert response.json().get("status") == "SUCCESS"
+
+    # 1. The asset landed on disk at the canonical <project>/<main_subdir>/<leaf>.
+    dest = project_root / _SPEC_LEAF_REL
+    assert dest.exists(), f"spec not copied to project: {dest}"
+    assert sentinel in dest.read_text(encoding="utf-8")
+
+    # 2. The reindex materialized the entity row.
+    spec = await Spec.get_one({"id": spec_id})
+    assert spec is not None, "reindex did not materialize the spec row"
+    assert spec.content and sentinel in spec.content, f"body missing: {spec.content!r}"
+
+
+@pytest.mark.asyncio
+async def test_upload_file_backed_asset_collision_different_bytes_returns_409(
+    bootstrapped_client, tmp_path,
+):
+    """[UNPACK-COLLISION] A different-bytes file already at the target path with
+    overwrite=False returns 409 with a PATH-shaped conflict ``{path: ...}`` —
+    distinct from the entity ``{type, id}`` conflict shape."""
+    conv_id, project_root = await _setup_mapped_conversation(tmp_path)
+    spec_id = _new_id()
+    fm_id = _new_id()
+    flowmsg_bytes = await _build_spec_bundle(
+        tmp_path, conv_id, spec_id, fm_id, body="# Plan\n\nBUNDLE-BYTES\n",
+    )
+
+    # Pre-occupy the target path with DIFFERENT bytes (no frontmatter id even).
+    dest = project_root / _SPEC_LEAF_REL
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("totally different local content\n", encoding="utf-8")
+
+    response = await bootstrapped_client.post(
+        "/api/v1/graph/flow-message-upload",
+        files={"file": ("share.flowmsg", flowmsg_bytes, "application/zip")},
+    )
+    assert response.status_code == 409, f"expected 409, got {response.status_code}: {response.text}"
+    body = response.json()
+    assert body.get("status") == "FAIL"
+    conflicts = body.get("data", {}).get("conflicts")
+    assert isinstance(conflicts, list) and len(conflicts) > 0, body
+    # PATH-shaped conflict, not the entity {type,id} shape.
+    first = conflicts[0]
+    assert "path" in first, f"expected path-shaped conflict, got {first}"
+    assert "type" not in first and "id" not in first, f"unexpected entity conflict shape: {first}"
+    assert first["path"].endswith(str(_SPEC_LEAF_REL)), first
+
+    # The collision left the local file untouched (no clobber on a 409).
+    assert dest.read_text(encoding="utf-8") == "totally different local content\n"
+
+
+@pytest.mark.asyncio
+async def test_unpack_overwrite_replaces_on_disk_file_backed_asset(
+    bootstrapped_client, tmp_path, _spec_blob_storage,
+):
+    """[UNPACK-OVERWRITE] overwrite=true replaces an existing ON-DISK file-backed
+    asset and re-materializes the row from the new bytes (on-disk file + entity
+    both reflect the replacement)."""
+    from flow_sdk.builtin.spec import Spec
+
+    conv_id, project_root = await _setup_mapped_conversation(tmp_path)
+    spec_id = _new_id()
+    fm_id = _new_id()
+    new_sentinel = "OVERWRITE-NEW-SENTINEL"
+    old_sentinel = "OVERWRITE-OLD-SENTINEL"
+    flowmsg_bytes = await _build_spec_bundle(
+        tmp_path, conv_id, spec_id, fm_id, body=f"# Plan\n\n{new_sentinel}\n",
+    )
+
+    # Pre-occupy the target with OLD bytes (same id, different body).
+    dest = project_root / _SPEC_LEAF_REL
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        f"---\nid: {spec_id}\ntitle: My Spec\nspec_type: plan\n---\n\n# Plan\n\n{old_sentinel}\n",
+        encoding="utf-8",
+    )
+
+    response = await bootstrapped_client.post(
+        "/api/v1/graph/flow-message-upload",
+        files={
+            "file": ("share.flowmsg", flowmsg_bytes, "application/zip"),
+            "overwrite": (None, "true"),
+        },
+    )
+    assert response.status_code == 200, f"overwrite upload failed: {response.text}"
+    assert response.json().get("status") == "SUCCESS"
+
+    # On-disk file reflects the replacement.
+    on_disk = dest.read_text(encoding="utf-8")
+    assert new_sentinel in on_disk and old_sentinel not in on_disk, on_disk
+
+    # Entity row re-materialized from the new bytes.
+    spec = await Spec.get_one({"id": spec_id})
+    assert spec is not None, "spec row missing after overwrite"
+    assert spec.content and new_sentinel in spec.content, f"row not refreshed: {spec.content!r}"
+    assert old_sentinel not in (spec.content or ""), spec.content

@@ -280,6 +280,22 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       },
     ],
   },
+  workflow_run: {
+    // A workflow run has no AgenticProcess — its asset_ref IS the provider
+    // journal, served as a "workflow" transcript by absolute path.
+    primaryAction: (r, navigation) => {
+      if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('workflow', r.asset_ref));
+    },
+    actions: [
+      {
+        icon: FileText,
+        name: 'Transcript',
+        action: (r, navigation) => {
+          if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('workflow', r.asset_ref));
+        },
+      },
+    ],
+  },
 };
 
 /** Returns the primary DockPointer for a result, or null if the type has no navigation */

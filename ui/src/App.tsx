@@ -8,9 +8,11 @@ import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, DiagnoseErrorModal, initNotificationIngest } from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
+import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
+import { ImageAnnotatorRoot } from '@src/components/image-annotator/image-annotator-store';
 import { useEffect, useRef } from 'react';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
@@ -98,8 +100,10 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <CleanupModal />
         <DeleteAssetModal />
         <InputPromptModal />
+        <ImageAnnotatorRoot />
         <Spotlight />
         <ActivityProgressModalRoot />
+        <WikiModalRoot />
         <GlobalEvents />
         <GitHubDeviceFlowModal />
         <MigrateLegacyKeychain />

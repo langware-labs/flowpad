@@ -1,6 +1,7 @@
 import { Tab } from '@sdk';
 import { useSyncExternalStore } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { editorForType } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 
 export enum TabLifecycleState {
@@ -116,10 +117,33 @@ function shouldMaterializeDock(dock: DockPointer): boolean {
   return !(dock.viewType === ViewType.SHELL && dock.pointer === 'new_terminal');
 }
 
+/**
+ * Does this dock address a first-class CONTENT asset (markdown/skill/whiteboard/
+ * …) — i.e. an entity whose `project_id` the tab must mirror? True for a vfs
+ * asset dock and for a typeid dock whose type maps to an asset editor; false for
+ * shells, agentic processes, bare projects, inbox/triggers (those resolve their
+ * project differently — or legitimately have none — and must keep the fast
+ * reuse path).
+ */
+function dockAddressesAsset(dock: DockPointer): boolean {
+  if (dock.vfsPath) return true;
+  const tid = dock.targetTypeId;
+  return !!(tid && editorForType(tid.type));
+}
+
 async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tabs: Tab[] }> {
   const existing = await Tab.listAll();
   const existingTab = findTabForDock(existing, dock);
-  if (existingTab) return { tab: existingTab, tabs: existing };
+  // Reuse an existing tab verbatim EXCEPT a project-less content tab: a content
+  // tab materialized before its asset was resolvable is persisted with
+  // project_id == null, and the backend's tab heal only re-derives a tab's
+  // project when its target ENTITY MOVES projects — so a tab born project-less
+  // whose asset never moves is never healed there. Fall through to
+  // `getFromDockPointer` for it (re-resolves project_id from the asset and
+  // self-heals the row) so it adopts its project on this load.
+  if (existingTab && (existingTab.project_id || !dockAddressesAsset(dock))) {
+    return { tab: existingTab, tabs: existing };
+  }
 
   // Create-or-resolve the dock's tab. `getFromDockPointer` → `new_tab` returns
   // the PROJECT-SCOPED list ({that project} + projectless), which must NEVER be

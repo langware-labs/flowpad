@@ -1,7 +1,7 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
+import { AssetEditor, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
@@ -12,7 +12,7 @@ import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
+import { dataContext, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
 import type { Project } from '@sdk';
 import { FSRef } from '@sdk';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -20,7 +20,7 @@ import { ProjectChip } from '@src/components/project/ProjectChip';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { EDITOR_TYPES } from '@src/navigation/asset-doc-types';
 import apiClient from '@sdk/client';
-import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, Trash2, X } from 'lucide-react';
+import { AlertCircle, BookOpen, ChevronRight, PackageSearch, Trash2, X } from 'lucide-react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -38,21 +38,10 @@ import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { useEntity } from '@sdk/react/hooks';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
 import { useIndexStatus } from '@src/hooks/use-index-status';
-import { useAssetStats } from '@src/hooks/use-asset-stats';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
 import { MarkdownIndexPanel } from './MarkdownIndexPanel';
-import { BrowseableTree } from '@src/components/browseable-tree';
-import { refreshNode } from '@src/components/browseable-tree/refresh-store';
-import { assetTypeRoot, AssetTypeCountsContext } from '@src/components/browseable-tree/adapters/assetTypeRoot';
-import {
-  markdownFolderNodeId,
-  markdownFolderRoot,
-  type MarkdownDragItem,
-  type MarkdownFolderTarget,
-} from '@src/components/browseable-tree/adapters/markdownFolderRoot';
 import { useAssetTypes, type AssetTypeVault } from '@src/hooks/use-asset-types';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { INDEX_BUILD_LABEL, INDEX_PROMPT_DESCRIPTION, INDEX_PROMPT_TITLE } from '@src/components/search-index/index-copy';
@@ -164,65 +153,7 @@ function buildFolderBreadcrumbs(
   return crumbs;
 }
 
-const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT]);
 
-const SIDEBAR_COLLAPSED_KEY = 'wiki:sidebar-collapsed';
-const SIDEBAR_WIDTH_KEY = 'wiki:sidebar-width';
-const SIDEBAR_DEFAULT_WIDTH = 224;
-const SIDEBAR_MIN_WIDTH = 160;
-const SIDEBAR_MAX_WIDTH = 560;
-
-function normalizeTreePath(path: string): string {
-  return path.replace(/^\/+/, '').replace(/\/+$/, '');
-}
-
-function basenamePath(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  const idx = trimmed.lastIndexOf('/');
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-
-function dirnamePath(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  const idx = trimmed.lastIndexOf('/');
-  if (idx < 0) return '';
-  if (idx === 0) return '/';
-  return trimmed.slice(0, idx);
-}
-
-/**
- * Extract the editor + absolute path from a vfs-addressed editor pointer, for
- * the rename/move "follow the open file" logic. Returns null for typeid/code/
- * wiki pointers (no file path in the URL to follow).
- */
-function parseAssetEditorPointer(pointer: string | undefined): { typeName: string; absPath: string } | null {
-  if (!pointer?.startsWith('editor/')) return null;
-  let ptr: AssetDocPointer;
-  try {
-    ptr = AssetDocPointer.parse(pointer);
-  } catch {
-    return null;
-  }
-  if (ptr.mode !== AssetMode.EDITOR || ptr.method !== AssetRoutingMethod.VFS || !ptr.editor) return null;
-  const vfs = VFSPath.parse(ptr.value);
-  return { typeName: ptr.editor, absPath: `/${vfs.entitySubPath.replace(/^\/+/, '')}` };
-}
-
-function joinRelPath(parent: string, name: string): string {
-  const base = normalizeTreePath(parent);
-  const cleanName = name.replace(/^\/+/, '').replace(/\/+$/, '');
-  return base ? `${base}/${cleanName}` : cleanName;
-}
-
-function joinAbsPath(parent: string, name: string): string {
-  const base = parent.replace(/\/+$/, '');
-  const cleanName = name.replace(/^\/+/, '').replace(/\/+$/, '');
-  return base && base !== '/' ? `${base}/${cleanName}` : `/${cleanName}`;
-}
-
-function isValidFolderName(name: string): boolean {
-  return !!name && name !== '.' && name !== '..' && !/[\\/]/.test(name);
-}
 
 /** Breadcrumb rendered above the folder-filtered AssetListView. Each crumb
  *  except the last navigates to that ancestor; the last is the current page.
@@ -286,16 +217,13 @@ function FolderBreadcrumb({
 
 export function AssetsPage() {
   const { currentDock, navigation } = useDockNavigation();
-  const { types: allTypes, isLoading: typesLoading } = useAssetTypes();
-  const { indexType, busy, resetAndRescan } = useSystemTools();
+  const { types: allTypes } = useAssetTypes();
+  const { busy, resetAndRescan } = useSystemTools();
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
-  const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
-  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const currentProjectId = dataContext.project?.id ?? null;
-  const currentProjectName = dataContext.project?.getDisplayName() ?? dataContext.project?.name ?? null;
   // When hosted under `/dock/project/<id>`, the project id comes from the URL.
   // The first segment of the pointer is the projectId; the rest is the same
   // sub-pointer shape AssetsPage already uses under `/dock/assets/<sub>`.
@@ -306,7 +234,6 @@ export function AssetsPage() {
   // The project the scope filter points at: the URL project on a project page,
   // else the context project. Drives the Project mode + its tooltip name.
   const scopeProjectId = urlProjectId ?? currentProjectId;
-  const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
   // The project entity backing the project view — drives the "Delete project"
   // header action. Only resolved on a project page.
   const projectTypeId = useMemo<TypeId | null>(
@@ -408,30 +335,15 @@ export function AssetsPage() {
     (openVfsEntity as { project_id?: string | null } | null)?.project_id ??
     null;
   const chipProjectId = urlProjectId ?? openEntityProjectId;
-  // Manual scope edits suppress the auto-union for the *current* asset only;
-  // opening a different asset re-enables it (the guard is keyed to the id).
-  const [suppressedAssetId, setSuppressedAssetId] = useState<string | null>(null);
-
+  // The open asset's bucket auto-union stays on in the body; manual scope edits
+  // (and their per-asset suppression) live in the navigator (`useAssetsModel`).
   const effectiveFilter = useMemo<AssetFilter>(() => {
-    const useBucket = openAssetBucket && openAssetId !== suppressedAssetId;
-    const scope = useBucket ? unionAssetBucket(urlScope, openAssetBucket) : urlScope;
+    const scope = openAssetBucket ? unionAssetBucket(urlScope, openAssetBucket) : urlScope;
     return { ...assetFilter, scope };
-  }, [assetFilter, urlScope, openAssetBucket, openAssetId, suppressedAssetId]);
+  }, [assetFilter, urlScope, openAssetBucket]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
-  });
-  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
-    if (typeof window === 'undefined') return SIDEBAR_DEFAULT_WIDTH;
-    const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    const n = raw ? Number(raw) : NaN;
-    if (!Number.isFinite(n)) return SIDEBAR_DEFAULT_WIDTH;
-    return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, n));
-  });
-  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
 
   // Project-page index state comes from the project record's own ``.hash``
   // (the project IS a record): never_indexed → CTA, stale → "changes pending".
@@ -447,16 +359,6 @@ export function AssetsPage() {
   const neverIndexed = idxState.phase === 'ready' && idxState.status.never_indexed;
   const changesPending = projIdx?.stale ?? false;
   const lastIndexedAt = projIdx?.last_indexed_at ?? null;
-
-  // Per-type counts for the sidebar badges, sourced from the single scoped
-  // `asset-stats` response (counts only) — one request for every type badge,
-  // scoped to the active filter so they track the scope/project picker, and
-  // reactive: `useAssetStats` invalidates on any asset create/delete data_op.
-  const { stats: assetStats } = useAssetStats(effectiveFilter.scope);
-  const typeCounts = useMemo(
-    () => new Map(Object.entries(assetStats.per_type)),
-    [assetStats.per_type],
-  );
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
 
@@ -499,45 +401,6 @@ export function AssetsPage() {
     void navigateToResult(result, navigation);
   }, [navigation]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? '1' : '0');
-  }, [sidebarCollapsed]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
-  }, [sidebarWidth]);
-
-  const toggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
-
-  const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = sidebarWidth;
-    setIsResizingSidebar(true);
-    const prevCursor = document.body.style.cursor;
-    const prevUserSelect = document.body.style.userSelect;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    const onMove = (ev: MouseEvent) => {
-      const next = Math.max(
-        SIDEBAR_MIN_WIDTH,
-        Math.min(SIDEBAR_MAX_WIDTH, startWidth + (ev.clientX - startX)),
-      );
-      setSidebarWidth(next);
-    };
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      document.body.style.cursor = prevCursor;
-      document.body.style.userSelect = prevUserSelect;
-      setIsResizingSidebar(false);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [sidebarWidth]);
-
   // URL-first scope write: scope is a dock option (serialized once, in
   // lib/scope-filter). Writing the URL is the single source of truth —
   // `urlScope` re-derives it on the next render.
@@ -545,13 +408,6 @@ export function AssetsPage() {
     const base = currentDock ?? DockPointer.forAssetList('all');
     navigation.openDock(base.withScopeFilter(scope));
   }, [currentDock, navigation]);
-
-  const handleScopeChange = useCallback((scope: ScopeFilter) => {
-    openScoped(scope);
-    // The user took control of the scope — stop auto-unioning the open asset's
-    // bucket for this asset (rule honored only until they open a different one).
-    setSuppressedAssetId(openAssetId);
-  }, [openScoped, openAssetId]);
 
   // Asset-shaped pointers (`forAssetEditor`, `forAssetFolder`, `forAssetList`)
   // open at `/dock/assets/<sub>`. Under `/dock/project/<id>` we must rebase
@@ -565,16 +421,6 @@ export function AssetsPage() {
     navigation.openDock(p.withScopeFilter(urlScope));
   }, [navigation, urlScope]);
 
-  // BrowseableTree's adapters key selection off `ViewType.ASSETS` pointers,
-  // so in project view we synthesize one from the sub-pointer. Memoized so
-  // the tree's `expandParentsForPointer` effect doesn't re-run every render.
-  const treeActivePointer = useMemo<DockPointer | null>(() => {
-    if (isProjectView) {
-      return new DockPointer(ViewType.ASSETS, effectivePointer || undefined);
-    }
-    return currentDock ?? null;
-  }, [isProjectView, effectivePointer, currentDock]);
-
   const {
     mode,
     typeName: selectedType,
@@ -587,171 +433,15 @@ export function AssetsPage() {
   const isFolderMode = mode === 'folder';
   const isWikiMode = mode === 'wiki';
 
-  const visibleTypes = useMemo(
-    () => allTypes.filter((t) => !HIDDEN_TYPES.has(t.type_name)),
-    [allTypes],
-  );
-
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
     [allTypes],
-  );
-
-  const handleScanComplete = useCallback(
-    (type: string) => {
-      if (type === selectedType) setRefreshKey((k) => k + 1);
-    },
-    [selectedType],
   );
 
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
     setNewTypeDialogOpen(true);
   }, []);
-
-  const handleCreateFolder = useCallback((target: MarkdownFolderTarget) => {
-    setNewFolderTarget(target);
-    setNewFolderDialogOpen(true);
-  }, []);
-
-  const handleNewFolderConfirm = useCallback(async (rawName: string) => {
-    const name = rawName.trim();
-    if (!newFolderTarget || !isValidFolderName(name)) {
-      notify.error({ title: 'Invalid folder name' });
-      return;
-    }
-
-    const typeId = new TypeId(newFolderTarget.typeid);
-    const folderRelPath = joinRelPath(newFolderTarget.relPath, name);
-
-    try {
-      if (await fsManager.exists(typeId, folderRelPath)) {
-        notify.error({ title: 'Folder already exists' });
-        return;
-      }
-      await fsManager.mkdir(typeId, folderRelPath);
-      fsStore.getState().invalidate(typeId, newFolderTarget.relPath || '/', 'browse');
-      refreshNode(markdownFolderNodeId(newFolderTarget.typeid, newFolderTarget.absPath));
-      setRefreshKey((k) => k + 1);
-      notify.success({ title: 'Folder created' });
-    } catch (err) {
-      console.error('[AssetsPage] Failed to create folder:', err);
-      notify.error({ title: 'Failed to create folder' });
-    } finally {
-      setNewFolderTarget(null);
-    }
-  }, [newFolderTarget]);
-
-  const handleMoveMarkdownItem = useCallback(async (
-    item: MarkdownDragItem,
-    target: MarkdownFolderTarget,
-  ) => {
-    const name = basenamePath(item.relPath) || item.label;
-    if (!name) return;
-
-    const typeId = new TypeId(item.typeid);
-    const sourceRel = normalizeTreePath(item.relPath);
-    const destRel = joinRelPath(target.relPath, name);
-    const destAbs = joinAbsPath(target.absPath, name);
-    const sourceParentRel = dirnamePath(sourceRel);
-    const sourceParentAbs = dirnamePath(item.absPath);
-
-    if (sourceRel === destRel) return;
-
-    try {
-      if (await fsManager.exists(typeId, destRel)) {
-        notify.error({ title: 'Destination already has an item with that name' });
-        return;
-      }
-
-      await fsManager.move(typeId, sourceRel, destRel);
-
-      const store = fsStore.getState();
-      store.invalidate(typeId, sourceRel, 'all');
-      store.invalidate(typeId, destRel, 'all');
-      store.invalidate(typeId, sourceParentRel || '/', 'browse');
-      store.invalidate(typeId, target.relPath || '/', 'browse');
-      refreshNode(markdownFolderNodeId(item.typeid, sourceParentAbs));
-      refreshNode(markdownFolderNodeId(item.typeid, target.absPath));
-
-      const activeEditor = parseAssetEditorPointer(effectivePointer);
-      const sourceAbs = item.absPath.replace(/\/+$/, '');
-      const activeEditorInMovedFolder = !!(
-        activeEditor &&
-        item.kind === 'markdown-folder' &&
-        activeEditor.typeName === item.typeName &&
-        activeEditor.absPath.startsWith(`${sourceAbs}/`)
-      );
-      if (activeEditor?.typeName === item.typeName && activeEditor.absPath === sourceAbs) {
-        navigateAsset(DockPointer.forAssetEditor(item.typeName, destAbs));
-      } else if (activeEditorInMovedFolder && activeEditor) {
-        const suffix = activeEditor.absPath.slice(sourceAbs.length).replace(/^\/+/, '');
-        const nextAbs = suffix ? `${destAbs}/${suffix}` : destAbs;
-        navigateAsset(DockPointer.forAssetEditor(item.typeName, nextAbs));
-      } else if (item.kind === 'markdown-folder' && effectivePointer) {
-        const folder = DockPointer.parseAssetFolderPointer(effectivePointer);
-        if (folder && folder.typeName === item.typeName && folder.typeid === item.typeid) {
-          const currentRel = normalizeTreePath(folder.relPath);
-          if (currentRel === sourceRel || currentRel.startsWith(`${sourceRel}/`)) {
-            const suffix = currentRel.slice(sourceRel.length).replace(/^\/+/, '');
-            const nextRel = suffix ? `${destRel}/${suffix}` : destRel;
-            navigateAsset(DockPointer.forAssetFolder(item.typeName, item.typeid, nextRel));
-          }
-        }
-      }
-
-      setRefreshKey((k) => k + 1);
-
-      try {
-        await indexType('markdown', effectiveFilter.scope, { force: true });
-      } catch (err) {
-        console.error('[AssetsPage] Markdown reindex after move failed:', err);
-        notify.error({ title: 'Moved, but reindex failed' });
-        return;
-      }
-
-      notify.success({ title: 'Moved' });
-    } catch (err) {
-      console.error('[AssetsPage] Failed to move markdown item:', err);
-      notify.error({ title: 'Failed to move item' });
-    }
-  }, [effectiveFilter.scope, effectivePointer, indexType, navigateAsset]);
-
-  const wikiRoots = useMemo(
-    () =>
-      visibleTypes.map((t) => {
-        if (t.type_name === 'markdown') {
-          return markdownFolderRoot(t, {
-            indexType,
-            onNew: handleNew,
-            onCreateFolder: handleCreateFolder,
-            onMoveItem: handleMoveMarkdownItem,
-            onScanComplete: handleScanComplete,
-            filter: effectiveFilter,
-            onOpenKnowledgeBrowser: (absPath) =>
-              navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
-          });
-        }
-        return assetTypeRoot(t, {
-          indexType,
-          onNew: handleNew,
-          creatableTypes,
-          filter: effectiveFilter,
-          onScanComplete: handleScanComplete,
-        });
-      }),
-    [
-      visibleTypes,
-      indexType,
-      handleNew,
-      handleCreateFolder,
-      handleMoveMarkdownItem,
-      creatableTypes,
-      effectiveFilter,
-      handleScanComplete,
-      navigation,
-    ],
-  );
 
   // Resolve the absolute path of the selected folder (from vault metadata),
   // and the effective record_type + filter for the right-panel list view.
@@ -838,19 +528,6 @@ export function AssetsPage() {
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3">
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          title={sidebarCollapsed ? 'Show asset tree' : 'Hide asset tree'}
-          aria-label={sidebarCollapsed ? 'Show asset tree' : 'Hide asset tree'}
-          className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted"
-        >
-          {sidebarCollapsed ? (
-            <PanelLeft className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4 text-muted-foreground" />
-          )}
-        </button>
         <BookOpen className="h-4 w-4 text-muted-foreground" />
         <span className="ml-1 text-sm font-medium">{isProjectView ? 'Project assets' : 'Assets'}</span>
         <ProjectChip projectId={chipProjectId} className="ml-1.5" />
@@ -941,51 +618,9 @@ export function AssetsPage() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* Type sidebar — collapsible push drawer, drag-resizable when expanded */}
-        <div
-          className={`flex-shrink-0 overflow-hidden border-r ${
-            isResizingSidebar ? '' : 'transition-[width] duration-200 ease-out'
-          }`}
-          style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
-          aria-hidden={sidebarCollapsed}
-        >
-          <div className="flex h-full flex-col" style={{ width: sidebarWidth }}>
-            <div className="flex flex-shrink-0 items-center gap-1 border-b p-1.5">
-              <ScopeFilterIconBar
-                scope={effectiveFilter.scope}
-                currentProjectId={scopeProjectId}
-                currentProjectName={scopeProjectName}
-                onScopeChange={handleScopeChange}
-              />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <AssetTypeCountsContext.Provider value={typeCounts}>
-                <BrowseableTree
-                  roots={wikiRoots}
-                  activePointer={treeActivePointer}
-                  activeKey={openAssetId}
-                  isLoading={typesLoading && wikiRoots.length === 0}
-                  onNavigate={navigateAsset}
-                />
-              </AssetTypeCountsContext.Provider>
-            </div>
-          </div>
-        </div>
-        {/* Resize handle for the sidebar — hidden when collapsed */}
-        {!sidebarCollapsed && (
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize asset tree"
-            onMouseDown={handleSidebarResizeStart}
-            onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)}
-            className={`group relative w-1 flex-shrink-0 cursor-col-resize select-none ${
-              isResizingSidebar ? 'bg-primary/40' : 'hover:bg-primary/30'
-            }`}
-            data-testid="asset-tree-resize-handle"
-          />
-        )}
-
+        {/* Sidebar (asset tree + scope filter) moved to the shared left-menu
+            slot — see AssetsNavigator / NavigatorSlot. This body keeps the
+            header + content router only. */}
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">
           {isWikiMode && wikiName ? (
@@ -1058,15 +693,6 @@ export function AssetsPage() {
         placeholder="Name"
         confirmLabel="Create"
         onConfirm={(name) => void handleNewConfirm(name)}
-      />
-      <InputDialog
-        open={newFolderDialogOpen}
-        onOpenChange={setNewFolderDialogOpen}
-        title="New Folder"
-        description={`Create a folder in ${newFolderTarget?.label ?? 'this folder'}.`}
-        placeholder="Folder name"
-        confirmLabel="Create"
-        onConfirm={(name) => void handleNewFolderConfirm(name)}
       />
     </div>
   );

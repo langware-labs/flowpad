@@ -8,7 +8,6 @@ import {
   FileText,
   Info,
   Loader2,
-  Terminal,
 } from 'lucide-react';
 
 import { AgenticProcess, TypeId, type StatusBearingProcess } from '@sdk';
@@ -22,7 +21,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
 import { useSyncTranscriptTabName } from '@src/tabs/useTabs';
 
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { WorkerToolbar, WORKER_ICON_BUTTON_CLASS } from '@src/components/workers/WorkerToolbar';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { ViewModeToggle } from '../ViewModeToggle';
 import { AnalysisSidePanel, useAnalysisControls } from './AnalysisControls';
 import { useTranscriptSession } from './useTranscriptSession';
@@ -32,8 +32,9 @@ import { useTranscriptMode, type TranscriptMode } from '../use-transcript-mode';
 import { ChatEntryItem } from './ChatEntryItem';
 import { TranscriptEntryItem } from './TranscriptEntryItem';
 import { TranscriptStats } from './TranscriptStats';
+import { WorkflowRunSummary } from './WorkflowRunSummary';
 import { groupEntriesByTurn } from './group-entries';
-import { collectToolKeys, formatAgo, formatDuration, operationFilterKey, resolveEntryTimestamp } from './transcript-utils';
+import { collectToolKeys, formatAgo, formatDuration, operationFilterKey, resolveEntryTimestamp, workerIcon, workerLabel } from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 interface Props {
@@ -70,11 +71,21 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   const sessionId = data?.session_id ?? null;
   const header = data?.header ?? {};
 
+  // Workflow-run envelope (only the workflow worker emits a session_meta entry).
+  // Surfaced as a summary header strip and dropped from the entry list below.
+  const workflowMeta = useMemo(
+    () => entries.find((e) => e.role === 'meta' && e.subtype === 'session_meta') ?? null,
+    [entries],
+  );
+
   // A received transcript (shared from another machine) never ran here and is
   // not resumable: hide the "open in terminal" affordance and instead offer a
   // worker that loads + summarises it via transcript_analyzer.
   const received = data?.received ?? false;
   const transcriptSession = useTranscriptSession(workerType, received ? sessionId : null);
+  // Vendor icon for the worker backing this transcript — used by the "open in
+  // terminal" affordance so it matches the WorkerToolbar icon-row.
+  const VendorIcon = workerIcon(workerType);
 
   // ── Live process / worker status for the session backing this transcript ──
   // Resolve the AgenticProcess by worker id, watch it for live ProcessStatus
@@ -84,13 +95,15 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   // separate spinner here.
   const [statusProcessId, setStatusProcessId] = useState<string | null>(null);
   useEffect(() => {
-    if (!sessionId) { setStatusProcessId(null); return; }
+    // A workflow run has no backing AgenticProcess (its id is a runId, not a
+    // worker session) — skip the lookup so it doesn't 404.
+    if (!sessionId || workerType === 'workflow') { setStatusProcessId(null); return; }
     let cancelled = false;
     void AgenticProcess.getByWorkerId(sessionId)
       .then((p) => { if (!cancelled) setStatusProcessId(p?.id ?? null); })
       .catch(() => { if (!cancelled) setStatusProcessId(null); });
     return () => { cancelled = true; };
-  }, [sessionId]);
+  }, [sessionId, workerType]);
 
   const { data: statusProcess } = useEntity<AgenticProcess>(
     statusProcessId ? new TypeId(AgenticProcess.type, statusProcessId) : null,
@@ -132,7 +145,14 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   const [displayTimestamp, setDisplayTimestamp] = useState<string | null>(null);
   const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
 
+  // `viewMode` is already forced to 'chat' in Standard view by useTranscriptMode;
+  // `isAdvanced` here only gates the chrome (mode toggle, scroll clock) on/off.
   const [viewMode, setViewMode] = useTranscriptMode();
+  const isAdvanced = useIsAdvanced();
+  // A workflow run has no chat turns (only phase + agent_spawn rows), and the
+  // callstack/execution synthesizers assume a claude/codex session — so always
+  // render it as the flat entry list.
+  const effectiveMode: TranscriptMode = workerType === 'workflow' ? 'trace' : viewMode;
 
   // ── Initialize tool filters on first load (run once per `entries` identity) ─
   const initializedForRef = useRef<UnifiedEntry[] | null>(null);
@@ -338,6 +358,8 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   const filteredEntries = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return entries.filter((entry) => {
+      // The workflow envelope renders as the summary header strip, not a row.
+      if (entry === workflowMeta) return false;
       if (entry.role === 'user') {
         if (!showUser) return false;
         return !query || entry.searchHaystack.includes(query);
@@ -355,7 +377,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
       if (!showUser && !showAssistant) return false;
       return !query || entry.searchHaystack.includes(query);
     });
-  }, [entries, showUser, showAssistant, toolFilters, searchQuery]);
+  }, [entries, workflowMeta, showUser, showAssistant, toolFilters, searchQuery]);
 
   // Chat mode is a quick agent ↔ user view. Operations (tool calls / file
   // writes / shell commands) live in trace mode only — chat stays simple.
@@ -523,7 +545,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
     <div className="flex h-full min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2">
-        <ViewModeToggle mode={viewMode} onChange={switchMode} />
+        {isAdvanced && <ViewModeToggle mode={viewMode} onChange={switchMode} />}
 
         {indicatorProcess && (
           <span
@@ -540,7 +562,8 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
           </span>
         )}
 
-        {/* Scroll-position clock */}
+        {/* Scroll-position clock — Advanced/Dev only; Standard keeps a plain spacer. */}
+        {isAdvanced ? (
         <div className="flex flex-1 items-center justify-center gap-0 text-[11px] tabular-nums">
           {transcriptStartTs && (
             <span
@@ -582,6 +605,9 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
             </span>
           )}
         </div>
+        ) : (
+          <div className="flex-1" />
+        )}
 
         {sessionId && (
           <div
@@ -598,15 +624,17 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
                 testIdPrefix="transcript-analyze"
               />
             ) : (
+              // Own (resumable) session: open its live terminal. Presented as the
+              // worker's vendor icon — matching the WorkerToolbar icon-row on the
+              // received branch — rather than a dedicated labelled button.
               <button
                 type="button"
                 onClick={handleOpenInTerminal}
-                className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                title="Open in terminal"
+                className={WORKER_ICON_BUTTON_CLASS}
+                title={`Open ${workerLabel(workerType)} in terminal`}
                 data-testid="transcript-open-in-terminal"
               >
-                <Terminal className="h-3 w-3" />
-                Open in terminal
+                <VendorIcon className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
@@ -634,11 +662,15 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
         )}
       </div>
 
-      {viewMode === 'callstack' ? (
+      {workflowMeta && (
+        <WorkflowRunSummary payload={workflowMeta.payload ?? {}} label={workerLabel(workerType)} />
+      )}
+
+      {effectiveMode === 'callstack' ? (
         <CallStackView workerType={workerType} sessionId={sessionId} />
-      ) : viewMode === 'execution' ? (
+      ) : effectiveMode === 'execution' ? (
         <ExecutionView controls={analysisControls} workerType={workerType} sessionId={sessionId} />
-      ) : viewMode === 'chat' ? (
+      ) : effectiveMode === 'chat' ? (
         <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
           {chatEntries.map((entry, idx) => {
             const ts = resolveEntryTimestamp(entry);
@@ -668,6 +700,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
                   entry={entry}
                   isExpanded={chatExpandedEntries.has(entry.id)}
                   onToggle={() => toggleChatEntry(entry.id)}
+                  isAdvanced={isAdvanced}
                 />
               </div>
             );

@@ -281,11 +281,13 @@ def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.Complet
 
 
 async def git_commit_file(repo_path: str, rel_file: str, message: str) -> bool:
-    """Stage and commit a SINGLE file (no push). Returns True if a commit was made.
+    """Stage and commit a single pathspec — a file OR a folder (no push). Returns
+    True if a commit was made.
 
-    File-scoped: ``git add -- <file>`` then ``git commit -- <file>`` so concurrent
-    edits to other files are never swept in. No-ops (returns False) when the file
-    has no staged delta. Best-effort; never raises.
+    Pathspec-scoped: ``git add -- <pathspec>`` then ``git commit -- <pathspec>`` so
+    concurrent edits outside the pathspec are never swept in. A folder pathspec
+    (a folder-backed asset, e.g. a skill) commits every change under it. No-ops
+    (returns False) when the pathspec has no staged delta. Best-effort; never raises.
     """
     try:
         if not Path(repo_path, rel_file).exists():
