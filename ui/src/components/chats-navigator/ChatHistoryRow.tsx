@@ -1,7 +1,7 @@
 import { AgenticProcess, TypeId } from '@sdk';
 import { useMemo } from 'react';
-import { cn } from '@src/lib/utils';
-import { Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
+import { cn, RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
+import { List, Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import {
   WorkerIcon,
@@ -15,21 +15,22 @@ import { ChatPromptsPopover } from './ChatPromptsPopover';
 
 /**
  * One chat-history row in the Chats navigator. Pure presentation over the
- * shared `history-row` formatters (worker glyph, title, time-ago) so it
+ * shared `history-row` formatters (worker glyph, title, subline, time-ago) so it
  * stays consistent with the terminal HistoryModal + the chat dropdown. Click
  * selects (URL-first, owned by the parent); star/trash are per-row side effects
- * revealed on hover. Project · branch live only in the row tooltip; the
- * message count is a chip that peeks the session's prompt list.
+ * revealed on hover.
  */
 interface ChatHistoryRowProps {
   entry: WorkerHistoryEntry;
   selected: boolean;
+  /** True when this chat's process backs an open tab → stays bright (vs. dimmed). */
+  hasOpenTab: boolean;
   onSelect: () => void;
   onToggleFavorite: () => void;
   onDelete: () => void;
 }
 
-export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, onDelete }: ChatHistoryRowProps) {
+export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggleFavorite, onDelete }: ChatHistoryRowProps) {
   const { t } = useLingui();
   // Subscribe to the backing process so a rename (tab/process) re-renders this
   // row instead of leaving a stale title. Gate `enabled` on a cached hit so we
@@ -65,8 +66,10 @@ export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, on
         }
       }}
       className={cn(
-        'group cursor-pointer border-b px-3 py-2 text-xs outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50',
+        'group cursor-pointer border-b px-3 py-2 text-xs outline-none transition-[color,background-color,border-color,opacity] hover:bg-muted/50 focus-visible:bg-muted/50',
         selected && 'bg-muted',
+        // Dim chats with no open tab (and not the active row); hover restores.
+        !selected && !hasOpenTab && RAIL_DIM_WHEN_CLOSED,
       )}
       data-testid="chat-history-row"
       title={meta || undefined}
@@ -116,22 +119,35 @@ export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, on
             <Trash2 className="h-3 w-3" />
           </button>
         </div>
-        {/* Message-count chip — sits to the right of the time. Click opens the
-            session's prompt-list review (popover anchored here), like history. */}
+        {/* Trailing cluster: a non-interactive message-count INFO LABEL (the
+            number is total transcript messages, not prompts), plus a distinct
+            "review prompts" ACTION button. The action uses opacity (not display)
+            for its hover reveal so its popover stays anchored once opened even as
+            the row loses hover. */}
         {hasMsgs && (
-          <ChatPromptsPopover entry={entry}>
-            <button
-              type="button"
-              onClick={(e) => e.stopPropagation()}
-              title={t`View prompts`}
-              aria-label={t`View prompts`}
-              className="inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          <span className="flex shrink-0 items-center gap-1">
+            <span
+              className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"
+              title={entry.message_count === 1 ? t`1 message` : t`${entry.message_count} messages`}
+              aria-label={entry.message_count === 1 ? t`1 message` : t`${entry.message_count} messages`}
               data-testid="chat-history-row-msgcount"
             >
               <MessageSquare className="h-2.5 w-2.5" />
               {entry.message_count}
-            </button>
-          </ChatPromptsPopover>
+            </span>
+            <ChatPromptsPopover entry={entry}>
+              <button
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                title={t`Review prompts`}
+                aria-label={t`Review prompts`}
+                className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                data-testid="chat-history-row-prompts"
+              >
+                <List className="h-3 w-3" />
+              </button>
+            </ChatPromptsPopover>
+          </span>
         )}
       </div>
     </div>

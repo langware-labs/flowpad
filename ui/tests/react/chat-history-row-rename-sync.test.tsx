@@ -39,6 +39,7 @@ function row(entry: WorkerHistoryEntry) {
       <ChatHistoryRow
         entry={entry}
         selected={false}
+        hasOpenTab={false}
         onSelect={() => {}}
         onToggleFavorite={() => {}}
         onDelete={() => {}}

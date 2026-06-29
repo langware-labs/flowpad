@@ -7,6 +7,8 @@ import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction
 import { useBrowseableTree } from './useBrowseableTree';
 import { subscribeRefresh } from './refresh-store';
 import { TreeSelectionContext, type TreeSelectionApi } from './useTreeSelection';
+import { useOpenTabHashes } from '@src/tabs/useTabs';
+import { RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
 
 /** Walk a root's currently-visible (expanded) subtree in render order,
  *  collecting the selectable rows. Powers Shift-range + Cmd/Ctrl+A. */
@@ -53,6 +55,9 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   } = props;
 
   const tree = useBrowseableTree(roots, { persistKey, defaultExpandedIds });
+  // Set of open-tab identities → rows backed by an open tab stay bright, the rest
+  // dim (see BrowseableRow). Subscribed once here, passed down through the tree.
+  const openTabHashes = useOpenTabHashes();
   const lastResolvedRef = useRef<string | null>(null);
   const [dragData, setDragData] = useState<BrowseableDragData | null>(null);
 
@@ -170,6 +175,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             selection={selection}
             activePointer={activePointer}
             activeKey={activeKey}
+            openTabHashes={openTabHashes}
             onNavigate={handleNavigate}
             dragData={dragData}
             onDragStart={setDragData}
@@ -190,13 +196,15 @@ interface RowProps {
   selection: TreeSelectionApi | null;
   activePointer: DockPointer | null;
   activeKey?: string | null;
+  /** Open-tab identities (`pointer.tabHash`) → un-dimmed rows. */
+  openTabHashes: Set<string>;
   onNavigate: (p: DockPointer) => void;
   dragData: BrowseableDragData | null;
   onDragStart: (data: BrowseableDragData) => void;
   onDragEnd: () => void;
 }
 
-function BrowseableRow({ node, level, rootId, tree, selection, activePointer, activeKey, onNavigate, dragData, onDragStart, onDragEnd }: RowProps) {
+function BrowseableRow({ node, level, rootId, tree, selection, activePointer, activeKey, openTabHashes, onNavigate, dragData, onDragStart, onDragEnd }: RowProps) {
   const { t } = useLingui();
   const expanded = tree.isExpanded(node.id);
   const loadState = tree.getLoadState(node.id);
@@ -227,6 +235,12 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
       node.pointer.viewType === activePointer.viewType &&
       node.pointer.pointer === activePointer.pointer)
   );
+
+  // Dim openable rows that aren't currently open as a tab (and aren't the active
+  // row, which is open by definition). Hover restores full brightness. Rows
+  // without a pointer (headers/categories) are never dimmed.
+  const hasOpenTab = !!(node.pointer?.tabHash && openTabHashes.has(node.pointer.tabHash));
+  const dimmed = !!node.pointer && !isSelected && !hasOpenTab;
 
   const hasChildrenHint = node.hasChildren === true || (node.hasChildren === 'unknown' && !!node.listChildren);
 
@@ -353,9 +367,9 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
   return (
     <div data-browseable-id={node.id} data-selection-key={node.selectionKey}>
       <div
-        className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-colors ${
+        className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-[color,background-color,border-color,opacity] ${
           isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
-        } ${
+        } ${dimmed ? RAIL_DIM_WHEN_CLOSED : ''} ${
           // Multi-select ring — distinct from, and composable with, the active
           // (bg-accent) fill: a row can be both the open editor and selected.
           multiSelected ? 'ring-2 ring-inset ring-primary' : ''
@@ -477,6 +491,7 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
               selection={selection}
               activePointer={activePointer}
               activeKey={activeKey}
+              openTabHashes={openTabHashes}
               onNavigate={onNavigate}
               dragData={dragData}
               onDragStart={onDragStart}

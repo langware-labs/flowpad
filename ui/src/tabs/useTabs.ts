@@ -57,6 +57,22 @@ export function useCurrentTabs(): Tab[] {
   );
 }
 
+/** Set of `tabHash`es for all currently-open tabs. Powers rail "dim entries that
+ *  have no open tab" — a Browseable row whose `pointer.tabHash` is in this set is
+ *  open and stays bright; everything else dims. */
+export function useOpenTabHashes(): Set<string> {
+  const all = useAllTabs();
+  return useMemo(() => new Set(all.map((t) => t.dockPointer?.tabHash).filter(Boolean) as string[]), [all]);
+}
+
+/** Set of target ids (AgenticProcess/Shell) that currently back a tab. Same
+ *  dimming rule as `useOpenTabHashes`, but for the custom-row rails (Chats) that
+ *  match by `target_id` rather than by a DockPointer. */
+export function useOpenTabTargetIds(): Set<string> {
+  const all = useAllTabs();
+  return useMemo(() => new Set(all.map((t) => t.target_id).filter(Boolean) as string[]), [all]);
+}
+
 /** React binding for terminal tabs, reading the global store. */
 export function useTerminalTabs(scope: 'project' | 'all' = 'project', projectId?: string | null): Tab[] {
   const tabs = useAllTabs();
