@@ -1,14 +1,10 @@
 import { AgenticProcess, Shell, Tab, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { Button } from '@src/components/ui/button';
+import { ProjectBrief } from '@src/components/project-brief/ProjectBrief';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTerminalTabs } from '@src/tabs/useTabs';
-import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
-import { History, Loader2, SquareTerminal } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
-import { Trans } from '@lingui/react/macro';
 import InteractiveTerminal from './interactive-terminal';
 import { TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
 import { allowRename, shouldAutoSaveTitleForTarget } from './rename-rules';
@@ -93,8 +89,8 @@ const TerminalPanel: React.FC<{
  * warm-mounted terminal panels; the chip strip is the shared `UnifiedTabStrip` the
  * host renders above it. Tabs come from the one backend-authoritative source
  * (`useTerminalTabs` → `tab` action), the active panel is URL-derived, and each
- * panel hydrates its own entity on mount. The empty state offers the spawn openers
- * (via the chrome controller).
+ * panel hydrates its own entity on mount. With no tabs it renders `ProjectBrief`
+ * (the shared project landing, which owns the spawn openers + their modals).
  */
 const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   className = '',
@@ -122,68 +118,12 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     });
   }, [activeKey]);
 
-  // Chrome controller — spawn openers + modals only (the strip owns shortcuts).
-  const controller = useTerminalStripController({ spawnProjectId });
-  const {
-    modals,
-    isTabCreationPending,
-    isClaudeCreationPending,
-    isTerminalCreationPending,
-    handleStartClaude,
-    handleStartTerminal,
-    handleOpenHistory,
-  } = controller;
-
   return (
     <div className={`flex h-full ${className}`}>
       <div className="flex h-full w-full flex-col">
         <div className="relative flex-1 overflow-hidden" data-testid="terminal-panels">
           {tabs.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
-              <p className="text-sm"><Trans>No terminal sessions</Trans></p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => void handleStartClaude()}
-                  disabled={isTabCreationPending}
-                  data-testid="start-claude-button"
-                >
-                  {isClaudeCreationPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ClaudeIcon className="h-4 w-4 text-orange-500" />
-                  )}
-                  <Trans>Claude Code</Trans>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => void handleStartTerminal()}
-                  disabled={isTabCreationPending}
-                >
-                  {isTerminalCreationPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <SquareTerminal className="h-4 w-4" />
-                  )}
-                  <Trans>Terminal</Trans>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={handleOpenHistory}
-                  disabled={isTabCreationPending}
-                  data-testid="open-history-button"
-                >
-                  <History className="h-4 w-4" />
-                  <Trans>Open from history</Trans>
-                </Button>
-              </div>
-            </div>
+            <ProjectBrief spawnProjectId={spawnProjectId} />
           ) : (
             tabs.map((tab) => {
               const tabHash = tab.dockPointer?.tabHash ?? tab.id;
@@ -200,7 +140,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           )}
         </div>
       </div>
-      {modals}
     </div>
   );
 };

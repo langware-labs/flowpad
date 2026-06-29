@@ -18,6 +18,7 @@
  */
 import { Tab } from '@sdk';
 import { TabStrip } from '@src/components/tabs/TabStrip';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { resolveNextTab } from '@src/tabs/tab-candidates';
@@ -80,16 +81,19 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   );
 
   // Where to go when the active tab(s) close: the next tab in the current
-  // project (confined to its scope — `resolveNextTab` with `projectId`), or Home
-  // when the project has no tabs left. Closing a project's last tab drops to the
-  // no-tabs page rather than jumping to a tab in another project. Same precedence
-  // the loaders use, so the close-time pick can't diverge from a fresh nav's.
+  // project (confined to its scope — `resolveNextTab` with `projectId`), or the
+  // project home (`DockPointer.forProject`, which renders `ProjectBrief`) when the
+  // project has no tabs left. Closing a project's last tab lands on its project
+  // home rather than jumping to a tab in another project — same destination a
+  // fresh project entry resolves to (`dockForProjectEntry`). Falls back to Home
+  // only when there's no project scope at all.
   const navigateAfterClose = useCallback(
     (closing: Tab[]) => {
       const closingIds = new Set(closing.map((t) => t.id));
       const remaining = allTabs.filter((t) => !closingIds.has(t.id));
       const next = resolveNextTab(remaining, new Set(), projectId);
       if (next?.dockPointer) navigation.openDock(next.dockPointer);
+      else if (projectId) navigation.openDock(DockPointer.forProject(projectId));
       else navigation.closeDock();
     },
     [allTabs, projectId, navigation],
