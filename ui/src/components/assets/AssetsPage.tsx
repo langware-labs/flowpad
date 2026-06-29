@@ -248,11 +248,14 @@ export function AssetsPage() {
     const proj = projectEntity;
     if (!proj) return;
     const name = proj.displayName ?? 'this project';
+    const path = proj.fs_storage_mount_path;
     showDeleteAssetModal({
       name,
       description:
         'This permanently deletes the project and everything in it — all indexed ' +
-        'records and their children, and the project folder on disk. This cannot be undone.',
+        'records and their children, and the project folder on disk' +
+        (path ? ` (${path})` : '') +
+        '. This cannot be undone.',
       onConfirm: async () => {
         await proj.deleteWithChildren();
       },
