@@ -498,6 +498,7 @@ function TranscriptsSection({
   isLoading: boolean;
   navigation: NavigationActions;
 }) {
+  const { t } = useLingui();
   const stats = useMemo(() => computeStatsFromHistory(entries), [entries]);
 
   const handleEntryClick = (entry: HistoryEntryResponse) => {
@@ -810,6 +811,7 @@ function PluginsSection({ data }: { data: SystemProfile }) {
  * Hooks Section
  */
 function HooksSection({ data }: { data: SystemProfile }) {
+  const { t } = useLingui();
   // State for delete confirmation dialog - must be before any early returns
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [hookToDelete, setHookToDelete] = useState<HookItem | null>(null);

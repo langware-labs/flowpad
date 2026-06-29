@@ -34,8 +34,6 @@ export interface MarkdownFolderRootDeps {
   onCreateFolder?: (target: MarkdownFolderTarget) => void;
   /** Called when a markdown file/folder is dropped onto a folder target. */
   onMoveItem?: (item: MarkdownDragItem, target: MarkdownFolderTarget) => Promise<void> | void;
-  /** Called after a successful scan. */
-  onScanComplete?: (typeName: string) => void;
   /** Active filter — used by the count badge so it tracks scope/project. */
   filter?: AssetFilter;
   /** Open the docs knowledge browser for a vault root (its absolute vfs path).
@@ -183,8 +181,8 @@ function rootToolbar(type: AssetTypeInfo, deps: MarkdownFolderRootDeps): Toolbar
       icon: <RefreshCw />,
       label: 'Scan for changes',
       run: async () => {
+        // Reindex; resulting data_ops refresh the tree via useAssetTreeRefresh.
         await deps.indexType(type.type_name, deps.filter?.scope);
-        deps.onScanComplete?.(type.type_name);
       },
     },
   ];

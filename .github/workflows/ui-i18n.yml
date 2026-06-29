@@ -1,0 +1,55 @@
+name: UI i18n Guards
+
+# Guards the three Lingui failure modes that each shipped to production
+# undetected (the buttons rendering raw hash ids like "Gp4Yi6"/"N40H-G"):
+#
+#   1. Catalog never loaded at runtime  -> tests/unit/i18n-en-catalog-load.test.ts
+#   2. swc-plugin vs catalog id alphabet -> tests/unit/i18n-message-id-alphabet.test.ts
+#   3. Catalog out of sync with source   -> the `lingui extract` check below
+#
+# All three are frontend/jsdom-only (no backend, no PTY), so they run cleanly
+# and deterministically on CI. This deliberately runs ONLY the i18n unit tests
+# (not the whole vitest suite) so the guard stays fast and reliable; broadening
+# the frontend coverage is a separate follow-up.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'ui/**'
+
+concurrency:
+  group: ui-i18n-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  i18n-guards:
+    name: ui i18n guards
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: i18n regression tests (catalog load + id alphabet)
+        run: npx vitest run --project unit tests/unit/i18n-en-catalog-load.test.ts tests/unit/i18n-message-id-alphabet.test.ts
+
+      - name: Catalog is in sync with source (lingui extract)
+        run: |
+          npx lingui extract
+          if ! git diff --quiet -- src/locales; then
+            echo "::error::Message catalogs are out of date with the source."
+            echo "Run 'npm run i18n:extract' in ui/ and commit the updated src/locales/*.po."
+            git --no-pager diff --stat -- src/locales
+            exit 1
+          fi

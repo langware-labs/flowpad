@@ -121,11 +121,7 @@ export function Footer({ className = '' }: FooterProps) {
             <BookOpen className="h-3.5 w-3.5" />
             <span><Trans>Flowpad docs</Trans></span>
           </button>
-          {version && (
-            <AdvancedOnly reserve={false}>
-              <VersionPopover currentVersion={version} />
-            </AdvancedOnly>
-          )}
+          {version && <VersionPopover currentVersion={version} />}
           <PoweredBy />
           <LanguageSelector />
         </div>

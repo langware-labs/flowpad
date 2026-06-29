@@ -8,7 +8,7 @@
 
 import { Archive, Check, CheckCircle, ChevronRight, FileText, Loader2, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
-import { Trans, t } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { Task } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -103,6 +103,7 @@ function AnalysisProgressRow({ task }: { task: Task }) {
  * Shows links to skill files, reports, or any other task artifacts.
  */
 function ArtifactsRow({ task }: { task: Task }) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const artifacts = getArtifactPaths(task);
 
@@ -149,6 +150,7 @@ export function TaskCard({
   isSelected,
   onToggleSelect,
 }: TaskCardProps) {
+  const { t } = useLingui();
   const [confirmRemove, setConfirmRemove] = useState(false);
   const isAlreadyArchived = task.status === 'archived' || !!task.archived_at;
   const actionLabel = isAlreadyArchived ? t`Delete` : t`Archive`;

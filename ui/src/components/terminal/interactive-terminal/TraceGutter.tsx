@@ -60,6 +60,7 @@ export const TraceGutter = React.memo(function TraceGutter({
   onClose,
   hideCounter = false,
 }: TraceGutterProps) {
+  const { t } = useLingui();
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const gutterRef = useRef<HTMLDivElement | null>(null);

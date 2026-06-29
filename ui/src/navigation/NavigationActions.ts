@@ -37,7 +37,7 @@ let pendingDockNavigationUrl: string | null = null;
 // URL — the ChatsNavigator reads currentDock.scopeFilter to filter history, exactly
 // like assets/explorer/triggers (SHELL's tabHash ignores scope, so the open
 // session's identity is unaffected).
-const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
+export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
   ViewType.TRIGGERS,
   ViewType.EXPLORER,

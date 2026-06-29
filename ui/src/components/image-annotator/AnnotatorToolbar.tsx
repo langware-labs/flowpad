@@ -96,11 +96,10 @@ export function AnnotatorToolbar({
         <button
           type="button"
           onClick={onSave}
-          disabled={!isDirty}
           className="flex h-8 items-center gap-1 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
         >
           <Check className="h-4 w-4" />
-          <Trans>Save</Trans>
+          {isDirty ? <Trans>Save</Trans> : <Trans>Attach</Trans>}
         </button>
       </div>
     </div>
