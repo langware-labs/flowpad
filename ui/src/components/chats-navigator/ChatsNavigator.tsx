@@ -6,6 +6,7 @@ import type { NavigatorDescriptor } from '@src/components/navigator-panel/types'
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useOpenTabTargetIds } from '@src/tabs/useTabs';
 import { useProject } from '@src/hooks/useProject';
 import { useContext } from '@src/hooks/useContext';
 import { notify } from '@src/notifications';
@@ -54,6 +55,10 @@ export function ChatsNavigator() {
   // Active row = the process the Shell URL currently targets (URL-first).
   const activeProcessId =
     activeTerminalTargetTypeId?.type === AgenticProcess.type ? activeTerminalTargetTypeId.id : null;
+
+  // Process ids that currently back an open (terminal) tab → those rows stay
+  // bright; chats with no open tab dim until hovered/opened.
+  const openProcessIds = useOpenTabTargetIds();
 
   const handleScopeChange = useCallback(
     (next: ScopeFilter) => {
@@ -170,6 +175,7 @@ export function ChatsNavigator() {
           buckets={buckets}
           isLoading={isLoading}
           activeProcessId={activeProcessId}
+          openProcessIds={openProcessIds}
           onSelect={handleSelect}
           onToggleFavorite={handleToggleFavorite}
           onDelete={requestDelete}
@@ -185,6 +191,7 @@ export function ChatsNavigator() {
       buckets,
       isLoading,
       activeProcessId,
+      openProcessIds,
       handleSelect,
       handleToggleFavorite,
       requestDelete,
