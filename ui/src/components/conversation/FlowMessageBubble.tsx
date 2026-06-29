@@ -1,4 +1,4 @@
-import { createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User } from '@sdk';
+import { APIEntity, createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -487,20 +487,26 @@ export function FlowMessageBubble({
             }
           />
         ))}
+        {/* Entity chips render as soon as the entity resolves locally — no
+            body-download/login round-trip for a same-machine forward (the
+            entity is already on disk). A not-yet-local (cross-user) entity stays
+            hidden until the bundle is downloaded (`forceShow`), where the
+            DownloadAttachmentsButton below still drives materialization. */}
+        {otherEntities.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {otherEntities.map((typeId) => (
+              <MessageEntityChip
+                key={`asset:${typeId.type}-${typeId.id}`}
+                typeId={typeId}
+                conversationId={fm.conversation_id ?? ''}
+                projectId={attachmentProjectId}
+                forceShow={showLiveChips}
+              />
+            ))}
+          </div>
+        )}
         {showLiveChips ? (
           <>
-            {otherEntities.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {otherEntities.map((typeId) => (
-                  <ContextEntityChip
-                    key={`asset:${typeId.type}-${typeId.id}`}
-                    typeId={typeId}
-                    inside={{ type: 'conversation', id: fm.conversation_id ?? '' }}
-                    projectId={attachmentProjectId}
-                  />
-                ))}
-              </div>
-            )}
             {gatedItems.map((item) => (
               <AttachmentChip
                 key={item.key}
@@ -530,7 +536,11 @@ export function FlowMessageBubble({
               </a>
             )}
           </>
-        ) : hasBody && pendingAssetCount > 0 ? (
+        ) : hasBody && pendingAssetCount > 0 && (!downloaded || attachmentItems.length > 0) ? (
+          // Show the Download button only when there's actually something to pull
+          // (`!downloaded`) or a FILE attachment that still needs project-mapping
+          // to open. An entity-only message whose entity is already local (e.g. the
+          // sender's own forwarded diagnosis) needs neither — its chip renders above.
           <DownloadAttachmentsButton
             count={pendingAssetCount}
             labels={assetLabels}
@@ -583,5 +593,38 @@ export function FlowMessageBubble({
         />
       )}
     </>
+  );
+}
+
+/**
+ * A conversation entity chip that appears as soon as the referenced entity is
+ * resolvable locally — no body-download / cloud-login round-trip. A local app
+ * entity (e.g. a forwarded `flowpad_diagnosis`) already lives on disk, so its
+ * chip shows immediately rather than as a blank message behind a Download button.
+ * When the entity isn't local yet (a cross-user forward whose bundle hasn't been
+ * pulled), it renders only once `forceShow` is set (the body has been downloaded),
+ * where `ContextEntityChip`'s own resolved / "unavailable" states take over.
+ */
+function MessageEntityChip({
+  typeId,
+  conversationId,
+  projectId,
+  forceShow,
+}: {
+  typeId: TypeId;
+  conversationId: string;
+  projectId?: string | null;
+  forceShow: boolean;
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = useEntity<APIEntity<any>>(typeId);
+  // Hidden until either the entity is on disk (local) or the bundle is downloaded.
+  if (!data && !forceShow) return null;
+  return (
+    <ContextEntityChip
+      typeId={typeId}
+      inside={{ type: 'conversation', id: conversationId }}
+      projectId={projectId}
+    />
   );
 }

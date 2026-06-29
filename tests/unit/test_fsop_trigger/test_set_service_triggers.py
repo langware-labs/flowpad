@@ -97,6 +97,12 @@ async def test_seeds_toplog_json_when_missing(initialize_test_db, tmp_path, monk
 
     Settings is a frozen dataclass, so we proxy `get_instance_settings()` to
     return an object that redirects just `toplog_config_path` to tmp.
+
+    Two seams resolve `get_instance_settings()` independently: `builtin_triggers`
+    imports it at module level (the watch path), while `toplog._config_path()`
+    re-imports it from `flow_sdk.instance_settings` at call time (the SEED path).
+    In production both yield the same real settings; the test must redirect BOTH
+    or the seeder writes to the real path and `fake_toplog` never appears.
     """
     fake_toplog = tmp_path / "toplog.json"
     from flow_sdk.server import builtin_triggers as bt
@@ -107,5 +113,8 @@ async def test_seeds_toplog_json_when_missing(initialize_test_db, tmp_path, monk
         def __getattr__(self, n): return getattr(real_settings, n)
 
     monkeypatch.setattr(bt, "get_instance_settings", lambda: _Proxy())
+    # toplog.seed_file → _config_path() resolves get_instance_settings from
+    # flow_sdk.instance_settings at call time, so redirect that seam too.
+    monkeypatch.setattr("flow_sdk.instance_settings.get_instance_settings", lambda: _Proxy())
     await set_service_triggers()
     assert fake_toplog.exists()

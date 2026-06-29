@@ -55,10 +55,11 @@ function pickActiveTab(tabs: Tab[], excludeIds: Set<string>): Tab | null {
 /**
  * Pick the best terminal tab to make active.
  *
- * When `preferProjectId` is given, prefer a tab in that project (+ projectless
- * tabs, which belong to every project) so closing a tab keeps you inside your
- * project while it still has tabs; only when that project is empty does the pick
- * skip to the next tab anywhere. Omit `preferProjectId` (or pass an already-scoped
+ * When `preferProjectId` is given, the pick is confined to that project (+
+ * projectless tabs, which belong to every project): closing a tab keeps you
+ * inside your project while it still has tabs, and when that project has no tabs
+ * left the pick is `null` (show the empty/no-tabs page) rather than jumping to a
+ * tab in another project. Omit `preferProjectId` (or pass an already-scoped
  * `tabs`) for a plain global pick. `null` means no tab is left to make active.
  *
  * Eligibility: not disabled, has a target, and none of the tab's ids (its target
@@ -72,8 +73,7 @@ export function resolveNextTab(
 ): Tab | null {
   if (preferProjectId !== undefined) {
     const scoped = tabs.filter((t) => tabInProject(t, preferProjectId));
-    const inProject = pickActiveTab(scoped, excludeIds);
-    if (inProject) return inProject;
+    return pickActiveTab(scoped, excludeIds);
   }
   return pickActiveTab(tabs, excludeIds);
 }

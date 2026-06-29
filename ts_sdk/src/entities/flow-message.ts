@@ -273,12 +273,17 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Download + unpack this message's body via the local backend.
    *  Throws BodyNotReadyError when body_status != READY.
    *  POSTs /api/v1/graph/flow_message/<id>/download_body. */
-  async downloadBody(_opts: { onProgress?: (pct: number) => void } = {}): Promise<this> {
+  async downloadBody(
+    _opts: { onProgress?: (pct: number) => void; overwrite?: boolean } = {},
+  ): Promise<this> {
     if (this.body_status !== BodyStatus.READY) {
       throw new BodyNotReadyError(this.body_status);
     }
     if (!this.id) throw new Error('downloadBody requires this.id');
     const action = new ActionInfo('download_body', FlowMessage.type, this.id, 'POST');
+    // On a genuine collision the backend replies 409 {asset_conflict:true}; the
+    // caller can re-invoke with overwrite:true to replace the on-disk asset.
+    action.bodyParameters = { overwrite: _opts.overwrite ?? false };
     await dataManager.callAction<unknown, unknown>(action);
     return this;
   }

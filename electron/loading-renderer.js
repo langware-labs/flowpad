@@ -119,3 +119,54 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
 
   closeBtn.addEventListener('click', closePanel);
 })();
+
+// Startup-timeout recovery panel — shown instead of the native OS error popup
+// when the backend fails to come up. Renders the two exact recovery commands,
+// each with a copy button, plus a Quit button.
+(function () {
+  const api = window.electronAPI;
+  if (!api || !api.onStartupError) return;
+
+  const overlay = document.getElementById('error-overlay');
+  const detailEl = document.getElementById('error-detail');
+  const upgradeEl = document.getElementById('upgrade-cmd');
+  const diagnoseEl = document.getElementById('diagnose-cmd');
+  const quitBtn = document.getElementById('quit-btn');
+
+  function wireCopy(buttonId, getText) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    const label = button.querySelector('.copy-label');
+    button.addEventListener('click', async () => {
+      try {
+        await api.copyToClipboard(getText());
+        button.classList.add('copied');
+        if (label) label.textContent = 'Copied';
+        setTimeout(() => {
+          button.classList.remove('copied');
+          if (label) label.textContent = 'Copy';
+        }, 1500);
+      } catch {
+        /* ignore copy failures */
+      }
+    });
+  }
+
+  wireCopy('copy-upgrade', () => upgradeEl.textContent);
+  wireCopy('copy-diagnose', () => diagnoseEl.textContent);
+
+  if (quitBtn && api.quitApp) {
+    quitBtn.addEventListener('click', () => api.quitApp());
+  }
+
+  api.onStartupError((data) => {
+    if (!data) return;
+    if (detailEl) detailEl.textContent = data.detail || '';
+    if (upgradeEl) upgradeEl.textContent = data.upgradeCommand || '';
+    if (diagnoseEl) diagnoseEl.textContent = data.diagnoseCommand || '';
+    if (overlay) overlay.classList.add('visible');
+    // Stop the spinner/status from animating behind the overlay.
+    const spinner = document.querySelector('.spinner');
+    if (spinner) spinner.style.display = 'none';
+  });
+})();

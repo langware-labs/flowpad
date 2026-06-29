@@ -27,12 +27,14 @@ import { diagnosisToText } from '@src/components/diagnose/diagnosis-details';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { Copy, Eye, Flag, Forward, Stethoscope, Trash2 } from 'lucide-react';
 import {
   systemTools,
   copyToClipboard,
-  sendDiagnosisReport,
+  forwardDiagnosis,
   sendDiagnosisEmailReport,
   FlowpadDiagnosis,
   QueryRequest,
@@ -47,8 +49,8 @@ function formatRecorded(value?: string | Date): string {
 
 /**
  * An icon button that drops down the most-recent conversations and forwards the
- * diagnosis report to the picked one (via `sendDiagnosisReport`). Used by the
- * Forward action; "Report" emails the team instead and needs no picker.
+ * diagnosis to the picked one (via `forwardDiagnosis`, which attaches the entity).
+ * Used by the Forward action; "Report" emails the team instead and needs no picker.
  */
 function ConvPickerButton({
   icon: Icon,
@@ -99,10 +101,13 @@ function DiagnosisRowActions({
   diag,
   onView,
   onDelete,
+  onForwarded,
 }: {
   diag: FlowpadDiagnosis;
   onView: () => void;
   onDelete: () => void;
+  /** Called after a successful forward — the parent opens the conversation. */
+  onForwarded: (conversationId: string) => void;
 }) {
   // "Report issue" — email the diagnosis to the Flowpad team (no conversation).
   const handleReport = useCallback(async () => {
@@ -117,14 +122,13 @@ function DiagnosisRowActions({
     }
   }, [diag]);
 
-  // "Forward" — post the formatted report into the chosen conversation.
+  // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
     async (conversationId: string) => {
       try {
-        await sendDiagnosisReport(conversationId, {
-          fallbackText: diag.summary || diag.title || '',
-        });
+        await forwardDiagnosis(conversationId, diag.id);
         notify.success({ title: 'Diagnosis forwarded' });
+        onForwarded(conversationId);
       } catch (e) {
         notify.error({
           title: 'Could not forward diagnosis',
@@ -132,7 +136,7 @@ function DiagnosisRowActions({
         });
       }
     },
-    [diag],
+    [diag, onForwarded],
   );
 
   const handleCopy = useCallback(async () => {
@@ -191,6 +195,16 @@ export function SystemDiagnoses() {
   const [open, setOpen] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [viewId, setViewId] = useState<string | null>(null);
+  const { navigation } = useDockNavigation();
+
+  // After a forward, close this dialog and open the conversation we sent into.
+  const handleForwarded = useCallback(
+    (conversationId: string) => {
+      setOpen(false);
+      navigation.openDock(DockPointer.forConversation(conversationId));
+    },
+    [navigation],
+  );
 
   // Reactive list of all recorded diagnoses — subscribes to the entity store, so a
   // delete (or a freshly recorded diagnosis) updates the table without a manual
@@ -268,6 +282,7 @@ export function SystemDiagnoses() {
                           diag={d}
                           onView={() => setViewId(d.id)}
                           onDelete={() => setConfirmId(d.id)}
+                          onForwarded={handleForwarded}
                         />
                       </TableCell>
                     </TableRow>

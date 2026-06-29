@@ -17,7 +17,11 @@ export interface NavigatorHeader {
   title?: string;
   /** Count pill rendered next to the title (e.g. number of workflows). */
   countBadge?: number;
-  /** Arbitrary control row under the title (e.g. a scope filter bar). */
+  /** Right-aligned control pinned in the title row itself (e.g. the scope
+   *  filter icon bar). Shares the row's trailing slot with `toolbar`. This is
+   *  the single canonical home for a navigator's scope filter. */
+  headerRight?: ReactNode;
+  /** Arbitrary control row under the title (e.g. a search box). */
   filterBar?: ReactNode;
   /** Always-visible header actions (e.g. "+ New"). */
   toolbar?: ToolbarAction[];

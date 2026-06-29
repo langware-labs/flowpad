@@ -79,11 +79,11 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     [tabByKey, navigation],
   );
 
-  // Where to go when the active tab(s) close: the next tab over the list,
-  // preferring the current project (stay in-project while it has tabs, else skip
-  // to the next tab anywhere — closing a project's last tab must not drop to
-  // Home), or Home when nothing is left. Same precedence the loaders use, so the
-  // close-time pick can't diverge from a fresh navigation's.
+  // Where to go when the active tab(s) close: the next tab in the current
+  // project (confined to its scope — `resolveNextTab` with `projectId`), or Home
+  // when the project has no tabs left. Closing a project's last tab drops to the
+  // no-tabs page rather than jumping to a tab in another project. Same precedence
+  // the loaders use, so the close-time pick can't diverge from a fresh nav's.
   const navigateAfterClose = useCallback(
     (closing: Tab[]) => {
       const closingIds = new Set(closing.map((t) => t.id));

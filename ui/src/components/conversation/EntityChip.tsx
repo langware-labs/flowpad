@@ -205,6 +205,10 @@ export function buildDockPointer(
       return DockPointer.forTasks(resolved.id, inside?.type === 'conversation' ? { conversationId: inside.id } : undefined);
     case 'spec':
       return DockPointer.forSpec(resolved.id);
+    case 'flowpad_diagnosis':
+      // Entity type is `flowpad_diagnosis` but the view type is `diagnosis`, so the
+      // generic fallback can't resolve it — map explicitly to the diagnosis viewer.
+      return DockPointer.forDiagnosis(resolved.id);
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
     case 'claude_session':

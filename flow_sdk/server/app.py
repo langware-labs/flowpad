@@ -76,6 +76,7 @@ from .routes import (
     search_router,
     semantic_checker_router,
     testing_router,
+    toplog_router,
     transcripts_router,
     ui_router,
     version_router,
@@ -506,6 +507,7 @@ server.add_router(pty_stream_router, prefix="/api/v1")
 server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
+server.add_router(toplog_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

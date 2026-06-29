@@ -1,13 +1,5 @@
-import {
-  AgenticProcess,
-  ContextEntitiesEnum,
-  dataContext,
-  Project,
-  QueryRequest,
-  systemTools,
-  Trigger,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, Plan, QueryRequest, Trigger, TypeId, VFSPath } from '@sdk';
+import { redirect } from 'react-router';
 import { DockPointer } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
 import { clearDockLoadError } from './dock-load-error-store';
@@ -15,7 +7,7 @@ import { DockLoadError, handleDockLoadError } from './dock-load-error';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
 import { loadLensRoute } from './load-lens';
-import { loadProject, loadProjectRoute } from './load-project';
+import { loadProjectRoute } from './load-project';
 import { loadProcess, ProcessLoadError } from './load-process';
 import { loadShellRoute } from './load-shell';
 import { loadTasksRoute } from './load-tasks';
@@ -30,18 +22,36 @@ async function loadPlanRoute(pointer: string | undefined): Promise<void> {
   const parsed = DockPointer.parsePlanPointer(pointer);
   if (!parsed) return;
 
-  await dataContext.setContextEntityTypeId(
-    ContextEntitiesEnum.CurrentProcessTypeId,
-    parsed.agenticProcessTypeId,
-  );
-  const process = await AgenticProcess.getById(parsed.agenticProcessTypeId.id).catch(() => null);
-  if (process?.project_id) {
-    await loadProject(new TypeId(Project.type, process.project_id)).catch(() =>
-      systemTools.resolveProjectContext(process.workdir, process),
-    );
-  } else {
-    await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
+  // Legacy `agentic_process-<id>/<path>` form (old bookmarks): resolve the abs
+  // path and redirect to the canonical, process-independent `vfs` form so the
+  // view only ever sees the new grammar and the link self-heals on first open.
+  if (parsed.kind === 'legacy') {
+    throw redirect(`/dock/plan/${DockPointer.forPlanByPath(parsed.filePath).pointer}`);
   }
+
+  // typeid form: the plan must resolve as a real entity, else render a clear
+  // "not found" page (vs. an infinite spinner). The DockLoadErrorView shows it.
+  if (parsed.kind === 'typeid') {
+    const plan = await Plan.getById(parsed.planTypeId.id).catch(() => null);
+    if (!plan) {
+      throw new DockLoadError(
+        'plan_not_found',
+        'hard',
+        {
+          action: 'render_error',
+          title: 'Plan not found',
+          message: 'This plan no longer exists.',
+        },
+        'plan',
+      );
+    }
+    return;
+  }
+
+  // vfs form: addressed by path on a (local) compute node — no entity required,
+  // the view reads the file directly. Nothing to pre-resolve; `VFSPath.parse`
+  // validates shape and the view surfaces a clear error if the file is missing.
+  VFSPath.parse(parsed.vfsValue);
 }
 
 async function loadAgenticProcessRoute(pointer: string | undefined): Promise<void> {

@@ -32,11 +32,16 @@ let pendingDockNavigationUrl: string | null = null;
 
 // View types whose dock adopts the current project's scope when opened without an
 // explicit one (see openDock). These are the project-aware browser surfaces: the
-// minted Tab attaches to the active project (project tab) or stays global.
+// minted Tab attaches to the active project (project tab) or stays global. SHELL
+// is included so the Chats/worker rail seeds the active project's scope onto the
+// URL — the ChatsNavigator reads currentDock.scopeFilter to filter history, exactly
+// like assets/explorer/triggers (SHELL's tabHash ignores scope, so the open
+// session's identity is unaffected).
 const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
   ViewType.TRIGGERS,
   ViewType.EXPLORER,
+  ViewType.SHELL,
 ]);
 
 /**
@@ -493,13 +498,17 @@ export class NavigationActions {
   }
 
   /**
-   * Open plan viewer with file path
-   * @param agenticProcessTypeId - TypeId of the owning AgenticProcess
+   * Open the plan viewer for a plan file. Addresses the plan by its **VFS path**
+   * (race-free — independent of the fs-records scanner having minted the PLAN
+   * entity, and of the owning process still being alive). The originating
+   * process — needed only for Execute/Update — is read from the current process
+   * context entity, not the URL. `agenticProcessTypeId` is retained in the
+   * signature so the live call sites stay unchanged; it is intentionally unused.
+   * @param _agenticProcessTypeId - (unused) TypeId of the owning AgenticProcess
    * @param filePath - Absolute path to plan .md file
    */
-  openPlan(agenticProcessTypeId: TypeId, filePath: string): void {
-    const pointer = DockPointer.forPlan(agenticProcessTypeId, filePath);
-    this.openDock(pointer);
+  openPlan(_agenticProcessTypeId: TypeId, filePath: string): void {
+    this.openDock(DockPointer.forPlanByPath(filePath));
   }
 
   openDiff(checkpointHash: string): void {

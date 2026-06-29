@@ -25,7 +25,7 @@ export function AssetsNavigator() {
     onNavigate: m.navigateAsset,
     header: {
       title: m.isProjectView ? 'Project assets' : 'Assets',
-      filterBar: (
+      headerRight: (
         <ScopeFilterIconBar
           scope={m.scope}
           currentProjectId={m.scopeProjectId}
