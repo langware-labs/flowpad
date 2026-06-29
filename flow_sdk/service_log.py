@@ -127,7 +127,7 @@ def init_dev_file_logging() -> Path | None:
     # guards against re-adding the handler on a reloader restart.
     root = logging.getLogger()
     if not any(getattr(h, "_flowpad_dev_file", False) for h in root.handlers):
-        handler = logging.FileHandler(str(_log_file))
+        handler = logging.FileHandler(str(_log_file), encoding="utf-8")
         handler.setFormatter(
             logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
         )
@@ -187,7 +187,7 @@ def _log_with_timer(level: int, msg: str, style: str) -> None:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
             level_name = logging.getLevelName(level)
             try:
-                with open(_log_file, "a") as f:
+                with open(_log_file, "a", encoding="utf-8") as f:
                     f.write(f"{timestamp} [{level_name}] {msg}{timer_info}\n")
             except OSError as exc:
                 __logger.warning("Dev log mirror write skipped: %s", exc)

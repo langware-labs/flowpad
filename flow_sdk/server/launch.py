@@ -51,7 +51,7 @@ def _setup_logging() -> None:
     cleanup_old_logs(monitor_log_dir)
     monitor_log_path = generate_timestamped_log_path("monitor")
 
-    handler = logging.FileHandler(str(monitor_log_path))
+    handler = logging.FileHandler(str(monitor_log_path), encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     log.addHandler(handler)
     log.addHandler(logging.StreamHandler(sys.stderr))
