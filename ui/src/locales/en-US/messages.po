@@ -409,7 +409,7 @@ msgstr "+{0} more"
 msgid "+{0} more notifications"
 msgstr "+{0} more notifications"
 
-#: src/components/open-project-component/open-project-component.tsx:519
+#: src/components/open-project-component/open-project-component.tsx:521
 msgid "+{hiddenCount} more — search to find them"
 msgstr "+{hiddenCount} more — search to find them"
 
@@ -1386,7 +1386,7 @@ msgstr "breadcrumb"
 msgid "Brief description of what this skill does"
 msgstr "Brief description of what this skill does"
 
-#: src/components/open-project-component/open-project-component.tsx:637
+#: src/components/open-project-component/open-project-component.tsx:639
 msgid "Browse"
 msgstr "Browse"
 
@@ -1731,7 +1731,7 @@ msgstr "Claude Code session"
 msgid "Claude Code Status"
 msgstr "Claude Code Status"
 
-#: src/components/open-project-component/open-project-component.tsx:250
+#: src/components/open-project-component/open-project-component.tsx:252
 msgid "Claude project"
 msgstr "Claude project"
 
@@ -2050,7 +2050,7 @@ msgstr "Codex"
 msgid "Codex (restored session)"
 msgstr "Codex (restored session)"
 
-#: src/components/open-project-component/open-project-component.tsx:253
+#: src/components/open-project-component/open-project-component.tsx:255
 msgid "Codex project"
 msgstr "Codex project"
 
@@ -2365,7 +2365,7 @@ msgstr "Copied to Clipboard"
 msgid "Copilot"
 msgstr "Copilot"
 
-#: src/components/open-project-component/open-project-component.tsx:256
+#: src/components/open-project-component/open-project-component.tsx:258
 msgid "Copilot project"
 msgstr "Copilot project"
 
@@ -2671,12 +2671,12 @@ msgstr "Create it"
 msgid "Create new"
 msgstr "Create new"
 
-#: src/components/open-project-component/open-project-component.tsx:388
-#: src/components/open-project-component/open-project-component.tsx:542
+#: src/components/open-project-component/open-project-component.tsx:390
+#: src/components/open-project-component/open-project-component.tsx:544
 msgid "Create New"
 msgstr "Create New"
 
-#: src/components/open-project-component/open-project-component.tsx:608
+#: src/components/open-project-component/open-project-component.tsx:610
 #: src/components/project-setup-screen/project-setup-screen.tsx:258
 msgid "Create New Project"
 msgstr "Create New Project"
@@ -2690,7 +2690,7 @@ msgstr "Create new…"
 msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
 msgstr "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
 
-#: src/components/open-project-component/open-project-component.tsx:657
+#: src/components/open-project-component/open-project-component.tsx:659
 #: src/components/project-setup-screen/project-setup-screen.tsx:289
 msgid "Create Project"
 msgstr "Create Project"
@@ -2725,7 +2725,7 @@ msgstr "Creating {0}..."
 msgid "Creating skill..."
 msgstr "Creating skill..."
 
-#: src/components/open-project-component/open-project-component.tsx:654
+#: src/components/open-project-component/open-project-component.tsx:656
 #: src/components/project-setup-screen/project-setup-screen.tsx:290
 msgid "Creating..."
 msgstr "Creating..."
@@ -3674,7 +3674,7 @@ msgstr "End room"
 msgid "Ensure the claude CLI is installed and authenticated."
 msgstr "Ensure the claude CLI is installed and authenticated."
 
-#: src/components/open-project-component/open-project-component.tsx:609
+#: src/components/open-project-component/open-project-component.tsx:611
 msgid "Enter a name and choose a parent folder for the new project."
 msgstr "Enter a name and choose a parent folder for the new project."
 
@@ -4232,7 +4232,7 @@ msgstr "Failed to open file"
 msgid "Failed to open folder"
 msgstr "Failed to open folder"
 
-#: src/components/open-project-component/open-project-component.tsx:840
+#: src/components/open-project-component/open-project-component.tsx:852
 #: src/components/project-setup-screen/project-setup-screen.tsx:186
 #: src/components/quick-create/QuickCreateDialog.tsx:163
 #: src/components/quick-create/QuickCreateMenu.tsx:73
@@ -4248,8 +4248,8 @@ msgstr "Failed to open log file"
 msgid "Failed to open logs folder"
 msgstr "Failed to open logs folder"
 
-#: src/components/open-project-component/open-project-component.tsx:824
-#: src/components/open-project-component/open-project-component.tsx:858
+#: src/components/open-project-component/open-project-component.tsx:836
+#: src/components/open-project-component/open-project-component.tsx:870
 #: src/tabs/useTerminalStripController.tsx:182
 msgid "Failed to open project"
 msgstr "Failed to open project"
@@ -5985,7 +5985,7 @@ msgstr "Loading project resources..."
 
 #: src/components/assets/ProjectPickerModal.tsx:212
 #: src/components/directory-tree/ProjectsDirectoryTree.tsx:70
-#: src/components/open-project-component/open-project-component.tsx:211
+#: src/components/open-project-component/open-project-component.tsx:213
 msgid "Loading projects..."
 msgstr "Loading projects..."
 
@@ -6090,7 +6090,7 @@ msgstr "Loading..."
 #: src/components/graph-context/GraphContextViewer.tsx:288
 #: src/components/inbox-view/InboxView.tsx:1080
 #: src/components/inbox-view/InboxView.tsx:1129
-#: src/components/open-project-component/open-project-component.tsx:481
+#: src/components/open-project-component/open-project-component.tsx:483
 #: src/components/project-selector/ProjectSelector.tsx:99
 #: src/components/search-index/EntitySearchModal.tsx:83
 #: src/components/tasks-viewer/TasksViewer.tsx:128
@@ -6215,7 +6215,7 @@ msgstr "managed"
 msgid "Managed by FlowPad sniffer"
 msgstr "Managed by FlowPad sniffer"
 
-#: src/components/open-project-component/open-project-component.tsx:338
+#: src/components/open-project-component/open-project-component.tsx:340
 msgid "Map remote project"
 msgstr "Map remote project"
 
@@ -6475,7 +6475,7 @@ msgstr "My Artifact"
 msgid "My Schedule"
 msgstr "My Schedule"
 
-#: src/components/open-project-component/open-project-component.tsx:617
+#: src/components/open-project-component/open-project-component.tsx:619
 #: src/components/project-setup-screen/project-setup-screen.tsx:265
 msgid "my-awesome-project"
 msgstr "my-awesome-project"
@@ -6832,7 +6832,7 @@ msgstr "No community tickets"
 
 #: src/components/hooks-view/HooksBrowser.tsx:264
 #: src/components/hooks-view/HooksBrowser.tsx:352
-#: src/components/open-project-component/open-project-component.tsx:834
+#: src/components/open-project-component/open-project-component.tsx:846
 #: src/components/project-setup-screen/project-setup-screen.tsx:175
 #: src/components/quick-create/QuickCreateDialog.tsx:156
 #: src/components/quick-create/QuickCreateMenu.tsx:66
@@ -7077,8 +7077,8 @@ msgid "no matches"
 msgstr "no matches"
 
 #: src/components/assets/ProjectPickerModal.tsx:216
-#: src/components/open-project-component/open-project-component.tsx:215
-#: src/components/open-project-component/open-project-component.tsx:485
+#: src/components/open-project-component/open-project-component.tsx:217
+#: src/components/open-project-component/open-project-component.tsx:487
 #: src/components/project-selector/ProjectSelector.tsx:103
 msgid "No matches"
 msgstr "No matches"
@@ -7213,8 +7213,8 @@ msgid "No projects"
 msgstr "No projects"
 
 #: src/components/assets/ProjectPickerModal.tsx:216
-#: src/components/open-project-component/open-project-component.tsx:215
-#: src/components/open-project-component/open-project-component.tsx:485
+#: src/components/open-project-component/open-project-component.tsx:217
+#: src/components/open-project-component/open-project-component.tsx:487
 #: src/pages/live-status/LiveStatus.tsx:1203
 msgid "No projects found"
 msgstr "No projects found"
@@ -7800,8 +7800,8 @@ msgstr "Open Flowpad docs"
 msgid "Open folder"
 msgstr "Open folder"
 
-#: src/components/open-project-component/open-project-component.tsx:379
-#: src/components/open-project-component/open-project-component.tsx:532
+#: src/components/open-project-component/open-project-component.tsx:381
+#: src/components/open-project-component/open-project-component.tsx:534
 msgid "Open Folder"
 msgstr "Open Folder"
 
@@ -8041,7 +8041,7 @@ msgstr "Open transcript"
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
 
-#: src/components/open-project-component/open-project-component.tsx:854
+#: src/components/open-project-component/open-project-component.tsx:866
 msgid "Opened existing project"
 msgstr "Opened existing project"
 
@@ -8154,7 +8154,7 @@ msgstr "pagination"
 msgid "Parent directory"
 msgstr "Parent directory"
 
-#: src/components/open-project-component/open-project-component.tsx:626
+#: src/components/open-project-component/open-project-component.tsx:628
 #: src/components/project-selector/NewProjectDialog.tsx:87
 msgid "Parent folder"
 msgstr "Parent folder"
@@ -8273,7 +8273,7 @@ msgstr "Pick a contact or enter an email"
 msgid "Pick a contact to see your conversations with them."
 msgstr "Pick a contact to see your conversations with them."
 
-#: src/components/open-project-component/open-project-component.tsx:340
+#: src/components/open-project-component/open-project-component.tsx:342
 msgid "Pick a project"
 msgstr "Pick a project"
 
@@ -8285,7 +8285,7 @@ msgstr "Pick project folder"
 msgid "Pick project…"
 msgstr "Pick project…"
 
-#: src/components/open-project-component/open-project-component.tsx:348
+#: src/components/open-project-component/open-project-component.tsx:350
 msgid "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
 msgstr "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
 
@@ -8368,7 +8368,7 @@ msgstr "Please contact support at<0>support@flowpad.ai</0>"
 msgid "Please enter a project name"
 msgstr "Please enter a project name"
 
-#: src/components/open-project-component/open-project-component.tsx:590
+#: src/components/open-project-component/open-project-component.tsx:592
 msgid "Please fill in both fields"
 msgstr "Please fill in both fields"
 
@@ -8384,7 +8384,7 @@ msgstr "Please log in to view and manage environment variables."
 msgid "Please make sure the server is running."
 msgstr "Please make sure the server is running."
 
-#: src/components/open-project-component/open-project-component.tsx:792
+#: src/components/open-project-component/open-project-component.tsx:804
 msgid "Please provide a valid project path"
 msgstr "Please provide a valid project path"
 
@@ -8584,7 +8584,7 @@ msgstr "Project folder…"
 msgid "Project is fixed after the first message — start a new session to change it."
 msgstr "Project is fixed after the first message — start a new session to change it."
 
-#: src/components/open-project-component/open-project-component.tsx:614
+#: src/components/open-project-component/open-project-component.tsx:616
 #: src/components/project-selector/NewProjectDialog.tsx:77
 msgid "Project name"
 msgstr "Project name"
@@ -8614,7 +8614,7 @@ msgstr "Project Required"
 msgid "projected"
 msgstr "projected"
 
-#: src/components/open-project-component/open-project-component.tsx:341
+#: src/components/open-project-component/open-project-component.tsx:343
 #: src/pages/live-status/LiveStatus.tsx:206
 msgid "Projects"
 msgstr "Projects"
@@ -9866,8 +9866,8 @@ msgstr "Search nodes…"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx:494
 #: src/components/assets/ProjectPickerModal.tsx:175
-#: src/components/open-project-component/open-project-component.tsx:170
-#: src/components/open-project-component/open-project-component.tsx:469
+#: src/components/open-project-component/open-project-component.tsx:172
+#: src/components/open-project-component/open-project-component.tsx:471
 msgid "Search projects…"
 msgstr "Search projects…"
 
@@ -9974,7 +9974,7 @@ msgstr "Select a file to see connected flows"
 msgid "Select a project"
 msgstr "Select a project"
 
-#: src/components/open-project-component/open-project-component.tsx:349
+#: src/components/open-project-component/open-project-component.tsx:351
 msgid "Select a project or open a new folder."
 msgstr "Select a project or open a new folder."
 
@@ -10061,7 +10061,7 @@ msgstr "Select mode"
 msgid "Select multiple"
 msgstr "Select multiple"
 
-#: src/components/open-project-component/open-project-component.tsx:632
+#: src/components/open-project-component/open-project-component.tsx:634
 #: src/components/project-setup-screen/project-setup-screen.tsx:278
 msgid "Select parent folder"
 msgstr "Select parent folder"
@@ -10458,7 +10458,7 @@ msgstr "Show positioning info"
 msgid "Show scope overrides"
 msgstr "Show scope overrides"
 
-#: src/components/open-project-component/open-project-component.tsx:196
+#: src/components/open-project-component/open-project-component.tsx:198
 msgid "Show SDK-shipped system projects (Flowpad Assistant)"
 msgstr "Show SDK-shipped system projects (Flowpad Assistant)"
 
@@ -10467,7 +10467,7 @@ msgid "Show Sessions"
 msgstr "Show Sessions"
 
 #: src/components/collaboration/sidebar/DocsCategory.tsx:216
-#: src/components/open-project-component/open-project-component.tsx:204
+#: src/components/open-project-component/open-project-component.tsx:206
 msgid "Show system"
 msgstr "Show system"
 
@@ -10959,7 +10959,7 @@ msgstr "Sweeping…"
 msgid "Switch project"
 msgstr "Switch project"
 
-#: src/components/open-project-component/open-project-component.tsx:461
+#: src/components/open-project-component/open-project-component.tsx:463
 #: src/components/status-bar.tsx:116
 msgid "Switch Project"
 msgstr "Switch Project"
@@ -10994,7 +10994,7 @@ msgid "Synthesize event"
 msgstr "Synthesize event"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx:440
-#: src/components/open-project-component/open-project-component.tsx:262
+#: src/components/open-project-component/open-project-component.tsx:264
 msgid "system"
 msgstr "system"
 
@@ -11240,11 +11240,11 @@ msgstr "This chat has no resumable session."
 msgid "This context is empty."
 msgstr "This context is empty."
 
-#: src/components/open-project-component/open-project-component.tsx:345
+#: src/components/open-project-component/open-project-component.tsx:347
 msgid "This conversation came from a project called \"{remoteProjectName}\" on another machine. Pick the local project folder it should map to."
 msgstr "This conversation came from a project called \"{remoteProjectName}\" on another machine. Pick the local project folder it should map to."
 
-#: src/components/open-project-component/open-project-component.tsx:346
+#: src/components/open-project-component/open-project-component.tsx:348
 msgid "This conversation came from a project on another machine. Pick the local project folder it should map to."
 msgstr "This conversation came from a project on another machine. Pick the local project folder it should map to."
 
@@ -11374,7 +11374,7 @@ msgstr "To"
 msgid "To Do"
 msgstr "To Do"
 
-#: src/components/open-project-component/open-project-component.tsx:277
+#: src/components/open-project-component/open-project-component.tsx:279
 msgid "today"
 msgstr "today"
 
@@ -12222,7 +12222,7 @@ msgstr "You can close this window."
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 
-#: src/components/open-project-component/open-project-component.tsx:789
+#: src/components/open-project-component/open-project-component.tsx:801
 #: src/components/project-setup-screen/project-setup-screen.tsx:203
 msgid "You must be logged in"
 msgstr "You must be logged in"
