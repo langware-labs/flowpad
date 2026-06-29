@@ -82,6 +82,8 @@ subfolder_count: '2'
 
 ## Subfolders
 
+* [collab/](collab/index.md) — Collaboration subsystem: conversations, messages, attachments, sharing, invites, participants, sender identity, and hub fan-out.
+
 * [agent-management/](agent-management/index.md) — Subtree under agent-management/ — see drilled-down index for details.
 
 * [data-management/](data-management/index.md) — Subtree under data-management/ — see drilled-down index for details.
