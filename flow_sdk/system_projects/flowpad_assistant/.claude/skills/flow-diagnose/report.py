@@ -28,9 +28,10 @@ the backend may be down):
      (everything fine / nothing to act on) only the diagnosis record is written.
 
 Posting the diagnosis to the **Home Feed** (a ``message_suggest`` ``FeedEntry``) is
-NOT done here — it is owned by the ``flow diagnose`` CLI runner, which posts it only
-for the CLI surface. The UI surface reuses the same Conversation/FlowMessage to drive
-the report buttons in its own modal, so it deliberately gets no Feed card.
+NOT done here — it is owned by the ``flow diagnose`` runner, which posts exactly one
+card for EVERY completed run (CLI and the UI modal alike). The UI modal also reuses the
+same Conversation/FlowMessage to drive its own report buttons, so the user can act from
+either the modal or the Feed card.
 
 The @local user/project are CREATED if they don't exist yet (idempotent).
 The `flow diagnose` runner cross-links the diagnosis to the calling process itself.
