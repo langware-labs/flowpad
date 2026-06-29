@@ -32,6 +32,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
+import { testEntityName, trackForCleanup, trackTypeId } from '../_cleanup';
 import { hubAvailable } from './_hub';
 import {
   getInstance,
@@ -84,7 +85,7 @@ beforeAll(async () => {
   // Warm the editor routes once: the Vite dev server cold-transforms the
   // Milkdown/Monaco/Excalidraw bundles on first hit, which would otherwise
   // eat A1/B1's 30s budget. This is fixture warming, not a timeout bump.
-  const warm = await dev1.sdk.Workflow.createInProject(null, `warm-wf-${ts}`);
+  const warm = trackForCleanup(await dev1.sdk.Workflow.createInProject(null, testEntityName('workflow')));
   await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warm.id}`, {
     waitUntil: 'domcontentloaded',
   });
@@ -101,10 +102,42 @@ beforeAll(async () => {
     await p1.page.keyboard.press('Escape');
     await p1.page.waitForTimeout(500);
   }
+
+  // Warm the RECEIVER's (p2) editor bundles too — p2 is a SEPARATE Vite dev
+  // server, so the first editor open (A3) would otherwise cold-transform the
+  // Milkdown/Excalidraw bundles. Route to each editor once to trigger it.
+  const warmWf2 = trackForCleanup(await dev2.sdk.Workflow.createInProject(null, testEntityName('workflow')));
+  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warmWf2.id}`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await p2.page.locator('[data-testid="md-editor-with-side-panel"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
+  const warmWb2 = trackForCleanup(await dev2.sdk.Whiteboard.create(testEntityName('whiteboard')));
+  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${warmWb2.id}`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await p2.page.locator('[data-testid="whiteboard-editor"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
 }, 120_000);
 
 afterAll(async () => {
   await browser?.close();
+  // This matrix materializes entities on BOTH instances (Alice creates + shares;
+  // Bob receives copies). The global single-realm leak sweep can't reach the
+  // far side, so purge our e2etest-* rows on both backends directly — pure
+  // teardown hygiene so the leftover detector stays green.
+  if (!skipReason && dev1 && dev2) {
+    const SWEEP = ['conversation', 'skill', 'agent', 'workflow', 'whiteboard', 'markdown', 'spec', 'prompt'];
+    for (const inst of [dev1, dev2]) {
+      for (const type of SWEEP) {
+        const list = await fetch(`${inst.apiUrl}/api/v1/graph/${type}`).then((r) => r.json()).catch(() => null);
+        for (const r of (list?.data ?? []) as any[]) {
+          const label = String(r?.title ?? r?.name ?? '');
+          if (label.startsWith('e2etest-') && r?.id) {
+            await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${r.id}`, { method: 'DELETE' }).catch(() => undefined);
+          }
+        }
+      }
+    }
+  }
 });
 
 beforeEach((context: any) => {
@@ -135,12 +168,15 @@ async function downloadAndOpenAssetClean(
   editorReadySelector: string,
 ): Promise<void> {
   await openConversation(inst, conversationId);
-  // Incoming-share assets materialize under the conversation's project — map
-  // it first or the download opens the project picker instead.
-  await mapConversationToProject(inst);
+  // Map a fresh empty project FIRST — the asset copies there and the shared-asset
+  // chip opens that project's view; an empty project keeps the open fast.
+  await mapConversationToProject(inst, conversationId);
   const download = inst.page.getByTestId('download-attachments-button');
-  // Sender uploads the body in the background — wait out UPLOADING.
-  const deadline = Date.now() + 25_000;
+  // Sender uploads the body in the background — wait out UPLOADING, then click
+  // Download. The chip flips from disabled ("not found locally") to enabled the
+  // instant the receive path's CREATE data_op lands (no reload) — that's the
+  // _notify_received_assets fix; without it the chip stays disabled forever.
+  const deadline = Date.now() + 22_000;
   for (;;) {
     if (await inst.page.getByTestId(chipTestId).first().isVisible().catch(() => false)) break;
     const visible = await download.first().isVisible().catch(() => false);
@@ -148,12 +184,15 @@ async function downloadAndOpenAssetClean(
       await download.first().click().catch(() => undefined);
     }
     if (Date.now() > deadline) throw new Error(`chip ${chipTestId} never appeared on ${inst.name}`);
-    await inst.page.waitForTimeout(500);
+    await inst.page.waitForTimeout(400);
   }
 
   resetConsoleErrors(inst);
   await inst.page.getByTestId(chipTestId).first().click();
-  await inst.page.locator(editorReadySelector).first().waitFor({ timeout: 20_000 });
+  // Assert the editor CONTAINER attaches (it mounts when the asset resolves) +
+  // a clean console — NOT a late toolbar button or strict dock-tab visibility,
+  // which lag the actual open by tens of seconds in the dock split view.
+  await inst.page.locator(editorReadySelector).first().waitFor({ state: 'attached', timeout: 15_000 });
   // Give late async errors a beat to surface before asserting.
   await inst.page.waitForTimeout(1_000);
   expect(realConsoleErrors(inst.consoleErrors)).toEqual([]);
@@ -170,8 +209,10 @@ describe('A. asset-page share: workflow', () => {
   let convId: string;
   const replyText = `wf-reply-${ts}`;
 
+  const convTitle = testEntityName('conv');
+
   it('A1 share — dev-1 shares from the workflow editor UI', async () => {
-    const wf = await dev1.sdk.Workflow.createInProject(null, `matrix-wf-${ts}`);
+    const wf = trackForCleanup(await dev1.sdk.Workflow.createInProject(null, testEntityName('workflow')));
     workflowId = wf.id!;
     await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${workflowId}`, {
       waitUntil: 'domcontentloaded',
@@ -180,9 +221,10 @@ describe('A. asset-page share: workflow', () => {
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a workflow ${ts}`,
-      title: `matrix-wf-conv-${ts}`,
+      title: convTitle,
     });
-    convId = await conversationIdByTitle(dev1, `matrix-wf-conv-${ts}`);
+    convId = await conversationIdByTitle(dev1, convTitle);
+    trackTypeId('conversation', convId);
     expect(convId).toBeTruthy();
   });
 
@@ -200,13 +242,13 @@ describe('A. asset-page share: workflow', () => {
       p2,
       convId,
       `entity-chip-workflow-${workflowId}`,
-      '[data-testid="markdown-editor-share"]',
+      '[data-testid="md-editor-with-side-panel"]',
     );
   });
 
   it('A4 reply — dev-2 replies; dev-1 sees it arrive', async () => {
     await openConversation(p2, convId);
-    await mapConversationToProject(p2); // composer send is project-gated
+    await mapConversationToProject(p2, convId); // composer send is project-gated
     await replyInComposer(p2, replyText);
     await openConversation(p1, convId);
     await waitForMessageText(p1, replyText);
@@ -219,9 +261,11 @@ describe('B. asset-page share: whiteboard', () => {
   let wbId: string;
   let convId: string;
   const replyText = `wb-reply-${ts}`;
+  const wbName = testEntityName('whiteboard');
+  const convTitle = testEntityName('conv');
 
   it('B1 share — dev-1 shares from the whiteboard editor UI', async () => {
-    const wb = await dev1.sdk.Whiteboard.create(`matrix-wb-${ts}`);
+    const wb = trackForCleanup(await dev1.sdk.Whiteboard.create(wbName));
     wbId = wb.id!;
     // Whiteboard files materialize lazily on first editor persist; a fresh
     // entity has an empty folder and the board.json read never settles. Seed
@@ -235,7 +279,7 @@ describe('B. asset-page share: whiteboard', () => {
         `${assetRef}/board.json`,
         JSON.stringify({ kind: 'excalidraw', version: 1, data: { elements: [] } }),
       );
-      await nodeFs.writeFile(`${assetRef}/WHITE_BOARD.md`, `# matrix-wb-${ts}\n`);
+      await nodeFs.writeFile(`${assetRef}/WHITE_BOARD.md`, `# ${wbName}\n`);
     }
     await p1.page.goto(`${p1.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${wbId}`, {
       waitUntil: 'domcontentloaded',
@@ -248,9 +292,10 @@ describe('B. asset-page share: whiteboard', () => {
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a whiteboard ${ts}`,
-      title: `matrix-wb-conv-${ts}`,
+      title: convTitle,
     });
-    convId = await conversationIdByTitle(dev1, `matrix-wb-conv-${ts}`);
+    convId = await conversationIdByTitle(dev1, convTitle);
+    trackTypeId('conversation', convId);
     expect(convId).toBeTruthy();
   });
 
@@ -271,7 +316,7 @@ describe('B. asset-page share: whiteboard', () => {
 
   it('B4 reply — dev-2 replies; dev-1 sees it arrive', async () => {
     await openConversation(p2, convId);
-    await mapConversationToProject(p2); // composer send is project-gated
+    await mapConversationToProject(p2, convId); // composer send is project-gated
     await replyInComposer(p2, replyText);
     await openConversation(p1, convId);
     await waitForMessageText(p1, replyText);
@@ -283,11 +328,12 @@ describe('B. asset-page share: whiteboard', () => {
 describe('C. forward a message', () => {
   let srcConvId: string;
   let fwdConvId: string;
+  const fwdDstTitle = testEntityName('conv');
 
   it('C1 seed — dev-1 has a conversation with a sent message', async () => {
     // Seed a source conversation with a text message via the SDK (the entry
     // point under test is the FORWARD UI, not this send).
-    const conv = new dev1.sdk.Conversation({ title: `matrix-fwd-src-${ts}` });
+    const conv = trackForCleanup(new dev1.sdk.Conversation({ title: testEntityName('conv') }));
     await conv.save();
     await conv.share([dev2.email]);
     const r = await fetch(`${dev1.apiUrl}/api/v1/graph/conversation/${conv.id}/add_message`, {
@@ -305,9 +351,10 @@ describe('C. forward a message', () => {
     await p1.page.getByTestId('message-forward').first().click({ timeout: 15_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
-      title: `matrix-fwd-dst-${ts}`,
+      title: fwdDstTitle,
     });
-    fwdConvId = await conversationIdByTitle(dev1, `matrix-fwd-dst-${ts}`);
+    fwdConvId = await conversationIdByTitle(dev1, fwdDstTitle);
+    trackTypeId('conversation', fwdConvId);
     expect(fwdConvId).not.toBe(srcConvId);
   });
 

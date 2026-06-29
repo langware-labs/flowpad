@@ -3,6 +3,15 @@ import { afterEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
+import { installCleanup } from '../_cleanup';
+
+// The react tier runs against the live local backend (apiTestSetup → bootstrap).
+// Suites that create real AgenticProcess / ComputeNode entities (e.g.
+// agentic_process_stress.test.ts) trackForCleanup() each create; this installs
+// the per-test purge (afterEach) + end-of-file leak sweep (afterAll) once. The
+// sweep also covers agentic_process so an un-tracked live create is caught.
+// Coexists with RTL's own afterEach(cleanup) below — they're independent hooks.
+installCleanup({ sweepTypes: ['agentic_process'] });
 
 // Mock matchMedia for jsdom (used by react-resizable-panels and other UI libraries)
 Object.defineProperty(window, 'matchMedia', {
@@ -28,6 +37,13 @@ global.ResizeObserver = class ResizeObserver {
 
 // Mock scrollIntoView for jsdom (used by cmdk and other UI libraries)
 Element.prototype.scrollIntoView = function () {
+  // No-op for jsdom
+};
+
+// Mock scrollTo for jsdom (used by use-auto-scroll on transcript/chat panes;
+// jsdom doesn't implement Element.scrollTo and would throw, white-screening the
+// rendered view via the router ErrorBoundary).
+Element.prototype.scrollTo = function () {
   // No-op for jsdom
 };
 

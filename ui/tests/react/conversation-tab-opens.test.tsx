@@ -11,6 +11,7 @@
  * once the tab label surfaces the conversation's `title`.
  */
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { dataManager, Conversation, type TabRow } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -64,7 +65,12 @@ describe('opening an "ask"-created conversation opens a correctly-named tab', ()
     };
 
     // 3. render the strip — the tab opens with a chip labeled by the subject.
-    render(<Strip rows={[row]} />);
+    //    Wrapped in a Router: TabStrip transitively uses navigation hooks.
+    render(
+      <MemoryRouter>
+        <Strip rows={[row]} />
+      </MemoryRouter>,
+    );
 
     // the opened tab chip reads the asked subject (not the conversation-<id>
     // placeholder). getByText throws + dumps the DOM if it's not there.

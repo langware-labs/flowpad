@@ -13,6 +13,7 @@ export enum EntryKind {
   ASSISTANT_MESSAGE = 'assistant_message',
   TOOL_USE = 'tool_use',
   TOOL_RESULT = 'tool_result',
+  AGENT_SPAWN = 'agent_spawn',
   SYSTEM = 'system',
   SUMMARY = 'summary',
   META = 'meta',

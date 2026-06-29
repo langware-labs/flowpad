@@ -130,6 +130,37 @@ def test_subagent_files_become_lanes_joined_on_tool_use_id(claude_home):
     assert len(spawns) == 1 and spawns[0]["label"] == "look around"
 
 
+def test_nested_subagent_lane_parents_to_its_spawner_not_root(claude_home):
+    # main spawns A (spawn1); A's transcript spawns B (spawn2). B's lane must
+    # parent to A's lane, not flat under root.
+    a_lines = [
+        _user("sa1", "2026-06-12T10:01:00Z", "A working"),
+        _tool_use("sa2", "2026-06-12T10:01:30Z", "spawn2", "Task",
+                  {"subagent_type": "Explore", "description": "deeper", "prompt": "p"}),
+    ]
+    b_lines = [_user("sb1", "2026-06-12T10:02:00Z", "B working")]
+    _write_session(
+        claude_home,
+        [
+            _user("u1", "2026-06-12T10:00:00Z", "go"),
+            _tool_use("a1", "2026-06-12T10:00:30Z", "spawn1", "Task",
+                      {"subagent_type": "Explore", "description": "look", "prompt": "p"}),
+        ],
+        subagents={
+            "agent-A": ({"agentType": "Explore", "description": "look",
+                         "toolUseId": "spawn1"}, a_lines),
+            "agent-B": ({"agentType": "Explore", "description": "deeper",
+                         "toolUseId": "spawn2"}, b_lines),
+        },
+    )
+    trace = synthesize_agent_trace(SID)
+
+    by_id = {lane["id"]: lane for lane in trace["lanes"]}
+    assert by_id["agent-A"]["parent_lane_id"] == "root"
+    assert by_id["agent-B"]["parent_lane_id"] == "agent-A"  # nested, not "root"
+    assert trace["summary"]["lane_count"] == 3
+
+
 def test_failures_and_stuck_loop_marked(claude_home):
     lines = [_user("u1", "2026-06-12T10:00:00Z", "build it")]
     for i in range(STUCK_REPEAT_THRESHOLD):

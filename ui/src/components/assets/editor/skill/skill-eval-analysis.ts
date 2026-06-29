@@ -1,4 +1,5 @@
 import {
+  AgentTrace,
   AgenticProcess,
   ComputeNode,
   ProcessKind,
@@ -55,9 +56,13 @@ async function runSkillWorker(
 }
 
 /** Process spawned per skill, keyed to its TypeId so it surfaces in that skill's
- * `EntityExecutionPanel` history. */
-const skillProcessOpts = (targetSkill: Skill): Parameters<ComputeNode['createProcess']>[0] => ({
-  targetVfsPath: targetSkill.typeId.toString(),
+ * `EntityExecutionPanel` history — unless `targetOverride` re-keys it (e.g. to an
+ * analysis trace so the run surfaces as that analysis's improvement). */
+const skillProcessOpts = (
+  targetSkill: Skill,
+  targetOverride?: string,
+): Parameters<ComputeNode['createProcess']>[0] => ({
+  targetVfsPath: targetOverride ?? targetSkill.typeId.toString(),
   processType: ProcessKind.Execution,
   outputFormat: 'stream-json',
   permissionMode: 'bypassPermissions',
@@ -152,6 +157,13 @@ export interface LaunchSkillCorrectArgs {
   sessionId?: string | null;
   /** The verified per-asset findings (`AgentTrace.annotations.by_skill[<skill>].findings`). */
   findings: unknown[];
+  /**
+   * When set, key the improvement process to this analysis trace's TypeId instead
+   * of the skill's — so it surfaces as that analysis's improvement
+   * (`useProcessesForTarget(trace.typeId, Execution)`), the "attached to the
+   * analysis" link the terminal Analysis side-window relies on.
+   */
+  analysisTrace?: AgentTrace | null;
 }
 
 /**
@@ -163,6 +175,7 @@ export function launchSkillCorrect({
   targetSkill,
   sessionId,
   findings,
+  analysisTrace,
 }: LaunchSkillCorrectArgs): Promise<AgenticProcess | null> {
   if (!findings.length) {
     notify.error({ title: 'Nothing to improve', message: 'No substantiated findings to apply for this skill.' });
@@ -171,7 +184,7 @@ export function launchSkillCorrect({
   const ctx = sessionId ? ` (from analysis of session ${sessionId})` : '';
   return runSkillWorker(
     SKILLIT_NAME,
-    skillProcessOpts(targetSkill),
+    skillProcessOpts(targetSkill, analysisTrace?.typeId.toString()),
     `Use the skillit skill in CORRECT mode on the skill "${targetSkill.name}".${ctx} ` +
       `Apply these per-asset findings, mapping each fix to its issue, and edit the skill in place:\n\n` +
       JSON.stringify(findings, null, 2),

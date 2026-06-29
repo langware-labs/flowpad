@@ -349,28 +349,48 @@ async def handle_upload_body(fm_id: str) -> ApiResponse:
     })
 
 
-async def handle_download_body(fm_id: str) -> ApiResponse:
+async def handle_download_body(fm_id: str, *, overwrite: bool = False) -> ApiResponse:
     """Download + unpack this message's body bundle. Refuses (BodyNotReadyError)
-    if body_status != READY — receivers must wait for the hub UPDATE fanout."""
+    if body_status != READY — receivers must wait for the hub UPDATE fanout.
+
+    ``overwrite`` — replace an existing on-disk asset on a genuine collision. On
+    a conflict with ``overwrite=False`` this returns a 409 carrying
+    ``asset_conflict`` + the conflicting paths so the UI can prompt the user and
+    re-POST with ``overwrite=True``."""
     from flow_sdk.builtin.flow_message import BodyNotReadyError
+    from flow_sdk.builtin.flow_message_bundle import (
+        FlowMessageExistsError, FlowMessageNoProjectError,
+    )
     from flow_sdk.core.network.resource_tracker import make_flow_message_progress_emitter
     fm = await _load_fm_local_or_hub(fm_id)
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
-    # FS-rooted assets (skill/agent) unpack into ``<root>/.claude/…``. Prefer the
-    # conversation/task's project workdir so a chip-triggered download installs
-    # into that project; otherwise pass ``None`` and let the single chokepoint
-    # ``_ensure_asset_dest_root`` resolve the personal-library fallback (so the
-    # "where do orphan assets land" default lives in exactly one place).
-    workdir, _project_id = await _resolve_workdir_and_project_async(fm)
-    asset_dest_root = Path(workdir) if workdir else None
+    # File-backed assets unpack into the conversation's mapped PROJECT (the
+    # destination is resolved inside unpack_bundle from the conversation). No
+    # asset_dest_root to pass — the project is the single source of placement.
     try:
         await fm.download_body(
-            asset_dest_root=asset_dest_root,
+            overwrite=overwrite,
             on_progress=make_flow_message_progress_emitter(fm_id, "download"),
         )
     except BodyNotReadyError as e:
         return ApiFailResponse(message=str(e), status_code=409)
+    except FlowMessageExistsError as e:
+        # Actionable conflict: surface the paths so the UI can ask "asset
+        # already exists — overwrite?" and re-POST with overwrite=True.
+        return ApiFailResponse(
+            message="asset already exists — overwrite?",
+            status_code=409,
+            data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
+        )
+    except FlowMessageNoProjectError as e:
+        # The conversation isn't mapped to a project — nowhere to land the
+        # assets. Tell the UI to prompt project selection then re-download.
+        return ApiFailResponse(
+            message="map a project to this conversation first",
+            status_code=409,
+            data={"needs_project": True, "pending_types": getattr(e, "pending_types", None)},
+        )
     except Exception as e:
         logger.error("[flow_message_action] download_body fm=%s: %s", fm_id, e, exc_info=True)
         return ApiFailResponse(message=f"download_body failed: {e}")
@@ -410,7 +430,11 @@ async def download_body_action() -> ApiResponse:
         request_info = get_current_request_info()
         if not request_info or not request_info.target_entity_typeid:
             return ApiFailResponse(message="No request info found", status_code=400)
-        return await handle_download_body(str(request_info.target_entity_typeid.id))
+        body = await request_info.get_post_data() or {}
+        overwrite = bool(body.get("overwrite", False))
+        return await handle_download_body(
+            str(request_info.target_entity_typeid.id), overwrite=overwrite,
+        )
     except Exception as e:
         logger.error(f"[flow_message_action] download_body error: {e}", exc_info=True)
         return ApiFailResponse(message=f"download_body failed: {e}")
@@ -426,6 +450,7 @@ async def handle_create_project_conversation(
     participants: list[dict],
     someone_typeid: str,
     title: Optional[str] = None,
+    shared_context_entities: Optional[list] = None,
 ) -> ApiResponse:
     """Create a Conversation directly under a Project (no Task).
 
@@ -433,12 +458,26 @@ async def handle_create_project_conversation(
     local User so the contact list grows automatically. `title` becomes the
     conversation's display name; when omitted, falls back to a participants
     summary.
+
+    The owning project is DERIVED from the shared/target entity, not the
+    client's ambient active project: when ``shared_context_entities`` carry an
+    entity with a project, that project wins — ``project_id`` (the request's
+    ambient default) is only the fallback. This keeps the assignment
+    deterministic and computed once at create (see ``Conversation.resolve_project_id``).
     """
     from flow_sdk.builtin.project import Project
 
-    project = await Project.get_one({"id": project_id})
+    effective_project_id = await Conversation.resolve_project_id(
+        shared_context_entities, fallback=project_id
+    )
+    if not effective_project_id:
+        return ApiFailResponse(message="project_id is required")
+
+    project = await Project.get_one({"id": effective_project_id})
     if not project:
-        return ApiFailResponse(message=f"Project not found: {project_id}", status_code=404)
+        return ApiFailResponse(
+            message=f"Project not found: {effective_project_id}", status_code=404
+        )
 
     resolved = list(participants or [])
     await _learn_address_book(resolved)
@@ -451,6 +490,9 @@ async def handle_create_project_conversation(
         "task_id": None,
         "project_id": project.id,
         "participants": resolved,
+        # Stamp the shared context at create so the project chip + context
+        # links resolve from the conversation itself (not only the first message).
+        "shared_context_entities": list(shared_context_entities or []),
         # `title` is the user-set display title (NewConversationDialog).
         # `name` mirrors it for legacy consumers that still read `conv.name`.
         "title": (title or "").strip() or None,
@@ -1084,7 +1126,12 @@ async def conversation_create() -> ApiResponse:
 
         body = await request_info.get_post_data() or {}
         project_id = (body.get("project_id") or "").strip()
-        if not project_id:
+        shared_context_entities = body.get("shared_context_entities") or []
+        if not isinstance(shared_context_entities, list):
+            return ApiFailResponse(message="shared_context_entities must be a list")
+        # ``project_id`` is the ambient fallback; a shared entity can supply the
+        # project instead, so it's required only when nothing is shared.
+        if not project_id and not shared_context_entities:
             return ApiFailResponse(message="project_id is required")
         participants = body.get("participants") or []
         if not isinstance(participants, list):
@@ -1096,6 +1143,7 @@ async def conversation_create() -> ApiResponse:
             participants=participants,
             someone_typeid=request_info.someone_typeid,
             title=title,
+            shared_context_entities=shared_context_entities,
         )
     except Exception as e:
         logger.error("[flow_message_action] conversation-create error: %s", e, exc_info=True)
@@ -1334,7 +1382,9 @@ async def _download_and_unpack_bundle(
     attachment_filename: str,
     *,
     body_status: "str | BodyStatus | None" = None,
-    asset_dest_root: Path | None = None,
+    overwrite: bool = False,
+    raise_on_conflict: bool = False,
+    raise_on_no_project: bool = False,
     on_progress=None,
 ) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
@@ -1350,14 +1400,18 @@ async def _download_and_unpack_bundle(
     explicit ``download_body`` path forwards its own READY status. ``None`` means
     "caller did not supply a status" and proceeds unchanged (back-compat).
 
-    ``asset_dest_root`` is forwarded to ``unpack_bundle`` to anchor FS-rooted
-    assets (skill/agent) restored from the bundle. ``None`` falls through to
-    ``unpack_bundle``'s lazy ``tempfile.mkdtemp()`` default.
+    File-backed assets in the bundle are copied into the conversation's mapped
+    PROJECT and indexed there (``unpack_bundle``). When no project is mapped the
+    assets are parked; ``raise_on_no_project`` (the explicit ``download_body``
+    path) then re-raises ``FlowMessageNoProjectError`` so the caller can prompt
+    "map a project first" and re-download. Implicit callers swallow it (parked).
 
     ``on_progress`` — optional async callback fired as download bytes land;
     when set the hub GET is streamed instead of buffered whole.
     """
-    from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError, unpack_bundle
+    from flow_sdk.builtin.flow_message_bundle import (
+        FlowMessageExistsError, FlowMessageNoProjectError, unpack_bundle,
+    )
 
     if body_status is not None:
         bs = body_status.value if isinstance(body_status, BodyStatus) else body_status
@@ -1381,7 +1435,8 @@ async def _download_and_unpack_bundle(
         tmp.write(bundle_bytes)
     try:
         await unpack_bundle(
-            tmp_path, local_user_id, overwrite=False, asset_dest_root=asset_dest_root,
+            tmp_path, local_user_id, overwrite=overwrite,
+            raise_on_no_project=raise_on_no_project,
         )
         # Bundle bytes are on disk now. The FM's ``attachment[].local_path``
         # is computed lazily by the model serializer from disk state, so the
@@ -1397,7 +1452,32 @@ async def _download_and_unpack_bundle(
             logger.warning("[bundle] post-unpack notify failed fm=%s: %s", fm_id, nerr)
         return True
     except FlowMessageExistsError:
-        return True  # already materialized — counts as success
+        # A GENUINE collision: a different asset already occupies the receiver's
+        # target path (byte-identical re-receives are now no-ops in
+        # ``_restore_file_backed_entry`` and never reach here). This is NOT
+        # success — swallowing it as True was the bug that silently dropped the
+        # shared asset and left the receiver pointed at their own pre-existing
+        # one. The explicit ``download_body`` path re-raises so the caller can
+        # surface "asset already exists — overwrite?" and retry with
+        # overwrite=True; implicit auto-materialize callers log + report failure
+        # (False) instead of crashing a background sync.
+        if raise_on_conflict:
+            raise
+        logger.warning(
+            "[bundle] unpack conflict fm=%s — asset already exists at target; "
+            "not materialized (retry with overwrite to replace)", fm_id,
+        )
+        return False
+    except FlowMessageNoProjectError:
+        # File-backed assets were extracted but the conversation isn't mapped to
+        # a project — they're parked (the FM still materialized). The explicit
+        # download path re-raises so the UI can prompt "map a project first" and
+        # re-download; implicit auto-callers leave the asset parked and report
+        # not-fully-materialized (False) without crashing the sync.
+        if raise_on_no_project:
+            raise
+        logger.info("[bundle] assets parked fm=%s — no project mapped yet", fm_id)
+        return False
     except ValueError as e:
         # Legacy bundles (pre-header.json) raise "Invalid .flowmsg: missing
         # header.json". Per the no-legacy-support rule, drop them silently
@@ -2563,6 +2643,17 @@ async def _upsert_hub_conversation_metadata(
         if hub_conv.get("created_date") is not None:
             payload["created_date"] = hub_conv["created_date"]
         payload["fetched_at"] = datetime.now(UTC)
+        # Deterministically adopt the local owning project from the shared/target
+        # entity (same rule as local create / receive). The hub never carries a
+        # local ``project_id`` — only ``remote_project_id`` (the sender's). When a
+        # shared entity resolves to a local project, stamp it so the conversation
+        # lands in that project without the receiver "map a project" prompt; an
+        # entity-less remote chat stays project-less (None) by design.
+        derived_project_id = await Conversation.resolve_project_id(
+            payload.get("shared_context_entities")
+        )
+        if derived_project_id:
+            payload["project_id"] = derived_project_id
         conv = Conversation.model_validate(payload)
         conv.id = conv_id
         # Pure reflection of the hub row: preserve created_by/updated_by/dates

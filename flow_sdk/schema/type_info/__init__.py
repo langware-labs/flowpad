@@ -51,6 +51,10 @@ class TypeMetadata:
     # body is materialized into ``<folder>/main_file`` while asset_ref stays the
     # folder. Ignored for ``main_layout == "file"``.
     main_file_is_asset_ref: bool = False
+    # File extension for ``main_layout == "file"`` types (default ``.md``). A
+    # non-markdown asset (e.g. a ``.js`` dynamic workflow) overrides it so the
+    # created file matches the type's indexer glob.
+    main_ext: str = ".md"
     parent_type: str | None = None
     # True ⇒ sharing an entity of this type automatically includes its parent
     # (``parent_type_id``) in the outgoing ``shared_context_entities``, and the
@@ -92,6 +96,7 @@ class TypeMetadata:
             main_layout=self.main_layout,
             main_file=self.main_file,
             main_file_is_asset_ref=self.main_file_is_asset_ref,
+            main_ext=self.main_ext,
             parent_type=self.parent_type,
             parent_share_on_default=self.parent_share_on_default,
             from_disk_fn=self.from_disk_fn,

@@ -228,6 +228,70 @@ async def test_agentic_process_close_hides_its_terminal_tab() -> None:
 
 
 @pytest.mark.asyncio
+async def test_known_session_is_recoverable_via_existing_worker_session_path() -> None:
+    # ISSUE 1 ("we already had fromWorkerSessionId"): a process that can't be found
+    # by id must still be recoverable through the existing worker-session resolver,
+    # so the load/reap path should consult it BEFORE declaring "not found" — only a
+    # genuinely session-less target falls through to the issue-2 reap below.
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    session_id = f"sess-{uuid.uuid4()}"
+    live = AgenticProcess(
+        id=str(uuid.uuid4()), worker_type="claude_code", session_id=session_id
+    )
+    await live.save()
+
+    # A stale/foreign process id is NOT resolvable by getById — the exact 404 the
+    # loader hits today (the agentic_process-4c29… "not found" RCA)...
+    stale_id = str(uuid.uuid4())
+    assert await AgenticProcess.get_one({"id": stale_id}) is None
+
+    # ...but the SAME worker session resolves via the existing resolver. This is
+    # the recovery the loader/reaper must call before treating the URL as dead.
+    recovered = await AgenticProcess.get_by_session_id(session_id)
+    assert recovered is not None and recovered.id == live.id, (
+        "the existing worker-session resolver must recover the live process for a "
+        "known session — the load path should call this before 404-falling-back"
+    )
+
+
+@pytest.mark.asyncio
+async def test_orphan_agentic_process_tab_is_reaped_when_target_missing() -> None:
+    # ISSUE 2 (proven this session — the agentic_process-4c29… "not found" RCA):
+    # a Tab denormalized onto an agentic_process whose entity row does NOT exist
+    # (a bare FS stub never synced to the DB, or a process removed out from under
+    # the tab) is never reaped. The list path's only reaper,
+    # ``_delete_tabs_for_missing_projects`` (inside ``_visible_tabs_sorted``),
+    # removes tabs for missing PROJECTS — there is no missing-TARGET reaping — so
+    # the chip lingers and clicking it 404s on ``getById`` ("not found"). When the
+    # target session is not found, the dangling tab must be removed.
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    ghost_id = str(uuid.uuid4())  # an agentic_process id with NO DB row (and no session)
+    assert await AgenticProcess.get_one({"id": ghost_id}) is None, "precondition: target absent"
+
+    tab = await ensure_tab(
+        f"shell/agentic_process-{ghost_id}",
+        target_type=AgenticProcess.get_type(),
+        target_id=ghost_id,
+        project_id=None,  # projectless: the missing-PROJECT reaper must NOT mask this
+    )
+    assert tab.visible is True
+
+    listed = await _build_tab_list(None)
+    assert tab.id not in {t.id for t in listed}, (
+        "a tab whose agentic_process target has no resolvable entity (and no "
+        "recoverable session) must be reaped from the list, not rendered as a "
+        "broken chip that 404s on click"
+    )
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is None or reloaded.visible is False, (
+        "the dangling tab row must be removed/hidden"
+    )
+
+
+@pytest.mark.asyncio
 async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
     # `list_all` is the GLOBAL projection (every visible tab, all projects) that the
     # footer chip + sessions view need; the project-scoped `list(pid)` is
@@ -268,6 +332,58 @@ async def test_set_label_changes_tab_name_without_touching_target() -> None:
     assert reloaded is not None
     assert reloaded.name == "orig", "target entity name is NOT changed by set_label"
     assert reloaded.auto_rename is True, "set_label must not pin auto_rename off"
+
+
+@pytest.mark.asyncio
+async def test_tab_project_id_follows_target_entity_project_change() -> None:
+    # ROOT CAUSE (proven this session): tab.project_id is a write-once snapshot of
+    # the target entity's project, taken at tab creation. When the target entity's
+    # project_id later changes (e.g. a conversation is assigned to a project),
+    # nothing reconciles the dependent Tab — so the tab keeps rendering its stale
+    # project color ("stays blue"). This is the project-change sibling of the
+    # orphan-close hook that already exists for Entity.delete
+    # (test_deleting_target_soft_closes_its_tabs) but is MISSING for a project change.
+    p1 = str(uuid.uuid4())
+    probe = _TabTargetProbe(id=str(uuid.uuid4()), project_id=p1)
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/proj-follow#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+        project_id=p1,
+    )
+    assert tab.project_id == p1
+
+    # The target entity is reassigned to a different project (the user's action).
+    p2 = str(uuid.uuid4())
+    probe.project_id = p2
+    await probe.save()
+
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is not None
+    assert reloaded.project_id == p2, (
+        "tab.project_id must follow its target entity's project change "
+        "(currently stale → tab keeps the old project color / stays blue)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_reopen_clears_project_to_match_target() -> None:
+    # ISSUE 2 (refresh/reopen cannot clear-to-null): ensure_tab's reopen path
+    # refreshes the denormalized project_id only `if val is not None`, so it can
+    # never CLEAR a stale project back to null when the target is now projectless.
+    # A refresh that re-resolves project_id=None from the target therefore leaves
+    # the tab pinned to the old project.
+    p = f"dock/reopen-clear#{uuid.uuid4()}"
+    p1 = str(uuid.uuid4())
+    tab = await ensure_tab(p, target_type="markdown", target_id="md-x", project_id=p1)
+    assert tab.project_id == p1
+
+    # Reopen with the target's CURRENT (now projectless) project_id.
+    reopened = await ensure_tab(p, target_type="markdown", target_id="md-x", project_id=None)
+    assert reopened.project_id is None, (
+        "reopen must re-derive project_id from the target, including clearing to null"
+    )
 
 
 @pytest.mark.asyncio

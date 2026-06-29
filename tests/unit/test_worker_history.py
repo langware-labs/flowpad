@@ -18,8 +18,67 @@ def _entry(worker_type: WorkerType, worker_id: str, timestamp: str) -> WorkerHis
     )
 
 
+def _scoped_entry(
+    worker_type: WorkerType, worker_id: str, timestamp: str, project_id: str
+) -> WorkerHistoryEntry:
+    return WorkerHistoryEntry(
+        worker_type=worker_type,
+        worker_id=worker_id,
+        last_active_time=datetime.fromisoformat(timestamp).replace(tzinfo=timezone.utc),
+        project_id=project_id,
+    )
+
+
 async def _noop_processes():
     return []
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_get_worker_history_caps_per_scope_not_globally(monkeypatch):
+    """The session limit must be applied PER project scope, not as a single
+    global top-N.
+
+    Repro of the live bug: when one project (B) has many recent sessions and
+    another (A) has a few older ones, a global ``collected[:limit]`` keeps only
+    B's rows in the slice — so a client scoped to A sees ~0 of A's sessions even
+    though they exist. The cap should bound each scope independently, returning
+    up to ``limit`` rows per project.
+    """
+    import collections
+
+    # 50 recent sessions in project B, 5 older sessions in project A.
+    b_entries = [
+        _scoped_entry(WorkerType.CLAUDE, f"b-{i}", f"2026-05-06T12:{i:02d}:00", "proj-B")
+        for i in range(50)
+    ]
+    a_entries = [
+        _scoped_entry(WorkerType.CLAUDE, f"a-{i}", f"2026-05-06T08:{i:02d}:00", "proj-A")
+        for i in range(5)
+    ]
+
+    async def _claude(_limit, _idx, _pids=None):
+        return [*b_entries, *a_entries]
+
+    async def _codex(_limit, _idx, _pids=None):
+        return []
+
+    monkeypatch.setattr(
+        wh,
+        "WORKER_HISTORY_PROVIDERS",
+        {WorkerType.CLAUDE: _claude, WorkerType.CODEX: _codex},
+    )
+    monkeypatch.setattr(wh, "_load_agentic_processes", _noop_processes)
+    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None: [])
+
+    result = await wh.get_worker_history(limit=10)
+    by_proj = collections.Counter(e.project_id for e in result)
+
+    # A client scoped to project A (useChatHistory.matchesScope) must see all 5
+    # of A's sessions — not lose them to B's recency.
+    assert by_proj["proj-A"] == 5, f"scoped-to-A should surface all 5 A sessions, got {by_proj['proj-A']}"
+    # And project B is itself capped to the per-scope limit.
+    assert by_proj["proj-B"] == 10, f"project B should be capped per-scope to 10, got {by_proj['proj-B']}"
 
 
 @pytest.mark.asyncio
@@ -29,10 +88,10 @@ async def test_get_worker_history_merges_sorts_and_limits(monkeypatch):
     claude_old = _entry(WorkerType.CLAUDE, "claude-old", "2026-05-06T08:00:00")
     codex_new = _entry(WorkerType.CODEX, "codex-new", "2026-05-06T12:00:00")
 
-    async def _claude(_limit, _idx):
+    async def _claude(_limit, _idx, _pids=None):
         return [claude_old, claude_mid]
 
-    async def _codex(_limit, _idx):
+    async def _codex(_limit, _idx, _pids=None):
         return [codex_new]
 
     monkeypatch.setattr(
@@ -44,7 +103,7 @@ async def test_get_worker_history_merges_sorts_and_limits(monkeypatch):
         },
     )
     monkeypatch.setattr(wh, "_load_agentic_processes", _noop_processes)
-    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen: [])
+    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None: [])
 
     result = await wh.get_worker_history(limit=2)
 
@@ -61,10 +120,10 @@ async def test_get_worker_history_dedupes_by_worker_type_and_id(monkeypatch):
     duplicate_old = _entry(WorkerType.CODEX, "same-session", "2026-05-06T09:00:00")
     claude_same_id = _entry(WorkerType.CLAUDE, "same-session", "2026-05-06T11:00:00")
 
-    async def _claude(_limit, _idx):
+    async def _claude(_limit, _idx, _pids=None):
         return [claude_same_id]
 
-    async def _codex(_limit, _idx):
+    async def _codex(_limit, _idx, _pids=None):
         return [duplicate_new, duplicate_old]
 
     monkeypatch.setattr(
@@ -76,7 +135,7 @@ async def test_get_worker_history_dedupes_by_worker_type_and_id(monkeypatch):
         },
     )
     monkeypatch.setattr(wh, "_load_agentic_processes", _noop_processes)
-    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen: [])
+    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None: [])
 
     result = await wh.get_worker_history(limit=10)
 

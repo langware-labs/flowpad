@@ -110,6 +110,10 @@ class EntityType(StrEnum):
     CONVERSATION = "conversation"
     WHITEBOARD = "whiteboard"
     AGENT_TRACE = "agent_trace"
+    DYNAMIC_WORKFLOW = "dynamic_workflow"
+    # A Claude Code workflow *run* — the provider's wf_<runId>.json journal,
+    # parsed & served like a worker transcript/session (worker_type "workflow").
+    WORKFLOW_RUN = "workflow_run"
     USAGE_REPORT = "usage_report"
     DATASET = "dataset"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"

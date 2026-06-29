@@ -36,6 +36,7 @@ class WSMessageType(Enum):
     CLOUD_LOGIN_STATUS_MSG = "cloud_login_status_msg"
     CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
     PRIVACY_MODE_MSG = "privacy_mode_msg"
+    TOPLOG_STATE_MSG = "toplog_state_msg"
 
 
 class ExeMessageSubType(StrEnum):
@@ -138,6 +139,14 @@ class PrivacyModeMessage(BaseMessage):
     client updates the footer control + cloud-access guards without a reload."""
     message_type: str = WSMessageType.PRIVACY_MODE_MSG.value
     privacy_mode: str  # "local" | "connected"
+
+
+class ToplogStateMessage(BaseMessage):
+    """Broadcast when this instance's toplog state changes, so every open client
+    updates its in-memory topic set live (no reload). See flow_sdk/toplog.py."""
+    message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
+    enabled: bool
+    filter: Dict[str, bool]
 
 
 class EntityMessage(BaseMessage):

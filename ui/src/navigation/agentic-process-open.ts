@@ -14,6 +14,36 @@ const apFromCache = (processId: string) =>
   AgenticProcess.getByIdFromCache<AgenticProcess>(processId) as APWithIds | null;
 
 /**
+ * Cached ClaudeSession lookup, guarded against the TypeId throw a non-v4/v5
+ * worker session id triggers: ``getByIdFromCache`` builds a ``claude_session``
+ * TypeId, which throws on codex/copilot v7 rollout ids (a worker session id
+ * isn't a claude entity id). Returns null instead of crashing the caller.
+ */
+const cachedClaudeSession = (sessionId: string): ClaudeSession | null => {
+  try {
+    return ClaudeSession.getByIdFromCache<ClaudeSession>(sessionId) ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Warm the ClaudeSession into cache if absent; null when already cached OR when
+ * the id isn't a claude session id. ``getById`` also builds the throwing
+ * ``claude_session`` TypeId, so the guard must wrap it too (not just the cache
+ * read) — a v7 worker id would otherwise crash the resolver synchronously.
+ */
+const warmClaudeSession = (sessionId: string): Promise<unknown> | null => {
+  try {
+    return ClaudeSession.getByIdFromCache<ClaudeSession>(sessionId)
+      ? null
+      : ClaudeSession.getById<ClaudeSession>(sessionId);
+  } catch {
+    return null;
+  }
+};
+
+/**
  * A worker's meaningful one-liner: the session title (the ai-title the history
  * and transcript views show) carried on its ClaudeSession, falling back to the
  * linked Shell's label. Reads the entity cache only (not reactive) — warm it
@@ -24,9 +54,9 @@ const apFromCache = (processId: string) =>
 export function agenticProcessName(processId: string): string | null {
   const ap = apFromCache(processId);
   const sessionId = ap?.session_id;
-  const sessionName = sessionId
-    ? ClaudeSession.getByIdFromCache<ClaudeSession>(sessionId)?.name
-    : null;
+  // Best-effort title from the session entity (null for non-claude workers,
+  // whose v7 session ids aren't claude entity ids — see cachedClaudeSession).
+  const sessionName = sessionId ? cachedClaudeSession(sessionId)?.name : null;
   // ClaudeSession.name is `custom_title || slug || session_id`; only use it
   // when it's an actual title, not the raw id.
   if (sessionName && sessionName !== sessionId) return sessionName;
@@ -39,11 +69,10 @@ export async function resolveAgenticProcessName(processId: string): Promise<void
   const ap = apFromCache(processId) ?? ((await AgenticProcess.getById<AgenticProcess>(processId)) as APWithIds | null);
   const sessionId = ap?.session_id;
   const shellId = ap?.shell_id;
+  const sessionWarm = sessionId ? warmClaudeSession(sessionId) : null;
   await Promise.allSettled(
     [
-      sessionId && !ClaudeSession.getByIdFromCache<ClaudeSession>(sessionId)
-        ? ClaudeSession.getById<ClaudeSession>(sessionId)
-        : null,
+      sessionWarm,
       shellId && !Shell.getByIdFromCache<Shell>(shellId) ? Shell.getById<Shell>(shellId) : null,
     ].filter(Boolean) as Promise<unknown>[],
   );

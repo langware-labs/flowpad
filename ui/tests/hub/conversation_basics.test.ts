@@ -19,6 +19,7 @@ import { config, dataContext } from '@sdk';
 import { Conversation } from '@sdk/entities/conversation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { testEntityName, trackForCleanup } from '../_cleanup';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import { HUB_URL, getAliceCreds, hubAvailable, hubLogin, localBackendIsCloudLoggedIn } from './_hub';
 
@@ -52,10 +53,9 @@ beforeEach(async (context: any) => {
 
 describe('hub: Conversation.share', () => {
   it('shares a new conversation to the hub and flips remote=true', async () => {
-    const ts = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-    const title = `basic-share-${ts}`;
+    const title = testEntityName('conv');
 
-    const conv = new Conversation({ title });
+    const conv = trackForCleanup(new Conversation({ title }));
     expect(conv.id).toBeTruthy();
     expect(conv.remote).toBeFalsy();
 

@@ -160,6 +160,11 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import UsageReport: {e}")
 
+try:
+    from flow_sdk.builtin.workflow_run import WorkflowRun  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import WorkflowRun: {e}")
+
 # These have more complex dependencies - skip for now
 # from builtin.page import Page  # noqa: F401
 # from builtin.task import Task  # noqa: F401
@@ -182,6 +187,12 @@ try:
     from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import ClaudeSession: {e}")
+
+try:
+    # DynamicWorkflow — a Claude Code workflow run surfaced as a read-only asset.
+    from flow_sdk.builtin.dynamic_workflow import DynamicWorkflow  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import DynamicWorkflow: {e}")
 
 try:
     from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401

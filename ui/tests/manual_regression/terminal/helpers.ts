@@ -243,7 +243,7 @@ export async function goHome(page: Page) {
  * (always visible), so no chevron hover is needed.
  */
 export async function gotoShellView(page: Page) {
-  const shellSidebarBtn = page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-terminal)');
+  const shellSidebarBtn = page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-message-square)');
   await shellSidebarBtn.click();
   await page.waitForURL(/\/dock\/shell/, { timeout: 10_000 });
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });

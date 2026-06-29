@@ -14,6 +14,7 @@ Bundle format (.flowmsg — a zip file):
 """
 from __future__ import annotations
 
+import filecmp
 import json
 import logging
 import os
@@ -86,6 +87,17 @@ class FlowMessageExistsError(Exception):
         super().__init__(f"FlowMessage entities already exist: {conflicts}")
 
 
+class FlowMessageNoProjectError(Exception):
+    """Raised when a bundle carries file-backed assets but the receiving
+    conversation is not mapped to a project, so there is nowhere to copy+index
+    them. The caller surfaces "map a project first" and re-downloads once a
+    project is selected; the bundle stays extracted (parked) meanwhile."""
+
+    def __init__(self, pending_types: list[str]):
+        self.pending_types = pending_types
+        super().__init__(f"no project mapped for file-backed assets: {pending_types}")
+
+
 # ---------------------------------------------------------------------------
 # pack_bundle
 # ---------------------------------------------------------------------------
@@ -136,41 +148,6 @@ def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Pa
     files_dir = attachment_dir / "files"
     files_dir.mkdir(exist_ok=True)
     shutil.copy2(file_path, files_dir / file_path.name)
-
-
-async def _pack_spec_attachment(entry_id: str, attachment_dir: Path) -> None:
-    """Write ``attachment/spec-@<id>/spec.md`` (frontmatter + content)."""
-    from flow_sdk.builtin.spec import Spec
-
-    spec = await Spec.get_one({"id": entry_id})
-    if not spec:
-        return
-    spec_dir = attachment_dir / f"spec-@{entry_id}"
-    spec_dir.mkdir(parents=True, exist_ok=True)
-    # ``id`` in the frontmatter so the receiver's reindex materializes the SAME
-    # entity row (``spec_gen_id`` prefers the frontmatter id over uuid5(path)).
-    # Structure unchanged — this is the spec.md content, not the bundle layout.
-    fm_lines = ["---\n", f"id: {entry_id}\n", f'title: "{spec.title}"\n', f'spec_type: "{spec.spec_type}"\n', "---\n"]
-    spec_md = "".join(fm_lines) + (spec.content or "")
-    (spec_dir / "spec.md").write_text(spec_md, encoding="utf-8")
-
-
-async def _pack_prompt_attachment(entry_id: str, attachment_dir: Path) -> None:
-    """Write ``attachment/prompt-@<id>/prompt.md`` (frontmatter + text body).
-
-    Rendered via ``_prompt_default_body`` so the frontmatter (id/name/icon/
-    color/use_count/last_used_at) round-trips through ``extract_prompt`` —
-    the same write path the entity's own ``owns_main_ref`` save uses.
-    """
-    from flow_sdk.builtin.prompt import Prompt
-    from flow_sdk.schema.type_info.prompt_info import _prompt_default_body
-
-    prompt = await Prompt.get_one({"id": entry_id})
-    if not prompt:
-        return
-    prompt_dir = attachment_dir / f"prompt-@{entry_id}"
-    prompt_dir.mkdir(parents=True, exist_ok=True)
-    (prompt_dir / "prompt.md").write_text(_prompt_default_body(prompt), encoding="utf-8")
 
 
 async def _pack_task_attachment(entry_id: str, attachment_dir: Path) -> None:
@@ -271,54 +248,6 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     )
 
 
-async def _pack_markdown_attachment(entry_id: str, attachment_dir: Path) -> None:
-    """Write ``attachment/markdown-@<id>/document.md`` (the markdown source).
-
-    Body-bearing like SPEC: the receiver restores the ``.md`` and reindexes so
-    the MARKDOWN row materializes with the SAME id (frontmatter ``id``). Prefer
-    a verbatim copy of the source file (preserves all frontmatter); fall back to
-    reconstructing from the entity's content when there's no source on disk.
-    Without this a shared markdown asset never transfers — the chip can't resolve
-    and the receiver's Download button never clears.
-
-    Markdown is FS-derived (no registered entity class), so we read the local
-    record folder's ``metadata.json`` directly — the same folder + ``asset_ref``
-    the materialization check (``_type_id_record_materialized``) probes."""
-    from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
-
-    mtype = EntityType.MARKDOWN.value
-    meta = get_default_records_root() / mtype / record_stem(mtype, entry_id) / "metadata.json"
-    if not meta.exists():
-        return
-    try:
-        data = json.loads(meta.read_text(encoding="utf-8")) or {}
-    except (OSError, ValueError):
-        return
-    md_dir = attachment_dir / f"{mtype}-@{entry_id}"
-    md_dir.mkdir(parents=True, exist_ok=True)
-    dest = md_dir / "document.md"
-    # The receiver derives the chip title from the file STEM when frontmatter
-    # carries no ``title:`` — and the bundle always names the file ``document.md``.
-    # Pass the materialized title so a source whose name came from its filename
-    # (no explicit ``title:``) still transfers its name instead of "document".
-    title = data.get("title") or data.get("name")
-    src = data.get("asset_ref")
-    if src and Path(src).exists():
-        rewritten = _inject_id_into_frontmatter_text(
-            Path(src).read_text(encoding="utf-8"), entry_id, title=title,
-        )
-        if rewritten is None:
-            shutil.copy2(Path(src), dest)  # source already carries id + title → verbatim
-        else:
-            dest.write_text(rewritten, encoding="utf-8")
-        return
-    # Fallback: no source file on disk — reconstruct from the record metadata.
-    # Prefer ``body`` (pure markdown) over ``content`` (body + appended links).
-    title = data.get("title") or data.get("name") or "Untitled"
-    body = data.get("body") or data.get("content") or ""
-    dest.write_text(f'---\nid: {entry_id}\ntitle: "{title}"\n---\n{body}', encoding="utf-8")
-
-
 async def _pack_conversation_attachment(
     entry_id: str, flow_message: "FlowMessage", attachment_dir: Path,
 ) -> None:
@@ -377,16 +306,19 @@ async def _pack_conversation_attachment(
 async def _pack_attachment_entry(
     entry, flow_message: "FlowMessage", attachment_dir: Path,
 ) -> None:
-    """Dispatch a single attachment entry to the correct per-type packer.
+    """Dispatch a single attachment entry to the correct FAMILY packer.
 
+    Three families, not per-type instances:
+      - native file (FILE/PROMPT bytes) → ``_pack_file_attachment``.
+      - DB-record (no on-disk asset_ref: task/conversation/flow_message/
+        claude_session/git_branch/flowpad_diagnosis) → their header.json serializers.
+      - file-backed asset (``TypeInfo.main_subdir is not None``: skill, agent,
+        workflow, whiteboard, spec, prompt, markdown, plan, command, rule) →
+        the ONE generic ``_pack_file_backed_attachment``.
     Repo/URL attachments have no bytes to bundle — silently skipped.
-
-    TODO: at ~10+ branches consider a TypeInfo-driven ``pack_attachment``
-    hook instead of growing this dispatch (currently 9: spec, prompt, task,
-    conversation, flow_message, claude_session, git_branch, fs-rooted). Each
-    type has a distinct serialization, so the registry hook is the only
-    generic form.
     """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
     if entry.attachment_type in (AttachmentType.FILE, AttachmentType.PROMPT):
         _pack_file_attachment(entry, flow_message, attachment_dir)
         return
@@ -396,11 +328,7 @@ async def _pack_attachment_entry(
     entry_type, entry_id = tid.type, tid.id
     if not entry_type or not entry_id:
         return
-    if entry_type == BuiltinEntityType.SPEC.value:
-        await _pack_spec_attachment(entry_id, attachment_dir)
-    elif entry_type == EntityType.PROMPT.value:
-        await _pack_prompt_attachment(entry_id, attachment_dir)
-    elif entry_type == BuiltinEntityType.TASK.value:
+    if entry_type == BuiltinEntityType.TASK.value:
         await _pack_task_attachment(entry_id, attachment_dir)
     elif entry_type == BuiltinEntityType.CONVERSATION.value:
         await _pack_conversation_attachment(entry_id, flow_message, attachment_dir)
@@ -412,130 +340,178 @@ async def _pack_attachment_entry(
         await _pack_git_branch_attachment(entry_id, attachment_dir)
     elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
         await _pack_flowpad_diagnosis_attachment(entry_id, attachment_dir)
-    elif entry_type == EntityType.MARKDOWN.value:
-        await _pack_markdown_attachment(entry_id, attachment_dir)
-    elif entry_type in _FS_ROOTED_TYPES:
-        await _pack_fs_rooted_attachment(entry_type, entry_id, attachment_dir)
+    else:
+        info = SchemaRegistry.get(entry_type)
+        if info is not None and getattr(info, "main_subdir", None) is not None:
+            await _pack_file_backed_attachment(entry_type, entry_id, attachment_dir)
 
 
 # ---------------------------------------------------------------------------
-# FS-rooted asset packing (skill, agent, …).
-#
-# These entity types are *filesystem-primary*: the canonical record is the
-# on-disk subtree under ``<root>/.claude/...``. Pack preserves that subtree
-# verbatim; unpack restores it and lets the FSIndexer rediscover the entity.
-# No type-specific serialization (header.json etc.) — the on-disk shape *is*
-# the record format.
+# File-backed asset packing — ONE family handler for skill, agent, workflow,
+# whiteboard, spec, prompt, markdown, plan, command, rule (any type whose
+# TypeInfo declares ``main_subdir``). The canonical record is the on-disk
+# asset_ref (a file or a folder); pack copies it verbatim under the bundle at
+# ``attachment/<type>-@<id>/<main_subdir>/<leaf>`` so the in-bundle relpath
+# equals what the receiver's ``compute_asset_ref(project_root, ent)`` produces.
+# No per-type code — layout/main_file all come from TypeInfo.
 # ---------------------------------------------------------------------------
 
-_FS_ROOTED_TYPES = frozenset({
-    BuiltinEntityType.SKILL.value,
-    BuiltinEntityType.AGENT.value,
-    EntityType.WORKFLOW.value,
-    EntityType.WHITEBOARD.value,
-})
 
-_CLAUDE_ANCHOR = ".claude"
+async def _resolve_file_backed_source(entry_type: str, entry_id: str):
+    """Return ``(info, entity, src_root)`` for a file-backed asset, or None.
 
-
-async def _fs_rooted_asset_path(entry_type: str, entry_id: str) -> "Path | None":
-    """Resolve the live ``.claude/…`` on-disk path for an FS-rooted asset.
-
-    Skill/Agent take the O(1) FSRecord shadow lookup (a perf shortcut, not a
-    capability difference — their entities also expose ``asset_ref``). Every
-    other FS-rooted type (workflow ``.claude/workflows/<name>.md``, whiteboard
-    ``.claude/whiteboards/<name>/``) resolves through the entity's ``asset_ref``
-    (the live path string), so the dispatch stays generic. Returns None when
-    the asset can't be located.
+    ``src_root`` is the on-disk subtree to ship: for a folder type it's the
+    folder (the asset_ref itself, or its parent for spec-style where asset_ref
+    is the inner main_file); for a file type it's the file. None when the type
+    isn't file-backed or the entity/asset can't be located on disk.
     """
-    def _get_skill(eid: str):
-        from flow_sdk.fs_store.operations.skill import get_skill
-        return get_skill(eid)
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    def _get_agent(eid: str):
-        from flow_sdk.fs_store.operations.agent import get_agent
-        return get_agent(eid)
-
-    shadow_getter = {
-        BuiltinEntityType.SKILL.value: _get_skill,
-        BuiltinEntityType.AGENT.value: _get_agent,
-    }.get(entry_type)
-    if shadow_getter is not None:
-        rec = shadow_getter(entry_id)
-        ref = getattr(rec, "asset_ref", None) if rec else None
-        return Path(ref._path) if ref is not None else None  # FSRecord.asset_ref is an FSRef
-
-    # Generic: resolve the entity row and read its (string) live asset_ref.
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    info = SchemaRegistry.get(entry_type)
+    if info is None or getattr(info, "main_subdir", None) is None:
+        return None
     cls = SchemaRegistry.get_entity_cls(entry_type)
     if cls is None:
         return None
     ent = await cls.get_one({"id": entry_id})
-    ref = getattr(ent, "asset_ref", None) if ent else None
-    return Path(ref) if isinstance(ref, str) and ref else None
+    if ent is None:
+        return None
+    ar = getattr(ent, "asset_ref", None)
+    if not isinstance(ar, str) or not ar:
+        return (info, ent, None)  # no on-disk source — caller may render a body
+    ar_path = Path(ar)
+    if not ar_path.exists():
+        return (info, ent, None)
+    if info.main_layout == "folder":
+        # spec-style: asset_ref is the inner main_file → ship the parent folder.
+        # skill-style: asset_ref is the folder itself.
+        src_root = ar_path.parent if getattr(info, "main_file_is_asset_ref", False) else ar_path
+    else:
+        src_root = ar_path
+    return (info, ent, src_root)
 
 
-def _claude_relative_path(asset_path: Path) -> Path:
-    """Return the asset's path relative to the nearest ``.claude`` anchor.
+async def _pack_file_backed_attachment(
+    entry_type: str, entry_id: str, attachment_dir: Path,
+) -> None:
+    """Copy a file-backed asset's on-disk subtree into the bundle.
 
-    Example: ``/home/u/.claude/skills/foo/SKILL.md`` →
-    ``Path(".claude/skills/foo/SKILL.md")``.
+    Bundle layout: ``attachment/<type>-@<id>/<main_subdir>/<leaf>``. The leaf
+    name is preserved from the source (not re-slugged) so the round-trip keeps
+    the sender's folder/file name. The sender's id is pinned into the main doc
+    (``TypeInfo.main_file`` for folder types, the file itself for single-file
+    types) so the receiver's ``gen_uuid_fn`` materializes the SAME entity.
 
-    Raises ``ValueError`` if ``.claude`` is not in the path — that's a real
-    misconfiguration (skill/agent outside the canonical layout), not a
-    silent-skip case.
+    Build/environment cruft is filtered via ``_ASSET_PACK_IGNORE`` (deep
+    ``.venv``/cache trees blow past Windows MAX_PATH on extractall).
     """
-    parts = asset_path.parts
-    for i, p in enumerate(parts):
-        if p == _CLAUDE_ANCHOR:
-            return Path(*parts[i:])
-    raise ValueError(
-        f"FS-rooted asset path missing '{_CLAUDE_ANCHOR}' anchor: {asset_path}"
+    resolved = await _resolve_file_backed_source(entry_type, entry_id)
+    if resolved is None:
+        return
+    info, ent, src_root = resolved
+    entry_root = attachment_dir / f"{entry_type}-@{entry_id}"
+    subdir = entry_root / info.main_subdir
+
+    if src_root is None:
+        # No on-disk source — render the body from the type's default_body_fn
+        # (covers a DB-backed spec/prompt/markdown whose file was never written).
+        default_body_fn = getattr(info, "default_body_fn", None)
+        if default_body_fn is None:
+            return  # nothing renderable to ship
+        safe = _safe_entity_name(ent)
+        if info.main_layout == "folder":
+            main_file = getattr(info, "main_file", None)
+            if not main_file:
+                return  # folder type without a main doc: nothing to ship
+            dest = subdir / safe / main_file
+        else:
+            dest = subdir / f"{safe}{info.main_ext}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(default_body_fn(ent), encoding="utf-8")
+        _ensure_id_in_md_frontmatter(dest, entry_id)
+        return
+
+    dest = subdir / src_root.name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if src_root.is_dir():
+        shutil.copytree(src_root, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
+        # Pin the id into the folder's main doc (TypeInfo.main_file).
+        main_file = getattr(info, "main_file", None)
+        if main_file:
+            doc = dest / main_file
+            if doc.exists():
+                _ensure_id_in_md_frontmatter(doc, entry_id)
+    else:
+        shutil.copy2(src_root, dest)
+        # Single-file markdown asset: pin the id into its frontmatter. Skip
+        # non-markdown bodies (e.g. dynamic_workflow ``.js``) — no YAML fm there.
+        if dest.suffix == ".md":
+            _ensure_id_in_md_frontmatter(dest, entry_id)
+
+
+def _safe_entity_name(entity) -> str:
+    """Filesystem-safe leaf name from an entity's name/title (fallback path)."""
+    raw = getattr(entity, "name", None) or getattr(entity, "title", None) or getattr(entity, "id", "asset")
+    return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in str(raw)) or "asset"
+
+
+async def _resolve_project_root_for_conv(conv_id: str) -> "Path | None":
+    """The receiver's mapped PROJECT directory for this conversation, or None.
+
+    Received file-backed assets are copied into the conversation's project (the
+    UI forces project selection on an incoming share). Mirrors
+    ``_resolve_workdir_and_project_async`` (flow_message_action) but keyed off
+    the conversation id directly. None ⇒ no project mapped yet (gate the copy).
+    """
+    if not conv_id:
+        return None
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+
+    conv = await Conversation.get_one({"id": conv_id})
+    if conv is None:
+        return None
+    # Prefer a context Task's project_root, else the Project's mount path.
+    task_typeid = (
+        conv.first_context_of_type(BuiltinEntityType.TASK.value)
+        if hasattr(conv, "first_context_of_type") else None
     )
+    if task_typeid:
+        from flow_sdk.builtin.task import Task  # noqa: PLC0415
+        task = await Task.get_one({"id": task_typeid.id})
+        wd = (getattr(task, "project_root", "") or "").strip() if task else ""
+        if wd:
+            return Path(wd)
+    project_id = getattr(conv, "project_id", None)
+    if project_id:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        project = await Project.get_one({"id": project_id})
+        mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
+        if mount:
+            return Path(mount)
+    return None
 
 
-def _ensure_asset_dest_root(asset_dest_root: Path | None) -> Path:
-    """Resolve the unpack destination for FS-rooted assets.
-
-    Called lazily — only when an FS-rooted entry is actually encountered, so
-    bundles without skill/agent attachments never touch the filesystem.
-
-    When the caller passes no destination (the AUTO-materialization path on
-    message receive, as opposed to a project-scoped chip download), fall back to
-    the user's personal library root (``~`` → ``~/.claude/skills`` /
-    ``~/.claude/agents``) rather than a throwaway temp dir. A received skill the
-    recipient still has hub access to must materialize DURABLY and get indexed
-    into their library — landing it in a temp dir made it vanish as soon as the
-    carrying conversation was left or deleted, even though the hub grant
-    persists. Home is the same root the app reads personal skills/agents from,
-    so the asset shows up in the library and survives independently.
-    """
-    if asset_dest_root is not None:
-        return asset_dest_root
-    chosen = Path.home()
-    logger.info("[bundle] asset_dest_root unset; restoring FS-rooted assets to personal library %s", chosen)
-    return chosen
-
-
-def _restore_fs_rooted_entry(
-    entry_dir: Path, asset_dest_root: Path, overwrite: bool,
+def _restore_file_backed_entry(
+    entry_dir: Path, project_root: Path, overwrite: bool,
 ) -> bool:
-    """Copy ``attachment/<type>-@<id>/.claude/…`` into ``asset_dest_root/.claude/…``.
+    """Copy every file under ``attachment/<type>-@<id>/`` into ``project_root``.
 
-    Returns True when at least one file was restored. Raises
-    ``FlowMessageExistsError`` on collision when ``overwrite=False``.
+    The in-bundle relpath is already the canonical ``<main_subdir>/<leaf>``
+    (the packer stores it that way), so this is an anchor-free verbatim mirror
+    — no per-type knowledge. Returns True when ≥1 file was restored. Raises
+    ``FlowMessageExistsError`` on a genuine collision when overwrite=False;
+    a byte-identical existing file is an idempotent no-op (re-receive).
     """
-    bundle_claude = entry_dir / _CLAUDE_ANCHOR
-    if not bundle_claude.is_dir():
-        return False
     conflicts: list[dict] = []
     copied_any = False
-    for src in bundle_claude.rglob("*"):
+    for src in entry_dir.rglob("*"):
         if not src.is_file():
             continue
-        rel = src.relative_to(entry_dir)  # ".claude/skills/foo/SKILL.md"
-        dest = asset_dest_root / rel
+        rel = src.relative_to(entry_dir)  # "<main_subdir>/<leaf>..."
+        dest = project_root / rel
         if dest.exists() and not overwrite:
+            if filecmp.cmp(src, dest, shallow=False):
+                continue  # same asset already present — no-op
             conflicts.append({"path": str(dest)})
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -570,74 +546,55 @@ async def _reindex_root(root: Path, record_type, *, types=None) -> None:
     )
 
 
-async def _reindex_asset_dest_root(asset_dest_root: Path) -> None:
-    """Reindex a restored ``.claude/`` subtree (skill/agent FS-rooted assets)."""
-    from flow_sdk.fs_store.record_types import RecordType
+async def _reindex_received_assets(project_root: Path, types) -> None:
+    """Reindex the project after received file-backed assets were copied in.
 
-    await _reindex_root(asset_dest_root, RecordType.USER_HOME_FOLDER)
-
-
-async def _reindex_project_root(root: Path) -> None:
-    """Index ``root`` as a project-cwd container so a restored shared spec
-    materializes (``extract_spec → Entity.from_record``, idempotent + body-aware
-    — heals a content-less stub). Scoped to SPEC so the generic project walk
-    doesn't also index the ``spec.md`` as a plain markdown duplicate. No
-    synthetic ``user_home/specs`` path is fabricated.
+    One project-cwd walk scoped to the received types materializes every row
+    from its real file (idempotent + body-aware). ``REAL_PROJECT_CWD`` reaches
+    all file-backed families; markdown is reached via the FOLDER walker, kept by
+    the type-gating since FOLDER → MARKDOWN.
     """
     from flow_sdk.fs_store.record_types import RecordType
 
-    await _reindex_root(root, RecordType.REAL_PROJECT_CWD, types=(RecordType.SPEC,))
+    await _reindex_root(project_root, RecordType.REAL_PROJECT_CWD, types=tuple(types) or None)
 
 
-async def _reindex_markdown_root(docs_root: Path) -> None:
-    """Index a restored shared-markdown ``docs/`` root as a project-cwd container
-    so ``markdown_in_folder_fn`` materializes the MARKDOWN row from its real
-    ``.md``. Scoped to MARKDOWN and pointed at the ``docs/`` subdir ONLY — never
-    the whole staging root — so it can't also re-index restored ``specs/*.md`` as
-    plain-markdown duplicates (the inverse of ``_reindex_project_root``'s guard).
+async def _notify_received_assets(entries: "set[tuple[str, str]]") -> None:
+    """Announce just-materialized received assets to the receiver's live UI.
+
+    The FSIndexer persists received-asset rows with ``notify=False`` (correct: a
+    bulk index walk must not flood the WS). But a share-receive genuinely
+    *creates* a small, known set of entities on this user, and the live page has
+    to learn about them — otherwise each asset's conversation chip stays stuck on
+    the 404 it negative-cached before the download ("not found locally"),
+    un-openable until a manual reload.
+
+    So the importer announces its own imports: one CREATE ``DataOpMessage`` per
+    received entity, via the SAME channel ``Entity.save(notify=True)`` uses
+    (``add_entity_op_notification`` → ``handle_entity_op`` → WS fanout). It must
+    be CREATE, not UPDATE: the receiver never had these cached, and the
+    frontend's update/entity-event handlers bail on an uncached entity — only a
+    CREATE adds it and wakes the chip's ``useEntity`` subscriber.
+
+    Type-agnostic: entity classes resolve generically through ``SchemaRegistry``,
+    so every file-backed family rides this with zero per-type code. ``entries`` is
+    a set, so each asset is announced exactly once.
     """
-    from flow_sdk.fs_store.record_types import RecordType
+    from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    await _reindex_root(docs_root, RecordType.REAL_PROJECT_CWD, types=(RecordType.MARKDOWN,))
-
-
-def _restore_markdown_source(md_file: Path, entry_id: str, staging_root: Path) -> None:
-    """Restore a bundle markdown ``.md`` into ``<staging>/docs/markdown-@<id>/``.
-
-    The post-loop MARKDOWN reindex (over the ``docs/`` subdir) materializes the
-    row from this real file. Entity identity comes from the frontmatter ``id``
-    (``markdown_id`` prefers it), copied verbatim when present, else the shared
-    ``entry_id`` is injected so the SAME row materializes rather than a
-    uuid5(path) duplicate. The folder is under ``docs/`` (not a typed-record dir),
-    so ``markdown_in_folder_fn`` indexes it.
-    """
-    dest = staging_root / "docs" / f"{EntityType.MARKDOWN.value}-@{entry_id}" / "document.md"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    rewritten = _inject_id_into_frontmatter_text(md_file.read_text(encoding="utf-8"), entry_id)
-    if rewritten is None:
-        shutil.copy2(md_file, dest)  # bundle already carries the id → verbatim
-    else:
-        dest.write_text(rewritten, encoding="utf-8")
-
-
-def _restore_spec_source(spec_file: Path, entry_id: str, staging_root: Path) -> None:
-    """Restore a bundle ``spec.md`` into the staging folder's ``specs/`` dir.
-
-    Destination: ``<staging>/specs/spec-@<id>/spec.md`` — the folder name is the
-    bundle's own ``spec-@<id>`` (deterministic, never a derived/creative slug).
-    The post-loop reindex (project-cwd) materializes the row from this real
-    file. Entity identity comes from the frontmatter ``id``: copied verbatim
-    when the bundle already carries it, otherwise the shared ``entry_id`` is
-    injected (legacy bundles predating the id-in-frontmatter pack) so the SAME
-    row materializes rather than a uuid5(path) duplicate.
-    """
-    dest = staging_root / "specs" / f"spec-@{entry_id}" / "spec.md"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    rewritten = _inject_id_into_frontmatter_text(spec_file.read_text(encoding="utf-8"), entry_id)
-    if rewritten is None:
-        shutil.copy2(spec_file, dest)  # bundle already carries the id → verbatim
-    else:
-        dest.write_text(rewritten, encoding="utf-8")
+    for entry_type, entry_id in entries:
+        try:
+            cls = SchemaRegistry.get_entity_cls(entry_type)
+            if cls is None:
+                continue
+            ent = await cls.get_one({"id": entry_id})
+            if ent is None:
+                continue
+            op = DataOpMessage(data=ent, op=OperationType.CREATE, to_entity=ent.typeid)
+            await ent.add_entity_op_notification(op, notify_immediately=True)
+        except Exception:
+            logger.exception("[bundle] notify CREATE failed for %s-%s", entry_type, entry_id)
 
 
 
@@ -654,64 +611,12 @@ _ASSET_PACK_IGNORE = shutil.ignore_patterns(
 )
 
 
-async def _pack_fs_rooted_attachment(
-    entry_type: str, entry_id: str, attachment_dir: Path,
-) -> None:
-    """Copy the asset's on-disk subtree (file or folder) into the bundle.
-
-    Bundle layout: ``attachment/<type>-@<id>/.claude/<relative-path>``. Format
-    is unchanged from the source — the indexer reads exactly the same shape
-    on disk in production, so unpack just needs to restore + reindex.
-
-    Build/environment cruft (``.venv``, ``__pycache__``, ``node_modules``, …)
-    is filtered out via ``_ASSET_PACK_IGNORE`` — it isn't asset source and its
-    deep paths break extraction on Windows.
-    """
-    src = await _fs_rooted_asset_path(entry_type, entry_id)
-    if src is None or not src.exists():
-        return
-    rel = _claude_relative_path(src)
-    dest_root = attachment_dir / f"{entry_type}-@{entry_id}"
-    dest = dest_root / rel
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if src.is_dir():
-        shutil.copytree(src, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
-        # Folder assets (whiteboard, skill) key their id off the main doc's
-        # frontmatter id, falling back to a name/path-derived value that won't
-        # match the sender's entity id. Pin the sender's id into the main doc so
-        # the receiver's gen_id materializes the SAME entity. (The doc filename
-        # is hardcoded rather than read from TypeInfo.main_file because the
-        # server's runtime schema registry doesn't reliably carry main_file for
-        # these types — the literal list is the proven path.)
-        for main_doc in ("WHITE_BOARD.md", "SKILL.md"):
-            doc = dest / main_doc
-            if doc.exists():
-                _ensure_id_in_md_frontmatter(doc, entry_id)
-    else:
-        shutil.copy2(src, dest)
-        # A single-file asset (workflow) keys its id off the file PATH, which
-        # differs on the receiver. Pin the sender's id into the packed doc's
-        # frontmatter so the receiver's gen_id (which preserves an existing
-        # frontmatter id) materializes the SAME entity instead of a uuid5(path)
-        # duplicate — mirrors the spec id-in-frontmatter contract.
-        _ensure_id_in_md_frontmatter(dest, entry_id)
-
-
-def _inject_id_into_frontmatter_text(
-    text: str, entry_id: str, title: "str | None" = None,
-) -> "str | None":
+def _inject_id_into_frontmatter_text(text: str, entry_id: str) -> "str | None":
     """Return ``text`` with ``id: <entry_id>`` ensured in its YAML frontmatter
-    (other fields + body preserved), or None when nothing needs changing — so a
+    (other fields + body preserved), or None when the id already matches — so a
     caller can keep the original bytes verbatim. Single source of truth for the
     "carry the sender's id into a shared markdown asset" contract, shared by the
-    spec restore and the FS-rooted packer.
-
-    When ``title`` is given AND the frontmatter has no ``title`` of its own, it
-    is injected too: a markdown asset's title falls back to the file STEM when
-    absent from frontmatter, and the bundle always names the file ``document.md``
-    — so without an explicit ``title:`` the receiver would render the chip as
-    "document" instead of the sender's name. Only fills a missing title; never
-    overrides one the source already carries."""
+    spec restore and the FS-rooted packer."""
     from flow_sdk.fs_store.indexer._frontmatter import (  # noqa: PLC0415
         _extract_body,
         _extract_frontmatter,
@@ -722,13 +627,10 @@ def _inject_id_into_frontmatter_text(
     fields = (_yaml_load(fm) or {}) if fm else {}
     if not isinstance(fields, dict):
         fields = {}
-    need_title = bool(title) and not fields.get("title")
-    if fields.get("id") == entry_id and not need_title:
+    if fields.get("id") == entry_id:
         return None
     body = _extract_body(text) if fm else text
     merged = {"id": entry_id, **{k: v for k, v in fields.items() if k != "id"}}
-    if need_title:
-        merged["title"] = title
     return _render_frontmatter(merged) + "\n\n" + body.lstrip("\n")
 
 
@@ -976,37 +878,6 @@ def _merge_conversation_jsonl(bundle_jsonl: Path, dest: Path) -> None:
 # unpack_bundle
 # ---------------------------------------------------------------------------
 
-async def _create_prompt_from_file(prompt_file: Path, prompt_id: str, owner_typeid) -> None:
-    """Materialize a bundled ``prompt.md`` as a local library Prompt entity.
-
-    Parsed with the indexer's own ``extract_prompt`` so frontmatter fidelity
-    matches a normal rescan. The receiver-side Prompt lands at USER scope
-    (``project_id=None`` → ``<user_home>/prompts/``): the conversation's
-    project is unmapped at unpack time, and prompts aren't project-coupled
-    for execution. The ``owns_main_ref`` save writes the backing .md and the
-    record folder — which is what flips ``body_downloaded``.
-    """
-    from flow_sdk.builtin.prompt import Prompt
-    from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.prompt import extract_prompt
-
-    try:
-        [rec] = extract_prompt(FSRef(prompt_file))
-        prompt = Prompt.model_validate({
-            "id": prompt_id,
-            "name": rec.name or "Shared prompt",
-            "text": rec.text or "",
-            "icon": getattr(rec, "icon", None),
-            "color": getattr(rec, "color", None),
-            "use_count": getattr(rec, "use_count", 0) or 0,
-            "last_used_at": getattr(rec, "last_used_at", None),
-            "project_id": None,
-        })
-        await prompt.save(owner_typeid)
-    except Exception as e:
-        logger.warning("unpack_bundle: could not create Prompt from %s: %s", prompt_file, e)
-
-
 def _extended_length_path(p: Path) -> Path:
     """Return ``p`` as a Windows extended-length (``\\\\?\\``) path so writes
     under it bypass the 260-char MAX_PATH limit. No-op off Windows and when the
@@ -1027,18 +898,20 @@ async def unpack_bundle(
     local_user_id: str,
     *,
     overwrite: bool = False,
-    asset_dest_root: Path | None = None,
+    raise_on_no_project: bool = False,
 ) -> "FlowMessage":
     """Extract .flowmsg, materialize entities, return FlowMessage.
 
-    Raises FlowMessageExistsError on conflict when overwrite=False.
+    File-backed assets (skill, agent, workflow, whiteboard, spec, prompt,
+    markdown, plan, command, rule) are copied from the extracted message folder
+    into the conversation's mapped PROJECT at ``<project>/<main_subdir>/<leaf>``
+    and indexed from there. When the conversation has no project mapped the
+    assets are parked (extracted, not copied); ``raise_on_no_project=True``
+    (the explicit download path) then raises ``FlowMessageNoProjectError`` AFTER
+    the FlowMessage materializes, so the caller can prompt + re-download.
 
-    FS-rooted assets (skill, agent, …) are restored as a literal ``.claude/…``
-    subtree under ``asset_dest_root``. When ``asset_dest_root`` is None, a
-    fresh ``tempfile.mkdtemp()`` is used so production callers don't have to
-    pick a real destination yet — restored assets are indexed but parked.
-    Tests pass an explicit ``asset_dest_root`` so they can assert on the
-    layout.
+    Raises ``FlowMessageExistsError`` on a genuine asset collision when
+    overwrite=False.
     """
     from flow_sdk._compat import UTC
     from flow_sdk.builtin.conversation import Conversation
@@ -1099,24 +972,25 @@ async def unpack_bundle(
 
         conversation_id: str | None = None
         task_id: str = ""
-        fs_rooted_restored = False
-        indexable_restored = False
-        markdown_restored = False
-        # Staging destination for source-backed shared entities (spec, …): the
-        # conversation's OWN data folder. Sources are restored there verbatim,
-        # then indexed as a project-cwd root (`spec_project_fn` scans
-        # `<root>/specs/…`). The message folder IS the home — no synthetic
-        # `user_home/specs` path is fabricated.
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+        # The conversation this bundle belongs to. Its data folder is the
+        # internal "message folder" (where the zip extracted); received
+        # file-backed assets are copied OUT of here into the conversation's
+        # PROJECT and indexed from there. Resolve the receiver's mapped project
+        # once: None ⇒ assets are parked (extracted, not copied/indexed) until
+        # the user maps a project.
         staging_conv_id = (msg_data.get("conversation_id") or "").strip() or next(
             (TypeId(c).id for c in (msg_data.get("shared_context_entities") or [])
              if TypeId(c).type == BuiltinEntityType.CONVERSATION.value),
             None,
         )
-        staging_root: Path | None = None
-        if staging_conv_id:
-            from flow_sdk.fs_store.operations.conversation import default_jsonl_path  # noqa: PLC0415
-            staging_root = default_jsonl_path(staging_conv_id).parent
-            staging_root.mkdir(parents=True, exist_ok=True)
+        project_root = await _resolve_project_root_for_conv(staging_conv_id) if staging_conv_id else None
+        received_types: set = set()
+        received_entries: set[tuple[str, str]] = set()
+        no_project_pending: list[str] = []
+
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -1126,45 +1000,24 @@ async def unpack_bundle(
                 if not entry_type or not entry_id:
                     continue
 
-                if entry_type in _FS_ROOTED_TYPES:
-                    asset_dest_root = _ensure_asset_dest_root(asset_dest_root)
-                    if _restore_fs_rooted_entry(entry_dir, asset_dest_root, overwrite):
-                        fs_rooted_restored = True
+                # FILE-BACKED ASSET FAMILY (TypeInfo.main_subdir set): one branch
+                # for skill/agent/workflow/whiteboard/spec/prompt/markdown/plan/
+                # command/rule. Copy the extracted ``<main_subdir>/<leaf>``
+                # subtree into the project, reindex the project after the loop.
+                info = SchemaRegistry.get(entry_type)
+                if info is not None and getattr(info, "main_subdir", None) is not None:
+                    if project_root is None:
+                        no_project_pending.append(entry_type)
+                        continue
+                    if _restore_file_backed_entry(entry_dir, project_root, overwrite):
+                        try:
+                            received_types.add(RecordType(entry_type))
+                        except ValueError:
+                            pass
+                        received_entries.add((entry_type, entry_id))
                     continue
 
-                if entry_type == EntityType.PROMPT.value:
-                    prompt_file = entry_dir / "prompt.md"
-                    if prompt_file.exists():
-                        # Create-once, same contract as SPEC below: a re-unpack
-                        # must not clobber receiver-side library edits.
-                        from flow_sdk.builtin.prompt import Prompt  # noqa: PLC0415
-                        if overwrite or await Prompt.get_one({"id": entry_id}) is None:
-                            await _create_prompt_from_file(prompt_file, entry_id, owner_typeid)
-
-                elif entry_type == BuiltinEntityType.SPEC.value:
-                    spec_file = entry_dir / "spec.md"
-                    if spec_file.exists() and staging_root is not None:
-                        # Restore the spec source into the conversation folder's
-                        # ``specs/`` dir, then let the post-loop reindex
-                        # materialize the row (``extract_spec`` → ``from_record``)
-                        # — idempotent + body-aware, no create-once skip. A
-                        # pre-existing content-less stub is HEALED (its body
-                        # lands), never blocked. User data is preserved verbatim
-                        # when the bundle carries the id.
-                        _restore_spec_source(spec_file, entry_id, staging_root)
-                        indexable_restored = True
-
-                elif entry_type == EntityType.MARKDOWN.value:
-                    # Shared markdown asset: restore the .md into the staging
-                    # ``docs/`` dir, then let the post-loop MARKDOWN reindex
-                    # materialize the row (``extract_markdown`` → ``from_record``)
-                    # so the receiver's chip resolves and body_downloaded clears.
-                    md_file = entry_dir / "document.md"
-                    if md_file.exists() and staging_root is not None:
-                        _restore_markdown_source(md_file, entry_id, staging_root)
-                        markdown_restored = True
-
-                elif entry_type == BuiltinEntityType.TASK.value:
+                if entry_type == BuiltinEntityType.TASK.value:
                     task_data = _read_entity_header(entry_dir)
                     if task_data is not None:
                         task_id = task_data.get("id") or entry_id
@@ -1339,22 +1192,26 @@ async def unpack_bundle(
                         inner_fm.id = fm_id
                         await inner_fm.save(owner_typeid)
 
-        # 4b. Re-index restored FS-rooted assets so DB rows + FTS5 entries land
-        # before any UI sync fires. Skipped when no FS-rooted entries were
-        # present in the bundle (zero-cost for vanilla spec/task bundles).
-        if fs_rooted_restored and asset_dest_root is not None:
-            await _reindex_asset_dest_root(asset_dest_root)
+        # 4b. ONE project reindex over the copied file-backed assets so DB rows +
+        # FTS5 entries land before any UI sync fires. Scoped to the received
+        # types; zero-cost when the bundle carried no file-backed assets.
+        if received_types and project_root is not None:
+            await _reindex_received_assets(project_root, received_types)
+            # The indexer materializes those rows silently (notify=False), so
+            # announce the just-created assets to the receiver's live UI — one
+            # CREATE data_op each — or their conversation chips stay stuck on the
+            # pre-download 404 ("not found locally") until a manual reload.
+            await _notify_received_assets(received_entries)
 
-        # 4c. Re-index source-backed shared entities (spec, …) restored into the
-        # conversation's data folder. One project-cwd reindex materializes every
-        # row from its real file — idempotent + body-aware, healing any
-        # content-less stub. Skipped (zero-cost) when nothing was restored.
-        if indexable_restored and staging_root is not None:
-            await _reindex_project_root(staging_root)
-        # Markdown reindex is scoped to the ``docs/`` subdir (see
-        # _reindex_markdown_root) so it can't re-index restored specs/*.md.
-        if markdown_restored and staging_root is not None:
-            await _reindex_markdown_root(staging_root / "docs")
+        # 4c. No-project note: file-backed assets were extracted but the
+        # conversation isn't mapped to a project, so they were NOT copied/indexed
+        # — they stay parked. The FlowMessage still materializes below (the
+        # message + its asset chips show); the gate is RAISED at the end so the
+        # explicit download path can prompt "map a project first" and
+        # re-download, while implicit callers leave it parked.
+        if no_project_pending:
+            logger.info("[bundle] %d file-backed asset(s) parked — no project mapped for conv=%s",
+                        len(no_project_pending), staging_conv_id)
 
         # 5. Resolve FILE attachment paths and materialize the top-level FlowMessage
         # via the unified write path. ``materialize_flow_message`` saves the
@@ -1425,6 +1282,11 @@ async def unpack_bundle(
         except Exception:
             pass
 
+        # No-project gate (raised AFTER the FM materialized): assets are parked
+        # until a project is mapped. The explicit download path surfaces this so
+        # the UI prompts + re-downloads.
+        if no_project_pending and raise_on_no_project:
+            raise FlowMessageNoProjectError(no_project_pending)
         return top_fm
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)

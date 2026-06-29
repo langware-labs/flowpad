@@ -39,6 +39,13 @@ class WebFetchEntry(TranscriptEntry):
         self.tool_name = tool_name
         self.tool_use_id = tool_use_id
 
+    def to_flow_data(self) -> list:
+        return self._tool_flow_data(
+            {"url": self.url, "query": self.query, "prompt": self.prompt},
+            default_name="WebFetch",
+            extra={"result": self.result_preview, "status_code": self.status_code},
+        )
+
     def to_dict(self) -> dict:
         return {
             **super().to_dict(),

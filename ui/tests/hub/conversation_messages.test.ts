@@ -16,6 +16,7 @@ import { Conversation } from '@sdk/entities/conversation';
 import type { FlowMessage } from '@sdk/entities/flow-message';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { testEntityName, trackForCleanup } from '../_cleanup';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import { getBobCreds, hubAvailable, localBackendIsCloudLoggedIn } from './_hub';
 
@@ -52,7 +53,7 @@ describe(`hub: alice + bob ping-pong loop to ${STOP_AT}`, () => {
   it('alice ignites and increments on every reply from bob', async () => {
     // 1. Create conv + invite bob via the SDK. The companion bob test polls
     //    his pending invitations and accepts this one within ~seconds.
-    const conv = new Conversation({ title: `pong-${Date.now()}` });
+    const conv = trackForCleanup(new Conversation({ title: testEntityName('conv') }));
     await conv.save();
     await conv.share([bobEmail!]);
     expect(conv.remote).toBe(true);

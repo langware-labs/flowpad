@@ -1102,17 +1102,16 @@ class FsRecordsActionsMixin:
                 status_code=400,
             )
 
-        # Resolve ScopeFilter → narrowed roots. When the filter is None,
-        # fall back to the indexer's default_roots() (full walk).
+        # Resolve ScopeFilter → indexer roots.
         #
-        # Orphan-aware runs (orphan_action != INDEX) intentionally walk the
-        # full root set even when a scope is selected: orphan-ness is defined
-        # globally (a record is orphan iff its source is missing anywhere),
-        # so ``seen_ids`` must cover all references. The scope filter is then
-        # re-applied inside the indexer to narrow which orphans get reported
-        # and acted on. Without this, a record physically inside project A
-        # but referenced from project B would be falsely flagged as orphan
-        # when the user picks scope=A.
+        # Orphan-aware runs (orphan_action != INDEX) walk the FULL all-projects
+        # root set even when a narrower scope is selected: orphan-ness is
+        # defined globally (a record is orphan iff its source is missing
+        # anywhere), so ``seen_ids`` must cover all references. The scope
+        # filter is re-applied inside the indexer to narrow which orphans get
+        # reported and acted on. Without the global walk, a record physically
+        # inside project A but referenced from project B — or any project not
+        # in the selected scope — would be falsely flagged as orphan.
         # Path-scoped run: a single explicit path short-circuits all root
         # resolution — walk just that file's directory. Cheap and bounded.
         if index_path:
@@ -1132,10 +1131,23 @@ class FsRecordsActionsMixin:
                     project_id=Project.derive_id_for_path(_root_dir),
                 ),
             )
-        elif orphan_action != OrphanAction.INDEX:
-            custom_roots = None
         else:
-            custom_roots = await self._resolve_scoped_roots(scope_filter)
+            # Orphan-aware runs (orphan_action != INDEX) must walk EVERY source
+            # so ``seen_ids`` is global — a record is orphan iff its source is
+            # missing *anywhere*. ``default_roots()`` (the old
+            # ``custom_roots = None``) only covers USER_HOME's targeted
+            # expanders + the backend CWD + system; it does NOT descend the
+            # registered project file trees, so every project record went
+            # unseen and was mass-deleted as a false orphan. Resolve the FULL
+            # all-projects root set for orphan runs; INDEX runs use the
+            # requested scope. Either way ``scope_filter`` is still passed to
+            # the indexer (opts.scope_filter) to narrow which orphans are acted on.
+            roots_scope = (
+                await get_all_scope_filter(create_missing=False)
+                if orphan_action != OrphanAction.INDEX
+                else scope_filter
+            )
+            custom_roots = await self._resolve_scoped_roots(roots_scope)
             if isinstance(custom_roots, ApiFailResponse):
                 return custom_roots
 
@@ -1154,11 +1166,17 @@ class FsRecordsActionsMixin:
 
         driver = get_db_driver()
 
-        # Rebuild mode: clear DB + FTS for target types first
+        # Rebuild mode: clear DB + FTS + on-disk .hash sentinels for target
+        # types first. Clearing sentinels is essential: rebuild drops the DB
+        # rows, and a leftover sentinel would let skip-fresh treat a now-missing
+        # row as "fresh" and never re-create it (the same poisoning DELETE
+        # avoids via clear_hashes_for_type). Mirrors the DELETE /index path.
         if rebuild:
+            from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
             targets = types_filter or INDEXABLE_TYPES
             for t in targets:
                 await driver.delete_entities_by_type(str(t))
+                FSRecord.clear_hashes_for_type(str(t))
             if not filter_type:
                 # Only full-clear FTS on aggregate rebuild; per-type rebuild
                 # already cleared matching FTS rows via delete_entities_by_type
@@ -1820,27 +1838,10 @@ class FsRecordsActionsMixin:
                     await rec.sync_to_db()
                 except Exception as e:
                     logging.debug(f"[fs-records] sync_to_db skipped on create: {e}")
-                # Stamp scope from the resolved asset path so HTTP-created
-                # records match indexer-discovered ones; otherwise the entity
-                # is born scope=None and search_filters treats it as
-                # unscoped (cluster #4 regression). asset_ref is populated
-                # only after sync_to_db (via Entity._prepare_for_storage),
-                # so this fires post-sync and patches the entity in place.
-                try:
-                    from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
-                    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-                    info = SchemaRegistry.get(str(record_type))
-                    entity_cls = info.entity_cls if info is not None else None
-                    if entity_cls is not None:
-                        entity = await entity_cls.get_one({"id": rec.id})
-                        if entity is not None and getattr(entity, "scope", None) in (None, ""):
-                            asset_path = getattr(entity, "asset_ref", None)
-                            inferred = classify_path(asset_path) if asset_path else None
-                            if inferred:
-                                entity.scope = inferred
-                                await entity.save(notify=False)
-                except Exception as e:
-                    logging.debug(f"[fs-records] scope-stamp skipped on create: {e}")
+                # scope is stamped from the resolved asset path inside
+                # Entity._prepare_for_storage (the single save chokepoint), so
+                # HTTP-created records are born with a scope just like
+                # indexer-discovered ones — no post-create patch needed here.
                 await self._broadcast_fs_record_op("create", record_type, rec.id, rec.meta_dict())
                 return ApiSuccessResponse(data=rec.meta_dict())
 

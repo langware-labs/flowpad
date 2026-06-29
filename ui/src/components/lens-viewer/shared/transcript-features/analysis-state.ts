@@ -48,7 +48,7 @@ export function deriveAnalysisAction(args: {
     : { kind: 'open', trace: newest, runCount: traces.length, stale: false };
 }
 
-function createdMs(e: { created_date?: string | Date | null }): number {
+export function createdMs(e: { created_date?: string | Date | null }): number {
   const v = e.created_date;
   if (!v) return NaN;
   return v instanceof Date ? v.getTime() : Date.parse(String(v));

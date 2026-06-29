@@ -466,6 +466,13 @@ class WorkerDriver(Protocol):
         used by restart recovery to decide whether to relaunch with resume."""
         ...
 
+    def supports_plan_mode(self, process: "AgenticProcess") -> bool:
+        """True iff this vendor supports CLI plan mode in headless turns
+        (``--permission-mode plan`` + the ExitPlanMode/AskUserQuestion tools).
+        Surfaced on the entity as ``supports_plan_mode`` so the chat UI can
+        offer the plan toggle only for capable workers. Defaults False."""
+        ...
+
     # ── History materialisation ──────────────────────────────────────────────
 
     def load_history(self, process: "AgenticProcess") -> list[FlowData]:
