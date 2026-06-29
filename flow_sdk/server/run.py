@@ -65,7 +65,7 @@ def _pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
         return True
-    except (ProcessLookupError, PermissionError):
+    except (OSError, SystemError):
         return False
 
 
