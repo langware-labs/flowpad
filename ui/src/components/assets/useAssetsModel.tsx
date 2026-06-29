@@ -12,8 +12,9 @@ import { notify } from '@src/notifications';
 import { getDescriptor } from '@src/components/quick-create';
 import { useAssetStats } from '@src/hooks/use-asset-stats';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
+import { useAssetTreeRefresh } from '@src/hooks/useAssetTreeRefresh';
 import { useSystemTools } from '@src/hooks/use-system-tools';
-import { assetScopeBucket, defaultScopeFilter, unionAssetBucket } from '@src/lib/scope-filter';
+import { assetScopeBucket, defaultScopeFilter, scopeFilterKey, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
@@ -82,8 +83,6 @@ export function useAssetsModel() {
   const { currentDock, navigation } = useDockNavigation();
   const { types: allTypes, isLoading: typesLoading } = useAssetTypes();
   const { indexType } = useSystemTools();
-
-  const [refreshKey, setRefreshKey] = useState(0);
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
   const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
@@ -149,6 +148,13 @@ export function useAssetsModel() {
   );
 
   const visibleTypes = useMemo(() => allTypes.filter((t) => !HIDDEN_TYPES.has(t.type_name)), [allTypes]);
+
+  // Reactivity only: keep each type's tree root live. A created / indexed /
+  // scanned entity arrives as a `data_op`; this re-fetches the affected root
+  // (and primes empty-at-mount roots) so the list never goes stale until a
+  // manual refresh. See useAssetTreeRefresh.
+  const visibleTypeNames = useMemo(() => visibleTypes.map((t) => t.type_name), [visibleTypes]);
+  useAssetTreeRefresh(visibleTypeNames, effectiveFilter.scope);
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
     [allTypes],
@@ -195,10 +201,6 @@ export function useAssetsModel() {
     return currentDock ?? null;
   }, [isProjectView, effectivePointer, currentDock, openAsset, openAssetTypeId]);
 
-  const handleScanComplete = useCallback(() => {
-    setRefreshKey((k) => k + 1);
-  }, []);
-
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
     setNewTypeDialogOpen(true);
@@ -226,7 +228,6 @@ export function useAssetsModel() {
         await fsManager.mkdir(typeId, folderRelPath);
         fsStore.getState().invalidate(typeId, newFolderTarget.relPath || '/', 'browse');
         refreshNode(markdownFolderNodeId(newFolderTarget.typeid, newFolderTarget.absPath));
-        setRefreshKey((k) => k + 1);
         notify.success({ title: 'Folder created' });
       } catch (err) {
         console.error('[AssetsNavigator] Failed to create folder:', err);
@@ -250,19 +251,23 @@ export function useAssetsModel() {
       try {
         const res = await descriptor.create({ project: dataContext.project ?? null, name });
         notify.success({ title: res.toastTitle });
+        // Local create: poke this type's tree root so the new entity shows
+        // immediately. The useAssetTreeRefresh subscription also covers it
+        // (and remote/async creates), but the explicit poke avoids waiting on
+        // the data_op echo — mirroring the delete path.
+        refreshNode(`asset-type:${newTypeTarget}:${scopeFilterKey(effectiveFilter.scope)}`);
         if (res.pointer) {
           navigateAsset(res.pointer);
           setNewTypeTarget(null);
           return;
         }
-        setRefreshKey((k) => k + 1);
       } catch (err) {
         console.error('[AssetsNavigator] Failed to create:', err);
         notify.error({ title: 'Failed to create' });
       }
       setNewTypeTarget(null);
     },
-    [newTypeTarget, navigateAsset],
+    [newTypeTarget, navigateAsset, effectiveFilter.scope],
   );
 
   const handleMoveMarkdownItem = useCallback(
@@ -316,7 +321,6 @@ export function useAssetsModel() {
           }
         }
 
-        setRefreshKey((k) => k + 1);
         try {
           await indexType('markdown', effectiveFilter.scope, { force: true });
         } catch (err) {
@@ -342,7 +346,6 @@ export function useAssetsModel() {
             onNew: handleNew,
             onCreateFolder: handleCreateFolder,
             onMoveItem: handleMoveMarkdownItem,
-            onScanComplete: handleScanComplete,
             filter: effectiveFilter,
             onOpenKnowledgeBrowser: (absPath) =>
               navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
@@ -353,7 +356,6 @@ export function useAssetsModel() {
           onNew: handleNew,
           creatableTypes,
           filter: effectiveFilter,
-          onScanComplete: handleScanComplete,
         });
       }),
     [
@@ -364,7 +366,6 @@ export function useAssetsModel() {
       handleMoveMarkdownItem,
       creatableTypes,
       effectiveFilter,
-      handleScanComplete,
       navigation,
     ],
   );
@@ -391,7 +392,5 @@ export function useAssetsModel() {
     newFolderDialogOpen,
     setNewFolderDialogOpen,
     handleNewFolderConfirm,
-    // exposed for tests / future
-    refreshKey,
   } as const;
 }
