@@ -1,14 +1,10 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
-import {
-  ActionInfo,
-  dataManager,
-  FlowpadDiagnosis,
-  sendDiagnosisEmailReport,
-  sendDiagnosisReport,
-} from '@sdk';
+import { ActionInfo, dataManager, forwardDiagnosis, sendDiagnosisEmailReport } from '@sdk';
 import { streamDiagnose, type DiagnoseEvent } from '@src/components/diagnose/diagnose-stream';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CheckCircle2, Info, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -17,11 +13,7 @@ interface DiagnoseModalProps {
   open: boolean;
   onClose: () => void;
   /** Open the full-diagnosis popup in place of this one (the "View diagnosis" button). */
-  onViewDiagnosis: (args: {
-    diagnosisId: string;
-    conversationId?: string;
-    flowMessageId?: string;
-  }) => void;
+  onViewDiagnosis: (args: { diagnosisId: string; conversationId?: string }) => void;
 }
 
 interface Line {
@@ -52,6 +44,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   const feedHandoffRef = useRef(false); // guards the one-shot feed-card post
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const { navigation } = useDockNavigation();
 
   // Reset everything whenever the modal is (re)opened.
   useEffect(() => {
@@ -163,18 +156,16 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
     }
   }, [done, handleClose]);
 
-  // "Forward" — post the formatted report into the chosen conversation.
+  // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
     async (conversationId: string) => {
       if (!done?.diagnosisId) return;
       setReporting(true);
       setReportError(undefined);
       try {
-        const diag = await FlowpadDiagnosis.getById<FlowpadDiagnosis>(done.diagnosisId);
-        await sendDiagnosisReport(conversationId, {
-          flowMessageId: done.flowMessageId,
-          fallbackText: diag?.summary || diag?.title || '',
-        });
+        await forwardDiagnosis(conversationId, done.diagnosisId);
+        // Open the conversation we forwarded into, replacing this modal.
+        navigation.openDock(DockPointer.forConversation(conversationId));
         handleClose();
       } catch (e) {
         setReportError(e instanceof Error ? e.message : 'Failed to send report');
@@ -182,7 +173,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
         setReporting(false);
       }
     },
-    [done, handleClose],
+    [done, handleClose, navigation],
   );
 
   return (
@@ -312,7 +303,6 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
                     onViewDiagnosis({
                       diagnosisId: done.diagnosisId!,
                       conversationId: done.conversationId ?? undefined,
-                      flowMessageId: done.flowMessageId ?? undefined,
                     })
                   }
                   className="flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"

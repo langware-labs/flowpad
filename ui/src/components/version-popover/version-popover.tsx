@@ -276,7 +276,6 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [diagReport, setDiagReport] = useState<{
     diagnosisId: string;
     conversationId?: string;
-    flowMessageId?: string;
   } | null>(null);
 
   const isDev = useIsDev();
@@ -719,7 +718,6 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         open={!!diagReport}
         diagnosisId={diagReport?.diagnosisId}
         conversationId={diagReport?.conversationId}
-        flowMessageId={diagReport?.flowMessageId}
         onClose={() => setDiagReport(null)}
       />
     </Popover>

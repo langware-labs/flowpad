@@ -5,6 +5,7 @@ import { DocsNavigator } from '@src/components/docs-viewer/DocsNavigator';
 import { AssetsNavigator } from '@src/components/assets/AssetsNavigator';
 import { TriggersNavigator } from '@src/components/triggers-view/TriggersNavigator';
 import { ChatsNavigator } from '@src/components/chats-navigator/ChatsNavigator';
+import { ExplorerNavigator } from '@src/components/explorer-view/ExplorerNavigator';
 
 /**
  * Navigator registry — maps a ViewType to the component that fills the shared
@@ -24,4 +25,5 @@ export const NAVIGATOR_REGISTRY: Partial<Record<ViewType, ComponentType>> = {
   [ViewType.TRIGGERS]: TriggersNavigator,
   [ViewType.CRON]: TriggersNavigator,
   [ViewType.SHELL]: ChatsNavigator,
+  [ViewType.EXPLORER]: ExplorerNavigator,
 };

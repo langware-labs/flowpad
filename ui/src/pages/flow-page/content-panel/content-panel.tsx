@@ -137,12 +137,6 @@ export function ContentPanel() {
     [navigation],
   );
 
-  const handleExplorerPathChange = useCallback(
-    (path: string) => {
-      navigation.openDock(DockPointer.forExplorer(path));
-    },
-    [navigation],
-  );
 
   // Shell entity sync is automatic via DataOp stream — no manual sync needed.
 
@@ -286,7 +280,6 @@ export function ContentPanel() {
             enabledFilters={enabledFilters}
             onEnabledFiltersChange={setEnabledFilters}
             onFileSelect={handleExplorerFileSelect}
-            onPathChange={handleExplorerPathChange}
           />
         );
       case ViewType.TRIGGERS:
