@@ -1959,7 +1959,7 @@ msgstr "משבוט…"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx:213
 #: src/components/terminal/interactive-terminal/PaneBar.tsx:23
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx:153
-#: src/components/version-popover/diagnose-modal.tsx:324
+#: src/components/version-popover/diagnose-modal.tsx:290
 #: src/components/version-popover/diagnosis-report-modal.tsx:83
 #: src/components/workflow-runner/detail/StepDetailPane.tsx:92
 msgid "Close"
@@ -3126,7 +3126,7 @@ msgstr "בעיבוד משימה…"
 msgid "Deriving with Claude…"
 msgstr "בעיבוד עם Claude…"
 
-#: src/components/version-popover/diagnose-modal.tsx:191
+#: src/components/version-popover/diagnose-modal.tsx:165
 msgid "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
 msgstr "תאר את הבעיה או הדבק את השגיאה, ואז הפעל אבחון. השאר ריק לסריקה אבחון מלאה. העוזר בודק את Flowpad, מתקן מה שבטוח, ותיעד את התוצאה."
 
@@ -3191,7 +3191,7 @@ msgstr "מצב פיתוח פעיל — לחץ כדי להשבית"
 msgid "Developer Tools"
 msgstr "כלים למפתחים"
 
-#: src/components/version-popover/diagnose-modal.tsx:275
+#: src/components/version-popover/diagnose-modal.tsx:249
 #: src/components/version-popover/version-popover.tsx:704
 msgid "Diagnose"
 msgstr "אבחון"
@@ -3200,7 +3200,7 @@ msgstr "אבחון"
 msgid "Diagnose a Flowpad issue"
 msgstr "אבחן בעיה ב-Flowpad"
 
-#: src/components/version-popover/diagnose-modal.tsx:185
+#: src/components/version-popover/diagnose-modal.tsx:159
 msgid "Diagnose Flowpad"
 msgstr "אבחון Flowpad"
 
@@ -3225,7 +3225,7 @@ msgstr "דיאגנוזה הועברה בהצלחה"
 msgid "Diagnosis not found."
 msgstr "לא נמצאה אבחנה."
 
-#: src/components/version-popover/diagnose-modal.tsx:241
+#: src/components/version-popover/diagnose-modal.tsx:215
 msgid "Diagnosis recorded."
 msgstr "אבחון נשמר."
 
@@ -3233,11 +3233,11 @@ msgstr "אבחון נשמר."
 msgid "Diagnosis reported to the Flowpad team"
 msgstr "דיאגנוזה דווחה לצוות Flowpad"
 
-#: src/components/version-popover/diagnose-modal.tsx:243
+#: src/components/version-popover/diagnose-modal.tsx:217
 msgid "Diagnosis was not recorded — try again."
 msgstr "אבחון לא נשמר — נסה שוב."
 
-#: src/components/version-popover/diagnose-modal.tsx:242
+#: src/components/version-popover/diagnose-modal.tsx:216
 msgid "Diagnostic complete — no issue found."
 msgstr "אבחון הושלם — לא נמצאה בעיה."
 
@@ -11284,7 +11284,7 @@ msgstr "זה יסיר באופן קבוע את תמונת הקשר השמורה.
 #~ msgid "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 #~ msgstr "זה פועל ברקע — אתה מוזמן לסגור את זה ולהמשיך לעבוד. כשזה יסתיים, התוצאה (וכל פעולה) תחכה לך בעמוד הבית שלך."
 
-#: src/components/version-popover/diagnose-modal.tsx:258
+#: src/components/version-popover/diagnose-modal.tsx:232
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 msgstr "התהליך רץ ברקע — אפשר להמשיך לעבוד. כשהוא יסתיים, התוצאה (וכל פעולה שתידרש) תחכה לכם בפיד הבית."
 
@@ -11947,7 +11947,7 @@ msgid "View Context Details"
 msgstr "צפה בפרטי ההקשר"
 
 #: src/components/account/system-diagnoses.tsx:152
-#: src/components/version-popover/diagnose-modal.tsx:316
+#: src/components/version-popover/diagnose-modal.tsx:282
 msgid "View diagnosis"
 msgstr "צפה בדיאגנוזה"
 
@@ -12104,7 +12104,7 @@ msgstr "מה צריך העובד לעשות עם הודעה זו?"
 msgid "What to look at"
 msgstr "מה לבדוק"
 
-#: src/components/version-popover/diagnose-modal.tsx:202
+#: src/components/version-popover/diagnose-modal.tsx:176
 msgid "What went wrong? (leave empty for a full sweep)"
 msgstr "מה השתבש? (השאר ריק לסריקה מלאה)"
 
@@ -12179,7 +12179,7 @@ msgstr "עץ עבודה"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx:257
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx:76
-#: src/components/version-popover/diagnose-modal.tsx:228
+#: src/components/version-popover/diagnose-modal.tsx:202
 msgid "Working…"
 msgstr "בתהליך…"
 
@@ -12214,7 +12214,7 @@ msgstr "אתה"
 msgid "You become the host — you decide what gets shared into the room."
 msgstr "אתה הופך למנחה - אתה מחליט מה משותף לחדר."
 
-#: src/components/version-popover/diagnose-modal.tsx:255
+#: src/components/version-popover/diagnose-modal.tsx:229
 msgid "You can close this window."
 msgstr "אפשר לסגור את החלון הזה."
 
