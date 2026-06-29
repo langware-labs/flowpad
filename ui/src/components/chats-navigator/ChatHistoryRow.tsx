@@ -1,21 +1,22 @@
 import { AgenticProcess } from '@sdk';
 import { cn } from '@src/lib/utils';
-import { Star, Trash2 } from 'lucide-react';
+import { MessageSquare, Star, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import {
   WorkerIcon,
-  buildHistorySubline,
   pickHistoryTitle,
   timeAgo,
 } from '@src/components/entity-execution-panel/history-row';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
+import { ChatPromptsPopover } from './ChatPromptsPopover';
 
 /**
  * One chat-history row in the Chats navigator. Pure presentation over the
- * shared `history-row` formatters (worker glyph, title, subline, time-ago) so it
+ * shared `history-row` formatters (worker glyph, title, time-ago) so it
  * stays consistent with the terminal HistoryModal + the chat dropdown. Click
  * selects (URL-first, owned by the parent); star/trash are per-row side effects
- * revealed on hover.
+ * revealed on hover. Project · branch live only in the row tooltip; the
+ * message count is a chip that peeks the session's prompt list.
  */
 interface ChatHistoryRowProps {
   entry: WorkerHistoryEntry;
@@ -31,7 +32,9 @@ export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, on
     ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null
     : null;
   const title = pickHistoryTitle(process, entry);
-  const subline = buildHistorySubline(entry);
+  // Project · branch survive only as a hover tooltip on the row (no visible subline).
+  const meta = [entry.project_name, entry.git_branch].filter(Boolean).join(' · ');
+  const hasMsgs = !!entry.message_count && entry.message_count > 0;
   const fav = process?.favorite_index != null;
 
   return (
@@ -46,10 +49,11 @@ export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, on
         }
       }}
       className={cn(
-        'group flex cursor-pointer flex-col gap-0.5 border-b px-3 py-2 text-xs outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50',
+        'group cursor-pointer border-b px-3 py-2 text-xs outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50',
         selected && 'bg-muted',
       )}
       data-testid="chat-history-row"
+      title={meta || undefined}
     >
       <div className="flex items-center gap-1.5">
         <WorkerIcon workerType={entry.worker_type} />
@@ -85,8 +89,24 @@ export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, on
             <Trash2 className="h-3 w-3" />
           </button>
         </div>
+        {/* Message-count chip — sits to the right of the time. Click opens the
+            session's prompt-list review (popover anchored here), like history. */}
+        {hasMsgs && (
+          <ChatPromptsPopover entry={entry}>
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              title={t`View prompts`}
+              aria-label={t`View prompts`}
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              data-testid="chat-history-row-msgcount"
+            >
+              <MessageSquare className="h-2.5 w-2.5" />
+              {entry.message_count}
+            </button>
+          </ChatPromptsPopover>
+        )}
       </div>
-      {subline && <span className="truncate pl-[1.125rem] text-[11px] text-muted-foreground">{subline}</span>}
     </div>
   );
 }
