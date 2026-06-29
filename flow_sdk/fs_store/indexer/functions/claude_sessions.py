@@ -332,9 +332,9 @@ def claude_session_to_transcript_dicts(rec: Record, include_raw_json: bool = Fal
     """Return filtered transcript entries as serializable dicts."""
     entries = claude_session_filtered_entries(rec)
     if include_raw_json:
-        return [e.meta_dict() for e in entries]
+        return [e.to_dict() for e in entries]
     return [
-        {k: v for k, v in e.meta_dict().items() if k != "raw_json"}
+        {k: v for k, v in e.to_dict().items() if k != "raw_json"}
         for e in entries
     ]
 
