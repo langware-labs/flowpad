@@ -36,8 +36,6 @@ export interface AssetTypeRootDeps {
   filter?: AssetFilter;
   /** Max number of children to fetch per type. Default 200. */
   childrenPageSize?: number;
-  /** Called after a successful scan so the parent can refresh counts. */
-  onScanComplete?: (typeName: string) => void;
   /** Called after a successful asset delete so the parent can refresh counts + tree. */
   onDeleteComplete?: (typeName: string) => void;
 }
@@ -220,8 +218,9 @@ function buildRootToolbar(type: AssetTypeInfo, deps: AssetTypeRootDeps): Toolbar
       icon: <RefreshCw />,
       label: 'Scan for changes',
       run: async () => {
+        // Reindex this type; the resulting data_ops flow back to the tree via
+        // the useAssetTreeRefresh subscription, which re-fetches this root.
         await deps.indexType(type.type_name, deps.filter?.scope);
-        deps.onScanComplete?.(type.type_name);
       },
     },
   ];

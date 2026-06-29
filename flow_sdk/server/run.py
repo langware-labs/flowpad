@@ -21,6 +21,21 @@ _sdk_path = os.path.join(_repo_root, "sdk", "python")
 if _sdk_path not in sys.path:
     sys.path.insert(0, _sdk_path)
 
+# On Windows the console/stdio defaults to a legacy code page (e.g. cp1252),
+# so a log line carrying non-ASCII text — a Hebrew project path, an exception
+# traceback referencing one — raises UnicodeEncodeError ("charmap") inside the
+# logging StreamHandler, which then silently drops the record. Force UTF-8 on
+# stdio before anything logs so those tracebacks reach the captured backend log
+# instead of vanishing. No-op on platforms that already default to UTF-8.
+from flow_sdk.config import PLATFORM_WIN32
+
+if sys.platform == PLATFORM_WIN32:
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
+
 import uvicorn
 from dotenv import load_dotenv
 from filelock import FileLock, Timeout
