@@ -409,7 +409,7 @@ msgstr "+{0} נוספים"
 msgid "+{0} more notifications"
 msgstr "+{0} התראות נוספות"
 
-#: src/components/open-project-component/open-project-component.tsx:519
+#: src/components/open-project-component/open-project-component.tsx:521
 msgid "+{hiddenCount} more — search to find them"
 msgstr "+{hiddenCount} עוד — חפש כדי למצוא אותם"
 
@@ -1386,7 +1386,7 @@ msgstr "ירור נתיבים"
 msgid "Brief description of what this skill does"
 msgstr "תיאור קצר של מה שהכישור הזה עושה"
 
-#: src/components/open-project-component/open-project-component.tsx:637
+#: src/components/open-project-component/open-project-component.tsx:639
 msgid "Browse"
 msgstr "עיין"
 
@@ -1731,7 +1731,7 @@ msgstr "הפעלת Claude Code"
 msgid "Claude Code Status"
 msgstr "סטטוס Claude Code"
 
-#: src/components/open-project-component/open-project-component.tsx:250
+#: src/components/open-project-component/open-project-component.tsx:252
 msgid "Claude project"
 msgstr "פרויקט Claude"
 
@@ -2050,7 +2050,7 @@ msgstr "Codex"
 msgid "Codex (restored session)"
 msgstr "קודקס (סשן שוחזר)"
 
-#: src/components/open-project-component/open-project-component.tsx:253
+#: src/components/open-project-component/open-project-component.tsx:255
 msgid "Codex project"
 msgstr "פרויקט Codex"
 
@@ -2365,7 +2365,7 @@ msgstr "הועתק ללוח"
 msgid "Copilot"
 msgstr "Copilot"
 
-#: src/components/open-project-component/open-project-component.tsx:256
+#: src/components/open-project-component/open-project-component.tsx:258
 msgid "Copilot project"
 msgstr "פרויקט Copilot"
 
@@ -2671,12 +2671,12 @@ msgstr "צור"
 msgid "Create new"
 msgstr "צור חדש"
 
-#: src/components/open-project-component/open-project-component.tsx:388
-#: src/components/open-project-component/open-project-component.tsx:542
+#: src/components/open-project-component/open-project-component.tsx:390
+#: src/components/open-project-component/open-project-component.tsx:544
 msgid "Create New"
 msgstr "צור חדש"
 
-#: src/components/open-project-component/open-project-component.tsx:608
+#: src/components/open-project-component/open-project-component.tsx:610
 #: src/components/project-setup-screen/project-setup-screen.tsx:258
 msgid "Create New Project"
 msgstr "צור פרויקט חדש"
@@ -2690,7 +2690,7 @@ msgstr "צור חדש…"
 msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
 msgstr "צור אחד על ידי שמיטת <0>index.md</0> עם frontmatter מסוג <1>type: markdown_index</1> לתוך תיקיית תיעוד והפעלת <2>flow record index <path></2>."
 
-#: src/components/open-project-component/open-project-component.tsx:657
+#: src/components/open-project-component/open-project-component.tsx:659
 #: src/components/project-setup-screen/project-setup-screen.tsx:289
 msgid "Create Project"
 msgstr "צור פרויקט"
@@ -2725,7 +2725,7 @@ msgstr "יוצר {0}..."
 msgid "Creating skill..."
 msgstr "יוצר מיומנות..."
 
-#: src/components/open-project-component/open-project-component.tsx:654
+#: src/components/open-project-component/open-project-component.tsx:656
 #: src/components/project-setup-screen/project-setup-screen.tsx:290
 msgid "Creating..."
 msgstr "יוצר..."
@@ -3674,7 +3674,7 @@ msgstr "סיים את החדר"
 msgid "Ensure the claude CLI is installed and authenticated."
 msgstr "ודא שה-claude CLI מותקן ומאומת."
 
-#: src/components/open-project-component/open-project-component.tsx:609
+#: src/components/open-project-component/open-project-component.tsx:611
 msgid "Enter a name and choose a parent folder for the new project."
 msgstr "הזן שם ובחר תיקייה הורית לפרויקט החדש."
 
@@ -4232,7 +4232,7 @@ msgstr "פתיחת הקובץ נכשלה"
 msgid "Failed to open folder"
 msgstr "כישלון בפתיחת תיקייה"
 
-#: src/components/open-project-component/open-project-component.tsx:840
+#: src/components/open-project-component/open-project-component.tsx:852
 #: src/components/project-setup-screen/project-setup-screen.tsx:186
 #: src/components/quick-create/QuickCreateDialog.tsx:163
 #: src/components/quick-create/QuickCreateMenu.tsx:73
@@ -4248,8 +4248,8 @@ msgstr "נכשל בפתיחת קובץ הרישום"
 msgid "Failed to open logs folder"
 msgstr "נכשל בפתיחת תיקיית הרישומים"
 
-#: src/components/open-project-component/open-project-component.tsx:824
-#: src/components/open-project-component/open-project-component.tsx:858
+#: src/components/open-project-component/open-project-component.tsx:836
+#: src/components/open-project-component/open-project-component.tsx:870
 #: src/tabs/useTerminalStripController.tsx:182
 msgid "Failed to open project"
 msgstr "נכשל בפתיחת הפרויקט"
@@ -5985,7 +5985,7 @@ msgstr "טעינת משאבי הפרויקט..."
 
 #: src/components/assets/ProjectPickerModal.tsx:212
 #: src/components/directory-tree/ProjectsDirectoryTree.tsx:70
-#: src/components/open-project-component/open-project-component.tsx:211
+#: src/components/open-project-component/open-project-component.tsx:213
 msgid "Loading projects..."
 msgstr "טוען פרויקטים..."
 
@@ -6090,7 +6090,7 @@ msgstr "טוען..."
 #: src/components/graph-context/GraphContextViewer.tsx:288
 #: src/components/inbox-view/InboxView.tsx:1080
 #: src/components/inbox-view/InboxView.tsx:1129
-#: src/components/open-project-component/open-project-component.tsx:481
+#: src/components/open-project-component/open-project-component.tsx:483
 #: src/components/project-selector/ProjectSelector.tsx:99
 #: src/components/search-index/EntitySearchModal.tsx:83
 #: src/components/tasks-viewer/TasksViewer.tsx:128
@@ -6215,7 +6215,7 @@ msgstr "מנוהל"
 msgid "Managed by FlowPad sniffer"
 msgstr "מנוהל על ידי FlowPad sniffer"
 
-#: src/components/open-project-component/open-project-component.tsx:338
+#: src/components/open-project-component/open-project-component.tsx:340
 msgid "Map remote project"
 msgstr "מיפוי פרויקט מרחוק"
 
@@ -6475,7 +6475,7 @@ msgstr "הארטיפקט שלי"
 msgid "My Schedule"
 msgstr "הלוח שלי"
 
-#: src/components/open-project-component/open-project-component.tsx:617
+#: src/components/open-project-component/open-project-component.tsx:619
 #: src/components/project-setup-screen/project-setup-screen.tsx:265
 msgid "my-awesome-project"
 msgstr "my-awesome-project"
@@ -6832,7 +6832,7 @@ msgstr "אין כרטיסי קהילה"
 
 #: src/components/hooks-view/HooksBrowser.tsx:264
 #: src/components/hooks-view/HooksBrowser.tsx:352
-#: src/components/open-project-component/open-project-component.tsx:834
+#: src/components/open-project-component/open-project-component.tsx:846
 #: src/components/project-setup-screen/project-setup-screen.tsx:175
 #: src/components/quick-create/QuickCreateDialog.tsx:156
 #: src/components/quick-create/QuickCreateMenu.tsx:66
@@ -7077,8 +7077,8 @@ msgid "no matches"
 msgstr "אין התאמות"
 
 #: src/components/assets/ProjectPickerModal.tsx:216
-#: src/components/open-project-component/open-project-component.tsx:215
-#: src/components/open-project-component/open-project-component.tsx:485
+#: src/components/open-project-component/open-project-component.tsx:217
+#: src/components/open-project-component/open-project-component.tsx:487
 #: src/components/project-selector/ProjectSelector.tsx:103
 msgid "No matches"
 msgstr "אין התאמות"
@@ -7213,8 +7213,8 @@ msgid "No projects"
 msgstr "אין פרויקטים"
 
 #: src/components/assets/ProjectPickerModal.tsx:216
-#: src/components/open-project-component/open-project-component.tsx:215
-#: src/components/open-project-component/open-project-component.tsx:485
+#: src/components/open-project-component/open-project-component.tsx:217
+#: src/components/open-project-component/open-project-component.tsx:487
 #: src/pages/live-status/LiveStatus.tsx:1203
 msgid "No projects found"
 msgstr "לא נמצאו פרויקטים"
@@ -7800,8 +7800,8 @@ msgstr "פתיחת מסמכי Flowpad"
 msgid "Open folder"
 msgstr "פתח תיקייה"
 
-#: src/components/open-project-component/open-project-component.tsx:379
-#: src/components/open-project-component/open-project-component.tsx:532
+#: src/components/open-project-component/open-project-component.tsx:381
+#: src/components/open-project-component/open-project-component.tsx:534
 msgid "Open Folder"
 msgstr "פתח תיקייה"
 
@@ -8041,7 +8041,7 @@ msgstr "פתח תמליל"
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
 
-#: src/components/open-project-component/open-project-component.tsx:854
+#: src/components/open-project-component/open-project-component.tsx:866
 msgid "Opened existing project"
 msgstr "פתח פרויקט קיים"
 
@@ -8154,7 +8154,7 @@ msgstr "עמודים"
 msgid "Parent directory"
 msgstr "תיקייה אב"
 
-#: src/components/open-project-component/open-project-component.tsx:626
+#: src/components/open-project-component/open-project-component.tsx:628
 #: src/components/project-selector/NewProjectDialog.tsx:87
 msgid "Parent folder"
 msgstr "תיקייה הורית"
@@ -8273,7 +8273,7 @@ msgstr "בחרו איש קשר או הזינו כתובת אימייל"
 msgid "Pick a contact to see your conversations with them."
 msgstr "בחר איש קשר כדי לראות את השיחות שלך איתו."
 
-#: src/components/open-project-component/open-project-component.tsx:340
+#: src/components/open-project-component/open-project-component.tsx:342
 msgid "Pick a project"
 msgstr "בחר פרויקט"
 
@@ -8285,7 +8285,7 @@ msgstr "בחר תיקיית פרויקט"
 msgid "Pick project…"
 msgstr "בחר פרויקט…"
 
-#: src/components/open-project-component/open-project-component.tsx:348
+#: src/components/open-project-component/open-project-component.tsx:350
 msgid "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
 msgstr "בחר את תיקיית הפרויקט המקומית בה צריכה לפעול שיחה זו. אנו נשתמש בה כדיוקטוריום העבודה לסשנים של Claude Code."
 
@@ -8368,7 +8368,7 @@ msgstr "אנא פנה לתמיכה ב-<0>support@flowpad.ai</0>"
 msgid "Please enter a project name"
 msgstr "אנא הזן שם פרויקט"
 
-#: src/components/open-project-component/open-project-component.tsx:590
+#: src/components/open-project-component/open-project-component.tsx:592
 msgid "Please fill in both fields"
 msgstr "אנא מלא את שני השדות"
 
@@ -8384,7 +8384,7 @@ msgstr "בואו להתחבר כדי להציג ולנהל משתנים סביב
 msgid "Please make sure the server is running."
 msgstr "אנא ודא שהשרת פועל."
 
-#: src/components/open-project-component/open-project-component.tsx:792
+#: src/components/open-project-component/open-project-component.tsx:804
 msgid "Please provide a valid project path"
 msgstr "אנא ספק נתיב פרויקט חוקי"
 
@@ -8584,7 +8584,7 @@ msgstr "תיקיית פרויקט…"
 msgid "Project is fixed after the first message — start a new session to change it."
 msgstr "הפרויקט קבוע לאחר ההודעה הראשונה — התחל סשן חדש כדי לשנות אותו."
 
-#: src/components/open-project-component/open-project-component.tsx:614
+#: src/components/open-project-component/open-project-component.tsx:616
 #: src/components/project-selector/NewProjectDialog.tsx:77
 msgid "Project name"
 msgstr "שם הפרויקט"
@@ -8614,7 +8614,7 @@ msgstr "פרויקט נדרש"
 msgid "projected"
 msgstr "משוער"
 
-#: src/components/open-project-component/open-project-component.tsx:341
+#: src/components/open-project-component/open-project-component.tsx:343
 #: src/pages/live-status/LiveStatus.tsx:206
 msgid "Projects"
 msgstr "פרויקטים"
@@ -9866,8 +9866,8 @@ msgstr "חפש צמתים…"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx:494
 #: src/components/assets/ProjectPickerModal.tsx:175
-#: src/components/open-project-component/open-project-component.tsx:170
-#: src/components/open-project-component/open-project-component.tsx:469
+#: src/components/open-project-component/open-project-component.tsx:172
+#: src/components/open-project-component/open-project-component.tsx:471
 msgid "Search projects…"
 msgstr "חיפוש פרויקטים…"
 
@@ -9974,7 +9974,7 @@ msgstr "בחר קובץ כדי לראות זרימות מחוברות"
 msgid "Select a project"
 msgstr "בחר פרויקט"
 
-#: src/components/open-project-component/open-project-component.tsx:349
+#: src/components/open-project-component/open-project-component.tsx:351
 msgid "Select a project or open a new folder."
 msgstr "בחר פרויקט או פתח תיקייה חדשה."
 
@@ -10061,7 +10061,7 @@ msgstr "בחר מצב"
 msgid "Select multiple"
 msgstr "בחר מרובים"
 
-#: src/components/open-project-component/open-project-component.tsx:632
+#: src/components/open-project-component/open-project-component.tsx:634
 #: src/components/project-setup-screen/project-setup-screen.tsx:278
 msgid "Select parent folder"
 msgstr "בחר תיקייה הורית"
@@ -10458,7 +10458,7 @@ msgstr "הצג מידע עמדה"
 msgid "Show scope overrides"
 msgstr "הצג עקיפות טווח"
 
-#: src/components/open-project-component/open-project-component.tsx:196
+#: src/components/open-project-component/open-project-component.tsx:198
 msgid "Show SDK-shipped system projects (Flowpad Assistant)"
 msgstr "הצג פרויקטים של מערכת שנשלחו עם SDK (Flowpad Assistant)"
 
@@ -10467,7 +10467,7 @@ msgid "Show Sessions"
 msgstr "הצג הפעלות"
 
 #: src/components/collaboration/sidebar/DocsCategory.tsx:216
-#: src/components/open-project-component/open-project-component.tsx:204
+#: src/components/open-project-component/open-project-component.tsx:206
 msgid "Show system"
 msgstr "הצג מערכת"
 
@@ -10959,7 +10959,7 @@ msgstr "מנקה…"
 msgid "Switch project"
 msgstr "החלף פרויקט"
 
-#: src/components/open-project-component/open-project-component.tsx:461
+#: src/components/open-project-component/open-project-component.tsx:463
 #: src/components/status-bar.tsx:116
 msgid "Switch Project"
 msgstr "החלף פרויקט"
@@ -10994,7 +10994,7 @@ msgid "Synthesize event"
 msgstr "הסנתז אירוע"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx:440
-#: src/components/open-project-component/open-project-component.tsx:262
+#: src/components/open-project-component/open-project-component.tsx:264
 msgid "system"
 msgstr "מערכת"
 
@@ -11240,11 +11240,11 @@ msgstr "לשיחה זו אין סשן שניתן להמשיך בו."
 msgid "This context is empty."
 msgstr "הקשר זה ריק."
 
-#: src/components/open-project-component/open-project-component.tsx:345
+#: src/components/open-project-component/open-project-component.tsx:347
 msgid "This conversation came from a project called \"{remoteProjectName}\" on another machine. Pick the local project folder it should map to."
 msgstr "שיחה זו באה מפרויקט בשם \"${remoteProjectName}\" במכונה אחרת. בחר את תיקיית הפרויקט המקומית שאליה היא צריכה להתאים."
 
-#: src/components/open-project-component/open-project-component.tsx:346
+#: src/components/open-project-component/open-project-component.tsx:348
 msgid "This conversation came from a project on another machine. Pick the local project folder it should map to."
 msgstr "שיחה זו באה מפרויקט במכונה אחרת. בחר את תיקיית הפרויקט המקומית שאליה היא צריכה להתאים."
 
@@ -11374,7 +11374,7 @@ msgstr "אל"
 msgid "To Do"
 msgstr "לביצוע"
 
-#: src/components/open-project-component/open-project-component.tsx:277
+#: src/components/open-project-component/open-project-component.tsx:279
 msgid "today"
 msgstr "היום"
 
@@ -12222,7 +12222,7 @@ msgstr "אפשר לסגור את החלון הזה."
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "עדיין אינכם משויכים לארגון. ארגונים מוגדרים ב‑Flowpad Cloud, ולאחר שתתווספו — הארגון שלכם וחבריו יופיעו כאן."
 
-#: src/components/open-project-component/open-project-component.tsx:789
+#: src/components/open-project-component/open-project-component.tsx:801
 #: src/components/project-setup-screen/project-setup-screen.tsx:203
 msgid "You must be logged in"
 msgstr "עליך להיות מחובר"
