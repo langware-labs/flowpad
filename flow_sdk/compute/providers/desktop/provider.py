@@ -152,6 +152,54 @@ else:
     termios = None
 
 
+def _winpty_safe_cwd(path: str) -> str:
+    """Return a winpty-safe working directory on Windows.
+
+    winpty rejects directory paths whose characters aren't representable in the
+    system ANSI code page, surfacing as ``[WinError 123]`` (ERROR_INVALID_NAME)
+    — e.g. a project folder with Hebrew characters on a Latin Windows install.
+    The 8.3 "short" name of an *existing* directory is pure ASCII, so resolve to
+    it when available. Falls back to the original path when short-name
+    generation is disabled on the volume (``GetShortPathNameW`` then echoes the
+    input) or anything goes wrong, so we never regress the ASCII-path case.
+
+    The directory must already exist for the short name to resolve — callers
+    must ``os.makedirs`` first.
+    """
+    if sys.platform != PLATFORM_WIN32:
+        return path
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW  # type: ignore[attr-defined]
+        GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        GetShortPathNameW.restype = wintypes.DWORD
+
+        needed = GetShortPathNameW(path, None, 0)
+        if needed == 0:
+            return path
+        buf = ctypes.create_unicode_buffer(needed)
+        if GetShortPathNameW(path, buf, needed) == 0:
+            return path
+        return buf.value or path
+    except Exception:
+        return path
+
+
+def _ps_single_quote(value: str) -> str:
+    """Quote a string as a PowerShell single-quoted literal.
+
+    Single-quoted PowerShell strings are fully literal — no variable expansion,
+    no escape sequences — so the only character needing escaping is the single
+    quote itself, which is doubled. This makes any path safe to embed in a
+    script regardless of its contents: quotes, ``$``, backticks, or non-ASCII
+    (e.g. Hebrew) characters can neither break out of the literal nor inject
+    code.
+    """
+    return "'" + value.replace("'", "''") + "'"
+
+
 def get_shell_rc_file() -> str:
     """
     Detect the current shell and return the appropriate rc file path.
@@ -775,13 +823,18 @@ class LocalComputeProvider(ComputeProvider):
                 # Ensure working directory exists (required on Windows for winpty)
                 os.makedirs(pty_working_dir, exist_ok=True)
 
+                # winpty can't represent non-ASCII (e.g. Hebrew) cwd paths and
+                # fails with [WinError 123]; spawn against the ASCII 8.3 short
+                # name on Windows. No-op elsewhere and for already-ASCII paths.
+                spawn_cwd = _winpty_safe_cwd(pty_working_dir)
+
                 logger.info(
-                    f"Spawning PTY (session={session_id}, cwd={pty_working_dir!r}, "
+                    f"Spawning PTY (session={session_id}, cwd={spawn_cwd!r}, "
                     f"argv={final_spawn_args!r})"
                 )
                 return PtyProcess.spawn(  # type: ignore[union-attr]
                     final_spawn_args,
-                    cwd=pty_working_dir,
+                    cwd=spawn_cwd,
                     env=env,
                     dimensions=(rows, cols),
                 )
@@ -1079,10 +1132,18 @@ class LocalComputeProvider(ComputeProvider):
             return None
 
         elif sys.platform == PLATFORM_WIN32:
+            # Embed initial_dir as a single-quoted PowerShell literal (no
+            # variable expansion) and escape any embedded quote by doubling it,
+            # so a path with quotes/`$`/backticks — or Hebrew characters — can't
+            # break the script. Force UTF-8 on the dialog's stdout (and decode
+            # it as UTF-8) so a returned non-ASCII path survives intact instead
+            # of being mangled by the console's cp1252 default.
             selected_path_line = (
-                f'$d.SelectedPath = "{initial_dir}"; ' if initial_dir else ""
+                f"$d.SelectedPath = {_ps_single_quote(initial_dir)}; "
+                if initial_dir else ""
             )
             ps_script = (
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
                 "Add-Type -AssemblyName System.Windows.Forms; "
                 "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
                 f"{selected_path_line}"
@@ -1090,9 +1151,9 @@ class LocalComputeProvider(ComputeProvider):
             )
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", ps_script],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, encoding="utf-8", timeout=120,
             )
-            output = result.stdout.strip()
+            output = (result.stdout or "").strip()
             return output or None
 
         else:
