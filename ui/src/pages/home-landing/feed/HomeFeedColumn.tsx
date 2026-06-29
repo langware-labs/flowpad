@@ -3,12 +3,14 @@ import {
   MessageSuggest,
   QueryRequest,
   UserNote,
-  sendDiagnosisReport,
+  forwardDiagnosis,
   sendDiagnosisEmailReport,
   type EntityFeedData,
 } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useFeedMutations } from '@src/hooks/use-feed-mutations';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { MessageSquarePlus, Rss, Send } from 'lucide-react';
 import { useCallback, useMemo, useState, type FormEvent } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -42,6 +44,7 @@ export function HomeFeedColumn() {
     await refetch();
   }, [refetch]);
   const { dismiss } = useFeedMutations({ refetch: refetchVoid });
+  const { navigation } = useDockNavigation();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [sendError, setSendError] = useState<{ entryId: string; message: string } | null>(null);
   const [commentOpen, setCommentOpen] = useState(false);
@@ -82,17 +85,17 @@ export function HomeFeedColumn() {
     [],
   );
 
-  // "Forward" — post the formatted report into the chosen conversation.
+  // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForwardMessageSuggest = useCallback(
     async (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => {
+      if (!suggest.diagnosis_id) return;
       setBusyId(entry.id ?? null);
       setSendError(null);
       try {
-        await sendDiagnosisReport(conversationId, {
-          flowMessageId: suggest.flow_message_id ?? undefined,
-          fallbackText: suggest.message_text ?? '',
-        });
-        // Report/Forward no longer dismiss the card — only the eye-off button does.
+        await forwardDiagnosis(conversationId, suggest.diagnosis_id);
+        // Open the conversation we forwarded into. (Forward/Report never dismiss the
+        // card — only the eye-off button does.)
+        navigation.openDock(DockPointer.forConversation(conversationId));
       } catch (err: unknown) {
         setSendError({
           entryId: entry.id ?? '',
@@ -102,7 +105,7 @@ export function HomeFeedColumn() {
         setBusyId(null);
       }
     },
-    [],
+    [navigation],
   );
 
   const handleCreateNote = useCallback(

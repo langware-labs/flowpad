@@ -2,12 +2,14 @@ import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-actio
 import {
   copyToClipboard,
   FlowpadDiagnosis,
+  forwardDiagnosis,
   sendDiagnosisEmailReport,
-  sendDiagnosisReport,
   TypeId,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { notify } from '@src/notifications';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Copy, Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -15,10 +17,9 @@ import { Trans, useLingui } from '@lingui/react/macro';
 interface DiagnosisDetailsProps {
   /** The FlowpadDiagnosis entity id (UUID, no type prefix). */
   diagnosisId: string;
-  /** The suggested support conversation — enables the report buttons (issue only). */
+  /** The support conversation — excluded from the Forward picker (you don't forward
+   *  a diagnosis back into the conversation that already holds it). */
   conversationId?: string;
-  /** The recorded support FlowMessage — its text is the full formatted report on Forward. */
-  flowMessageId?: string;
   /** Called after a successful report/forward send (e.g. the modal closes). */
   onActionDone?: () => void;
   /**
@@ -60,21 +61,21 @@ export function diagnosisToText(diag: FlowpadDiagnosis): string {
 
 /**
  * The shared diagnosis body — title, the four fields (summary / symptoms / root
- * cause / fix), a Copy-all button, and (for a real issue) the same Report/Forward
- * buttons as a Feed entry. Rendered identically by the popup
- * (`DiagnosisReportModal`), the routed full-tab viewer (`DiagnosisViewer`), and
- * the feed's View action, so the three never diverge. Report routes through the
- * shared `sendDiagnosisReport` — the single report path.
+ * cause / fix), a Copy-all button, and the same Report/Forward buttons as a Feed
+ * entry. Rendered identically by the popup (`DiagnosisReportModal`), the routed
+ * full-tab viewer (`DiagnosisViewer`), and the feed's View action, so the three
+ * never diverge. Report emails the team (`sendDiagnosisEmailReport`); Forward
+ * attaches the diagnosis entity into the chosen conversation (`forwardDiagnosis`).
  */
 export function DiagnosisDetails({
   diagnosisId,
   conversationId,
-  flowMessageId,
   onActionDone,
   variant = 'modal',
 }: DiagnosisDetailsProps) {
   const { t } = useLingui();
   const isPage = variant === 'page';
+  const { navigation } = useDockNavigation();
   const typeId = useMemo(
     () => (diagnosisId ? new TypeId(FlowpadDiagnosis.type, diagnosisId) : null),
     [diagnosisId],
@@ -107,16 +108,16 @@ export function DiagnosisDetails({
     }
   }, [diagnosisId, onActionDone, t]);
 
-  // "Forward" — post the formatted report into the chosen conversation.
+  // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
     async (targetConversationId: string) => {
+      if (!diagnosisId) return;
       setReporting(true);
       setReportError(undefined);
       try {
-        await sendDiagnosisReport(targetConversationId, {
-          flowMessageId,
-          fallbackText: diag?.summary || diag?.title || '',
-        });
+        await forwardDiagnosis(targetConversationId, diagnosisId);
+        // Open the conversation we just forwarded into, replacing the current view.
+        navigation.openDock(DockPointer.forConversation(targetConversationId));
         onActionDone?.();
       } catch (e) {
         setReportError(e instanceof Error ? e.message : t`Failed to send report`);
@@ -124,7 +125,7 @@ export function DiagnosisDetails({
         setReporting(false);
       }
     },
-    [diag, flowMessageId, onActionDone, t],
+    [diagnosisId, navigation, onActionDone, t],
   );
 
   if (isLoading) {
