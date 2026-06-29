@@ -1,7 +1,32 @@
 import type { ReactNode } from 'react';
 import type { DockPointer } from '@src/navigation/DockPointer';
-import type { BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
+import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
 import type { ScopeFilter } from '@src/lib/scope-filter';
+
+/**
+ * Context handed to a `MultiSelectAction.run`: the scope root the selection
+ * belongs to (for refresh) and a `clearSelection` to reset after the action.
+ */
+export interface MultiSelectActionContext {
+  scopeRootId: string | null;
+  clearSelection: () => void;
+}
+
+/**
+ * A bulk action shown in the navigator's selection bar. Resolved per-selection
+ * by `NavigatorDescriptor.bulkActions`, so the toolbar adjusts to what's
+ * selected (e.g. entity types offer Share; folder files don't).
+ */
+export interface MultiSelectAction {
+  id: string;
+  icon: ReactNode;
+  label: string;
+  /** `destructive` styles the button and makes it the Delete-key target. */
+  variant?: 'default' | 'destructive';
+  /** Disable (don't hide) the button when it can't apply to this selection. */
+  enabledWhen?: (selected: Browseable[]) => boolean;
+  run: (selected: Browseable[], ctx: MultiSelectActionContext) => void | Promise<void>;
+}
 
 /**
  * Context-aware search for a navigator. When present, `NavigatorPanel` shows a
@@ -33,9 +58,11 @@ export interface NavigatorSearchConfig {
  * (`BrowseableTree`).
  *
  * Invariants (mirrors BrowseableTree + CLAUDE.md URL-first rule):
- * - Selection is URL-first: a row click calls `onNavigate` (→ openDock) only;
+ * - Navigation is URL-first: a row click calls `onNavigate` (→ openDock) only;
  *   the active row derives from `activePointer`/`activeKey` (from currentDock).
- * - There is exactly one active item. Multi-select is intentionally unsupported.
+ *   There is exactly one *active* (open) item.
+ * - Multi-select is a separate, ephemeral cursor (opt-in via `bulkActions`),
+ *   orthogonal to the URL-first active item — never persisted or in the URL.
  */
 export interface NavigatorHeader {
   title?: string;
@@ -88,6 +115,11 @@ export interface NavigatorDescriptor {
 
   /** Inject a context provider around the tree (e.g. AssetTypeCountsContext). */
   wrapTree?: (tree: ReactNode) => ReactNode;
+
+  /** Opt into multi-select. Resolves the selection toolbar from the currently
+   *  selected rows, so different selected types surface different actions. When
+   *  omitted, the navigator has no multi-select and behaves exactly as before. */
+  bulkActions?: (selected: Browseable[]) => MultiSelectAction[];
 
   /** Escape hatch: render this instead of the BrowseableTree row engine, for
    *  lists too rich/irregular for the row model (e.g. the Triggers list with

@@ -32,7 +32,7 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter
 
@@ -1252,24 +1252,81 @@ async def index_system_content() -> None:
 
 
 # Bookmark.source value tagging the onboarding favorite (used to find/delete it
-# on reset). FeedEntry onboarding assets are tagged by ``data.kind == "wiki_tip"``.
+# on reset). The Welcome FeedEntry is tagged by ``data.category`` below.
 _ONBOARDING_SOURCE = "onboarding"
+# data.category on the Welcome feed entry — the stable id used to find/dedup/delete
+# it (robust vs the old ``data.kind == "wiki_tip"`` match).
+_ONBOARDING_FEED_CATEGORY = "onboarding.feed_welcome"
+# Preference gate (a dotted PrefKey in preferences.json, mirrored to the frontend
+# registry as PrefKey.ONBOARDING_WELCOME). true|missing → seed on start, then false.
+# This is the ONE key both the backend (this seeder) and the frontend (a surfaced
+# toggle) write; both merge into preferences.json so they don't clobber other keys,
+# but this key itself is last-writer-wins by design (the backend writes it at most
+# once per boot, so a concurrent UI toggle losing is benign: re-seed or don't).
+_ONBOARDING_WELCOME_KEY = "preferences.onboarding.welcome"
+# Default when the key is absent: true ⇒ a fresh instance seeds on first start.
+_ONBOARDING_WELCOME_DEFAULT = True
+
+
+def _preferences_path() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().instance_dir / "preferences.json"
+
+
+def _read_pref(key: str, default: Any) -> Any:
+    """Read a single key from the instance preferences.json (the same file the
+    frontend prefMan owns). Returns ``default`` if the file/key is missing."""
+    path = _preferences_path()
+    if not path.exists():
+        return default
+    try:
+        prefs = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+    if not isinstance(prefs, dict) or key not in prefs:
+        return default
+    return prefs[key]
+
+
+def _write_pref(key: str, value: Any) -> None:
+    """Merge a single key into preferences.json (read-modify-write), preserving
+    every other key the frontend owns — the backend mirror of the store's
+    merge-on-save, so the two writers never clobber each other."""
+    path = _preferences_path()
+    prefs: dict = {}
+    if path.exists():
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                prefs = parsed
+        except (OSError, json.JSONDecodeError):
+            prefs = {}
+    prefs[key] = value
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
+    except OSError as e:
+        logging.warning(f"[onboarding] failed to write {key} to {path}: {e}")
 
 
 async def create_onboarding_assets(user: User) -> None:
     """One-shot onboarding seed for the user's home view:
 
-    1. a favorite **bookmark** to the Welcome markdown, and
-    2. a Welcome **WikiTip feed entry** (``data.kind == "wiki_tip"`` →
-       WikiTipFeedEntryCard; see docs/wikitip.md).
+    1. a favorite **bookmark** to the Welcome markdown (already a fixture), and
+    2. a Welcome **feed entry** tagged ``data.category == "onboarding.feed_welcome"``
+       (kept ``kind == "wiki_tip"`` so WikiTipFeedEntryCard renders it and a click
+       opens the Welcome wiki; see docs/wikitip.md).
 
-    Idempotent via ``user.onboarded``. Runs at the tail of
-    ``index_system_content`` (after the markdown index has landed), so the
-    Welcome doc is a plain lookup — no polling. If it's still not found, leave
-    ``onboarded`` False so the next process restart retries. Re-run after
-    clearing ``onboarded`` (see ``/api/v1/onboarding/reset``) to re-seed.
+    Gated by the ``preferences.onboarding.welcome`` preference (true|missing → seed,
+    then flip it to false). Each asset is created idempotently so a stray true with
+    assets already present can't duplicate them. Runs at the tail of
+    ``index_system_content`` (after the markdown index has landed), so the Welcome
+    doc is a plain lookup. If it's still not found, leave the gate on so the next
+    process restart retries. Flip the gate back on (or ``/onboarding/reset``) to
+    re-seed.
     """
-    if getattr(user, "onboarded", False):
+    if not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT):
         return
 
     from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
@@ -1282,32 +1339,48 @@ async def create_onboarding_assets(user: User) -> None:
         return
     welcome = candidates[0]
 
-    # 1) Favorite bookmark to the Welcome page on the home view.
-    favorite = Bookmark(
-        bookmark_type=BookmarkType.FAVORITE.value,
-        title="Welcome",
-        source=_ONBOARDING_SOURCE,
-        data={
-            "entity_type": "markdown",
-            "entity_id": str(welcome.typeid),
-            "icon": "BookOpen",
-            # The favorite click handler reads asset_ref from data.nav and
-            # routes directly, bypassing a name-resolution hop on click.
-            "nav": {"asset_ref": welcome.asset_ref or ""},
-        },
+    # 1) Favorite bookmark to the Welcome page on the home view (skip if present).
+    has_bookmark = any(
+        getattr(bm, "source", None) == _ONBOARDING_SOURCE
+        for bm in await Bookmark.get_all(source_entity=user.typeid)
     )
-    await favorite.save(owner=user)
+    if not has_bookmark:
+        favorite = Bookmark(
+            bookmark_type=BookmarkType.FAVORITE.value,
+            title="Welcome",
+            source=_ONBOARDING_SOURCE,
+            data={
+                "entity_type": "markdown",
+                "entity_id": str(welcome.typeid),
+                "icon": "BookOpen",
+                # The favorite click handler reads asset_ref from data.nav and
+                # routes directly, bypassing a name-resolution hop on click.
+                "nav": {"asset_ref": welcome.asset_ref or ""},
+            },
+        )
+        await favorite.save(owner=user)
 
-    # 2) WikiTip Home Feed entry pointing at the Welcome page.
-    feed_entry = FeedEntry(
-        feed_status=FeedStatus.NEW.value,
-        data={"type_id": str(welcome.typeid), "kind": "wiki_tip", "wiki": "Welcome"},
+    # 2) Welcome Home Feed entry pointing at the Welcome wiki page (skip if present).
+    has_feed = any(
+        (fe.data or {}).get("category") == _ONBOARDING_FEED_CATEGORY
+        for fe in await FeedEntry.get_all(source_entity=user.typeid)
     )
-    await feed_entry.save(user.typeid)
+    if not has_feed:
+        feed_entry = FeedEntry(
+            feed_status=FeedStatus.NEW.value,
+            data={
+                "category": _ONBOARDING_FEED_CATEGORY,
+                "kind": "wiki_tip",
+                "wiki": "Welcome",
+                "type_id": str(welcome.typeid),
+            },
+        )
+        await feed_entry.save(user.typeid)
 
-    user.onboarded = True
-    await user.save()
-    logging.info(f"[bootstrap] Seeded onboarding assets (favorite + WikiTip feed) for user {user.typeid}")
+    # Done — flip the gate off. The pref is the sole onboarding SSOT (nothing reads
+    # the legacy User.onboarded field anymore).
+    _write_pref(_ONBOARDING_WELCOME_KEY, False)
+    logging.info(f"[bootstrap] Seeded onboarding assets (favorite + Welcome feed) for user {user.typeid}")
 
 
 async def _delete_onboarding_assets(user: User) -> int:
@@ -1322,7 +1395,10 @@ async def _delete_onboarding_assets(user: User) -> int:
             await bm.delete()
             removed += 1
     for fe in await FeedEntry.get_all(source_entity=user.typeid):
-        if (fe.data or {}).get("kind") == "wiki_tip":
+        data = fe.data or {}
+        # Match the Welcome feed entry by its category tag; also clean up entries
+        # seeded by the older kind-only tagging so reset stays effective.
+        if data.get("category") == _ONBOARDING_FEED_CATEGORY or data.get("kind") == "wiki_tip":
             await fe.delete()
             removed += 1
     return removed
@@ -1330,23 +1406,22 @@ async def _delete_onboarding_assets(user: User) -> int:
 
 @router.get("/api/v1/onboarding/status")
 async def onboarding_status() -> ApiSuccessResponse[dict]:
-    """Whether onboarding assets have been seeded for the local user. Surfaced
-    in profile settings next to Dev mode."""
-    user = await get_or_create_local_user()
-    return ApiSuccessResponse[dict](data={"onboarded": getattr(user, "onboarded", False)})
+    """Whether onboarding assets have been seeded. Onboarded ≡ the
+    ``preferences.onboarding.welcome`` gate is off. Surfaced in profile settings."""
+    return ApiSuccessResponse[dict](data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)})
 
 
 @router.post("/api/v1/onboarding/reset")
 async def onboarding_reset() -> ApiSuccessResponse[dict]:
-    """Reset onboarding: delete the seeded assets, clear ``onboarded``, and
-    re-seed fresh. A dev/testing affordance surfaced in profile settings."""
+    """Reset onboarding: delete the seeded assets, turn the
+    ``preferences.onboarding.welcome`` gate back on, and re-seed fresh (which flips
+    the gate off again). A dev/testing affordance surfaced in profile settings."""
     user = await get_or_create_local_user()
     removed = await _delete_onboarding_assets(user)
-    user.onboarded = False
-    await user.save()
+    _write_pref(_ONBOARDING_WELCOME_KEY, True)
     await create_onboarding_assets(user)
     logging.info(f"[onboarding/reset] removed {removed} asset(s), re-seeded for user {user.typeid}")
-    return ApiSuccessResponse[dict](data={"onboarded": getattr(user, "onboarded", False)})
+    return ApiSuccessResponse[dict](data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)})
 
 
 # ---------------------------------------------------------------------------
@@ -1392,7 +1467,7 @@ def setup_desktop_filesystem() -> None:
     # topic ids `preferences.<category>.<name>`; the frontend store migrates any
     # legacy flat-keyed preferences.json on load.
     # Legacy location: <workspace>/.flow/settings.json — migrated below.
-    prefs_path = get_instance_settings().instance_dir / "preferences.json"
+    prefs_path = _preferences_path()
     legacy_settings_path = workspace_path / ".flow" / "settings.json"
 
     # Single source of truth for the default-stub shape, keyed by dotted PrefKey.
@@ -1404,6 +1479,9 @@ def setup_desktop_filesystem() -> None:
         "preferences.notifications.sound_key": "supershort-ping",
         "preferences.advanced.scrollback_lines": 1000,
         "preferences.advanced.experimental_flags": {},
+        # Onboarding gate: true (or missing) → seed onboarding assets on start, then
+        # the seeder flips it to false. Flip back on to re-seed on the next start.
+        _ONBOARDING_WELCOME_KEY: _ONBOARDING_WELCOME_DEFAULT,
     }
     known_pref_keys = set(default_prefs.keys())
 

@@ -30,6 +30,7 @@ export function AssetsNavigator() {
     activePointer: m.treeActivePointer,
     activeKey: m.openAssetId,
     onNavigate: m.navigateAsset,
+    bulkActions: m.bulkActions,
     search: {
       recordTypes: searchRecordTypes,
       scope: m.scope,

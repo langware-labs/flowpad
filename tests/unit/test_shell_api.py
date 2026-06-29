@@ -86,8 +86,12 @@ async def test_ensure_live_compute_node_binding_rebinds_stale_node_to_local():
     assert rebound is True
     assert shell.compute_node_id == "local-node"
     assert shell.compute_node_uname == "local"
-    get_by_id.assert_awaited_once_with("compute_node-stale-node")
-    get_by_uname.assert_awaited_once_with("local")
+    # The stale id is looked up; the local fallback then routes through
+    # ComputeNode.get_local(), which does its own id-retry + legacy uname
+    # lookup — so assert the behavioral contract (these lookups happened),
+    # not brittle exact call counts on internal helpers.
+    get_by_id.assert_any_await("compute_node-stale-node")
+    get_by_uname.assert_any_await("local")
     save.assert_awaited_once()
 
 
