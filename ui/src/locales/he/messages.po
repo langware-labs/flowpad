@@ -2553,7 +2553,7 @@ msgstr "לא ניתן לבדוק עדכונים: {error}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx:118
 msgid "Couldn’t load transcript"
-msgstr ""
+msgstr "לא ניתן לטעון את התמליל"
 
 #: src/components/account/db-stats.tsx:80
 msgid "Count"
@@ -5468,7 +5468,7 @@ msgstr "הזמן בדוא״ל…"
 
 #: src/components/conversation/MembersAvatarStack.tsx:286
 msgid "Invite by name or email…"
-msgstr ""
+msgstr "הזמנה לפי שם או אימייל…"
 
 #: src/components/account/organization-panel.tsx:196
 msgid "Invite failed"
@@ -8220,7 +8220,7 @@ msgstr "הערה אישית, פריט שניתן לביצוע"
 
 #: src/components/conversation/MembersAvatarStack.tsx:109
 msgid "Pick a contact or enter an email"
-msgstr ""
+msgstr "בחרו איש קשר או הזינו כתובת אימייל"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx:367
 msgid "Pick a contact to see your conversations with them."
@@ -11226,7 +11226,7 @@ msgstr "זה יסיר באופן קבוע את תמונת הקשר השמורה.
 
 #: src/components/version-popover/diagnose-modal.tsx:258
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
-msgstr ""
+msgstr "התהליך רץ ברקע — אפשר להמשיך לעבוד. כשהוא יסתיים, התוצאה (וכל פעולה שתידרש) תחכה לכם בפיד הבית."
 
 #: src/components/inbox-view/InboxView.tsx:1205
 #: src/components/inbox-view/InboxView.tsx:1242
@@ -12148,11 +12148,11 @@ msgstr "אתה הופך למנחה - אתה מחליט מה משותף לחדר.
 
 #: src/components/version-popover/diagnose-modal.tsx:255
 msgid "You can close this window."
-msgstr ""
+msgstr "אפשר לסגור את החלון הזה."
 
 #: src/components/account/organization-panel.tsx:38
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
-msgstr ""
+msgstr "עדיין אינכם משויכים לארגון. ארגונים מוגדרים ב‑Flowpad Cloud, ולאחר שתתווספו — הארגון שלכם וחבריו יופיעו כאן."
 
 #: src/components/open-project-component/open-project-component.tsx:789
 #: src/components/project-setup-screen/project-setup-screen.tsx:203
