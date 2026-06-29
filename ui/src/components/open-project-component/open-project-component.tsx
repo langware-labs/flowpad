@@ -9,7 +9,9 @@ import {
   type ProjectListItem,
   Project,
   QueryRequest,
+  PrefKey,
 } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { selectProjectContext } from '@src/components/project-selector';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockForProjectEntry } from '@src/tabs/project-entry';
@@ -24,16 +26,6 @@ import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Loader2, Lock, Search, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-
-const SHOW_SYSTEM_PROJECTS_KEY = 'project-list-show-system';
-
-function loadShowSystemFlag(): boolean {
-  try { return localStorage.getItem(SHOW_SYSTEM_PROJECTS_KEY) === 'true'; } catch { return false; }
-}
-
-function saveShowSystemFlag(v: boolean) {
-  try { localStorage.setItem(SHOW_SYSTEM_PROJECTS_KEY, v ? 'true' : 'false'); } catch {}
-}
 
 type TimeFilter = 'today' | 'week' | 'all';
 const TIME_FILTER_KEY = 'project-list-time-filter';
@@ -714,7 +706,7 @@ export function OpenProjectComponent({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showSystem, setShowSystem] = useState<boolean>(loadShowSystemFlag);
+  const [showSystem, setShowSystem] = usePreference<boolean>(PrefKey.SHOW_SYSTEM_PROJECTS);
   const devMode = useDevMode();
   const isAdvanced = useIsAdvanced();
 
@@ -734,8 +726,7 @@ export function OpenProjectComponent({
 
   const handleShowSystemChange = useCallback((next: boolean) => {
     setShowSystem(next);
-    saveShowSystemFlag(next);
-  }, []);
+  }, [setShowSystem]);
 
   useEffect(() => {
     if (!open) {

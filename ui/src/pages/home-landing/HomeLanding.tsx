@@ -10,7 +10,8 @@ import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly } from '@src/components/view-mode';
 import { useProjects } from '@src/hooks/use-projects';
-import { claudeSessionManager, dataContext } from '@sdk';
+import { claudeSessionManager, dataContext, PrefKey } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
@@ -41,7 +42,6 @@ import { Trans, useLingui } from '@lingui/react/macro';
  *   - Right column: Feed
  * URL: /dock/home
  */
-const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
 const _SCAN_DISMISSED_KEY = 'flowpad-scan-dismissed';
 
 export function HomeLanding() {
@@ -100,6 +100,7 @@ export function HomeLanding() {
   const { project: currentProject } = useProject();
   const { resetAndRescan, scanInfo, lastScanResult } = useSystemTools();
   const [showWelcome, setShowWelcome] = useState(false);
+  const [indexApproved, setIndexApproved] = usePreference<boolean>(PrefKey.INDEXING_APPROVED);
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
 
   // Detect scan completion: when lastScanResult changes to a new value, capture it for display
@@ -113,9 +114,9 @@ export function HomeLanding() {
 
   // Show welcome modal when never_indexed, unless user has already approved or dismissed this session.
   useEffect(() => {
-    if (localStorage.getItem(_INDEX_APPROVED_KEY) || sessionStorage.getItem(_SCAN_DISMISSED_KEY) || !scanInfo) return;
+    if (indexApproved || sessionStorage.getItem(_SCAN_DISMISSED_KEY) || !scanInfo) return;
     if (scanInfo.never_indexed) setShowWelcome(true);
-  }, [scanInfo]);
+  }, [scanInfo, indexApproved]);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
   const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
@@ -320,7 +321,7 @@ export function HomeLanding() {
       <WelcomeModal
         open={showWelcome}
         onStart={() => {
-          localStorage.setItem(_INDEX_APPROVED_KEY, '1');
+          setIndexApproved(true);
           setShowWelcome(false);
           void resetAndRescan();
         }}

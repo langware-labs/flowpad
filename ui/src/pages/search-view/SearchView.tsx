@@ -9,7 +9,8 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { dataContext, dataManager, systemTools } from '@sdk';
+import { dataContext, dataManager, systemTools, PrefKey } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { SearchCalibration, SearchFilters, loadStoredCalibration, saveCalibration, useRecordSearch } from '@src/hooks/use-record-search';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -21,7 +22,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 
 const LS_KEY = 'flowpad-search-filters';
-const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
 const _SCAN_DISMISSED_KEY = 'flowpad-scan-dismissed';
 
 function loadStoredFilters(): SearchFilters {
@@ -110,6 +110,7 @@ export function SearchView() {
   const { state: statusState } = useIndexStatus();
   const [indexState, setIndexState] = useState<IndexState>('loading');
   const [modalOpen, setModalOpen] = useState(false);
+  const [indexApproved, setIndexApproved] = usePreference<boolean>(PrefKey.INDEXING_APPROVED);
 
   useEffect(() => {
     if (statusState.phase !== 'ready') return;
@@ -120,8 +121,8 @@ export function SearchView() {
   }, [statusState]);
 
   useEffect(() => {
-    if (indexState === 'never_indexed' && !localStorage.getItem(_INDEX_APPROVED_KEY) && !sessionStorage.getItem(_SCAN_DISMISSED_KEY)) setModalOpen(true);
-  }, [indexState]);
+    if (indexState === 'never_indexed' && !indexApproved && !sessionStorage.getItem(_SCAN_DISMISSED_KEY)) setModalOpen(true);
+  }, [indexState, indexApproved]);
 
   // Sync from URL when dock options change (e.g., browser back/forward)
   useEffect(() => {
@@ -352,7 +353,7 @@ export function SearchView() {
         <IndexNowModal
           open={modalOpen}
           types={statusState.status.default_types}
-          onComplete={() => { localStorage.setItem(_INDEX_APPROVED_KEY, '1'); setModalOpen(false); setIndexState('ok'); }}
+          onComplete={() => { setIndexApproved(true); setModalOpen(false); setIndexState('ok'); }}
           onDeny={() => { sessionStorage.setItem(_SCAN_DISMISSED_KEY, '1'); setModalOpen(false); setIndexState('denied'); }}
         />
       )}

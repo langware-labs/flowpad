@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { instancePreferences, PrefKey } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 
 /**
@@ -7,8 +8,9 @@ import { defineGlobal } from '@sdk/utils';
  *  - `'chat'`   → force the chat UI regardless of View mode.
  *  - `'terminal'` → force the xterm terminal regardless of View mode.
  *
- * The user flips it from the bottom-ribbon toggle; once set, it is persisted to
- * localStorage and **takes priority** over the View-mode default until cleared.
+ * Owned by prefMan (`preferences.ui.chat_ui_mode`, a boot key). Stored as a string
+ * where the empty string means "no override" (≡ null); the user flips it from the
+ * bottom-ribbon toggle and it takes priority over the View-mode default until cleared.
  */
 export type ChatUiOverride = 'chat' | 'terminal' | null;
 
@@ -19,30 +21,28 @@ declare global {
   }
 }
 
-const KEY = 'chatUiOverride';
-const LEGACY_KEY = 'chatUiMode';
+const LEGACY_BOOL_KEY = 'chatUiMode';
 
-function load(): ChatUiOverride {
-  const v = localStorage.getItem(KEY);
-  if (v === 'chat' || v === 'terminal') return v;
-  // Migrate the legacy boolean flag: true meant "force chat".
-  if (localStorage.getItem(LEGACY_KEY) === 'true') return 'chat';
-  return null;
+// One-time migration of the legacy boolean flag (true meant "force chat").
+if (
+  typeof localStorage !== 'undefined' &&
+  instancePreferences.get(PrefKey.CHAT_UI_MODE) === '' &&
+  localStorage.getItem(LEGACY_BOOL_KEY) === 'true'
+) {
+  instancePreferences.set(PrefKey.CHAT_UI_MODE, 'chat');
+}
+if (typeof localStorage !== 'undefined') localStorage.removeItem(LEGACY_BOOL_KEY);
+
+function toOverride(v: unknown): ChatUiOverride {
+  return v === 'chat' || v === 'terminal' ? v : null;
 }
 
-let _override: ChatUiOverride = load();
-const _listeners = new Set<(val: ChatUiOverride) => void>();
-
 export function setChatUiOverride(val: ChatUiOverride): void {
-  _override = val;
-  if (val === null) localStorage.removeItem(KEY);
-  else localStorage.setItem(KEY, val);
-  localStorage.removeItem(LEGACY_KEY);
-  _listeners.forEach((fn) => fn(val));
+  instancePreferences.set(PrefKey.CHAT_UI_MODE, val ?? '');
 }
 
 export function getChatUiOverride(): ChatUiOverride {
-  return _override;
+  return toOverride(instancePreferences.get(PrefKey.CHAT_UI_MODE));
 }
 
 // Console helper, back-compatible with the old boolean form:
@@ -53,12 +53,6 @@ defineGlobal('setChatUi', (val: ChatUiOverride | boolean) => {
 defineGlobal('getChatUi', getChatUiOverride);
 
 export function useChatUiOverride(): ChatUiOverride {
-  const [override, setState] = useState(_override);
-  useEffect(() => {
-    _listeners.add(setState);
-    return () => {
-      _listeners.delete(setState);
-    };
-  }, []);
-  return override;
+  const [value] = usePreference<string>(PrefKey.CHAT_UI_MODE);
+  return toOverride(value);
 }
