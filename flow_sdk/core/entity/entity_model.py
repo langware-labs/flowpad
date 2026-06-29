@@ -114,6 +114,20 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    # Git provenance + placement for an asset RECEIVED via a conversation. A raw
+    # ``GitOrigin`` dict ({provider,owner,name,branch,head_commit,rel_path}) —
+    # stored as json to avoid a core→builtin import cycle; construct/validate via
+    # ``flow_sdk.builtin.git_origin.GitOrigin`` at the boundaries. Set ONLY on the
+    # receiver when a shared file-backed asset carried a git origin in the bundle,
+    # so the receiver knows the asset's intended repo-relative location even
+    # without git access. ``persist=TRUE`` → written to the backend record
+    # metadata.json (survives reindex), NOT the asset's user-facing file. Excluded
+    # from ``share()`` (local provenance, never a hub-synced field).
+    git_origin: dict | None = APIField(
+        default=None,
+        persist=Persist.TRUE,
+        description="Git provenance/placement of a received shared asset (local-only; see GitOrigin).",
+    )
     semantic_lock: bool = APIField(
         default=False,
         description=(
@@ -1453,6 +1467,7 @@ class Entity(DBEntity):
                 "created_date", "updated_date",
                 "remote", "system", "fetched_at",
                 "message_count",
+                "git_origin",  # local-only provenance; never a hub-synced field
                 "tags", "project_id", "participants",
             },
         )
