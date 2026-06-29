@@ -820,8 +820,24 @@ class LocalComputeProvider(ComputeProvider):
                     # capability folder) actually takes effect.
                     final_spawn_args = [resolved_cmd, *final_spawn_args[1:]]
 
-                # Ensure working directory exists (required on Windows for winpty)
-                os.makedirs(pty_working_dir, exist_ok=True)
+                # Ensure working directory exists (required on Windows for winpty).
+                # A working dir that arrives already corrupted — e.g. a non-ASCII
+                # path mojibake'd into a literal '?' by a cp1252 decode upstream —
+                # makes os.makedirs raise a bare [WinError 123] that names neither
+                # the cause nor that the path itself is the problem (the original
+                # Hebrew-folder incident). Surface it as an actionable error
+                # instead. This does NOT police paths: a valid dir is created
+                # exactly as before; we only re-frame the failure of an
+                # already-invalid one.
+                try:
+                    os.makedirs(pty_working_dir, exist_ok=True)
+                except OSError as mkdir_exc:
+                    raise RuntimeError(
+                        f"Invalid PTY working directory {pty_working_dir!r}: "
+                        f"{mkdir_exc}. The path may have been corrupted upstream "
+                        f"(e.g. a non-ASCII folder name mangled to '?' by a "
+                        f"non-UTF-8 decode)."
+                    ) from mkdir_exc
 
                 # winpty can't represent non-ASCII (e.g. Hebrew) cwd paths and
                 # fails with [WinError 123]; spawn against the ASCII 8.3 short
@@ -832,12 +848,35 @@ class LocalComputeProvider(ComputeProvider):
                     f"Spawning PTY (session={session_id}, cwd={spawn_cwd!r}, "
                     f"argv={final_spawn_args!r})"
                 )
-                return PtyProcess.spawn(  # type: ignore[union-attr]
-                    final_spawn_args,
-                    cwd=spawn_cwd,
-                    env=env,
-                    dimensions=(rows, cols),
-                )
+                try:
+                    return PtyProcess.spawn(  # type: ignore[union-attr]
+                        final_spawn_args,
+                        cwd=spawn_cwd,
+                        env=env,
+                        dimensions=(rows, cols),
+                    )
+                except Exception as spawn_exc:
+                    # Don't let the spawn failure reach the caller as a bare
+                    # message — the OS error (e.g. [WinError 123]) names neither
+                    # which input was rejected nor the full traceback, which is
+                    # exactly how the Hebrew-cwd diagnosis went unverified. Log
+                    # every spawn input so the NEXT failure is self-diagnosing.
+                    logger.error(
+                        "PTY spawn failed (session=%s): %r\n"
+                        "  argv      = %r\n"
+                        "  cwd(raw)  = %r\n"
+                        "  cwd(spawn)= %r  (short_path_applied=%s)\n"
+                        "  PATH      = %r",
+                        session_id,
+                        spawn_exc,
+                        final_spawn_args,
+                        pty_working_dir,
+                        spawn_cwd,
+                        spawn_cwd != pty_working_dir,
+                        env.get("PATH"),
+                        exc_info=True,
+                    )
+                    raise
 
             try:
                 pty_process = await asyncio.to_thread(_resolve_and_spawn)
@@ -907,7 +946,7 @@ class LocalComputeProvider(ComputeProvider):
                 }
 
             except Exception as e:
-                logger.error(f"Failed to create PTY: {e}")
+                logger.error(f"Failed to create PTY: {e}", exc_info=True)
                 raise RuntimeError(f"Failed to create PTY session: {e}") from e
 
         return self._pty_processes[pty_key]
