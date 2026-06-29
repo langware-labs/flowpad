@@ -14,6 +14,8 @@ import {
 import { usePreference } from '@src/hooks/use-preference';
 import { selectProjectContext } from '@src/components/project-selector';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { SCOPE_SEEDED_VIEWS } from '@src/navigation/NavigationActions';
+import { projectScope } from '@src/lib/scope-filter';
 import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
@@ -700,7 +702,7 @@ export function OpenProjectComponent({
   const { t } = useLingui();
   const { project: currentProject } = useProject();
   const { computeNode } = useAgentContext();
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
 
   const [showCreate, setShowCreate] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -763,16 +765,26 @@ export function OpenProjectComponent({
         // openDock). Resumes the last-active tab, or the project landing when it
         // has no open tab. Without this the active project changed but the URL
         // stayed on the old project's tab, so nothing was selected.
-        //
-        // `contextOnly` (footer Switch Project) deliberately skips this: it only
-        // changes the active-project context — no navigation, no project tab.
-        // Note: this context switch is ephemeral by design — the URL-first
-        // loader re-derives the active project from the URL on the next
-        // navigation, so the switch sticks only until you navigate.
         navigation.openDock(await dockForProjectEntry(project.id));
+      } else if (
+        // contextOnly (footer Switch Project) deliberately does NOT open a
+        // project tab — it just flips the active-project context. But a
+        // scope-seeded view (assets/triggers/files) reads its project from the
+        // URL's `scope-*`, which OUTRANKS the active project — so without this
+        // its counts/lists stay pinned to the old project until a manual scope
+        // change. When the current view is project-scoped, re-scope it IN PLACE
+        // to the new project (same view, no focus pull — exactly like the scope
+        // bar) so the URL follows the switch. A deliberate all/user scope is
+        // left untouched; only an already-project-scoped view follows along.
+        currentDock &&
+        SCOPE_SEEDED_VIEWS.has(currentDock.viewType) &&
+        currentDock.scopeFilter?.mode === 'project' &&
+        currentDock.scopeFilter.activeProjectId !== project.id
+      ) {
+        navigation.openDock(currentDock.withScopeFilter(projectScope(project.id)));
       }
     },
-    [onProjectChanged, onPicked, navigation, contextOnly],
+    [onProjectChanged, onPicked, navigation, currentDock, contextOnly],
   );
 
   const ensureProjectAndSetContext = useCallback(

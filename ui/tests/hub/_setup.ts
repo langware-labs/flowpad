@@ -2,6 +2,16 @@ import { afterAll } from 'vitest';
 
 import { installCleanup } from '../_cleanup';
 
+// The backend port is resolved from `.env.local` in vitest.config.ts and baked
+// in via `define`. Validate it HERE — this setup only loads when the hub
+// project runs — so a missing port hard-fails the hub suite (no silent guess at
+// a non-existent backend) without breaking unrelated projects whose runs also
+// evaluate the hub config file at startup.
+declare const __HUB_BACKEND_PORT__: string;
+if (!__HUB_BACKEND_PORT__) {
+  throw new Error('hub vitest: LOCAL_SERVER_PORT is not set in .env.local — refusing to guess a backend port');
+}
+
 // Track + sweep every live local entity these hub tests mint before sharing to
 // the hub. Scope is LOCAL-backend entities (the realm that created them); the
 // remote hub copy is out of scope.

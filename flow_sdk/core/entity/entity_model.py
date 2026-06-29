@@ -11,6 +11,7 @@ import functools
 from typing import (
     Any,
     ClassVar,
+    Dict,
     List,
     Literal,
     Optional,
@@ -1765,9 +1766,9 @@ class Entity(DBEntity):
                 self.project_id = scope_proj.id
         if getattr(self, "asset_ref", None):
             # Already set (entity update or explicit caller-set path), but the
-            # scope tag may still be unstamped — derive it from the path so
+            # scope tag may still be unstamped — derive it (project-aware) so
             # every save labels its bucket, not just HTTP-create/indexer paths.
-            self._stamp_scope_from_asset_ref()
+            self._stamp_scope()
             return
         type_name = self.get_type()
         info = SchemaRegistry.get(type_name)
@@ -1795,7 +1796,7 @@ class Entity(DBEntity):
         # label its bucket — previously scope was only filled at index time
         # plus per-edge band-aids, so any other writer birthed a scope-less row
         # that leaked into every project scope (e.g. usage_report).
-        self._stamp_scope_from_asset_ref()
+        self._stamp_scope()
 
     @staticmethod
     def _scope_from_path(path) -> str | None:
@@ -1820,6 +1821,31 @@ class Entity(DBEntity):
         inferred = self._scope_from_path(getattr(self, "asset_ref", None))
         if inferred:
             self.scope = inferred
+
+    def _stamp_scope(self) -> None:
+        """Stamp ``scope`` for storage, preferring a resolved project over the
+        path guess.
+
+        ``_scope_from_path`` (``classify_path``) only treats the *server cwd* as
+        a project, so a file inside a real workspace project — which lives under
+        ``user_home`` — is mislabeled ``'user'`` and then filtered out of every
+        project-scoped browse until the indexer walk re-derives it. A resolved
+        ``project_id`` is authoritative: if this entity belongs to a project, it
+        is project-scoped. ``'system'`` (SDK-shipped) paths still win, since that
+        content is never project-scoped user data.
+
+        No-op when there is no ``scope`` field or it is already set, mirroring
+        ``_stamp_scope_from_asset_ref`` (never clobbers an explicit scope).
+        """
+        if not hasattr(self, "scope") or getattr(self, "scope", None) not in (None, ""):
+            return
+        if self._scope_from_path(getattr(self, "asset_ref", None)) == "system":
+            self.scope = "system"
+            return
+        if getattr(self, "project_id", None):
+            self.scope = "project"
+            return
+        self._stamp_scope_from_asset_ref()
 
     async def delete(self):
         """Override delete to invalidate cache when entity is deleted."""
