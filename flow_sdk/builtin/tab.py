@@ -34,7 +34,7 @@ from flow_sdk.builtin.tab_order import (
     filter_for_project,
 )
 from flow_sdk.core import Entity
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.fs_store.identifier import is_valid_uuid, mint_uuid
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -186,13 +186,25 @@ class Tab(Entity):
         return await entity_cls.get_one({"id": self.target_id})
 
 
+async def _visible_tabs_sorted_with_targets() -> (
+    "tuple[list[Tab], dict[tuple[str, str], object]]"
+):
+    """``_visible_tabs_sorted`` plus the batched SHELL/AGENTIC_PROCESS target map
+    it already loaded to reap. The hot read paths (``_build_tab_list`` /
+    ``list_all``) thread that map into ``_populate_tab_statuses`` so the status
+    fill reuses it instead of re-running the same ``id IN (…)`` loads — one set
+    of target queries per request, not two."""
+    tabs = await Tab.get_all({"visible": True})
+    target_map, verified_types = await _load_status_targets(tabs)
+    tabs = await _reap_orphans(tabs, target_map, verified_types)
+    tabs.sort(key=lambda t: (getattr(t, "tab_order", 0) or 0, t.id))
+    return tabs, target_map
+
+
 async def _visible_tabs_sorted() -> list[Tab]:
     """Every visible Tab in canonical GLOBAL order (``tab_order`` asc, ``id`` as
     the deterministic tiebreak so legacy ``tab_order==0`` rows never reshuffle)."""
-    tabs = await Tab.get_all({"visible": True})
-    tabs = await _delete_tabs_for_missing_projects(tabs)
-    tabs = await _delete_tabs_for_missing_targets(tabs)
-    tabs.sort(key=lambda t: (getattr(t, "tab_order", 0) or 0, t.id))
+    tabs, _ = await _visible_tabs_sorted_with_targets()
     return tabs
 
 
@@ -240,67 +252,160 @@ async def delete_tabs_for_missing_project(project_id: str | None) -> int:
     return deleted
 
 
-async def _delete_tabs_for_missing_projects(tabs: list[Tab]) -> list[Tab]:
-    project_ids = sorted({str(t.project_id) for t in tabs if getattr(t, "project_id", None)})
-    if not project_ids:
-        return tabs
-    missing_ids = [pid for pid in project_ids if not await _project_exists(pid)]
-    if not missing_ids:
-        return tabs
-    deleted_ids: set[str] = set()
-    for project_id in missing_ids:
-        try:
-            project_tabs = await Tab.get_all({"project_id": project_id})
-        except Exception:
+async def _load_status_targets(
+    tabs: list[Tab],
+) -> "tuple[dict[tuple[str, str], object], set[str]]":
+    """Batch-load the SHELL and AGENTIC_PROCESS target entities referenced by
+    ``tabs`` — ONE ``id IN (…)`` query per type, vs a ``get_one`` per tab.
+
+    These are the only target types that carry a chip ``status`` and the only
+    ones the orphan-target reaper validates, so a single load serves both the
+    status fill (``_populate_tab_statuses``) and the missing-target reap
+    (``_reap_orphans``) — killing the previous double-read of every
+    agentic_process row.
+
+    Returns ``(by_type_id, verified_types)``. ``verified_types`` lists the types
+    whose query actually ran (or had nothing to load) — a type whose load raised
+    is omitted so the reaper treats its tabs as "could not determine" and leaves
+    them alone, exactly like the old per-tab ``except: continue`` fail-open.
+    """
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    by_type_id: dict[tuple[str, str], object] = {}
+    verified: set[str] = set()
+    for t in (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value):
+        ids = sorted(
+            {str(tab.target_id) for tab in tabs if tab.target_type == t and tab.target_id}
+        )
+        if not ids:
+            verified.add(t)  # nothing referenced == fully known
             continue
-        for tab in project_tabs:
+        cls = SchemaRegistry.get_entity_cls(t)
+        if cls is None:
+            continue
+        try:
+            rows = await cls.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids]))
+            )
+        except Exception:
+            logger.debug("tab status-target batch load failed for %s", t, exc_info=True)
+            continue
+        for r in rows:
+            by_type_id[(t, str(r.id))] = r
+        verified.add(t)
+    return by_type_id, verified
+
+
+async def _existing_project_ids(tabs: list[Tab]) -> "tuple[set[str], set[str], bool]":
+    """Resolve which of the tabs' project ids still exist, via ONE ``id IN (…)``
+    query (vs a ``get_by_id`` per distinct project).
+
+    Returns ``(existing_ids, candidate_ids, ok)`` where ``candidate_ids`` is the
+    set of distinct UUID-shaped ``project_id``s (the only ones eligible for
+    reaping — legacy/non-UUID ids aren't reliable Project keys, same rule as
+    ``_project_exists``) and ``existing_ids`` is the subset of those that exist.
+    The caller reaps ``candidate_ids - existing_ids`` without re-validating shape.
+    ``ok`` is ``False`` if the lookup raised, so the caller fails open and reaps
+    nothing.
+    """
+    candidates = {
+        str(t.project_id)
+        for t in tabs
+        if getattr(t, "project_id", None) and is_valid_uuid(str(t.project_id))
+    }
+    if not candidates:
+        return set(), candidates, True
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+
+    try:
+        rows = await Project.get_all(
+            QueryFilter(
+                match=ExpressionNode(op=QueryOp.IN, operands=["id", sorted(candidates)])
+            )
+        )
+    except Exception:
+        logger.debug("tab project-existence batch load failed", exc_info=True)
+        return set(), candidates, False
+    return {str(r.id) for r in rows}, candidates, True
+
+
+async def _reap_orphans(
+    tabs: list[Tab],
+    target_map: "dict[tuple[str, str], object] | None" = None,
+    verified_types: "set[str] | None" = None,
+) -> list[Tab]:
+    """Drop — and hard-delete the rows for — tabs orphaned by a missing project
+    or a missing agentic_process target. Replaces the old pair of per-row reapers
+    (``_delete_tabs_for_missing_projects`` / ``…_targets``).
+
+    Orphan detection is in-memory off two batched ``id IN (…)`` loads (projects
+    and the agentic_process targets — the latter shared with the status fill via
+    ``target_map``), so the list READ costs O(1) queries instead of
+    O(distinct-projects + agentic_process-tabs) ``get_one``s. Writes fire ONLY
+    when something is genuinely orphaned (rare), so the steady-state read writes
+    nothing.
+
+    Fail-open preserved: a project lookup that raised reaps no project orphans;
+    an agentic_process type whose batch load raised (absent from
+    ``verified_types``) reaps no target orphans — never mass-delete on a transient
+    read error.
+
+    ``agentic_process`` is the only target type reaped: those rows are always
+    DB-backed, so absence == orphan, whereas a missing ``markdown``/asset target
+    is a valid unindexed-but-on-disk row (see ``_backfill_tab_projects``).
+    """
+    if not tabs:
+        return tabs
+    if target_map is None or verified_types is None:
+        target_map, verified_types = await _load_status_targets(tabs)
+    existing_projects, candidate_projects, projects_ok = await _existing_project_ids(tabs)
+
+    deleted_ids: set[str] = set()
+
+    # Missing PROJECT: reap every tab (visible AND hidden) of each absent project
+    # via the shared per-project reaper, so a deleted project leaves no dangling
+    # rows behind — not just the ones currently visible. Fires only for a
+    # genuinely missing project, so the steady-state read does no extra work.
+    if projects_ok:
+        for pid in sorted(candidate_projects - existing_projects):
+            await delete_tabs_for_missing_project(pid)
+            deleted_ids.update(
+                t.id for t in tabs if str(getattr(t, "project_id", None)) == pid
+            )
+
+    # Missing TARGET: an agentic_process tab whose entity row is absent.
+    ap_type = EntityType.AGENTIC_PROCESS.value
+    if ap_type in verified_types:
+        target_orphans = [
+            t
+            for t in tabs
+            if t.id not in deleted_ids
+            and t.target_type == ap_type
+            and t.target_id
+            and (ap_type, str(t.target_id)) not in target_map
+        ]
+        reaped_target = False
+        for tab in target_orphans:
             try:
                 await tab.delete()
             except Exception:
                 continue
             deleted_ids.add(tab.id)
-    if deleted_ids:
-        await broadcast_tabs_changed()
-    return [t for t in tabs if t.id not in deleted_ids]
-
-
-async def _delete_tabs_for_missing_targets(tabs: list[Tab]) -> list[Tab]:
-    """Hard-delete dangling agentic_process tabs whose target row no longer exists
-    — a bare FS stub that never synced, or a process removed out from under the
-    tab. The delete→orphan-Tab cleanup in ``Entity.delete`` never fired (there was
-    no delete) and the missing-PROJECT reaper skips it (its project still exists),
-    so the chip lingers, titled with its raw pointer, and 404s on click. Like that
-    reaper this removes only the stale row (``Tab.delete`` — never ``Tab.close``,
-    so no teardown of a target that isn't there).
-
-    Restricted to ``agentic_process``: those rows are always DB-backed, so absence
-    == orphan, whereas a missing ``markdown``/asset target is a valid
-    unindexed-but-on-disk row (see ``_backfill_tab_projects``) that must NOT be
-    reaped.
-    """
-    ap_type = EntityType.AGENTIC_PROCESS.value
-    candidates = [t for t in tabs if t.target_type == ap_type and t.target_id]
-    if not candidates:
-        return tabs
-    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
-
-    deleted_ids: set[str] = set()
-    for tab in candidates:
-        try:
-            if await AgenticProcess.get_one({"id": str(tab.target_id)}) is not None:
-                continue
-        except Exception:
-            # Fail open: a transient lookup problem must not hard-delete tabs.
-            continue
-        try:
-            await tab.delete()
-        except Exception:
-            continue
-        deleted_ids.add(tab.id)
-    if deleted_ids:
-        # Background reap (no user navigation) — ping clients so the dangling chip
-        # drops live instead of waiting for the next list fetch.
-        await broadcast_tabs_changed()
+            reaped_target = True
+        if reaped_target:
+            # Background reap (no user navigation) — ping clients so the dangling
+            # chip drops live instead of waiting for the next list fetch.
+            await broadcast_tabs_changed()
     return [t for t in tabs if t.id not in deleted_ids]
 
 
@@ -513,17 +618,23 @@ async def reconcile_tab_project(target_type: str, target_id: str, project_id: st
 # in global order, optionally filtered to one project's view.
 
 
-async def _resolve_status(tab: Tab) -> str | None:
+async def _resolve_status(tab: Tab, target: "object" = _UNSET) -> str | None:
     """Best-effort live status for the chip (``closing`` ⇒ disabled affordance).
     Duck-typed: a Shell carries ``status``; an AgenticProcess defers to its linked
     shell (``shell_id``). Absent/unknown ⇒ ``None`` (enabled).
 
     Only terminal targets carry a status, so content/target-less tabs short-circuit
-    BEFORE the ``_target_entity`` DB read — the list path resolves no entity for the
-    ~majority of rows (markdown/asset/settings/search/diff)."""
+    BEFORE any DB read — the list path resolves no entity for the ~majority of rows
+    (markdown/asset/settings/search/diff).
+
+    ``target`` may be passed pre-loaded — the entity ``_populate_tab_statuses``
+    already batch-fetched (or ``None`` when the batch didn't find it) — to skip the
+    per-tab ``get_one``. ``_UNSET`` (the default, for callers without a batch) falls
+    back to a direct ``_target_entity`` read."""
     if tab.target_type not in (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value):
         return None
-    target = await tab._target_entity()
+    if target is _UNSET:
+        target = await tab._target_entity()
     if target is None:
         return None
     status = getattr(target, "status", None)
@@ -546,11 +657,27 @@ def _normalize_project(project: str | None) -> str | None:
     return project
 
 
-async def _populate_tab_statuses(tabs: list[Tab]) -> None:
-    """Populate status and is_disabled fields on a list of Tabs (in-place mutation).
-    Called before serialization to ensure every Tab carries current status from its backing entity."""
+async def _populate_tab_statuses(
+    tabs: list[Tab],
+    target_map: "dict[tuple[str, str], object] | None" = None,
+) -> None:
+    """Populate ``status`` and ``is_disabled`` on a list of Tabs (in-place).
+
+    Resolves the backing SHELL/AGENTIC_PROCESS entities in ONE batched
+    ``id IN (…)`` load per type (``_load_status_targets``) instead of a
+    ``get_one`` per tab, then derives each chip's status from the pre-loaded map.
+    Content/target-less tabs (markdown/asset/settings/…) carry no status and
+    never touch the DB. ``target_map`` may be supplied by a caller that already
+    loaded it, to avoid re-querying."""
+    status_types = (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value)
+    if target_map is None:
+        target_map, _ = await _load_status_targets(tabs)
     for tab in tabs:
-        tab.status = await _resolve_status(tab)
+        if tab.target_type in status_types and tab.target_id:
+            target = target_map.get((tab.target_type, str(tab.target_id)))
+            tab.status = await _resolve_status(tab, target)
+        else:
+            tab.status = None
         tab.is_disabled = tab.status == "closing"
 
 
@@ -585,8 +712,14 @@ async def _backfill_tab_projects(tabs: list[Tab]) -> None:
     unindexed claude-session lens, an editor on an unindexed markdown), or minted
     by an older client. The list is the single source the strip draws from, so
     resolving here heals every chip on plain navigation, no ``new_tab`` re-mint
-    needed. Persisted so it sticks (and so the project-filter routes the chip to
-    its real project's view).
+    needed.
+
+    Resolution is IN-MEMORY ONLY — this is a read path (GET ``list``/``list_all``),
+    so it no longer writes (the old per-row ``tab.save()`` heated the SQLite writer
+    on every list fetch). The assignment is enough for both the response and the
+    project filter (``_build_tab_list`` reads ``tab.project_id`` straight after);
+    durable persistence of the heal moves to the next ``ensure_tab``/open of the
+    same pointer.
 
     Resolution order: the target entity's own project (authoritative — includes
     the claude-session on-disk recovery), else the project a project-scoped dock
@@ -602,12 +735,6 @@ async def _backfill_tab_projects(tabs: list[Tab]) -> None:
         if not resolved:
             continue
         tab.project_id = resolved
-        try:
-            await tab.save()
-        except Exception:
-            logging.getLogger(__name__).debug(
-                "tab project backfill save failed for %s", tab.id, exc_info=True
-            )
 
 
 async def _build_tab_list(project: str | None) -> list[Tab]:
@@ -615,7 +742,7 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     Global order filtered to ``{project OR projectless}`` (decision 3), each Tab
     fully populated with status/is_disabled. The Tab objects are serialized
     directly for API responses — no separate projection."""
-    tabs = await _visible_tabs_sorted()
+    tabs, target_map = await _visible_tabs_sorted_with_targets()
     # Heal projectless chips BEFORE filtering, so a backfilled tab routes to its
     # real project's view rather than staying in the projectless bucket.
     await _backfill_tab_projects(tabs)
@@ -624,7 +751,7 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     filtered = filter_for_project(order_ids, project_of, _normalize_project(project))
     by_id = {t.id: t for t in tabs}
     result = [by_id[tab_id] for tab_id in filtered]
-    await _populate_tab_statuses(result)
+    await _populate_tab_statuses(result, target_map)
     return result
 
 
@@ -752,9 +879,9 @@ async def _http_list_all(cls):
     ping) that replaces the old reactive ``tab?visible=true`` entity query."""
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
-    tabs = await _visible_tabs_sorted()
+    tabs, target_map = await _visible_tabs_sorted_with_targets()
     await _backfill_tab_projects(tabs)
-    await _populate_tab_statuses(tabs)
+    await _populate_tab_statuses(tabs, target_map)
     return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 
