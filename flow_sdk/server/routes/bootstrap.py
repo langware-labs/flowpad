@@ -654,9 +654,9 @@ async def get_desktop_compute_node() -> Optional[Entity]:
     Returns:
         Desktop ComputeNode entity if found, None otherwise
 
-    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
+    Delegates to the single source of truth (read-only, no self-heal mint).
     """
-    return await get_local_entity(ComputeNode)
+    return await ComputeNode.get_local(create=False)
 
 
 async def get_desktop_project() -> Optional[Entity]:
@@ -911,11 +911,10 @@ async def get_or_create_local_workspace(desktop_user: Optional[Entity] = None) -
 
 @functools.lru_cache(maxsize=8)
 def _local_entity_id(entity_type: str) -> str:
-    """Deterministic per-machine id: ``uuid5(NAMESPACE_DNS, "<type>:local:<machine_id>")``.
-    Stable across DB recreations + clear-index so cached UI/WS typeids keep resolving.
-    """
-    from flow_sdk.utils.machine_id import get_machine_id  # noqa: PLC0415
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{entity_type}:local:{get_machine_id()}"))
+    """Deterministic per-machine id for the @local entities — see the single
+    source of truth ``flow_sdk.utils.machine_id.local_entity_id``."""
+    from flow_sdk.utils.machine_id import local_entity_id  # noqa: PLC0415
+    return local_entity_id(entity_type)
 
 
 async def get_or_create_local_compute_node(
@@ -924,80 +923,47 @@ async def get_or_create_local_compute_node(
 ) -> ComputeNode:
     """Get or create the @local compute node with filesystem storage mounted at root.
 
-    Uses SANDBOX storage provider with fs_storage_mount_path set to the OS root
-    (/ on Unix, C:\\ on Windows) to browse the entire local filesystem.
+    Thin bootstrap wrapper over the single source of truth,
+    ``ComputeNode.get_local()`` / ``ComputeNode.create_local()`` (in
+    flow_sdk/builtin/faas/compute_node.py). This function additionally
+    normalizes storage settings on a pre-existing (possibly legacy) row, which
+    is a one-time bootstrap concern rather than something every ``get_local()``
+    caller should pay for on the hot path.
+
+    ``local_project`` is accepted for backward compatibility but intentionally
+    ignored: the @local compute node is a machine-level singleton, NOT a
+    project-owned child. It used to be attached as a child here, which let a
+    project-delete cascade destroy it out from under every live session.
 
     Args:
-        local_project: The Project entity to link the compute node to
-        desktop_user: The desktop User entity to set as owner
-
-    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_local_compute_node)
+        local_project: Deprecated/ignored — see above.
+        desktop_user: The desktop User entity to set as owner on first creation.
     """
     os_root = get_os_root_path()
-    local_id = _local_entity_id("compute_node")
 
-    # Resolve by deterministic id first; fall back to the legacy uname='local'
-    # lookup for databases written before stable-id was introduced.
-    compute_node = await ComputeNode.get_by_id(local_id)
+    # Resolve without minting so we can normalize storage on a pre-existing row;
+    # create_local() (via get_local) handles the deterministic id + race below.
+    compute_node = await ComputeNode.get_local(create=False)
     if compute_node is None:
-        compute_node = await get_local_entity(ComputeNode)
-        if compute_node is not None and compute_node.id != local_id:
-            logging.warning(
-                "@local compute_node has legacy random id %s; expected stable %s. "
-                "Keeping existing row to preserve references — wipe the DB to migrate.",
-                compute_node.id, local_id,
-            )
-    already_existed = compute_node is not None
-    if compute_node:
-        logging.info(f"@local compute node already exists: {compute_node.id}")
-        # Ensure storage settings are correct for existing @local compute node
-        needs_update = False
-        if compute_node.fs_storage_provider != StorageProvider.SANDBOX:
-            compute_node.fs_storage_provider = StorageProvider.SANDBOX
-            needs_update = True
-        if compute_node.fs_storage_mount_path != os_root:
-            compute_node.fs_storage_mount_path = os_root
-            needs_update = True
-        if needs_update:
-            await compute_node.save()
-            logging.info(f"Updated @local compute node storage settings: provider=SANDBOX, mount_path={os_root}")
-    else:
-        logging.info("Creating @local compute node for desktop environment")
-        compute_node = ComputeNode(
-            id=local_id,
-            type="compute_node",
-            uname="local",
-            name="@local",
-            runtime=RuntimeEnvironment(name="local_desktop_runtime"),
-            node_provider_type=ComputeProviderType.LOCAL_MACHINE,
-            fs_storage_provider=StorageProvider.SANDBOX,
-            fs_storage_mount_path=os_root,
-            visitor_role="owner",
-        )
-        try:
-            await compute_node.save(owner=desktop_user)
-        except Exception as save_error:
-            if "already exist" in str(save_error):
-                logging.info("@local compute node already exists (race/cache miss), fetching it")
-                # Bypass uname_cache in case it has a stale entry
-                existing = await ComputeNode.get_by_prop("uname", "local", "compute_node")
-                if existing:
-                    compute_node = existing
-                    already_existed = True
-                else:
-                    raise save_error
-            else:
-                raise save_error
+        compute_node = await ComputeNode.create_local(owner=desktop_user)
         logging.info(
-            f"Created @local compute node: {compute_node.id} with owner: "
-            f"{desktop_user.id if desktop_user else 'None'}, mount_path: {os_root}"
+            "Created @local compute node: %s with owner: %s, mount_path: %s",
+            compute_node.id, desktop_user.id if desktop_user else "None", os_root,
         )
+        return compute_node
 
-    # Only link to project and set visitor role on first creation (expensive DB ops)
-    if not already_existed:
-        if local_project:
-            await local_project.add_child(compute_node)
-        await compute_node.set_visitor_role("owner")
+    logging.info(f"@local compute node already exists: {compute_node.id}")
+    # Ensure storage settings are correct for an existing (possibly legacy) row.
+    needs_update = False
+    if compute_node.fs_storage_provider != StorageProvider.SANDBOX:
+        compute_node.fs_storage_provider = StorageProvider.SANDBOX
+        needs_update = True
+    if compute_node.fs_storage_mount_path != os_root:
+        compute_node.fs_storage_mount_path = os_root
+        needs_update = True
+    if needs_update:
+        await compute_node.save()
+        logging.info(f"Updated @local compute node storage settings: provider=SANDBOX, mount_path={os_root}")
 
     # Generate provider_id if not set (needed for PTY operations)
     if not compute_node.node_provider_id:
