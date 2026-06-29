@@ -1,13 +1,13 @@
 import { PrefDataType, PrefInfo, PrefOption, soundService } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
-import { Label } from '@src/components/ui/label';
-import { Switch } from '@src/components/ui/switch';
+import { SettingRow } from '@src/components/settings/settings-card';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
+import { Switch } from '@src/components/ui/switch';
 import { NOTIFICATION_SOUNDS } from '@src/assets/sounds/notification/manifest';
 import { Play } from 'lucide-react';
-import { ReactNode, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 /**
  * Resolve a pref's selectable options. Static `options` win; `optionsSource`
@@ -22,113 +22,49 @@ function resolveOptions(info: PrefInfo): PrefOption[] {
   return [];
 }
 
-/** Label + description block — the "content" half of a settings row. */
-function RowHeader({ id, info }: { id: string; info: PrefInfo }) {
-  return (
-    <div className="min-w-0">
-      <Label htmlFor={id} className="cursor-pointer text-sm font-medium text-foreground">
-        {info.label}
-      </Label>
-      {info.description && (
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{info.description}</p>
-      )}
-    </div>
-  );
-}
-
 /**
- * A settings row. By default the control sits in a tight right column beside its
- * label (toggles, selects, numbers); `block` stacks a full-width control under the
- * label (multi-line JSON). The whole row shares one hover surface so the control
- * always reads as belonging to its label.
- */
-function PrefRow({
-  block = false,
-  header,
-  control,
-}: {
-  block?: boolean;
-  header: ReactNode;
-  control: ReactNode;
-}) {
-  if (block) {
-    return (
-      <div className="flex flex-col gap-3 px-5 py-4 transition-colors hover:bg-muted/30">
-        {header}
-        {control}
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-center justify-between gap-6 px-5 py-4 transition-colors hover:bg-muted/30">
-      {header}
-      <div className="flex shrink-0 items-center">{control}</div>
-    </div>
-  );
-}
-
-/**
- * A single registry-driven preference control. Renders the right input for the
- * pref's `dataType` and reads/writes the value via {@link usePreference}.
+ * A single registry-driven preference control: the right input for the pref's
+ * `dataType`, wired to {@link usePreference}, rendered as a shared {@link SettingRow}.
  */
 export function PrefControl({ info }: { info: PrefInfo }) {
   const [value, setValue] = usePreference<unknown>(info.key);
   const id = `pref-${info.key}`;
-  const header = <RowHeader id={id} info={info} />;
+  const row = (control: React.ReactNode, block = false) => (
+    <SettingRow label={info.label} description={info.description} htmlFor={id} control={control} block={block} />
+  );
 
   switch (info.dataType) {
     case PrefDataType.BOOL:
-      return (
-        <PrefRow
-          header={header}
-          control={
-            <Switch
-              id={id}
-              checked={value === true}
-              onCheckedChange={(checked) => setValue(checked === true)}
-            />
-          }
-        />
+      return row(
+        <Switch id={id} checked={value === true} onCheckedChange={(checked) => setValue(checked === true)} />,
       );
 
     case PrefDataType.STRING: {
       // dataType STRING ⇒ the stored value is a string (coerced by the store).
       const strValue = (value ?? '') as string;
       const options = resolveOptions(info);
-      const control =
+      return row(
         options.length > 0 ? (
           <SelectControl id={id} options={options} value={strValue} onChange={setValue} />
         ) : (
-          <Input
-            id={id}
-            value={strValue}
-            onChange={(e) => setValue(e.target.value)}
-            className="h-9 w-56"
-          />
-        );
-      return <PrefRow header={header} control={control} />;
+          <Input id={id} value={strValue} onChange={(e) => setValue(e.target.value)} className="h-9 w-56" />
+        ),
+      );
     }
 
     case PrefDataType.NUMBER:
-      return (
-        <PrefRow
-          header={header}
-          control={
-            <Input
-              id={id}
-              type="number"
-              value={Number(value ?? 0)}
-              onChange={(e) => setValue(e.target.value === '' ? 0 : Number(e.target.value))}
-              className="h-9 w-28 text-right tabular-nums"
-            />
-          }
-        />
+      return row(
+        <Input
+          id={id}
+          type="number"
+          value={Number(value ?? 0)}
+          onChange={(e) => setValue(e.target.value === '' ? 0 : Number(e.target.value))}
+          className="h-9 w-28 text-right tabular-nums"
+        />,
       );
 
     case PrefDataType.JSON:
-      return (
-        <PrefRow block header={header} control={<JsonControl id={id} value={value} onChange={setValue} />} />
-      );
+      return row(<JsonControl id={id} value={value} onChange={setValue} />, true);
 
     default:
       return null;
