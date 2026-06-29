@@ -16,7 +16,7 @@ import { dismissSetupModal, gotoTriggers, cleanupScheduleTriggers } from './help
 // so the trigger ends up project-less. Same TriggersView filter regression
 // flagged in the 2026-04-21 cycle. Fix is server- or filter-side.
 test.skip('create, edit, and delete a schedule trigger', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push(err.message));
@@ -56,7 +56,7 @@ test.skip('create, edit, and delete a schedule trigger', async ({ page }) => {
 
   // Capture the trigger ID for cleanup
   const triggerId = await page.evaluate(async () => {
-    const res = await fetch('http://localhost:9008/api/v1/graph/trigger');
+    const res = await fetch('/api/v1/graph/trigger');
     const json = await res.json();
     const triggers = json?.data ?? [];
     const t = triggers.find((tr: any) => tr.name === 'Test Daily Schedule');

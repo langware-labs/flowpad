@@ -5,12 +5,13 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { FileText, FolderOpen } from 'lucide-react';
 import { AgenticProcess } from '@sdk';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { ProcessEntry } from './workflow-run-store';
 
 /**
  * Claude / Codex name workspace dirs by replacing every non-alphanumeric
- * char with `-` (so `/Users/shlom/.claude/worktrees/foo` becomes
- * `-Users-shlom--claude-worktrees-foo`). Mirrors Claude's own dirname rule
+ * char with `-` (so `/Users/alice/.claude/worktrees/foo` becomes
+ * `-Users-alice--claude-worktrees-foo`). Mirrors Claude's own dirname rule
  * for `~/.claude/projects/<projectEncodedName>/<sessionId>.jsonl`.
  */
 function workdirToProjectEncodedName(workdir: string): string {
@@ -73,7 +74,7 @@ export function WorkflowRunsPanel({
     <div className="h-full overflow-y-auto py-1" data-testid="workflow-runs-panel">
       {entries.length === 0 && (
         <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
-          No runs yet.
+          <Trans>No runs yet.</Trans>
         </div>
       )}
       {entries.map((entry, idx) => (
@@ -103,12 +104,13 @@ function WorkflowRunItem({
   computeNodeId: string | undefined;
   onSelectRun?: (processId: string) => void;
 }) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { data: live } = useEntity<AgenticProcess>(entry.process.typeId ?? null);
   const process = live ?? entry.process;
 
   const handleOpenInTerminal = () => {
-    navigation.openDock(process.dockPointer);
+    navigation.openDock(process.terminalDockPointer);
   };
 
   const handleOpenFolder = async () => {
@@ -163,7 +165,7 @@ function WorkflowRunItem({
           variant="ghost"
           size="icon"
           className="h-5 w-5 flex-shrink-0"
-          title="Open transcript"
+          title={t`Open transcript`}
           onClick={(e) => {
             e.stopPropagation();
             navigation.openDock(transcriptPointer);
@@ -179,7 +181,7 @@ function WorkflowRunItem({
           variant="ghost"
           size="icon"
           className="h-5 w-5 flex-shrink-0"
-          title="Open output folder"
+          title={t`Open output folder`}
           onClick={(e) => {
             e.stopPropagation();
             void handleOpenFolder();

@@ -25,6 +25,7 @@ describe('AgenticProcess embeddedAssets (HTTP round-trip)', () => {
   let agentDir: string;
   let agentName: string;
   let agentMdPath: string;
+  let agentRecordId: string | null = null;
 
   beforeEach(async (ctx: any) => {
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
@@ -52,19 +53,32 @@ You are a test agent.
     agentDir = homeClaude;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     // Test fixture lives under the user's real ~/.claude/agents/ — delete it so
     // it doesn't pollute every future "what assets does this process see?" view.
     // Same for the temp workdir under $TMPDIR.
     try { fs.unlinkSync(agentMdPath); } catch { /* ignore */ }
     try { fs.rmSync(workdir, { recursive: true, force: true }); } catch { /* ignore */ }
+    // The forced reindex created a real agent entity for the fixture — delete
+    // it too, or every run leaks an `ea-test-agent-<ts>` into the asset list.
+    // fs-records DELETE = full purge (entity row + FTS + shadow record dir).
+    if (agentRecordId) {
+      await fetch(
+        `http://localhost:9008/api/v1/graph/compute_node/@local/fs-records/agent/${agentRecordId}`,
+        { method: 'DELETE' },
+      );
+      agentRecordId = null;
+    }
   });
 
   it('attach → list → detach round-trip for an agent by uuid id', async () => {
     const proc = await new AgenticProcess({ workdir }).save([]);
 
     // Force a reindex of agents so the fixture file is picked up by /search.
-    const reindexResp = await fetch('http://localhost:9008/api/v1/search/reindex/agent', { method: 'POST' });
+    const reindexResp = await fetch(
+      'http://localhost:9008/api/v1/graph/compute_node/@local/fs-records/index?type=agent',
+      { method: 'POST' },
+    );
     expect(reindexResp.ok, `reindex failed: ${reindexResp.status}`).toBe(true);
 
     // Resolve the agent's uuid via /search so we use the same TypeId shape the UI sends.
@@ -78,6 +92,7 @@ You are a test agent.
     const searchRaw = (await searchResp.json()) as { data?: { results?: Array<{ record_id: string; name: string; record_type: string }> } };
     const hit = searchRaw.data?.results?.find((r) => r.name === agentName);
     expect(hit, `search did not find agent "${agentName}" — ensure indexer picked it up`).toBeDefined();
+    agentRecordId = hit!.record_id;
 
     const agentRef = `agent-${hit!.record_id}`;
 

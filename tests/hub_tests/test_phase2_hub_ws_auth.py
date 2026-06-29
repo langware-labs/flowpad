@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 import uuid
 
 import pytest
@@ -33,8 +34,19 @@ def capture_local_ws(monkeypatch):
 
 
 async def _recv_json(websocket, timeout: float = 10.0) -> dict:
-    raw = await asyncio.wait_for(websocket.recv(), timeout=timeout)
-    return json.loads(raw)
+    """Receive the next JSON frame that is our reply, skipping the hub's
+    opening ``ws_ready_msg`` greeting frame (hub emits it first on every
+    connection — hub commit 696bf45a1)."""
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise asyncio.TimeoutError("no reply frame before timeout")
+        raw = await asyncio.wait_for(websocket.recv(), timeout=remaining)
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and parsed.get("message_type") == "ws_ready_msg":
+            continue
+        return parsed
 
 
 @pytest.mark.asyncio
@@ -50,6 +62,11 @@ async def test_hub_ws_rest_current_user_matches_rest_current_user(hub_base_url, 
         message = APIMessage(direct_resource_type="user")
         await websocket.send(message.model_dump_json())
         ws_response = await _recv_json(websocket)
+
+    # The hub wraps rest_api_msg replies in a response_msg envelope; unwrap
+    # to the ApiResponse payload before reading status/data.
+    if ws_response.get("message_type") == "response_msg":
+        ws_response = ws_response.get("content") or {}
 
     assert str(ws_response.get("status")).lower() == "success"
     ws_users = ws_response["data"]

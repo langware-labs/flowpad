@@ -182,15 +182,12 @@ async def handle_record_action():
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
 
-    rec_cls = SchemaRegistry.get_record_cls(entity.type)
-    if rec_cls is None:
-        return ApiFailResponse(message=f"No Record class for type {entity.type}")
-
     rec = await entity.get_record()
     if rec is None:
         # Try by uname as well
         if getattr(entity, "uname", None):
-            rec = rec_cls.get(entity.uname)
+            from flow_sdk.fs_store.fs_record import FSRecord
+            rec = FSRecord.load_or_none(entity.type, entity.uname)
     if rec is None:
         return ApiFailResponse(message="Record not found", status_code=404)
 
@@ -259,7 +256,31 @@ async def handle_create_entity(request: Request):
             service_log.highlighted_error(err_msg)
             raise HTTPException(status_code=400, detail=err_msg)
 
+        # Canonical parent pointer (supersedes the legacy per-type
+        # ``data.parent_id``). Set before ``add_child`` so it persists with the
+        # entity row + metadata — ``add_child`` saves the child first.
+        if "parent_type_id" in type(entity).model_fields:
+            entity.parent_type_id = str(target_entity.typeid)
         await target_entity.add_child(entity)
+
+        # Auto-share: when the parent is reachable on the hub, the child must
+        # become a hub ``is_child`` too so it syncs to watchers via ``child_*``.
+        # The hub may not host the immediate parent's type (e.g. ``markdown``),
+        # so we create the child under the nearest ancestor that has its OWN hub
+        # row (the conversation). The child keeps ``parent_type_id`` = the real
+        # local parent (the doc) in its payload for gutter filtering. Non-fatal.
+        try:
+            # One walk: the nearest ancestor with a hub row (or None) — being
+            # non-None is exactly "effective_remote".
+            hub_parent = await target_entity.nearest_remote_ancestor()
+            if hub_parent is not None:
+                await hub_parent.create_child(entity)
+                if getattr(entity, "remote", False):
+                    await entity.save(someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            service_log.warn(
+                f"[create] auto-share child {entity.typeid} under {target_entity.typeid} failed (non-fatal): {e}"
+            )
     # TODO Turn off expand_permissions upon entity creation
     await entity.expand_permissions()
 

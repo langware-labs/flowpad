@@ -63,34 +63,39 @@ def _invalidate_caches():
 _CANONICAL_FS_RECORD_PATH = os.environ.get("FS_RECORD_PATH")
 
 
-@pytest.fixture(autouse=True)
-def _rebind_session_db_driver():
+@pytest_asyncio.fixture(autouse=True)
+async def _rebind_session_db_driver():
     """Re-bind the session DB driver before every test.
 
     Tests that use starlette ``TestClient`` (sync) trigger the FastAPI
     lifespan, whose shutdown calls ``close_db()`` — which pops the cached
-    SQLite driver from ``_driver_instances`` and closes its engine. The
-    next test then sees a split-brain: writes hit a freshly-created driver
-    on disk, but reads via ``DBEntity._db`` still go through the OLD
-    (closed) driver instance that ``initialize_test_db`` rebound at session
-    start. The symptom is silent: ``sync_to_db`` succeeds, ``get_one``
-    returns ``None``.
+    SQLite driver from ``_driver_instances`` and ALSO disposes its engine
+    (engine=None, session_factory=None). The next test then sees a
+    split-brain: writes hit a freshly-created driver on disk, but reads via
+    ``DBEntity._db`` still go through the OLD (closed) driver instance that
+    ``initialize_test_db`` rebound at session start. The symptom is either
+    silent (``sync_to_db`` succeeds, ``get_one`` returns ``None``) or loud
+    (``'NoneType' object is not callable`` from ``self.session_factory()``).
 
-    Restoring both pointers before each test keeps every read/write on the
-    single session-owned driver.
+    Restoring both pointers and re-opening the engine on the current event
+    loop before each test keeps every read/write on the single session-owned
+    driver.
     """
     import tests.conftest as _root_cf
     driver = getattr(_root_cf, "_test_db_driver", None)
     if driver is not None:
-        try:
-            import flow_sdk.db.drivers.db_driver as _ddm
-            _ddm._driver_instances["sqlite"] = driver
-            from flow_sdk.db.db_entity import DBEntity
-            from flow_sdk.db.db_relationship import DBRelationship
-            DBEntity._db = driver
-            DBRelationship._db = driver
-        except Exception:
-            pass
+        import flow_sdk.db.drivers.db_driver as _ddm
+        _ddm._driver_instances["sqlite"] = driver
+        from flow_sdk.db.db_entity import DBEntity
+        from flow_sdk.db.db_relationship import DBRelationship
+        DBEntity._db = driver
+        DBRelationship._db = driver
+        if driver.session_factory is None:
+            try:
+                await driver.open()
+            except Exception as e:
+                import logging as _logging
+                _logging.error(f"_rebind_session_db_driver: driver.open() failed: {e!r}")
     _invalidate_caches()
     yield
 
@@ -171,19 +176,19 @@ async def drain_background_tasks():
         from flow_sdk.compute.providers import _providers
         provider = _providers.get("local_machine")
         if provider:
-            for pty_key, pty_info in list(provider._pty_sessions.items()):
+            for pty_key, pty_info in list(provider._pty_processes.items()):
                 try:
                     process = pty_info.get("process")
                     if process and hasattr(process, "terminate"):
                         process.terminate()
                 except Exception:
                     pass
-            provider._pty_sessions.clear()
+            provider._pty_processes.clear()
     except Exception:
         pass
     try:
-        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
-        session_manager.sessions.clear()
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+        pty_registry.states.clear()
     except Exception:
         pass
     # Invalidate bootstrap cache so next test gets fresh state.

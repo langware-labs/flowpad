@@ -1,8 +1,12 @@
+---
+id: 441d2199-ed12-509e-bbc7-28a3baec26ef
+---
+
 test 1: Send message via Enter key
 - navigate to {APP_URL}/
 - fill landing input with "input controls test"
 - press Enter
-- wait for URL to change to /dock/session/...
+- wait for URL to change to /dock/shell/...
 - click "New Session" button
 - validate instruction input is visible and status is IDLE
 - fill instruction input with "Sent with Enter"

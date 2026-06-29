@@ -12,8 +12,12 @@ line is:
 Session continuity:
 - Captures the ``thread_id`` from the first ``thread.started`` event onto
   ``self._session_id`` so the AgenticProcess can persist it.
-- ``--ephemeral`` is set so codex does not persist its own session JSONL —
-  the process-local transcript is the source of truth.
+- Codex persists its own rollout under ``~/.codex/sessions/`` (NOT ``--ephemeral``)
+  so a subsequent turn can ``codex exec ... resume <thread_id>``: that's the only
+  store ``has_resumable_session``/``find_codex_session_jsonl`` can see, and it's
+  the SAME rollout the PTY path writes — so headless multi-turn resumes, and a
+  headless⇄PTY toggle keeps one continuous session. (We still tee the events into
+  the process-local transcript for our own readers.)
 
 Cancel semantics: ``close_session()`` sends SIGTERM → 5 s grace → SIGKILL,
 matching the Claude worker's contract.
@@ -29,12 +33,12 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 from pathlib import Path
 from typing import AsyncIterator
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata import (
     convert_line,
@@ -195,7 +199,10 @@ class CodexCLIStreamWorker(AgenticWorker):
         self,
         context: AgenticContext,
     ) -> tuple[list[str] | None, dict[str, str]]:
-        if not shutil.which("codex"):
+        # Discovered harness capability supplies the CLI's bin folder
+        # (terminal-PATH resolution) — None ⇔ codex is not installed.
+        path_env = worker_path_env("codex")
+        if path_env is None:
             return None, {}
 
         opts = CodexCliOptions(
@@ -206,13 +213,20 @@ class CodexCLIStreamWorker(AgenticWorker):
             session_id=context.resume_session_id,
             resume=bool(context.resume_session_id),
             json_stream=True,
-            ephemeral=True,
+            # NOT ephemeral: persist codex's rollout so the NEXT headless turn (or
+            # a headless→PTY toggle) can resume this thread. Mirrors the PTY path
+            # (driver.cmd_line sets ephemeral=False for visible). Without a rollout,
+            # find_codex_session_jsonl misses → has_resumable_session=False → every
+            # turn mints a fresh session_id (the headless multi-turn resume bug).
+            ephemeral=False,
         )
         argv, env_from_opts = opts.to_spawn_args()
 
-        # Inherit os.environ so codex can find creds, PATH, ~/.codex, then
-        # overlay caller-provided env_vars last so they win.
+        # Inherit os.environ so codex can find creds, PATH, ~/.codex; overlay
+        # the capability's PATH prepend (argv[0] + `#!/usr/bin/env node`
+        # resolution), then caller-provided env_vars last so they win.
         env = dict(os.environ)
+        env.update(path_env)
         env.update(env_from_opts)
         return argv, env
 

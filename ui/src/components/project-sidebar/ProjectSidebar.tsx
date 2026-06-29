@@ -4,6 +4,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { Check, ExternalLink, Folder, FolderOpen, FolderPlus, Loader2, Trash2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import './ProjectSidebar.css';
 
@@ -34,6 +35,7 @@ export function ProjectSidebar({
   computeNode,
   workspacePath,
 }: ProjectSidebarProps) {
+  const { t } = useLingui();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -113,11 +115,11 @@ export function ProjectSidebar({
       <div className="project-sidebar-actions">
         <Button variant="ghost" size="sm" className="project-action-btn" onClick={onOpenProject}>
           <FolderOpen className="h-4 w-4" />
-          Open Project
+          <Trans>Open Project</Trans>
         </Button>
         <Button variant="ghost" size="sm" className="project-action-btn" onClick={onNewProject}>
           <FolderPlus className="h-4 w-4" />
-          New Project
+          <Trans>New Project</Trans>
         </Button>
       </div>
 
@@ -125,12 +127,12 @@ export function ProjectSidebar({
         {isLoading ? (
           <div className="project-sidebar-loading">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span>Loading...</span>
+            <span><Trans>Loading...</Trans></span>
           </div>
         ) : !projects || projects.length === 0 ? (
           <div className="project-sidebar-empty">
             <Folder className="h-8 w-8 opacity-30" />
-            <span>No projects yet</span>
+            <span><Trans>No projects yet</Trans></span>
           </div>
         ) : (
           <ul className="project-sidebar-list">
@@ -159,14 +161,14 @@ export function ProjectSidebar({
                       <button
                         className="project-item-action"
                         onClick={(e) => void handleOpenInExplorer(e, project)}
-                        title="Open in Explorer"
+                        title={t`Open in Explorer`}
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
                       </button>
                       <button
                         className="project-item-action project-item-action-delete"
                         onClick={(e) => handleDeleteClick(e, project)}
-                        title="Delete Project"
+                        title={t`Delete Project`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -182,10 +184,10 @@ export function ProjectSidebar({
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete Project"
+        title={t`Delete Project`}
         description={`Are you sure you want to delete "${projectToDelete?.displayName}"? This action cannot be undone.`}
-        confirmLabel={isDeleting ? 'Deleting...' : 'Delete'}
-        cancelLabel="Cancel"
+        confirmLabel={isDeleting ? t`Deleting...` : t`Delete`}
+        cancelLabel={t`Cancel`}
         variant="destructive"
         onConfirm={() => void handleConfirmDelete()}
       />

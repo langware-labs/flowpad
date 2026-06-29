@@ -1,23 +1,29 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { useClaudeProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
+import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { useAllProjects } from '@src/hooks/use-all-projects';
 import {
-  ContextEntitiesEnum,
   dataContext,
-  FLOWPAD_ASSISTANT_PROJECT_UNAME,
   type ProjectListItem,
   Project,
   QueryRequest,
 } from '@sdk';
-import apiClient from '@sdk/client';
+import { selectProjectContext } from '@src/components/project-selector';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Loader2, Lock, Search, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const SHOW_SYSTEM_PROJECTS_KEY = 'project-list-show-system';
 
@@ -90,6 +96,12 @@ const canonicalPathKey = (path: string): string => {
 
 const getProjectPath = (project: Project): string => normalizePath(project.fs_storage_mount_path || project.name || '');
 
+/** Free-text match against a project's display name or cwd. `q` must already be
+ *  trimmed + lowercased. Shared by the detailed and compact pickers so their
+ *  search heuristic can't drift apart. */
+const matchesProjectQuery = (project: ProjectListItem, q: string): boolean =>
+  getProjectDisplayName(project).toLowerCase().includes(q) || (project.cwd ?? '').toLowerCase().includes(q);
+
 // ---------------------------------------------------------------------------
 // ProjectSelectList
 // ---------------------------------------------------------------------------
@@ -123,6 +135,7 @@ function ProjectSelectList({
   onShowSystemChange,
   devMode,
 }: ProjectSelectListProps) {
+  const { t } = useLingui();
   const [search, setSearch] = useState('');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(loadTimeFilter);
 
@@ -144,8 +157,7 @@ function ProjectSelectList({
     const cutoff = cutoffForFilter(timeFilter);
     return projects.filter((p) => {
       if (cutoff && effectiveModifiedAt(p.modified_at) < cutoff) return false;
-      if (!q) return true;
-      return getProjectDisplayName(p).toLowerCase().includes(q) || (p.cwd ?? '').toLowerCase().includes(q);
+      return !q || matchesProjectQuery(p, q);
     });
   }, [projects, search, timeFilter]);
 
@@ -155,7 +167,7 @@ function ProjectSelectList({
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
-            placeholder="Search projects…"
+            placeholder={t`Search projects…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="h-8 pl-8 text-sm"
@@ -181,7 +193,7 @@ function ProjectSelectList({
         </div>
         <label
           className="ml-1 flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          title="Show SDK-shipped system projects (Flowpad Assistant)"
+          title={t`Show SDK-shipped system projects (Flowpad Assistant)`}
         >
           <input
             type="checkbox"
@@ -189,18 +201,18 @@ function ProjectSelectList({
             checked={showSystem}
             onChange={(e) => onShowSystemChange(e.target.checked)}
           />
-          Show system
+          <Trans>Show system</Trans>
         </label>
       </div>
     <div className="max-h-56 overflow-y-auto rounded-lg border border-border bg-card">
       {isLoading ? (
         <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Loading projects...
+          <Trans>Loading projects...</Trans>
         </div>
       ) : filtered.length === 0 ? (
         <div className="py-8 text-center text-sm text-muted-foreground">
-          {projects.length === 0 ? 'No projects found' : 'No matches'}
+          {projects.length === 0 ? <Trans>No projects found</Trans> : <Trans>No matches</Trans>}
         </div>
       ) : (
         <div className="divide-y divide-border">
@@ -234,11 +246,20 @@ function ProjectSelectList({
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
+                    {project.claude && (
+                      <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" aria-label={t`Claude project`} />
+                    )}
+                    {project.codex && (
+                      <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-label={t`Codex project`} />
+                    )}
+                    {project.copilot && (
+                      <CopilotIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label={t`Copilot project`} />
+                    )}
                     <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
                     {isSystem && (
                       <span className="flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] uppercase tracking-wide text-muted-foreground">
                         <Sparkles className="h-2.5 w-2.5" />
-                        system
+                        <Trans>system</Trans>
                       </span>
                     )}
                   </div>
@@ -253,7 +274,7 @@ function ProjectSelectList({
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground/70">
-                    {relativeTime(project.modified_at) ?? 'today'}
+                    {relativeTime(project.modified_at) ?? t`today`}
                   </span>
                 </div>
               </button>
@@ -311,20 +332,21 @@ function ProjectSelectDialog({
   trigger = 'switch',
   remoteProjectName,
 }: ProjectSelectDialogProps) {
+  const { t } = useLingui();
   const title =
     trigger === 'map'
-      ? 'Map remote project'
+      ? t`Map remote project`
       : trigger === 'gate'
-      ? 'Pick a project'
-      : 'Projects';
+      ? t`Pick a project`
+      : t`Projects`;
   const description =
     trigger === 'map'
       ? remoteProjectName
-        ? `This conversation came from a project called "${remoteProjectName}" on another machine. Pick the local project folder it should map to.`
-        : 'This conversation came from a project on another machine. Pick the local project folder it should map to.'
+        ? t`This conversation came from a project called "${remoteProjectName}" on another machine. Pick the local project folder it should map to.`
+        : t`This conversation came from a project on another machine. Pick the local project folder it should map to.`
       : trigger === 'gate'
-      ? "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
-      : 'Select a project or open a new folder.';
+      ? t`Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions.`
+      : t`Select a project or open a new folder.`;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-lg">
@@ -354,7 +376,7 @@ function ProjectSelectDialog({
               disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
             >
               <FolderOpen className="h-4 w-4" />
-              Open Folder
+              <Trans>Open Folder</Trans>
             </Button>
             <Button
               variant="outline"
@@ -363,7 +385,161 @@ function ProjectSelectDialog({
               disabled={isSubmitting || !!openingProjectId}
             >
               <FolderPlus className="h-4 w-4" />
-              Create New
+              <Trans>Create New</Trans>
+            </Button>
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CompactProjectSelectDialog — Standard-view footer switcher
+// ---------------------------------------------------------------------------
+//
+// Standard view gets a shortened, compact project list instead of the detailed
+// modal (search + time-filter pills + system toggle + per-row paths/sessions).
+// Just a calm one-line-per-project picker with a tiny search and minimal
+// actions. Advanced/Dev view keeps the full ProjectSelectDialog above.
+
+interface CompactProjectSelectDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projects: ProjectListItem[];
+  isLoadingProjects: boolean;
+  currentProjectPath: string;
+  openingProjectId: string | null;
+  isSubmitting: boolean;
+  computeNodeAvailable: boolean;
+  error: string | null;
+  onProjectClick: (project: ProjectListItem) => void;
+  onOpenFolder: () => void;
+  onCreateNew: () => void;
+}
+
+/** How many recent projects the compact list shows before the rest are
+ *  reachable only via search. Keeps Standard view short. */
+const COMPACT_PROJECT_LIMIT = 8;
+
+function CompactProjectSelectDialog({
+  open,
+  onOpenChange,
+  projects,
+  isLoadingProjects,
+  currentProjectPath,
+  openingProjectId,
+  isSubmitting,
+  computeNodeAvailable,
+  error,
+  onProjectClick,
+  onOpenFolder,
+  onCreateNew,
+}: CompactProjectSelectDialogProps) {
+  const { t } = useLingui();
+  const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+
+  const filtered = useMemo(() => {
+    const byRecent = [...projects].sort(
+      (a, b) => effectiveModifiedAt(b.modified_at).getTime() - effectiveModifiedAt(a.modified_at).getTime(),
+    );
+    // No query → show only the most-recent slice; querying searches all projects.
+    return q ? byRecent.filter((p) => matchesProjectQuery(p, q)) : byRecent.slice(0, COMPACT_PROJECT_LIMIT);
+  }, [projects, q]);
+
+  // Without a query the list is capped; surface how many recent projects are hidden.
+  const hiddenCount = q ? 0 : Math.max(0, projects.length - filtered.length);
+  const showSearch = projects.length > COMPACT_PROJECT_LIMIT || search.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-base"><Trans>Switch Project</Trans></DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-2">
+          {showSearch && (
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder={t`Search projects…`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 pl-8 text-sm"
+              />
+            </div>
+          )}
+
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-card">
+            {isLoadingProjects ? (
+              <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Trans>Loading…</Trans>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                {projects.length === 0 ? <Trans>No projects found</Trans> : <Trans>No matches</Trans>}
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {filtered.map((project) => {
+                  const projectPath = normalizePath(project.cwd || project.name || '');
+                  const isCurrent =
+                    !!currentProjectPath && canonicalPathKey(projectPath) === canonicalPathKey(currentProjectPath);
+                  const isOpening = openingProjectId === project.id;
+                  return (
+                    <button
+                      key={project.id}
+                      onClick={() => onProjectClick(project)}
+                      disabled={!!openingProjectId || isSubmitting}
+                      title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
+                    >
+                      {isOpening ? (
+                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+                      ) : isCurrent ? (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                      ) : (
+                        <div className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {hiddenCount > 0 && (
+            <p className="px-1 text-[11px] text-muted-foreground">
+              <Trans>+{hiddenCount} more — search to find them</Trans>
+            </p>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 gap-1.5"
+              onClick={onOpenFolder}
+              disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              <Trans>Open Folder</Trans>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 gap-1.5"
+              onClick={onCreateNew}
+              disabled={isSubmitting || !!openingProjectId}
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+              <Trans>Create New</Trans>
             </Button>
           </div>
 
@@ -395,6 +571,7 @@ function NewProjectDialog({
   pickFolder,
   onCreate,
 }: NewProjectDialogProps) {
+  const { t } = useLingui();
   const [projectName, setProjectName] = useState('');
   const [parentFolder, setParentFolder] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -410,7 +587,7 @@ function NewProjectDialog({
 
   const handleCreate = useCallback(async () => {
     if (!projectName.trim() || !parentFolder.trim()) {
-      setError('Please fill in both fields');
+      setError(t`Please fill in both fields`);
       return;
     }
     setIsSubmitting(true);
@@ -428,16 +605,16 @@ function NewProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create New Project</DialogTitle>
-          <DialogDescription>Enter a name and choose a parent folder for the new project.</DialogDescription>
+          <DialogTitle><Trans>Create New Project</Trans></DialogTitle>
+          <DialogDescription><Trans>Enter a name and choose a parent folder for the new project.</Trans></DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-2">
-            <Label htmlFor="new-project-name">Project name</Label>
+            <Label htmlFor="new-project-name"><Trans>Project name</Trans></Label>
             <Input
               id="new-project-name"
-              placeholder="my-awesome-project"
+              placeholder={t`my-awesome-project`}
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               autoFocus
@@ -446,18 +623,18 @@ function NewProjectDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="new-parent-folder">Parent folder</Label>
+            <Label htmlFor="new-parent-folder"><Trans>Parent folder</Trans></Label>
             <div className="flex gap-2">
               <Input
                 id="new-parent-folder"
                 value={parentFolder}
                 onChange={(e) => setParentFolder(e.target.value)}
-                placeholder={defaultWorkspacePath || 'Select parent folder'}
+                placeholder={defaultWorkspacePath || t`Select parent folder`}
                 className="flex-1 font-mono text-sm"
                 dir="ltr"
               />
               {computeNodeAvailable && (
-                <Button variant="outline" onClick={() => void pickFolder(parentFolder || defaultWorkspacePath || undefined).then((p) => { if (p) setParentFolder(p); })} type="button" title="Browse">
+                <Button variant="outline" onClick={() => void pickFolder(parentFolder || defaultWorkspacePath || undefined).then((p) => { if (p) setParentFolder(p); })} type="button" title={t`Browse`}>
                   <FolderOpen className="h-4 w-4" />
                 </Button>
               )}
@@ -474,10 +651,10 @@ function NewProjectDialog({
             {isSubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating...
+                <Trans>Creating...</Trans>
               </>
             ) : (
-              'Create Project'
+              <Trans>Create Project</Trans>
             )}
           </Button>
         </div>
@@ -511,6 +688,10 @@ interface OpenProjectComponentProps {
   /** Called after the project has been picked + side-effects applied. The
    *  gate uses this to resume the action that opened the dialog. */
   onPicked?: (project: Project) => void | Promise<void>;
+  /** Plain switch only: change the active-project CONTEXT without navigating
+   *  (no project tab/dock is opened). Used by the footer "Switch Project" so
+   *  switching projects doesn't pull focus into a project view. */
+  contextOnly?: boolean;
 }
 
 export function OpenProjectComponent({
@@ -522,20 +703,32 @@ export function OpenProjectComponent({
   remoteProjectName,
   trigger,
   onPicked,
+  contextOnly,
 }: OpenProjectComponentProps) {
+  const { t } = useLingui();
   const { project: currentProject } = useProject();
-  const { toast } = useToast();
-  const { projects: scanProjects, isLoading: isLoadingScanProjects } = useClaudeProjectList({ enabled: open });
   const { computeNode } = useAgentContext();
+  const { navigation } = useDockNavigation();
 
   const [showCreate, setShowCreate] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [flowpadProjects, setFlowpadProjects] = useState<Project[]>([]);
-  const [systemProjects, setSystemProjects] = useState<{ id: string; name: string; uname?: string; fs_storage_mount_path?: string; displayName?: string }[]>([]);
   const [showSystem, setShowSystem] = useState<boolean>(loadShowSystemFlag);
   const devMode = useDevMode();
+  const isAdvanced = useIsAdvanced();
+
+  // The detailed picker (search + time pills + system toggle + per-row metadata)
+  // is an Advanced-view affordance. In Standard view the footer "Switch Project"
+  // gets a shortened, compact list instead. Only the plain 'switch' trigger is
+  // compacted — the 'map'/'gate' flows need their explanatory copy + full list.
+  const resolvedTrigger = trigger ?? (remoteProjectId ? 'map' : taskId ? 'gate' : 'switch');
+  const useCompact = !isAdvanced && resolvedTrigger === 'switch';
+
+  const { projects: mergedProjects, isLoading: isLoadingScanProjects } = useAllProjects({
+    enabled: open,
+    includeSystem: showSystem,
+  });
 
   const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
@@ -550,99 +743,8 @@ export function OpenProjectComponent({
       setError(null);
       setIsSubmitting(false);
       setOpeningProjectId(null);
-      return;
     }
-    Project.query(new QueryRequest({ type: Project.type, scope: [] }))
-      .then(setFlowpadProjects)
-      .catch(() => {});
   }, [open]);
-
-  // Fetch system projects via direct HTTP (bypassing Project.query so include_system
-  // lands on the top-level query string rather than inside the QueryFilter.match).
-  useEffect(() => {
-    if (!open || !showSystem) {
-      setSystemProjects([]);
-      return;
-    }
-    apiClient
-      .get('/graph/project/?include_system=true')
-      .then((data: unknown) => {
-        const list = Array.isArray((data as { data?: unknown[] })?.data)
-          ? ((data as { data: unknown[] }).data as Array<Record<string, unknown>>)
-          : Array.isArray(data)
-            ? (data as unknown as Array<Record<string, unknown>>)
-            : [];
-        setSystemProjects(
-          list
-            .filter((p) => !!p.system)
-            .map((p) => ({
-              id: String(p.id ?? ''),
-              name: String(p.name ?? ''),
-              uname: typeof p.uname === 'string' ? p.uname : undefined,
-              fs_storage_mount_path: typeof p.fs_storage_mount_path === 'string' ? p.fs_storage_mount_path : undefined,
-              displayName: typeof p.name === 'string' ? p.name : undefined,
-            })),
-        );
-      })
-      .catch(() => setSystemProjects([]));
-  }, [open, showSystem]);
-
-  // Merge scanned Claude projects with flowpad Project entities, then deduplicate
-  // by canonical path. Scanned entries are preferred (they have real session counts
-  // and filesystem timestamps). Flowpad-only entries (no Claude session yet) are
-  // appended with session_count=0 and modified_at=null (treated as today by the filter).
-  const mergedProjects = useMemo((): ProjectListItem[] => {
-    const byPath = new Map<string, ProjectListItem>();
-
-    const upsert = (item: ProjectListItem) => {
-      const key = item.cwd ? canonicalPathKey(normalizePath(item.cwd)) : null;
-      if (!key) return;
-      const existing = byPath.get(key);
-      // Keep entry with more sessions; on tie prefer non-null modified_at
-      if (!existing || item.session_count > existing.session_count ||
-          (item.session_count === existing.session_count && item.modified_at && !existing.modified_at)) {
-        byPath.set(key, item);
-      }
-    };
-
-    for (const p of scanProjects) upsert(p);
-
-    for (const p of flowpadProjects) {
-      const path = p.fs_storage_mount_path;
-      // Skip blank, internal, and session/record-path entities. Note: the
-      // historical `/tmp/` exclusion was removed as part of the project
-      // consolidation (Path A, 2026-05-09) — `/tmp` is a perfectly valid
-      // user-chosen mount path, and the indexer-driven auto-adopt now
-      // surfaces those folders as legitimate Projects.
-      if (!path || !p.name) continue;
-      if (/[/\\](\.flow|flow\/sessions|flow\/records)[/\\]/.test(path)) continue;
-      upsert({
-        id: `flowpad:${p.id}`,
-        name: p.displayName,
-        encoded_name: p.id,
-        cwd: path,
-        session_count: 0,
-        modified_at: null,
-      });
-    }
-
-    // System projects are only appended when the "Show system" checkbox is on.
-    for (const p of systemProjects) {
-      const path = p.fs_storage_mount_path;
-      if (!path || !p.name) continue;
-      upsert({
-        id: `flowpad:${p.id}`,
-        name: p.displayName || p.name,
-        encoded_name: p.id,
-        cwd: path,
-        session_count: 0,
-        modified_at: null,
-        system: true,
-      });
-    }
-
-    return Array.from(byPath.values());
-  }, [scanProjects, flowpadProjects, systemProjects]);
 
   const currentProjectPath = useMemo(
     () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
@@ -651,31 +753,43 @@ export function OpenProjectComponent({
 
   const setCurrentProjectContext = useCallback(
     async (project: Project) => {
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
-      await dataContext.refreshProject();
-      dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
+      await selectProjectContext(project);
 
       onProjectChanged?.();
-      // Entity stamping (task/conversation/project_id, mapping table writes,
-      // remap navigation) happens inside `onPicked` — the gate's apply
-      // callback owns it so the wasReplacement signal isn't clobbered by a
-      // pre-stamp here. In the plain footer-switch case onPicked is undefined
-      // and only ctx.project changes, which is the right behavior.
-      try {
-        await onPicked?.(project);
-      } catch {
-        // continuation errors shouldn't break the picker
+      if (onPicked) {
+        // Entity stamping (task/conversation/project_id, mapping table writes,
+        // remap navigation) happens inside `onPicked` — the gate's apply
+        // callback owns it (and its own navigation) so the wasReplacement
+        // signal isn't clobbered by a pre-stamp here.
+        try {
+          await onPicked(project);
+        } catch {
+          // continuation errors shouldn't break the picker
+        }
+      } else if (!contextOnly) {
+        // Plain switch: select the project by navigating to its tab — the same
+        // path as clicking that tab (dockForProjectEntry → fromTabHash →
+        // openDock). Resumes the last-active tab, or the project landing when it
+        // has no open tab. Without this the active project changed but the URL
+        // stayed on the old project's tab, so nothing was selected.
+        //
+        // `contextOnly` (footer Switch Project) deliberately skips this: it only
+        // changes the active-project context — no navigation, no project tab.
+        // Note: this context switch is ephemeral by design — the URL-first
+        // loader re-derives the active project from the URL on the next
+        // navigation, so the switch sticks only until you navigate.
+        navigation.openDock(await dockForProjectEntry(project.id));
       }
     },
-    [onProjectChanged, onPicked],
+    [onProjectChanged, onPicked, navigation, contextOnly],
   );
 
   const ensureProjectAndSetContext = useCallback(
     async (path: string) => {
-      if (!dataContext.someone) throw new Error('You must be logged in');
+      if (!dataContext.someone) throw new Error(t`You must be logged in`);
 
       const normalizedPath = normalizePath(path);
-      if (!normalizedPath) throw new Error('Please provide a valid project path');
+      if (!normalizedPath) throw new Error(t`Please provide a valid project path`);
 
       const pathKey = canonicalPathKey(normalizedPath);
       const freshProjects = await Project.query(
@@ -693,7 +807,7 @@ export function OpenProjectComponent({
       await setCurrentProjectContext(targetProject);
       return { project: targetProject, openedExisting };
     },
-    [setCurrentProjectContext],
+    [setCurrentProjectContext, t],
   );
 
   const handleProjectClick = useCallback(
@@ -707,26 +821,26 @@ export function OpenProjectComponent({
         await ensureProjectAndSetContext(path);
         onOpenChange(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to open project');
+        setError(err instanceof Error ? err.message : t`Failed to open project`);
       } finally {
         setOpeningProjectId(null);
       }
     },
-    [ensureProjectAndSetContext, onOpenChange],
+    [ensureProjectAndSetContext, onOpenChange, t],
   );
 
   const pickFolder = useCallback(async (initialDir?: string): Promise<string | null> => {
     if (!computeNode) {
-      setError('No compute node available');
+      setError(t`No compute node available`);
       return null;
     }
     try {
       return await computeNode.openPathDialog(initialDir);
     } catch {
-      setError('Failed to open folder picker');
+      setError(t`Failed to open folder picker`);
       return null;
     }
-  }, [computeNode]);
+  }, [computeNode, t]);
 
   const handleOpenFolder = useCallback(async () => {
     const selected = await pickFolder(defaultWorkspacePath || undefined);
@@ -737,15 +851,15 @@ export function OpenProjectComponent({
     try {
       const result = await ensureProjectAndSetContext(selected);
       if (result.openedExisting) {
-        toast({ title: 'Opened existing project', description: result.project.displayName });
+        notify.success({ title: t`Opened existing project`, message: result.project.displayName });
       }
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to open project');
+      setError(err instanceof Error ? err.message : t`Failed to open project`);
     } finally {
       setIsSubmitting(false);
     }
-  }, [pickFolder, ensureProjectAndSetContext, onOpenChange, toast]);
+  }, [pickFolder, ensureProjectAndSetContext, onOpenChange, t]);
 
   // NewProjectDialog calls this after validation
   const handleCreate = useCallback(
@@ -757,27 +871,37 @@ export function OpenProjectComponent({
     [ensureProjectAndSetContext, onOpenChange],
   );
 
+  // Shared between the compact + detailed pickers — the detailed one layers on a
+  // few extra props (system toggle, trigger copy) below.
+  const commonDialogProps = {
+    open: open && !showCreate,
+    onOpenChange,
+    projects: mergedProjects,
+    isLoadingProjects: isLoadingScanProjects,
+    currentProjectPath,
+    openingProjectId,
+    isSubmitting,
+    computeNodeAvailable: !!computeNode,
+    error,
+    onProjectClick: (p: ProjectListItem) => void handleProjectClick(p),
+    onOpenFolder: () => void handleOpenFolder(),
+    onCreateNew: () => setShowCreate(true),
+  };
+
   return (
     <>
-      <ProjectSelectDialog
-        open={open && !showCreate}
-        onOpenChange={onOpenChange}
-        projects={mergedProjects}
-        isLoadingProjects={isLoadingScanProjects}
-        currentProjectPath={currentProjectPath}
-        openingProjectId={openingProjectId}
-        isSubmitting={isSubmitting}
-        computeNodeAvailable={!!computeNode}
-        error={error}
-        onProjectClick={(p) => void handleProjectClick(p)}
-        onOpenFolder={() => void handleOpenFolder()}
-        onCreateNew={() => setShowCreate(true)}
-        showSystem={showSystem}
-        onShowSystemChange={handleShowSystemChange}
-        devMode={devMode}
-        trigger={trigger ?? (remoteProjectId ? 'map' : taskId ? 'gate' : 'switch')}
-        remoteProjectName={remoteProjectName}
-      />
+      {useCompact ? (
+        <CompactProjectSelectDialog {...commonDialogProps} />
+      ) : (
+        <ProjectSelectDialog
+          {...commonDialogProps}
+          showSystem={showSystem}
+          onShowSystemChange={handleShowSystemChange}
+          devMode={devMode}
+          trigger={resolvedTrigger}
+          remoteProjectName={remoteProjectName}
+        />
+      )}
       <NewProjectDialog
         open={open && showCreate}
         onOpenChange={(v) => { if (!v) onOpenChange(false); }}

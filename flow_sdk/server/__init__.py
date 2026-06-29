@@ -10,7 +10,7 @@ Public API::
         graph_router,
         health_router,
         bootstrap_router,
-        init_sod_driver,
+        cleanup_legacy_sod_local,
         init_local_storage_driver,
     )
 
@@ -30,7 +30,7 @@ __all__ = [
     "graph_router",
     "health_router",
     "bootstrap_router",
-    "init_sod_driver",
+    "cleanup_legacy_sod_local",
     "init_local_storage_driver",
 ]
 
@@ -47,7 +47,7 @@ _LAZY_MAP: dict[str, tuple[str, str]] = {
     "graph_router": (".routes", "graph_router"),
     "health_router": (".routes", "health_router"),
     "bootstrap_router": (".routes", "bootstrap_router"),
-    "init_sod_driver": (".startup", "init_sod_driver"),
+    "cleanup_legacy_sod_local": (".startup", "cleanup_legacy_sod_local"),
     "init_local_storage_driver": (".startup", "init_local_storage_driver"),
 }
 

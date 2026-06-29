@@ -65,22 +65,34 @@ export interface ViewerMeta {
     | 'Home'
     | 'Zap'
     | 'CheckSquare'
+    | 'BadgeCheck'
     | 'SearchIcon'
     | 'Workflow'
+    | 'GitGraph'
+    | 'BrainCircuit'
     | 'Users'
-    | 'Inbox';
+    | 'Inbox'
+    | 'Stethoscope';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
   canAddAsTab: boolean;
+  /**
+   * How the content panel frames this surface: `'fullbleed'` takes over the whole
+   * panel (no tab strip) — a landing like Home; `'workspace'` (default when
+   * omitted) renders inside the tabbed workspace (strip + body). This is the one
+   * "is the strip shown?" bit, separate from `DockPointer.tabHash` ("is this a chip?").
+   */
+  chrome?: 'fullbleed' | 'workspace';
 }
 
-export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
+export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.HOME]: {
     title: 'Home',
     iconName: 'Home',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+    chrome: 'fullbleed',
   },
   [ViewType.SYSTEM_PROFILE]: {
     title: 'System Profile',
@@ -101,7 +113,7 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     canAddAsTab: false,
   },
   [ViewType.SHELL]: {
-    title: 'Shell',
+    title: 'Worker',
     iconName: 'Terminal',
     tabLocation: 'overview',
     canAddAsTab: true,
@@ -224,18 +236,32 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.APPS]: {
+    title: 'App',
+    iconName: 'Sparkles',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.GRAPH]: {
+    title: 'Graph',
+    iconName: 'Workflow',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.K_BROWSER]: {
+    title: 'Knowledge Browser',
+    iconName: 'Brain',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.LENS]: {
     title: 'Lens',
     iconName: 'Eye',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
-  [ViewType.SESSION]: {
-    title: 'Session',
-    iconName: 'Zap',
-    tabLocation: 'dedicated',
-    canAddAsTab: false,
-  },
+  // ViewType.SESSION removed — legacy /dock/session URLs redirect to
+  // /dock/shell/<agentic_process>. The old live-workflow viewer is gone.
   [ViewType.TASKS]: {
     title: 'Tasks',
     iconName: 'CheckSquare',
@@ -263,6 +289,12 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
   [ViewType.TRIGGERS]: {
     title: 'Triggers',
     iconName: 'Zap',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.CAPABILITIES]: {
+    title: 'Capabilities',
+    iconName: 'BadgeCheck',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
@@ -311,6 +343,18 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
   [ViewType.SPEC]: {
     title: 'Spec',
     iconName: 'FileText',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.GRAPH_CONTEXT]: {
+    title: 'Context',
+    iconName: 'BrainCircuit',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.DIAGNOSIS]: {
+    title: 'Diagnosis',
+    iconName: 'Stethoscope',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },

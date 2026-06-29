@@ -244,23 +244,38 @@ def session_analysis(claude_session_id: str, index: int) -> str:
     Returns:
         Details of the sessions as a string for the complete session or a specific entry based on the index provided.
     """
-    from flow_sdk.fs_records.claude import ClaudeRootFsRecord
+    from flow_sdk.transcript_analyzer import AgentTranscriptFile, worker_summary_log  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     if not claude_session_id:
         return "Error: session_id is required"
     if not isinstance(index, int):
         return "Error: index must be an integer"
-    claude = ClaudeRootFsRecord.default()
-    session = claude.get_session(claude_session_id)
-    if session is None:
+
+    # Find <projects_dir>/<encoded>/<session_id>.jsonl across all project dirs.
+    projects_dir = get_instance_settings().claude_projects_dir
+    jsonl_path = None
+    if projects_dir.is_dir():
+        for project_dir in projects_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            cand = project_dir / f"{claude_session_id}.jsonl"
+            if cand.is_file():
+                jsonl_path = cand
+                break
+    if jsonl_path is None:
         return f"Error: session {claude_session_id} not found"
+
+    # Worker-generic transcript analyzer: extractive whole-session summary for
+    # index == -1, or the full rich rendering of a single entry otherwise.
     if index == -1:
-        result = session.summary_log
-    elif 0 <= index < len(session.filtered_entries):
-        entry = session.filtered_entries[index]
-        result = f"Entry {index} summary: {entry.summary}\nFull content: {entry.content}"
+        result = worker_summary_log(jsonl_path, "claude")
     else:
-        result = f"Error: index {index} out of range for session with {len(session.filtered_entries)} entries"
+        entries = AgentTranscriptFile("claude", jsonl_path).entries
+        if 0 <= index < len(entries):
+            result = entries[index].to_string()
+        else:
+            result = f"Error: index {index} out of range for session with {len(entries)} entries"
 
     from flow_sdk.discovery.notify import send_mcp_event
     send_mcp_event("session_analysis", claude_session_id, {"index": index}, result[:200])

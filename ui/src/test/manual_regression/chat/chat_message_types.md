@@ -1,8 +1,12 @@
+---
+id: eb2bf03b-7eee-589d-a1fd-d8ddb8ee5c15
+---
+
 test 1: Plain text message with USER and ASSISTANT blocks
 - navigate to {APP_URL}/
 - fill landing input with "message types test"
 - press Enter
-- wait for URL to change to /dock/session/...
+- wait for URL to change to /dock/shell/...
 - click "New Session" button
 - validate instruction input is visible and status is IDLE
 - fill instruction input with "What is the capital of France?"

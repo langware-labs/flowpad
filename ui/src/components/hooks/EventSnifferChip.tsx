@@ -10,6 +10,7 @@ import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Maximize2, Power, Radio } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { EventListPanel } from './EventListPanel';
 import { EventTooltipContent, getEventColor, getEventIcon, navigateToTranscript } from './event-utils';
 
@@ -166,6 +167,7 @@ function HeartbeatChart({
 // ---------------------------------------------------------------------------
 
 export function EventSnifferChip() {
+  const { t } = useLingui();
   const { snifferEnabled: enabled } = useContext();
   const { events, isLoading, isToggling, enable, disable, clear } = useSnifferContext();
   const { navigation } = useDockNavigation();
@@ -213,9 +215,16 @@ export function EventSnifferChip() {
   const spanMs = TIME_SPANS.find((t) => t.value === timeSpan)!.ms;
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+    <div
+      data-testid="sniffer-chip"
+      data-sniffer-enabled={enabled ? 'true' : 'false'}
+      className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2"
+    >
       {/* Status dot */}
-      <span className={cn('h-2 w-2 shrink-0 rounded-full', enabled ? 'bg-green-500' : 'bg-muted-foreground/40')} />
+      <span
+        data-testid="sniffer-status-dot"
+        className={cn('h-2 w-2 shrink-0 rounded-full', enabled ? 'bg-green-500' : 'bg-muted-foreground/40')}
+      />
 
       {/* Label – opens lens view; double-click toggles level */}
       <button
@@ -260,7 +269,11 @@ export function EventSnifferChip() {
         }}
       >
         <PopoverTrigger asChild>
-          <button className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+          <button
+            data-testid="sniffer-expand-button"
+            aria-label={t`Expand sniffer event list`}
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
         </PopoverTrigger>
@@ -317,6 +330,8 @@ export function EventSnifferChip() {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
+            data-testid="sniffer-power-button"
+            aria-label={enabled ? t`Disable sniffer` : t`Enable sniffer`}
             variant="ghost"
             size="icon"
             className={cn('h-7 w-7 shrink-0', enabled && 'text-green-500')}
@@ -326,7 +341,7 @@ export function EventSnifferChip() {
             <Power className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>{enabled ? 'Disable sniffer' : 'Enable sniffer'}</TooltipContent>
+        <TooltipContent>{enabled ? t`Disable sniffer` : t`Enable sniffer`}</TooltipContent>
       </Tooltip>
     </div>
   );

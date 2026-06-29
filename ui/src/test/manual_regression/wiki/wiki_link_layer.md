@@ -1,3 +1,7 @@
+---
+id: 2734152a-8220-50d4-955b-95a0e7a76849
+---
+
 # Wiki link layer — manual regression
 
 Scenarios collected from the validation runs that shipped Phase 1–3 of the
@@ -123,7 +127,7 @@ wiki feature (backend `links` table + `Entity.reindex` + frontend toolbar
 ### test 13: toolbar works for system docs that lack a source entity
 
 - navigate to a doc that has NO entity row, e.g.
-  `/dock/assets/editor/markdown/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/system_projects/flowpad_assistant/.claude/docs/hello-flowpad.md`.
+  `/dock/assets/editor/markdown/<abs-repo-root>/flow_sdk/system_projects/flowpad_assistant/.claude/docs/hello-flowpad.md`.
 - switch to `editor` mode.
 - expected: `wiki-toolbar-add-link` is still **enabled** (not disabled) — verified by `btn.disabled === false`.
 - click → search modal opens, click a result → `<a>` link inserted.

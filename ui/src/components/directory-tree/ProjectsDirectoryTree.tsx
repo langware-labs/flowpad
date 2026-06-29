@@ -1,5 +1,6 @@
 import { FSItem, Project, QueryRequest } from '@sdk';
 import { useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { DirectoryTree } from './DirectoryTree';
 import type { DirectoryTreeProps } from './types';
 
@@ -25,6 +26,7 @@ export interface ProjectsDirectoryTreeProps extends Omit<DirectoryTreeProps, 'ro
  * ```
  */
 export function ProjectsDirectoryTree(props: ProjectsDirectoryTreeProps) {
+  const { t } = useLingui();
   const [rootFolders, setRootFolders] = useState<FSItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,14 +60,14 @@ export function ProjectsDirectoryTree(props: ProjectsDirectoryTreeProps) {
       setRootFolders(roots);
     } catch (err) {
       console.error('Failed to load projects:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load projects');
+      setError(err instanceof Error ? err.message : t`Failed to load projects`);
     } finally {
       setLoading(false);
     }
   };
 
   if (loading) {
-    return <div className="p-4 text-center text-xs text-muted-foreground">Loading projects...</div>;
+    return <div className="p-4 text-center text-xs text-muted-foreground"><Trans>Loading projects...</Trans></div>;
   }
 
   if (error) {

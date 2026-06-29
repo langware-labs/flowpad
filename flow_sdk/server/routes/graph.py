@@ -248,6 +248,57 @@ async def handle_request(
                 kwargs[name] = json_data[name]
 
     _hr_bench("before handler call")
+
+    # Hub reflection: if the call opts in (``request_info.hub_reflect``) and the
+    # entity has a hub counterpart (remote=True), forward the call to the
+    # hub and mirror its response into the local row instead of running
+    # the local handler. Falls through to the local handler on HubError
+    # (offline / hub unreachable) so degraded mode still works.
+    from flow_sdk.server.routes._hub_reflect import (
+        reflect_to_hub,
+        should_reflect_to_hub,
+    )
+    from flow_sdk.utils.hub import HubError
+
+    # The target entity for reflection: entity-bound action handlers receive it
+    # as ``self`` (e.g. ``members``), but the generic CRUD handlers (``update`` /
+    # ``create`` / ``delete``) take only ``request`` — for those, fall back to the
+    # framework-resolved target so a reflectable PUT (e.g. a conversation rename)
+    # still finds its entity.
+    entity_for_reflect = kwargs.get("self")
+    if entity_for_reflect is None and request_info.auth_result is not None:
+        entity_for_reflect = request_info.auth_result.target
+    if should_reflect_to_hub(entity_for_reflect, request_info.hub_reflect):
+        try:
+            # Carry the REAL request method into reflection — never infer the hub
+            # verb from the matched action's static methods (see reflect_to_hub).
+            hub_data = await reflect_to_hub(
+                a, entity_for_reflect, {**request_params, **json_data}, request_info.method
+            )
+            _hr_bench("after hub reflect")
+            return ApiResponse.success(data=hub_data)
+        except HubError as e:
+            # A hub REJECTION (4xx/5xx) of a mutation must reach the client —
+            # falling back to the local handler would turn a denial (e.g. the
+            # members role-change/remove 403 from the hub's authorization
+            # gates) into a silent fake success and drift local state from the
+            # hub. Only transport failures (status_code == 0: DNS, refused,
+            # timeout — i.e. offline) keep the degraded local fallback, and
+            # GETs always do (a stale local read beats an error).
+            if request_info.method.upper() != "GET" and e.status_code >= 400:
+                raise HTTPException(status_code=e.status_code, detail=e.reason)
+            service_log.warn(
+                f"[hub-reflect] {request_info.action} on {entity_for_reflect.type}/{entity_for_reflect.id} "
+                f"falling back to local: {e}"
+            )
+        except Exception as e:  # noqa: BLE001
+            # Never let a reflection-layer bug 500 the whole request — fall
+            # through to the local handler. The dispatcher is opportunistic.
+            service_log.warn(
+                f"[hub-reflect] unexpected error on {request_info.action} "
+                f"for {entity_for_reflect.type}/{entity_for_reflect.id}: {type(e).__name__}: {e}"
+            )
+
     # Call the function with the matched arguments
     try:
         if inspect.iscoroutinefunction(a.handler):
@@ -286,6 +337,85 @@ async def handle_request(
     return response
 
 
+_SELF_HEAL_INDEXERS: dict[str, Any] | None = None
+
+
+def _get_self_heal_indexers() -> dict[str, Any]:
+    """Per-type single-file indexers used by the 404 self-heal path. Built
+    lazily so import cost only lands when an actual self-heal happens.
+
+    v1 wires PLAN only (the original RCA target). Other file-backed types
+    (markdown, claude_md, claude_command, skill, claude_memory, claude_rules)
+    can be added when the chip→loader→hint_path wiring on the FE starts
+    sending hints for them.
+    """
+    global _SELF_HEAL_INDEXERS
+    if _SELF_HEAL_INDEXERS is not None:
+        return _SELF_HEAL_INDEXERS
+    out: dict[str, Any] = {}
+    try:
+        from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (
+            _index_single_claude_md,
+            _index_single_claude_memory,
+            _index_single_claude_rules,
+            _index_single_command,
+            _index_single_markdown,
+            _index_single_plan,
+            _index_single_skill,
+        )
+        out["plan"] = _index_single_plan
+        out["markdown"] = _index_single_markdown
+        out["skill"] = _index_single_skill
+        out["claude_md"] = _index_single_claude_md
+        out["claude_memory"] = _index_single_claude_memory
+        out["claude_rules"] = _index_single_claude_rules
+        out["command"] = _index_single_command
+    except Exception:
+        pass
+    _SELF_HEAL_INDEXERS = out
+    return out
+
+
+async def _try_self_heal_missing_entity(
+    request: Request,
+    request_info,
+) -> Any | None:
+    """If the GET 404'd and the caller passed ``?hint_path=<file>``, run a
+    single-file index for the target type and retry the lookup. Returns the
+    rehydrated entity on success, None otherwise.
+
+    Per the no-auto-walk rule (feedback_no_auto_indexing.md), this only
+    fires when the caller explicitly provided a path hint — chip clicks
+    that originated from a context entry carrying ``data.path``.
+    """
+    target_typeid = request_info.target_entity_typeid
+    if not target_typeid:
+        return None
+    hint_path = request.query_params.get("hint_path")
+    if not hint_path:
+        return None
+    indexers = _get_self_heal_indexers()
+    indexer = indexers.get(target_typeid.type)
+    if indexer is None:
+        return None
+    from pathlib import Path
+    p = Path(hint_path)
+    if not p.exists():
+        return None
+    try:
+        await indexer(p)
+    except Exception as exc:
+        service_log.warn(
+            f"self-heal index failed for {target_typeid} at {hint_path}: {exc}"
+        )
+        return None
+    # Reset the per-request cache so the retry actually rehydrates.
+    request_info._target_entity = None
+    if request_info.auth_result is not None:
+        request_info.auth_result.target = None
+    return await request_info.get_target_entity()
+
+
 async def fill_self_cls_param_if_needed(args, first_param, request_info):
     # Check if we need to pass 'self' or 'cls'
     if first_param.name == "self":
@@ -296,6 +426,11 @@ async def fill_self_cls_param_if_needed(args, first_param, request_info):
             )
         if not request_info.direct_resource_type:
             target_entity = await request_info.get_target_entity()
+            if target_entity is None:
+                # 404 self-heal: ?hint_path=<file> → single-file index + retry.
+                target_entity = await _try_self_heal_missing_entity(
+                    request_info.request, request_info
+                )
             if target_entity is None:
                 raise HTTPException(
                     status_code=404,

@@ -1,3 +1,7 @@
+---
+id: 681a5494-683d-5f30-bb29-7af5e4795c5e
+---
+
 # Adding a New Component
 
 Guide for creating reusable UI components in the frontend.

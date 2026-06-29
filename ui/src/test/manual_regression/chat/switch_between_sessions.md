@@ -1,8 +1,12 @@
+---
+id: d2d949e8-7b47-5422-95b0-4b4aa3abb767
+---
+
 test 1: Create multiple session tabs and switch between them
 - navigate to {APP_URL}/
 - fill landing input with "session switch test"
 - press Enter
-- wait for URL to change to /dock/session/...
+- wait for URL to change to /dock/shell/...
 - click "New Session" button
 - validate Session 1 tab is visible
 - validate instruction input is visible and status is IDLE

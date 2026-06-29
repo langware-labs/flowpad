@@ -4,6 +4,8 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { FolderOpen, FolderPlus, Loader2, LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 
 interface ProjectFormHeaderProps {
   icon: LucideIcon;
@@ -92,7 +94,7 @@ function FormActions({ onSubmit, onCancel, submitLabel, submitLoadingLabel, isLo
   return (
     <div className="flex gap-2">
       <Button variant="outline" onClick={onCancel} className="flex-1">
-        Back
+        <Trans>Back</Trans>
       </Button>
       <Button onClick={onSubmit} disabled={isLoading || isDisabled} className="flex-1">
         {isLoading ? (
@@ -127,6 +129,7 @@ export function ProjectSetupScreen({
   hideButtons = false,
   onProjectCreated,
 }: ProjectSetupScreenProps) {
+  const { t } = useLingui();
   const [internalMode, setInternalMode] = useState<ProjectSetupMode>('select');
   const [isCreating, setIsCreating] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
@@ -169,7 +172,7 @@ export function ProjectSetupScreen({
   const handleBrowseFolder = useCallback(
     async (setter: (path: string) => void) => {
       if (!computeNode) {
-        setError('No compute node available');
+        setError(t`No compute node available`);
         return;
       }
       try {
@@ -180,7 +183,7 @@ export function ProjectSetupScreen({
         }
       } catch (err) {
         console.error('Failed to open folder picker:', err);
-        setError('Failed to open folder picker');
+        setError(t`Failed to open folder picker`);
       }
     },
     [computeNode],
@@ -197,7 +200,7 @@ export function ProjectSetupScreen({
   const handleSubmitProject = useCallback(
     async (action: 'create' | 'open') => {
       if (!dataContext.someone) {
-        setError('You must be logged in');
+        setError(t`You must be logged in`);
         return;
       }
 
@@ -205,11 +208,11 @@ export function ProjectSetupScreen({
       const path = isCreate ? parentFolderPath.trim() : selectedFolderPath.trim();
 
       if (!path) {
-        setError(isCreate ? 'Please select a parent folder' : 'Please select or enter a folder');
+        setError(isCreate ? t`Please select a parent folder` : t`Please select or enter a folder`);
         return;
       }
       if (isCreate && !newProjectName.trim()) {
-        setError('Please enter a project name');
+        setError(t`Please enter a project name`);
         return;
       }
 
@@ -252,14 +255,14 @@ export function ProjectSetupScreen({
       <div className="w-80 space-y-3 duration-200 animate-in fade-in slide-in-from-top-2">
         <ProjectFormHeader
           icon={FolderPlus}
-          title="Create New Project"
-          description="Enter a name and choose where to create your project."
+          title={t`Create New Project`}
+          description={t`Enter a name and choose where to create your project.`}
         />
         <div className="space-y-2">
-          <Label htmlFor="project-name">Project Name</Label>
+          <Label htmlFor="project-name"><Trans>Project Name</Trans></Label>
           <Input
             id="project-name"
-            placeholder="my-awesome-project"
+            placeholder={t`my-awesome-project`}
             value={newProjectName}
             onChange={(e) => setNewProjectName(e.target.value)}
             autoFocus
@@ -267,24 +270,24 @@ export function ProjectSetupScreen({
         </div>
         <FolderInput
           id="parent-folder"
-          label="Parent Folder"
+          label={t`Parent Folder`}
           value={parentFolderPath}
           onChange={setParentFolderPath}
           onBrowse={() => void handleBrowseFolder(setParentFolderPath)}
           showBrowse={!!computeNode}
-          placeholder={defaultWorkspacePath || 'Select parent folder'}
+          placeholder={defaultWorkspacePath || t`Select parent folder`}
           helperText={
             isDesktop
-              ? 'Full path where your project folder will be created.'
-              : 'In browser mode, projects must be in the workspace folder. Enter the full path manually.'
+              ? t`Full path where your project folder will be created.`
+              : t`In browser mode, projects must be in the workspace folder. Enter the full path manually.`
           }
         />
         {error && <p className="text-sm text-destructive">{error}</p>}
         <FormActions
           onSubmit={() => void handleSubmitProject('create')}
           onCancel={handleBack}
-          submitLabel="Create Project"
-          submitLoadingLabel="Creating..."
+          submitLabel={t`Create Project`}
+          submitLoadingLabel={t`Creating...`}
           isLoading={isCreating}
           isDisabled={!parentFolderPath.trim() || !newProjectName.trim()}
         />
@@ -298,21 +301,21 @@ export function ProjectSetupScreen({
       <div className="w-80 space-y-3 duration-200 animate-in fade-in slide-in-from-top-2">
         <ProjectFormHeader
           icon={FolderOpen}
-          title="Open Existing Project"
-          description="Choose a folder to open as a project."
+          title={t`Open Existing Project`}
+          description={t`Choose a folder to open as a project.`}
         />
         <FolderInput
           id="project-path"
-          label="Project Folder"
+          label={t`Project Folder`}
           value={selectedFolderPath}
           onChange={setSelectedFolderPath}
           onBrowse={() => void handleBrowseFolder(setSelectedFolderPath)}
           showBrowse={!!computeNode}
-          placeholder={defaultWorkspacePath ? `${defaultWorkspacePath}/my-project` : 'Enter folder path'}
+          placeholder={defaultWorkspacePath ? `${defaultWorkspacePath}/my-project` : t`Enter folder path`}
           helperText={
             isDesktop
-              ? 'Click the folder icon to browse, or enter the full path.'
-              : 'In browser mode, projects must be in the workspace folder. Enter the full path manually.'
+              ? t`Click the folder icon to browse, or enter the full path.`
+              : t`In browser mode, projects must be in the workspace folder. Enter the full path manually.`
           }
           autoFocus
         />
@@ -320,8 +323,8 @@ export function ProjectSetupScreen({
         <FormActions
           onSubmit={() => void handleSubmitProject('open')}
           onCancel={handleBack}
-          submitLabel="Open Project"
-          submitLoadingLabel="Opening..."
+          submitLabel={t`Open Project`}
+          submitLoadingLabel={t`Opening...`}
           isLoading={isOpening}
           isDisabled={!selectedFolderPath.trim()}
         />
@@ -348,7 +351,7 @@ export function ProjectSetupScreen({
         className="gap-1.5"
       >
         <FolderPlus className="h-4 w-4" />
-        New Project
+        <Trans>New Project</Trans>
       </Button>
       <Button
         variant="outline"
@@ -361,7 +364,7 @@ export function ProjectSetupScreen({
         className="gap-1.5"
       >
         <FolderOpen className="h-4 w-4" />
-        Open Project
+        <Trans>Open Project</Trans>
       </Button>
     </div>
   );

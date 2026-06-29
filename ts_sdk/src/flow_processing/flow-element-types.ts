@@ -35,6 +35,10 @@ export const FlowElementTypes = {
   ENV_VAR: 'env-var',
   NOTIFICATION: 'notification',
 
+  // Transport envelope: Python Entity.emit_entity_event(event, payload). Not
+  // a renderable element — APIEntity.handleFlowData routes it to onEntityEvent.
+  ENTITY_EVENT: 'entity_event',
+
   // File system
   WRITE: 'write',
 
@@ -53,6 +57,15 @@ export const FlowElementTypes = {
   WEB_APP: 'web-app',
   SURVEY: 'survey',
   CONTINUE: 'continue',
+
+  // Indexer / FAAS scan progress envelopes (emitted by in_process_activity)
+  PROGRESS_REPORT: 'progress_report',
+
+  // FlowMessage body transfer progress (emitted by resource_tracker on the
+  // .flowmsg bundle move; consumed by useFlowMessageProgress). Legitimate
+  // element types — registered here so the parser doesn't warn "unknown".
+  UPLOAD_PROGRESS: 'upload_progress',
+  DOWNLOAD_PROGRESS: 'download_progress',
 
   // Execution tracing / webhooks
   WEBHOOK: 'webhook',

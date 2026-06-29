@@ -1,3 +1,8 @@
+---
+id: 4ad84cbc-f597-5149-9124-caf0112f51a6
+---
+
+- PRECONDITION: switch the app to Advanced view (footer view pill or `window.setView('advanced')` / localStorage `viewMode=advanced`) — the process toolbar (Restart / Open Terminal / Fork / Worktree / Session Info / Transcript) and side-ribbon panels only exist in Advanced view; the default Standard view shows the simple-chat header without them
 test 1: PTY Viewer opens from the Columns & Trace dropdown (always available, no dev-mode gate)
 - navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for the Claude banner

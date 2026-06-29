@@ -279,7 +279,7 @@ describe('e2b_sandbox_pty', () => {
     pc.shellId = shell.id;
     pc.computeNodeId = sandboxNode.id;
     pc.started = true;
-    pc._replayDone = true;
+    pc._attached = true;
     pc._attachedPtyId = shell.id;
 
     let accumulated = '';
@@ -296,14 +296,15 @@ describe('e2b_sandbox_pty', () => {
       `printf '%s\\n' ${START} && uname -a && printf '%s\\n' ${END}\n`,
     );
 
-    // Wait for END to appear twice — once in the echoed command line, once in
-    // the real command output.
+    // Some PTY providers echo the command line and some only stream command
+    // output through shell.onOutput. Wait for the parsed marker-framed payload
+    // instead of assuming a provider-specific echo count.
     await vi.waitFor(
       () => {
-        let idx = -1;
-        let count = 0;
-        while ((idx = accumulated.indexOf(END, idx + 1)) !== -1) count++;
-        if (count < 2) throw new Error(`waiting for ${END} x2, have ${count}, accumulated=${accumulated.length}b`);
+        const line = extractBetweenMarkers(accumulated, START, END);
+        if (!line.includes('Linux')) {
+          throw new Error(`waiting for Linux between ${START}/${END}, accumulated=${accumulated.length}b`);
+        }
       },
       { timeout: 10_000, interval: 100 },
     );
@@ -360,7 +361,7 @@ describe('e2b_sandbox_pty', () => {
           if (!accumulated.includes('e2b_shell_start_fix_ok')) {
             const pc: any = (shell as any).ptyConnection;
             throw new Error(
-              `no output via shell.onOutput; ptyConnection state: started=${pc?.started} replayDone=${pc?.replayDone} isLive=${pc?.isLive} lastSeq=${pc?.lastSeq} accumulated=${accumulated.length}b`,
+              `no output via shell.onOutput; ptyConnection state: started=${pc?.started} attached=${pc?.attached} isLive=${pc?.isLive} lastSeq=${pc?.lastSeq} accumulated=${accumulated.length}b`,
             );
           }
         },

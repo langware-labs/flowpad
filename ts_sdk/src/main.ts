@@ -13,7 +13,9 @@ import { navigator } from './services/navigationService';
 import * as Sentry from '@sentry/browser';
 import { ContextEntitiesEnum } from './FlowSync/context';
 import { getContextEntityFromLocalStorage, setContextEntityToLocalStorage } from './FlowSync/context-local-storage';
+import { capabilityManager } from './capabilities';
 import { cloudManager } from './services/cloud_login';
+import { privacyManager } from './services/privacy_mode';
 import { ConnectionManager } from './websocket';
 
 declare global {
@@ -46,8 +48,17 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // and listens to oauth WS events for the lifetime of the app.
       void cloudManager.bootstrap(bootstrapInfo.desktop_info);
 
-      // Load schemas (pass empty array if null to prevent re-fetching)
-      await dataManager.loadSchemas(bootstrapInfo.schemas || []);
+      // Seed the data-privacy mode (Local/Connected); it mirrors into dataContext
+      // and listens for live mode changes over WS.
+      void privacyManager.bootstrap(bootstrapInfo.privacy_mode);
+
+      // Seed the capabilities summary so the Capabilities view paints without a
+      // second round-trip (it can still refresh via getSummary(true)).
+      capabilityManager.setSummary(bootstrapInfo.capabilities_summary);
+
+      // Load the type registry (TypeInfo + schema) into the SchemaRegistry
+      // (pass empty array if null to prevent re-fetching)
+      await dataManager.loadTypes(bootstrapInfo.types || []);
 
       // Set domain in context if present
       if (bootstrapInfo.domain) {
@@ -74,6 +85,11 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         if (persistedTypeId && !persistedTypeId.equals(computeNode.typeId)) {
           setContextEntityToLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId, null);
         }
+        // Evict cached compute_node entities so getById('@local') re-fetches the fresh
+        // UUID. Without this, a prior expanded ComputeNode keyed under the @local alias
+        // survives bootstrap and createProcess posts to a dead UUID → 404.
+        dataManager.removeEntityFromCache(new TypeId('compute_node', '@local'));
+        if (persistedTypeId) dataManager.removeEntityFromCache(persistedTypeId);
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentComputeNodeTypeId, computeNode.typeId);
       }
 
@@ -127,6 +143,19 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       await authManager.init(user);
       await dataContext.initContext({ setupWorkspace: params?.setupWorkspace, setupProject: true });
       //await acceptInvitation(url); // TODO Handle this
+      // Expose introspection hooks for manual_regression specs (and for
+      // hands-on debugging). ``window.context`` mirrors the dataContext
+      // singleton so specs can read ``window.context.snifferHook``,
+      // ``window.context.snifferEnabled``, ``window.context.bootstrapInfo``,
+      // etc.; ``window.sniffer`` is shorthand for the SnifferManager's
+      // attached entity, exposing its flowDataStream for event-count
+      // assertions.
+      try {
+        (window as Record<string, unknown>).context = dataContext;
+        (window as Record<string, unknown>).sniffer = snifferManager.entity;
+      } catch {
+        // ignore — non-browser env
+      }
       window['appReady'] = true;
     } catch (error: any) {
       console.error('initSdk error:', error);

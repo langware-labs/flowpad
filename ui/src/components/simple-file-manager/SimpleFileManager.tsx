@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { FSItem, fsManager, fsStore, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
@@ -9,7 +10,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFS } from '@src/hooks/useFS';
 import {
   ArrowUp,
-  Box,
   ChevronRight,
   ClipboardPaste,
   Copy,
@@ -21,17 +21,14 @@ import {
   FileText,
   Folder,
   FolderPlus,
-  HardDrive,
-  PanelLeft,
-  PanelLeftClose,
   RefreshCw,
   Scissors,
   Trash2,
   Upload,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DirectoryTree, ItemHandler } from '../directory-tree';
-import { FilterName } from './filters';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { fileShareSource } from '@src/hooks/share-sources';
 import { FileItem, SimpleFileManagerProps, SortDirection, SortField } from './types';
 
 function formatFileSize(bytes: number): string {
@@ -251,13 +248,11 @@ export function SimpleFileManager({
   onPathChange,
   filterDefinitions,
   enabledFilters,
-  onEnabledFiltersChange,
   compact = false,
   className = '',
-  homePath,
-  workspacePath,
-  projectPath,
+  onFsMutated,
 }: SimpleFileManagerProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [currentPath, setCurrentPath] = useState(() => normalizeFsPath(initialPath));
   const [loading, setLoading] = useState(false);
@@ -266,12 +261,15 @@ export function SimpleFileManager({
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [clipboard, setClipboard] = useState<{ items: FileItem[]; operation: 'copy' | 'cut' } | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(true);
-  const [rootFolders, setRootFolders] = useState<FSItem[]>([]);
-  const effectiveHomePath = homePath || workspacePath || null;
+  // Absolute node path of the file being shared; non-null opens the dialog.
+  const [sharePath, setSharePath] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typeidObj = useMemo(() => new TypeId(typeId.type, typeId.id), [typeId.type, typeId.id]);
+  const shareSource = useMemo(
+    () => (sharePath ? fileShareSource({ computeNodeTypeId: typeidObj, absPath: sharePath }) : null),
+    [sharePath, typeidObj],
+  );
 
   // Use shared browse cache from fsStore
   const fs = useFS(typeidObj);
@@ -299,39 +297,6 @@ export function SimpleFileManager({
     setSelectedItems(new Set());
   }, [initialPath]);
 
-  // Load root folders for directory tree - Computer and Project roots
-  useEffect(() => {
-    const loadRootFolders = () => {
-      const roots: FSItem[] = [];
-
-      // Create "Computer" root folder item representing the VFS root
-      // Use "." as path since FSItem regex requires non-empty path after slash
-      const computerItem = new FSItem({
-        is_dir: true,
-        vfs_abs_path: `${typeidObj.toString()}/.`,
-        size: 0,
-        display_name: 'Computer',
-      });
-      roots.push(computerItem);
-
-      // Add dedicated "Project" root if a project path is available
-      const normalizedProjectPath = projectPath?.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
-      if (normalizedProjectPath) {
-        const projectItem = new FSItem({
-          is_dir: true,
-          vfs_abs_path: `${typeidObj.toString()}/${normalizedProjectPath}`,
-          size: 0,
-          display_name: 'Project',
-        });
-        roots.push(projectItem);
-      }
-
-      setRootFolders(roots);
-    };
-
-    loadRootFolders();
-  }, [typeidObj, projectPath]);
-
   // Dialogs
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [showNewFileDialog, setShowNewFileDialog] = useState(false);
@@ -343,21 +308,6 @@ export function SimpleFileManager({
   const [newItemName, setNewItemName] = useState('');
   // Target folder for tree actions (when creating file/folder via hover action)
   const [targetFolderPath, setTargetFolderPath] = useState<string | null>(null);
-
-  // Convert FileItem-based filter definitions to FSItem-based for DirectoryTree
-  const fsItemFilterDefinitions = useMemo(() => {
-    if (!filterDefinitions) return undefined;
-
-    return filterDefinitions.map((filterDef) => ({
-      name: filterDef.name,
-      label: filterDef.label,
-      filterFn: (fsItem: FSItem) => {
-        // Convert FSItem to FileItem and apply the original filter
-        const fileItem = fsItemToFileItem(fsItem, currentPath);
-        return filterDef.filterFn(fileItem);
-      },
-    }));
-  }, [filterDefinitions, currentPath]);
 
   // Ensure files are loaded for the current directory (uses cache if available)
   const ensureFilesLoaded = useCallback(async () => {
@@ -525,13 +475,12 @@ export function SimpleFileManager({
       // Invalidate browse cache for the parent folder
       fsStore.getState().invalidate(typeidObj, basePath, 'browse');
       await ensureFilesLoaded();
-      // Refresh tree by updating rootFolders reference
-      setRootFolders((prev) => [...prev]);
+      onFsMutated?.(basePath);
     } catch (err) {
       console.error('[SimpleFileManager] Failed to create folder:', err);
       setError(formatFsErrorMessage(err, 'Failed to create folder'));
     }
-  }, [newFolderName, currentPath, targetFolderPath, typeidObj, ensureFilesLoaded]);
+  }, [newFolderName, currentPath, targetFolderPath, typeidObj, ensureFilesLoaded, onFsMutated]);
 
   const handleNewFile = useCallback(async () => {
     if (!newFileName.trim()) return;
@@ -546,13 +495,12 @@ export function SimpleFileManager({
       // Invalidate browse cache for the parent folder
       fsStore.getState().invalidate(typeidObj, basePath, 'browse');
       await ensureFilesLoaded();
-      // Refresh tree by updating rootFolders reference
-      setRootFolders((prev) => [...prev]);
+      onFsMutated?.(basePath);
     } catch (err) {
       console.error('[SimpleFileManager] Failed to create file:', err);
       setError(formatFsErrorMessage(err, 'Failed to create file'));
     }
-  }, [newFileName, currentPath, targetFolderPath, typeidObj, ensureFilesLoaded]);
+  }, [newFileName, currentPath, targetFolderPath, typeidObj, ensureFilesLoaded, onFsMutated]);
 
   const handleRename = useCallback(async () => {
     if (!renameItem || !newItemName.trim()) return;
@@ -564,11 +512,12 @@ export function SimpleFileManager({
       // Invalidate browse cache for the current folder
       fsStore.getState().invalidate(typeidObj, currentPath, 'browse');
       await ensureFilesLoaded();
+      onFsMutated?.(currentPath);
     } catch (err) {
       console.error('[SimpleFileManager] Failed to rename:', err);
       setError(formatFsErrorMessage(err, 'Failed to rename'));
     }
-  }, [renameItem, newItemName, typeidObj, currentPath, ensureFilesLoaded]);
+  }, [renameItem, newItemName, typeidObj, currentPath, ensureFilesLoaded, onFsMutated]);
 
   const handleDelete = useCallback(async () => {
     const itemsToDelete = sortedFiles.filter((f) => selectedItems.has(f.id));
@@ -582,11 +531,12 @@ export function SimpleFileManager({
       // Invalidate browse cache for the current folder
       fsStore.getState().invalidate(typeidObj, currentPath, 'browse');
       await ensureFilesLoaded();
+      onFsMutated?.(currentPath);
     } catch (err) {
       console.error('[SimpleFileManager] Failed to delete:', err);
       setError(formatFsErrorMessage(err, 'Failed to delete'));
     }
-  }, [selectedItems, sortedFiles, typeidObj, currentPath, ensureFilesLoaded]);
+  }, [selectedItems, sortedFiles, typeidObj, currentPath, ensureFilesLoaded, onFsMutated]);
 
   const handleUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -600,6 +550,7 @@ export function SimpleFileManager({
         // Invalidate browse cache to refresh file list
         fsStore.getState().invalidate(typeidObj, currentPath, 'browse');
         await ensureFilesLoaded();
+        onFsMutated?.(currentPath);
       } catch (err) {
         console.error('[SimpleFileManager] Failed to upload:', err);
         setError(formatFsErrorMessage(err, 'Failed to upload'));
@@ -609,7 +560,7 @@ export function SimpleFileManager({
         }
       }
     },
-    [typeidObj, currentPath, ensureFilesLoaded],
+    [typeidObj, currentPath, ensureFilesLoaded, onFsMutated],
   );
 
   const handleDownload = useCallback(async () => {
@@ -663,20 +614,13 @@ export function SimpleFileManager({
       // Invalidate destination folder
       fsStore.getState().invalidate(typeidObj, currentPath, 'browse');
       await ensureFilesLoaded();
+      sourceParentPaths.forEach((path) => onFsMutated?.(path));
+      onFsMutated?.(currentPath);
     } catch (err) {
       console.error('[SimpleFileManager] Failed to paste:', err);
       setError(formatFsErrorMessage(err, 'Failed to paste'));
     }
-  }, [clipboard, currentPath, typeidObj, ensureFilesLoaded]);
-
-  const handleOpenFolder = useCallback(async (pathToOpen: string = currentPath) => {
-    try {
-      await fsManager.open(typeidObj, normalizeFsPath(pathToOpen));
-    } catch (err) {
-      console.error('[SimpleFileManager] Failed to open folder:', err);
-      setError(formatFsErrorMessage(err, 'Failed to open folder'));
-    }
-  }, [typeidObj, currentPath]);
+  }, [clipboard, currentPath, typeidObj, ensureFilesLoaded, onFsMutated]);
 
   const handleOpenInEditor = useCallback(
     (item: FileItem) => {
@@ -691,7 +635,7 @@ export function SimpleFileManager({
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split('/').filter(Boolean);
     // Always use '/' as the path for home button to navigate to VFS root
-    const crumbs = [{ name: 'Home', path: '/' }];
+    const crumbs = [{ name: t`Home`, path: '/' }];
     let path = '';
     for (const part of parts) {
       path += `/${part}`;
@@ -710,68 +654,11 @@ export function SimpleFileManager({
   const hasSelection = selectedCount > 0;
   const selectedFile = selectedCount === 1 ? sortedFiles.find((f) => selectedItems.has(f.id)) : null;
 
-  // ItemHandler for DirectoryTree with file/folder actions
-  const itemHandler = useMemo(
-    () =>
-      new ItemHandler({
-        renderIcon: (item) => {
-          const isRoot = rootFolders.some((root) => root.vfsPath.equals(item.vfsPath));
-          if (isRoot) {
-            // Root entries use non-folder icons so they are visually distinct from folders.
-            if (item.vfs_abs_path.endsWith('/.')) {
-              return <HardDrive className="h-3 w-3 flex-shrink-0 text-muted-foreground" />;
-            }
-            return <Box className="h-3 w-3 flex-shrink-0 text-muted-foreground" />;
-          }
-          if (item.is_dir) {
-            return <Folder className="h-3 w-3 flex-shrink-0 text-muted-foreground" />;
-          }
-          return <File className="h-3 w-3 flex-shrink-0 text-muted-foreground" />;
-        },
-        actions: [
-          ItemHandler.createFileAction((item, e) => {
-            e.stopPropagation();
-            setTargetFolderPath(item.relativePath || '/');
-            setShowNewFileDialog(true);
-          }),
-          ItemHandler.createFolderAction((item, e) => {
-            e.stopPropagation();
-            setTargetFolderPath(item.relativePath || '/');
-            setShowNewFolderDialog(true);
-          }),
-          ItemHandler.refreshAction((_item, e) => {
-            e.stopPropagation();
-            void refreshFiles();
-            setRootFolders((prev) => [...prev]);
-          }),
-          // Delete is handled by DirectoryTree's built-in delete (enableBuiltInDelete=true)
-        ],
-      }),
-    [refreshFiles, rootFolders],
-  );
-
   return (
     <div className={`flex h-full flex-col bg-background ${className}`}>
       {/* Toolbar */}
       <div className="flex items-center gap-1 border-b bg-muted/30 px-2 py-1">
         <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                data-testid="file-manager-drawer-toggle-button"
-                variant="ghost"
-                size="icon"
-                className={`h-7 w-7 ${drawerOpen ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}`}
-                onClick={() => setDrawerOpen(!drawerOpen)}
-              >
-                {drawerOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{drawerOpen ? 'Hide tree' : 'Show tree'}</TooltipContent>
-          </Tooltip>
-
-          <div className="mx-1 h-4 w-px bg-border" />
-
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -785,7 +672,7 @@ export function SimpleFileManager({
                 <ArrowUp className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Go up</TooltipContent>
+            <TooltipContent><Trans>Go up</Trans></TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -801,7 +688,7 @@ export function SimpleFileManager({
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Refresh</TooltipContent>
+            <TooltipContent><Trans>Refresh</Trans></TooltipContent>
           </Tooltip>
 
           {!compact && (
@@ -820,7 +707,7 @@ export function SimpleFileManager({
                     <FolderPlus className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>New folder</TooltipContent>
+                <TooltipContent><Trans>New folder</Trans></TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -835,7 +722,7 @@ export function SimpleFileManager({
                     <FilePlus className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>New file</TooltipContent>
+                <TooltipContent><Trans>New file</Trans></TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -850,7 +737,7 @@ export function SimpleFileManager({
                     <Upload className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Upload files</TooltipContent>
+                <TooltipContent><Trans>Upload files</Trans></TooltipContent>
               </Tooltip>
 
               <div className="mx-1 h-4 w-px bg-border" />
@@ -868,7 +755,7 @@ export function SimpleFileManager({
                     <Copy className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Copy</TooltipContent>
+                <TooltipContent><Trans>Copy</Trans></TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -884,7 +771,7 @@ export function SimpleFileManager({
                     <Scissors className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Cut</TooltipContent>
+                <TooltipContent><Trans>Cut</Trans></TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -900,7 +787,7 @@ export function SimpleFileManager({
                     <ClipboardPaste className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Paste</TooltipContent>
+                <TooltipContent><Trans>Paste</Trans></TooltipContent>
               </Tooltip>
 
               <div className="mx-1 h-4 w-px bg-border" />
@@ -918,7 +805,7 @@ export function SimpleFileManager({
                     <Edit2 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Rename</TooltipContent>
+                <TooltipContent><Trans>Rename</Trans></TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -934,7 +821,7 @@ export function SimpleFileManager({
                     <Download className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Download</TooltipContent>
+                <TooltipContent><Trans>Download</Trans></TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -950,7 +837,7 @@ export function SimpleFileManager({
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Delete</TooltipContent>
+                <TooltipContent><Trans>Delete</Trans></TooltipContent>
               </Tooltip>
             </>
           )}
@@ -982,60 +869,13 @@ export function SimpleFileManager({
         <div className="border-b border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-yellow-900/50 dark:bg-yellow-950/30 dark:text-yellow-500">
           {error}
           <button onClick={() => setError(null)} className="ml-2 underline hover:no-underline">
-            Dismiss
+            <Trans>Dismiss</Trans>
           </button>
         </div>
       )}
 
-      {/* Main content area with drawer */}
+      {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Directory tree drawer */}
-        {drawerOpen && (
-          <div className="w-64 border-r bg-background">
-            <DirectoryTree
-              rootFolders={rootFolders}
-              selectedPath={currentPath}
-              homePath={effectiveHomePath}
-              filterDefinitions={fsItemFilterDefinitions}
-              enabledFilters={enabledFilters?.map((f) => String(f))}
-              itemHandler={itemHandler}
-              events={{
-                onSelect: (item) => {
-                  if (item) {
-                    const path = item.relativePath || '/';
-                    // Only navigate to directories, call onFileSelect for files
-                    if (item.is_dir) {
-                      navigateToPath(path);
-                    } else {
-                      onFileSelect?.(buildVfsPath(path));
-                    }
-                  } else {
-                    // Always navigate to VFS root '/' when clicking root folder
-                    navigateToPath('/');
-                  }
-                },
-                onNavigateHome: effectiveHomePath
-                  ? () => {
-                      navigateToPath(effectiveHomePath);
-                    }
-                  : undefined,
-                onOpenExternal: () => {
-                  void handleOpenFolder(effectiveHomePath || currentPath);
-                },
-                onEnabledFiltersChange: onEnabledFiltersChange
-                  ? (filters: string[]) => {
-                      onEnabledFiltersChange(filters as FilterName[]);
-                    }
-                  : undefined,
-                onItemDeleted: () => {
-                  void refreshFiles();
-                  setRootFolders((prev) => [...prev]);
-                },
-              }}
-            />
-          </div>
-        )}
-
         {/* File list */}
         <ScrollArea className="flex-1">
           <Table>
@@ -1043,15 +883,15 @@ export function SimpleFileManager({
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[45%] cursor-pointer" onClick={() => handleSort('name')}>
-                    Name {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                    <Trans>Name</Trans> {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
                   </TableHead>
                   <TableHead className="w-[15%] cursor-pointer" onClick={() => handleSort('size')}>
-                    Size {sortField === 'size' && (sortDirection === 'asc' ? '↑' : '↓')}
+                    <Trans>Size</Trans> {sortField === 'size' && (sortDirection === 'asc' ? '↑' : '↓')}
                   </TableHead>
                   <TableHead className="w-[25%] cursor-pointer" onClick={() => handleSort('modifiedAt')}>
-                    Modified {sortField === 'modifiedAt' && (sortDirection === 'asc' ? '↑' : '↓')}
+                    <Trans>Modified</Trans> {sortField === 'modifiedAt' && (sortDirection === 'asc' ? '↑' : '↓')}
                   </TableHead>
-                  <TableHead className="w-[15%]">Actions</TableHead>
+                  <TableHead className="w-[15%]"><Trans>Actions</Trans></TableHead>
                 </TableRow>
               </TableHeader>
             )}
@@ -1059,13 +899,13 @@ export function SimpleFileManager({
               {loading && files.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={compact ? 1 : 4} className="text-center text-muted-foreground">
-                    Loading...
+                    <Trans>Loading...</Trans>
                   </TableCell>
                 </TableRow>
               ) : sortedFiles.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={compact ? 1 : 4} className="text-center text-muted-foreground">
-                    Empty folder
+                    <Trans>Empty folder</Trans>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -1103,7 +943,7 @@ export function SimpleFileManager({
                                       <ExternalLink className="h-4 w-4" />
                                     </Button>
                                   </TooltipTrigger>
-                                  <TooltipContent>Open in Editor</TooltipContent>
+                                  <TooltipContent><Trans>Open in Editor</Trans></TooltipContent>
                                 </Tooltip>
                               )}
                             </TableCell>
@@ -1114,19 +954,24 @@ export function SimpleFileManager({
                     <ContextMenuContent>
                       {item.type === 'folder' && (
                         <>
-                          <ContextMenuItem onClick={() => handleItemDoubleClick(item)}>Open</ContextMenuItem>
+                          <ContextMenuItem onClick={() => handleItemDoubleClick(item)}><Trans>Open</Trans></ContextMenuItem>
                           <ContextMenuSeparator />
                         </>
                       )}
-                      <ContextMenuItem onClick={() => startRename(item)}>Rename</ContextMenuItem>
-                      <ContextMenuItem onClick={handleCopy}>Copy</ContextMenuItem>
-                      <ContextMenuItem onClick={handleCut}>Cut</ContextMenuItem>
+                      <ContextMenuItem onClick={() => startRename(item)}><Trans>Rename</Trans></ContextMenuItem>
+                      <ContextMenuItem onClick={handleCopy}><Trans>Copy</Trans></ContextMenuItem>
+                      <ContextMenuItem onClick={handleCut}><Trans>Cut</Trans></ContextMenuItem>
                       {item.type === 'file' && (
-                        <ContextMenuItem onClick={() => void handleDownload()}>Download</ContextMenuItem>
+                        <>
+                          <ContextMenuItem onClick={() => void handleDownload()}><Trans>Download</Trans></ContextMenuItem>
+                          <ContextMenuItem onClick={() => setSharePath(item.path)}>
+                            <Trans>Share to conversation</Trans>
+                          </ContextMenuItem>
+                        </>
                       )}
                       <ContextMenuSeparator />
                       <ContextMenuItem className="text-destructive" onClick={() => setShowDeleteDialog(true)}>
-                        Delete
+                        <Trans>Delete</Trans>
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>
@@ -1149,15 +994,23 @@ export function SimpleFileManager({
         )}
       </div>
 
+      {shareSource && (
+        <ShareToConversationDialog
+          open
+          onClose={() => setSharePath(null)}
+          source={shareSource}
+        />
+      )}
+
       {/* New Folder Dialog */}
       {showNewFolderDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">
-            <h3 className="mb-3 text-sm font-medium">New Folder</h3>
+            <h3 className="mb-3 text-sm font-medium"><Trans>New Folder</Trans></h3>
             <Input
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
-              placeholder="Folder name"
+              placeholder={t`Folder name`}
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void handleNewFolder();
@@ -1176,10 +1029,10 @@ export function SimpleFileManager({
                   setTargetFolderPath(null);
                 }}
               >
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
               <Button size="sm" onClick={() => void handleNewFolder()} disabled={!newFolderName.trim()}>
-                Create
+                <Trans>Create</Trans>
               </Button>
             </div>
           </div>
@@ -1190,11 +1043,11 @@ export function SimpleFileManager({
       {showNewFileDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">
-            <h3 className="mb-3 text-sm font-medium">New File</h3>
+            <h3 className="mb-3 text-sm font-medium"><Trans>New File</Trans></h3>
             <Input
               value={newFileName}
               onChange={(e) => setNewFileName(e.target.value)}
-              placeholder="File name"
+              placeholder={t`File name`}
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void handleNewFile();
@@ -1213,10 +1066,10 @@ export function SimpleFileManager({
                   setTargetFolderPath(null);
                 }}
               >
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
               <Button size="sm" onClick={() => void handleNewFile()} disabled={!newFileName.trim()}>
-                Create
+                <Trans>Create</Trans>
               </Button>
             </div>
           </div>
@@ -1227,11 +1080,11 @@ export function SimpleFileManager({
       {showRenameDialog && renameItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">
-            <h3 className="mb-3 text-sm font-medium">Rename</h3>
+            <h3 className="mb-3 text-sm font-medium"><Trans>Rename</Trans></h3>
             <Input
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
-              placeholder="New name"
+              placeholder={t`New name`}
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void handleRename();
@@ -1240,10 +1093,10 @@ export function SimpleFileManager({
             />
             <div className="mt-3 flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setShowRenameDialog(false)}>
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
               <Button size="sm" onClick={() => void handleRename()} disabled={!newItemName.trim()}>
-                Rename
+                <Trans>Rename</Trans>
               </Button>
             </div>
           </div>
@@ -1254,14 +1107,14 @@ export function SimpleFileManager({
       {showDeleteDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">
-            <h3 className="mb-3 text-sm font-medium">Delete {selectedCount} item(s)?</h3>
-            <p className="text-sm text-muted-foreground">This action cannot be undone.</p>
+            <h3 className="mb-3 text-sm font-medium"><Trans>Delete {selectedCount} item(s)?</Trans></h3>
+            <p className="text-sm text-muted-foreground"><Trans>This action cannot be undone.</Trans></p>
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setShowDeleteDialog(false)}>
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
               <Button variant="destructive" size="sm" onClick={() => void handleDelete()}>
-                Delete
+                <Trans>Delete</Trans>
               </Button>
             </div>
           </div>

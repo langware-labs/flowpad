@@ -1,7 +1,8 @@
 import { Button } from '@src/components/ui/button';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Webhook, Download, Upload } from 'lucide-react';
 import React, { useState, useMemo, useEffect } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { HooksTable, type HookTableRow } from './HooksTable';
 import { HooksBrowser } from './HooksBrowser';
 import { HookEditor } from './HookEditor';
@@ -9,6 +10,7 @@ import { getHooks, updateHooks, type HookConfig, type HookDefinition } from './h
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 export function HooksView() {
+  const { t } = useLingui();
   const { currentDock } = useDockNavigation();
   const highlightHookId = currentDock?.options?.hookId;
   const highlightEventType = currentDock?.options?.eventType;
@@ -26,8 +28,6 @@ export function HooksView() {
   const [editPrompt, setEditPrompt] = useState('');
   const [editTimeout, setEditTimeout] = useState('60');
 
-  const { toast } = useToast();
-
   // Load hooks from API on mount
   useEffect(() => {
     void loadHooks();
@@ -41,10 +41,9 @@ export function HooksView() {
       setConfig({ hooks: response.hooks || {} });
     } catch (error) {
       console.error('Failed to load hooks:', error);
-      toast({
-        title: 'Failed to Load Hooks',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
+      notify.error({
+        title: t`Failed to Load Hooks`,
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     } finally {
       setIsLoading(false);
@@ -164,16 +163,15 @@ export function HooksView() {
       setShowEditor(false);
       setSelectedRowId(null);
 
-      toast({
-        title: selectedRow ? 'Hook Updated' : 'Hook Added',
-        description: `Hook has been ${selectedRow ? 'updated' : 'added'} successfully`,
+      notify.success({
+        title: selectedRow ? t`Hook Updated` : t`Hook Added`,
+        message: `Hook has been ${selectedRow ? 'updated' : 'added'} successfully`,
       });
     } catch (error) {
       console.error('Failed to save hook:', error);
-      toast({
-        title: 'Failed to Save',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
+      notify.error({
+        title: t`Failed to Save`,
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   };
@@ -220,16 +218,15 @@ export function HooksView() {
       setSelectedRowId(null);
       setShowEditor(false);
 
-      toast({
-        title: 'Hook Deleted',
-        description: 'Hook has been removed successfully',
+      notify.success({
+        title: t`Hook Deleted`,
+        message: t`Hook has been removed successfully`,
       });
     } catch (error) {
       console.error('Failed to delete hook:', error);
-      toast({
-        title: 'Failed to Delete',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
+      notify.error({
+        title: t`Failed to Delete`,
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   };
@@ -249,9 +246,9 @@ export function HooksView() {
     a.click();
     URL.revokeObjectURL(url);
 
-    toast({
-      title: 'Exported',
-      description: 'Hooks configuration has been downloaded',
+    notify.success({
+      title: t`Exported`,
+      message: t`Hooks configuration has been downloaded`,
     });
   };
 
@@ -271,15 +268,14 @@ export function HooksView() {
         // Reload from server to ensure UI is in sync
         await loadHooks();
 
-        toast({
-          title: 'Imported',
-          description: 'Hooks configuration has been loaded and saved',
+        notify.success({
+          title: t`Imported`,
+          message: t`Hooks configuration has been loaded and saved`,
         });
       } catch (error) {
-        toast({
-          title: 'Import Failed',
-          description: error instanceof Error ? error.message : 'Invalid JSON',
-          variant: 'destructive',
+        notify.error({
+          title: t`Import Failed`,
+          message: error instanceof Error ? error.message : t`Invalid JSON`,
         });
       }
     };
@@ -295,10 +291,10 @@ export function HooksView() {
             <div>
               <div className="flex items-center gap-2">
                 <Webhook className="h-6 w-6" />
-                <h2 className="text-2xl font-bold text-foreground">Hooks</h2>
+                <h2 className="text-2xl font-bold text-foreground"><Trans>Hooks</Trans></h2>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                Configure Claude Code hooks to automate workflows with custom scripts and AI-powered decisions
+                <Trans>Configure Claude Code hooks to automate workflows with custom scripts and AI-powered decisions</Trans>
               </p>
             </div>
 
@@ -307,14 +303,14 @@ export function HooksView() {
                 <Button variant="outline" className="cursor-pointer" asChild>
                   <span>
                     <Upload className="mr-2 h-4 w-4" />
-                    Import
+                    <Trans>Import</Trans>
                   </span>
                 </Button>
                 <input id="import-hooks" type="file" accept=".json" className="hidden" onChange={handleImport} />
               </label>
               <Button variant="outline" onClick={handleExport}>
                 <Download className="mr-2 h-4 w-4" />
-                Export
+                <Trans>Export</Trans>
               </Button>
             </div>
           </div>
@@ -322,9 +318,9 @@ export function HooksView() {
           {/* Hooks Browser */}
           <div className="rounded-lg border bg-card p-4">
             <div className="mb-3">
-              <h3 className="text-sm font-semibold text-foreground">Hooks Browser</h3>
+              <h3 className="text-sm font-semibold text-foreground"><Trans>Hooks Browser</Trans></h3>
               <p className="text-xs text-muted-foreground">
-                Scans all hook resources from the system profile and lists every hook with full details.
+                <Trans>Scans all hook resources from the system profile and lists every hook with full details.</Trans>
               </p>
             </div>
             <HooksBrowser highlightHookId={highlightHookId} highlightEventType={highlightEventType} />
@@ -333,7 +329,7 @@ export function HooksView() {
           {/* Toggle between Table and Editor */}
           {isLoading ? (
             <div className="flex items-center justify-center rounded-lg border p-12">
-              <p className="text-sm text-muted-foreground">Loading hooks...</p>
+              <p className="text-sm text-muted-foreground"><Trans>Loading hooks...</Trans></p>
             </div>
           ) : showEditor ? (
             <HookEditor

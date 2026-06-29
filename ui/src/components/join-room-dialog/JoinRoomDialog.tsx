@@ -4,6 +4,7 @@ import { Input } from '@src/components/ui/input';
 import { CollaborationRoom } from '@sdk';
 import { Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface JoinRoomDialogProps {
   open: boolean;
@@ -14,6 +15,7 @@ interface JoinRoomDialogProps {
 }
 
 export function JoinRoomDialog({ open, onClose, hostName, draftPrompt, onStart }: JoinRoomDialogProps) {
+  const { t } = useLingui();
   const [name, setName] = useState(hostName ?? '');
   const [roomName, setRoomName] = useState('');
   const [roomNameEdited, setRoomNameEdited] = useState(false);
@@ -56,21 +58,20 @@ export function JoinRoomDialog({ open, onClose, hostName, draftPrompt, onStart }
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-green-600" />
-            Start collaboration room
+            <Trans>Start collaboration room</Trans>
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 text-sm">
           <p className="text-muted-foreground">
-            You're about to open a room on this project. You can invite others with the share
-            code that'll appear in the header once the room starts.
+            <Trans>You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts.</Trans>
           </p>
 
           {/* Host name */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Your display name</label>
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground"><Trans>Your display name</Trans></label>
             <Input
-              placeholder="e.g. Alex"
+              placeholder={t`e.g. Alex`}
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
@@ -81,9 +82,9 @@ export function JoinRoomDialog({ open, onClose, hostName, draftPrompt, onStart }
 
           {/* Room name — prefilled, user can override */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Room name</label>
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground"><Trans>Room name</Trans></label>
             <Input
-              placeholder="e.g. Retry logic review"
+              placeholder={t`e.g. Retry logic review`}
               value={roomName}
               onChange={(e) => {
                 setRoomName(e.target.value);
@@ -98,7 +99,7 @@ export function JoinRoomDialog({ open, onClose, hostName, draftPrompt, onStart }
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           <Button
             className="gap-1.5 bg-green-600 text-white hover:bg-green-700"
@@ -106,7 +107,7 @@ export function JoinRoomDialog({ open, onClose, hostName, draftPrompt, onStart }
             disabled={!canStart}
           >
             <Users className="h-4 w-4" />
-            {busy ? 'Starting…' : 'Start'}
+            {busy ? t`Starting…` : t`Start`}
           </Button>
         </div>
       </DialogContent>

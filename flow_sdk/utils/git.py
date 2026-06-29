@@ -89,6 +89,26 @@ def repo_id(repo_full_name: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"repo:{repo_full_name}"))
 
 
+def derive_repo_leaf_from_url(project_url: str) -> str:
+    """Extract the repo folder name from a git URL.
+
+    Handles https / ssh / scp-style git URLs:
+      https://github.com/foo/bar.git   → bar
+      git@github.com:foo/bar.git       → bar
+      https://example.com/some/repo/   → repo
+    Returns empty string when the URL has no usable trailing segment.
+    """
+    if not project_url:
+        return ""
+    leaf = project_url.strip().rstrip("/").split("/")[-1]
+    # ssh form `git@host:owner/repo.git` leaves "owner/repo.git" or just "repo.git"
+    if ":" in leaf and "/" not in leaf:
+        leaf = leaf.split(":")[-1]
+    if leaf.endswith(".git"):
+        leaf = leaf[:-4]
+    return leaf
+
+
 def _url_matches(path: str, project_url: str) -> bool:
     """Return True if the git repo at path has an origin URL matching project_url."""
     try:
@@ -112,7 +132,7 @@ def find_local_repo_for_url(project_url: str) -> Optional[str]:
         return None
 
     from pathlib import Path as _Path
-    from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
     claude_paths = list(iter_claude_project_paths())
 
@@ -249,3 +269,39 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
     except Exception as e:
         logger.warning("[git] push error (non-fatal): %s", e)
         return GitPushResult(ok=False, message=str(e))
+
+
+# ── Per-file revision history (local, no push) ────────────────────────────────
+
+_LOG_SEP = "\x1f"
+
+
+def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.CompletedProcess:
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+
+
+async def git_commit_file(repo_path: str, rel_file: str, message: str) -> bool:
+    """Stage and commit a single pathspec — a file OR a folder (no push). Returns
+    True if a commit was made.
+
+    Pathspec-scoped: ``git add -- <pathspec>`` then ``git commit -- <pathspec>`` so
+    concurrent edits outside the pathspec are never swept in. A folder pathspec
+    (a folder-backed asset, e.g. a skill) commits every change under it. No-ops
+    (returns False) when the pathspec has no staged delta. Best-effort; never raises.
+    """
+    try:
+        if not Path(repo_path, rel_file).exists():
+            return False
+        await asyncio.to_thread(_run_git, ["git", "add", "--", rel_file], repo_path)
+        staged = await asyncio.to_thread(
+            _run_git, ["git", "diff", "--cached", "--quiet", "--", rel_file], repo_path
+        )
+        if staged.returncode == 0:
+            return False  # nothing staged for this file
+        result = await asyncio.to_thread(
+            _run_git, ["git", "commit", "-m", message, "--", rel_file], repo_path
+        )
+        return result.returncode == 0
+    except Exception as e:  # noqa: BLE001 — auto-commit must never break a save
+        logger.warning("[git] commit_file error (non-fatal): %s", e)
+        return False

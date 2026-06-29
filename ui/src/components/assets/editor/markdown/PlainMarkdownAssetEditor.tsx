@@ -1,14 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { MarkdownEditor } from './MarkdownEditor';
 import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
 import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { useRunOnFile } from '@src/components/assets/editor/run/useRunOnFile';
+import { DiscussDocButtons } from '@src/components/assets/editor/discuss/DiscussDocButtons';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
-import { dataContext, FrontMatterFsRef, ProcessType } from '@sdk';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useSideWindows } from '@src/navigation/useSideWindows';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { dataContext, FrontMatterFsRef, ProcessKind } from '@sdk';
 import type { APIEntity, FSRef } from '@sdk';
 import { History } from 'lucide-react';
 
@@ -36,20 +41,37 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   const chatTarget = entity ? entity.typeId.toString() : null;
   const assetRef = (entity as { asset_ref?: string } | null)?.asset_ref;
   const localTypeId = dataContext.computeNodeTypeId;
-  const editorRef =
-    assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef;
+  // Memoize: useFSRefContent's load effect is keyed on fsRef identity, so a
+  // fresh FrontMatterFsRef every render re-downloads the file on every re-render.
+  const editorRef = useMemo(
+    () => (assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef),
+    [assetRef, localTypeId, fsRef],
+  );
 
-  const [activeSideTab, setActiveSideTab] = useState<string>('editor');
+  const { navigation } = useDockNavigation();
+  // No backing FsRecord entity (raw CLAUDE.md etc.) → no delete button. The
+  // tree row + the file remain; user can still delete via the filesystem tools.
+  const deletable = entity as unknown as { delete?: () => Promise<boolean>; name?: string } | null;
+  const onDelete = useCallback(async () => {
+    if (!deletable?.delete) return;
+    await deletable.delete();
+    navigation.openDock(DockPointer.forAssetList(assetType));
+  }, [deletable, navigation, assetType]);
+
+  const { open: openSideWindow } = useSideWindows();
+
+  // Run is an advanced-only affordance; only fetch its run history when shown.
+  const isAdvanced = useIsAdvanced();
 
   const { runWithAsset, isStarting, processEntry, mcpModal } = useRunOnFile({
     targetVfsPath: chatTarget,
     filePath: assetRef ?? fsRef.path,
-    onActiveSideTabChange: setActiveSideTab,
+    onOpenSideWindow: openSideWindow,
   });
 
   const { processes: pastRunProcesses } = useProcessesForTarget(chatTarget ?? '', {
-    enabled: !!chatTarget,
-    processType: ProcessType.Execution,
+    enabled: !!chatTarget && isAdvanced,
+    processType: ProcessKind.Execution,
   });
 
   const runHistory = useMemo<ProcessEntry[]>(() => {
@@ -68,17 +90,23 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   const isRunning = !!processEntry;
 
   const toolbar = (
-    <AssetPickerPopover
-      trigger={
-        <RunButton
-          isRunning={isRunning}
-          isStarting={isStarting}
-          disabled={!chatTarget}
-          title={!chatTarget ? 'No backing entity yet' : undefined}
+    <>
+      <DiscussDocButtons fsRef={fsRef} />
+      {isAdvanced && (
+        <AssetPickerPopover
+          trigger={
+            <RunButton
+              iconOnly
+              isRunning={isRunning}
+              isStarting={isStarting}
+              disabled={!chatTarget}
+              title={!chatTarget ? 'No backing entity yet' : undefined}
+            />
+          }
+          onPick={(d) => void runWithAsset(d)}
         />
-      }
-      onPick={(d) => void runWithAsset(d)}
-    />
+      )}
+    </>
   );
 
   const runsTab: ExtraSideTab = {
@@ -102,8 +130,8 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
         chatTarget={chatTarget}
         toolbar={toolbar}
         extraSideTabs={[runsTab]}
-        activeSideTab={activeSideTab}
-        onActiveSideTabChange={setActiveSideTab}
+        onDelete={deletable?.delete ? onDelete : undefined}
+        deleteLabel={deletable?.name ?? undefined}
       />
       {mcpModal}
     </>

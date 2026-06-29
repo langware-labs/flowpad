@@ -5,6 +5,27 @@ import { TypeId, isTypeId } from '../models/TypeId';
  */
 export const VFS_PROTOCOL = 'vfs';
 
+/** Matches a Windows drive-letter prefix: `C:\`, `C:/`, `D:\`, etc. */
+const WINDOWS_DRIVE_PATTERN = /^[A-Za-z]:[/\\]/;
+
+/**
+ * True when ``path`` is an absolute machine path on either POSIX or Windows.
+ *
+ * - POSIX:   starts with ``/`` (e.g. ``/Users/Gadi/.flow/…``)
+ * - Windows: starts with a drive letter + ``:`` + ``\`` or ``/`` (e.g.
+ *            ``C:\Users\…\Temp\…`` or ``C:/Users/…``)
+ *
+ * Use this anywhere you need to decide whether a string is a real filesystem
+ * path versus an id / VFS slug / session-uuid. Both shapes are first-class:
+ * the backend that produced the path reads it back with its native OS path
+ * semantics (Python ``pathlib.Path`` handles either), so detection should
+ * accept both.
+ */
+export function isAbsoluteMachinePath(path: string): boolean {
+  if (!path) return false;
+  return path.startsWith('/') || WINDOWS_DRIVE_PATTERN.test(path);
+}
+
 /**
  * VFSPath - Virtual File System path parser and normalizer
  *
@@ -137,20 +158,16 @@ export class VFSPath {
       throw new Error('Machine path is required');
     }
 
-    let normalizedPath = machineAbsPath;
-
-    // Check for Windows path (has drive letter like C:\ or D:/)
-    const windowsDrivePattern = /^[A-Za-z]:[/\\]/;
-    const isWindowsPath = windowsDrivePattern.test(machineAbsPath);
-
-    if (isWindowsPath) {
-      // Windows: Remove drive prefix, convert backslashes to forward slashes
-      normalizedPath = machineAbsPath.substring(3).replace(/\\/g, '/');
-    } else if (machineAbsPath.startsWith('/')) {
-      // Mac/Linux: Remove leading slash
-      normalizedPath = machineAbsPath.substring(1);
-    } else {
+    if (!isAbsoluteMachinePath(machineAbsPath)) {
       throw new Error(`Path must be absolute. Got: ${machineAbsPath}`);
+    }
+    let normalizedPath: string;
+    if (WINDOWS_DRIVE_PATTERN.test(machineAbsPath)) {
+      // Windows: drop drive prefix (``C:\``), convert backslashes to forward slashes
+      normalizedPath = machineAbsPath.substring(3).replace(/\\/g, '/');
+    } else {
+      // POSIX: drop leading root slash
+      normalizedPath = machineAbsPath.substring(1);
     }
 
     // Use typeId.toString() which produces "type-@uname" if id is @uname format
@@ -203,6 +220,26 @@ export class VFSPath {
    */
   get uri(): string {
     return `${VFSPath.PROTOCOL_PREFIX}${this.absVfsPath}`;
+  }
+
+  /**
+   * The absolute MACHINE path (the form stored as an entity's `asset_ref`) — the
+   * inverse of `fromMachinePath`, which drops the leading `/` (POSIX) or the
+   * drive (Windows) to build `entitySubPath`. POSIX: `/{entitySubPath}`.
+   *
+   * Use this — NOT `absVfsPath`/`toString()` — when matching against a stored
+   * `asset_ref` (e.g. `dataManager.getEntityByPath`), which is an exact string
+   * match on the machine path. Returns '' when there is no sub-path.
+   *
+   * Windows note: `entitySubPath` no longer carries the drive letter, so the
+   * machine path can't be losslessly reconstructed there; callers fall back to
+   * path-discovery on a miss.
+   */
+  get machinePath(): string {
+    if (!this.entitySubPath) return '';
+    return isAbsoluteMachinePath(this.entitySubPath)
+      ? this.entitySubPath
+      : `/${this.entitySubPath}`;
   }
 
   /**

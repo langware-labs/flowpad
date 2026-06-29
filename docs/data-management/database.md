@@ -1,3 +1,7 @@
+---
+id: 8106572b-f02b-5e7c-a9e7-c528fc03e0b5
+---
+
 # Database Architecture
 
 How the SQLite layer is wired in flow-cli — one async engine, one transaction
@@ -18,6 +22,9 @@ per-method `commit()` instead of one transaction per request, and
 - **WAL mode + production pragmas** on every aiosqlite connection,
   installed via a `connect` event listener in
   `flow_sdk/db/drivers/sqlite/connection.py:install_pragmas_and_immediate`.
+- **`BEGIN IMMEDIATE` on every transaction**, installed via a `begin`
+  event listener in the same `install_pragmas_and_immediate`. This is
+  live in production (see "BEGIN IMMEDIATE" below).
 - **`NullPool`** (every operation opens a fresh aiosqlite connection;
   see "Why NullPool" below).
 - **Driver methods share a single session via `_session_ctx()`**: a
@@ -32,15 +39,14 @@ per-method `commit()` instead of one transaction per request, and
 
 ### What's intentionally NOT wired
 
-- **`BEGIN IMMEDIATE` on every transaction** was tried but caused
-  contention with the existing test scaffolding (see `tests/api/conftest.py`
-  `_reset_db_state`). WAL + `busy_timeout=5000` is sufficient for the
-  close-shells flood that motivated this refactor.
 - **Per-request transaction binding** (`RequestTransactionMiddleware`
-  passing the driver's `transaction_factory`) was tried but causes the
-  same test-isolation issues. Driver methods open and commit their own
-  short-lived sessions instead. The middleware infrastructure is still
-  in place and can be re-enabled once the test scaffolding is updated.
+  passing the driver's `transaction_factory`) was tried but causes
+  test-isolation issues. Driver methods open and commit their own
+  short-lived sessions via `_session_ctx` instead. The middleware
+  infrastructure is still in place (`RequestTransactionMiddleware` is
+  registered in `flow_sdk/server/flow_server.py:86`) but the
+  per-request transaction binding is left unwired — see
+  `request_transaction_middleware.py:143`.
 
 ## Why NullPool
 
@@ -61,33 +67,39 @@ it for two reasons:
    concurrency, the perf win is not worth the complexity.
 
 All the writer-lock-friendly behavior comes from the pragmas + `BEGIN
-IMMEDIATE`, not from the pool.
+IMMEDIATE`, not from the pool. (The driver picks `NullPool` explicitly
+in `sqlite_driver.py:329`: `create_async_engine(url, echo=False,
+poolclass=NullPool)`.)
 
 ## The pragmas, and why each one
 
 ```python
 PRAGMA journal_mode=WAL          # readers concurrent with one writer
 PRAGMA synchronous=NORMAL        # safe with WAL, fsync only on checkpoint
-PRAGMA busy_timeout=5000         # 5s wait on writer-lock contention
+PRAGMA busy_timeout=15000        # 15s wait on writer-lock contention
 PRAGMA temp_store=MEMORY         # temp tables in RAM
 PRAGMA cache_size=-64000         # 64 MB page cache
 PRAGMA mmap_size=268435456       # 256 MB memory-mapped I/O for reads
-PRAGMA foreign_keys=ON           # enforce FK constraints
+PRAGMA foreign_keys=OFF          # FKs enforced at app level, not by SQLite DDL
 ```
 
 These are set **on every new aiosqlite connection** by a
 `@event.listens_for(engine.sync_engine, "connect")` listener. WAL mode is
 sticky at the file level; the rest are per-connection so the listener is
-the right place.
+the right place. `foreign_keys` is set explicitly to `OFF` because the
+schema doesn't declare FK constraints in its SQL DDL (FKs are enforced at
+the app level); the sync `open_sqlite` path applies the identical pragma
+set (`_SYNC_PRAGMAS` in `connection.py`) so a process touching the same
+file through both paths never mixes WAL with rollback-journal.
 
-`busy_timeout=5000` is the single most important pragma for "database is
+`busy_timeout=15000` is the single most important pragma for "database is
 locked". Without it, SQLite returns `SQLITE_BUSY` immediately when a
-writer is contended; with it, the connection sleeps up to 5 seconds for
+writer is contended; with it, the connection sleeps up to 15 seconds for
 the lock to free. Aligns with the
 [OneUptime SQLite production guide](https://oneuptime.com/blog/post/2026-02-02-sqlite-production-setup/view)
 and the SQLAlchemy docs.
 
-## BEGIN IMMEDIATE — tried and disabled
+## BEGIN IMMEDIATE — live
 
 SQLite has a subtle trap (Bert Hubert's "locked despite timeout"): a
 transaction that starts with a `SELECT` acquires a SHARED lock, and when
@@ -96,7 +108,9 @@ another writer already holds RESERVED, SQLite returns `SQLITE_BUSY`
 immediately, ignoring `busy_timeout`.
 
 The textbook fix is to open every transaction with `BEGIN IMMEDIATE` so
-the writer lock is acquired up-front. We tried this:
+the writer lock is acquired up-front. This is wired in production via a
+`begin` event listener registered alongside the pragmas in
+`install_pragmas_and_immediate`:
 
 ```python
 @event.listens_for(engine.sync_engine, "begin")
@@ -104,20 +118,14 @@ def _on_begin(conn):
     conn.exec_driver_sql("BEGIN IMMEDIATE")
 ```
 
-It works in production but caused test isolation breakage with the
-existing api-test scaffolding (each test's teardown closes the SQLite
-driver on a *fresh throwaway event loop*, which leaves the WAL writer
-lock held by an orphan worker thread; the next test's `BEGIN IMMEDIATE`
-then sees `database is locked` and the busy_timeout doesn't help because
-the holder is the same process).
-
-For now we rely on WAL + `busy_timeout=5000` alone. The original
-"close-shells flood" cascade is solved by those two together — most of
-the value of `BEGIN IMMEDIATE` is for the read-then-write upgrade trap,
-which is uncommon in our codebase. To fully re-enable, the test
-scaffolding's "new event loop per teardown" pattern needs to be replaced
-with a same-loop async teardown that properly drains aiosqlite worker
-threads.
+Combined with WAL + `busy_timeout=15000`, this eliminates both the
+original "close-shells flood" cascade and the read-then-write upgrade
+trap. The contention this once caused with the api-test scaffolding (each
+test's teardown closing the SQLite driver on a fresh throwaway event
+loop, leaving the WAL writer lock held by an orphan worker thread) no
+longer blocks it — the part that stayed unwired is the per-request
+transaction binding in the middleware, not the `begin`-listener itself
+(see next section).
 
 ## Per-request transaction (scaffolded but disabled)
 
@@ -176,19 +184,25 @@ async with session() as s:
 at the same single `SQLiteDBDriver` instance everyone uses.
 
 Legacy names — `init_db`, `close_db`, `async_session`, `reinit_db` from
-`flow_sdk.db.database` — are preserved (the module still owns its own
-SQLAlchemy engine alongside the driver's; both engines share the same
-SQLite file with identical pragmas, so they coexist without contention).
-The duplication is deliberate: collapsing `database.py` to a facade was
-attempted but interacted poorly with the existing test scaffolding.
+`flow_sdk.db.database` — are preserved as thin wrappers. `database.py` is
+now a pure facade over the active driver: it owns **no** engine of its
+own. There is exactly one engine, owned by the active `DBDriver`
+instance (`get_db_driver()`); the old module-level `_engine` /
+`_session_factory` globals are gone. `async_session` is just an alias for
+`flow_sdk.db.session`, and `init_db` / `close_db` delegate to
+`get_db_driver().open()` / `.close()`.
 
 ## What stays sync
 
-`flow_sdk/system_tools.py:261, 410` keeps a `sqlite3.connect` for
-`validate_db()` (PRAGMA integrity_check) and `get_db_statistics()`
-(diagnostic COUNT queries). They're short-lived, no transaction, run
-outside the async stack, and exist for offline diagnostics — making them
-async would buy nothing.
+`flow_sdk/system_tools.py:299` (`validate_db()`, PRAGMA integrity_check)
+and `:470` (`get_database_stats()`, diagnostic COUNT queries) stay sync.
+They no longer call `sqlite3.connect` directly — both route through
+`open_sqlite()` in `connection.py`, so the WAL + `busy_timeout` pragma
+discipline is uniform across sync and async paths (mixing pragma
+configurations on the same file is a documented SQLite corruption
+vector). They're short-lived, no transaction, run outside the async
+stack, and exist for offline diagnostics — making them async would buy
+nothing.
 
 ## What landed and what didn't
 
@@ -200,30 +214,34 @@ async would buy nothing.
   per-method open+commit. `_create_entity` uses `flush()` so the
   IntegrityError → `HTTPException(409)` mapping for `type_uname` stays
   local.
-- Full pragma set + `AsyncAdaptedQueuePool` installed via
-  `install_pragmas_and_immediate` in `connection.py`.
+- Full pragma set + `BEGIN IMMEDIATE` (`begin` listener) installed via
+  `install_pragmas_and_immediate` in `connection.py`. The engine uses
+  `NullPool` (set in `sqlite_driver.py`).
 - `flow_sdk.db.session` and `Entity` / `Relationship` re-exports.
 - `AsyncLinkStore` over the shared engine. Wiki indexer and resolver
-  are now async. All wiki call sites in `entity_model.py`, `record.py`,
+  are now async. All wiki call sites in `entity_model.py`, `fs_record.py`,
   and `wiki_action.py` use `await`. The sync `LinkStore` is deleted.
-- `Record.sync_to_db` opens one shared session for the whole
-  entity + FTS + wiki write so bulk indexer paths don't pay
-  per-step connection setup.
+- `FSRecord.sync_to_db` (`flow_sdk/fs_store/fs_record.py:530`) opens one
+  shared session for the whole entity + FTS + wiki write so bulk indexer
+  paths don't pay per-step connection setup.
+- `BEGIN IMMEDIATE` on every transaction (`begin` event listener).
+- Collapsing `database.py` to a pure facade with no engine of its own.
 
 **Tried and reverted**:
 
-- `BEGIN IMMEDIATE` on every transaction.
-- `RequestTransactionMiddleware` wiring `get_db_driver().get_transaction_factory()`.
-- Collapsing `database.py` to a facade.
+- `RequestTransactionMiddleware` wiring
+  `get_db_driver().get_transaction_factory()` per request.
 
-All three were good ideas in isolation but interacted with the existing
-test scaffolding's "new event loop per teardown" pattern in ways that
-caused `database is locked` cascades between tests. The full pragma set +
-single-session indexer path are sufficient for the writer-lock cascade
-the refactor was meant to solve. The middleware and BEGIN IMMEDIATE
-infrastructure remains in place and can be re-enabled once the test
-teardown is updated to drain aiosqlite worker threads on the same loop
-they were created on.
+The per-request transaction binding interacted with the existing test
+scaffolding's "new event loop per teardown" pattern in ways that caused
+`database is locked` cascades between tests (root cause traces to
+SQLAlchemy issue #8145: async connection close needs async I/O that
+can't reliably run during non-context-managed teardown). The full pragma
+set + `BEGIN IMMEDIATE` + single-session indexer path are sufficient for
+the writer-lock cascade the refactor was meant to solve. The middleware
+infrastructure remains in place and the binding can be re-enabled once
+the test teardown is updated to drain aiosqlite worker threads on the
+same loop they were created on.
 
 ## References
 
@@ -251,7 +269,7 @@ Primary:
 
 Wiki call sites (added `await`):
 - `flow_sdk/core/entity/entity_model.py`
-- `flow_sdk/fs_store/record.py`
+- `flow_sdk/fs_store/fs_record.py`
 - `flow_sdk/app/actions/wiki_action.py`
 
 Tests:

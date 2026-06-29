@@ -12,7 +12,7 @@ import {
 } from '@sdk';
 import { useContext, useEntityData } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { useClaudeProjectList } from './use-claude-projects';
+import { useProjectList } from './use-claude-projects';
 
 export type EventLayer = 'debug' | 'info' | 'raw_notifications' | 'resource';
 
@@ -42,7 +42,7 @@ export type SnifferEvent = {
 
 const MAX_EVENTS_STORAGE_KEY = 'flowpad-sniffer-max-events';
 const DEFAULT_MAX_EVENTS = 100;
-const SNIFFER_ENABLED_STORAGE_KEY = 'flowpad-sniffer-enabled';
+const SNIFFER_ENABLED_STORAGE_KEY = 'flowpad.snifferEnabled';
 
 function loadMaxEvents(): number {
   try {
@@ -57,8 +57,11 @@ function loadMaxEvents(): number {
   return DEFAULT_MAX_EVENTS;
 }
 
-/** Last user decision; defaults to OFF when no preference has been recorded. */
-function loadSnifferPreference(): boolean {
+/** Last user decision. Returns ``null`` when no preference has been recorded
+ *  so callers can fall back to the backend state — bootstrap auto-enables
+ *  the sniffer on desktop init, and clobbering that to OFF on every fresh
+ *  install would clear the just-injected ~/.claude/settings.json hooks. */
+function loadSnifferPreference(): boolean | null {
   try {
     const stored = localStorage.getItem(SNIFFER_ENABLED_STORAGE_KEY);
     if (stored === 'true') return true;
@@ -66,7 +69,7 @@ function loadSnifferPreference(): boolean {
   } catch {
     // ignore
   }
-  return false;
+  return null;
 }
 
 function saveSnifferPreference(enabled: boolean): void {
@@ -85,29 +88,35 @@ function safeParse(raw: string): any {
   }
 }
 
-/** Extract OS working directory from a raw FlowData payload */
+/** Extract OS working directory from a raw FlowData payload.
+ *
+ * Phase 9: post-collapse `hook_data.cwd` is the canonical source. The deep
+ * raw_hook_data / event.context fallbacks are kept for hook_op events that
+ * never went through the synthesizer.
+ */
 function extractOsPath(item: FlowData): string | null {
   const raw = item?.data ?? item?.rawData;
   const payload: any = typeof raw === 'string' ? safeParse(raw) : raw;
   if (!payload) return null;
   return (
     payload.hook_data?.cwd ??
-    payload.hook_data?.raw_hook_data?.cwd ??
-    payload.event?.context?.cwd ??
     payload.data?.event_data?.context?.cwd ??
     null
   );
 }
 
-/** Extract session_id from a raw FlowData payload */
+/** Extract session_id from a raw FlowData payload.
+ *
+ * Phase 9: post-collapse `hook_data.session_id` is canonical (lifecycle
+ * field on the slimmed HookEventData). hook_op events still use the
+ * deeper fallback.
+ */
 function extractSessionId(item: FlowData): string | null {
   const raw = item?.data ?? item?.rawData;
   const payload: any = typeof raw === 'string' ? safeParse(raw) : raw;
   if (!payload) return null;
   return (
-    payload.hook_data?.raw_hook_data?.session_id ??
     payload.hook_data?.session_id ??
-    payload.event?.context?.session_id ??
     payload.data?.event_data?.context?.session_id ??
     null
   );
@@ -138,7 +147,7 @@ export function useHooksSniffer() {
   }, []);
 
   const { flowData, clear: clearEntityData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
-  const { projects } = useClaudeProjectList();
+  const { projects } = useProjectList();
   const { computeNode, snifferEnabled, isBootstrapping } = useContext();
   const isLoading = isBootstrapping;
   const status: HooksSnifferStatus = { enabled: snifferEnabled, hook_id: hookId };
@@ -156,13 +165,14 @@ export function useHooksSniffer() {
   }, [snifferEnabled]);
 
   // Reconcile server state with the user's last-saved preference, exactly once
-  // after bootstrap completes. Default is OFF (see loadSnifferPreference).
+  // after bootstrap completes. When no preference is recorded, trust the
+  // backend (bootstrap auto-enables on desktop init).
   const reconciledRef = useRef(false);
   useEffect(() => {
     if (isBootstrapping || reconciledRef.current) return;
     reconciledRef.current = true;
     const desired = loadSnifferPreference();
-    if (desired === snifferEnabled) return;
+    if (desired === null || desired === snifferEnabled) return;
     setIsToggling(true);
     void (desired ? snifferManager.enable() : snifferManager.disable())
       .then(() => setHookId(desired ? snifferManager.entity?.id ?? null : null))
@@ -281,7 +291,10 @@ export function useHooksSniffer() {
     if (isPaused) {
       pausedSnapshot.current = flowData;
     }
-  }, [flowData, isPaused]);
+    // Capture only on the rising edge of isPaused — keeping flowData in deps
+    // would re-sync the snapshot on every new event, defeating pause.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPaused]);
 
   const events = useMemo(() => {
     const items = isPaused ? pausedSnapshot.current : flowData;
@@ -355,7 +368,7 @@ export function useHooksSniffer() {
         const transcriptEntryPath: string = payload.transcript_path || '';
         const parsedTranscriptEntry = transcriptEntryPath ? parseTranscriptPath(transcriptEntryPath) : null;
         const transcriptEntryPointer = parsedTranscriptEntry
-          ? { ref: `${parsedTranscriptEntry.projectEncodedName}/${parsedTranscriptEntry.sessionId}`, options: { ts: item.timestamp } }
+          ? { ref: parsedTranscriptEntry.sessionId, options: { ts: item.timestamp } }
           : null;
         payload.entry.tools.forEach((tool: any, toolIdx: number) => {
           parsed.push({
@@ -384,13 +397,20 @@ export function useHooksSniffer() {
       if (!payload || !payload.webhook_type) return;
 
       const webhookType: string = payload.webhook_type;
-      const rawHookData = (payload.hook_data || {}).raw_hook_data || {};
-      // Hoist tool_name / tool_input from raw_hook_data so EventOneLiner
-      // sub-components can access them at hook_data.tool_name / .tool_input
+      // Phase 9: HookEventData is collapsed (5 lifecycle fields + process_entry +
+      // extra). The conversational payload is on process_entry.transcript_entry;
+      // variant-specific fields are on extra. Promote both onto a flat hookData
+      // bag so legacy EventOneLiner sub-components keep working until they
+      // migrate to read process_entry directly.
+      const hookDataRaw = payload.hook_data || {};
+      const peTranscript = hookDataRaw.process_entry?.transcript_entry || {};
+      const extra = hookDataRaw.extra || {};
       const hookData = {
-        ...(payload.hook_data || {}),
-        ...(rawHookData.tool_name ? { tool_name: rawHookData.tool_name } : {}),
-        ...(rawHookData.tool_input ? { tool_input: rawHookData.tool_input } : {}),
+        ...hookDataRaw,
+        ...extra,
+        ...(peTranscript.tool_name ? { tool_name: peTranscript.tool_name } : {}),
+        ...(peTranscript.tool_input ? { tool_input: peTranscript.tool_input } : {}),
+        ...(peTranscript.tool_use_id ? { tool_use_id: peTranscript.tool_use_id } : {}),
       };
       const rawJson = JSON.stringify(payload, null, 2);
 
@@ -425,16 +445,16 @@ export function useHooksSniffer() {
         event_type: eventType,
         hook_entry_id: payload.hook_entry_id || '',
         hook_file_path: payload.hook_file_path || '',
-        transcript_path: rawHookData.transcript_path || '',
-        session_id: rawHookData.session_id || hookData.session_id || payload.event?.context?.session_id || '',
+        transcript_path: hookDataRaw.transcript_path || '',
+        session_id: hookDataRaw.session_id || payload.event?.context?.session_id || '',
         hook_data: hookData,
         raw_line: rawJson,
         layer: 'debug',
         skill_usage_count: hookData.skill_usage_count ?? undefined,
         warning: itemWarning,
         error: itemError,
-        transcriptDockPointer: rawHookData.hook_event_name
-          ? getTranscriptDockPointer(rawHookData, item.timestamp)
+        transcriptDockPointer: hookDataRaw.hook_event_name
+          ? getTranscriptDockPointer(hookDataRaw, item.timestamp)
           : null,
         triggerLogDockPointer: getTriggerLogDockPointer(payload.hook_entry_id || null),
       });

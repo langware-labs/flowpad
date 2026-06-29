@@ -8,6 +8,7 @@ import { Separator } from '@src/components/ui/separator';
 import { Textarea } from '@src/components/ui/textarea';
 import { ArrowLeft, MessageSquare, Send, Trash2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface TaskDetailProps {
   task: Task;
@@ -16,6 +17,7 @@ interface TaskDetailProps {
 
 export function TaskDetail({ task, onBack }: TaskDetailProps) {
   const [commentText, setCommentText] = useState<string>('');
+  const { t } = useLingui();
 
   // Fetch comments for this task using the custom hook
   const { data: comments, isLoading: isLoadingComments } = useTaskComments(task);
@@ -51,7 +53,7 @@ export function TaskDetail({ task, onBack }: TaskDetailProps) {
           <h3 className="text-sm font-medium">{task.displayName}</h3>
           {task.status && (
             <p className="text-xs text-muted-foreground">
-              Status:{' '}
+              <Trans>Status:</Trans>{' '}
               <span
                 className={`inline-block rounded-full px-2 py-0.5 ${getStatusBadgeClass(task.status)}`}
               >
@@ -68,14 +70,14 @@ export function TaskDetail({ task, onBack }: TaskDetailProps) {
           {/* Task Description */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Description</CardTitle>
+              <CardTitle className="text-base"><Trans>Description</Trans></CardTitle>
             </CardHeader>
             <CardContent>
               <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                {task.description || 'No description provided.'}
+                {task.description || <Trans>No description provided.</Trans>}
               </p>
               {task.created_date && (
-                <p className="mt-2 text-xs text-muted-foreground">Created: {formatDate(task.created_date)}</p>
+                <p className="mt-2 text-xs text-muted-foreground"><Trans>Created: {formatDate(task.created_date)}</Trans></p>
               )}
             </CardContent>
           </Card>
@@ -85,12 +87,12 @@ export function TaskDetail({ task, onBack }: TaskDetailProps) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <MessageSquare className="h-4 w-4" />
-                Comments ({comments?.length || 0})
+                <Trans>Comments ({comments?.length || 0})</Trans>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {isLoadingComments ? (
-                <p className="text-sm text-muted-foreground">Loading comments...</p>
+                <p className="text-sm text-muted-foreground"><Trans>Loading comments...</Trans></p>
               ) : comments && comments.length > 0 ? (
                 <div className="space-y-3">
                   {comments.map((comment) => (
@@ -117,7 +119,7 @@ export function TaskDetail({ task, onBack }: TaskDetailProps) {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No comments yet.</p>
+                <p className="text-sm text-muted-foreground"><Trans>No comments yet.</Trans></p>
               )}
 
               <Separator className="my-3" />
@@ -125,7 +127,7 @@ export function TaskDetail({ task, onBack }: TaskDetailProps) {
               {/* Add Comment Input */}
               <div className="space-y-2">
                 <Textarea
-                  placeholder="Add a comment..."
+                  placeholder={t`Add a comment...`}
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
                   className="min-h-[80px] resize-none text-sm"
@@ -139,7 +141,7 @@ export function TaskDetail({ task, onBack }: TaskDetailProps) {
                     disabled={!commentText.trim()}
                   >
                     <Send className="mr-2 h-3 w-3" />
-                    Send
+                    <Trans>Send</Trans>
                   </Button>
                 </div>
               </div>

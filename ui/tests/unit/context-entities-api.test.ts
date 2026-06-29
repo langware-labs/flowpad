@@ -1,162 +1,167 @@
 /**
- * Tests for the unified context_entities entity API on the TS side.
+ * Tests for the FE-side context_entities surface.
  *
- * Mirrors tests/unit/test_context_entities_api.py — covers add/remove
- * mutators, the dynamic ``contextEntities`` getter (direct projection
- * merged with the private array), and per-entity ``_directFieldsAsTypeIds``
- * overrides for Task / Spec / Conversation / CollaborationRoom.
+ * Under the current architecture the FE is **display-only** for context.
+ * The backend computes both buckets and ships them over the wire:
+ *   * ``shared_context_entities`` — wire-bound shared bucket.
+ *   * ``private_context_entities`` — backend-computed merged view
+ *     (``Entity.get_implicit_private_context_entities`` + explicit
+ *     attachments, deduped server-side).
+ *
+ * The FE has no mutation primitives, no projection logic. The getters
+ * (``sharedContextEntities`` / ``privateContextEntities``) are identity
+ * over the wire-deserialized arrays. These tests verify that surface.
  */
 
 import { describe, expect, it } from 'vitest';
-import { CollaborationRoom, Conversation, Spec, Task, TypeId } from '@sdk';
+import { Conversation, Spec, Task, TypeId } from '@sdk';
 
 // Reusable UUIDs (TypeId requires a valid identifier).
-const SPEC_ID_1 = '11111111-aaaa-4bbb-9ccc-000000000001';
-const SPEC_ID_2 = '22222222-aaaa-4bbb-9ccc-000000000002';
-const CONV_ID_1 = '11111111-aaaa-4bbb-9ccc-000000000010';
-const TASK_ID_1 = '11111111-aaaa-4bbb-9ccc-000000000020';
-const PROJ_ID_1 = '11111111-aaaa-4bbb-9ccc-000000000030';
-const USER_ID_1 = '11111111-aaaa-4bbb-9ccc-000000000040';
-const PROC_ID_1 = '11111111-aaaa-4bbb-9ccc-000000000050';
-const PROC_ID_2 = '22222222-aaaa-4bbb-9ccc-000000000051';
-const PLAN_ID_1 = '11111111-aaaa-4bbb-9ccc-000000000060';
+const SPEC_ID = '11111111-aaaa-4bbb-9ccc-000000000001';
+const CONV_ID = '22222222-aaaa-4bbb-9ccc-000000000010';
+const TASK_ID = '33333333-aaaa-4bbb-9ccc-000000000020';
+const PROJ_ID = '44444444-aaaa-4bbb-9ccc-000000000030';
 
 const containsTypeId = (haystack: TypeId[], needle: TypeId): boolean =>
   haystack.some((t) => t.equals(needle));
 
-describe('context_entities entity API', () => {
-  describe('base mutators', () => {
-    it('default contextEntities is an empty list', () => {
-      const task = new Task({ title: 't' });
-      expect(task.contextEntities).toEqual([]);
-    });
-
-    it('addContextEntity appends', () => {
-      const task = new Task({ title: 't' });
-      const tid = new TypeId('spec', SPEC_ID_1);
-      task.addContextEntity(tid);
-      expect(containsTypeId(task.contextEntities, tid)).toBe(true);
-    });
-
-    it('addContextEntity is idempotent', () => {
-      const task = new Task({ title: 't' });
-      const tid = new TypeId('spec', SPEC_ID_1);
-      task.addContextEntity(tid);
-      task.addContextEntity(tid);
-      const matches = task.contextEntities.filter((t) => t.equals(tid));
-      expect(matches).toHaveLength(1);
-    });
-
-    it('removeContextEntity returns true when removed', () => {
-      const task = new Task({ title: 't' });
-      const tid = new TypeId('spec', SPEC_ID_1);
-      task.addContextEntity(tid);
-      expect(task.removeContextEntity(tid)).toBe(true);
-      expect(containsTypeId(task.contextEntities, tid)).toBe(false);
-    });
-
-    it('removeContextEntity returns false when absent', () => {
-      const task = new Task({ title: 't' });
-      const tid = new TypeId('spec', SPEC_ID_1);
-      expect(task.removeContextEntity(tid)).toBe(false);
-    });
-
-    it('contextOfType filters', () => {
-      const task = new Task({ title: 't', project_id: PROJ_ID_1 });
-      task.addContextEntity(new TypeId('spec', SPEC_ID_1));
-      task.addContextEntity(new TypeId('spec', SPEC_ID_2));
-      task.addContextEntity(new TypeId('conversation', CONV_ID_1));
-      const specs = task.contextOfType('spec');
-      expect(specs.map((t) => t.id).sort()).toEqual([SPEC_ID_1, SPEC_ID_2].sort());
-    });
-
-    it('firstContextOfType returns first match or null', () => {
-      const task = new Task({ title: 't' });
-      task.addContextEntity(new TypeId('spec', SPEC_ID_1));
-      task.addContextEntity(new TypeId('spec', SPEC_ID_2));
-      const first = task.firstContextOfType('spec');
-      expect(first?.id).toBe(SPEC_ID_1);
-      expect(task.firstContextOfType('plan')).toBeNull();
-    });
+describe('context_entities entity API (display-only)', () => {
+  it('defaults to empty arrays when wire payload omits both buckets', () => {
+    const task = new Task({ title: 't' });
+    expect(task.sharedContextEntities).toEqual([]);
+    expect(task.privateContextEntities).toEqual([]);
   });
 
-  describe('Task direct projection', () => {
-    it('projects project / assignee / my_process / shared_process', () => {
+  it('deserializes shared_context_entities from the wire as TypeIds', () => {
+    const task = new Task({
+      title: 't',
+      shared_context_entities: [`spec-${SPEC_ID}`, `conversation-${CONV_ID}`],
+    } as Partial<Task>);
+    expect(task.sharedContextEntities).toHaveLength(2);
+    expect(containsTypeId(task.sharedContextEntities, new TypeId('spec', SPEC_ID))).toBe(true);
+    expect(containsTypeId(task.sharedContextEntities, new TypeId('conversation', CONV_ID))).toBe(true);
+    // Private remains empty — the wire didn't ship a private bucket.
+    expect(task.privateContextEntities).toEqual([]);
+  });
+
+  it('deserializes private_context_entities (backend-computed) from the wire as TypeIds', () => {
+    // The backend's ``private_context_entities`` computed_field already
+    // merged implicit (project_id) + explicit and deduped. The FE just
+    // reads it as-is — no projection happens here.
+    const task = new Task({
+      title: 't',
+      project_id: PROJ_ID,
+      private_context_entities: [`project-${PROJ_ID}`, `spec-${SPEC_ID}`],
+    } as Partial<Task>);
+    expect(task.privateContextEntities).toHaveLength(2);
+    expect(containsTypeId(task.privateContextEntities, new TypeId('project', PROJ_ID))).toBe(true);
+    expect(containsTypeId(task.privateContextEntities, new TypeId('spec', SPEC_ID))).toBe(true);
+  });
+
+  it('the two buckets stay independent', () => {
+    const task = new Task({
+      title: 't',
+      shared_context_entities: [`spec-${SPEC_ID}`],
+      private_context_entities: [`project-${PROJ_ID}`],
+    } as Partial<Task>);
+    expect(containsTypeId(task.sharedContextEntities, new TypeId('spec', SPEC_ID))).toBe(true);
+    expect(containsTypeId(task.sharedContextEntities, new TypeId('project', PROJ_ID))).toBe(false);
+    expect(containsTypeId(task.privateContextEntities, new TypeId('project', PROJ_ID))).toBe(true);
+    expect(containsTypeId(task.privateContextEntities, new TypeId('spec', SPEC_ID))).toBe(false);
+  });
+
+  it('Spec / Conversation read the same wire-deserialized buckets', () => {
+    const spec = new Spec({
+      title: 's',
+      shared_context_entities: [`task-${TASK_ID}`],
+      private_context_entities: [`project-${PROJ_ID}`],
+    } as Partial<Spec>);
+    expect(containsTypeId(spec.sharedContextEntities, new TypeId('task', TASK_ID))).toBe(true);
+    expect(containsTypeId(spec.privateContextEntities, new TypeId('project', PROJ_ID))).toBe(true);
+
+    const conv = new Conversation({
+      project_id: PROJ_ID,
+      private_context_entities: [`project-${PROJ_ID}`],
+    } as Partial<Conversation>);
+    expect(containsTypeId(conv.privateContextEntities, new TypeId('project', PROJ_ID))).toBe(true);
+  });
+
+  describe('per-entry sidecar data (getContextEntryData)', () => {
+    const PLAN_ID = '55555555-aaaa-4bbb-9ccc-000000000099';
+    const planTypeIdString = `plan-${PLAN_ID}`;
+    const planTypeId = new TypeId('plan', PLAN_ID);
+    const planPath = '/Users/alice/.claude/plans/some-plan.md';
+
+    it('returns undefined when no data was harvested for the typeid', () => {
       const task = new Task({
         title: 't',
-        project_id: PROJ_ID_1,
-        assignee: USER_ID_1,
-        my_process_id: PROC_ID_1,
-        shared_process_id: PROC_ID_2,
+        private_context_entities: [planTypeIdString],
+      } as Partial<Task>);
+      expect(task.getContextEntryData(planTypeId)).toBeUndefined();
+    });
+
+    it('deserializes shared_context_entity_data from the wire and looks up by TypeId', () => {
+      const task = new Task({
+        title: 't',
+        shared_context_entities: [planTypeIdString],
+        shared_context_entity_data: { [planTypeIdString]: { path: planPath } },
+      } as Partial<Task>);
+      expect(task.getContextEntryData(planTypeId)).toEqual({ path: planPath });
+      // String form also works (matches how chip code constructs the key).
+      expect(task.getContextEntryData(planTypeIdString)).toEqual({ path: planPath });
+    });
+
+    it('private sidecar wins on collision (matches backend precedence)', () => {
+      const task = new Task({
+        title: 't',
+        shared_context_entities: [planTypeIdString],
+        private_context_entities: [planTypeIdString],
+        shared_context_entity_data: { [planTypeIdString]: { path: '/shared/path.md' } },
+        private_context_entity_data: { [planTypeIdString]: { path: '/private/path.md' } },
+      } as Partial<Task>);
+      expect(task.getContextEntryData(planTypeId)).toEqual({ path: '/private/path.md' });
+    });
+
+    it('toJSON emits shared sidecar only — private sidecar stays local', () => {
+      const task = new Task({
+        title: 't',
+        shared_context_entities: [planTypeIdString],
+        private_context_entities: [planTypeIdString],
+        shared_context_entity_data: { [planTypeIdString]: { path: planPath } },
+        private_context_entity_data: { [planTypeIdString]: { path: '/private/only.md' } },
+      } as Partial<Task>);
+      const json = task.toJSON();
+      expect(json.shared_context_entity_data).toEqual({
+        [planTypeIdString]: { path: planPath },
       });
-      const ctx = task.contextEntities;
-      expect(containsTypeId(ctx, new TypeId('project', PROJ_ID_1))).toBe(true);
-      expect(containsTypeId(ctx, new TypeId('user', USER_ID_1))).toBe(true);
-      expect(containsTypeId(ctx, new TypeId('agentic_process', PROC_ID_1))).toBe(true);
-      expect(containsTypeId(ctx, new TypeId('agentic_process', PROC_ID_2))).toBe(true);
-    });
-
-    it('merges direct projection with private array', () => {
-      const task = new Task({ title: 't', project_id: PROJ_ID_1 });
-      task.addContextEntity(new TypeId('spec', SPEC_ID_1));
-      const ctx = task.contextEntities;
-      expect(containsTypeId(ctx, new TypeId('project', PROJ_ID_1))).toBe(true);
-      expect(containsTypeId(ctx, new TypeId('spec', SPEC_ID_1))).toBe(true);
-    });
-
-    it('skips unset direct fields', () => {
-      const task = new Task({ title: 't' });
-      expect(task.contextEntities).toEqual([]);
+      // private_context_entity_data must NOT appear on the wire — matches the
+      // BE share() exclusion of the same field.
+      expect(json.private_context_entity_data).toBeUndefined();
     });
   });
 
-  describe('Spec direct projection', () => {
-    it('projects author', () => {
-      const spec = new Spec({ title: 's', author_id: USER_ID_1 });
-      expect(containsTypeId(spec.contextEntities, new TypeId('user', USER_ID_1))).toBe(true);
-    });
-
-    it('plan in private context_entities is exposed via getter', () => {
-      const spec = new Spec({ title: 's' });
-      spec.addContextEntity(new TypeId('plan', PLAN_ID_1));
-      expect(containsTypeId(spec.contextEntities, new TypeId('plan', PLAN_ID_1))).toBe(true);
-    });
+  it('contextOfType(type, bucket?) filters by bucket', () => {
+    const task = new Task({
+      title: 't',
+      shared_context_entities: [`spec-${SPEC_ID}`],
+      private_context_entities: [`project-${PROJ_ID}`],
+    } as Partial<Task>);
+    expect(task.contextOfType('spec', 'shared').map((t) => t.id)).toEqual([SPEC_ID]);
+    expect(task.contextOfType('project', 'private').map((t) => t.id)).toEqual([PROJ_ID]);
+    expect(task.contextOfType('spec', 'private')).toEqual([]);
+    // Default 'both' walks shared first, then private.
+    expect(task.contextOfType('project').map((t) => t.id)).toEqual([PROJ_ID]);
   });
 
-  describe('Conversation direct projection', () => {
-    it('projects project', () => {
-      const conv = new Conversation({ project_id: PROJ_ID_1 });
-      expect(containsTypeId(conv.contextEntities, new TypeId('project', PROJ_ID_1))).toBe(true);
-    });
-
-    it('exposes task added via addContextEntity', () => {
-      const conv = new Conversation({});
-      conv.addContextEntity(new TypeId('task', TASK_ID_1));
-      const t = conv.firstContextOfType('task');
-      expect(t?.id).toBe(TASK_ID_1);
-    });
-  });
-
-  describe('CollaborationRoom', () => {
-    it('exposes agentic_process_ids derived from contextEntities', () => {
-      const room = new CollaborationRoom({ project_id: PROJ_ID_1 });
-      room.addContextEntity(new TypeId('agentic_process', PROC_ID_1));
-      room.addContextEntity(new TypeId('agentic_process', PROC_ID_2));
-      room.addContextEntity(new TypeId('user', USER_ID_1));
-      expect(room.agenticProcessIds.sort()).toEqual([PROC_ID_1, PROC_ID_2].sort());
-    });
-  });
-
-  describe('direct projection invariants', () => {
-    it('the private list does not contain projected direct fields', () => {
-      const task = new Task({ title: 't', project_id: PROJ_ID_1 });
-      task.addContextEntity(new TypeId('spec', SPEC_ID_1));
-      // The dynamic getter merges; the underlying field declared on the
-      // entity (we go through the proxy) sees only what we added.
-      const projectInFull = containsTypeId(task.contextEntities, new TypeId('project', PROJ_ID_1));
-      const specInFull = containsTypeId(task.contextEntities, new TypeId('spec', SPEC_ID_1));
-      expect(projectInFull).toBe(true);
-      expect(specInFull).toBe(true);
-    });
+  it('toJSON emits shared_context_entities only — private stays display-side', () => {
+    const task = new Task({
+      title: 't',
+      shared_context_entities: [`spec-${SPEC_ID}`],
+      private_context_entities: [`project-${PROJ_ID}`],
+    } as Partial<Task>);
+    const json = task.toJSON();
+    expect(json.shared_context_entities).toEqual([`spec-${SPEC_ID}`]);
+    // Private is server-computed; the FE doesn't round-trip it on save.
+    expect(json.private_context_entities).toBeUndefined();
   });
 });

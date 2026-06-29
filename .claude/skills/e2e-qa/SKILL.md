@@ -1,7 +1,12 @@
 ---
+id: ae32bd1d-2fca-50c2-bf33-fa24a06aad61
 name: e2e-qa
-description: Team-based E2E QA system. QA Manager leads a team of testers and developers.
-tags: [testing, e2e, qa, regression]
+description: Team-based E2E QA system for running test cycles, debugging failures, and scanning for bugs — use when running "qa cycle", "debug test X", "run scenario Y", "analyze [area]", "report [dir]", or "bug scan".
+tags:
+- testing
+- e2e
+- qa
+- regression
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 output-dir: ui/tests/manual_regression/_results
 scenarios-dir: ui/tests/manual_regression
@@ -51,7 +56,7 @@ LOCAL_SERVER_PORT=${LOCAL_SERVER_PORT} uv run -m flow_sdk.server.run
 
 **This is the first thing you do — before reading config, before building the index.**
 
-Parse the user's request and identify which of the 5 job types applies:
+Parse the user's request and identify which of the 6 job types applies:
 
 | # | Job type | Trigger phrase |
 |---|----------|----------------|
@@ -64,10 +69,10 @@ Parse the user's request and identify which of the 5 job types applies:
 
 Print the identified job type before proceeding:
 ```
-Job type: <i–v> — <name>
+Job type: <i–vi> — <name>
 ```
 
-If ambiguous, ask the user to clarify before continuing.
+If ambiguous, ask the user to clarify before continuing. **This is the ONLY moment user questions are allowed.** Once a job starts, the Autonomous Run Policy (see below) applies: zero questions, decide-or-flag.
 
 ---
 
@@ -82,14 +87,15 @@ If ambiguous, ask the user to clarify before continuing.
 - Format: category heading, then one line per scenario with path, test count, and whether a `.md.ts` or fast-path exists
 - **This file must exist and be up-to-date before any tester is launched**
 - Skip this step for job types iv (Analyze) and v (Report) if the index already exists
+- **The `index` is a convenience view, not the source of truth for coverage.** The authoritative set of specs-without-a-test (Phase 12's scope) is derived directly from the filesystem via the `comm -23` diff in `modes/qa-cycle.md` (Phase 12 → Coverage detection), so a stale index can never hide an un-executed `.md`.
 
 ### 4. Execute (job-type-specific)
-- **i. QA Cycle**: See [QA Cycle Mode](#qa-cycle-mode)
-- **ii. Debug Test**: See [Debug Mode](#debug-mode)
-- **iii. Run Scenario**: See [Run Mode](#run-mode)
-- **iv. Analyze**: See [Analyze Mode](#analyze-mode)
-- **v. Report**: See [Report Mode](#report-mode)
-- **vi. Bug Detector**: See [Bug Detector Mode](#bug-detector-mode)
+- **i. QA Cycle**: read `modes/qa-cycle.md`
+- **ii. Debug Test**: read `modes/debug.md`
+- **iii. Run Scenario**: read `modes/run.md`
+- **iv. Analyze**: read `modes/analyze.md`
+- **v. Report**: read `modes/report.md`
+- **vi. Bug Detector**: read `modes/bug-detector.md`
 
 ### 5. Update Learnings
 - Append new insights to the `## Learnings` section in the instructions file
@@ -112,518 +118,109 @@ If ambiguous, ask the user to clarify before continuing.
 
 ---
 
-## Team Setup
+## Reference
 
-### Creating the Team
+For output formats, schemas, storage, error handling, and shared work products, read `modes/reference.md`.
 
-Before spawning any teammates, create the team:
-
-```
-TeamCreate(team_name="e2e-qa-cycle")   # for run/debug mode
-TeamCreate(team_name="e2e-qa-analyze") # for analyze mode
-```
-
-### Spawning Teammates
-
-**qa-tester** (up to 3 for run mode; 1 for debug/validate):
-
-> **Per-test tab allocation is mandatory.** A qa-tester does NOT use a single tab for its whole run. Instead, EVERY time it claims a task, it allocates a brand-new Chrome tab dedicated to that task — and keeps the tab open for the full task lifecycle (run → debug → fix → re-validate). The tab is closed only when the task is fully resolved (passed, fail accepted, or skip confirmed) and a new task begins. This prevents (a) cross-tester hijack on a shared Chrome session, and (b) cross-test contamination from leftover state of a prior test on the same tab. See ``agents/qa-tester.md`` "Per-test tab — one tab per task, lifecycle-bound" for the full protocol. The spawn prompt below points the tester at that protocol.
-
-```
-Task(
-  subagent_type="general-purpose",
-  team_name="e2e-qa-cycle",
-  name="qa-tester-1",  # qa-tester-2, qa-tester-3
-  prompt="You are a qa-tester teammate on the e2e-qa-cycle team. Your name is qa-tester-1.
-    Read your full instructions at .claude/skills/e2e-qa/agents/qa-tester.md.
-    Environment: APP_URL=http://localhost:${VITE_PORT}, API_URL=http://localhost:${LOCAL_SERVER_PORT}
-    Output dir: <output-dir>/<timestamp>/
-    Per-test tab allocation: For EACH task you claim (Run:/Validate:/etc.), allocate a NEW browser tab via mcp__debugMcp__browser_tabs(new) (or tabs_create_mcp) and bind it as MY_TASK_TAB_ID for that task. Every browser_* call for that task must select MY_TASK_TAB_ID first. Keep this tab open through the task's full lifecycle — Run → (any) Debug → Fix → re-Validate — so the same DOM state can be inspected across iterations. Close MY_TASK_TAB_ID only when the task is completed (or marked skip-confirmed). Then claim the next task and allocate a fresh tab. Never reuse another tester's tab.
-    Check TaskList and claim available 'Run:' or 'Validate:' tasks. Work through them until none remain.
-    On shutdown_request, close any open task tabs before exiting.",
-  run_in_background=true
-)
-```
-
-**test_debugger** (debug mode; also parallel on first-time failures in run mode):
-```
-Task(
-  subagent_type="general-purpose",
-  team_name="e2e-qa-cycle",
-  name="test_debugger",
-  prompt="You are a test_debugger teammate on the e2e-qa-cycle team.
-    Read your full instructions at .claude/skills/e2e-qa/agents/test_debugger.md.
-    Debug log: .flow/skills/agentic-qa/debug_log.md
-    Check TaskList and claim available 'Debug:' tasks.",
-  run_in_background=true
-)
-```
-
-**bug_fixer** (spawned after debugger produces RCA):
-```
-Task(
-  subagent_type="general-purpose",
-  team_name="e2e-qa-cycle",
-  name="bug_fixer",
-  prompt="You are a bug_fixer teammate on the e2e-qa-cycle team.
-    Read your full instructions at .claude/skills/e2e-qa/agents/bug_fixer.md.
-    Check TaskList and claim available 'Fix:' tasks.",
-  run_in_background=true
-)
-```
-
-**testing_analysis_expert** (analyze mode; parallel in debug mode for first-time failures):
-```
-Task(
-  subagent_type="general-purpose",
-  team_name="e2e-qa-cycle",
-  name="testing_analysis_expert",
-  prompt="You are a testing_analysis_expert teammate on the e2e-qa-cycle team.
-    Read your full instructions at .claude/skills/e2e-qa/agents/testing_analysis_expert.md.
-    Output: .flow/skills/agentic-qa/coverage_analysis.md
-    Check TaskList and claim available 'Analyze:' tasks.",
-  run_in_background=true
-)
-```
+For team creation and teammate spawn templates, read `modes/team-setup.md` before spawning any teammates.
 
 ---
 
-## QA Cycle Mode
+## Run Integrity & Resilience (non-negotiable)
 
-When invoked with `run qa cycle` / `full qa` / `qa cycle`:
+Hard rules learned from cycle post-mortems. They bind every role, the manager most of all.
 
-Runs all test suites in sequence across 6 phases. **You never advance to the next phase unless the current phase achieves a clear pass.** All failures in a phase must be debugged and fixed before moving on.
+### Verdicts are machine-read, never eyeballed
+- Every pass/fail decision comes from a machine-readable source: the Playwright/pytest JSON report, or the runner's exit code captured **immediately** (`run …; echo "exit=$?"` as the very next statement).
+- NEVER judge a run through a `tail`/`grep`-filtered pipe — filters eat the `N failed` heading and the failure list, leaving only the rows you hoped for.
+- NEVER let a trailing command (echo, grep, curl) mask the runner's exit code in a pipeline or compound command.
+- Absence of failure artifacts is NOT evidence of success. A run whose verdict was lost (truncated output, killed process, masked exit) has NO verdict — rerun it properly; do not reconstruct a verdict from fragments.
 
----
+### Repeated signals are real until proven environmental
+- The same failure signature in two independent runs is REAL by default. Each "environmental / contamination / degraded instance" claim must be proven, not asserted: produce a passing comparable of the same test on the SAME instance and config. No comparable → the failure stands.
+- A baseline established on one instance never validates another. Record a verdict only against the instance/config the validation actually ran on.
 
-### Phase Rules
+### Blame across a boundary only with a minimal reproduction
+- Before attributing a failure to anything you don't own — another service, another repo, "infra", a remote API — reproduce it with the smallest client that crosses ONLY that boundary. A flag that names someone else's component must carry that repro; "their bug" without it is a guess.
+- Read the WHOLE exchange the failing client reads. A stream/socket often opens with handshake/keepalive/ready frames before the answer — never conclude from the first frame, the first line, or a single `recv`. The bug is frequently that the client stops reading too early, not that the peer is wrong.
+- A log line from a SHARED service is not your evidence until correlated to your own connection/request id — other clients write the same log. Don't let a neighbour's error become your root cause.
+- After you restart, reconfigure, or reseed a shared service as a diagnostic step, any log lines you read from that service describe the world AFTER your change, not the old failure. Re-establish a clean baseline by re-running the failing test against the new service state and documenting which of your own side effects could explain the symptoms (e.g., a restart invalidates issued tokens). Only then read post-change logs as evidence of the original failure; side effects from your intervention are not the root cause you were chasing.
+- Cluster failures by their EXACT error signature and confirm each cluster's root independently. One proven cause never explains a different signature — resist collapsing many failures into one tidy "blocker".
+- **A suspected hub bug is a blocker ONLY after a pure hub-side reproduction.** Reproduce it against the hub alone — a hub-repo test, or a minimal raw client (login → call the hub endpoint/socket directly) that does NOT route through the flow_sdk client. No pure-hub repro → it is presumed a flow_sdk client or test-setup defect, not a hub blocker, and stays owned on this side. (A hub that returns the correct answer on a later frame, or behind a gate the client never satisfied, is not a hub bug.)
 
-- **Clear pass** = all tests in the phase exit with 0 failures. No skipped failures allowed unless the user explicitly approves skipping a specific test.
-- **On failure**: debug the failing test(s) one by one using the [Debug Mode](#debug-mode) flow. Do NOT re-run the full suite after every individual fix — fix all failures first, then re-run the phase once as a final verification.
-- **Never skip** a failing test without explicit user instruction. "It was already failing" is not a reason to move on.
-- **Backend ownership**: For phases 2, 3, 5, and 7, you own the machine. You may restart the backend server (`python -m server.run`) as needed between runs.
+### Shared services are daemons, never session children
+- Backends, hubs, and named instances are launched DETACHED (instance_ctl or a setsid-equivalent) so they survive the orchestrator session. Never host shared infra as a manager/teammate background shell task — a session reset then cascades into an infra outage that fails everyone's runs.
+- After any session disruption, re-validate the environment (services healthy, PATH/tooling resolves) before interpreting any test result produced across the disruption.
 
----
+### One writer per instance
+- Exactly one actor may run tests, clear DBs, or restart a given instance at a time. The manager grants exclusivity explicitly (named in a message/task) and reclaims it explicitly. Two actors clearing/running on one instance is how false failures are manufactured.
+- Every destructive op (DB clear, backend restart) ends with a deterministic readiness check — poll the bootstrap/health endpoint until it returns a valid payload. Never a blind sleep.
 
-### Phase 1 — pytest unit tests
+### Durable cycle state
+- Maintain `<output-dir>/<timestamp>/cycle-state.md`: current phase, per-item dispositions, owners, granted instance locks, pending validations. Update it at every milestone (phase gate, fix landed, verdict recorded).
+- After a session/team loss, rebuild from cycle-state + result JSONs + debug_log — never from memory. Work products must always make a team death cost a re-read, not a re-do.
 
-```bash
-python -m pytest tests/unit/ -v
-```
-
-- Run from repo root
-- **Gate**: all tests pass → proceed to Phase 2
-
-### Phase 2 — pytest API tests (backend required)
-
-```bash
-# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
-uv run -m flow_sdk.server.run &   # restart if needed
-
-python -m pytest tests/api/ -v
-```
-
-- You own the backend. Restart it if unhealthy before running.
-- **Gate**: all tests pass → proceed to Phase 3
-
-### Phase 3 — pytest long tests (backend required)
-
-```bash
-# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
-DEEP_TESTING=1 FLOWPAD_HUB_URL="http://localhost:${LOCAL_SERVER_PORT}" python -m pytest tests/long_tests/ -v
-```
-
-- Always set `DEEP_TESTING=1` (not `=true` — pydantic BaseSettings parses it inconsistently, learned 2026-04-21).
-- Some long tests hardcode `FLOWPAD_HUB_URL` default to 8093; pass it explicitly.
-- **Gate**: all tests pass → proceed to Phase 4
-
-### Phase 4 — vitest unit tests
-
-```bash
-cd ui && npm run test:vitest:unit
-```
-
-- **Gate**: all tests pass → proceed to Phase 5
-
-### Phase 5 — vitest API tests (backend required)
-
-```bash
-# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
-cd ui && npm run test:vitest:api
-```
-
-- Backend must be running (you own it — restart if needed).
-- **Gate**: all tests pass → proceed to Phase 6
-
-### Phase 6 — vitest react tests
-
-```bash
-cd ui && npm run test:vitest:react
-```
-
-- **Gate**: all tests pass → proceed to Phase 7
-
-### Phase 7 — vitest long tests (backend required)
-
-```bash
-# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
-cd ui && npm run test:vitest:long
-```
-
-- Backend must be running (you own it — restart if needed).
-- **Gate**: all tests pass → proceed to Phase 8
-
-### Phase 8 — full manual regression
-
-- Build test index, spawn up to 3 qa-testers, run all `.md` scenarios
-- Follow [Run Mode](#run-mode) steps 1–12
-- **Before each scenario**, the tester must reset the DB to a clean state:
-  ```bash
-  curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear
-  ```
-  This backs up and wipes the DB + FTS index so each scenario starts from a clean bootstrap state.
-- **Gate**: all scenarios pass (or explicitly user-approved skips)
-
+### Circuit breaker
+- TWO anomalies of the same class — unexplained run/process death, repeated team loss, the same validation re-run without ever producing an accepted machine-read verdict, repeated infra outage — HALT forward execution. Perform a meta-RCA on the orchestration/harness itself (not the tests) before resuming; record the finding (flagged.md if unresolved).
+- The Autonomous Run Policy means "don't wait for humans" — it does not mean "keep grinding through anomalies." Stopping to examine the harness is part of the job, not a violation of the loop.
 
 ---
 
-### QA Cycle Summary Format
+## Autonomous Run Policy
 
-After all phases complete, print:
+**You do not stop to ask questions — no matter what. No one is on the other side to answer during e2e.** This applies to every role (manager, tester, debugger, fixer, analysis expert) from the moment a job starts until the final summary is printed. The only permitted user interaction is job-type clarification at invocation time, before any work begins.
 
-```
-QA Cycle Complete
-─────────────────
-Phase 1 (pytest unit):   PASS — N tests
-Phase 2 (pytest api):    PASS — N tests
-Phase 3 (pytest long):   PASS — N tests
-Phase 4 (vitest unit):   PASS — N tests
-Phase 5 (vitest api):    PASS — N tests
-Phase 6 (vitest react):  PASS — N tests
-Phase 7 (vitest long):   PASS — N tests
-Phase 8 (manual e2e):    PASS — N scenarios
+Every decision is made from the documented defaults in this skill. When something genuinely requires human judgment, it does not pause the cycle — in **phases 1–10** it becomes **`flagged`** and the cycle moves on; in the **Playwright phases 11–12** there is no flag (see the `flagged` carve-out below) — an unresolved failure makes the phase **BLOCKED**, which is itself the reported, non-paused outcome.
 
-Total fixes applied: N
-Docs corrected: N
-```
+"No questions" is about not WAITING on humans; it never licenses grinding through anomalies. The circuit breaker (see above) is part of this policy: repeated same-class anomalies stop forward execution for a self-directed meta-RCA — still autonomous, still no questions.
 
----
+### User Decree Enforcement
 
-## Bug Detector Mode
+When the user issues a decree mid-run — a config change, a policy like a timeout cut, a ban on hardcoded values — apply it mechanically to **ALL affected files and configs BEFORE the next run starts**. Do not narrate the decree and then continue; that pattern lets the violation repeat. Instead:
 
-When invoked with `bug scan` / `bug detector` / `find bugs`:
+1. **Identify all affected files.** For a timeout cut: grep across all `.ts` / `.py` test files for the old timeout and count matches. For a ban: grep for the pattern and list occurrences.
+2. **Apply the change uniformly.** Edit every file. Do not cherry-pick or rationalize partial application.
+3. **Verify the application took.** Grep again and report the count of changed occurrences to confirm the old pattern is gone.
+4. **Only then narrate** the change and resume the next run — the decree is not enforced until the grep count proves it.
 
-Architecture-driven broad scan. Not targeted at a specific feature. The expert reads what's been scanned before, scans architecture/code/docs for new interesting edge cases, defines them in a temp location, then the team executes and debugs. Only tests confirming real bugs are promoted.
+### `flagged` — definition
 
-**Persistent log**: `.flow/skills/agentic-qa/corner_case_scan_log.md`
-**Temp dir**: `ui/tests/manual_regression/_discovery/<timestamp>/`
+> Flagged means this test exposes a significant gap, hence senior dev review is required to decide on next step.
 
----
+`flagged` is a terminal state for a test within this cycle. It is a quarantine lane: **non-blocking** for cycle completion, but always **visible, evidence-attached, and owned**. It is never a silent skip and never counts as a pass.
 
-### Step 1 — Read the log (manager)
+> **`flagged` applies only to phases 1–10 (pytest/vitest).** The Playwright phases — **Phase 11 (`.md.ts` green gate)** and **Phase 12 (`.md`→`.md.ts` authoring)** — admit **no `flagged` pass-through.** There, a file is green only on a machine-read `npx playwright test` exit 0; the sole permitted non-green is a real in-code `test.skip(...)` for one of the three documented environment reasons (clipboard / live-Claude actively responding / wrong-platform). Anything else is a hard **BLOCKED** phase — a loud, unmasked failure — not a quarantined flag. This is deliberate: a tested regression once escaped because Phase 11 was advisory and Phase 12 allowed a flag.
 
-Before creating any tasks, read `.flow/skills/agentic-qa/corner_case_scan_log.md`.
-Pass its contents to the expert via the task description so they know what's already been explored.
+### When to flag (and only then)
 
----
+- The fix requires an **architectural change** (cross-cutting concern, API contract change, major module restructure) — bug_fixer's existing stop rule.
+- The fixer↔debugger loop exhausted its **3 rejection iterations** without an approved fix.
+- The **2 fix→re-validate retries** are exhausted and the scenario still fails.
+- Required infra (hub, Neo4j, a named instance) is unavailable **after an autonomous start/restart attempt**.
+- The only way to make the test pass would **violate a non-negotiable** (e.g., raising any timeout, adding retries/flaky markers).
 
-### Step 2 — BugScan: discover new cases
+Flagging without a genuine RCA attempt is a process violation — a flag is *worked*, not waved through.
 
-Create task:
-```
-TaskCreate(
-  subject="BugScan: <timestamp>",
-  description="Read corner_case_scan_log.md first (contents included below).
-    Scan architecture, code, and docs for new interesting edge cases NOT already in the log.
-    Focus: cross-module interactions, invalid/partial state transitions, race conditions,
-    retry/timeout/cancel behavior, boundary values, corrupted/stale/missing data,
-    permission mismatches, multi-step flows that break in the middle,
-    gaps between expected architecture and actual implementation.
+### Flag artifact
 
-    For each new scenario, write to ui/tests/manual_regression/_discovery/<timestamp>/
-    as a .md.ts Playwright file. Also record in the temp working list:
-    - title
-    - why it may fail / suspected risk
-    - relevant components or files
-    - expected correct behavior
-
-    Update corner_case_scan_log.md with all newly explored scenarios.
-    SendMessage to manager with the scenario list.
-
-    corner_case_scan_log.md contents:
-    <paste log contents here>"
-)
-```
-
-Spawn **testing_analysis_expert**.
-
-Expert mindset (included in task description):
-- Think like a malicious user, a confused user, and a stressed production system
-- Prefer architecture boundaries over UI surface interactions
-- Look for bugs from sequencing, partial completion, inconsistent state, hidden coupling
-- Prioritize depth and realism over volume of guesses
-
----
-
-### Step 3 — Execute: run all discovery scenarios
-
-For each `.md.ts` file the expert produces:
-```
-TaskCreate(
-  subject="Run: _discovery/<timestamp>/<scenario-name>",
-  description="Execute Playwright scenario at ui/tests/manual_regression/_discovery/<timestamp>/<file>.md.ts
-    Command: cd ui && VITE_PORT=${VITE_PORT} npx playwright test --config tests/manual_regression/_discovery/playwright.config.ts <file>.md.ts
-    Write JSON result to <output-dir>/<timestamp>/discovery--<scenario-name>.json
-    Report unexpected behavior even if not a hard assertion failure."
-)
-```
-
-Spawn up to 3 **qa-testers** (Playwright only — no MCP browser fallback for discovery runs).
-
-For any failure: invoke the full [Debug Mode](#debug-mode) flow (debugger → fixer → validate).
-
----
-
-### Step 4 — Promote: real bugs → permanent scenarios (manager)
-
-**Promotion criteria — ALL must be true:**
-- Scenario genuinely failed before fix
-- Debugger confirmed real app bug (not env/test-issue)
-- Fix applied and validated by tester
-- Test is stable (not flaky)
-
-**For each promoted scenario:**
-1. Move the `.md.ts` file from `_discovery/<timestamp>/` to `ui/tests/manual_regression/<category>/`
-2. Create a matching `.md` spec file documenting the scenario (manager writes this)
-3. Update the test index
-
-Do NOT promote: speculative tests, flaky tests, tests for invalid assumptions, tests that never reproduced.
-
----
-
-### Step 5 — Report
-
-```
-Bug Detector Report — <timestamp>
-───────────────────────────────────
-Scenarios scanned:   N
-Real bugs found:     N  (N fixed)
-Promoted to suite:   N  (<list of scenario names + categories>)
-Discarded:           N  (test-issues, speculative, flaky)
-High-risk areas:     <areas still needing investigation>
-corner_case_scan_log.md updated: yes
-```
-
----
-
-## Debug Mode
-
-When invoked with `debug test <scenario>`:
-
-Full bug lifecycle for a specific failing scenario. Runs sequentially per issue.
-
-**A. Tester confirms failure:**
-1. Create task: `TaskCreate(subject="Run: <scenario>", description=<scenario details>)`
-2. Spawn 1 qa-tester
-3. Tester runs scenario → writes repro steps → SendMessage to manager with failure summary
-4. Create task: `TaskCreate(subject="Debug: <scenario>", description=<repro steps + failure details>)`
-
-**B. Parallel: check for coverage gaps (if first-time issue):**
-- Create task: `TaskCreate(subject="Analyze: <scenario area>", description="Check if this is a first-time issue with no test coverage")`
-- Spawn testing_analysis_expert in parallel (does not block fix cycle)
-- Expert sends coverage recommendations to manager when done; manager incorporates into final report
-
-**C. Debugger does RCA:**
-- Spawn test_debugger to claim the "Debug:" task
-- Debugger writes to `debug_log.md`, sends RCA + evidence to bug_fixer via SendMessage
-- Create task: `TaskCreate(subject="Fix: <scenario>", description=<RCA + evidence from debugger>)`
-
-**D. Fixer ↔ Debugger iterate:**
-- Spawn bug_fixer to claim the "Fix:" task
-- Fixer challenges RCA, implements fix, sends to debugger for approval via SendMessage
-- Debugger approves or rejects; fixer revises if needed (max 3 iterations)
-- On approval: fixer SendMessage → tester "fix complete, please validate"
-
-**E. Tester validates:**
-- Create task: `TaskCreate(subject="Validate: <scenario>", description="Re-run after fix")`
-- Tester re-runs, SendMessage result to manager
-
-**F. Manager closes loop:**
-- Update report with fix outcome + coverage recommendations
-- Move to next issue if any
-
----
-
-## Run Mode
-
-When invoked with `run scenario <Y>` or `run [category]`:
-
-Simple execution — no debug lifecycle unless failures occur.
-
-1. **Verify test index**: Ensure `.flow/skills/agentic-qa/test_index.md` exists and is current.
-2. **Build execution plan**: Scan the target scenarios (all, category, or single)
-3. **Print the plan**:
-   ```
-   QA Cycle Plan
-   ─────────────
-   Scope: [all | category-name | scenario-name]
-   Scenarios: N
-   Categories: [list]
-   Timestamp: YYYY-MM-DDTHH-MM-SS
-   Output: ui/tests/manual_regression/_results/<timestamp>/
-   ```
-4. **Create the team**: `TeamCreate(team_name="e2e-qa-cycle")`
-5. **Create tasks**: For each scenario, create a task via TaskCreate:
-   ```
-   TaskCreate(
-     subject="Run: <category>/<scenario>",
-     description="Execute scenario at <scenario-path>.
-       Write JSON result to <output-dir>/<timestamp>/<category>--<scenario-name>.json.
-       Playwright .md.ts exists: yes/no.
-       APP_URL=http://localhost:${VITE_PORT}, API_URL=http://localhost:${LOCAL_SERVER_PORT}",
-     activeForm="Running <category>/<scenario>"
-   )
-   ```
-6. **Spawn testers**: Spawn up to 3 qa-tester teammates; each claims tasks autonomously.
-7. **Monitor**: Periodically check TaskList until all "Run:" tasks are completed.
-8. **Handle failures**:
-   - **First-time failure** (no entry in `debug_log.md` for this scenario): spawn test_debugger + bug_fixer in parallel; also spawn testing_analysis_expert to check coverage
-   - **Persistent failure** (entry exists in `debug_log.md`): spawn test_debugger + bug_fixer only
-   - After fix: create re-run task for tester (max 2 retries)
-9. **Aggregate**: Read all JSON result files. Build cycle report conforming to `schemas/cycle-report.schema.json`.
-10. **Generate HTML**: Read `templates/report.html`, inject cycle report data at `<!-- REPORT_DATA -->`, write to results directory. Print file path only — do not start an HTTP server.
-11. **Report summary**: Print the summary table and the report file path
-12. **Shutdown**: Send `shutdown_request` to all teammates, then `TeamDelete`
-
----
-
-## Analyze Mode
-
-When invoked with `analyze [area/activity]`:
-
-Coverage analysis → fully-specified test plan. No auto-authoring.
-
-1. **Create the team**: `TeamCreate(team_name="e2e-qa-analyze")`
-2. **Create analysis task**:
-   ```
-   TaskCreate(
-     subject="Analyze: <area/activity or 'full coverage'>",
-     description="Inspect all test types and produce coverage_analysis.md.
-       Scope: tests/unit/, tests/api/, ui/tests/, ui/tests/manual_regression/
-       Output: .flow/skills/agentic-qa/coverage_analysis.md",
-     activeForm="Analyzing coverage"
-   )
-   ```
-3. **Spawn testing_analysis_expert**: 1 teammate to perform the analysis
-4. **Wait for completion**: Expert marks task complete and sends summary via SendMessage
-5. **Present deliverable**: Show `coverage_analysis.md` as the actionable spec for the user to implement
-6. **Shutdown**: Send `shutdown_request`, then `TeamDelete`
-
----
-
-## Report Mode
-
-When invoked with `report [results-dir]`:
-
-**No team needed** — the lead handles this directly.
-
-1. If no dir specified, find the latest `_results/<timestamp>/` directory
-2. Read all `*.json` result files (exclude `cycle-report.json`)
-3. Aggregate into cycle report conforming to `schemas/cycle-report.schema.json`
-4. Generate HTML report from `templates/report.html`
-5. Print summary and report path
-
----
-
-## Summary Table Format
-
-Always end with a summary:
-```
-QA Cycle Results
-────────────────
-Total:       N scenarios
-Passed:      N (green)
-Failed:      N (red)      ← app bugs
-Test Issues: N (orange)   ← scenario authoring problems
-Skipped:     N (yellow)
-Errors:      N (red)
-Duration:    Xs
-Pass Rate:   N%           ← excludes test-issues from denominator
-Report:      <path-to-report.html>
-```
-
-**Pass rate calculation**: `passed / (total - skipped - test_issues) * 100`.
-
----
-
-## Test Index Format
-
-The file `.flow/skills/agentic-qa/test_index.md` uses this format:
+Append every flag to `<output-dir>/<timestamp>/flagged.md`:
 
 ```markdown
-# Test Index
-
-> Last updated: 2026-03-04T10:30:00Z
-> Scope: .md scenarios only. .md.ts-only files without a .md spec are not counted.
-
-## chat (20 scenarios)
-| Scenario | Tests | Playwright | Fast Path | Skip |
-|----------|-------|------------|-----------|------|
-| chat_input_controls.md | 3 | yes | no | - |
-| chat_streaming.md | 2 | yes | no | - |
-| in_claude_ctrlv_does_not_paste.md | 1 | no | no | clipboard |
-...
-
-## terminal (19 scenarios)
-...
+## <phase>/<category>/<scenario-or-test-id>
+- owner: senior-dev-review
+- reason: <which flag criterion, one line>
+- evidence: <log excerpts, RCA-so-far, file:line references, result JSON path>
+- why senior review: <what decision is actually needed>
+- recommendation: <the team's best suggested next step>
 ```
 
-**Column definitions**:
-- **Playwright**: `yes` if a `.md.ts` file exists
-- **Fast Path**: `yes` if a `_fast_paths/<category>/<name>.fast.ts` file exists
-- **Skip**: skip reason if unautomatable (`clipboard`, `live-claude`, `platform`), or `-` if runnable
+Flags also appear in the result JSON (`status: "flagged"` + `flag_reason`), in the cycle report, and in the final summary.
+
+### What this replaces
+
+Anywhere this skill or an agent doc previously said "wait for user guidance" / "ask the user" mid-run: the agent instead sends the manager the full evidence package via SendMessage, and the **manager decides — fix path or flag**. The manager never relays a question to the user mid-cycle.
 
 ---
-
-## JSON Schemas
-
-### Test Result (`schemas/test-result.schema.json`)
-- `scenario_path`, `category`, `status` (pass|fail|skip|error|test-issue)
-- `execution_method` (playwright|fast-path|mcp-browser|skipped)
-- `known_bug`, `tests[]`, `environment`
-
-### Cycle Report (`schemas/cycle-report.schema.json`)
-- `summary`, `categories`, `results[]`, `stale_fast_paths[]`
-
-## HTML Report Template
-
-Inject at `<!-- REPORT_DATA -->`:
-```html
-<script>const REPORT_DATA = { /* cycle-report JSON */ };</script>
-```
-
-## Result Storage
-
-```
-_results/
-  2026-03-04T10-30-00/
-    chat--chat_input_controls.json
-    terminal--run_basic_command.json
-    cycle-report.json
-    report.html
-```
-
-File naming: `<category>--<scenario-name>.json`.
-
----
-
-## Error Handling
-
-- If a tester teammate fails to produce a result, create an error result with `status: "error"`
-- If the HTML template is missing, generate a minimal HTML report inline
-- If the results directory doesn't exist, create it
-- Never let a single scenario failure stop the entire cycle
-- **Never launch a tester without a current test index file**
 
 ## Non-Dismissal Policy
 
@@ -632,9 +229,10 @@ File naming: `<category>--<scenario-name>.json`.
 - A `known_bug: true` entry in a scenario does NOT mean the bug is accepted. It means the team knows about it. It still requires a Debug task.
 - An entry in `debug_log.md` does NOT mean the issue is resolved. If a scenario is still failing, it gets debugged again.
 - "This was broken before my changes" is not a valid reason to skip. If it failed during this run, it gets a Fix task.
-- The only valid reason to skip working an issue is an explicit user instruction to do so.
+- The only valid reason to skip working an issue is an explicit user instruction given at invocation time.
+- `flagged` is the **only** alternate terminal state in phases 1–10, and it is itself "worked": it requires a real RCA attempt and the full evidence package described in the Autonomous Run Policy. Flagging without evidence is dismissal by another name. (In the Playwright phases 11–12 there is no flag at all — the alternate terminal state is a **BLOCKED** phase, equally "worked": a proven RCA, but surfaced loudly instead of quarantined.)
 
-This applies to all roles — manager, tester, debugger, and fixer. No team member may declare an issue out of scope without user authorization.
+This applies to all roles — manager, tester, debugger, and fixer. No team member may declare an issue out of scope without user authorization given before the run started.
 
 ---
 

@@ -22,7 +22,7 @@ interface ProjectResourcesCache {
   timestamp: number;
 }
 
-interface UseClaudeProjectListOptions {
+interface UseProjectListOptions {
   enabled?: boolean;
 }
 
@@ -39,9 +39,10 @@ const projectResourcesInFlight = new Map<string, Promise<ScanProjectResponse>>()
 
 /**
  * Hook for fast project list enumeration.
+ * The backend merges Claude, Codex, Copilot, and persisted Project entities.
  * Returns just the project list (~50ms) without loading all resources.
  */
-export function useClaudeProjectList(options: UseClaudeProjectListOptions = {}) {
+export function useProjectList(options: UseProjectListOptions = {}) {
   const { computeNode } = useAgentContext();
   const { enabled = true } = options;
 
@@ -102,7 +103,7 @@ export function useClaudeProjectList(options: UseClaudeProjectListOptions = {}) 
         setData(result);
         projectListCache.set(cacheKey, { data: result, timestamp: Date.now() });
       } catch (err) {
-        console.error('Failed to list Claude projects:', err);
+        console.error('Failed to list projects:', err);
         setError(err instanceof Error ? err.message : 'Failed to list projects');
       } finally {
         projectListInFlight.delete(cacheKey);
@@ -128,6 +129,9 @@ export function useClaudeProjectList(options: UseClaudeProjectListOptions = {}) 
     refetch: () => fetchData(true),
   };
 }
+
+/** @deprecated Use useProjectList. */
+export const useClaudeProjectList = useProjectList;
 
 /**
  * Hook for loading resources for a specific Claude Code project.
@@ -256,7 +260,7 @@ export function useClaudeProjectResources(
  * This is the main hook to use for the Projects tab UI.
  */
 export function useClaudeProjects(selectedProjectEncodedName: string | null = null) {
-  const projectList = useClaudeProjectList();
+  const projectList = useProjectList();
   const projectResources = useClaudeProjectResources(selectedProjectEncodedName);
 
   return {
@@ -332,7 +336,7 @@ export function useAllSkills(options: { enabled?: boolean } = {}) {
 
 /**
  * Get a display name for a Claude Code project.
- * Converts encoded names like "-Users-shlom-Documents-dev-test" to "~/Documents/dev/test"
+ * Converts encoded names like "-Users-alice-Documents-dev-test" to "~/Documents/dev/test"
  */
 export function getProjectDisplayName(project: ProjectListItem): string {
   // Use the last folder name from cwd

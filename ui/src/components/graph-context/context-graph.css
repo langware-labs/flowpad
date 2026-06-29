@@ -1,0 +1,228 @@
+/* Context graph canvas — Atlas-inspired, theme-aware. Surfaces/text come from
+ * the app shadcn tokens (--background/--muted/--border/--foreground/...), so it
+ * flips light/dark for free; the three edge hues mirror the dep-graph palette
+ * (graph-view/graph/themeColors.ts): member = indigo, shared = emerald,
+ * private = amber. */
+
+.ctx-graph {
+  --paper: hsl(var(--background));
+  --paper-2: hsl(var(--muted));
+  --paper-3: color-mix(in oklab, hsl(var(--muted)) 88%, hsl(var(--foreground)));
+  --ctx-edge: hsl(var(--border));
+
+  --ink: hsl(var(--foreground) / 0.9);
+  --ink-strong: hsl(var(--foreground));
+  --ink-soft: hsl(var(--muted-foreground));
+  --ink-faint: hsl(var(--muted-foreground) / 0.7);
+
+  /* edge hues — light (themeColors.ts LIGHT) */
+  --ctx-member: rgb(67 56 202 / 0.55);
+  --ctx-shared: rgb(5 150 105 / 0.7);
+  --ctx-private: rgb(180 83 9 / 0.7);
+
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 1px 1px, hsl(var(--foreground) / 0.1) 1px, transparent 0) 0 0 / 28px 28px,
+    var(--paper);
+  cursor: grab;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dark .ctx-graph {
+  --ctx-member: rgb(99 102 241 / 0.6);
+  --ctx-shared: rgb(16 185 129 / 0.75);
+  --ctx-private: rgb(245 158 11 / 0.75);
+}
+
+.ctx-graph.panning { cursor: grabbing; }
+.ctx-graph * { box-sizing: border-box; }
+
+/* World transform (pan/zoom). Nodes + edges share it so they stay aligned. */
+.ctx-graph .ctx-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.ctx-graph .ctx-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+}
+.ctx-graph .ctx-edge {
+  fill: none;
+  stroke-width: 1.6;
+  transition: stroke-opacity 0.18s, stroke-width 0.18s;
+}
+.ctx-graph .ctx-edge.member { stroke: var(--ctx-member); }
+.ctx-graph .ctx-edge.shared { stroke: var(--ctx-shared); }
+.ctx-graph .ctx-edge.private { stroke: var(--ctx-private); }
+.ctx-graph .ctx-edge.cross { stroke-dasharray: 2 5; stroke-opacity: 0.55; }
+.ctx-graph .ctx-edge.dim { stroke-opacity: 0.12; }
+.ctx-graph .ctx-edge.hot { stroke-width: 2.4; stroke-opacity: 1; stroke-dasharray: none; }
+
+/* ---- Nodes (cards) ------------------------------------------------- */
+.ctx-graph .ctx-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  user-select: none;
+  cursor: grab;
+  transition: opacity 0.18s;
+}
+.ctx-graph .ctx-node:active { cursor: grabbing; }
+.ctx-graph .ctx-node.faded { opacity: 0.3; }
+
+.ctx-graph .ctx-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 220px;
+  padding: 9px 12px;
+  background: var(--paper);
+  border: 1px solid var(--ctx-edge);
+  border-radius: 11px;
+  box-shadow: 0 1px 0 hsl(var(--border) / 0.5), 0 8px 20px -12px hsl(0 0% 0% / 0.4);
+  transition: border-color 0.16s, box-shadow 0.16s, transform 0.16s;
+}
+.ctx-graph .ctx-node:hover .ctx-card {
+  border-color: var(--ink-faint);
+  box-shadow: 0 2px 0 hsl(var(--border) / 0.5), 0 14px 30px -14px hsl(0 0% 0% / 0.5);
+  transform: translateY(-1px);
+}
+
+.ctx-graph .ctx-ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--paper-2);
+  border: 1px solid var(--ctx-edge);
+  color: var(--ink-soft);
+}
+.ctx-graph .ctx-txt { min-width: 0; display: flex; flex-direction: column; }
+.ctx-graph .ctx-ttl {
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--ink-strong);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 168px;
+}
+.ctx-graph .ctx-kic {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* root — inverted primary card */
+.ctx-graph .ctx-node.root .ctx-card {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  padding: 12px 16px;
+  box-shadow: 0 0 0 4px hsl(var(--primary) / 0.18), 0 16px 36px -16px hsl(0 0% 0% / 0.5);
+}
+.ctx-graph .ctx-node.root .ctx-ic {
+  background: hsl(var(--primary-foreground) / 0.16);
+  border-color: hsl(var(--primary-foreground) / 0.25);
+  color: hsl(var(--primary-foreground));
+  width: 30px;
+  height: 30px;
+}
+.ctx-graph .ctx-node.root .ctx-ttl { color: hsl(var(--primary-foreground)); font-size: 15px; }
+.ctx-graph .ctx-node.root .ctx-kic { color: hsl(var(--primary-foreground) / 0.7); }
+
+/* unresolved (raw-typeid) placeholder */
+.ctx-graph .ctx-node.unresolved .ctx-card { border-style: dashed; }
+.ctx-graph .ctx-node.unresolved .ctx-ttl { color: var(--ink-soft); font-family: ui-monospace, monospace; font-size: 11px; }
+
+/* ---- Chrome (controls overlay) ------------------------------------ */
+.ctx-graph .ctx-chrome { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+.ctx-graph .ctx-chrome > * { pointer-events: auto; }
+
+.ctx-graph .ctx-bar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 38px;
+  padding: 0 14px;
+  background: hsl(var(--background) / 0.82);
+  border: 1px solid var(--ctx-edge);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px -12px hsl(0 0% 0% / 0.45);
+  backdrop-filter: blur(6px);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.ctx-graph .ctx-legend {
+  position: absolute;
+  bottom: 14px;
+  left: 12px;
+  display: flex;
+  gap: 12px;
+  padding: 7px 12px;
+  background: hsl(var(--background) / 0.82);
+  border: 1px solid var(--ctx-edge);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px -12px hsl(0 0% 0% / 0.45);
+  backdrop-filter: blur(6px);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.ctx-graph .ctx-legend .sw { width: 16px; height: 3px; border-radius: 2px; align-self: center; }
+.ctx-graph .ctx-legend .lr { display: flex; align-items: center; gap: 6px; }
+
+.ctx-graph .ctx-zoom {
+  position: absolute;
+  bottom: 14px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  background: hsl(var(--background) / 0.9);
+  border: 1px solid var(--ctx-edge);
+  border-radius: 9px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px -12px hsl(0 0% 0% / 0.45);
+}
+.ctx-graph .ctx-zoom button {
+  width: 32px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.14s, color 0.14s;
+}
+.ctx-graph .ctx-zoom button + button { border-top: 1px solid hsl(var(--border) / 0.6); }
+.ctx-graph .ctx-zoom button:hover { background: var(--paper-3); color: var(--ink-strong); }
+
+.ctx-graph .ctx-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--ink-faint);
+}

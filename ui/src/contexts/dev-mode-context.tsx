@@ -1,40 +1,9 @@
-import { useEffect, useState } from 'react';
-import { defineGlobal } from '@sdk/utils';
-
-declare global {
-  interface Window {
-    setDev: (val: boolean) => void;
-    getDev: () => boolean;
-  }
-}
-
-const DEV_MODE_KEY = 'devMode';
-
-let _devMode: boolean = localStorage.getItem(DEV_MODE_KEY) === 'true' || __FLOWPAD_DEV__;
-const _listeners = new Set<(val: boolean) => void>();
-
-function setDevMode(val: boolean): void {
-  _devMode = val;
-  localStorage.setItem(DEV_MODE_KEY, String(val));
-  _listeners.forEach((fn) => fn(val));
-}
-
-function getDevMode(): boolean {
-  return _devMode;
-}
-
-defineGlobal('setDev', setDevMode);
-defineGlobal('getDev', getDevMode);
+/**
+ * @deprecated Backward-compat shim — dev mode is now part of the view-mode hierarchy.
+ * All consumers should import from '@src/components/view-mode' for new code.
+ */
+import { useIsDev } from '@src/contexts/view-mode-context';
 
 export function useDevMode(): boolean {
-  const [devMode, setDevModeState] = useState(_devMode);
-
-  useEffect(() => {
-    _listeners.add(setDevModeState);
-    return () => {
-      _listeners.delete(setDevModeState);
-    };
-  }, []);
-
-  return devMode;
+  return useIsDev();
 }

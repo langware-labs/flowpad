@@ -1,3 +1,7 @@
+---
+id: 48085388-0b96-5c38-bef3-cfba308d3e8c
+---
+
 test 1: Navigating to execute flow tab does not produce 404 (agent ID missing) error (FLOWPAD-1644)
 - navigate to {APP_URL}/dock/execute-flow
 - wait 3 seconds for the execute flow view to load
@@ -6,7 +10,7 @@ test 1: Navigating to execute flow tab does not produce 404 (agent ID missing) e
 - validate no such errors appeared
 
 test 2: Navigating to skills tab does not produce 404 error
-- navigate to {APP_URL}/dock/skills
+- navigate to {APP_URL}/dock/assets/list/skill
 - wait 3 seconds for the skills view to load
 - validate the skills view is visible
 - check console for 404 errors

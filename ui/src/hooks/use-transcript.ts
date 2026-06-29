@@ -9,12 +9,14 @@ import {
  * Worker types the generic transcript viewer supports. Mirrors the server
  * route's whitelist in `flow_sdk/server/routes/transcripts.py`.
  */
-export type WorkerType = 'claude' | 'codex';
+export type WorkerType = 'claude' | 'codex' | 'copilot' | 'workflow';
 
 interface UseTranscriptArgs {
   workerType: WorkerType;
-  /** Absolute filesystem path to the JSONL transcript. */
-  path: string;
+  /** Absolute filesystem path to the JSONL transcript. Provide this OR sessionId. */
+  path?: string;
+  /** Session id; the server resolves the on-disk JSONL via the worker route. */
+  sessionId?: string;
 }
 
 interface UseTranscriptReturn {
@@ -28,11 +30,11 @@ interface UseTranscriptReturn {
  * Fetch and parse a worker transcript via the generic backend route.
  *
  * The hook is the single data path used by `GenericTranscriptViewer`.
- * Server-side `AgentTranscript(worker_type, path)` parses the JSONL and
+ * Server-side `AgentTranscriptFile(worker_type, path)` parses the JSONL and
  * returns typed entries; we just hand the JSON to `parseTranscriptResponse`
  * for runtime validation. Re-fetches when `workerType` or `path` changes.
  */
-export function useTranscript({ workerType, path }: UseTranscriptArgs): UseTranscriptReturn {
+export function useTranscript({ workerType, path, sessionId }: UseTranscriptArgs): UseTranscriptReturn {
   const [data, setData] = useState<ParsedTranscript | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -42,7 +44,7 @@ export function useTranscript({ workerType, path }: UseTranscriptArgs): UseTrans
   const cancelRef = useRef(0);
 
   useEffect(() => {
-    if (!path || !workerType) {
+    if (!workerType || (!path && !sessionId)) {
       setData(null);
       setError(null);
       setIsLoading(false);
@@ -52,7 +54,11 @@ export function useTranscript({ workerType, path }: UseTranscriptArgs): UseTrans
     setError(null);
     const myToken = ++cancelRef.current;
 
-    const url = `${sdkConfig.apiUrl}/api/v1/transcripts/${encodeURIComponent(workerType)}?path=${encodeURIComponent(path)}`;
+    // Prefer sessionId form (server resolves the JSONL — no client-side path
+    // encoding required, fixes the project_encoded_name divergence bug).
+    const url = sessionId
+      ? `${sdkConfig.apiUrl}/api/v1/workers/${encodeURIComponent(workerType)}/${encodeURIComponent(sessionId)}/transcript`
+      : `${sdkConfig.apiUrl}/api/v1/transcripts/${encodeURIComponent(workerType)}?path=${encodeURIComponent(path!)}`;
     fetch(url, { credentials: 'include' })
       .then(async (r) => {
         const json = await r.json();
@@ -74,7 +80,7 @@ export function useTranscript({ workerType, path }: UseTranscriptArgs): UseTrans
         setData(null);
         setIsLoading(false);
       });
-  }, [workerType, path, reloadToken]);
+  }, [workerType, path, sessionId, reloadToken]);
 
   const refetch = useCallback(() => {
     setReloadToken((n) => n + 1);

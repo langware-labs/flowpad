@@ -53,6 +53,7 @@ def _server_env(port: int, db_path: str) -> dict:
     env["MINIHUB_HOST"] = "127.0.0.1"
     env["LOCAL_SERVER_PORT"] = str(port)
     env["FLOWPAD_SKIP_LOCK"] = "true"
+    env["FLOWPAD_SKIP_DOTENV"] = "true"
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
     return env
@@ -186,7 +187,7 @@ async def _send_input(ws, cn_id: str, shell_id: str, data: str) -> None:
     ))
 
 
-async def _attach_via_ws(ws, cn_id: str, shell_id: str, since_seq: int = 0) -> dict:
+async def _attach_via_ws(ws, cn_id: str, shell_id: str, cols: int | None = None, rows: int | None = None) -> dict:
     """Send terminal-command/attach and return the response.
 
     _attach_pty_session returns ApiSuccessResponse(data=ResponseMessage.model_dump()).
@@ -196,10 +197,13 @@ async def _attach_via_ws(ws, cn_id: str, shell_id: str, since_seq: int = 0) -> d
     rather than {"status": "SUCCESS", ...}.
     """
     msg_id = str(uuid.uuid4())
+    body = {"shell_id": shell_id}
+    if cols is not None and rows is not None:
+        body["cols"] = cols
+        body["rows"] = rows
     await ws.send(json.dumps(
         _rest_api_msg("compute_node", cn_id, "terminal-command",
-                      body={"shell_id": shell_id, "since_seq": since_seq},
-                      sub_path="attach", msg_id=msg_id)
+                      body=body, sub_path="attach", msg_id=msg_id)
     ))
     for _ in range(15):
         msg = await _recv(ws, timeout=10)
@@ -228,7 +232,8 @@ async def _attach_via_ws(ws, cn_id: str, shell_id: str, since_seq: int = 0) -> d
 async def test_shell_pty_recover(pty_recover_server):
     """
     A. Reattach: WS2 reattaches to a running PTY started by WS1.
-       Expects status="reattached" and replay of previous output.
+       Expects status="reattached" and a repaint (the attach-time winsize
+       jiggle makes the shell redraw its prompt — live output, no replay).
        WS2 can then send new input and receive output.
 
     B. Not-found: attach to a shell that has no PTY session returns
@@ -274,7 +279,7 @@ async def test_shell_pty_recover(pty_recover_server):
                 confirm2 = await _recv(ws2, timeout=5)
                 assert confirm2["status"] == "ok"
 
-                attach_resp = await _attach_via_ws(ws2, cn_id, shell_a, since_seq=0)
+                attach_resp = await _attach_via_ws(ws2, cn_id, shell_a)
 
                 # Response arrives as unwrapped ResponseMessage (see _attach_via_ws docstring)
                 content = attach_resp.get("content", {})
@@ -283,10 +288,11 @@ async def test_shell_pty_recover(pty_recover_server):
                     f"Expected status='reattached', got: {attach_resp}"
                 )
 
-                # Replay should include the previous "reattach_hello" echo
-                # (sent as separate pty_output_msg messages before the response)
-                # Drain any pending replay messages briefly
-                replay_text = ""
+                # No byte replay anymore: the attach-time winsize jiggle makes
+                # the running shell repaint (zsh redraws its prompt line on
+                # SIGWINCH) — live pty_output_msg traffic arrives shortly after
+                # attach. Drain briefly and require at least one output chunk.
+                repaint_text = ""
                 for _ in range(20):
                     try:
                         msg = await _recv(ws2, timeout=1.0)
@@ -299,7 +305,9 @@ async def test_shell_pty_recover(pty_recover_server):
                     elif msg.get("message_type") == "pty_output_msg":
                         raw = msg.get("data", "")
                     if raw:
-                        replay_text += base64.b64decode(raw).decode("utf-8", errors="replace")
+                        repaint_text += base64.b64decode(raw).decode("utf-8", errors="replace")
+                        break
+                assert repaint_text, "No repaint output arrived after attach (winsize jiggle)"
 
                 # Send new input via WS2 and confirm PTY is live
                 await _send_input(ws2, cn_id, shell_a, "echo ws2_alive\n")
@@ -320,7 +328,7 @@ async def test_shell_pty_recover(pty_recover_server):
             assert confirm3["status"] == "ok"
 
             # Attach to a shell that was never opened — no PTY session exists
-            attach_resp2 = await _attach_via_ws(ws3, cn_id, shell_b, since_seq=0)
+            attach_resp2 = await _attach_via_ws(ws3, cn_id, shell_b)
 
             content2 = attach_resp2.get("content", {})
             not_found_status = content2.get("status") if isinstance(content2, dict) else None
@@ -340,3 +348,85 @@ async def test_shell_pty_recover(pty_recover_server):
             assert "fresh_start" in output_ws3, (
                 f"PTY not live after fresh open: {output_ws3!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Attach repaint semantics (no replay buffer)
+# ---------------------------------------------------------------------------
+
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+async def test_pty_attach_repaint(pty_recover_server):
+    """
+    C. Size-asserting attach: attach with explicit cols/rows resizes the PTY
+       (verified end-to-end via `stty size` inside the shell).
+    D. Same-size attach: attach without cols/rows leaves the size untouched
+       (the winsize jiggle restores the exact size) and still produces a
+       repaint — observable as prompt-redraw output after attach.
+    """
+    port, base_url = pty_recover_server
+    ws_base = f"ws://127.0.0.1:{port}"
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=20.0) as http:
+        resp = await http.get("/api/v1/graph/bootstrap")
+        assert resp.status_code == 200, f"Bootstrap failed: {resp.text}"
+        cn_id = resp.json()["data"]["default_compute_node"]["id"]
+
+        r = await http.post("/api/v1/graph/shell",
+                            json={"name": "repaint-test", "compute_node_id": cn_id})
+        assert r.status_code == 200
+        shell_id = r.json()["data"]["id"]
+
+        conn1_id = str(uuid.uuid4())
+        async with websockets.connect(f"{ws_base}/api/v1/connect/ws/{conn1_id}") as ws1:
+            confirm = await _recv(ws1, timeout=5)
+            assert confirm["status"] == "ok"
+
+            open_resp = await _open_shell_via_ws(ws1, shell_id, conn1_id)
+            assert open_resp["status"] == "SUCCESS", f"Shell.open() failed: {open_resp}"
+
+            # Let the shell reach its prompt
+            await _send_input(ws1, cn_id, shell_id, "echo warm_up\n")
+            assert "warm_up" in await _collect_pty_output(ws1, "warm_up")
+
+            # ── C: attach WITH explicit cols/rows asserts the size ────────────
+            conn2_id = str(uuid.uuid4())
+            async with websockets.connect(f"{ws_base}/api/v1/connect/ws/{conn2_id}") as ws2:
+                confirm2 = await _recv(ws2, timeout=5)
+                assert confirm2["status"] == "ok"
+
+                attach_resp = await _attach_via_ws(ws2, cn_id, shell_id, cols=100, rows=40)
+                content = attach_resp.get("content", {})
+                assert (content.get("status") if isinstance(content, dict) else None) == "reattached"
+
+                await _send_input(ws2, cn_id, shell_id, "stty size\n")
+                out = await _collect_pty_output(ws2, "40 100")
+                assert "40 100" in out, f"PTY size not asserted by attach: {out!r}"
+
+                # ── D: attach WITHOUT size → jiggle repaints, size unchanged ──
+                attach_resp2 = await _attach_via_ws(ws2, cn_id, shell_id)
+                content2 = attach_resp2.get("content", {})
+                assert (content2.get("status") if isinstance(content2, dict) else None) == "reattached"
+
+                # Repaint output (zsh prompt redraw on SIGWINCH) must arrive
+                repaint = ""
+                for _ in range(20):
+                    try:
+                        msg = await _recv(ws2, timeout=1.0)
+                    except asyncio.TimeoutError:
+                        break
+                    content_m = msg.get("content")
+                    raw = None
+                    if isinstance(content_m, dict) and content_m.get("message_type") == "pty_output_msg":
+                        raw = content_m.get("data", "")
+                    elif msg.get("message_type") == "pty_output_msg":
+                        raw = msg.get("data", "")
+                    if raw:
+                        repaint += base64.b64decode(raw).decode("utf-8", errors="replace")
+                        break
+                assert repaint, "No repaint output after same-size attach (jiggle)"
+
+                # Jiggle must restore the exact size — not leave rows-1
+                await _send_input(ws2, cn_id, shell_id, "stty size\n")
+                out2 = await _collect_pty_output(ws2, "40 100")
+                assert "40 100" in out2, f"Jiggle did not restore exact size: {out2!r}"

@@ -3,8 +3,10 @@ import { cn } from '@src/lib/utils';
 import { dataManager } from '@sdk';
 import { getActionsForResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import type { ScopeFilter } from '@src/lib/scope-filter';
 import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const MAX_INLINE = 5;
 
@@ -34,6 +36,8 @@ function timeAgo(iso?: string): string {
 interface InlineSearchResultsProps {
   query: string;
   filters: SearchFilters;
+  scope: ScopeFilter;
+  scopeLoading?: boolean;
   selectedIndex: number;
   onSelectedIndexChange: (i: number) => void;
   onOpenFullSearch: () => void;
@@ -43,11 +47,14 @@ interface InlineSearchResultsProps {
 export function InlineSearchResults({
   query,
   filters,
+  scope,
+  scopeLoading = false,
   selectedIndex,
   onSelectedIndexChange,
   onOpenFullSearch,
   onNavigateResult,
 }: InlineSearchResultsProps) {
+  const { t } = useLingui();
   const hasFilter = !!(filters.record_type || filters.status || filters.scope || filters.time_preset);
   const { navigation } = useDockNavigation();
 
@@ -60,21 +67,27 @@ export function InlineSearchResults({
   // Track when a search begins
   const prevQuery = useRef(query);
   const prevFilters = useRef(filters);
+  const prevScopeLoading = useRef(scopeLoading);
   useEffect(() => {
     const filtersChanged =
       filters.record_type !== prevFilters.current.record_type ||
       filters.status !== prevFilters.current.status ||
       filters.scope !== prevFilters.current.scope ||
       filters.time_preset !== prevFilters.current.time_preset;
-    if (query !== prevQuery.current || filtersChanged) {
+    const scopeReadyChanged = prevScopeLoading.current && !scopeLoading;
+    if (query !== prevQuery.current || filtersChanged || scopeReadyChanged) {
       setSearchStartMs(Date.now());
       setElapsedMs(null);
-      prevQuery.current = query;
-      prevFilters.current = filters;
     }
-  }, [query, filters]);
+    prevQuery.current = query;
+    prevFilters.current = filters;
+    prevScopeLoading.current = scopeLoading;
+  }, [query, filters, scopeLoading]);
 
-  const { results, isLoading } = useRecordSearch(query, filters);
+  const requestQuery = scopeLoading ? '' : query;
+  const requestFilters = scopeLoading ? {} : filters;
+  const { results, isLoading: searchLoading } = useRecordSearch(requestQuery, requestFilters, {}, scope);
+  const isLoading = scopeLoading || searchLoading;
 
   // Record elapsed time when results arrive
   useEffect(() => {
@@ -120,15 +133,15 @@ export function InlineSearchResults({
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="text-xs text-muted-foreground">
           {isLoading
-            ? 'Searching…'
+            ? <Trans>Searching…</Trans>
             : elapsedMs !== null
               ? `${results.length} result${results.length !== 1 ? 's' : ''}${scanInfo?.total_indexed ? ` · ${scanInfo.total_indexed.toLocaleString()} indexed` : ''} · ${elapsedMs}ms`
-              : 'Ready'}
+              : <Trans>Ready</Trans>}
         </span>
         <button
           type="button"
           onClick={onOpenFullSearch}
-          title="Open full search"
+          title={t`Open full search`}
           className="rounded p-0.5 text-muted-foreground hover:text-foreground"
         >
           <ArrowUpRight className="h-3.5 w-3.5" />
@@ -146,16 +159,19 @@ export function InlineSearchResults({
 
       {/* Empty state */}
       {!isLoading && results.length === 0 && (
-        <div className="px-3 py-3 text-sm text-muted-foreground">No results</div>
+        <div className="px-3 py-3 text-sm text-muted-foreground"><Trans>No results</Trans></div>
       )}
 
-      {/* Result rows */}
+      {/* Result rows — div+role=button (not <button>) so the per-action
+          chips below can be real <button>s without nesting buttons. Selection
+          + Enter activation are handled by the container's handleKeyDown. */}
       {!isLoading && displayResults.map((result, i) => (
-        <button
+        <div
           key={result.record_id}
-          type="button"
+          role="button"
+          tabIndex={-1}
           className={cn(
-            'flex w-full flex-col gap-0.5 px-3 py-2 text-left',
+            'flex w-full flex-col gap-0.5 px-3 py-2 text-left cursor-pointer',
             selectedIndex === i ? 'bg-accent text-foreground' : 'hover:bg-accent/50',
           )}
           onClick={() => onNavigateResult(result)}
@@ -212,7 +228,7 @@ export function InlineSearchResults({
               </div>
             );
           })()}
-        </button>
+        </div>
       ))}
 
       {/* See all overflow row */}
@@ -227,7 +243,7 @@ export function InlineSearchResults({
           onMouseEnter={() => onSelectedIndexChange(MAX_INLINE - 1)}
         >
           <ArrowUpRight className="h-3.5 w-3.5" />
-          See all {results.length} results →
+          <Trans>See all {results.length} results →</Trans>
         </button>
       )}
     </div>

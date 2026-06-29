@@ -67,6 +67,7 @@ export function useContext() {
     cloudLoginAvailable: typeof dataContext.cloudLoginAvailable;
     desktopInfo: typeof dataContext.desktopInfo;
     isDesktop: typeof dataContext.isDesktop;
+    instanceName: typeof dataContext.instanceName;
     warnings: typeof dataContext.warnings;
     workflow: typeof dataContext.workflow;
     workflowTypeId: typeof dataContext.workflowTypeId;
@@ -75,6 +76,7 @@ export function useContext() {
     activeShellId: typeof dataContext.activeShellId;
     activeTerminalTargetTypeId: typeof dataContext.activeTerminalTargetTypeId;
     workdir: typeof dataContext.workdir;
+    terminalRuntimeError: typeof dataContext.terminalRuntimeError;
   }>({
     user: dataContext.user,
     workspace: dataContext.workspace,
@@ -100,6 +102,7 @@ export function useContext() {
     cloudLoginAvailable: dataContext.cloudLoginAvailable,
     desktopInfo: dataContext.desktopInfo,
     isDesktop: dataContext.isDesktop,
+    instanceName: dataContext.instanceName,
     warnings: dataContext.warnings,
     workflow: dataContext.workflow,
     workflowTypeId: dataContext.workflowTypeId,
@@ -108,6 +111,7 @@ export function useContext() {
     activeShellId: dataContext.activeShellId,
     activeTerminalTargetTypeId: dataContext.activeTerminalTargetTypeId,
     workdir: dataContext.workdir,
+    terminalRuntimeError: dataContext.terminalRuntimeError,
   });
 
   // Subscribe to dataContext changes using the shared subscription manager
@@ -143,6 +147,7 @@ export function useContext() {
       cloudLoginAvailable: dataContext.cloudLoginAvailable,
       desktopInfo: dataContext.desktopInfo,
       isDesktop: dataContext.isDesktop,
+      instanceName: dataContext.instanceName,
       warnings: dataContext.warnings,
       workflow: dataContext.workflow,
       workflowTypeId: dataContext.workflowTypeId,
@@ -151,6 +156,7 @@ export function useContext() {
       activeShellId: dataContext.activeShellId,
       activeTerminalTargetTypeId: dataContext.activeTerminalTargetTypeId,
       workdir: dataContext.workdir,
+      terminalRuntimeError: dataContext.terminalRuntimeError,
     };
 
     // Only update snapshot if values have changed (to maintain stable reference)
@@ -186,6 +192,7 @@ export function useContext() {
       prev.cloudLoginAvailable !== current.cloudLoginAvailable ||
       prev.desktopInfo !== current.desktopInfo ||
       prev.isDesktop !== current.isDesktop ||
+      prev.instanceName !== current.instanceName ||
       prev.warnings !== current.warnings ||
       prev.workflow !== current.workflow ||
       typeIdChanged(prev.workflowTypeId, current.workflowTypeId) ||
@@ -193,7 +200,9 @@ export function useContext() {
       typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
       prev.activeShellId !== current.activeShellId ||
       typeIdChanged(prev.activeTerminalTargetTypeId, current.activeTerminalTargetTypeId) ||
-      prev.workdir !== current.workdir
+      prev.workdir !== current.workdir ||
+      prev.terminalRuntimeError?.kind !== current.terminalRuntimeError?.kind ||
+      prev.terminalRuntimeError?.processId !== current.terminalRuntimeError?.processId
     ) {
       snapshotRef.current = current;
     }

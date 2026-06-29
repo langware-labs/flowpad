@@ -6,6 +6,7 @@ The desktop_db action and any other caller should import from here — not dupli
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import platform
@@ -93,7 +94,15 @@ def get_db_path() -> Path:
 
 
 def get_backup_folder() -> Path:
-    folder = Path.home() / ".flowpad" / "backups"
+    """Per-instance backup directory.
+
+    Backups live under ``<instance_dir>/backups`` (not the legacy shared
+    ``~/.flowpad/backups``). Two instances on the same machine (e.g.
+    ``app`` and ``oss``) used to collide on identical timestamps + filenames
+    in the shared folder; moving under ``instance_dir`` keeps them isolated.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    folder = get_instance_settings().instance_dir / "backups"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -103,7 +112,15 @@ def get_db_folder() -> Path:
 
 
 def get_logs_folder() -> Path:
-    folder = Path.home() / "Flowpad workspace" / ".flow" / "logs"
+    """Per-instance logs directory (call-time, via InstanceSettings).
+
+    Resolves to ``<flow_home>/instances/<instance_name>/logs`` so the dev
+    (port 9008) and prod (port 9007) backends keep their logs in separate
+    folders. This is what the ``open-logs`` action opens and what the UI
+    shows as the log folder path.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    folder = get_instance_settings().logs_dir
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -123,7 +140,12 @@ def get_database_paths() -> DatabasePathsResult:
 
 
 async def clear_index(types: list[str] | None = None) -> ClearIndexResult:
-    """Clear FTS index + indexed entity records. Optionally scoped to specific types."""
+    """Clear FTS index + record-backed entities. Optionally scoped to specific types.
+
+    ``SchemaRegistry.clear_index`` is the authoritative implementation and is
+    careful to delete only schema-registered record types (not arbitrary
+    anonymous entities like user-created projects/workspaces).
+    """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     result = await SchemaRegistry.clear_index(types)
@@ -160,6 +182,21 @@ async def backup_db() -> BackupResult:
 # ---------------------------------------------------------------------------
 
 
+def _scan_backup_folder(folder: Path) -> list[Path]:
+    """Collect candidate backup files from a single folder."""
+    candidates: list[Path] = []
+    if not folder.exists():
+        return candidates
+    for entry in folder.iterdir():
+        if entry.is_file() and entry.name.startswith("flowpad_db_"):
+            candidates.append(entry)
+        elif entry.is_dir() and entry.name.startswith("archive_"):
+            db_inside = entry / "flowpad_db"
+            if db_inside.exists():
+                candidates.append(db_inside)
+    return candidates
+
+
 def find_last_valid_db_backup() -> Path | None:
     """Return the path of the most recent valid DB file from the backups folder.
 
@@ -167,18 +204,25 @@ def find_last_valid_db_backup() -> Path | None:
       - flowpad_db_YYYYMMDD_HHMMSS        (plain backup files)
       - archive_YYYYMMDD_HHMMSS/flowpad_db (archive folders)
 
-    Returns None if no valid backup is found.
+    Looks first in the per-instance folder (``<instance_dir>/backups``).
+    If nothing valid is found, falls back to the legacy shared folder
+    (``~/.flowpad/backups``) so installations that upgraded from a layout
+    where backups lived in the shared location can still recover. Without
+    the fallback, ``ensure_db`` would silently reinitialise a fresh DB on
+    first post-upgrade boot and lose recoverable user history.
+
+    Returns None if no valid backup is found in either folder.
     """
     backup_folder = get_backup_folder()
-    candidates: list[Path] = []
+    legacy_folder = Path.home() / ".flowpad" / "backups"
 
-    for entry in backup_folder.iterdir():
-        if entry.is_file() and entry.name.startswith("flowpad_db_"):
-            candidates.append(entry)
-        elif entry.is_dir() and entry.name.startswith("archive_"):
-            db_inside = entry / "flowpad_db"
-            if db_inside.exists():
-                candidates.append(db_inside)
+    folders: list[Path] = [backup_folder]
+    if legacy_folder != backup_folder and legacy_folder.exists():
+        folders.append(legacy_folder)
+
+    candidates: list[Path] = []
+    for folder in folders:
+        candidates.extend(_scan_backup_folder(folder))
 
     # Sort newest-first by the timestamp embedded in the parent name
     candidates.sort(key=lambda p: p.parent.name if p.name == "flowpad_db" else p.name, reverse=True)
@@ -228,13 +272,17 @@ def ensure_db() -> bool:
 
 
 def _write_db_corruption_error(db_path: Path) -> None:
-    """Write a RecordError recording the DB corruption incident."""
+    """Write a record_error FSRecord recording the DB corruption incident."""
+    import uuid as _uuid  # noqa: PLC0415
     from datetime import datetime, timezone  # noqa: PLC0415
 
-    from flow_sdk.fs_records.record_error import RecordError  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     try:
-        rec = RecordError(
+        rec = FSRecord(
+            type=RecordType.RECORD_ERROR,
+            id=str(_uuid.uuid4()),
             trigger="ensure_db",
             error_type="DatabaseCorruption",
             error_message=(
@@ -244,9 +292,9 @@ def _write_db_corruption_error(db_path: Path) -> None:
             occurred_at=datetime.now(timezone.utc).isoformat(),
         )
         rec.save()
-        logger.info("ensure_db: corruption RecordError written")
+        logger.info("ensure_db: corruption record_error written")
     except Exception as e:
-        logger.error(f"ensure_db: failed to write RecordError: {e}")
+        logger.error(f"ensure_db: failed to write record_error: {e}")
 
 
 def validate_db(db_path: Path | None = None) -> bool:
@@ -257,13 +305,15 @@ def validate_db(db_path: Path | None = None) -> bool:
     """
     import sqlite3 as stdlib_sqlite3  # noqa: PLC0415
 
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite  # noqa: PLC0415
+
     path = db_path or get_db_path()
     if not path.exists():
         logger.warning(f"validate_db: file not found at {path}")
         return False
 
     try:
-        conn = stdlib_sqlite3.connect(str(path))
+        conn = open_sqlite(path)
         try:
             rows = conn.execute("PRAGMA integrity_check").fetchall()
             # SQLite returns [('ok',)] when healthy; any other rows mean corruption.
@@ -297,8 +347,15 @@ async def clear_all_data() -> ClearAllResult:
     # 1. Backup first
     backup = await backup_db()
 
-    # 2. Clear the scan index (FTS + index logs + RecordErrors)
-    await clear_index()
+    # 2. Clear the scan index (FTS + index logs + RecordErrors). Best-effort:
+    # this queries the entity DB, and factory reset is exactly the operation
+    # that must still work when that DB is broken (e.g. schema-less after an
+    # interrupted clear). Its DB-row deletes are redundant with the wipe
+    # below, but the on-disk index_log.jsonl cleanup is not — keep the call.
+    try:
+        await clear_index()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"clear_all_data: clear_index failed (continuing with wipe): {e}")
 
     # 3. Drop in-memory caches
     from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
@@ -306,35 +363,100 @@ async def clear_all_data() -> ClearAllResult:
     entity_cache.clear()
     uname_cache.clear()
 
+    # Capability system rows are wiped along with the DB below, but the
+    # once-per-process seed guard is an in-memory cache of "DB has been
+    # seeded". Reset it so the capability specs are re-seeded on next access
+    # — otherwise a factory reset silently loses all capabilities until the
+    # process restarts.
+    from flow_sdk.builtin.capability import Capability  # noqa: PLC0415
+
+    Capability._seeded_once = False
+
     # 4. Close DB, delete file, reinitialize
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_driver import _driver_instances  # noqa: PLC0415
-
-    # Close the SQLiteDriver's own engine before wiping the file
-    sqlite_driver = _driver_instances.get("sqlite")
-    if sqlite_driver is not None:
-        await sqlite_driver.close()
-
-    await close_db()
-    db_path.unlink()
-    logger.info(f"Database file deleted: {db_path}")
-    await init_db()
-
-    # Reopen the SQLiteDriver so it points to the new DB file
-    if sqlite_driver is not None:
-        await sqlite_driver.open()
-
-    # Invalidate the bootstrap cache and immediately rebuild the @local
-    # entities. Without the rebuild, subsequent requests addressed via
-    # `/compute_node/@local/...` cannot resolve `@local` (it has just been
-    # wiped) and the request middleware returns "Invalid request" until the
-    # client happens to call /bootstrap again.
-    from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
-        bootstrap,
-        invalidate_bootstrap_cache,
+    from flow_sdk.db.drivers.db_driver import (  # noqa: PLC0415
+        _driver_instances,
+        db_lifecycle_guard,
+        get_db_driver,
+        LazyDBDriver,
+        remove_db_sidecars,
     )
-    invalidate_bootstrap_cache()
-    await bootstrap()
+    from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
+    from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
+
+    async def _wipe_and_reinit() -> None:
+        # Serialize the entire close→unlink→init→repoint→bootstrap block against
+        # any overlapping lifecycle swap AND against fresh-session opens so no two
+        # engines can straddle the unlink. The guard also flags this coroutine so
+        # the nested session opens below (init_db / bootstrap rebuild) bypass the
+        # same non-reentrant lock instead of self-deadlocking.
+        async with db_lifecycle_guard():
+            # Close the SQLiteDriver's own engine before wiping the file
+            sqlite_driver = _driver_instances.get("sqlite")
+            if sqlite_driver is not None:
+                await sqlite_driver.close()
+
+            await close_db()
+            db_path.unlink()
+            remove_db_sidecars(db_path)
+            logger.info(f"Database file deleted: {db_path}")
+            await init_db()
+
+            # DBEntity._db / DBRelationship._db are LazyDBDriver descriptors that
+            # snapshot the active driver on first access. After ``init_db`` builds
+            # a fresh driver, point both class-level caches at it so reads/writes
+            # go through the new instance — otherwise we read from a closed driver
+            # whose connections were torn down above (silent split-brain).
+            new_driver = get_db_driver()
+            DBEntity._db = new_driver
+            DBRelationship._db = new_driver
+
+            # Invalidate the bootstrap cache and immediately rebuild the @local
+            # entities. Without the rebuild, subsequent requests addressed via
+            # `/compute_node/@local/...` cannot resolve `@local` (it has just been
+            # wiped) and the request middleware returns "Invalid request" until the
+            # client happens to call /bootstrap again.
+            from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
+                bootstrap,
+                invalidate_bootstrap_cache,
+            )
+            invalidate_bootstrap_cache()
+            await bootstrap()
+
+        # Re-seed the system projects (e.g. @flowpad_assistant). These are seeded
+        # only by the startup-index path — the bootstrap() route handler above
+        # rebuilds @local but NOT the system projects, so without this a factory
+        # reset silently loses them until the process restarts (same class of bug
+        # as the Capability._seeded_once reset above). Their absence makes the FE
+        # assistant resolver log "Invalid entity type or ID" console errors on every
+        # page load. Non-fatal — mirror startup's best-effort handling.
+        try:
+            from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
+                _ensure_system_projects,
+                _index_system_project_markdowns,
+                get_or_create_local_user,
+            )
+
+            _user = await get_or_create_local_user()
+            _system_projects = await _ensure_system_projects(desktop_user=_user)
+            # Mirror the startup-index path: seed THEN index the system markdown so
+            # the assistant docs are searchable/browsable after a reset, not just
+            # present as empty project rows.
+            try:
+                await _index_system_project_markdowns(_system_projects)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"clear_all_data: failed to index system markdowns (non-fatal): {e}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"clear_all_data: failed to re-seed system projects (non-fatal): {e}")
+
+    # The triggering HTTP request can be CANCELLED at any await (ASGI client
+    # disconnect — e.g. the test runner being killed mid-clear). Without a
+    # shield, the cancellation can land between ``db_path.unlink()`` and
+    # ``init_db()`` completing, leaving a schema-less DB file that fails
+    # EVERY query ("no such table: entities") until a process restart.
+    # Shield the destructive section so once started it always runs to
+    # completion, regardless of the caller's fate.
+    await asyncio.shield(_wipe_and_reinit())
 
     return ClearAllResult(
         backup_path=backup.backup_path,
@@ -349,7 +471,7 @@ async def clear_all_data() -> ClearAllResult:
 
 async def archive() -> ArchiveResult:
     """Create a full archive: DB backup + records snapshot in a timestamped folder."""
-    from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
+    from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_dir = get_backup_folder() / f"archive_{timestamp}"
@@ -390,18 +512,33 @@ async def restore(backup_path: str) -> RestoreResult:
 
     from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_driver import db_lifecycle_guard, remove_db_sidecars  # noqa: PLC0415
 
-    await close_db()
-    shutil.copy2(src, db_path)
-    logger.info(f"Database restored from: {src}")
+    # Same dispose→swap-file→reinit shape as clear_all_data — serialize it
+    # under the shared lifecycle lock so a restore can't straddle a concurrent
+    # clear/path-switch (or a fresh session open) and leave an engine bound to
+    # the just-overwritten file. The guard flags this coroutine so the nested
+    # init_db / clear_index session opens bypass the non-reentrant lock.
+    async def _swap_and_reinit() -> None:
+        async with db_lifecycle_guard():
+            await close_db()
+            shutil.copy2(src, db_path)
+            # The copied file pairs with the OLD inode's sidecars — same
+            # "locking protocol" hazard as clear_all_data's unlink path.
+            remove_db_sidecars(db_path)
+            logger.info(f"Database restored from: {src}")
 
-    entity_cache.clear()
-    uname_cache.clear()
+            entity_cache.clear()
+            uname_cache.clear()
 
-    await init_db()
+            await init_db()
 
-    # Clear index — it no longer reflects the restored DB
-    await clear_index()
+            # Clear index — it no longer reflects the restored DB
+            await clear_index()
+
+    # Same cancellation exposure as clear_all_data: a client disconnect
+    # mid-swap must not strand a half-restored DB. Run to completion.
+    await asyncio.shield(_swap_and_reinit())
 
     return RestoreResult(message=f"Database restored from {src.name}. Index cleared.")
 
@@ -412,14 +549,14 @@ async def restore(backup_path: str) -> RestoreResult:
 
 
 async def get_database_stats() -> DatabaseStatsResult:
-    import sqlite3 as stdlib_sqlite3  # noqa: PLC0415
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite  # noqa: PLC0415
 
     db_path = get_db_path()
     if not db_path.exists():
         raise FileNotFoundError("Database file does not exist")
 
     file_size = db_path.stat().st_size
-    conn = stdlib_sqlite3.connect(str(db_path))
+    conn = open_sqlite(db_path)
     try:
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM entities")

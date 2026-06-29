@@ -18,7 +18,6 @@ from datetime import datetime, timezone
 import pytest
 
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
-from flow_sdk.fs_records.skill_record import SkillRecord  # noqa: F401 — trigger registration
 from flow_sdk.server.app import app
 from starlette.testclient import TestClient
 from tests.test_settings import test_service_config
@@ -130,9 +129,12 @@ def _assert_table_shape(attrs: dict, job_name: str) -> None:
     # `current` is a string or null
     current = attrs.get("current")
     assert current is None or isinstance(current, str)
-    # `text` is null or "complete"
+    # `text` is a phase marker: null mid-run, a phase label while a long
+    # sub-phase runs (e.g. "sweeping" for the orphan sweep), or "complete"
+    # on the terminal snapshot. Any non-complete string is a valid in-flight
+    # phase; the terminal "complete" contract is asserted on final, below.
     text = attrs.get("text")
-    assert text is None or text == "complete"
+    assert text is None or isinstance(text, str)
     # Per-row shape
     for row in attrs["rows"]:
         assert isinstance(row.get("type_name"), str)

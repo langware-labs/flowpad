@@ -88,6 +88,29 @@ class ExecutionContext:
         if self.request_info and self.request_info.transaction_handler:
             await self.request_info.transaction_handler.rollback()
 
+    @asynccontextmanager
+    async def transaction_scope(self):
+        """The request transaction boundary — single source of truth for durability.
+
+        Wrap a request handler in ``async with ec.transaction_scope()``: the
+        body's writes are committed on success, rolled back on exception
+        (then the exception is re-raised), and the session is always closed
+        via cleanup(). Both entry paths use this — RequestTransactionMiddleware
+        for HTTP and handle_rest_message for WebSocket rest messages — so the
+        commit/rollback/cleanup rule is written exactly once. The WS path
+        bypasses ASGI middleware entirely, so without this shared scope it
+        would otherwise need its own divergent copy of the rule.
+        """
+        try:
+            yield self
+        except Exception:
+            await self.rollback_transaction()
+            raise
+        else:
+            await self.commit_transaction()
+        finally:
+            await self.cleanup()
+
     @classmethod
     @asynccontextmanager
     async def create(

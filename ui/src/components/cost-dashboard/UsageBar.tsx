@@ -7,6 +7,7 @@
 
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
 import { DollarSign, Zap } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 import { formatValue } from './constants';
 import { CostSparkline } from './CostSparkline';
 import { TimeCohortTabs } from './TimeCohortTabs';
@@ -21,7 +22,7 @@ export function UsageBar() {
   if (error) {
     return (
       <div className="rounded-lg border border-border bg-card px-3 py-1.5">
-        <span className="text-[11px] text-muted-foreground">Usage unavailable</span>
+        <span className="text-[11px] text-muted-foreground"><Trans>Usage unavailable</Trans></span>
       </div>
     );
   }
@@ -44,7 +45,7 @@ export function UsageBar() {
           <div className="flex items-center gap-1">
             <DollarSign className="h-3 w-3 text-green-500" />
             <span className="font-medium">{formatValue(totalCostMetric?.value ?? 0, 'currency')}</span>
-            <span className="text-muted-foreground">cost</span>
+            <span className="text-muted-foreground"><Trans>cost</Trans></span>
           </div>
 
           <div className="h-3 w-px bg-border" />
@@ -53,7 +54,7 @@ export function UsageBar() {
           <div className="flex items-center gap-1">
             <Zap className="h-3 w-3 text-purple-500" />
             <span className="font-medium">{formatValue(totalTokensMetric?.value ?? 0, 'tokens')}</span>
-            <span className="text-muted-foreground">tokens</span>
+            <span className="text-muted-foreground"><Trans>tokens</Trans></span>
           </div>
 
           <div className="h-3 w-px bg-border" />

@@ -1,11 +1,15 @@
 ---
+id: 4973063f-5e80-586a-bd6f-6ebd043efa7d
 name: session_analysis
-description: Analyze agentic session transcripts to surface automation opportunities, preventable errors, and behavior corrections.
+description: Analyze agentic session transcripts to surface automation opportunities,
+  preventable errors, and behavior corrections.
 tags:
-  - analysis
-  - transcript
-  - quality
-allowed-tools: [Read, Write]
+- analysis
+- transcript
+- quality
+allowed-tools:
+- Read
+- Write
 ---
 
 # Session Analysis Skill

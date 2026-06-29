@@ -362,5 +362,5 @@ export interface ICompletionOptions {
   classifyPlannerSupported?: boolean;
   setActiveView?: boolean; // Default true - switches to Active view after sending message
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") or "<typeid>/<sub_path>". */
-  target_vfs_path?: string;
+  target_typeid_str?: string;
 }

@@ -5,6 +5,7 @@
 export enum Layout {
   DOCK = 'dock',
   DEV = 'dev',
+  WIN = 'win',
 }
 
 /**
@@ -12,6 +13,14 @@ export enum Layout {
  * Not flexible by design for security, validation, and clarity
  */
 export const DEV_KEYWORD = 'dev' as const;
+
+/**
+ * Focus-window layout keyword - appears in URL as /win/...
+ * Mirrors every dock/<viewType>/<pointer> with a chrome-less window variant
+ * (docs/tab-management.md Part 3 §7). Same loaders, same view component;
+ * the tab content is the entire window.
+ */
+export const WIN_KEYWORD = 'win' as const;
 
 /**
  * ViewType enum for content panel views
@@ -43,6 +52,9 @@ export enum ViewType {
   AI_CONFIG = 'ai-config', // AI Configuration (LLM APIs, CLIs)
   EXECUTE_FLOW = 'execute-flow', // Execute markdown instruction files
   SHOW = 'show', // MCP UI display dock pointer
+  APPS = 'apps', // Skill UI apps - /dock/apps/<uname>/<router> mounts AppHost
+  GRAPH = 'graph', // Built-in dep-graph viewer - /dock/graph/<type>/<id>
+  K_BROWSER = 'k-browser', // Docs knowledge browser - /dock/k-browser/<vfs|typeid>/<value>
   LENS = 'lens', // Lens viewer for specialized content (e.g., transcripts)
   SESSION = 'session', // Live session view (simplified workflow without file)
   TASKS = 'tasks', // Task create/edit view
@@ -50,6 +62,7 @@ export enum ViewType {
   AGENTIC_PROCESS = 'agentic_process', // Process terminal view (Layer 3)
   SEARCH = 'search', // Record semantic search view
   TRIGGERS = 'triggers', // Activation rules browser + editor
+  CAPABILITIES = 'capabilities', // System capability checks/install/test
   PLAN = 'plan', // Plan viewer with Milkdown editor
   CRON = 'cron', // Scheduled cron jobs manager
   WORKFLOWS = 'workflows', // Workflows manager with markdown editor
@@ -58,6 +71,8 @@ export enum ViewType {
   INBOX = 'inbox', // Inbox — received FlowMessages from hub
   CONVERSATION = 'conversation', // Single Conversation viewer (avatar bubbles + composer)
   SPEC = 'spec', // Single Spec viewer (shows spec metadata, plan link, generated tasks)
+  GRAPH_CONTEXT = 'graph_context', // Frozen-context viewer - /dock/graph_context/<id>
+  DIAGNOSIS = 'diagnosis', // Single FlowpadDiagnosis viewer - /dock/diagnosis/<id>
 }
 
 /**

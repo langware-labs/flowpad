@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { AgenticProcess, fsManager, ProcessResult, Task } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { TaskType } from '@src/components/task-bar/task-utils';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { validateProcessContext } from '@src/hooks/process-context';
 
 /** Map classification command names to task_type values. */
@@ -62,7 +62,6 @@ export function useActAccordingToClassification(
   options?: UseActAccordingToClassificationOptions,
 ): UseActAccordingToClassificationResult {
   const { project: currentProject } = useProject();
-  const { toast } = useToast();
   const onStartedRef = useRef(options?.onStarted);
   onStartedRef.current = options?.onStarted;
   const onCompletedRef = useRef(options?.onCompleted);
@@ -76,7 +75,7 @@ export function useActAccordingToClassification(
     async (sessionId: string, cwd: string, command: string) => {
       if (runningRef.current) return;
 
-      const ctx = validateProcessContext(toast);
+      const ctx = validateProcessContext();
       if (!ctx) return;
       ctx.projectTypeId = currentProject?.typeId;
 
@@ -221,15 +220,14 @@ export function useActAccordingToClassification(
         }
       } catch (error) {
         console.error('[useActAccordingToClassification] Failed to run action:', error);
-        toast({
+        notify.error({
           title: 'Action failed',
-          description: `Could not start ${command}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          variant: 'destructive',
+          message: `Could not start ${command}: ${error instanceof Error ? error.message : 'Unknown error'}`,
         });
         resetState();
       }
     },
-    [currentProject?.typeId, toast],
+    [currentProject?.typeId],
   );
 
   return { actOnClassification, actingSessionId, workerSessionId };

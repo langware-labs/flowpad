@@ -1,11 +1,21 @@
 """Smoke test for migration_2026_05_consolidate_context_entities.
 
-Validates the per-type planners produce the right ``context_entities`` for
-synthetic raw records. The end-to-end "scan DB and save" path is covered
-by manual run on real data — this test only locks the projection rules.
+Superseded: the unified ``context_entities`` field has been split into
+``shared_context_entities`` / ``private_context_entities_``. The migration
+that this test exercises remains on disk for historical reference but is
+no longer wired into the current data model. The test is skipped at module
+load to keep the suite green without deleting the migration code.
 """
 
-from flow_sdk.migrations.migration_2026_05_consolidate_context_entities import (
+import pytest
+
+pytest.skip(
+    "Superseded by the context_entities split — see "
+    "plan add-context-entity-typeid-kind-remove-melodic-meadow.md",
+    allow_module_level=True,
+)
+
+from flow_sdk.migrations.migration_2026_05_consolidate_context_entities import (  # noqa: E402
     _planned_changes_for_conversation,
     _planned_changes_for_flow_message,
     _planned_changes_for_room,

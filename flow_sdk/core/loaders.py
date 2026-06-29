@@ -68,6 +68,12 @@ def load_actions():
     except ImportError:
         pass  # Hooks sniffer action not available
 
+    # Import workers action to register it
+    try:
+        from flow_sdk.app.actions import workers  # noqa: F401
+    except ImportError:
+        pass  # Workers action not available
+
     # Import api-keys action to register it
     try:
         from flow_sdk.builtin import api_key  # noqa: F401
@@ -103,12 +109,6 @@ def load_actions():
         from flow_sdk.app.actions import oauth_action  # noqa: F401
     except ImportError:
         pass  # OAuth action not available
-
-    # Import LLM config action to register it
-    try:
-        from flow_sdk.app.actions import llm_config_action  # noqa: F401
-    except ImportError:
-        pass  # LLM config action not available
 
     # Import mcp_app action to register it
     from flow_sdk.actions import mcp_app_action  # noqa: F401

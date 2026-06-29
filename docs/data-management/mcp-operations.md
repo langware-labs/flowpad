@@ -1,3 +1,7 @@
+---
+id: 1e15f81a-5225-5a6a-af91-3cd2645e39d3
+---
+
 # MCP Server Operations
 
 The `flow_sdk` MCP server exposes a set of tools that Claude Code can call from within a running session. These tools allow in-session agents to record entities, report progress via XML flow tags, manage per-session key-value context, and introspect session transcripts — all over the MCP stdio protocol rather than through the HTTP graph API.
@@ -31,7 +35,7 @@ mcp.tool()(flow_context)
 mcp.tool()(session_analysis)
 
 def run():
-    mcp.run(transport="stdio")
+    mcp.run(transport="stdio", show_banner=False)
 ```
 
 `FastMCP` (the `fastmcp` library) wraps each registered function, derives its tool name, description, and JSON Schema from Python type annotations and docstrings, and handles the JSON-RPC framing automatically.
@@ -70,7 +74,7 @@ Tools are registered by passing a callable to `mcp.tool()()`. The tool name expo
 
 ## Registered Tools
 
-All five tools are defined in `flow_sdk/mcp_server/mcp_api.py` and registered in `flow_sdk/mcp_server/__init__.py`.
+All five tools are defined in `flow_sdk/mcp_server/mcp_api.py` and registered in `flow_sdk/mcp_server/__init__.py`. A sixth function, `workflow_trace`, is also defined in `mcp_api.py` but is intentionally **not** registered (its `mcp.tool()(workflow_trace)` line is commented out in `__init__.py`), so it is not exposed to Claude Code.
 
 ### `flow_ping`
 
@@ -85,8 +89,14 @@ All five tools are defined in `flow_sdk/mcp_server/mcp_api.py` and registered in
 ```python
 def flow_ping() -> str:
     from flow_sdk import __version__
-    return f"flow_sdk {__version__} connected"
+    from flow_sdk.discovery.notify import send_mcp_event
+
+    result = f"flow_sdk {__version__} connected"
+    send_mcp_event("flow_ping", "", {}, result)
+    return result
 ```
+
+In addition to returning the version string, every tool (including `flow_ping`) calls `flow_sdk.discovery.notify.send_mcp_event(tool_name, session_id, params, result)` to fire a `mcp_tool_call` log event to FlowPad (fire-and-forget; silently skipped when FlowPad is not running).
 
 **Usage:** Called by Claude Code at session start to verify the MCP server is available before using any other tools.
 
@@ -108,7 +118,7 @@ def flow_ping() -> str:
 
 **Routing to handler:**
 
-1. `entity_json` is parsed with `json.loads()`. A `json.JSONDecodeError` returns an error string immediately.
+1. `entity_json` is parsed with `json.loads()`. A `json.JSONDecodeError` returns `"Error: invalid JSON — {e}"` immediately.
 2. `plugin_records.skillit_records` is imported at call time. If the package is not installed, the function returns an informational stub message (`"entity_crud {crud} received for {type} (plugin_records not available)"`) rather than raising.
 3. If `plugin_records` is available, control passes to:
 
@@ -196,7 +206,7 @@ After local processing, `send_flow_tag(flow_data)` is called. This sends a `hook
 {
   "webhook_type": "hook_op",
   "webhook_payload": {
-    "resource_type": "skill",
+    "resource_type": "entity",
     "type": "skill",
     "id": "<uuid4>",
     "operation": "event",
@@ -210,7 +220,7 @@ After local processing, `send_flow_tag(flow_data)` is called. This sends a `hook
 }
 ```
 
-The `id` field is a fresh UUID4 generated per call. The `ref_type` field defaults to `"data"`. The `execution_scope` field is a JSON array parsed from the `FLOWPAD_EXECUTION_SCOPE` environment variable (defaults to `[]` if unset or unparseable). Note that `resource_type` and `type` are always `"skill"` regardless of the actual `element_type` in the flow tag — to discriminate event kinds, consumers must inspect `data.event_data.element_type`.
+`send_flow_tag` routes through the shared `send_resource_sync()` envelope. The `id` field is a fresh UUID4 generated per call. `resource_type` is `"entity"` (the `send_resource_sync` default — `send_flow_tag` does not override it) and `ref_type` is `"data"` (also the default). The `type` field is always `"skill"` regardless of the actual `element_type` in the flow tag — to discriminate event kinds, consumers must inspect `data.event_data.element_type`. The `execution_scope` field comes from `flow_sdk.utils.environment.get_execution_scope()`, which parses the `FLOWPAD_EXECUTION_SCOPE` environment variable as JSON (defaults to `[]` if unset or unparseable).
 
 If FlowPad is not running or is rate-limited, the notification is silently skipped and the return value reflects `"skipped (FlowPad unavailable)"`.
 
@@ -326,25 +336,32 @@ store = stores.get(key, session_store)
 
 **Returns:**
 
-- `index == -1`: Returns `session.summary_log` — a newline-joined string of one-line summaries for all filtered transcript entries, formatted as `"[   1]  <summary>"`.
+- `index == -1`: Returns `claude_session_summary_log(session)` — a newline-joined string of one-line summaries for all filtered transcript entries, formatted as `"[   1]  <summary>"`.
 - `index >= 0`: Returns a string of the form `"Entry {index} summary: {entry.summary}\nFull content: {entry.content}"`.
+- If `index` is not an `int`: `"Error: index must be an integer"`.
 - If the session is not found: `"Error: session {claude_session_id} not found"`.
 - If the index is out of range: `"Error: index {index} out of range for session with {n} entries"`.
 
 **Data source:**
 
-The tool reads directly from the Claude Code session JSONL files on disk:
+The tool reads directly from the Claude Code session JSONL files on disk via the indexer's `claude_sessions` function module:
 
 ```python
-from flow_sdk.fs_records.claude import ClaudeRootFsRecord
+from flow_sdk.fs_store.indexer.functions.claude_sessions import (
+    claude_session_filtered_entries,
+    claude_session_summary_log,
+    extract_claude_session_from_path,
+)
+from flow_sdk.instance_settings import get_instance_settings
 
-claude = ClaudeRootFsRecord.default()
-session = claude.get_session(claude_session_id)
+projects_dir = get_instance_settings().claude_projects_dir
+# scan each project subdir for "{claude_session_id}.jsonl"
+session = extract_claude_session_from_path(jsonl)
 ```
 
-`ClaudeRootFsRecord.default()` points to `~/.claude/projects/`. `get_session()` scans all project subdirectories for a file named `{session_id}.jsonl` and parses it via `ClaudeSessionFsRecord.from_jsonl()`.
+`get_instance_settings().claude_projects_dir` resolves to the Claude projects directory (`~/.claude/projects/` by default). The tool iterates every project subdirectory looking for a file named `{session_id}.jsonl`; the first match is parsed by `extract_claude_session_from_path()`. There is no `ClaudeRootFsRecord` / `ClaudeSessionFsRecord` class involved — those record classes were removed in favor of the free functions in `claude_sessions.py`.
 
-**Filtered entries:** The `session.filtered_entries` property excludes entry types in `EXCLUDED_ENTRY_TYPES = ["file-history-snapshot", "progress"]`. Index values in `session_analysis` refer to positions in this filtered list, not the raw transcript.
+**Filtered entries:** `claude_session_filtered_entries(session)` excludes entry types in the module-level tuple `_EXCLUDED_ENTRY_TYPES = ("file-history-snapshot", "progress")`. Index values in `session_analysis` refer to positions in this filtered list, not the raw transcript.
 
 **Summary log format example:**
 
@@ -408,9 +425,9 @@ Alternatively, using `python -m`:
 
 The `flow-sdk-mcp` console script is registered in `pyproject.toml` and points to `flow_sdk.mcp_server:run`.
 
-The SDK parses `.mcp.json` files via `ClaudeMcpJsonRecordList` (`flow_sdk/fs_records/claude/claude_mcp_json.py`), which extracts each `mcpServers.<name>` entry into a `ClaudeMcpServerFsRecord` with fields `server_name`, `server_type`, `command`, `args`, `env`, `url`, and `scope`.
+The SDK discovers MCP servers through the indexer function module `flow_sdk/fs_store/indexer/functions/mcp_server.py` (the old `ClaudeMcpJsonRecordList` / `ClaudeMcpServerFsRecord` record classes have been removed). It walks each `.mcp.json` / `.claude/mcp.json` (and the legacy `~/.claude.json`) file, yielding one RFC-6901 `/mcpServers/<name>` JSON-pointer FSRef per server. `extract_mcp_server()` then materializes each into an `FSRecord` of type `RecordType.MCP_SERVER` with a stable id of `<source_file>:<name>` and fields `name`, `scope`, `source_file`, `path`, `modified_at`, `command`, `args`, and `env`.
 
-The `scope` field distinguishes user-level from project-level servers. A server entry from `~/.claude/mcp.json` gets `scope="user"`; one from `.mcp.json` in a project directory gets `scope="project"`.
+The `scope` field distinguishes user-level from project-level servers. It defaults to `"user"` when the source FSRef carries no scope.
 
 ## MCP Tools vs Graph API Actions
 

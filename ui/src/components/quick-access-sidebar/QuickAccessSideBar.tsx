@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   type ProjectResourceListItem,
   type ProjectResourceType,
@@ -13,7 +14,7 @@ import { ArrowLeft, Check, Folder, FolderOpen, FolderPlus, ListTree, Loader2, Re
 import { useMemo, useState } from 'react';
 import './QuickAccessSideBar.css';
 
-/** Show last 2 path segments, e.g. "/Users/shlom/Documents/dev/test" → "dev/test" */
+/** Show last 2 path segments, e.g. "/Users/alice/Documents/dev/test" → "dev/test" */
 function getShortName(project: ProjectListItem): string {
   const raw = project.cwd || project.name || project.encoded_name;
   const parts = raw.replace(/\/+$/, '').split('/').filter(Boolean);
@@ -65,6 +66,7 @@ export function QuickAccessSideBar({
   projectFlowDataCounts,
 }: QuickAccessSideBarProps) {
   const [search, setSearch] = useState('');
+  const { t } = useLingui();
 
   // Resolve expanded project from the encoded name (URL-driven)
   const expandedProject = useMemo(
@@ -130,7 +132,7 @@ export function QuickAccessSideBar({
                       <FolderOpen className="h-4 w-4" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">Open Project</TooltipContent>
+                  <TooltipContent side="bottom"><Trans>Open Project</Trans></TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -138,7 +140,7 @@ export function QuickAccessSideBar({
                       <FolderPlus className="h-4 w-4" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">New Project</TooltipContent>
+                  <TooltipContent side="bottom"><Trans>New Project</Trans></TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
@@ -149,7 +151,7 @@ export function QuickAccessSideBar({
             <input
               className="quick-access-search-input"
               type="text"
-              placeholder="Filter projects..."
+              placeholder={t`Filter projects...`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -159,12 +161,12 @@ export function QuickAccessSideBar({
             {isLoading ? (
               <div className="quick-access-sidebar-loading">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Loading...</span>
+                <span><Trans>Loading...</Trans></span>
               </div>
             ) : filteredProjects.length === 0 ? (
               <div className="quick-access-sidebar-empty">
                 <Folder className="h-8 w-8 opacity-30" />
-                <span>{search.trim() ? 'No matching projects' : 'No projects yet'}</span>
+                <span>{search.trim() ? t`No matching projects` : t`No projects yet`}</span>
               </div>
             ) : (
               <ul className="quick-access-sidebar-list">
@@ -200,7 +202,7 @@ export function QuickAccessSideBar({
                               e.stopPropagation();
                               onNewSession?.(project);
                             }}
-                            title="New session"
+                            title={t`New session`}
                           >
                             <Terminal className="h-3.5 w-3.5" />
                           </button>
@@ -210,7 +212,7 @@ export function QuickAccessSideBar({
                               e.stopPropagation();
                               onExpandProject?.(project);
                             }}
-                            title="View resources"
+                            title={t`View resources`}
                           >
                             <ListTree className="h-3.5 w-3.5" />
                           </button>
@@ -228,10 +230,10 @@ export function QuickAccessSideBar({
         <div className="quick-access-panel">
           <div className="quick-access-detail-header">
             <div className="quick-access-detail-nav">
-              <button className="quick-access-detail-back" onClick={() => onCollapseProject?.()} title="Back to projects">
+              <button className="quick-access-detail-back" onClick={() => onCollapseProject?.()} title={t`Back to projects`}>
                 <ArrowLeft className="h-4 w-4" />
               </button>
-              <button className="quick-access-detail-back" onClick={() => refetchResources()} title="Refresh">
+              <button className="quick-access-detail-back" onClick={() => refetchResources()} title={t`Refresh`}>
                 <RefreshCw className="h-4 w-4" />
               </button>
             </div>
@@ -242,12 +244,12 @@ export function QuickAccessSideBar({
             {isLoadingResources ? (
               <div className="quick-access-sidebar-loading">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Loading resources...</span>
+                <span><Trans>Loading resources...</Trans></span>
               </div>
             ) : groupedResources.length === 0 ? (
               <div className="quick-access-sidebar-empty">
                 <Folder className="h-8 w-8 opacity-30" />
-                <span>No resources found</span>
+                <span><Trans>No resources found</Trans></span>
               </div>
             ) : (
               <div className="quick-access-detail-groups">

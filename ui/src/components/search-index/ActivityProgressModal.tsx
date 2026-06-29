@@ -1,13 +1,25 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
-import type { IndexProgressTable, TypeProgressRow } from '@sdk';
+import { PROGRESS_TEXT_COMPLETE, type IndexProgressTable, type TypeProgressRow } from '@sdk';
+import { rowState } from './activity-labels';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export type { IndexProgressTable, TypeProgressRow };
 
-function rowState(row: TypeProgressRow, current: string | null): 'done' | 'current' | 'pending' {
-  if (current === row.type_name) return 'current';
-  if (row.total > 0 && row.done >= row.total) return 'done';
-  return 'pending';
+/**
+ * The 16px per-row progress bar shared by the type list (ActivityIndicator)
+ * and this modal. Caller guards on a known total; `pct` is `done/total*100`.
+ * `done` paints the emerald "finished" fill instead of the in-flight primary.
+ */
+export function MiniProgressBar({ pct, done = false }: { pct: number; done?: boolean }) {
+  return (
+    <div className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
+      <div
+        className={`h-full rounded-full transition-all ${done ? 'bg-emerald-500' : 'bg-primary'}`}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
 }
 
 export function ActivityProgressBar({
@@ -18,7 +30,7 @@ export function ActivityProgressBar({
   onClick: () => void;
 }) {
   const pct = table.total > 0 ? (table.done / table.total) * 100 : 0;
-  const isDone = table.text === 'complete';
+  const isDone = table.text === PROGRESS_TEXT_COMPLETE;
   const label = table.total > 0
     ? `${table.done.toLocaleString()}/${table.total.toLocaleString()}`
     : `${table.done.toLocaleString()}`;
@@ -29,13 +41,13 @@ export function ActivityProgressBar({
       className="w-full text-left rounded-md px-1 py-0.5 hover:bg-accent/30 transition-colors"
     >
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium tabular-nums">{label} records</span>
+        <span className="text-xs font-medium tabular-nums"><Trans>{label} records</Trans></span>
         {table.current ? (
           <span className="text-xs text-muted-foreground truncate max-w-[180px] ml-2 font-mono">
             {table.current}
           </span>
         ) : isDone ? (
-          <span className="text-xs text-emerald-600 dark:text-emerald-400">done</span>
+          <span className="text-xs text-emerald-600 dark:text-emerald-400"><Trans>done</Trans></span>
         ) : null}
       </div>
       <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -52,15 +64,17 @@ export function ActivityProgressModal({
   open,
   onOpenChange,
   table,
-  title = 'Progress',
+  title,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   table: IndexProgressTable | null;
   title?: string;
 }) {
+  const { t } = useLingui();
   if (!table) return null;
 
+  const displayTitle = title || t`Progress`;
   const headerLabel = table.total > 0
     ? `${table.done.toLocaleString()}/${table.total.toLocaleString()}`
     : `${table.done.toLocaleString()} records`;
@@ -70,13 +84,13 @@ export function ActivityProgressModal({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold">
-            {title} — {headerLabel}
+            {displayTitle} — {headerLabel}
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-1 max-h-[70vh] overflow-y-auto pr-1">
           {table.rows.length === 0 && (
-            <p className="text-xs text-muted-foreground italic px-3 py-2">No records discovered yet.</p>
+            <p className="text-xs text-muted-foreground italic px-3 py-2"><Trans>No records discovered yet.</Trans></p>
           )}
           {table.rows.map((row) => {
             const state = rowState(row, table.current);
@@ -107,14 +121,7 @@ export function ActivityProgressModal({
                 <span className="text-xs tabular-nums text-muted-foreground shrink-0">
                   {countLabel}
                 </span>
-                {row.total > 0 && (
-                  <div className="h-1 w-16 rounded-full bg-muted overflow-hidden shrink-0">
-                    <div
-                      className={`h-full ${state === 'done' ? 'bg-emerald-500' : 'bg-primary'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                )}
+                {row.total > 0 && <MiniProgressBar pct={pct} done={state === 'done'} />}
               </div>
             );
           })}

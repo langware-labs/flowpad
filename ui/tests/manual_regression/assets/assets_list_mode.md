@@ -1,60 +1,88 @@
-# Assets Page — List Mode Navigation
+---
+id: 79e55ed3-1173-53ca-ad86-0f3f8a597ab6
+---
+
+# Assets Page — Browseable Tree + AssetListView
 
 ## Summary
-Verifies the new list-mode sidebar and search/browse experience added in the Search-First Asset Management UI feature. The default view should be list mode with a type sidebar on the left and a search-able data table on the right.
+Verifies the Assets page at `/dock/assets` and `/dock/assets/list/<type>`. The
+page renders a collapsible **BrowseableTree** sidebar (asset types as tree
+roots) on the left and either a "Select a type to browse" placeholder or an
+**AssetListView** on the right, depending on the URL.
+
+This scenario replaces the older "Search-First UI" spec, which described a
+LayoutList/Network mode toggle + type pills that never shipped — none of those
+elements exist in the current codebase (`AssetsPage.tsx`, `AssetListView.tsx`).
 
 ## Preconditions
-- App is running at http://localhost:4097
-- Backend is running at http://localhost:9007
-- Bootstrap has been called (entities exist)
+- App is running at {APP_URL}
+- Backend is running at {API_URL}
+- Bootstrap has been called (entities exist). If the DB has been cleared, a
+  background bootstrap will re-index; some tests may need a 1-2s settle.
+
+## Notes for the tester
+- The chevron data-testid carries a filter-signature suffix:
+  `browseable-chevron-asset-type:<type>:<scope>:<projectIds>`. Always use a
+  **prefix match** (`starts with "browseable-chevron-asset-type:<type>:"`),
+  never the bare literal. Same for `browseable-toolbar-*` ids.
+- The bare `/dock/assets` URL should NOT render an AssetListView until a type
+  is selected — by either clicking a tree node or navigating to
+  `/dock/assets/list/<type>`.
 
 ## Steps
 
-### 1. Navigate to Assets page
-1. Open the app at http://localhost:4097
-2. Click on the "Assets" tab or navigate to the assets section
-3. **Expected**: The Assets page loads in **list mode** by default (not hierarchy mode)
-4. **Expected**: A type sidebar appears on the left side with clickable type pills (e.g. "Asset", "Skill", "Agent", "Task", etc.)
-5. **Expected**: The right panel shows "Select a type to browse"
+### test 1: /dock/assets renders the BrowseableTree sidebar + placeholder right panel
+- [browser] navigate to {APP_URL}/dock/assets
+- [browser] wait for page to load
+- [browser] validate the element with role="tree" is visible (the asset-type sidebar)
+- [browser] validate at least one treeitem at aria-level 1 is visible
+- [browser] validate the text "Select a type to browse" is visible somewhere on the page
 
-### 2. Verify mode toggle buttons
-1. Look at the header area of the Assets page
-2. **Expected**: Two toggle buttons visible — one for list mode (LayoutList icon) and one for hierarchy mode (Network icon)
-3. **Expected**: The list mode button appears active/selected (secondary variant)
+### test 2: Header renders the assets controls (no LayoutList/Network toggles)
+- [browser] navigate to {APP_URL}/dock/assets
+- [browser] wait for page to load
+- [browser] validate the text "Assets" is visible (page title)
+- [browser] validate NO element matching `[aria-label*="hierarchy"], [aria-label*="list mode"], button:has(svg.lucide-layout-list), button:has(svg.lucide-network)` exists
+- [browser] validate the element with data-testid="rebuild-index" exists (the PackageSearch refresh button) OR a button with title "Refresh search data"
 
-### 3. Browse by type
-1. Click on "Skill" in the type sidebar (or any available type)
-2. **Expected**: The right panel shows a data table (possibly empty or with results)
-3. **Expected**: A search input bar appears above the table
-4. **Expected**: A filter bar area appears (QuickFilterBar)
-5. **Expected**: Pagination controls appear at the bottom of the table (if there are multiple pages)
+### test 3: Navigate to /dock/assets/list/skill — AssetListView renders
+- [browser] navigate to {APP_URL}/dock/assets/list/skill
+- [browser] wait for page to load
+- [browser] validate the text "Select a type to browse" is NOT visible
+- [browser] validate at least one text input is rendered in the right panel (search/tag input above the table)
+- [browser] validate either a table OR an empty-state message ("No results found", "No skills", etc.) is visible
 
-### 4. Switch to hierarchy mode
-1. Click the hierarchy mode toggle button (Network icon) in the header
-2. **Expected**: The sidebar changes to show the asset tree (old behavior)
-3. **Expected**: The right panel shows the asset editor
-4. **Expected**: The hierarchy mode button is now active/selected
+### test 4: Sidebar treeitems include known asset types
+- [browser] navigate to {APP_URL}/dock/assets
+- [browser] wait for page to load
+- [browser] validate treeitems with names "Agent", "Skill", "Workflow", and "Markdown" each appear in the role="tree" (case-insensitive)
 
-### 5. Switch back to list mode
-1. Click the list mode toggle button (LayoutList icon)
-2. **Expected**: Returns to list mode with type sidebar
-3. **Expected**: Previously selected type (if any) is remembered
+### test 5: Expand a POPULATED type via its chevron prefix-match selector
+# NOTE: pick a type whose level-1 row shows a non-zero count badge — an empty
+# type (e.g. skill at 0 records in a fresh env) has no children to expand, so
+# asserting level-2 items on it would be a self-inflicted test-issue.
+- [browser] navigate to {APP_URL}/dock/assets
+- [browser] wait for page to load
+- [browser] pick a level-1 treeitem whose accessible name contains a number (count > 0)
+- [browser] click the chevron whose data-testid starts with "browseable-chevron-asset-type:" inside that row
+- [browser] wait up to 3s for at least one treeitem at aria-level 2 to appear under that root
 
-### 6. API smoke test — /api/v1/assets/types
-1. Open a new browser tab or use the network panel
-2. Navigate to http://localhost:9007/api/v1/assets/types
-3. **Expected**: Returns JSON with `status: "SUCCESS"` and `data.types` array
-4. **Expected**: Array contains entries for asset, skill, agent, workflow, task, bookmark types
+### test 6: API smoke test — /api/v1/assets/types
+- [bash] curl -s {API_URL}/api/v1/assets/types | jq -r '.status'
+- [bash] expect `SUCCESS`
+- [bash] curl -s {API_URL}/api/v1/assets/types | jq -r '.data.types[].type_name' | sort
+- [bash] validate the output INCLUDES at least: `agent`, `skill`, `workflow`, `markdown`. (The set may also include `spec`, `claude_md`, `claude_memory`, `plan`, `claude_rules`, `project`, etc. — do not assert exact equality, the registry evolves; assert subset only.)
 
 ## Pass Criteria
-- [ ] Assets page loads in list mode by default
-- [ ] Type sidebar shows user-facing record types
-- [ ] Clicking a type shows the browse table
-- [ ] Search input filters results (after typing 2+ chars)
-- [ ] Mode toggle switches between list and hierarchy
-- [ ] Hierarchy mode still shows tree + editor as before
-- [ ] `/api/v1/assets/types` endpoint returns correct types
+- [ ] /dock/assets renders a tree + placeholder right panel
+- [ ] Header has page title and the refresh button (no LayoutList/Network toggles)
+- [ ] /dock/assets/list/<type> renders an AssetListView (not the placeholder)
+- [ ] Sidebar contains the core asset-type roots
+- [ ] Chevron prefix-match selectors expand the type subtree
+- [ ] `/api/v1/assets/types` returns SUCCESS and includes at least the core set
 
 ## Notes
-- This is a new feature — first-time coverage
-- The search API now supports empty-query browsing via `/api/v1/search?record_type=...&offset=0&limit=20`
+- Rewritten 2026-05-12 after a prior cycle found the original scenario
+  described a phantom UI variant (LayoutList/Network mode toggles + type pills)
+  that doesn't exist in the codebase. The actual implementation is the
+  BrowseableTree + AssetListView wiring in `ui/src/components/assets/`.

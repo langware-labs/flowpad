@@ -4,7 +4,8 @@ import { AgenticProcess, dataManager, TypeId } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { fileAttachmentUrl } from '../attachment-url';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { localAttachmentUrl } from '../attachment-url';
 import {
   findConversationTranscript,
   type ConversationTranscriptInfo,
@@ -23,6 +24,7 @@ interface ConversationChipsProps {
  * TaskChips row above is suppressed via ``ChipsExcludeContext``.
  */
 export function ConversationChips({ conversationId, task }: ConversationChipsProps) {
+  const { t } = useLingui();
   const exclude = useChipsExclude();
   const { navigation } = useDockNavigation();
   const [transcript, setTranscript] = useState<ConversationTranscriptInfo | null>(null);
@@ -39,7 +41,16 @@ export function ConversationChips({ conversationId, task }: ConversationChipsPro
 
   const sharedProcessId = task?.shared_process_id ?? undefined;
 
-  const showTranscript = !!transcript && !exclude.has(ChipKey.transcript(transcript.vfsPath));
+  // Null until the transcript bytes are local — keeps the link from pointing at
+  // a body that was never pulled.
+  const transcriptUrl = transcript
+    ? localAttachmentUrl(transcript.messageId, {
+        data: transcript.vfsPath,
+        local_path: transcript.localPath,
+      })
+    : null;
+  const showTranscript =
+    !!transcript && !!transcriptUrl && !exclude.has(ChipKey.transcript(transcript.vfsPath));
   const showSharedTerminal =
     !!sharedProcessId && !exclude.has(ChipKey.sharedTerminal(sharedProcessId));
 
@@ -54,17 +65,17 @@ export function ConversationChips({ conversationId, task }: ConversationChipsPro
 
   return (
     <>
-      {showTranscript && transcript && (
+      {showTranscript && transcript && transcriptUrl && (
         <a
-          href={fileAttachmentUrl(transcript.messageId, transcript.vfsPath)}
+          href={transcriptUrl}
           target="_blank"
           rel="noreferrer"
           download
-          title="Download sender's Claude Code transcript"
+          title={t`Download sender's Claude Code transcript`}
           className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <FileText className="h-3 w-3" />
-          Transcript File
+          <Trans>Transcript File</Trans>
         </a>
       )}
 
@@ -72,11 +83,11 @@ export function ConversationChips({ conversationId, task }: ConversationChipsPro
         <button
           type="button"
           onClick={() => void handleOpenShared()}
-          title="Open the shared terminal where approved prompts run"
+          title={t`Open the shared terminal where approved prompts run`}
           className="inline-flex h-6 items-center gap-1 rounded-full border border-orange-500/40 bg-orange-500/10 px-2 text-[11px] font-medium text-orange-700 transition-colors hover:bg-orange-500/20 dark:text-orange-300"
         >
           <ClaudeIcon className="h-3 w-3" />
-          Open Shared Terminal
+          <Trans>Open Shared Terminal</Trans>
         </button>
       )}
     </>

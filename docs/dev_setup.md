@@ -1,3 +1,7 @@
+---
+id: ca3d6613-3fc8-50e1-a0a5-92fa6da3638c
+---
+
 # Developer Setup
 
 ## PyCharm Import Resolution

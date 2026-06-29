@@ -32,7 +32,7 @@ async def test_pty_session_websocket_notification_placeholder():
     3. WebSocket clients receive real-time updates when PTY sessions are created
 
     Original test from FlowPad:
-    /Users/shlom/Documents/dev/test_flowpad/FlowPad/flowpad/hub/tests/api/test_pty_session.py:34-106
+    <hub checkout>/flowpad/hub/tests/api/test_pty_session.py:34-106
     """
     assert True  # Placeholder
 
@@ -44,7 +44,7 @@ async def test_pty_session_notification_contains_session_id_placeholder():
     Validates that DataOp notifications include session_id for frontend tab management.
 
     Original test from FlowPad:
-    /Users/shlom/Documents/dev/test_flowpad/FlowPad/flowpad/hub/tests/api/test_pty_session.py:109-179
+    <hub checkout>/flowpad/hub/tests/api/test_pty_session.py:109-179
     """
     assert True  # Placeholder
 
@@ -57,6 +57,6 @@ async def test_machine_session_notification_via_start_machine_pty_session_placeh
     mirroring what the Claude CLI worker does.
 
     Original test from FlowPad:
-    /Users/shlom/Documents/dev/test_flowpad/FlowPad/flowpad/hub/tests/api/test_pty_session.py:182-257
+    <hub checkout>/flowpad/hub/tests/api/test_pty_session.py:182-257
     """
     assert True  # Placeholder

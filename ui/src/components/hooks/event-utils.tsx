@@ -70,6 +70,7 @@ export const HOOK_OP_ICONS: Record<string, LucideIcon> = {
 };
 
 export function getEventIcon(eventType: string, event?: TraceEvent): LucideIcon {
+  if (event?.error || event?.element_type === 'error') return CircleX;
   if (event?.warning) return AlertTriangle;
   if (event?.webhook_type === 'hook_op') {
     // Read the hook-op discriminator from canonical attributes (set by
@@ -126,6 +127,8 @@ export const EVENT_TYPE_COLORS: Record<string, string> = {
   SkillUsed: 'text-purple-500',
   UserMessage: 'text-blue-400',
   AssistantMessage: 'text-emerald-400',
+  error: 'text-red-500',
+  session_detect_failed: 'text-red-500',
 };
 
 export function getWebhookColor(webhookType?: string): string {
@@ -133,6 +136,7 @@ export function getWebhookColor(webhookType?: string): string {
 }
 
 export function getEventColor(event: TraceEvent): string {
+  if (event.error || event.element_type === 'error') return 'text-red-500';
   if (event.warning) return 'text-yellow-500';
   if (event.event_type.startsWith('SkillUsed:')) return 'text-purple-600';
   // hook_op: per-operation color first, then webhook fallback. Read the
@@ -186,6 +190,8 @@ export function getOneLiner(event: TraceEvent): string {
     if (candidate) return cropText(typeof candidate === 'string' ? candidate : JSON.stringify(candidate));
   }
   if (event.summary) return cropText(event.summary);
+  if (event.error) return cropText(event.error, 8);
+  if (typeof event.raw?.value === 'string' && event.raw.value) return cropText(event.raw.value, 8);
 
   // 2. Canonical FlowData attributes set by hook_to_flowdata.convert_hook_event:
   //    these flatten Claude raw_hook_data fields onto the wire so the renderer
@@ -250,25 +256,23 @@ export function getOneLiner(event: TraceEvent): string {
  * Compute the transcript lens pointer for a TraceEvent.
  *
  * - Sniffer events: returns the pre-computed transcriptDockPointer (includes SessionStart guard).
- * - Transcript-source events: computes on-the-fly using the projectEncodedName from context,
- *   since transcript entries don't carry a transcript_path.
+ * - Transcript-source events: built from the event's session_id; the lens
+ *   resolves the JSONL path server-side via ClaudeSessionRecord.discover.
  *
  * Returns null when not enough information is available.
  */
 export function getTranscriptLensPointer(
   event: TraceEvent,
-  projectEncodedName?: string,
 ): { ref: string; options: Record<string, string> } | null {
   // Sniffer events: pre-computed at parse time (SessionStart already filtered out)
   if (event.source === FlowDataSource.Sniffer) return event.transcriptDockPointer;
 
-  // Transcript-source events need projectEncodedName from the viewer's context
-  if (event.source === FlowDataSource.History && projectEncodedName && event.session_id) {
+  if (event.source === FlowDataSource.History && event.session_id) {
     const options: Record<string, string> = {};
     const match = event.id.match(/^transcript-([0-9a-f-]{36})(?:-tool-\d+)?$/);
     if (match) options.transcript_entry_id = match[1];
     else if (event.timestamp) options.ts = event.timestamp;
-    return { ref: `${projectEncodedName}/${event.session_id}`, options };
+    return { ref: event.session_id, options };
   }
 
   return null;

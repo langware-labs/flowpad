@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { promisify } = require('util');
+const { SEMVER_RE, isNewer } = require('./semver');
 
 const execFileAsync = promisify(execFile);
 
@@ -10,26 +11,82 @@ const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 const PATH_SEP = IS_WIN ? ';' : ':';
 
+/**
+ * Decide whether to spawn `cmd` through cmd.exe on Windows.
+ *
+ * shell:true is the broadly-compatible default — cmd.exe handles PATHEXT,
+ * App Exec aliases, and uv shims that some AV/AppLocker setups refuse to
+ * launch via direct CreateProcess (manifests as "spawn UNKNOWN").
+ *
+ * The one case where shell:true breaks is an .exe path containing whitespace:
+ * cmd.exe splits on the space, so `C:\Users\avi tal\.local\bin\flow.exe`
+ * becomes `C:\Users\avi`. For that case only, fall back to shell:false and
+ * let Node's CreateProcess handle the path natively.
+ */
+function needsShellOnWin(cmd) {
+  if (!IS_WIN) return false;
+  if (!/[\\/]/.test(cmd)) return true;                      // bare name → PATH lookup needs shell
+  if (/\.exe$/i.test(cmd) && /\s/.test(cmd)) return false;  // .exe with space → bypass cmd.exe
+  return true;
+}
+
+/**
+ * Quote a Windows command path for safe inclusion in a cmd.exe command line
+ * (only relevant when shell:true is in use). For bare names with no spaces
+ * this is a no-op.
+ */
+function quoteWinCmd(cmd) {
+  return /\s/.test(cmd) ? `"${cmd}"` : cmd;
+}
+
+/**
+ * Parse `netstat -ano` output into the PIDs LISTENING on exactly `port`.
+ *
+ * Pure (no I/O) so it can be unit-tested. Matches the port off the LOCAL
+ * address column with an anchored `:<port>$`, NOT a substring scan — a naive
+ * `line.includes(':9007')` also matches `:90071`, `:9007x` and the foreign
+ * address column, which would taskkill an unrelated listener. Only TCP rows
+ * in the LISTENING state are considered; ESTABLISHED/TIME_WAIT/UDP are ignored
+ * so we never kill a mere client of the port.
+ */
+function parseNetstatPids(stdout, port) {
+  const pids = new Set();
+  for (const raw of String(stdout).split('\n')) {
+    const line = raw.trim();
+    if (!/^TCP\b/i.test(line)) continue;       // TCP rows only
+    if (!/\bLISTENING\b/i.test(line)) continue; // listeners only
+    // netstat -ano columns: Proto  LocalAddr  ForeignAddr  State  PID
+    const parts = line.split(/\s+/);
+    const local = parts[1] || '';
+    const m = local.match(/:(\d+)$/);           // port = digits after final ':'
+    if (!m || parseInt(m[1], 10) !== port) continue;
+    const pid = parseInt(parts[parts.length - 1], 10);
+    if (pid > 0) pids.add(pid);
+  }
+  return [...pids];
+}
+
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
 
+// Python interpreter flowpad's tool venv must run on. flowpad requires >=3.10,
+// but uv would otherwise pick the system default (e.g. 3.12). Pin every
+// `uv tool install` to 3.10 so the backend always runs on the supported
+// interpreter; uv auto-downloads a managed CPython 3.10 if none is present.
+const PYTHON_VERSION = '3.10';
+
 const API_PREFIX = '/api/v1';
 
-// Keychain entry for the Flowpad API key. Must match
-// flow_sdk.cli.auth.AuthConstants on the Python side.
-const KEYCHAIN_SERVICE = 'Flowpad.ai';
-const KEYCHAIN_ACCOUNT = 'flowpad_api_key';
 
-// Python writes/truncates this file inside ~/.flow/ when the user logs
-// in or out. The signed Electron app mirrors changes into the OS keychain
-// at backend start so the entry's ACL is owned by FlowPad. We use ~/.flow/
-// instead of ~/Library/Application Support/FlowPad/ to avoid macOS
-// Sequoia's "would like to access data from other apps" prompt.
-//   file with content → pending login (write keychain, delete file)
-//   file empty        → pending logout (clear keychain, delete file)
-//   file missing      → nothing to do
-const CRED_HANDOFF_FILENAME = 'credentials';
-const CRED_HANDOFF_DIR = path.join(os.homedir(), '.flow');
+// Working directory for the `flow start` backend. The FS indexer treats its
+// CWD as a project root and walks the entire subtree (see
+// flow_sdk/fs_store/indexer/roots.py + project_folder_walker.py). If that root
+// is the home directory, the walk descends into ~/Desktop, ~/Library/Mobile
+// Documents (iCloud), other apps' containers, and the media library — each
+// first access trips a macOS TCC prompt attributed to Flowpad. Anchor the
+// backend to a dedicated, app-owned folder instead. Mirrors flow_sdk.config's
+// "~/Flowpad workspace".
+const BACKEND_CWD = path.join(os.homedir(), 'Flowpad workspace');
 
 const UpdateStatus = Object.freeze({
   REQUIRED: 'required',
@@ -41,6 +98,47 @@ class UvManager {
     this.log = log;
     this.isShuttingDown = false;
     this._flowBin = null;
+    // Set to true when the uv-generated flow.exe shim is blocked by Windows
+    // Device Guard / WDAC. We then route every flow invocation through
+    // `uv tool run --from flowpad flow ...` instead, which doesn't go
+    // through the unsigned shim.
+    this._useUvToolRun = false;
+    this._probedShim = false;
+  }
+
+  /**
+   * Build the spawn command for invoking the flow CLI. When the uv shim
+   * is blocked by Device Guard we route through `uv tool run` which
+   * launches the venv's signed python directly.
+   */
+  _flowCmd(args) {
+    if (this._useUvToolRun) {
+      return { cmd: 'uv', args: ['tool', 'run', '--from', PYPI_PACKAGE, 'flow', ...args] };
+    }
+    return { cmd: this._flowBin, args };
+  }
+
+  /**
+   * Probe the flow shim once. On Windows machines with Device Guard / WDAC,
+   * `uv tool install` writes an unsigned shim that's blocked from executing.
+   * If we detect that here, swap to the `uv tool run` fallback for the rest
+   * of this session. No-op on non-Windows.
+   */
+  async _probeFlowBinOnce() {
+    if (this._probedShim || !IS_WIN || !this._flowBin) return;
+    this._probedShim = true;
+    try {
+      await this._run(this._flowBin, ['--help'], { timeout: 10000 });
+    } catch (err) {
+      const stderr = (err.stderr || err.message || '').toString();
+      if (/Device Guard|Application Control|blocked by your organization/i.test(stderr)) {
+        this.log.warn(
+          '[uv] flow shim blocked by Windows Device Guard — falling back to `uv tool run`'
+        );
+        this._useUvToolRun = true;
+      }
+      // Other failures will surface naturally on the real call below.
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -128,12 +226,14 @@ class UvManager {
       ...options.env,
     };
     this.log.info(`[uv] Running: ${cmd} ${args.join(' ')}`);
+    const useShell = needsShellOnWin(cmd);
+    const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
     try {
-      const { stdout, stderr } = await execFileAsync(cmd, args, {
+      const { stdout, stderr } = await execFileAsync(cmdToRun, args, {
         env,
         timeout: options.timeout || 60000,
         cwd: options.cwd || os.homedir(),
-        shell: IS_WIN,               // needed for .cmd wrappers & App Exec links
+        shell: useShell,             // shell only when bare-name or .cmd/.bat
         windowsHide: true,            // don't flash a console window
       });
       if (stdout.trim()) this.log.info(`[uv] ${stdout.trim()}`);
@@ -266,55 +366,46 @@ class UvManager {
   }
 
   /**
-   * Synchronous, filesystem-only check for the flow binary.
-   * No subprocess calls — this is the key to instant startup.
-   * Returns absolute path if found, null otherwise.
+   * Synchronous, filesystem-only check for the flow binary that *we* installed
+   * via `uv tool install flowpad`. No subprocess calls — this is the key to
+   * instant startup. Returns absolute path if found, null otherwise.
+   *
+   * We deliberately only look at uv's canonical tool location (and its shim in
+   * ~/.local/bin if it resolves back to that venv). Any other `flow` on the
+   * system — Homebrew, framework Python, pip --user, an unrelated tool that
+   * happens to share the name — is ignored: returning the wrong binary here
+   * would launch a completely different process as our backend.
    */
   getInstalledFlowBin() {
     const home = os.homedir();
-    const candidates = [];
+    const uvVenvRoot = IS_WIN
+      ? path.join(home, 'AppData', 'Roaming', 'uv', 'tools', PYPI_PACKAGE)
+      : path.join(home, '.local', 'share', 'uv', 'tools', PYPI_PACKAGE);
+    const uvVenvBin = IS_WIN
+      ? path.join(uvVenvRoot, 'Scripts', 'flow.exe')
+      : path.join(uvVenvRoot, 'bin', 'flow');
 
-    // uv tool bin dir (all platforms)
-    candidates.push(path.join(home, '.local', 'bin'));
-
-    if (IS_WIN) {
-      // pip --user Scripts for each minor version
-      for (let minor = 10; minor <= 14; minor++) {
-        candidates.push(
-          path.join(home, 'AppData', 'Roaming', 'Python', `Python3${minor}`, 'Scripts')
-        );
-      }
-      // python.org installer Scripts dirs
-      const localProgs = path.join(home, 'AppData', 'Local', 'Programs', 'Python');
-      for (let minor = 10; minor <= 14; minor++) {
-        candidates.push(path.join(localProgs, `Python3${minor}`, 'Scripts'));
-      }
-      // Windows Store / App Exec aliases
-      candidates.push(path.join(home, 'AppData', 'Local', 'Microsoft', 'WindowsApps'));
-    } else if (IS_MAC) {
-      // Homebrew (Apple Silicon + Intel)
-      candidates.push('/opt/homebrew/bin');
-      candidates.push('/usr/local/bin');
-      // python.org framework installer
-      for (let minor = 10; minor <= 14; minor++) {
-        candidates.push(`/Library/Frameworks/Python.framework/Versions/3.${minor}/bin`);
-      }
-    } else {
-      // Linux
-      candidates.push('/usr/local/bin');
-      candidates.push('/usr/bin');
-      candidates.push('/snap/bin');
+    if (fs.existsSync(uvVenvBin)) {
+      this.log.info(`[uv] Found flowpad binary at canonical uv path: ${uvVenvBin}`);
+      return uvVenvBin;
     }
 
+    // uv also drops a shim in ~/.local/bin pointing at the venv binary above.
+    // Accept it only if realpath confirms it belongs to the flowpad uv tool.
+    const shimDir = path.join(home, '.local', 'bin');
     const names = IS_WIN ? ['flow.exe', 'flow.cmd', 'flow'] : ['flow'];
-
-    for (const dir of candidates) {
-      for (const name of names) {
-        const candidate = path.join(dir, name);
-        if (fs.existsSync(candidate)) {
-          this.log.info(`[uv] Found existing flow binary: ${candidate}`);
+    for (const name of names) {
+      const candidate = path.join(shimDir, name);
+      if (!fs.existsSync(candidate)) continue;
+      try {
+        const resolved = fs.realpathSync(candidate);
+        if (resolved === uvVenvBin || resolved.startsWith(uvVenvRoot + path.sep)) {
+          this.log.info(`[uv] Found flowpad binary via shim: ${candidate} -> ${resolved}`);
           return candidate;
         }
+        this.log.info(`[uv] Ignoring ${candidate}: resolves to ${resolved}, not the flowpad uv tool`);
+      } catch {
+        // realpath failed (broken symlink, permissions); skip.
       }
     }
 
@@ -396,14 +487,85 @@ class UvManager {
   }
 
   /**
+   * Windows-only: kill any process whose executable lives inside the flowpad
+   * uv tool venv, so a `--force`/`--reinstall` install can replace it.
+   *
+   * `uv tool install … --force` must delete and recreate
+   * `…\uv\tools\flowpad\Scripts\`, but Windows refuses to remove a directory
+   * that contains a running .exe — "failed to remove directory … Scripts:
+   * Access is denied. (os error 5)". The usual culprit is an orphaned backend
+   * from a previous session (`python.exe -m flow_sdk.server.launch`) still
+   * holding `Scripts\python.exe` open. It may NOT be listening on 9007
+   * (crashed/hung mid-boot), so `ensurePortFree`/`_killPort` — which only target
+   * the port listener — can't reach it. Match by image path instead and kill the
+   * whole tree (`/T`) so spawned workers under the same venv go too.
+   *
+   * No-op on Unix: unlinking a running executable's file is allowed there, so
+   * the tool dir can be replaced while the old backend keeps running.
+   */
+  async _killStaleToolProcesses() {
+    if (!IS_WIN) return;
+    const toolDir = path.join(
+      os.homedir(), 'AppData', 'Roaming', 'uv', 'tools', PYPI_PACKAGE
+    );
+    try {
+      const escaped = toolDir.replace(/'/g, "''");
+      const { stdout } = await execFileAsync('powershell.exe', [
+        '-NoProfile', '-Command',
+        `Get-CimInstance Win32_Process | ` +
+        `Where-Object { $_.ExecutablePath -like '${escaped}\\*' } | ` +
+        `Select-Object -ExpandProperty ProcessId`,
+      ], { timeout: 8000, windowsHide: true });
+      const pids = stdout.split(/\r?\n/)
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((p) => p > 0);
+      for (const pid of pids) {
+        try {
+          await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 });
+          this.log.info(`[uv] Killed stale tool process PID ${pid} (held ${toolDir})`);
+        } catch { /* already gone / not killable — ignore */ }
+      }
+    } catch (e) {
+      this.log.warn(`[uv] _killStaleToolProcesses failed: ${e.message}`);
+    }
+  }
+
+  /**
    * First-time install: `uv tool install flowpad` (latest from PyPI).
    */
   async installLatest() {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
-    await this._uv(['tool', 'install', PYPI_PACKAGE, '--force'], { timeout: 120000 });
+    await this._killStaleToolProcesses();
+    await this._uv(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--force'], { timeout: 120000 });
+    await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] ${PYPI_PACKAGE} installed, binary at ${this._flowBin}`);
+  }
+
+  /**
+   * Ensure uv's tool-bin dir (~/.local/bin) is on the user's *shell* PATH, so
+   * `flow` resolves in a fresh terminal — not just inside this app (which finds
+   * it via _enrichedPath()). Without this, a clean install leaves `flow` working
+   * in-app but "not recognized" when the user types it in a terminal.
+   *
+   * `uv tool update-shell` is uv's own cross-platform PATH-fixer: it edits the
+   * User PATH (registry) on Windows and the shell profile (.zshrc/.bashrc/
+   * .profile) on macOS/Linux, and is idempotent (won't double-append). Best
+   * effort — never block install/upgrade if it fails; we log and move on.
+   *
+   * NOTE: like any PATH edit, it only takes effect in terminals opened *after*
+   * this runs — an already-open shell won't see `flow` until restarted.
+   */
+  async _ensureShimOnPath() {
+    try {
+      await this._uv(['tool', 'update-shell'], { timeout: 30000 });
+      this.log.info('[uv] Ensured uv tool-bin dir is on user PATH');
+    } catch (err) {
+      this.log.warn(
+        `[uv] update-shell failed; flow may not be on terminal PATH: ${err.message}`
+      );
+    }
   }
 
   /**
@@ -457,30 +619,16 @@ class UvManager {
       // uv tool list output format: "flowpad v0.1.35" (one tool per line)
       for (const line of stdout.split('\n')) {
         if (line.startsWith(PYPI_PACKAGE)) {
-          const match = line.match(/v(\d+\.\d+\.\d+)/);
-          if (match) return match[1];
+          // Shared SEMVER_RE so an "extra" tag (e.g. "0.2.40-local") is kept,
+          // not silently dropped. m[0] is the full matched version string.
+          const match = line.match(SEMVER_RE);
+          if (match) return match[0];
         }
       }
       return null;
     } catch {
       return null;
     }
-  }
-
-  /**
-   * Compare two semver version strings (major.minor.patch).
-   * Returns -1 if a < b, 0 if a == b, 1 if a > b.
-   */
-  _compareVersions(a, b) {
-    const pa = a.split('.').map(Number);
-    const pb = b.split('.').map(Number);
-    for (let i = 0; i < 3; i++) {
-      const na = pa[i] || 0;
-      const nb = pb[i] || 0;
-      if (na < nb) return -1;
-      if (na > nb) return 1;
-    }
-    return 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -499,13 +647,23 @@ class UvManager {
       this.isShuttingDown = false;
       this.log.info('[uv] Starting backend via flow start...');
 
+      // On Windows, probe whether the uv shim is blocked by Device Guard.
+      // If so, _useUvToolRun gets set and _flowCmd() routes around it.
+      await this._probeFlowBinOnce();
+
       // Ensure port 9007 is free before starting
       await this.ensurePortFree(9007);
 
-      // Load the Flowpad API key from the OS keychain via the signed Electron
-      // app. Apply any pending login/logout written by Python in a previous
-      // session (handoff file in ~/.flow/credentials), then read keychain.
-      const apiKey = await this._loadAndSyncCredential();
+      // Read the per-instance Fernet sod-key from the OS keychain via the
+      // bundled, signed flow-rs binary. If present (i.e. a previous launch
+      // or the SecretApprovalDialog has already provisioned it), pass it
+      // through as SOD_ENC_KEY so Python's `sod_key` property short-circuits
+      // and never touches the keychain itself — keeping the entry's ACL
+      // trust list flow-rs-only (no python3.x ownership). If absent, the
+      // React SecretApprovalDialog fires on first secret use, mints via
+      // flow-rs (provision-sod-key IPC), and seeds the running backend via
+      // /secrets/seed-key.
+      const sodKey = await this._loadSodKey();
 
       const env = {
         ...process.env,
@@ -517,8 +675,11 @@ class UvManager {
         FLOWPAD_NO_BROWSER: '1',
         FLOWPAD_DESKTOP: '1',
       };
-      if (apiKey) {
-        env.FLOWPAD_CLAUDE_CREDENTIALS = JSON.stringify(apiKey);
+      if (sodKey) {
+        // Matches flow_sdk/instance_settings/base_settings.py:ENV_SOD_ENC_KEY.
+        // Python's `sod_key` property reads this and short-circuits any
+        // keychain access — no Python-keyring touch on subsequent launches.
+        env.SOD_ENC_KEY = sodKey;
       }
 
       if (IS_WIN) {
@@ -531,12 +692,25 @@ class UvManager {
         env.LANG = process.env.LANG || 'en_US.UTF-8';
       }
 
-      const child = spawn(this._flowBin, ['start'], {
+      // shell:true on Windows breaks paths with spaces (e.g.
+      // "C:\Users\avi tal\…\flow.exe" gets split on the space). Use shell
+      // only when actually needed — see needsShellOnWin().
+      const { cmd: flowCmd, args: flowArgs } = this._flowCmd(['start']);
+      const useShell = needsShellOnWin(flowCmd);
+      const cmdToRun = useShell ? quoteWinCmd(flowCmd) : flowCmd;
+      // Ensure the app-owned workspace exists so spawn() doesn't ENOENT on the
+      // cwd, and so the backend never falls back to walking the home tree.
+      try {
+        fs.mkdirSync(BACKEND_CWD, { recursive: true });
+      } catch (e) {
+        this.log.warn(`[uv] could not create backend cwd ${BACKEND_CWD}: ${e.message}`);
+      }
+      const child = spawn(cmdToRun, flowArgs, {
         env,
-        cwd: os.homedir(),
+        cwd: BACKEND_CWD,
         detached: false,
         stdio: ['ignore', 'pipe', 'pipe'],
-        shell: IS_WIN,       // needed for .cmd wrappers on Windows
+        shell: useShell,
         windowsHide: true,   // don't flash a console window
       });
 
@@ -628,9 +802,11 @@ class UvManager {
    * Run `flow stop`. Swallows errors.
    */
   async _flowStop() {
-    const cmd = this._flowBin || 'flow';
+    const { cmd, args } = this._flowBin
+      ? this._flowCmd(['stop'])
+      : { cmd: 'flow', args: ['stop'] };
     try {
-      await this._run(cmd, ['stop'], { timeout: 10000 });
+      await this._run(cmd, args, { timeout: 10000 });
       this.log.info('[uv] flow stop completed');
     } catch (error) {
       this.log.warn(`[uv] flow stop failed: ${error.message}`);
@@ -681,14 +857,7 @@ class UvManager {
     try {
       if (IS_WIN) {
         const { stdout } = await execFileAsync('netstat', ['-ano'], { timeout: 5000 });
-        const pids = new Set();
-        for (const line of stdout.split('\n')) {
-          if (line.includes(`:${port}`) && line.includes('LISTENING')) {
-            const parts = line.trim().split(/\s+/);
-            const pid = parseInt(parts[parts.length - 1], 10);
-            if (pid > 0) pids.add(pid);
-          }
-        }
+        const pids = parseNetstatPids(stdout, port);
         for (const pid of pids) {
           try {
             await execFileAsync('taskkill', ['/PID', String(pid), '/F'], { timeout: 5000 });
@@ -697,7 +866,10 @@ class UvManager {
         }
       } else {
         try {
-          const { stdout } = await execFileAsync('lsof', ['-ti', `tcp:${port}`], { timeout: 5000 });
+          // -sTCP:LISTEN restricts to the listening socket so we don't also
+          // SIGKILL processes that merely hold a client connection to the port
+          // (mirrors the LISTENING-only filter in the Windows branch above).
+          const { stdout } = await execFileAsync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'], { timeout: 5000 });
           const pids = stdout.trim().split('\n').map(p => parseInt(p, 10)).filter(p => p > 0);
           for (const pid of pids) {
             try {
@@ -751,7 +923,8 @@ class UvManager {
    */
   async _getUpgradeInfo() {
     try {
-      const { stdout } = await this._run(this._flowBin, ['upgrade', '--info'], { timeout: 15000 });
+      const { cmd, args } = this._flowCmd(['upgrade', '--info']);
+      const { stdout } = await this._run(cmd, args, { timeout: 15000 });
       return JSON.parse(stdout);
     } catch (err) {
       this.log.warn(`[uv] _getUpgradeInfo failed: ${err.message}`);
@@ -759,68 +932,186 @@ class UvManager {
     }
   }
 
-  /**
-   * Run a background update check after the UI is loaded.
-   * Non-blocking — failures are logged and silently ignored.
-   * Shows a native OS dialog if an update is available.
-   */
-  async checkForUpdatesInBackground(mainWindow, { sendStatus, waitForBackend, backendUrl, cloudUrl }) {
-    try {
-      const upgradeInfo = await this._getUpgradeInfo();
-      if (!upgradeInfo || !upgradeInfo.version) return;
+  // There are deliberately TWO update checks, for two different moments:
+  //
+  //   getLatestPypiVersion / isUpgradeAvailable  → asks PyPI directly. No
+  //     backend and no cloud needed. Used during the desktop-upgrade window,
+  //     where the local flow backend is stopped/not-yet-started.
+  //
+  //   getUpdateStatus → asks the cloud `/check-update` for its policy verdict
+  //     (whether an upgrade is *required*). Used by the background prompt while
+  //     the app is already running.
 
+  /**
+   * Latest published flowpad version on PyPI, or null on any failure. Hits
+   * pypi.org only — works even when the local backend is down.
+   */
+  async getLatestPypiVersion() {
+    try {
+      const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/json`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) {
+        this.log.warn(`[uv] PyPI version lookup failed: HTTP ${res.status}`);
+        return null;
+      }
+      const data = await res.json();
+      return (data && data.info && data.info.version) || null;
+    } catch (err) {
+      this.log.warn(`[uv] PyPI version lookup failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * True if PyPI has a newer flowpad than `installedVersion`. Returns false
+   * (don't upgrade) when either version can't be determined, so an offline /
+   * indeterminate result never forces a needless reinstall. Backend-independent.
+   */
+  async isUpgradeAvailable(installedVersion) {
+    if (!installedVersion) return false;
+    const latest = await this.getLatestPypiVersion();
+    if (!latest) return false;
+    const available = isNewer(installedVersion, latest);
+    this.log.info(
+      available
+        ? `[uv] flowpad upgrade available: ${installedVersion} → ${latest}`
+        : `[uv] flowpad is up to date (installed=${installedVersion}, latest=${latest})`
+    );
+    return available;
+  }
+
+  /**
+   * Ask the cloud `/check-update` endpoint for its verdict. Returns
+   * { currentVersion, latestVersion, required } or null when the version can't
+   * be read or the check fails — callers treat null as "no update".
+   */
+  async getUpdateStatus(cloudUrl) {
+    const upgradeInfo = await this._getUpgradeInfo();
+    if (!upgradeInfo || !upgradeInfo.version) return null;
+    try {
       const res = await fetch(`${cloudUrl}${API_PREFIX}/check-update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(upgradeInfo),
       });
-
-      if (!res.ok) return;
+      if (!res.ok) return null;
       const data = await res.json();
+      return {
+        currentVersion: upgradeInfo.version,
+        latestVersion: data.latest_version || null,
+        required: data.status === UpdateStatus.REQUIRED,
+      };
+    } catch (err) {
+      this.log.warn(`[uv] update check failed: ${err.message}`);
+      return null;
+    }
+  }
 
-      if (data.status !== UpdateStatus.REQUIRED || !data.latest_version) return;
+  /**
+   * Standalone, dependency-free update verdict for the pre-start prompt: just
+   * compare the installed version to the latest on PyPI.
+   *
+   * This is the PRIMARY check before the backend boots, where the cloud
+   * `/check-update` and `flow upgrade --info` paths are both unavailable or
+   * unreliable. It needs neither: `getInstalledVersionSync` reads `_version.py`
+   * as text (no Python, so it works even on a venv that can't import
+   * `flow_sdk`), and `getLatestPypiVersion` hits PyPI directly. So it behaves
+   * identically for healthy, broken, and offline-from-cloud installs.
+   *
+   * `required` is true when PyPI is strictly newer, or when the installed
+   * version can't be read at all (a partial/corrupt install worth repairing by
+   * upgrade). Returns null when PyPI is unreachable, so an offline machine
+   * never shows a prompt it can't act on.
+   */
+  async _pypiUpdateStatus() {
+    const latestVersion = await this.getLatestPypiVersion();
+    if (!latestVersion) return null;
+    const currentVersion = this.getInstalledVersionSync() || null;
+    const required = !currentVersion || isNewer(currentVersion, latestVersion);
+    if (!required) return null;
+    this.log.info(
+      `[uv] Pre-start update check: installed=${currentVersion || 'unknown'}, ` +
+      `latest=${latestVersion} → offering upgrade`
+    );
+    return { currentVersion, latestVersion, required: true };
+  }
 
-      const latest = data.latest_version;
-      this.log.info(`[uv] Update available: ${upgradeInfo.version} → ${latest}`);
+  /**
+   * Run a background update check after the UI is loaded.
+   * Non-blocking — failures are logged and silently ignored.
+   * Shows a native OS dialog if an update is required.
+   */
+  async checkForUpdatesInBackground(
+    mainWindow,
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false }
+  ) {
+    try {
+      // Pre-start: the backend is down and the install may even be broken, so
+      // decide with the standalone PyPI-vs-installed check — no cloud, no CLI,
+      // so it behaves the same for healthy, broken, and offline-from-cloud
+      // installs (offer the upgrade whenever PyPI is newer). Post-boot: the
+      // running backend can answer the cloud `/check-update` policy, so defer
+      // to that verdict.
+      const status = beforeBackendStart
+        ? await this._pypiUpdateStatus()
+        : await this.getUpdateStatus(cloudUrl);
+      if (!status || !status.required || !status.latestVersion) return false;
 
-      if (!mainWindow || mainWindow.isDestroyed()) return;
+      const latest = status.latestVersion;
+      this.log.info(`[uv] Update available: ${status.currentVersion || 'unknown'} → ${latest}`);
+
+      if (!mainWindow || mainWindow.isDestroyed()) return false;
 
       const { response } = await require('electron').dialog.showMessageBox(mainWindow, {
         type: 'info',
         title: 'Update Available',
         message: `A new version of FlowPad is available (${latest}).`,
-        detail: `You are running version ${upgradeInfo.version}.`,
+        detail: status.currentVersion
+          ? `You are running version ${status.currentVersion}.`
+          : 'Your current installation could not be verified and may be incomplete.',
         buttons: ['Upgrade', 'Later'],
         defaultId: 0,
       });
+      if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
 
-      if (response === 0 && mainWindow && !mainWindow.isDestroyed()) {
-        // User chose Upgrade — show loading screen and wait for it to be ready
-        const loadingPath = require('path').join(__dirname, 'loading.html');
-        await mainWindow.loadFile(loadingPath);
+      // User chose Upgrade — show loading screen and wait for its IPC listener.
+      const loadingPath = require('path').join(__dirname, 'loading.html');
+      await mainWindow.loadFile(loadingPath);
+      await new Promise(r => setTimeout(r, 200));
 
-        // Small delay to ensure the renderer's IPC listener is registered
-        await new Promise(r => setTimeout(r, 200));
-
+      // Pre-start: nothing is running yet, so skip the stop. Post-boot: stop the
+      // live backend before reinstalling over it.
+      if (!beforeBackendStart) {
         if (sendStatus) sendStatus('Stopping server');
         await this.stop();
         this.isShuttingDown = false;
-
-        if (sendStatus) sendStatus('Upgrading Flowpad');
-        await this.upgrade();
-
-        if (sendStatus) sendStatus('Starting server');
-        await this.start();
-
-        if (sendStatus) sendStatus('Waiting for server');
-        if (waitForBackend) await waitForBackend();
-
-        if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
-          mainWindow.loadURL(backendUrl);
-        }
       }
+
+      if (sendStatus) sendStatus('Upgrading Flowpad');
+      await this.upgrade();
+
+      // Pre-start: hand back to startApp's normal start path to boot the
+      // upgraded backend — calling start()/loadURL here would double-start the
+      // backend and load the main UI prematurely.
+      if (beforeBackendStart) return true;
+
+      if (sendStatus) sendStatus('Starting server');
+      await this.start();
+
+      if (sendStatus) sendStatus('Waiting for server');
+      // 120s window — matches the upgrade() subprocess ceiling and gives
+      // the freshly-installed backend room to boot before the user sees
+      // a false "failed to start" error.
+      if (waitForBackend) await waitForBackend({ maxChecks: 240 });
+
+      if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
+        mainWindow.loadURL(backendUrl);
+      }
+      return true;
     } catch (err) {
       this.log.warn(`[uv] Background update check failed: ${err.message}`);
+      return false;
     }
   }
 
@@ -829,104 +1120,98 @@ class UvManager {
    */
   async upgrade() {
     this.log.info('[uv] Upgrading flowpad...');
-    await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--force'], { timeout: 120000 });
+    await this._killStaleToolProcesses();
+    await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', PYTHON_VERSION, '--force'], { timeout: 120000 });
+    await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
   }
 
   /**
-   * Lazily load the keytar module. Returns null if it's not installed or
-   * fails to load (e.g. native binding mismatch). All keychain operations
-   * are best-effort — failures are logged and treated as "no credential".
+   * Repair a corrupt install: a `flow.exe`/`flow` shim exists on disk (so the
+   * fast path tries it) but its env can't `import flow_sdk` — the package
+   * never finished installing into site-packages, or was quarantined/removed.
+   * `--reinstall` recreates the tool venv and reinstalls every package (not
+   * just a metadata refresh), then we re-resolve the freshly written shim.
    */
-  _keytar() {
-    if (this._keytarCached !== undefined) return this._keytarCached;
-    try {
-      this._keytarCached = require('keytar');
-    } catch (err) {
-      this.log.warn(`[uv] keytar not available: ${err.message}`);
-      this._keytarCached = null;
-    }
-    return this._keytarCached;
-  }
-
-  _credentialHandoffPath() {
-    return path.join(CRED_HANDOFF_DIR, CRED_HANDOFF_FILENAME);
+  async reinstall() {
+    this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
+    await this._killStaleToolProcesses();
+    await this._uv(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--reinstall', '--force'], { timeout: 120000 });
+    await this._ensureShimOnPath();
+    this._flowBin = await this._resolveFlowBin();
+    this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
   }
 
   /**
-   * Read the handoff file. Returns:
-   *   { kind: 'set', value: '<api-key>' }  — pending login
-   *   { kind: 'delete' }                   — pending logout (empty file)
-   *   null                                 — no pending op
+   * True when an error from `flow start` indicates the install itself is
+   * broken — the interpreter runs but can't import the package. The canonical
+   * symptom is `ModuleNotFoundError: No module named 'flow_sdk'` (the wheel's
+   * own top-level module is missing), which means a `--reinstall` will fix it.
+   * Deliberately narrow: a generic crash or a runtime error in working code
+   * must NOT trigger a reinstall loop.
    */
-  _readHandoffFile() {
-    let raw;
+  isBrokenInstallError(error) {
+    const text = `${error?.message || ''}\n${error?.stderr || ''}\n${error?.stdout || ''}`;
+    // Order-independent: a Python traceback prints the flow_sdk file frames
+    // FIRST and the `ModuleNotFoundError/ImportError:` line LAST, so we can't
+    // assume the keyword precedes "flow_sdk". Trigger when the package's own
+    // top-level module is missing, OR any import error occurs in flowpad's own
+    // code (its traceback mentions flow_sdk — e.g. a missing transitive dep).
+    const importFailure = /\b(ModuleNotFoundError|ImportError)\b/.test(text);
+    return /No module named ['"]flow_sdk/.test(text)
+      || (importFailure && /flow_sdk/.test(text));
+  }
+
+  /**
+   * Read the per-instance Fernet sod-key from the OS keychain via the
+   * bundled `flow-rs` binary. Reads from the same flow-rs binary that
+   * wrote the entry (see main.js::secrets:provision-sod-key) succeed
+   * without an ACL prompt; flow-rs is a no-op for fresh installs where
+   * the entry doesn't exist yet. Returns null on miss, flow-rs binary
+   * unavailable, or any error — caller treats that as "no key", and the
+   * React SecretApprovalDialog handles first-time approval.
+   */
+  async _loadSodKey() {
+    let flowRs;
     try {
-      raw = fs.readFileSync(this._credentialHandoffPath(), 'utf8');
+      flowRs = require('./flow-rs-keychain');
     } catch (err) {
-      if (err.code !== 'ENOENT') {
-        this.log.warn(`[uv] Failed to read credential handoff: ${err.message}`);
-      }
+      this.log.warn(`[uv] flow-rs-keychain not available: ${err.message}`);
       return null;
     }
-    const value = raw.trim();
-    return value ? { kind: 'set', value } : { kind: 'delete' };
-  }
-
-  _deleteHandoffFile() {
+    const account = flowRs.sodKeyAccount();
     try {
-      fs.unlinkSync(this._credentialHandoffPath());
-    } catch (err) {
-      if (err.code !== 'ENOENT') {
-        this.log.warn(`[uv] could not remove handoff file: ${err.message}`);
-      }
-    }
-  }
-
-  /**
-   * Apply any pending login/logout that Python wrote to the handoff file
-   * in a previous session, then return the current keychain value. Once
-   * applied, the handoff file is removed; keychain becomes the source of
-   * truth and reads are silent on subsequent launches.
-   */
-  async _loadAndSyncCredential() {
-    const keytar = this._keytar();
-    const pending = this._readHandoffFile();
-
-    if (pending && keytar) {
-      try {
-        if (pending.kind === 'set') {
-          await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, pending.value);
-          this.log.info('[uv] applied pending login to keychain');
-        } else {
-          await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
-          this.log.info('[uv] applied pending logout to keychain');
-        }
-        this._deleteHandoffFile();
-      } catch (err) {
-        this.log.warn(`[uv] keychain sync failed: ${err.message}`);
-      }
-    }
-
-    if (!keytar) {
-      // Without keytar we can still pass through a pending login for the
-      // current session — Python's in-process cache will pick it up.
-      return pending && pending.kind === 'set' ? pending.value : null;
-    }
-
-    try {
-      const current = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
-      if (current) {
-        this.log.info('[uv] Loaded Flowpad credential from keychain');
-        return current;
+      const key = await flowRs.getKeyRestricted(SOD_KEY_KEYCHAIN_SERVICE, account);
+      if (key) {
+        this.log.info(`[uv] Loaded Flowpad sod_key from keychain (${account})`);
+        return key;
       }
     } catch (err) {
       this.log.warn(`[uv] keychain read failed: ${err.message}`);
     }
-    this.log.info('[uv] No Flowpad credential found');
+    this.log.info('[uv] No sod_key in keychain — SecretApprovalDialog will fire on first secret use');
     return null;
   }
 }
 
+// Keychain SERVICE for the per-instance Fernet sod-key. Matches
+// flow_sdk/instance_settings/base_settings.py:SOD_KEY_KEYCHAIN_SERVICE so
+// both code paths address the same logical namespace. The ACCOUNT diverges
+// intentionally between Electron (`<instance>.flow-rs`, see
+// flow-rs-keychain.js::sodKeyAccount) and Python's fallback path (bare
+// `<instance>`); under Electron-driven flow Python never reaches its
+// fallback (it gets the value via SOD_ENC_KEY env or the /secrets/seed-key
+// endpoint), so the slot divergence has no functional effect.
+const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
+
 module.exports = UvManager;
+module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;
+// PyPI package + pinned interpreter, exported so main.js can surface the exact
+// `uv tool install` command to the user in the startup-timeout dialog.
+module.exports.PYPI_PACKAGE = PYPI_PACKAGE;
+module.exports.PYTHON_VERSION = PYTHON_VERSION;
+// Pure helpers exported for unit testing (electron/uv-manager.test.js).
+module.exports.needsShellOnWin = needsShellOnWin;
+module.exports.quoteWinCmd = quoteWinCmd;
+module.exports.parseNetstatPids = parseNetstatPids;

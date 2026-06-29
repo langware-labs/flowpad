@@ -9,6 +9,7 @@ export enum BookmarkType {
   NOTIFICATION_FAILED = 'notification_failed',
   TERMINAL_ANNOTATION = 'terminal_annotation',
   FAVORITE = 'favorite',
+  PLAN = 'plan',
 }
 
 export interface IBookmark extends IEntity {

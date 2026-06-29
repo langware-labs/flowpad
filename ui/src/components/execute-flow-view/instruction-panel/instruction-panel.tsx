@@ -1,8 +1,9 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { copyToClipboard } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Progress } from '@src/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import Editor from '@monaco-editor/react';
 import { Copy, FileText, FilePlus, Loader2, Pencil, Save, X } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -39,6 +40,7 @@ export function InstructionPanel({
   onSkip,
   onToggleExpand,
 }: InstructionPanelProps): JSX.Element {
+  const { t } = useLingui();
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const { resolvedTheme } = useTheme();
@@ -59,7 +61,7 @@ export function InstructionPanel({
   const handleCopyPath = useCallback(() => {
     if (filePath) {
       void copyToClipboard(filePath);
-      toast.success('Path copied', { description: 'File path copied to clipboard' });
+      notify.success({ title: t`Path copied`, message: t`File path copied to clipboard` });
     }
   }, [filePath]);
 
@@ -79,10 +81,10 @@ export function InstructionPanel({
     try {
       await onSaveFile(editContent);
       setIsEditing(false);
-      toast.success('File saved', { description: 'Changes saved successfully' });
+      notify.success({ title: t`File saved`, message: t`Changes saved successfully` });
     } catch (error) {
       console.error('[InstructionPanel] Failed to save:', error);
-      toast.error('Save failed', { description: 'Could not save changes' });
+      notify.error({ title: t`Save failed`, message: t`Could not save changes` });
     }
   }, [editContent, onSaveFile]);
 
@@ -90,7 +92,7 @@ export function InstructionPanel({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <Loader2 className="h-6 w-6 animate-spin" />
-        <span className="text-sm">Loading file...</span>
+        <span className="text-sm"><Trans>Loading file...</Trans></span>
       </div>
     );
   }
@@ -129,7 +131,7 @@ export function InstructionPanel({
                       <Pencil className="h-3 w-3" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Edit file</TooltipContent>
+                  <TooltipContent><Trans>Edit file</Trans></TooltipContent>
                 </Tooltip>
               )}
               <Tooltip>
@@ -138,7 +140,7 @@ export function InstructionPanel({
                     <FilePlus className="h-3 w-3" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>New prompt</TooltipContent>
+                <TooltipContent><Trans>New prompt</Trans></TooltipContent>
               </Tooltip>
             </div>
           )}
@@ -146,8 +148,8 @@ export function InstructionPanel({
         {!isEditing && (
           <>
             <div className="mt-2 text-xs text-muted-foreground">
-              {progress.completed} / {progress.total} instructions completed
-              {progress.failed > 0 && ` · ${progress.failed} failed`}
+              <Trans>{progress.completed} / {progress.total} instructions completed</Trans>
+              {progress.failed > 0 && t` · ${progress.failed} failed`}
             </div>
             <Progress value={progressPercent} className="mt-2 h-1" />
           </>
@@ -178,11 +180,11 @@ export function InstructionPanel({
           <div className="flex justify-end gap-2 border-t p-2">
             <Button variant="ghost" size="sm" onClick={handleCancelEdit}>
               <X className="mr-1 h-3 w-3" />
-              Cancel
+              <Trans>Cancel</Trans>
             </Button>
             <Button size="sm" onClick={() => void handleSaveEdit()}>
               <Save className="mr-1 h-3 w-3" />
-              Save
+              <Trans>Save</Trans>
             </Button>
           </div>
         </div>

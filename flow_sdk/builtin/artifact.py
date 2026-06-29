@@ -101,8 +101,6 @@ class CodeRef(Entity):
     description: Optional[str] = APIField(default=None, description="Human-readable description")
     metadata: Optional[Dict[str, Any]] = APIField(default=None, description="Additional metadata")
 
-    _api_visible: ClassVar[bool] = True
-
     def __init__(self, **data):
         # Generate ID if not provided
         if "id" not in data:
@@ -137,8 +135,6 @@ class Artifact(CodeRef):
     start_cmd: Optional[str] = APIField(default=None, description="Command to start/restart the service")
     health: Optional[str] = APIField(default=None, description="Health check endpoint path")
 
-    _api_visible: ClassVar[bool] = True
-
     def __init__(self, **data):
         # Generate ID if not provided
         if "id" not in data:
@@ -163,8 +159,6 @@ class ArtifactRelation(Entity):
     target_artifact_id: str = APIField(description="ID of the target artifact")
     relation_type: ArtifactRelationType = APIField(description="Type of relationship")
     metadata: Dict[str, Any] = APIField(default_factory=dict, description="Additional metadata")
-
-    _api_visible: ClassVar[bool] = True
 
     def __init__(self, **data):
         # Generate ID if not provided

@@ -1,18 +1,28 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { AssetEditor, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
+import { ProjectBrief } from '@src/components/project-brief/ProjectBrief';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { InlineSearchResults } from '@src/pages/home-landing/InlineSearchResults';
 import type { SearchFilters, SearchResult as RecordSearchResult } from '@src/hooks/use-record-search';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, RecordType, systemTools } from '@sdk';
+import { dataContext, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
+import type { Project } from '@sdk';
+import { FSRef } from '@sdk';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { ProjectChip } from '@src/components/project/ProjectChip';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { EDITOR_TYPES } from '@src/navigation/asset-doc-types';
 import apiClient from '@sdk/client';
-import { BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
+import { AlertCircle, BookOpen, ChevronRight, PackageSearch, Trash2, X } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -23,15 +33,20 @@ import {
 } from '@src/components/ui/breadcrumb';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AssetFilter, AssetScope } from './assetFilter';
+import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
-import { ScopeFilterBar } from './ScopeFilterBar';
+import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, projectScope, unionAssetBucket } from '@src/lib/scope-filter';
+import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
+import { useEntity } from '@sdk/react/hooks';
+import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
+import { useIndexStatus } from '@src/hooks/use-index-status';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
-import { BrowseableTree } from '@src/components/browseable-tree';
-import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
-import { markdownFolderRoot } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
+import { MarkdownIndexPanel } from './MarkdownIndexPanel';
 import { useAssetTypes, type AssetTypeVault } from '@src/hooks/use-asset-types';
 import { useSystemTools } from '@src/hooks/use-system-tools';
+import { INDEX_BUILD_LABEL, INDEX_PROMPT_DESCRIPTION, INDEX_PROMPT_TITLE } from '@src/components/search-index/index-copy';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 // Side-effect column registrations
 import '@src/components/assets/columns/assetColumns';
@@ -57,11 +72,13 @@ interface ParsedAssetPointer {
   folderRelPath: string | null;
   /** Only set when mode === 'wiki'. Decoded link target name. */
   wikiName: string | null;
+  /** Only set when mode === 'wiki'. The space the name resolves within (default @local). */
+  wikiSpace: string | null;
 }
 
 function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
   const empty: ParsedAssetPointer = {
-    mode: null, typeName: null, folderTypeid: null, folderRelPath: null, wikiName: null,
+    mode: null, typeName: null, folderTypeid: null, folderRelPath: null, wikiName: null, wikiSpace: null,
   };
   if (!pointer) return empty;
   if (pointer.startsWith('editor/')) {
@@ -83,10 +100,14 @@ function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
     }
   }
   if (pointer.startsWith('wiki/')) {
-    const raw = pointer.slice('wiki/'.length);
+    // Canonical grammar: wiki/<space>/<name>. Space defaults to @local.
+    const rest = pointer.slice('wiki/'.length);
+    const slash = rest.indexOf('/');
+    const space = slash >= 0 ? rest.slice(0, slash) : DEFAULT_WIKI_SPACE;
+    const raw = slash >= 0 ? rest.slice(slash + 1) : rest;
     let name = raw;
     try { name = decodeURIComponent(raw); } catch { /* keep raw */ }
-    return { ...empty, mode: 'wiki', typeName: 'markdown', wikiName: name || null };
+    return { ...empty, mode: 'wiki', typeName: 'markdown', wikiName: name || null, wikiSpace: space || DEFAULT_WIKI_SPACE };
   }
   return empty;
 }
@@ -134,9 +155,7 @@ function buildFolderBreadcrumbs(
   return crumbs;
 }
 
-const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION]);
 
-const SIDEBAR_COLLAPSED_KEY = 'wiki:sidebar-collapsed';
 
 /** Breadcrumb rendered above the folder-filtered AssetListView. Each crumb
  *  except the last navigates to that ancestor; the last is the current page.
@@ -150,6 +169,7 @@ function FolderBreadcrumb({
   onNavigate: (p: DockPointer) => void;
   onClear: () => void;
 }) {
+  const { t } = useLingui();
   if (crumbs.length === 0) return null;
   return (
     <div
@@ -187,8 +207,8 @@ function FolderBreadcrumb({
       <button
         type="button"
         onClick={onClear}
-        title="Clear folder filter"
-        aria-label="Clear folder filter"
+        title={t`Clear folder filter`}
+        aria-label={t`Clear folder filter`}
         data-testid="asset-list-breadcrumb-clear"
         className="ml-auto flex h-5 w-5 items-center justify-center rounded hover:bg-muted"
       >
@@ -199,22 +219,153 @@ function FolderBreadcrumb({
 }
 
 export function AssetsPage() {
-  const { toast } = useToast();
+  const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
-  const { types: allTypes, isLoading: typesLoading } = useAssetTypes();
-  const { indexType, busy, resetAndRescan } = useSystemTools();
+  const { types: allTypes } = useAssetTypes();
+  const { busy, resetAndRescan } = useSystemTools();
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
-  const [assetFilter, setAssetFilter] = useState<AssetFilter>(DEFAULT_ASSET_FILTER);
+  const currentProjectId = dataContext.project?.id ?? null;
+  // When hosted under `/dock/project/<id>`, the project id comes from the URL.
+  // The first segment of the pointer is the projectId; the rest is the same
+  // sub-pointer shape AssetsPage already uses under `/dock/assets/<sub>`.
+  const isProjectView = currentDock?.viewType === ViewType.PROJECT;
+  const { projectId: urlProjectId, assetSubPointer } = isProjectView
+    ? DockPointer.splitProjectPointer(currentDock?.pointer)
+    : { projectId: null, assetSubPointer: currentDock?.pointer ?? '' };
+  // The project the scope filter points at: the URL project on a project page,
+  // else the context project. Drives the Project mode + its tooltip name.
+  const scopeProjectId = urlProjectId ?? currentProjectId;
+  // The project entity backing the project view — drives the "Delete project"
+  // header action. Only resolved on a project page.
+  const projectTypeId = useMemo<TypeId | null>(
+    () => (isProjectView && scopeProjectId ? new TypeId('project', scopeProjectId) : null),
+    [isProjectView, scopeProjectId],
+  );
+  const { data: projectEntity } = useEntity<Project>(projectTypeId);
+  const handleDeleteProject = useCallback(() => {
+    const proj = projectEntity;
+    if (!proj) return;
+    const name = proj.displayName ?? 'this project';
+    const path = proj.fs_storage_mount_path;
+    showDeleteAssetModal({
+      name,
+      description:
+        'This permanently deletes the project and everything in it — all indexed ' +
+        'records and their children, and the project folder on disk' +
+        (path ? ` (${path})` : '') +
+        '. This cannot be undone.',
+      onConfirm: async () => {
+        await proj.deleteWithChildren();
+      },
+      onAfterDelete: () => {
+        notify.success({ title: 'Project deleted', message: name });
+        navigation.closeDock();
+      },
+    });
+  }, [projectEntity, navigation]);
+  // On a project page, scope is *preselected* to that project (not locked) — the
+  // user can still switch to All/User/Selected. `projectSeedScope` is that
+  // preselection: it seeds the initial scope, scopes the project index status,
+  // and re-applies when navigating between projects.
+  const projectSeedScope = useMemo(
+    () => (urlProjectId ? defaultScopeFilter(urlProjectId) : null),
+    [urlProjectId],
+  );
+  const effectivePointer = isProjectView ? assetSubPointer : (currentDock?.pointer ?? '');
+  // Scope is URL-first: it lives in the dock options (read generically via
+  // `DockPointer.scopeFilter`). An explicit option wins; on a project page we
+  // default to that project; the bare `/dock/assets` (no option) falls back to
+  // the context-aware default (project chip when in a project, else user-only)
+  // — NOT a forced "All".
+  const urlScope = useMemo<ScopeFilter>(
+    () => currentDock?.scopeFilter ?? projectSeedScope ?? defaultScopeFilter(currentProjectId),
+    [currentDock, projectSeedScope, currentProjectId],
+  );
+  // Non-scope filter state (query / tags / per-type filters / folder path).
+  // The `scope` field is vestigial here — `effectiveFilter` always derives it
+  // from `urlScope`, keeping scope URL-authoritative.
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
+    ...DEFAULT_ASSET_FILTER,
+  }));
+
+  // --- Side menu follows the open asset ---------------------------------
+  // The asset open in the editor may live in a different project (or in the
+  // user/system scope) than the side-menu's current scope, in which case its
+  // type would show 0 count and an empty list. Union the open asset's own
+  // scope bucket onto the filter so it stays visible while you view it. The
+  // union is derived (recomputed per open, never accumulated); a manual scope
+  // change suppresses it for that one asset (see handleScopeChange).
+  const openAssetTypeId = useMemo<TypeId | null>(() => {
+    if (!effectivePointer.startsWith('editor/')) return null;
+    try {
+      const p = AssetDocPointer.parse(effectivePointer);
+      if (p.editor !== AssetEditor.CODE && p.method === AssetRoutingMethod.TYPEID) {
+        return new TypeId(p.value);
+      }
+    } catch {
+      // not an editor/typeid pointer — nothing to union
+    }
+    return null;
+  }, [effectivePointer]);
+  const openAssetId = openAssetTypeId?.toString() ?? null;
+  const { data: openAsset } = useEntity(openAssetTypeId);
+  const openAssetBucket = useMemo<AssetScopeBucket>(
+    () => assetScopeBucket(openAsset as { scope?: string | null; project_id?: string | null } | null),
+    [openAsset],
+  );
+  // The open asset may be addressed by a VFS path (not a TypeId), in which case
+  // `openAsset` above is null. Resolve that entity by path too so the header
+  // can show its owning-project chip. (Same 30s-cached lookup the editor uses.)
+  const openVfsRef = useMemo<{ type: string; fsRef: FSRef } | null>(() => {
+    if (!effectivePointer.startsWith('editor/')) return null;
+    try {
+      const p = AssetDocPointer.parse(effectivePointer);
+      if (!p.editor || p.editor === AssetEditor.CODE || p.method !== AssetRoutingMethod.VFS) return null;
+      const vfs = VFSPath.parse(p.value);
+      if (!vfs.typeId) return null;
+      return {
+        type: (EDITOR_TYPES[p.editor][0] as string | undefined) ?? p.editor,
+        fsRef: new FSRef(vfs.entitySubPath, vfs.typeId),
+      };
+    } catch {
+      return null;
+    }
+  }, [effectivePointer]);
+  const { entity: openVfsEntity } = useEntityByPath(openVfsRef?.type ?? null, openVfsRef?.fsRef ?? null);
+  // The project whose chip the header shows: the URL project on a project page,
+  // else the owning project of the open asset (TypeId- or VFS-addressed).
+  const openEntityProjectId =
+    (openAsset as { project_id?: string | null } | null)?.project_id ??
+    (openVfsEntity as { project_id?: string | null } | null)?.project_id ??
+    null;
+  const chipProjectId = urlProjectId ?? openEntityProjectId;
+  // The open asset's bucket auto-union stays on in the body; manual scope edits
+  // (and their per-asset suppression) live in the navigator (`useAssetsModel`).
+  const effectiveFilter = useMemo<AssetFilter>(() => {
+    const scope = openAssetBucket ? unionAssetBucket(urlScope, openAssetBucket) : urlScope;
+    return { ...assetFilter, scope };
+  }, [assetFilter, urlScope, openAssetBucket]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
-  });
+
+  // Project-page index state comes from the project record's own ``.hash``
+  // (the project IS a record): never_indexed → CTA, stale → "changes pending".
+  // Only meaningful under a locked project scope; global assets keep the plain
+  // "refresh search data" rebuild.
+  const { state: idxState, refresh: refreshIdxStatus } = useIndexStatus(
+    projectSeedScope ?? undefined,
+  );
+  const projIdx = isProjectView && idxState.phase === 'ready' ? idxState.status : null;
+  // Canonical "nothing indexed yet" signal. `idxState` is already scope-aware
+  // (project-scoped in project view, unscoped in the assets dock), so this one
+  // flag drives both the header CTA and the empty-state prompt.
+  const neverIndexed = idxState.phase === 'ready' && idxState.status.never_indexed;
+  const changesPending = projIdx?.stale ?? false;
+  const lastIndexedAt = projIdx?.last_indexed_at ?? null;
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
 
@@ -222,14 +373,31 @@ export function AssetsPage() {
     void systemTools.refreshActivityStatus();
   }, []);
 
-  const handleRebuildIndex = useCallback(() => {
+  const handleRebuildIndex = useCallback(async () => {
+    // Project view → Fast index scoped to the project (re-stamps the project's
+    // own index sentinel). Global view → legacy full reset+rescan.
+    if (isProjectView) {
+      const params = new URLSearchParams();
+      // Always re-index the project itself, regardless of the visible scope.
+      applyScopeToParams(params, projectSeedScope ?? effectiveFilter.scope);
+      try {
+        await apiClient.post(`/graph/compute_node/@local/fs-records/index?${params.toString()}`);
+      } finally {
+        refreshIdxStatus();
+      }
+      return;
+    }
     void resetAndRescan();
-  }, [resetAndRescan]);
+  }, [isProjectView, projectSeedScope, effectiveFilter.scope, refreshIdxStatus, resetAndRescan]);
 
   const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim();
     navigation.openSearch(q ? searchQuery : undefined, searchFilters);
   }, [navigation, searchQuery, searchFilters]);
+  const {
+    scope: searchScope,
+    isLoading: searchScopeLoading,
+  } = useSearchScopeToggle(currentProjectId);
 
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedResultIndex(0); }
@@ -240,28 +408,25 @@ export function AssetsPage() {
     void navigateToResult(result, navigation);
   }, [navigation]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? '1' : '0');
-  }, [sidebarCollapsed]);
+  // URL-first scope write: scope is a dock option (serialized once, in
+  // lib/scope-filter). Writing the URL is the single source of truth —
+  // `urlScope` re-derives it on the next render.
+  const openScoped = useCallback((scope: ScopeFilter) => {
+    const base = currentDock ?? DockPointer.forAssetList('all');
+    navigation.openDock(base.withScopeFilter(scope));
+  }, [currentDock, navigation]);
 
-  const toggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
-
-  const handleScopeChange = useCallback((scope: AssetScope) => {
-    setAssetFilter(prev => ({
-      ...prev,
-      scope,
-      projectIds: scope === 'project' ? prev.projectIds : [],
-    }));
-  }, []);
-
-  const handleProjectIdsChange = useCallback((ids: string[]) => {
-    setAssetFilter(prev => ({ ...prev, projectIds: ids }));
-  }, []);
-
-  const handleIncludeSystemChange = useCallback((next: boolean) => {
-    setAssetFilter(prev => ({ ...prev, includeSystem: next }));
-  }, []);
+  // Asset-shaped pointers (`forAssetEditor`, `forAssetFolder`, `forAssetList`)
+  // open at `/dock/assets/<sub>`. Under `/dock/project/<id>` we must rebase
+  // them onto the project URL or every tree click, breadcrumb, or row click
+  // would jump out of the project shell.
+  const navigateAsset = useCallback((p: DockPointer) => {
+    // Every in-assets navigation (type click, folder, breadcrumb, row→editor)
+    // stays in the SAME scope-keyed tab: re-stamp the current scope onto the
+    // freshly-built (scope-less) pointer so the assets tabHash is unchanged and
+    // the scope isn't dropped from the URL.
+    navigation.openDock(p.withScopeFilter(urlScope));
+  }, [navigation, urlScope]);
 
   const {
     mode,
@@ -269,53 +434,21 @@ export function AssetsPage() {
     folderTypeid,
     folderRelPath,
     wikiName,
-  } = parseAssetPointer(currentDock?.pointer);
+    wikiSpace,
+  } = parseAssetPointer(effectivePointer);
   const isEditorMode = mode === 'editor';
   const isFolderMode = mode === 'folder';
   const isWikiMode = mode === 'wiki';
-
-  const visibleTypes = useMemo(
-    () => allTypes.filter((t) => !HIDDEN_TYPES.has(t.type_name)),
-    [allTypes],
-  );
 
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
     [allTypes],
   );
 
-  const handleScanComplete = useCallback(
-    (type: string) => {
-      if (type === selectedType) setRefreshKey((k) => k + 1);
-    },
-    [selectedType],
-  );
-
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
     setNewTypeDialogOpen(true);
   }, []);
-
-  const wikiRoots = useMemo(
-    () =>
-      visibleTypes.map((t) => {
-        if (t.type_name === 'markdown') {
-          return markdownFolderRoot(t, {
-            indexType,
-            onNew: handleNew,
-            onScanComplete: handleScanComplete,
-          });
-        }
-        return assetTypeRoot(t, {
-          indexType,
-          onNew: handleNew,
-          creatableTypes,
-          filter: assetFilter,
-          onScanComplete: handleScanComplete,
-        });
-      }),
-    [visibleTypes, indexType, handleNew, creatableTypes, assetFilter, handleScanComplete],
-  );
 
   // Resolve the absolute path of the selected folder (from vault metadata),
   // and the effective record_type + filter for the right-panel list view.
@@ -334,34 +467,34 @@ export function AssetsPage() {
 
   const listFilter = useMemo<AssetFilter>(() => {
     if (isFolderMode && folderAbsPath) {
-      return { ...assetFilter, parentPath: folderAbsPath };
+      return { ...effectiveFilter, parentPath: folderAbsPath };
     }
-    return assetFilter;
-  }, [assetFilter, isFolderMode, folderAbsPath]);
+    return effectiveFilter;
+  }, [effectiveFilter, isFolderMode, folderAbsPath]);
 
   const handleNewConfirm = useCallback(async (name: string) => {
     if (!name.trim() || !newTypeTarget) return;
     const descriptor = getDescriptor(newTypeTarget);
     if (!descriptor) {
-      toast({ title: `Cannot create ${newTypeTarget}`, variant: 'destructive' });
+      notify.error({ title: `Cannot create ${newTypeTarget}` });
       setNewTypeTarget(null);
       return;
     }
     try {
       const res = await descriptor.create({ project: dataContext.project ?? null, name });
-      toast({ title: res.toastTitle });
+      notify.success({ title: res.toastTitle });
       if (res.pointer) {
-        navigation.openDock(res.pointer);
+        navigateAsset(res.pointer);
         setNewTypeTarget(null);
         return;
       }
       setRefreshKey((k) => k + 1);
     } catch (err) {
       console.error('[AssetsPage] Failed to create:', err);
-      toast({ title: 'Failed to create', variant: 'destructive' });
+      notify.error({ title: t`Failed to create` });
     }
     setNewTypeTarget(null);
-  }, [newTypeTarget, navigation, toast]);
+  }, [newTypeTarget, navigateAsset]);
 
   const handleRowClick = useCallback((result: SearchResult) => {
     // Projects open in their collaboration space (the "project room"), not
@@ -372,15 +505,14 @@ export function AssetsPage() {
     }
     const path = result.asset_ref;
     if (!path || !path.startsWith('/')) {
-      toast({
-        title: 'Asset has no file on disk',
-        description: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
-        variant: 'destructive',
+      notify.error({
+        title: t`Asset has no file on disk`,
+        message: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
       });
       return;
     }
-    navigation.openDock(DockPointer.forAssetEditor(result.record_type, path));
-  }, [navigation, toast]);
+    navigateAsset(DockPointer.forAssetEditor(result.record_type, path));
+  }, [navigateAsset, navigation]);
 
   const handleProjectFilter = useCallback(async (label: string) => {
     try {
@@ -391,32 +523,21 @@ export function AssetsPage() {
         return lastSeg === label || p.name === label;
       });
       if (match) {
-        setAssetFilter({ ...DEFAULT_ASSET_FILTER, scope: 'project', projectIds: [match.record_id] });
+        setAssetFilter({ ...DEFAULT_ASSET_FILTER });
+        openScoped(projectScope(match.record_id));
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [openScoped]);
 
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3">
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          title={sidebarCollapsed ? 'Show asset tree' : 'Hide asset tree'}
-          aria-label={sidebarCollapsed ? 'Show asset tree' : 'Hide asset tree'}
-          className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted"
-        >
-          {sidebarCollapsed ? (
-            <PanelLeft className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4 text-muted-foreground" />
-          )}
-        </button>
         <BookOpen className="h-4 w-4 text-muted-foreground" />
-        <span className="ml-1 text-sm font-medium">Assets</span>
+        <span className="ml-1 text-sm font-medium">{isProjectView ? <Trans>Project assets</Trans> : <Trans>Assets</Trans>}</span>
+        <ProjectChip projectId={chipProjectId} className="ml-1.5" />
         <div className="ml-auto flex items-center gap-2">
           <div className="relative w-96 shrink-0">
             <RecordSearchBar
@@ -426,13 +547,15 @@ export function AssetsPage() {
               onFiltersChange={setSearchFilters}
               onSubmit={handleSearchSubmit}
               onKeyDown={handleSearchKeyDown}
-              placeholder="Search..."
+              placeholder={t`Search...`}
             />
             {searchQuery.trim().length >= 2 && (
               <div className="absolute right-0 top-full z-50 w-[600px] pt-1">
                 <InlineSearchResults
                   query={searchQuery}
                   filters={searchFilters}
+                  scope={searchScope}
+                  scopeLoading={searchScopeLoading}
                   selectedIndex={selectedResultIndex}
                   onSelectedIndexChange={setSelectedResultIndex}
                   onOpenFullSearch={handleSearchSubmit}
@@ -441,75 +564,97 @@ export function AssetsPage() {
               </div>
             )}
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 shrink-0"
-                onClick={handleRebuildIndex}
-                disabled={busy}
-                aria-label="Refresh search data"
-                data-testid="rebuild-index"
-              >
-                <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Refresh search data</TooltipContent>
-          </Tooltip>
-          <ScopeFilterBar
-            scope={assetFilter.scope}
-            projectIds={assetFilter.projectIds}
-            onScopeChange={handleScopeChange}
-            onProjectIdsChange={handleProjectIdsChange}
-            includeSystem={assetFilter.includeSystem ?? false}
-            onIncludeSystemChange={handleIncludeSystemChange}
-          />
+          {isProjectView && neverIndexed ? (
+            // Never indexed → clear call-to-action (same action, clearer label).
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0 gap-1.5"
+              onClick={() => void handleRebuildIndex()}
+              disabled={busy}
+              data-testid="index-now-cta"
+            >
+              <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+              {INDEX_BUILD_LABEL}
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative h-9 w-9 shrink-0"
+                  onClick={() => void handleRebuildIndex()}
+                  disabled={busy}
+                  aria-label={isProjectView ? t`Re-index project` : t`Refresh search data`}
+                  data-testid="rebuild-index"
+                >
+                  <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+                  {isProjectView && changesPending && (
+                    <AlertCircle
+                      className="absolute -right-0.5 -top-0.5 h-3 w-3 text-amber-500"
+                      data-testid="changes-pending-badge"
+                    />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isProjectView
+                  ? changesPending
+                    ? <Trans>Changes pending next index</Trans>
+                    : lastIndexedAt
+                      ? `Last indexed ${formatTimeAgo(lastIndexedAt)}`
+                      : <Trans>Re-index project</Trans>
+                  : <Trans>Refresh search data</Trans>}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {isProjectView && projectEntity && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 shrink-0 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={handleDeleteProject}
+              data-testid="project-delete"
+            >
+              <Trash2 className="h-4 w-4" />
+              <Trans>Delete project</Trans>
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* Type sidebar — collapsible push drawer */}
-        <div
-          className={`flex-shrink-0 overflow-hidden border-r transition-[width] duration-200 ease-out ${
-            sidebarCollapsed ? 'w-0' : 'w-56'
-          }`}
-          aria-hidden={sidebarCollapsed}
-        >
-          <div className="h-full w-56 overflow-y-auto">
-            <BrowseableTree
-              roots={wikiRoots}
-              activePointer={currentDock ?? null}
-              isLoading={typesLoading && wikiRoots.length === 0}
-              onNavigate={(p) => navigation.openDock(p)}
-            />
-          </div>
-        </div>
-
+        {/* Sidebar (asset tree + scope filter) moved to the shared left-menu
+            slot — see AssetsNavigator / NavigatorSlot. This body keeps the
+            header + content router only. */}
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">
           {isWikiMode && wikiName ? (
-            <WikiResolveView name={wikiName} />
-          ) : isEditorMode && currentDock?.pointer ? (
-            <AssetEditorRouter pointer={currentDock.pointer} />
+            <WikiResolveView name={wikiName} space={wikiSpace ?? DEFAULT_WIKI_SPACE} />
+          ) : isEditorMode && effectivePointer ? (
+            <AssetEditorRouter pointer={effectivePointer} />
           ) : isFolderMode ? (
-            <div className="flex h-full flex-col">
-              <FolderBreadcrumb
-                crumbs={folderCrumbs}
-                onNavigate={(p) => navigation.openDock(p)}
-                onClear={() => navigation.openDock(DockPointer.forAssetList('markdown'))}
-              />
-              <div className="min-h-0 flex-1">
-                <AssetListView
-                  recordType="markdown"
-                  onNew={creatableTypes.has('markdown') ? () => handleNew('markdown') : undefined}
-                  refreshKey={refreshKey}
-                  onRowClick={hasEditor('markdown') ? handleRowClick : undefined}
-                  filter={listFilter}
-                  onFilterChange={setAssetFilter}
-                  onProjectFilter={handleProjectFilter}
+            <div className="flex h-full">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <FolderBreadcrumb
+                  crumbs={folderCrumbs}
+                  onNavigate={navigateAsset}
+                  onClear={() => navigateAsset(DockPointer.forAssetList('markdown'))}
                 />
+                <div className="min-h-0 flex-1">
+                  <AssetListView
+                    recordType="markdown"
+                    onNew={creatableTypes.has('markdown') ? () => handleNew('markdown') : undefined}
+                    refreshKey={refreshKey}
+                    onRowClick={hasEditor('markdown') ? handleRowClick : undefined}
+                    filter={listFilter}
+                    onFilterChange={setAssetFilter}
+                    onProjectFilter={handleProjectFilter}
+                  />
+                </div>
               </div>
+              {folderAbsPath && <MarkdownIndexPanel folderAbsPath={folderAbsPath} />}
             </div>
           ) : selectedType ? (
             <AssetListView
@@ -517,13 +662,33 @@ export function AssetsPage() {
               onNew={creatableTypes.has(selectedType) ? () => handleNew(selectedType) : undefined}
               refreshKey={refreshKey}
               onRowClick={hasEditor(selectedType) ? handleRowClick : undefined}
-              filter={assetFilter}
+              filter={effectiveFilter}
               onFilterChange={setAssetFilter}
               onProjectFilter={handleProjectFilter}
             />
+          ) : neverIndexed ? (
+            <div className="flex h-full items-center justify-center p-6">
+              <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+                <PackageSearch className="h-8 w-8 text-muted-foreground" />
+                <div className="text-sm font-medium">{INDEX_PROMPT_TITLE}</div>
+                <p className="text-sm text-muted-foreground">{INDEX_PROMPT_DESCRIPTION}</p>
+                <Button
+                  size="sm"
+                  className="mt-1 gap-1.5"
+                  onClick={() => void handleRebuildIndex()}
+                  disabled={busy}
+                  data-testid="empty-state-index-cta"
+                >
+                  <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+                  {INDEX_BUILD_LABEL}
+                </Button>
+              </div>
+            </div>
+          ) : isProjectView ? (
+            <ProjectBrief spawnProjectId={scopeProjectId} />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              Select a type to browse
+              <Trans>Select a type to browse</Trans>
             </div>
           )}
         </div>
@@ -534,8 +699,8 @@ export function AssetsPage() {
         onOpenChange={setNewTypeDialogOpen}
         title={`New ${newTypeTarget ?? ''}`}
         description={`Enter a name for the new ${newTypeTarget ?? 'item'}.`}
-        placeholder="Name"
-        confirmLabel="Create"
+        placeholder={t`Name`}
+        confirmLabel={t`Create`}
         onConfirm={(name) => void handleNewConfirm(name)}
       />
     </div>

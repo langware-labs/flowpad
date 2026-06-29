@@ -81,7 +81,7 @@ test.describe('Shell Tab Title and Switching', () => {
   });
 
   test('rename tabs, refresh, and switch between them', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     // Use timestamps so these tabs are findable even if other tabs exist.
     // Do NOT close all existing tabs — with many accumulated sessions that
@@ -93,7 +93,7 @@ test.describe('Shell Tab Title and Switching', () => {
     // Step 1: Navigate to shell (creates a new terminal, waits for xterm init)
     await gotoShell(page);
 
-    /** Create a tab, detect it by testid diff, rename it via dispatchEvent('dblclick'). */
+    /** Create a tab, detect it by testid diff, rename it via the ContextMenu "Rename" item. */
     async function createAndRename(newName: string): Promise<string> {
       // Snapshot existing testids before adding
       const before = new Set(
@@ -116,17 +116,22 @@ test.describe('Shell Tab Title and Switching', () => {
       }).toPass({ timeout: 10_000 });
 
       const tab = page.locator(`[data-testid="${newTestId}"]`);
-      // Force-click to activate + scroll into view, then dispatchEvent to avoid
-      // overflow-scroll interception in a crowded tab strip
+      // Open rename via the tab's ContextMenu "Rename" item (same handler as the
+      // span dblclick — handleTabDoubleClick). The synthetic dblclick raced the
+      // selectTab re-render and dropped the event under load; the context menu is
+      // deterministic. The menu is portaled to body, so the menuitem is page-scoped.
       await tab.click({ force: true });
-      await page.waitForTimeout(200);
-      await tab.locator('span.font-medium').dispatchEvent('dblclick');
-      await page.waitForTimeout(300);
+      await tab.click({ button: 'right', force: true });
+      await page.getByRole('menuitem', { name: 'Rename' }).click();
 
       const renameInput = tab.locator('input[type="text"]');
       await expect(renameInput).toBeVisible({ timeout: 5_000 });
-      await renameInput.click({ clickCount: 3 });
-      await renameInput.type(newName);
+      // The product auto-focuses + selects-all the input on mount (TabbedTerminal
+      // handleTabDoubleClick → useEffect input.focus()+setSelectionRange), so no
+      // click is needed. fill() is also re-render-robust: it waits for stability
+      // and sets the value atomically, surviving the streaming tab strip's churn
+      // that detached the node under a manual click({clickCount:3}).
+      await renameInput.fill(newName);
       await renameInput.press('Enter');
       await waitForTabName(page, newName, 10_000);
       return newTestId;

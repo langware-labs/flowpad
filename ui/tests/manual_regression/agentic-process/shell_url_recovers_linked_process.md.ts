@@ -18,12 +18,12 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
   });
 }
 
-// SKIPPED: same root cause as agentic_process_visible_restored_on_load —
-// routePlainShellPointer's cachedEntitiesByType doesn't reliably surface the
-// linked process on a cold navigation, so the redirect never fires. Real
-// loader-side regression to track.
-test.skip('navigating to shell URL with linked agentic process redirects to agentic_process URL', async ({ page }) => {
-  test.setTimeout(150_000);
+// Cold-nav redirect now works: routePlainShellPointer resolves the owning
+// process by shell_id via the backend (AgenticProcess.getByShellId →
+// terminals/get_by_shell_id) when the in-memory cache is cold, so the redirect
+// fires on a fresh page.goto. (Fix per Debug #17.)
+test('navigating to shell URL with linked agentic process redirects to agentic_process URL', async ({ page }) => {
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push(err.message));
@@ -53,7 +53,7 @@ test.skip('navigating to shell URL with linked agentic process redirects to agen
   // (the process has a dedicated PTY shell, separate from the user's interactive shell)
   const shellId = await page.evaluate(
     async ({ id }) => {
-      const res = await fetch(`http://localhost:9008/api/v1/graph/agentic_process/${id}`);
+      const res = await fetch(`/api/v1/graph/agentic_process/${id}`);
       const json = await res.json();
       return json?.data?.shell_id as string | null;
     },

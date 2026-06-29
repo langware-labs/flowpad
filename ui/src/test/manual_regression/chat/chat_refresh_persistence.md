@@ -1,8 +1,12 @@
+---
+id: 8b382210-9ee7-547b-b598-91590abf8351
+---
+
 test 1: Session resets after page refresh
 - navigate to {APP_URL}/
 - fill landing input with "refresh test"
 - press Enter
-- wait for URL to change to /dock/session/...
+- wait for URL to change to /dock/shell/...
 - click "New Session" button
 - validate instruction input is visible and status is IDLE
 - fill instruction input with "Say hello"

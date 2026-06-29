@@ -19,6 +19,24 @@ from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 router = APIRouter(prefix="/api/v1/cloud")
 
+# Standardized copy for the privacy-mode block — kept in sync with the
+# frontend guard (``ts_sdk/src/services/privacy-guard.ts``).
+LOCAL_MODE_LOGIN_MESSAGE = "Login disabled in Local mode"
+
+
+def _local_mode_login_block():
+    """Return a 403 ApiFailResponse when this instance is in Local privacy mode,
+    else ``None``. The single gate the cloud-auth routes call before any cloud
+    side effect."""
+    from flow_sdk.instance_settings.privacy_mode import is_local_mode
+
+    if is_local_mode():
+        return JSONResponse(
+            content=ApiFailResponse(message=LOCAL_MODE_LOGIN_MESSAGE).model_dump(mode="json"),
+            status_code=403,
+        )
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Branded result page (login/logout success or error in the system browser)
@@ -98,7 +116,7 @@ def _render_result_page(
 async def logout_callback():
     """Cloud-redirect logout callback. Clears local credentials."""
     from flow_sdk.cli.auth.cloud_login import clear_cloud_credentials
-    clear_cloud_credentials()
+    await clear_cloud_credentials()
     blank_script = '<script>setTimeout(function(){ document.body.innerHTML = ""; }, 10000);</script>'
     return _render_result_page(
         title="Logout Successful",
@@ -117,21 +135,41 @@ async def logout_callback():
 
 @router.get("/status")
 async def status():
-    """Logged-in flag, current user, cloud URL (for tooltips)."""
+    """Logged-in flag, current user, cloud URL, and orthogonal hub statuses."""
     try:
         from flow_sdk.cli.app_config import get_user
         from flow_sdk.cli.auth.hub_login import is_logged_in
         from flow_sdk.cloud_client import ApiConfig
+        from flow_sdk.cloud_client.auth_state import current_login_status
+        from flow_sdk.cloud_client.auth_status import HubLoginStatus
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
         logged_in = is_logged_in()
         user_info = get_user() if logged_in else None
         cloud_url = ApiConfig.from_env().api_base_url
 
+        login_status = current_login_status()
+        # Heal in-memory mirror if disk and memory disagree (e.g. fresh boot
+        # before any transition has been emitted).
+        if logged_in and login_status != HubLoginStatus.LOGGED_IN:
+            login_status = HubLoginStatus.LOGGED_IN
+        elif not logged_in and login_status == HubLoginStatus.LOGGED_IN:
+            login_status = HubLoginStatus.LOGGED_OUT
+
+        connection_payload = hub_ws_manager.connection_payload()
+
         return ApiSuccessResponse(data={
+            # New nested shape — canonical, drives the UI.
+            "login": {
+                "status": login_status.value,
+                "user": user_info,
+                "reason": None,
+            },
+            "connection": connection_payload,
+            "cloud_url": cloud_url,
+            # Deprecated aliases — kept for one release while UI migrates.
             "logged_in": logged_in,
             "user": user_info,
-            "cloud_url": cloud_url,
             **hub_ws_manager.status_payload(),
         })
     except Exception as e:
@@ -144,7 +182,10 @@ def _cloud_ws_error(message: str, status_code: int = 400):
     return JSONResponse(
         content=ApiFailResponse(
             message=message,
-            data=hub_ws_manager.status_payload(),
+            data={
+                "connection": hub_ws_manager.connection_payload(),
+                **hub_ws_manager.status_payload(),
+            },
         ).model_dump(mode="json"),
         status_code=status_code,
     )
@@ -153,6 +194,9 @@ def _cloud_ws_error(message: str, status_code: int = 400):
 @router.post("/ws/connect")
 async def connect_ws():
     """Verify hub WS auth and start the background hub WebSocket listener."""
+    blocked = _local_mode_login_block()
+    if blocked is not None:
+        return blocked
     try:
         from flow_sdk.cli.auth.hub_login import is_logged_in
         from flow_sdk.cloud_client.ws_client import (
@@ -170,7 +214,11 @@ async def connect_ws():
             return _cloud_ws_error(status_payload.get("hub_ws_error") or "Hub WebSocket did not connect.", 502)
 
         verification = await hub_ws_manager.verify_current_user()
-        return ApiSuccessResponse(data={**hub_ws_manager.status_payload(), "verification": verification})
+        return ApiSuccessResponse(data={
+            "connection": hub_ws_manager.connection_payload(),
+            **hub_ws_manager.status_payload(),
+            "verification": verification,
+        })
     except HubWebSocketLoginRequiredError as e:
         return _cloud_ws_error(str(e), 401)
     except HubWebSocketAuthError as e:
@@ -193,7 +241,11 @@ async def disconnect_ws():
     try:
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
-        return ApiSuccessResponse(data=await hub_ws_manager.stop())
+        legacy = await hub_ws_manager.stop()
+        return ApiSuccessResponse(data={
+            "connection": hub_ws_manager.connection_payload(),
+            **legacy,
+        })
     except Exception as e:
         return _cloud_ws_error(str(e), 500)
 
@@ -201,6 +253,9 @@ async def disconnect_ws():
 @router.post("/ws/verify")
 async def verify_ws():
     """Verify the current hub WebSocket credentials against the local cloud profile."""
+    blocked = _local_mode_login_block()
+    if blocked is not None:
+        return blocked
     try:
         from flow_sdk.cli.auth.hub_login import is_logged_in
         from flow_sdk.cloud_client.ws_client import (
@@ -214,7 +269,11 @@ async def verify_ws():
             return _cloud_ws_error("Cloud login required before verifying hub WebSocket.", 401)
 
         verification = await hub_ws_manager.verify_current_user()
-        return ApiSuccessResponse(data={**hub_ws_manager.status_payload(), "verification": verification})
+        return ApiSuccessResponse(data={
+            "connection": hub_ws_manager.connection_payload(),
+            **hub_ws_manager.status_payload(),
+            "verification": verification,
+        })
     except HubWebSocketLoginRequiredError as e:
         return _cloud_ws_error(str(e), 401)
     except HubWebSocketAuthError as e:
@@ -236,6 +295,9 @@ async def login():
     On synchronous failure (rejected creds, can't open browser) returns a 400
     ``ApiFailResponse``.
     """
+    blocked = _local_mode_login_block()
+    if blocked is not None:
+        return blocked
     from flow_sdk.cli.auth.cloud_login import cloud_login
 
     try:
@@ -259,7 +321,7 @@ async def logout():
     from flow_sdk.cli.auth.cloud_urls import get_logout_url
     from flow_sdk.instance_settings import get_instance_settings
 
-    clear_cloud_credentials()
+    await clear_cloud_credentials()
     port = get_instance_settings().port
     callback_url = f"http://127.0.0.1:{port}/api/v1/cloud/logout_callback"
     return ApiSuccessResponse(data={"cloud_logout_url": get_logout_url(callback_url)})

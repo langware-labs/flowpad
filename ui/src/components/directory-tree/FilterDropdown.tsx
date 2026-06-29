@@ -3,6 +3,7 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Filter } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { FilterDefinition } from './types';
 
 export interface FilterDropdownProps {
@@ -21,6 +22,7 @@ export interface FilterDropdownProps {
  * for each available filter. Consolidates filter UX across all directory trees.
  */
 export function FilterDropdown({ filters, enabledFilters, onFiltersChange }: FilterDropdownProps) {
+  const { t } = useLingui();
   const handleToggleFilter = (filterName: string) => {
     const isCurrentlyEnabled = enabledFilters.includes(filterName);
     const newEnabledFilters = isCurrentlyEnabled
@@ -39,13 +41,13 @@ export function FilterDropdown({ filters, enabledFilters, onFiltersChange }: Fil
               variant="ghost"
               size="icon"
               className="h-7 w-7"
-              title="Filters"
+              title={t`Filters`}
             >
               <Filter className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>Filters</TooltipContent>
+        <TooltipContent><Trans>Filters</Trans></TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="end" className="w-48">
         {filters.map((filter) => (

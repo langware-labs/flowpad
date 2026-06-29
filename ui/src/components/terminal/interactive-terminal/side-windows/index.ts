@@ -1,4 +1,3 @@
-export { SideWindow } from './SideWindow';
 export { SideTabId, SIDE_TABS, parseSideTabId, parseSideTabIdList } from './SideWindowTypes';
 export type { SideTabDescriptor } from './SideWindowTypes';
 export { GitPanel } from './GitPanel';
@@ -7,5 +6,7 @@ export type { PromptEntry } from './PromptIndexPanel';
 export { usePromptsForProcess } from './usePromptsForProcess';
 export type { TranscriptPrompt, UsePromptsForProcessResult } from './usePromptsForProcess';
 export { InputFilesPanel } from './InputFilesPanel';
+export { AnalysisPanel } from './AnalysisPanel';
 export { QueuePanel } from './QueuePanel';
 export { SimpleDirTree } from './SimpleDirTree';
+export { SkillsAgentsPanel } from './SkillsAgentsPanel';

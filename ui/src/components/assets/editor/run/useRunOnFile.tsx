@@ -1,8 +1,9 @@
 import { useCallback, useState, type ReactNode } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
   ComputeNode,
-  ProcessType,
+  ProcessKind,
   type AssetDescriptor,
 } from '@sdk';
 import { enableMcp, isMcpAvailable } from '@src/components/assets/utils';
@@ -16,7 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useProject } from '@src/hooks/useProject';
 import { parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
@@ -26,8 +27,8 @@ interface UseRunOnFileArgs {
   targetVfsPath: string | null;
   /** On-disk file path of the markdown file (used in the prompt text). */
   filePath: string | null;
-  /** Notified after a run starts so the host can flip to the Runs side tab. */
-  onActiveSideTabChange?: (id: string) => void;
+  /** Called after a run starts so the host opens the Runs side window (`useSideWindows().open`). */
+  onOpenSideWindow?: (id: string) => void;
 }
 
 interface UseRunOnFileResult {
@@ -60,10 +61,10 @@ const MCP_SERVER = 'flow-sdk-mcp';
 export function useRunOnFile({
   targetVfsPath,
   filePath,
-  onActiveSideTabChange,
+  onOpenSideWindow,
 }: UseRunOnFileArgs): UseRunOnFileResult {
-  const { toast } = useToast();
   const { project } = useProject();
+  const { t } = useLingui();
 
   const [isStarting, setIsStarting] = useState(false);
   const [processEntry, setProcessEntry] = useState<ProcessEntry | null>(null);
@@ -82,7 +83,7 @@ export function useRunOnFile({
         workdir: project?.fs_storage_mount_path ?? undefined,
         projectId: project?.id,
         targetVfsPath,
-        processType: ProcessType.Execution,
+        processType: ProcessKind.Execution,
         outputFormat: 'stream-json',
         permissionMode: 'bypassPermissions',
       });
@@ -100,18 +101,17 @@ export function useRunOnFile({
 
       void proc.prompt(instruction);
       setProcessEntry({ process: proc });
-      onActiveSideTabChange?.('runs');
+      onOpenSideWindow?.('runs');
     },
-    [targetVfsPath, filePath, project, onActiveSideTabChange],
+    [targetVfsPath, filePath, project, onOpenSideWindow],
   );
 
   const runWithAsset = useCallback(
     async (descriptor: AssetDescriptor) => {
       if (!targetVfsPath) {
-        toast({
-          title: 'Cannot run',
-          description: 'This file has no backing entity yet.',
-          variant: 'destructive',
+        notify.error({
+          title: t`Cannot run`,
+          message: t`This file has no backing entity yet.`,
         });
         return;
       }
@@ -126,12 +126,12 @@ export function useRunOnFile({
         await doRun(descriptor);
       } catch (err) {
         console.error('[useRunOnFile] run failed', err);
-        toast({ title: 'Failed to start run', variant: 'destructive' });
+        notify.error({ title: t`Failed to start run` });
       } finally {
         setIsStarting(false);
       }
     },
-    [targetVfsPath, doRun, toast],
+    [targetVfsPath, doRun],
   );
 
   const handleEnableMcp = useCallback(
@@ -144,17 +144,17 @@ export function useRunOnFile({
       try {
         await enableMcp(MCP_SERVER, scope);
         setShowMcpModal(false);
-        toast({ title: `${MCP_SERVER} enabled (${scope} scope). Starting run…` });
+        notify.success({ title: `${MCP_SERVER} enabled (${scope} scope). Starting run…` });
         await doRun(pendingDescriptor);
       } catch (err) {
         console.error('[useRunOnFile] enable MCP failed', err);
-        toast({ title: 'Failed to enable MCP', variant: 'destructive' });
+        notify.error({ title: t`Failed to enable MCP` });
       } finally {
         setMcpEnabling(false);
         setPendingDescriptor(null);
       }
     },
-    [pendingDescriptor, doRun, toast],
+    [pendingDescriptor, doRun],
   );
 
   const mcpModal = (
@@ -167,19 +167,18 @@ export function useRunOnFile({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Flow MCP not enabled</AlertDialogTitle>
+          <AlertDialogTitle><Trans>Flow MCP not enabled</Trans></AlertDialogTitle>
           <AlertDialogDescription>
-            The <code>flow-sdk-mcp</code> server is required to run with progress
-            tracing. Enable it to continue.
+            <Trans>The <code>flow-sdk-mcp</code> server is required to run with progress tracing. Enable it to continue.</Trans>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
           <Button disabled={mcpEnabling} onClick={() => void handleEnableMcp('project')}>
-            Enable for project
+            <Trans>Enable for project</Trans>
           </Button>
           <Button disabled={mcpEnabling} onClick={() => void handleEnableMcp('user')}>
-            Enable for user
+            <Trans>Enable for user</Trans>
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

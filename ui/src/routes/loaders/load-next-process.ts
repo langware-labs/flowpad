@@ -3,7 +3,8 @@
  *
  * Loop:
  *   1. Pull visible shells + processes, build the tab list.
- *   2. Pick the best candidate via `resolveDefaultTab`.
+ *   2. Pick the best candidate via `resolveNextTab` (the single
+ *      `resolveActive` resolver over the pre-filtered candidates).
  *   3. Try to load it (`loadProcess` for agentic-process tabs, `loadShell`
  *      otherwise).
  *   4. On a typed `ProcessLoadError` / `ShellLoadError`, dispatch the per-kind
@@ -20,14 +21,10 @@
  */
 
 import { AgenticProcess, Shell, TypeId } from '@sdk';
-import {
-  closeTerminalTargets,
-  fetchActiveTerminals,
-  terminalProcessId,
-  terminalTransportShellId,
-} from '@src/hooks/useActiveTerminals';
+import { closeTerminalTab, getTerminalTabsSnapshot } from '@src/tabs/useTabs';
+import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
-import { loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
+import { loadShell, ShellLoadError } from './load-shell';
 
 // ── public types ────────────────────────────────────────────────────────────
 
@@ -51,7 +48,7 @@ export interface CleanupRecord {
 }
 
 export type LoadedNext =
-  | { kind: 'process'; process: AgenticProcess; shell: Shell }
+  | { kind: 'process'; process: AgenticProcess; shell: Shell | null }
   | { kind: 'shell'; shell: Shell };
 
 export interface LoadNextProcessOptions {
@@ -74,16 +71,31 @@ export interface LoadNextProcessResult {
 
 // ── per-error cleanup dispatchers (preserve current behaviour) ──────────────
 
-function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
+// Exported: also the direct-link cleanup mapper used by load-shell's route loader
+// (single source of truth — both the in-loader recovery path and the direct-link
+// route map a ProcessLoadError to the same CleanupRecord).
+export function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
   switch (e.kind) {
-    case 'not_found':
+    case 'entity_not_found':
       return {
         kind: 'process_not_found',
         processId: e.processId,
         title: 'Session not found',
         description: 'Agentic process does not exist.',
       };
-    case 'start_failed': {
+    case 'network_error': {
+      const desc = describeProcessStartError(e.cause ?? e);
+      return {
+        kind: 'process_start_failed',
+        processId: e.processId,
+        shellId: e.shellId ?? undefined,
+        title: 'Couldn’t reach backend',
+        description: desc.description,
+      };
+    }
+    case 'runtime_terminated':
+    case 'pty_attach_failed':
+    case 'failed_to_start': {
       const desc = describeProcessStartError(e.cause ?? e);
       return {
         kind: 'process_start_failed',
@@ -93,7 +105,7 @@ function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
         description: desc.description,
       };
     }
-    case 'no_shell':
+    case 'shell_entity_missing':
       return {
         kind: 'process_no_shell',
         processId: e.processId,
@@ -109,6 +121,20 @@ function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
         title: 'Project not found',
         description: 'Could not recover this session’s project.',
       };
+    default: {
+      // Exhaustiveness guard: a missing kind type-errors here; at runtime it
+      // returns a generic record rather than undefined (which would crash
+      // handleCleanups on `.title`).
+      const _exhaustive: never = e.kind;
+      void _exhaustive;
+      return {
+        kind: 'process_start_failed',
+        processId: e.processId,
+        shellId: e.shellId ?? undefined,
+        title: 'Session unavailable',
+        description: 'Failed to restore this session.',
+      };
+    }
   }
 }
 
@@ -131,7 +157,7 @@ async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecord> {
     case 'start_failed': {
       // Best-effort close so the user isn't stuck with a zombie row
       // (mirrors the pre-refactor behaviour at routePlainShellPointer:272-273).
-      await closeTerminalTargets([new TypeId(Shell.type, e.shellId)]).catch(() => {});
+      await closeTerminalTab(new TypeId(Shell.type, e.shellId)).catch(() => {});
       const desc = describeProcessStartError(e.cause ?? e);
       return {
         kind: 'shell_start_failed',
@@ -151,19 +177,17 @@ export async function loadNextProcess(
   const cleaned: CleanupRecord[] = [];
   const tried = new Set(options.excludeIds ?? []);
 
-  const allTabs = await fetchActiveTerminals();
+  const allTabs = await getTerminalTabsSnapshot('all');
   const projectId = options.projectId ?? null;
-  const tabs = projectId == null
-    ? allTabs
-    : allTabs.filter((t) => t.projectId === projectId);
+  const tabs = projectId == null ? allTabs : allTabs.filter((t) => t.project_id === projectId);
 
   while (true) {
-    const tab = resolveDefaultTab(tabs, tried);
+    const tab = resolveNextTab(tabs, tried);
     if (!tab) {
       return { loaded: null, cleaned };
     }
 
-    const processId = terminalProcessId(tab);
+    const processId = tab.target_type === AgenticProcess.type ? tab.target_id : null;
     if (processId) {
       try {
         const result = await loadProcess(processId);
@@ -180,10 +204,11 @@ export async function loadNextProcess(
       }
     }
 
-    const shellId = terminalTransportShellId(tab);
-    if (!shellId || !tab.shell) {
-      // Defensive: filterTabs shouldn't yield a tab without either entity.
-      tried.add(tab.targetTypeId.toString());
+    // A shell tab's transport id is its target id (present without any cache);
+    // loadShell hydrates the entity on demand below.
+    const shellId = tab.target_id;
+    if (!shellId) {
+      tried.add(tabTargetKey(tab));
       continue;
     }
 

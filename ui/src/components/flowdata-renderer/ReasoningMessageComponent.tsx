@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { EnhancedFlowData } from '@src/types/ui-flowdata';
 import { UIFlowData } from '@src/types/ui-flowdata';
 
@@ -7,6 +9,7 @@ interface ReasoningMessageComponentProps {
 }
 
 export function ReasoningMessageComponent({ flowData }: ReasoningMessageComponentProps) {
+  const { t } = useLingui();
   const [isExpanded, setIsExpanded] = useState(false);
   const icon = flowData instanceof EnhancedFlowData ? flowData.getIcon() : '🤔';
 
@@ -14,12 +17,12 @@ export function ReasoningMessageComponent({ flowData }: ReasoningMessageComponen
     <div className="reasoning-message">
       <div className="message-header">
         <span className="message-icon">{icon}</span>
-        <span className="message-role">Assistant Reasoning</span>
+        <span className="message-role"><Trans>Assistant Reasoning</Trans></span>
         <span className="message-timestamp">{flowData.displayTimestamp}</span>
         <button
           className="expand-button"
           onClick={() => setIsExpanded(!isExpanded)}
-          aria-label={isExpanded ? 'Collapse reasoning' : 'Expand reasoning'}
+          aria-label={isExpanded ? t`Collapse reasoning` : t`Expand reasoning`}
         >
           {isExpanded ? '▼' : '▶'}
         </button>

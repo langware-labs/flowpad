@@ -1,5 +1,6 @@
 import { SkillMetadata } from '@sdk';
 import { Input } from '@src/components/ui/input';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface SkillMetadataHeaderProps {
   metadata: SkillMetadata | null;
@@ -7,12 +8,13 @@ interface SkillMetadataHeaderProps {
 }
 
 export function SkillMetadataHeader({ metadata, onMetadataChange }: SkillMetadataHeaderProps) {
+  const { t } = useLingui();
   if (!metadata) {
     return null;
   }
 
   return (
-    <div className="border-b bg-muted/30 px-4 py-3">
+    <div className="border-b px-3 py-2">
       <div className="flex items-start gap-6">
         {/* Name and Description */}
         <div className="min-w-0 flex-1 space-y-1">
@@ -20,22 +22,22 @@ export function SkillMetadataHeader({ metadata, onMetadataChange }: SkillMetadat
             <Input
               value={metadata.name}
               onChange={(e) => onMetadataChange('name', e.target.value)}
-              placeholder="skill-name"
+              placeholder={t`skill-name`}
               className="h-8 text-lg font-semibold"
             />
           ) : (
-            <h2 className="truncate text-lg font-semibold text-foreground">{metadata.name || 'Untitled Skill'}</h2>
+            <span className="truncate text-sm font-medium text-foreground">{metadata.name || t`Untitled Skill`}</span>
           )}
           {onMetadataChange ? (
             <Input
               value={metadata.description}
               onChange={(e) => onMetadataChange('description', e.target.value)}
-              placeholder="Brief description of what this skill does"
-              className="h-7 text-sm text-muted-foreground"
+              placeholder={t`Brief description of what this skill does`}
+              className="h-7 text-sm"
             />
           ) : (
             metadata.description && (
-              <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{metadata.description}</p>
+              <p className="mt-0.5 line-clamp-2 text-sm text-foreground/70">{metadata.description}</p>
             )
           )}
         </div>
@@ -45,7 +47,7 @@ export function SkillMetadataHeader({ metadata, onMetadataChange }: SkillMetadat
           {/* Tags */}
           {metadata.tags.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Tags:</span>
+              <span className="text-xs text-muted-foreground"><Trans>Tags:</Trans></span>
               {metadata.tags.map((tag) => (
                 <span
                   key={tag}
@@ -60,7 +62,7 @@ export function SkillMetadataHeader({ metadata, onMetadataChange }: SkillMetadat
           {/* Allowed Tools */}
           {metadata.allowedTools.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Tools:</span>
+              <span className="text-xs text-muted-foreground"><Trans>Tools:</Trans></span>
               {metadata.allowedTools.map((tool) => (
                 <span key={tool} className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs">
                   {tool}

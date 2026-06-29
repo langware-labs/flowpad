@@ -272,6 +272,22 @@ describe('clean_claude_pty', () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         let process: AgenticProcess | null = null;
         try {
+          // Heal a dropped shared WS before the attempt. Across 50 back-to-back
+          // real-Claude PTY spawns the singleton ConnectionManager can drop
+          // (PTY-output backpressure on the one socket); without this, every
+          // subsequent iteration throws "WebSocket not connected" and is
+          // miscounted as a PTY-cleanliness regression. A reconnect is exactly
+          // the transient-infra recovery this retry loop exists for — it does
+          // not mask real prompt-leak regressions, which fail the invariant
+          // checks on a healthy connection.
+          const cm = ConnectionManager.getInstance();
+          if (!cm.connected) {
+            await cm.connect();
+            await vi.waitFor(
+              () => { if (!cm.connected) throw new Error('WS reconnect pending'); },
+              { timeout: 5000, interval: 100 },
+            );
+          }
           const result = await runIteration(workdir);
           process = result.process;
           activeProcess = process;
@@ -297,5 +313,9 @@ describe('clean_claude_pty', () => {
     }
 
     expect(failures, `${failures.length}/${ITERATIONS} dirty:\n${failures.join('\n')}`).toHaveLength(0);
-  }, ITERATIONS * 15_000 + 60_000);
+    // 50 cold Claude PTYs × ~16-18s/iter on a loaded dev machine. Noisy
+    // iterations trigger the one-retry inner loop and can double their cost,
+    // so leave 20s/iter + 60s setup as the budget. (Nominal iteration is
+    // ~14s; the extra is retry headroom, not slack on the happy path.)
+  }, ITERATIONS * 20_000 + 60_000);
 });

@@ -7,6 +7,7 @@ import { DockPointer, useDockNavigation } from '@src/navigation';
 import { useViewerStore } from '@src/hooks/flow-hooks';
 import { Hand } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { TaskDetail } from './TaskDetail';
 
 export function AssistanceViewer() {
@@ -47,22 +48,22 @@ export function AssistanceViewer() {
   const renderSidebar = () => (
     <div className="flex h-full w-80 flex-col border-r bg-background">
       <div className="flex h-[52px] items-center justify-between border-b bg-muted/50 px-3">
-        <h2 className="text-sm font-semibold">Expert Assistance</h2>
+        <h2 className="text-sm font-semibold"><Trans>Expert Assistance</Trans></h2>
       </div>
 
       <ScrollArea className="flex-1">
         {isLoading ? (
-          <div className="p-4 text-center text-xs text-muted-foreground">Loading tasks...</div>
+          <div className="p-4 text-center text-xs text-muted-foreground"><Trans>Loading tasks...</Trans></div>
         ) : error ? (
           <div className="p-4 text-center">
             <Hand className="mx-auto h-8 w-8 text-muted-foreground/50" />
-            <p className="mt-2 text-xs text-muted-foreground">Failed to load tasks</p>
+            <p className="mt-2 text-xs text-muted-foreground"><Trans>Failed to load tasks</Trans></p>
           </div>
         ) : !tasks || tasks.length === 0 ? (
           <div className="p-4 text-center">
             <Hand className="mx-auto h-8 w-8 text-muted-foreground/50" />
-            <p className="mt-2 text-xs text-muted-foreground">No assistance requests yet</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">Use &quot;Send to Expert&quot; to create a task</p>
+            <p className="mt-2 text-xs text-muted-foreground"><Trans>No assistance requests yet</Trans></p>
+            <p className="mt-1 text-xs text-muted-foreground/70"><Trans>Use "Send to Expert" to create a task</Trans></p>
           </div>
         ) : (
           <div className="space-y-2 p-2">
@@ -104,13 +105,13 @@ export function AssistanceViewer() {
         <div className="flex h-full flex-1 flex-col bg-background">
           <div className="flex h-[52px] items-center border-b bg-muted/50 px-3">
             <div className="flex-1">
-              <h3 className="text-sm font-medium text-muted-foreground">No Task Selected</h3>
+              <h3 className="text-sm font-medium text-muted-foreground"><Trans>No Task Selected</Trans></h3>
             </div>
           </div>
           <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
             <Hand className="h-16 w-16 text-muted-foreground/50" />
-            <p className="mt-4 text-lg text-muted-foreground">Select a task</p>
-            <p className="mt-2 text-sm text-muted-foreground">Choose a task from the sidebar to view details</p>
+            <p className="mt-4 text-lg text-muted-foreground"><Trans>Select a task</Trans></p>
+            <p className="mt-2 text-sm text-muted-foreground"><Trans>Choose a task from the sidebar to view details</Trans></p>
           </div>
         </div>
       );
@@ -120,7 +121,7 @@ export function AssistanceViewer() {
     if (!selectedTask) {
       return (
         <div className="flex h-full flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">Task not found</p>
+          <p className="text-sm text-muted-foreground"><Trans>Task not found</Trans></p>
         </div>
       );
     }

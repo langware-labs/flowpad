@@ -1,3 +1,8 @@
+---
+id: 273cd1d7-93e9-58d3-bcad-24b592465dd2
+---
+
+- PRECONDITION: switch the app to Advanced view (footer view pill or `window.setView('advanced')` / localStorage `viewMode=advanced`) — the process toolbar (Restart / Open Terminal / Fork / Worktree / Session Info / Transcript) and side-ribbon panels only exist in Advanced view; the default Standard view shows the simple-chat header without them
 test 1: Git status button appears in agentic process terminal ribbon
 - navigate to {APP_URL}/dock/shell/new_terminal
 - click the "Start Claude" button if on a plain shell to create an agentic process
@@ -81,7 +86,7 @@ test 9: Git panel auto-refreshes — new changes appear within 5 seconds
 - wait up to 7 seconds, validate the file disappears from the panel
 
 test 10: Git panel API endpoint returns correct structure
-- call GET /api/v1/graph/compute_node/{id}/git-status?workdir=/Users/shlom/Documents/dev/flow-cli
+- call GET /api/v1/graph/compute_node/{id}/git-status?workdir={repo-root} (this checkout's absolute path)
   (replace {id} with the compute_node entity ID from GET /api/v1/graph/compute_node)
 - validate response status is 200 with ApiResponse shape: { status: "OK", data: {...} }
 - validate data.branch is a non-empty string

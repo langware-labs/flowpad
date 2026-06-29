@@ -81,15 +81,15 @@ class Navigator {
       const initial = await secretsService.isEnabled();
       if (initial?.enabled) return true;
     } catch {
-      // If the probe fails (offline, server down) fall through to the dialog;
-      // the dialog's own enable() call will surface the same error.
+      // If the probe fails (offline, server down) fall through to provisioning;
+      // request()'s own enable() call will surface the same error.
     }
 
     const approved = await secretApprovalGate.request();
     if (!approved) return false;
 
-    // The dialog already called secretsService.enable(); re-verify before
-    // redirecting in case the OS denied the prompt despite the in-app approval.
+    // request() already provisioned secrets; re-verify before redirecting in
+    // case the OS denied the keychain prompt despite the provisioning call.
     try {
       const verified = await secretsService.isEnabled();
       return Boolean(verified?.enabled);

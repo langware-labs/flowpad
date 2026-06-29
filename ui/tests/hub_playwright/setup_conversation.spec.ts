@@ -1,0 +1,115 @@
+/**
+ * Two-browser conversation setup via the standard hub invitation pattern.
+ *
+ * Flow (all driven through pure UI interactions):
+ *   1. alice opens her UI, clicks "Start conversation", types bob's email,
+ *      types an initial message, clicks "Create".
+ *      Backend wires it: local Conversation/FlowMessage, ``conv.share()`` on
+ *      the hub, ``conversation/<id>/join`` for alice, ``members`` POST to
+ *      invite bob.
+ *   2. bob opens his UI, clicks the Refresh button on the conversations
+ *      strip (``conversation-sync`` pulls his pending invitations from
+ *      the hub).
+ *   3. bob clicks "Accept" on the pending-invitations row. Backend wires it:
+ *      hub ``/members/accept`` (grants ``member`` role on the Conversation),
+ *      then ``conversation/<id>/join`` so bob enters ``participants``.
+ *   4. Both UIs navigate to the new conversation.
+ *   5. alice types a calibration message → bob's UI shows it within the
+ *      realtime SLO (< 500 ms).
+ *
+ * Prereqs (checked up-front; test skips with a clear reason otherwise):
+ *   - alice backend (9008), bob backend (9007), local hub (8093) all up
+ *   - both backends cloud-logged-in, both hub WS bridges connected
+ *
+ * Run on its own:
+ *   npx playwright test --config ui/tests/hub_playwright/playwright.config.ts \
+ *     setup_conversation.spec.ts
+ */
+import { test, expect, chromium, type Browser } from '@playwright/test';
+
+import {
+  ALICE,
+  BOB,
+  assertPreconditions,
+  gotoConversation,
+  openInstance,
+  sendReplyViaUi,
+  startConversationViaUi,
+  waitForBubbleText,
+} from './helpers';
+
+const BOB_EMAIL = process.env.BOB_CLOUD_EMAIL || 'bob@local.test';
+
+test('setup: alice creates → bob accepts via UI → realtime round-trip < 500 ms', async () => {
+  await assertPreconditions();
+
+  const browser: Browser = await chromium.launch();
+  try {
+    const alice = await openInstance(browser, ALICE);
+    const bob = await openInstance(browser, BOB);
+
+    // Open bob's home-landing FIRST so his invitations strip is mounted by
+    // the time alice fires the invite — keeps the test honest about realtime
+    // perception.
+    await bob.page.goto('/');
+    await bob.page.getByRole('button', { name: 'Start conversation' }).waitFor({ state: 'visible' });
+
+    // 1. Alice drives the Start-conversation dialog.
+    const initial = `setup-${Date.now()}`;
+    const t0 = Date.now();
+    const convId = await startConversationViaUi(alice.page, BOB_EMAIL, initial);
+    const tCreated = Date.now();
+    console.log(`[setup] alice created conv ${convId.slice(0, 8)} via UI  (${tCreated - t0} ms)`);
+
+    // 2. Bob clicks Refresh so ``conversation-sync`` pulls pending invitations.
+    //    The invitation pull happens before the inbox fetch in the handler,
+    //    and ``_materialize_remote_invitation`` saves with ``notify=True`` so
+    //    the strip's reactive query updates as soon as the row hits the local
+    //    DB — well within 2s of the click.
+    await bob.page.getByTestId('refresh-conversations-button').click();
+    await bob.page.locator('[data-testid="conversation-row"][data-kind="invitation"]').first()
+      .waitFor({ state: 'visible', timeout: 2_000 });
+
+    // 3. Click Accept on every pending row in parallel. Stale invitations
+    //    from prior runs are harmless to accept; the one we care about is
+    //    alice's freshly-created Conversation-target invite. ``Promise.all``
+    //    over the buttons fires all clicks concurrently so accept latency is
+    //    dominated by the single slowest hub round-trip, not N×serial.
+    const tInviteSeen = Date.now();
+    const acceptButtons = await bob.page.locator('[data-testid="conversation-row"][data-kind="invitation"] [data-testid="accept-invitation-button"]').all();
+    console.log(`[setup] bob sees ${acceptButtons.length} pending invitation(s)  (+${tInviteSeen - tCreated} ms)`);
+    expect(acceptButtons.length).toBeGreaterThan(0);
+    await Promise.all(acceptButtons.map((b) => b.click()));
+    const tAccepted = Date.now();
+    console.log(`[setup] bob clicked all accepts (parallel)    (+${tAccepted - tInviteSeen} ms)`);
+
+    // 4. Both navigate to the conversation.
+    await gotoConversation(bob.page, convId);
+    await gotoConversation(alice.page, convId);
+
+    // 5. Round-trip: alice sends a calibration message; bob's UI must see it
+    //    within the SLO. Alice already has the initial message in her view;
+    //    we use a fresh marker so the wait is unambiguous.
+    const calibrate = `ping-${Date.now()}`;
+    const { sentAt } = await sendReplyViaUi(alice.page, calibrate);
+    let tRx: number;
+    try {
+      tRx = await waitForBubbleText(bob.page, calibrate, 2_000);
+    } catch (e) {
+      // RCA dump: did the message land in bob's local DB? did the bubble even render?
+      const bubbleCount = await bob.page.locator('[data-testid^="message-bubble-"]').count();
+      const bubbleTexts = await bob.page.locator('[data-testid^="message-bubble-"] .text-sm:not(.font-semibold)').allInnerTexts();
+      const bobFm = await fetch(`${BOB.backendUrl}/api/v1/graph/conversation/${convId}/messages`).then((r) => r.json()).catch(() => null);
+      console.log('[rca] bob bubbles:', bubbleCount, JSON.stringify(bubbleTexts));
+      console.log('[rca] bob backend messages:', JSON.stringify(bobFm));
+      throw e;
+    }
+    const rtt = tRx - sentAt;
+    console.log(`[setup] realtime round-trip alice → bob: ${rtt} ms`);
+
+    expect(convId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(rtt).toBeLessThan(500); // realtime SLO
+  } finally {
+    await browser.close();
+  }
+});

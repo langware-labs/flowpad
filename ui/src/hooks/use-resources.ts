@@ -7,7 +7,7 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { type SystemProfileItem } from '@sdk';
 import { useCallback, useEffect, useState } from 'react';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { type ScanParams, type TimeWindow, useResourceManager } from '../store/resource-manager';
 
 interface UseResourcesOptions {
@@ -79,7 +79,6 @@ export function useResources<T extends SystemProfileItem = SystemProfileItem>(
   const [offset, setOffset] = useState(0);
 
   const { setComputeNodeId, getResources, invalidate: storeInvalidate } = useResourceManager();
-  const { toast } = useToast();
 
   // Initialize resource manager with compute node
   useEffect(() => {
@@ -115,16 +114,15 @@ export function useResources<T extends SystemProfileItem = SystemProfileItem>(
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to fetch resources';
         setError(message);
-        toast({
+        notify.error({
           title: `Failed to load ${resourceType.replace(/_/g, ' ')}`,
-          description: message,
-          variant: 'destructive',
+          message,
         });
       } finally {
         setIsLoading(false);
       }
     },
-    [computeNode?.id, resourceType, timeWindow, parentId, limit, getResources, toast],
+    [computeNode?.id, resourceType, timeWindow, parentId, limit, getResources],
   );
 
   // Auto-fetch on mount/params change

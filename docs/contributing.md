@@ -1,3 +1,7 @@
+---
+id: 4e876bca-361e-5f79-9239-b138b7a4951b
+---
+
 # Contributing to Flowpad
 
 ## Prerequisites
@@ -95,8 +99,14 @@ python -m pytest tests/api/ -v
 # CLI tests only
 python -m pytest tests/cli/ -v
 
-# Frontend tests
+# Frontend tests — all vitest projects
 cd ui && npx vitest run
+
+# …or a single project
+cd ui && npm run test:vitest:unit       # pure unit tests
+cd ui && npm run test:vitest:api        # API tests (needs backend)
+cd ui && npm run test:vitest:react      # component tests (jsdom + RTL)
+cd ui && npm run test:vitest:headless   # full app in jsdom + RTL vs a LIVE backend, no mocks (needs backend; self-skips)
 
 # Frontend build + lint
 cd ui && npm run build && npm run lint

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "flow_rs"
+version = "0.1.0"
+description = "OS-keychain helper (Rust + pyo3), interchangeable with Python keyring"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+test = ["pytest", "keyring"]
+
+[tool.maturin]
+module-name = "flow_rs"
+features = ["python"]
+bindings = "pyo3"
+
+# Anchor pytest's rootdir here so the repo root's pyproject.toml + tests/conftest.py
+# are NOT loaded for these tests. Verified via `pytest --collect-only` reporting
+# `rootdir: .../flow_sdk/rust`.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Disable the inherited 30s global timeout. The interchange matrix runs in <1s
+# end-to-end so the timeout would never fire in practice, but the inherited
+# default would still attach a signal-based watchdog; turning it off keeps the
+# test environment minimal.
+timeout = 0

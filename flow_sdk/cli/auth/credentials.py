@@ -1,8 +1,26 @@
 #!/usr/bin/env python3
-"""Canonical hub credential storage.
+"""Per-instance hub credential storage.
 
-The keyring slot used to store a raw API key now stores a JSON credential
-record. Legacy raw-string values are migrated on first read.
+Credentials live in the per-instance encrypted ``sodot`` file as four
+separate sod entries: ``api_key``, ``refresh_token``, ``expires_at`` (as
+string), ``user`` (as JSON string). The accessor is
+``get_instance_settings().sod`` — see ``flow_sdk/instance_settings``.
+
+``instance.sod`` is now always available — the Fernet key resolves lazily
+(``SOD_ENC_KEY`` env, else keychain auto-mint) on first real read/write, and
+the ``.secrets_enabled`` marker is auto-created on first use. So login is just
+one more writer into the shared per-instance ``sodot``; it is no longer a
+precondition for the store, and ``save_credentials`` no longer depends on a
+prior ``enable_secrets()`` call. The defensive ``enable_secrets`` in
+``cloud_login._finalize_login`` is retained only to pre-time the keychain
+prompt at a friendly moment.
+
+Phase C of the InstanceSettings consolidation. The legacy OS keychain
+``Flowpad.ai.app_secrets/flowpad_api_key[:<instance>]`` entries are no
+longer read or written here; the migration script at
+``system_projects/flowpad_assistant/migrations/0.2.26/scripts/migrate.py``
+leaves them in place for rollback safety but does not bootstrap them
+into the new sodot.
 """
 
 from __future__ import annotations
@@ -11,19 +29,48 @@ import json
 import time
 from typing import Any
 
-import keyring
 from pydantic import BaseModel, Field
 
 
-SERVICE_NAME = "Flowpad.ai.app_secrets"
+# Well-known sod entry names. Stable wire format inside the sodot file —
+# treat as a small public contract. These names double as the per-field
+# SUFFIX in the per-user scoped form (``user::<user_id>::<field>``) and as
+# the LEGACY flat key names that pre-per-user instances still carry.
+SOD_API_KEY = "api_key"
+SOD_REFRESH_TOKEN = "refresh_token"
+SOD_EXPIRES_AT = "expires_at"
+SOD_USER = "user"
+
+# Namespace segment for per-user scoped sod entries. Credentials are keyed by
+# hub user id so multiple users coexist in one instance's sodot with no
+# overwrite — the "natural separation, no cleanup" model. The active user is
+# tracked separately as a pointer in config.json (app_config.get_user); SOD
+# only holds the secrets.
+SOD_USER_PREFIX = "user"
 
 
-def _api_key_name() -> str:
-    """Per-instance keyring username."""
+def _scoped_key(field: str, user_id: str) -> str:
+    """Per-user sod entry name, e.g. ``user::<user_id>::api_key``."""
+    return f"{SOD_USER_PREFIX}::{user_id}::{field}"
+
+
+def _active_user_id() -> str | None:
+    """Resolve the active hub user's id from the config.json pointer.
+
+    This is the same record ``is_logged_in`` / ``hub_auth_available`` key off,
+    so "the current user's credentials" means this user's scoped sod entries.
+    Returns None when no user is logged in (then callers fall back to the
+    legacy flat keys)."""
+    from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+    user = get_user()
+    uid = user.get("id") if user else None
+    return str(uid) if uid else None
+
+
+def _sod():
+    """Lazy import so the module loads cleanly even before any sod use."""
     from flow_sdk.instance_settings import get_instance_settings
-
-    name = get_instance_settings().instance_name
-    return "flowpad_api_key" if name == "prod" else f"flowpad_api_key:{name}"
+    return get_instance_settings().sod
 
 
 class UserHubCredentials(BaseModel):
@@ -81,39 +128,125 @@ class UserHubCredentials(BaseModel):
 
 
 def save_credentials(creds: UserHubCredentials) -> None:
-    """Store credentials as JSON in the existing keyring slot."""
-    keyring.set_password(SERVICE_NAME, _api_key_name(), creds.model_dump_json())
+    """Persist ``creds`` to the per-instance sodot file, keyed by user id.
+
+    When ``creds.user`` carries an ``id`` (every hub login does), the four
+    entries are written under per-user scoped keys (``user::<id>::<field>``)
+    so a second user logging into the same instance does NOT overwrite the
+    first user's token — natural separation, no cleanup. When there is no user
+    id (the ``set_api_key`` headless path, ``creds.user == {}``), the legacy
+    flat keys are written, exactly as before.
+
+    The store is always available; the first write here resolves the Fernet
+    key (env or keychain auto-mint) and auto-creates the consent marker. No
+    prior ``enable_secrets()`` is required.
+    """
+    sod = _sod()
+
+    uid = creds.user.get("id") if creds.user else None
+    uid = str(uid) if uid else None
+
+    def key(field: str) -> str:
+        return _scoped_key(field, uid) if uid else field
+
+    sod.write(key(SOD_API_KEY), creds.api_key)
+    if creds.refresh_token is not None:
+        sod.write(key(SOD_REFRESH_TOKEN), creds.refresh_token)
+    else:
+        sod.delete(key(SOD_REFRESH_TOKEN))
+    if creds.expires_at is not None:
+        sod.write(key(SOD_EXPIRES_AT), str(creds.expires_at))
+    else:
+        sod.delete(key(SOD_EXPIRES_AT))
+    sod.write(key(SOD_USER), json.dumps(creds.user))
 
 
-def load_credentials() -> UserHubCredentials | None:
-    """Load credentials, migrating legacy raw API-key strings on first read."""
-    raw = keyring.get_password(SERVICE_NAME, _api_key_name())
-    if not raw:
+def load_credentials(user_id: str | None = None) -> UserHubCredentials | None:
+    """Return the stored credentials or None if the user is not logged in.
+
+    Resolves which user's credentials to read in this order:
+
+    * ``user_id`` argument when given (the just-logged-in user during
+      ``_finalize_login``, before the config.json pointer is committed);
+    * else the active user from the config.json pointer (``_active_user_id``).
+
+    Each field is read scoped-first (``user::<id>::<field>``) with a fallback
+    to the LEGACY flat key — so instances written before per-user keying stay
+    logged in, and re-login transparently upgrades them. When no user id
+    resolves at all (e.g. the headless ``set_api_key`` path), only the flat
+    keys are read.
+
+    Returns None when secrets are not yet enabled — load is a read-only
+    probe and shouldn't force a keychain prompt by raising.
+    """
+    from flow_sdk.instance_settings import SecretsNotEnabledError
+    try:
+        sod = _sod()
+    except SecretsNotEnabledError:
         return None
 
+    uid = user_id or _active_user_id()
+
+    def read(field: str) -> str | None:
+        if uid:
+            scoped = sod.read(_scoped_key(field, uid))
+            if scoped:
+                return scoped
+        return sod.read(field)
+
+    api_key = read(SOD_API_KEY)
+    if not api_key:
+        return None
+
+    expires_raw = read(SOD_EXPIRES_AT)
+    expires_at: float | None
+    if expires_raw is None or expires_raw == "":
+        expires_at = None
+    else:
+        try:
+            expires_at = float(expires_raw)
+        except ValueError:
+            expires_at = None
+
+    user_raw = read(SOD_USER)
+    if user_raw:
+        try:
+            user = json.loads(user_raw)
+            if not isinstance(user, dict):
+                user = {}
+        except json.JSONDecodeError:
+            user = {}
+    else:
+        user = {}
+
+    return UserHubCredentials(
+        api_key=api_key,
+        refresh_token=read(SOD_REFRESH_TOKEN),
+        expires_at=expires_at,
+        user=user,
+    )
+
+
+def clear_credentials(user_id: str | None = None) -> None:
+    """Delete one user's credential sod entries. Idempotent. Safe to call when
+    secrets aren't enabled (no-op rather than raise).
+
+    Resolves the target user from ``user_id`` else the active config.json
+    pointer, and deletes only THAT user's scoped entries — other users'
+    credentials are left intact. When no user id resolves, the legacy flat
+    keys are deleted (the headless / logged-out path)."""
+    from flow_sdk.instance_settings import SecretsNotEnabledError
     try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        creds = UserHubCredentials(api_key=raw)
-        save_credentials(creds)
-        return creds
-
-    if isinstance(parsed, dict):
-        if "api_key" in parsed:
-            return UserHubCredentials.model_validate(parsed)
-        if "token" in parsed:
-            creds = UserHubCredentials.from_login_payload(parsed)
-            save_credentials(creds)
-            return creds
-
-    creds = UserHubCredentials(api_key=parsed if isinstance(parsed, str) else raw)
-    save_credentials(creds)
-    return creds
-
-
-def clear_credentials() -> None:
-    """Delete the credential keyring entry. Idempotent."""
-    try:
-        keyring.delete_password(SERVICE_NAME, _api_key_name())
-    except keyring.errors.PasswordDeleteError:
-        pass
+        sod = _sod()
+    except SecretsNotEnabledError:
+        return
+    uid = user_id or _active_user_id()
+    for field in (SOD_API_KEY, SOD_REFRESH_TOKEN, SOD_EXPIRES_AT, SOD_USER):
+        # Clear this user's scoped entries AND the legacy flat slot. The flat
+        # slot is a single pre-per-user (or headless set_api_key) slot, not a
+        # per-user one, so clearing it on logout never touches another user's
+        # scoped credentials — but it does prevent a flat key from being
+        # orphaned when creds were written flat yet cleared with a pointer set.
+        if uid:
+            sod.delete(_scoped_key(field, uid))
+        sod.delete(field)

@@ -31,6 +31,9 @@ _WALK_IGNORED: frozenset[str] = frozenset({
     ".git", "node_modules", ".venv", "venv", "__pycache__",
     ".tox", "dist", "build", ".eggs", ".mypy_cache", ".pytest_cache",
     ".ruff_cache", ".next", ".nuxt", "coverage", ".cache",
+    # macOS zip-extraction junk: __MACOSX holds only AppleDouble (._*)
+    # resource-fork sidecars — binary, never real content.
+    "__MACOSX",
 })
 
 
@@ -60,21 +63,23 @@ def load_gitignore_stack(root: Path) -> GitignoreStack:
     """
     stack: GitignoreStack = []
     gi = root / ".gitignore"
-    if gi.is_file():
-        try:
+    # The is_file() stat itself can raise (e.g. PermissionError inside an
+    # unreadable mount) — one bad directory must skip, never abort the walk.
+    try:
+        if gi.is_file():
             lines = gi.read_text(encoding="utf-8", errors="replace").splitlines()
             stack.append((root, GitIgnoreSpec.from_lines(lines)))
-        except OSError:
-            pass
+    except OSError:
+        pass
     return stack
 
 
 def push_gitignore(stack: GitignoreStack, dir_path: Path) -> int:
     """If ``dir_path`` has a ``.gitignore``, push onto stack. Return pushes (0 or 1)."""
     gi = dir_path / ".gitignore"
-    if not gi.is_file():
-        return 0
     try:
+        if not gi.is_file():
+            return 0
         lines = gi.read_text(encoding="utf-8", errors="replace").splitlines()
         stack.append((dir_path, GitIgnoreSpec.from_lines(lines)))
         return 1
@@ -92,10 +97,10 @@ def is_ignored(
       2. If basename in ``_WALK_IGNORED`` → ignored (fast-path).
       3. Walk the gitignore stack outermost→innermost, last-match-wins.
     """
-    if _is_force_include(path, root):
-        return False
     if path.name in _WALK_IGNORED:
         return True
+    if _is_force_include(path, root):
+        return False
 
     ignored = False
     for base_dir, spec in stack:

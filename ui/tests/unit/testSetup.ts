@@ -16,6 +16,12 @@ import { AgenticProcessMock as FlowMock } from '../utils/stub/agentic_process_mo
 // import { SlAlert } from '@shoelace-style/shoelace';
 import { v4 as uuidv4 } from 'uuid';
 import { vi } from 'vitest';
+import { installLeakTripwire } from '../_cleanup';
+
+// Leak tripwire only: the unit tier is fully mocked (no live POSTs), so this is
+// a cheap regression guard for a future unit test that starts creating real
+// backend entities. No-ops silently when no backend is reachable.
+installLeakTripwire(['skill']);
 
 export const currentUser = new User({
   id: uuidv4(),
@@ -73,9 +79,9 @@ for (let i = 0; i < 4; i++) {
   page.expand = page.expand ?? { auth_scopes: [] };
 
   if (page.expand.auth_scopes) {
-    page.expand.auth_scopes.push([pageTypeId]);
+    page.expand.auth_scopes.push([pageTypeId.toString()]);
   } else {
-    page.expand.auth_scopes = [[pageTypeId]];
+    page.expand.auth_scopes = [[pageTypeId.toString()]];
   }
   mockPages.push(page);
 }

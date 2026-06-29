@@ -8,9 +8,10 @@ import {
   FSItem,
 } from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Code, FileText, FlaskConical, RefreshCw, Save } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ActivationEvalsPanel } from './ActivationEvalsPanel';
 import { ActivationMetadataHeader } from './ActivationMetadataHeader';
 import { ActivationRuleView } from './ActivationRuleView';
@@ -36,7 +37,7 @@ export function SkillActivationEditor({
   initialViewMode = 'rule',
 }: SkillActivationEditorProps) {
   useAgentContext(); // Keep context connection for future use
-  const { toast } = useToast();
+  const { t } = useLingui();
   const [activation, setActivation] = useState<ActivationRule | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -108,7 +109,7 @@ export function SkillActivationEditor({
     try {
       // Load activation from the folder (works for both folder selection and file selection)
       if (!activeActivationManager) {
-        setLoadError('No activation manager available');
+        setLoadError(t`No activation manager available`);
         setActivation(null);
         return;
       }
@@ -128,8 +129,8 @@ export function SkillActivationEditor({
       if (error instanceof ActivationLoadError || error instanceof ActivationParseError) {
         setLoadError(error.message);
       } else {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        setLoadError(`Failed to load activation rule: ${errorMessage}`);
+        const errorMessage = error instanceof Error ? error.message : t`Unknown error`;
+        setLoadError(t`Failed to load activation rule: ${errorMessage}`);
       }
       setActivation(null);
     } finally {
@@ -190,16 +191,15 @@ export function SkillActivationEditor({
       }
 
       onActivationUpdated?.();
-      toast({
-        title: 'Saved',
-        description: 'Activation rule saved successfully.',
+      notify.success({
+        title: t`Saved`,
+        message: t`Activation rule saved successfully.`,
       });
     } catch (error) {
       console.error('[SkillActivationEditor] Failed to save:', error);
-      toast({
-        title: 'Save Failed',
-        description: 'Failed to save activation rule. Please check the format.',
-        variant: 'destructive',
+      notify.error({
+        title: t`Save Failed`,
+        message: t`Failed to save activation rule. Please check the format.`,
       });
     } finally {
       setIsSaving(false);
@@ -213,7 +213,6 @@ export function SkillActivationEditor({
     editedRuleContent,
     editedTriggerContent,
     onActivationUpdated,
-    toast,
   ]);
 
   if (isLoading) {
@@ -235,7 +234,7 @@ export function SkillActivationEditor({
     const isNotFound = loadError?.includes('not found');
     const isInvalidFormat =
       loadError?.includes('Invalid rule.md') || loadError?.includes('Missing') || loadError?.includes('frontmatter');
-    const errorTitle = isInvalidFormat ? 'Invalid rule.md Format' : isNotFound ? 'Rule Not Found' : 'Failed to Load';
+    const errorTitle = isInvalidFormat ? t`Invalid rule.md Format` : isNotFound ? t`Rule Not Found` : t`Failed to Load`;
 
     return (
       <div className="flex h-full flex-1 flex-col bg-background">
@@ -246,15 +245,15 @@ export function SkillActivationEditor({
         </div>
         <div className="flex flex-1 items-center justify-center p-8 text-center">
           <div className="max-w-md">
-            <p className="text-muted-foreground">{loadError || 'Unknown error loading activation rule'}</p>
+            <p className="text-muted-foreground">{loadError || t`Unknown error loading activation rule`}</p>
             {isInvalidFormat && (
               <p className="mt-2 text-sm text-muted-foreground">
-                rule.md files require YAML frontmatter with at least a name field.
+                <Trans>rule.md files require YAML frontmatter with at least a name field.</Trans>
               </p>
             )}
             <Button variant="outline" className="mt-4" onClick={() => void loadActivation()}>
               <RefreshCw className="mr-2 h-4 w-4" />
-              Retry
+              <Trans>Retry</Trans>
             </Button>
           </div>
         </div>
@@ -271,7 +270,7 @@ export function SkillActivationEditor({
       <div className="flex h-[52px] items-center justify-between border-b bg-muted/50 px-3">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium">{activation.metadata.name}</h3>
-          {hasChanges && <span className="text-xs text-muted-foreground">(unsaved changes)</span>}
+          {hasChanges && <span className="text-xs text-muted-foreground"><Trans>(unsaved changes)</Trans></span>}
         </div>
 
         <div className="flex items-center gap-2">
@@ -282,37 +281,37 @@ export function SkillActivationEditor({
               size="sm"
               className="rounded-r-none border-r"
               onClick={() => setViewMode('rule')}
-              title="Edit rule.md"
+              title={t`Edit rule.md`}
             >
               <FileText className="mr-1 h-4 w-4" />
-              Rule
+              <Trans>Rule</Trans>
             </Button>
             <Button
               variant={viewMode === 'trigger' ? 'secondary' : 'ghost'}
               size="sm"
               className="rounded-none border-r"
               onClick={() => setViewMode('trigger')}
-              title="Edit trigger.py"
+              title={t`Edit trigger.py`}
             >
               <Code className="mr-1 h-4 w-4" />
-              Trigger
+              <Trans>Trigger</Trans>
             </Button>
             <Button
               variant={viewMode === 'evals' ? 'secondary' : 'ghost'}
               size="sm"
               className="rounded-l-none"
               onClick={() => setViewMode('evals')}
-              title="Run evaluations"
+              title={t`Run evaluations`}
             >
               <FlaskConical className="mr-1 h-4 w-4" />
-              Evals
+              <Trans>Evals</Trans>
             </Button>
           </div>
 
           {/* Save Button */}
           <Button size="sm" onClick={() => void handleSave()} disabled={!hasChanges || isSaving}>
             <Save className={`mr-1 h-4 w-4 ${isSaving ? 'animate-pulse' : ''}`} />
-            {isSaving ? 'Saving...' : 'Save'}
+            {isSaving ? t`Saving...` : t`Save`}
           </Button>
         </div>
       </div>

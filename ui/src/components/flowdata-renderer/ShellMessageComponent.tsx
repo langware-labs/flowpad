@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { EnhancedFlowData } from '@src/types/ui-flowdata';
 import { UIFlowData } from '@src/types/ui-flowdata';
 import { useDataStreamText } from '@src/hooks/flow-hooks';
@@ -14,7 +15,7 @@ export function ShellMessageComponent({ flowData }: ShellMessageComponentProps) 
     <div className="shell-message">
       <div className="message-header">
         <span className="message-icon">{icon}</span>
-        <span className="message-role">Shell Command</span>
+        <span className="message-role"><Trans>Shell Command</Trans></span>
         <span className="message-timestamp">{flowData.displayTimestamp}</span>
         {streamState.isStreaming && <span className="streaming-indicator">●</span>}
       </div>

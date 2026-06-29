@@ -18,15 +18,14 @@ from typing import TYPE_CHECKING
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     AgenticProcessContextKey,
-    WorkerDriver,
     WorkerCLIOptions,
     restart_payload_from_cli_options,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
-    find_latest_codex_session_jsonl,
     find_codex_session_jsonl,
+    find_latest_codex_session_jsonl,
     load_session_history as _codex_load_session_history,
     load_transcript_history as _codex_load_transcript_history,
     read_codex_rollout_meta,
@@ -35,8 +34,8 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
     CodexCLIStreamWorker,
 )
+from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.fs_records.agent_status import WorkerStatus
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
@@ -56,6 +55,9 @@ class CodexDriver:
     """Vendor glue for OpenAI Codex. Implements the ``WorkerDriver`` Protocol."""
 
     name = WorkerType.CODEX.value
+    # Codex's TUI needs a discrete Enter after the paste settles, not a
+    # trailing \r in the pasted text (Shell.write_then_submit).
+    pty_submits_on_paste = False
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -68,14 +70,10 @@ class CodexDriver:
         on this), and the runtime path inlines the agent body via
         ``compose_prompt`` instead.
         """
-        from flow_sdk.config import flowpad_assistant_project_root
-
         cmd = CodexCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
-        core_dir = str(flowpad_assistant_project_root())
-        extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-        cmd.add_dirs = [core_dir] + extra
+        cmd.add_dirs = process.resolved_add_dirs
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.skill_names = list(agents_json.keys())
@@ -98,7 +96,7 @@ class CodexDriver:
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
-    async def run_print_turn(
+    async def headless_prompt(
         self,
         process: "AgenticProcess",
         instruction: str,
@@ -112,7 +110,7 @@ class CodexDriver:
         try:
             await process.get_project()
         except Exception:
-            logger.debug("CodexDriver.run_print_turn: get_project failed", exc_info=True)
+            logger.debug("CodexDriver.headless_prompt: get_project failed", exc_info=True)
         if not process.workdir:
             return ApiFailResponse(message="codex prompt: workdir is not set")
 
@@ -124,7 +122,14 @@ class CodexDriver:
             env_vars=dict(cli_cfg.get("env_vars") or {}),
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
-            resume_session_id=process.session_id if process.session_id else None,
+            # Resume ONLY when codex actually has a rollout for this id. Codex
+            # (unlike claude) mints its own rollout id — a preassigned/PTY
+            # ``session_id`` that codex never wrote (e.g. a fresh chat tab, or a
+            # PTY session killed before its first turn) has no rollout, and
+            # ``codex exec resume <unknown-id>`` exits with an error. Starting
+            # fresh lets the worker mint a rollout; its real id is captured from
+            # the stream below and persisted back onto ``process.session_id``.
+            resume_session_id=process.session_id if self.has_resumable_session(process) else None,
         )
 
         worker = CodexCLIStreamWorker.for_process(process.id)
@@ -140,18 +145,26 @@ class CodexDriver:
                 transcript_path.parent.mkdir(parents=True, exist_ok=True)
                 transcript_path.touch()
         except OSError:
-            logger.debug("CodexDriver.run_print_turn: failed to pre-touch transcript", exc_info=True)
+            logger.debug("CodexDriver.headless_prompt: failed to pre-touch transcript", exc_info=True)
 
-        from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+        from flow_sdk.builtin.process_lifecycle import ProcessStatus
         if process.status != ProcessStatus.RUNNING.value:
             process.status = ProcessStatus.RUNNING.value
             try:
                 await process.save()
             except Exception:
-                logger.debug("CodexDriver.run_print_turn: lifecycle save failed", exc_info=True)
+                logger.debug("CodexDriver.headless_prompt: lifecycle save failed", exc_info=True)
 
         process_ref = process
         process_id = process.id
+
+        # Multi-turn correctness: see ClaudeDriver.headless_prompt + the
+        # AgenticProcess._discover_status_from_transcript override.
+        object.__setattr__(process_ref, "_turn_in_flight", True)
+        try:
+            await process_ref.notify_updated()
+        except Exception:
+            logger.exception("CodexDriver.headless_prompt: start-of-turn notify_updated failed")
 
         async def _run_turn() -> None:
             session_id_persisted = False
@@ -164,15 +177,16 @@ class CodexDriver:
                             await process_ref.save()
                             session_id_persisted = True
                         except Exception:
-                            logger.debug("CodexDriver.run_print_turn: session_id save failed", exc_info=True)
+                            logger.debug("CodexDriver.headless_prompt: session_id save failed", exc_info=True)
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:
-                        logger.debug("CodexDriver.run_print_turn: emit_flow_data failed", exc_info=True)
+                        logger.debug("CodexDriver.headless_prompt: emit_flow_data failed", exc_info=True)
             except Exception:
-                logger.exception("CodexDriver.run_print_turn: worker error")
+                logger.exception("CodexDriver.headless_prompt: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
+                object.__setattr__(process_ref, "_turn_in_flight", False)
                 # ``worker_status`` is a computed projection re-derived from
                 # the JSONL tail by ``to_dict`` / ``api_json_serializer``, so
                 # ``save()`` short-circuits when no real entity field changed.
@@ -184,10 +198,13 @@ class CodexDriver:
                 try:
                     await process_ref.notify_updated()
                 except Exception:
-                    logger.exception("CodexDriver.run_print_turn: terminal notify_updated failed")
+                    logger.exception("CodexDriver.headless_prompt: terminal notify_updated failed")
 
         asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
+
+    def stream_worker(self, process: "AgenticProcess") -> CodexCLIStreamWorker:
+        return CodexCLIStreamWorker.for_process(process.id)
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
@@ -207,6 +224,13 @@ class CodexDriver:
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
+
+    def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
+        """Codex discovers skills only from ``$CODEX_HOME/skills`` (a global,
+        non-per-process location), not from a mounted ``--add-dir``."""
+        from flow_sdk.instance_settings import get_instance_settings
+
+        return get_instance_settings().codex_home / "skills"
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Process-local JSONL the headless codex worker tee'd."""
@@ -247,6 +271,13 @@ class CodexDriver:
 
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         return codex_tail_status(transcript_path)
+
+    def has_resumable_session(self, process: "AgenticProcess") -> bool:
+        return bool(process.session_id) and find_codex_session_jsonl(process.session_id) is not None
+
+    def supports_plan_mode(self, process: "AgenticProcess") -> bool:
+        # Codex has no CLI plan-mode equivalent yet; tracked as a follow-up.
+        return False
 
     # ── History materialisation ──────────────────────────────────────────────
 

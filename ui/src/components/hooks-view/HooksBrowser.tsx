@@ -1,7 +1,7 @@
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -12,6 +12,7 @@ import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { createClaudeHooksService, type HookItem, VFSPath } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
+import { useLingui, Trans } from '@lingui/react/macro';
 import { HookEditor } from './HookEditor';
 
 type ScopeFilter = 'all' | 'user' | 'project' | 'managed' | 'plugin';
@@ -94,6 +95,7 @@ interface HooksBrowserProps {
 }
 
 export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrowserProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { computeNode } = useAgentContext();
   const {
@@ -113,7 +115,6 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
   const autoLoadAttempts = useRef(0);
   const highlightRef = useRef<HTMLDivElement>(null);
   const hasScrolled = useRef(false);
-  const { toast } = useToast();
 
   // Editor state
   const [isCreating, setIsCreating] = useState(false);
@@ -258,10 +259,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
   const handleDeleteHook = useCallback(
     (hook: HookItem) => {
       if (!computeNode) {
-        toast({
-          title: 'Cannot delete hook',
-          description: 'No compute node available',
-          variant: 'destructive',
+        notify.error({
+          title: t`Cannot delete hook`,
+          message: t`No compute node available`,
         });
         return;
       }
@@ -269,10 +269,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
       const hooksService = createClaudeHooksService(computeNode);
 
       if (!hooksService.canDeleteHook(hook)) {
-        toast({
-          title: 'Cannot delete hook',
-          description: 'No source file available for this hook',
-          variant: 'destructive',
+        notify.error({
+          title: t`Cannot delete hook`,
+          message: t`No source file available for this hook`,
         });
         return;
       }
@@ -291,10 +290,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
               next.delete(hook.id);
               return next;
             });
-            toast({
-              title: 'Failed to delete hook',
-              description: result.error,
-              variant: 'destructive',
+            notify.error({
+              title: t`Failed to delete hook`,
+              message: result.error,
             });
           }
         })
@@ -305,15 +303,14 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
             next.delete(hook.id);
             return next;
           });
-          const message = err instanceof Error ? err.message : 'Failed to delete hook';
-          toast({
-            title: 'Failed to delete hook',
-            description: message,
-            variant: 'destructive',
+          const message = err instanceof Error ? err.message : t`Failed to delete hook`;
+          notify.error({
+            title: t`Failed to delete hook`,
+            message,
           });
         });
     },
-    [computeNode, toast],
+    [computeNode],
   );
 
   // --- Create / Edit handlers ---
@@ -352,7 +349,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
 
   const handleEditorSave = useCallback(async () => {
     if (!computeNode) {
-      toast({ title: 'No compute node available', variant: 'destructive' });
+      notify.error({ title: t`No compute node available` });
       return;
     }
 
@@ -370,10 +367,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
     }
 
     if (!sourceFile) {
-      toast({
-        title: 'Cannot determine settings file',
-        description: `No existing hooks found for scope "${editorScope}" to determine the settings file path.`,
-        variant: 'destructive',
+      notify.error({
+        title: t`Cannot determine settings file`,
+        message: `No existing hooks found for scope "${editorScope}" to determine the settings file path.`,
       });
       return;
     }
@@ -393,7 +389,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
           flowMetadata,
         );
         if (!result.success) {
-          toast({ title: 'Failed to update hook', description: result.error, variant: 'destructive' });
+          notify.error({ title: t`Failed to update hook`, message: result.error });
           return;
         }
       } else {
@@ -406,7 +402,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
           flowMetadata,
         );
         if (!result.success) {
-          toast({ title: 'Failed to create hook', description: result.error, variant: 'destructive' });
+          notify.error({ title: t`Failed to create hook`, message: result.error });
           return;
         }
       }
@@ -415,10 +411,10 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
       invalidate();
       autoLoadAttempts.current = 0;
       void refresh();
-      toast({ title: editingHook ? 'Hook updated' : 'Hook created' });
+      notify.success({ title: editingHook ? t`Hook updated` : t`Hook created` });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      toast({ title: 'Operation failed', description: message, variant: 'destructive' });
+      notify.error({ title: t`Operation failed`, message });
     }
   }, [
     computeNode,
@@ -434,7 +430,6 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
     invalidate,
     refresh,
     resetEditor,
-    toast,
   ]);
 
   // Check if a hook row matches the highlight criteria
@@ -492,12 +487,12 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
     const canDelete = isSnifferHook ? false : (hooksService?.canDeleteHook(hook) ?? false);
     const canEdit = isSnifferHook ? false : canDelete;
     const deleteTooltip = isSnifferHook
-      ? 'Managed by FlowPad sniffer'
+      ? t`Managed by FlowPad sniffer`
       : canDelete
-        ? 'Delete hook'
+        ? t`Delete hook`
         : hook.scope === 'plugin'
           ? `Managed by plugin: ${hook.plugin_name || 'unknown'}`
-          : 'Cannot delete: no source file';
+          : t`Cannot delete: no source file`;
     const highlighted = isHighlighted(hook);
     const isExpanded = expandedHookId === hook.id;
 
@@ -577,7 +572,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
                 e.stopPropagation();
                 handleStartEdit(hook);
               }}
-              title={canEdit ? 'Edit hook' : 'Cannot edit'}
+              title={canEdit ? t`Edit hook` : t`Cannot edit`}
             >
               <Edit className="h-3 w-3" />
             </Button>
@@ -602,37 +597,37 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
         {isExpanded && (
           <div className="space-y-1.5 border-t bg-muted/20 px-8 py-3 text-xs">
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-              <span className="font-semibold text-muted-foreground">Name</span>
+              <span className="font-semibold text-muted-foreground"><Trans>Name</Trans></span>
               <span>{hook.name}</span>
-              <span className="font-semibold text-muted-foreground">Hook Type</span>
+              <span className="font-semibold text-muted-foreground"><Trans>Hook Type</Trans></span>
               <span>{hook.hook_type}</span>
-              <span className="font-semibold text-muted-foreground">Matcher</span>
+              <span className="font-semibold text-muted-foreground"><Trans>Matcher</Trans></span>
               <span className="font-mono">{hook.matcher || '*'}</span>
-              <span className="font-semibold text-muted-foreground">Command</span>
+              <span className="font-semibold text-muted-foreground"><Trans>Command</Trans></span>
               <span className="break-all font-mono">{hook.command}</span>
               {hook.source_file && (
                 <>
-                  <span className="font-semibold text-muted-foreground">Source File</span>
+                  <span className="font-semibold text-muted-foreground"><Trans>Source File</Trans></span>
                   <span className="break-all">{hook.source_file}</span>
                 </>
               )}
               {hook.path && (
                 <>
-                  <span className="font-semibold text-muted-foreground">Path</span>
+                  <span className="font-semibold text-muted-foreground"><Trans>Path</Trans></span>
                   <span className="break-all">{hook.path}</span>
                 </>
               )}
-              <span className="font-semibold text-muted-foreground">ID</span>
+              <span className="font-semibold text-muted-foreground"><Trans>ID</Trans></span>
               <span className="font-mono">{hook.id}</span>
               {eventCount > 0 && (
                 <>
-                  <span className="font-semibold text-muted-foreground">Calls</span>
+                  <span className="font-semibold text-muted-foreground"><Trans>Calls</Trans></span>
                   <span>{eventCount}</span>
                 </>
               )}
-              <span className="font-semibold text-muted-foreground">Modified</span>
+              <span className="font-semibold text-muted-foreground"><Trans>Modified</Trans></span>
               <span>{formatDate(hook.modified_at)}</span>
-              <span className="font-semibold text-muted-foreground">Created</span>
+              <span className="font-semibold text-muted-foreground"><Trans>Created</Trans></span>
               <span>{formatDate(hook.created_at)}</span>
             </div>
           </div>
@@ -694,7 +689,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search by event, command, matcher, path, scope, or plugin"
+            placeholder={t`Search by event, command, matcher, path, scope, or plugin`}
             className="pl-9"
           />
         </div>
@@ -702,7 +697,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
         <div className="flex flex-wrap items-center gap-2">
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Filter className="h-3.5 w-3.5" />
-            Filters
+            <Trans>Filters</Trans>
           </span>
           <div className="flex flex-wrap rounded-md border">
             {SCOPE_OPTIONS.map((scope, index) => {
@@ -726,7 +721,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
 
           <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
             <X className="mr-1 h-3.5 w-3.5" />
-            Clear filters
+            <Trans>Clear filters</Trans>
           </Button>
           <Button
             type="button"
@@ -739,11 +734,11 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
             }}
           >
             <RefreshCw className={`mr-1 h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
+            <Trans>Refresh</Trans>
           </Button>
           <Button type="button" variant="default" size="sm" onClick={handleStartCreate} disabled={isEditorOpen}>
             <Plus className="mr-1 h-3.5 w-3.5" />
-            Add Hook
+            <Trans>Add Hook</Trans>
           </Button>
         </div>
       </div>
@@ -757,9 +752,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
 
       <div className="divide-y rounded-lg border">
         {isLoading ? (
-          <div className="py-6 text-center text-sm text-muted-foreground">Scanning hooks...</div>
+          <div className="py-6 text-center text-sm text-muted-foreground"><Trans>Scanning hooks...</Trans></div>
         ) : sortedHooks.length === 0 ? (
-          <div className="py-6 text-center text-sm text-muted-foreground">No hooks match your filters</div>
+          <div className="py-6 text-center text-sm text-muted-foreground"><Trans>No hooks match your filters</Trans></div>
         ) : (
           groupedHooks.map((item) => {
             if (item.type === 'group') {
@@ -799,7 +794,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
                         variant="outline"
                         className="shrink-0 border-amber-300 px-1 py-0 text-[10px] text-amber-600"
                       >
-                        managed
+                        <Trans>managed</Trans>
                       </Badge>
                     )}
                     {isPluginGroup && (
@@ -807,7 +802,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
                         variant="outline"
                         className="shrink-0 border-blue-300 px-1 py-0 text-[10px] text-blue-600"
                       >
-                        plugin
+                        <Trans>plugin</Trans>
                       </Badge>
                     )}
                     {groupTotalCount > 0 && (

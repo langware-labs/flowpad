@@ -1,10 +1,12 @@
-import { APIEntity, FSRef, config, systemTools } from '@sdk';
-import { EntityFactory } from '@sdk/schema/factory';
+import { APIEntity, FSRef, apiClient, dataManager, systemTools } from '@sdk';
+import { useEntityOps } from '@sdk/react/hooks';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
-const stripLeadingSlash = (p: string | undefined | null): string =>
-  p ? (p.startsWith('/') ? p.slice(1) : p) : '';
+const stripLeadingSlash = (p: unknown): string => {
+  if (typeof p !== 'string' || p.length === 0) return '';
+  return p.startsWith('/') ? p.slice(1) : p;
+};
 
 /**
  * Discriminator for entity-by-path resolution lifecycle.
@@ -112,16 +114,29 @@ export function useEntityByPath<T extends APIEntity<T>>(
   } = useQuery<T[]>({
     queryKey: bulkKey,
     queryFn: async () => {
-      const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/${type}?include_system=true&limit=5000`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`failed to fetch ${type}: ${resp.status}`);
-      const body = await resp.json();
-      const rows = (body.data ?? []) as Array<Record<string, unknown> & { type?: string }>;
+      const rows = await apiClient.get<Array<Record<string, unknown> & { type?: string }>>(
+        `/graph/${type}?include_system=true&limit=5000`,
+      );
       const out: T[] = [];
-      for (const row of rows) {
+      for (const row of rows ?? []) {
         if (!row.type) row.type = type;
-        const inst = EntityFactory.createEntity(row as never) as T | undefined;
-        if (inst) out.push(inst);
+        try {
+          // Hydrate through the cache-deduping path, NOT `new <Ctor>()` /
+          // `EntityFactory.createEntity` directly. The APIEntity constructor
+          // registers itself into the dataManager store as a side effect, so
+          // building a fresh instance for an id already cached (every refetch,
+          // or another hook holding the same row) collides in
+          // `register_new_entity` ("already registered with different entity").
+          // `updateEntityFromJson` reuses the canonical cached instance on a
+          // hit and only constructs+registers on a true miss.
+          const inst = dataManager.updateEntityFromJson<T>(row as never) as T | undefined;
+          if (inst) out.push(inst);
+        } catch (e) {
+          // Per-row isolation: one unhydratable row (e.g. a non-conforming id
+          // the TypeId ctor rejects) must NOT fail the whole list. Skip it so
+          // the rest — including the doc we're resolving — still resolves.
+          console.warn('[useEntityByPath] skipping unhydratable row', (row as { id?: string }).id, e);
+        }
       }
       return out;
     },
@@ -147,8 +162,11 @@ export function useEntityByPath<T extends APIEntity<T>>(
   // Treat an orphan match the same as "no match" for discover-eligibility:
   // the file is gone, so discoverByPath would 404 anyway. Skip the round-trip.
   const bulkMatchIsOrphan = !!(bulkMatch && (bulkMatch as { orphan?: boolean }).orphan === true);
+  // NB: intentionally NOT gated on ``!bulkError`` — if the bulk list errored
+  // (e.g. a malformed row slipped past per-row isolation), the single-file
+  // discover is exactly the recovery path, so it must still run.
   const shouldDiscover =
-    enabled && autoDiscover && bulkSettled && !bulkMatch && !bulkError;
+    enabled && autoDiscover && bulkSettled && !bulkMatch;
 
   const {
     data: discoverData,
@@ -163,7 +181,7 @@ export function useEntityByPath<T extends APIEntity<T>>(
         if (!row) return NOT_FOUND;
         const rowWithType = row as Record<string, unknown> & { type?: string };
         if (!rowWithType.type) rowWithType.type = type;
-        const inst = EntityFactory.createEntity(rowWithType as never) as T | undefined;
+        const inst = dataManager.updateEntityFromJson<T>(rowWithType as never) as T | undefined;
         return inst ?? NOT_FOUND;
       } catch (err: unknown) {
         // apiClient (axios) throws AxiosError; status lives at error.response.status.
@@ -189,6 +207,24 @@ export function useEntityByPath<T extends APIEntity<T>>(
     void queryClient.invalidateQueries({ queryKey: bulkKey });
     void queryClient.invalidateQueries({ queryKey: discoverKey });
   }, [queryClient, bulkKey, discoverKey]);
+
+  // Self-heal when a matching entity row arrives over the WS after we
+  // already settled on ``missing_asset``. The discover query caches
+  // NOT_FOUND with ``staleTime: Infinity`` so it never re-fires on its
+  // own; we invalidate both the bulk list and the path-keyed discover
+  // result so the next render re-runs the lookup and finds the freshly
+  // indexed row. Filter by ``type`` first to avoid invalidating on
+  // unrelated entity ops.
+  const onEntityOp = useCallback(
+    (_typeId: unknown, op: unknown, _data: unknown) => {
+      if (op !== 'create' && op !== 'update') return;
+      void queryClient.invalidateQueries({ queryKey: bulkKey });
+      void queryClient.invalidateQueries({ queryKey: discoverKey });
+    },
+    [queryClient, bulkKey, discoverKey],
+  );
+  const subscribedTypes = useMemo(() => (enabled ? [type] : []), [enabled, type]);
+  useEntityOps(subscribedTypes, onEntityOp as never);
 
   // Derive resolution state.
   const state: EntityResolutionState = useMemo(() => {

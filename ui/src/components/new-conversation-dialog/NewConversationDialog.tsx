@@ -1,17 +1,17 @@
-import {
-  Conversation,
-  ConversationParticipant,
-  createProjectConversation,
-  getErrorMessagesFromAxios,
-  startBundleConversation,
-} from '@sdk';
-import { sendReply } from '@sdk/entities/notifications';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { ConversationParticipant, hasRemoteParticipant } from '@sdk';
+import type { AssetDescriptor, ConversationSendPayload } from '@sdk';
+import { useAuth } from '@sdk/react/hooks';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
+import { useSendToConversation, type SendTarget } from '@src/hooks/use-send-to-conversation';
+import { useAutoTitle } from '@src/hooks/use-auto-title';
+import { AutofillInput } from '@src/components/ui/autofill-input';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
-import { useLocalUser } from '@src/components/conversation/useLocalUser';
+import { AttachMenu } from '@src/components/conversation/AttachMenu';
+import { MAX_FILE_SIZE_BYTES } from '@src/components/conversation/constants';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import {
   Select,
@@ -20,10 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@src/components/ui/select';
-import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { MessageSquarePlus, Pencil } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface NewConversationDialogProps {
   open: boolean;
@@ -31,112 +31,70 @@ interface NewConversationDialogProps {
 }
 
 export function NewConversationDialog({ open, onClose }: NewConversationDialogProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const ctx = useDataContext();
   const { projects = [] } = useProjects();
-  const { localUser, updateName } = useLocalUser();
+  const { cloudUser, localUser } = useAuth();
+  const { send, busy, error, resetDraft } = useSendToConversation();
 
   const [projectId, setProjectId] = useState<string>('');
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
   const [initialMessage, setInitialMessage] = useState('');
+  const [title, setTitle] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   const [senderName, setSenderName] = useState('');
   const [editingName, setEditingName] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // Default the project picker to the current project on open.
   useEffect(() => {
     if (!open) return;
     setParticipants([]);
     setInitialMessage('');
+    setTitle('');
     setFiles([]);
-    setError(null);
+    setAssetRefs([]);
     setEditingName(false);
     setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
-  }, [open, ctx.project?.id, projects]);
+    resetDraft();
+  }, [open, ctx.project?.id, projects, resetDraft]);
 
-  // Default sender name from git-synced local user. Mirror SendSpecNotificationDialog.
   useEffect(() => {
-    if (localUser?.name) setSenderName(localUser.name);
-  }, [localUser?.name]);
+    const name = cloudUser?.name || cloudUser?.email || localUser?.name || '';
+    if (name) setSenderName(name);
+  }, [cloudUser?.email, cloudUser?.name, localUser?.name]);
 
-  // Cross-user mode: any participant addressed by email triggers the bundle
-  // delivery flow (startBundleConversation). Otherwise we keep the
-  // project-local-only path.
-  const hasEmailParticipant = participants.some(
-    (p) => !!p.email && p.email.includes('@'),
-  );
+  const isRemote = hasRemoteParticipant(participants);
+  const autofillTitle = useAutoTitle(open, participants);
+  const placeholderTitle = autofillTitle;
 
-  // Slack-style placeholder: "<my name>, <participant1>, ..."
-  const myLabel = ctx.user?.name || ctx.user?.email || 'You';
-  const placeholderTitle = useMemo(() => {
-    if (participants.length === 0) return 'New conversation';
-    const others = participants.map((p) => p.name || p.email).join(', ');
-    return `${myLabel}, ${others}`;
-  }, [participants, myLabel]);
-
-  // Cross-user bundle conversations don't require a Project; local-only ones do.
-  const canCreate = !busy && (hasEmailParticipant || !!projectId) && participants.length > 0;
+  const canCreate =
+    !busy
+    && (isRemote || !!projectId)
+    && participants.length > 0
+    && !!initialMessage.trim();
 
   const handleCreate = async () => {
     if (!canCreate) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const hasFiles = files.length > 0;
-      const message = initialMessage.trim();
-
-      let conversationId: string | null;
-      let projectIdForNav: string | null = null;
-
-      if (hasEmailParticipant) {
-        // Bundle delivery — same path as share_task / AskForAssistance, just
-        // without a Task/Spec. Backend stamps project_id on the local
-        // Conversation at create time and includes it as remote_project_id in
-        // the bundle for the receiver's project-mapping flow.
-        const recipient = participants.find((p) => !!p.email)?.email || '';
-        // ``message`` is sent as the initial-message body when there are no
-        // file attachments. With files, defer to the follow-up sendReply so
-        // attachments ride a single FormData call.
-        const result = await startBundleConversation({
-          recipient_id: recipient,
-          message: hasFiles ? undefined : (message || undefined),
-          project_id: projectId || null,
-          sender_name: senderName.trim() || null,
-        });
-        conversationId = result.conversation_id ?? null;
-        if (!conversationId) {
-          throw new Error(result.email_error || 'Failed to start conversation');
-        }
-      } else {
-        const result = await createProjectConversation({
-          project_id: projectId,
-          participants,
-        });
-        conversationId = result.conversation_id;
-        projectIdForNav = result.project_id;
-      }
-
-      if (hasFiles && conversationId) {
-        await sendReply({ conversationId }, message, files);
-      }
-
-      if (conversationId) {
-        navigation.openDock(resolveConversationDockPointer({
-          conversationId,
-          projectId: projectIdForNav,
-        }));
-      }
+    const effectiveTitle = title.trim() || autofillTitle;
+    const target: SendTarget = {
+      kind: 'new',
+      params: {
+        project_id: isRemote ? null : projectId,
+        participants,
+        title: effectiveTitle,
+      },
+    };
+    const payload: ConversationSendPayload = {
+      text: initialMessage.trim(),
+      files: files.length > 0 ? files : undefined,
+      assetReferences:
+        assetRefs.length > 0 ? assetRefs.map((a) => a.typeid) : undefined,
+    };
+    const conversationId = await send(target, payload);
+    if (conversationId) {
+      navigation.openDock(DockPointer.forConversation(conversationId));
       onClose();
-    } catch (err: unknown) {
-      // Axios errors carry the backend's `message` field on `error.response.data`;
-      // `err.message` would just be "Request failed with status code 400".
-      const fromAxios = await getErrorMessagesFromAxios(err);
-      const msg = fromAxios || (err instanceof Error ? err.message : '') || 'Failed to create conversation';
-      setError(msg);
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -151,24 +109,21 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         </DialogHeader>
 
         <div className="flex flex-col gap-4 text-sm">
-          {hasEmailParticipant && (
+          {isRemote && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="font-medium">From:</span>
+              <span className="font-medium"><Trans>From:</Trans></span>
               {editingName ? (
                 <input
                   className="border-b border-input bg-transparent text-xs text-foreground focus:outline-none"
                   value={senderName}
                   onChange={(e) => setSenderName(e.target.value)}
-                  onBlur={async () => {
+                  onBlur={() => {
                     setEditingName(false);
-                    if (senderName.trim() && senderName.trim() !== localUser?.name) {
-                      await updateName(senderName.trim());
-                    }
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') e.currentTarget.blur();
                     if (e.key === 'Escape') {
-                      setSenderName(localUser?.name ?? '');
+                      setSenderName(cloudUser?.name || cloudUser?.email || localUser?.name || '');
                       setEditingName(false);
                     }
                   }}
@@ -181,7 +136,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
                     type="button"
                     onClick={() => setEditingName(true)}
                     className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                    title="Edit sender name"
+                    title={t`Edit sender name`}
                     disabled={busy}
                   >
                     <Pencil className="h-3 w-3" />
@@ -191,16 +146,31 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
             </div>
           )}
 
+          {/* Title — pre-filled from participants + date. Click to select and
+              replace. After any keystroke the autofill is suppressed until the
+              dialog reopens. */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+              <Trans>Title</Trans>
+            </label>
+            <AutofillInput
+              autofill={autofillTitle}
+              value={title}
+              onChange={setTitle}
+              data-testid="conversation-title-input"
+            />
+          </div>
+
           {/* Project — required for project-local conversations, optional for
               cross-user bundle conversations (stamped on the local Conversation
               and shipped as remote_project_id for the receiver's mapping). */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Project{hasEmailParticipant ? ' (optional)' : ''}
+              Project{isRemote ? ' (optional)' : ''}
             </label>
             <Select value={projectId} onValueChange={setProjectId}>
               <SelectTrigger>
-                <SelectValue placeholder={hasEmailParticipant ? 'No project' : 'Select a project'} />
+                <SelectValue placeholder={isRemote ? t`No project` : t`Select a project`} />
               </SelectTrigger>
               <SelectContent>
                 {projects.map((p) => (
@@ -215,36 +185,54 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
           {/* Participants */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Participants
+              <Trans>Participants</Trans>
             </label>
             <ContactPicker
               value={participants}
               onChange={setParticipants}
-              excludeUserId={ctx.user?.id}
+              excludeUserId={cloudUser?.id ?? ctx.user?.id}
               enabled={open}
               testId="participant-input"
             />
           </div>
 
-          {/* Initial message */}
+          {/* Initial message — required: a conversation always starts with one. */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Initial message
+              <Trans>Initial message</Trans>
             </label>
             <textarea
               className="min-h-[80px] rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={initialMessage}
               onChange={(e) => setInitialMessage(e.target.value)}
-              placeholder={hasEmailParticipant ? 'Say hi…' : 'Optional'}
+              placeholder={isRemote ? t`Say hi…` : t`Type your first message…`}
               data-testid="initial-message-input"
             />
           </div>
 
-          {/* Attachments */}
+          {/* Attachments — dropzone for file drag/drop + small menu for File/Asset */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Attachments
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                <Trans>Attachments</Trans>
+              </label>
+              <AttachMenu
+                assetRefs={assetRefs}
+                onAssetRefsChange={setAssetRefs}
+                onFilesPicked={(picked) => {
+                  if (!picked) return;
+                  const next = [...files];
+                  for (const f of Array.from(picked)) {
+                    if (f.size > MAX_FILE_SIZE_BYTES) continue;
+                    if (!next.some((x) => x.name === f.name && x.size === f.size)) {
+                      next.push(f);
+                    }
+                  }
+                  setFiles(next);
+                }}
+                disabled={busy}
+              />
+            </div>
             <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
           </div>
 
@@ -253,16 +241,13 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => void handleCreate()} disabled={!canCreate}>
-            {busy ? 'Creating…' : 'Create'}
+            {busy ? t`Creating…` : t`Create`}
           </Button>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
-
-// Re-export for type completeness
-export type { Conversation };

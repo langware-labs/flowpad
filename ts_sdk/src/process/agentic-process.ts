@@ -26,53 +26,19 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
-import type { ProcessType } from './process-types';
-import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import type { ProcessKind } from './process-types';
+import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
   TranscriptSource as TranscriptSourceType,
 } from '../transcript-analyzer';
 
-// ---------------------------------------------------------------------------
-// Auto-recovery dispatcher — mirrors Shell's static-listener pattern at
-// ts_sdk/src/entities/shell.ts:81-95. A single ConnectionManager listener and
-// a periodic poll fan out to every registered AgenticProcess; each instance's
-// ``reconnect()`` then short-circuits cheaply when nothing is wrong, so the
-// fan-out cost is one ``GET /os-status`` per registered process per tick.
-// ---------------------------------------------------------------------------
-const _agenticProcessRegistry = new Set<AgenticProcess>();
-let _agenticListenersRegistered = false;
-let _pollTimer: ReturnType<typeof setInterval> | null = null;
-const _POLL_INTERVAL_MS = 5000;
-
-function _ensureAgenticStaticListeners(): void {
-  if (_agenticListenersRegistered) return;
-  _agenticListenersRegistered = true;
-  void import('../websocket').then(({ ConnectionManager }) => {
-    const cm = ConnectionManager.getInstance();
-    cm.on('on_reconnected', () => {
-      for (const proc of _agenticProcessRegistry) void proc.reconnect();
-    });
-  });
-  if (_pollTimer === null) {
-    _pollTimer = setInterval(() => {
-      for (const proc of _agenticProcessRegistry) void proc.reconnect();
-    }, _POLL_INTERVAL_MS);
-  }
-}
-
-/**
- * Predicate consumed by ``Shell._onCmReconnected`` so the bare-shell
- * reconnect handler skips shells that are owned by an AgenticProcess. The
- * process layer drives recovery — it knows the session_id, --resume, env
- * injection. Bare ``Shell.start()`` would just spawn an empty PTY.
- */
-export function _isShellOwnedByAgenticProcess(shellId: string): boolean {
-  for (const proc of _agenticProcessRegistry) {
-    if (proc.shell_id === shellId) return true;
-  }
-  return false;
-}
+// Connection membership and PTY recovery are now fully backend-owned:
+//   - membership: PtyRegistry.on_ws_connect/on_ws_disconnect (park/resume) wired
+//     to the WS lifecycle (server/routes/websocket.py).
+//   - mid-session dead-worker respawn: the periodic backend watchdog
+//     (server/pty_recovery.py start_recovery_task).
+// The frontend no longer probes os-status, polls, or re-attaches on reconnect.
 
 /**
  * Result returned by AgenticProcess.spawn().
@@ -82,7 +48,7 @@ export interface SpawnResult {
   /** Set in PTY mode */
   shell?: Shell;
   /** Set in both modes */
-  workerSessionId?: string;
+  workerSessionId?: string | null;
 }
 
 /**
@@ -106,32 +72,6 @@ export interface ProcessState {
 }
 
 /**
- * OS-level status snapshot returned by the backend ``os-status`` action.
- * Single source of truth for "is this process alive right now?". Combines
- * persisted entity status, in-memory PTY-session state on the compute
- * node, and a real PID liveness check (psutil + cmdline match).
- *
- * ``ready`` is the answer to ``AgenticProcess.isAlive()``: true iff the
- * PTY session is alive AND the worker PID matches the recorded session.
- */
-export interface AgenticProcessOSStatus {
-  process_id: string;
-  process_status: string;
-  shell_id: string | null;
-  shell_status: string | null;
-  session_id: string | null;
-  pty_pid: number | null;
-  worker_pid: number | null;
-  worker_name: string | null;
-  pty_alive: boolean;
-  worker_alive: boolean;
-  has_attachable_pty: boolean;
-  ready: boolean;
-  reason: string | null;
-  checked_at: string;
-}
-
-/**
  * Response from get-history action
  */
 interface HistoryResponse {
@@ -148,6 +88,53 @@ interface HistoryResponse {
   use_worker_history: boolean;
 }
 
+export enum AgenticProcessEventName {
+  FirstPrompt = 'first_prompt',
+}
+
+export interface AgenticProcessReportEventResult {
+  accepted: boolean;
+  scheduled: boolean;
+  process_id: string;
+  worker_type?: string | null;
+  session_id: string | null;
+  event_name: AgenticProcessEventName;
+  event_data: Record<string, unknown>;
+  request_id?: string | null;
+  task_name?: string;
+}
+
+/**
+ * One pending prompt in the backend file-backed PromptQueue. Flat shape —
+ * mirrors `flow_sdk/builtin/agentic_process/prompt_queue/prompt_queue.py`.
+ */
+export interface QueueEntry {
+  id: string;
+  prompt: string;
+  source: string;
+  created_at: string;
+}
+
+/**
+ * Reflected state of a process's prompt queue. Read-only on the frontend:
+ * the backend owns the file + the drain; the UI mutates only via the
+ * `enqueue` / `dequeue` / `clear-queue` / `set-queue-enabled` actions.
+ */
+export interface QueueState {
+  enabled: boolean;
+  entries: QueueEntry[];
+}
+
+/** A user-facing markdown doc authored by an AgenticProcess (docs chip). */
+export interface MarkdownDoc {
+  /** Absolute path to the .md file. */
+  path: string;
+  /** Basename of `path`, shown as the chip/row label. */
+  name: string;
+  /** `create` (written via Write) or `update` (written via Edit / re-write). */
+  change: 'create' | 'update';
+}
+
 /**
  * Interface for AgenticProcess entity data
  */
@@ -156,43 +143,75 @@ export interface IAgenticProcess extends IEntity {
   asset_ref?: string;
   workdir?: string | null;
   context_data?: Record<string, unknown>;
-  context_entities?: TypeId[];
+  // ``shared_context_entities`` is inherited from IEntity (wire shape).
+  // ``privateContextEntities`` is exposed by the APIEntity getter — no
+  // field is declared here for it (local-only, never on the wire).
   favorite_index?: number | null;
   readonly status?: ProcessStatus;
   readonly worker_status?: WorkerStatus;
   session_id?: string | null;
+  /**
+   * USD cost of this process's session transcript so far. Computed
+   * server-side from the session jsonl via
+   * flow_sdk.transcript_analyzer.pricing.total_cost_usd; not persisted on
+   * the entity. Null when no session_id exists yet.
+   */
+  total_cost_usd?: number | null;
   use_worker_history?: boolean;
   /** False=direct PTY spawn (default), True=legacy zsh intermediary */
   shell_mode?: boolean;
   /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
   worker_type?: string | null;
   /** Discriminates how this process is being used (chat vs execution). */
-  process_type?: ProcessType | null;
+  process_type?: ProcessKind | null;
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
-  /** Whether this process is visible in the tabs view */
+  /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
   visible?: boolean;
+  /** Transport intent: true → interactive PTY (default, today's behaviour);
+   *  false → headless JSON-stream (no PTY/xterm). Seeds `visible` at launch and
+   *  is kept durable across reload by the loader. Routing stays headless==!visible. */
+  pty_mode?: boolean;
+  /** Backend-computed driver capability: this worker supports CLI plan mode
+   *  (`--permission-mode plan`). Drives the headless-chat plan toggle. */
+  supports_plan_mode?: boolean;
+  /** tabbed / tab_order / last_active_at come from IEntity (base-Entity fields). */
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
+  /** WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted) */
+  connection_id?: string | null;
+  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  auto_rename?: boolean;
   /**
    * Derived: true when the worker is ready for a new user prompt.
    * Computed server-side via ``is_ready_for_input``. Read-only on the wire.
    */
   ready_for_input?: boolean;
+  /**
+   * Epoch-ms timestamp approximating when the worker became ready-for-input
+   * (transcript-file mtime). Stable across refresh so the UI pending-action
+   * store can compare against a persisted ack and avoid re-arming the glow
+   * for a transition the user has already seen. Null when not ready or when
+   * the transcript is unavailable.
+   */
+  ready_for_input_since?: number | null;
   /** @internal — use AgenticProcess.cliOptions getter/setter instead */
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
   additional_dirs?: string[];
+  /** Per-process override for mounting the Flowpad Assistant project
+   *  (--add-dir → its .claude/skills + agents become discoverable). When
+   *  null/undefined it inherits the global ServiceConfig.load_flowpad_assistant.
+   *  Set via {@link enableAssistant}. */
+  load_flowpad_assistant?: boolean | null;
   /** TypeIds of entities materialized under the process's assets dir. */
   embedded_asset_refs?: TypeId[];
   /** Owning project ID */
   project_id?: string | null;
-  /** Encoded project path/name used for worker history and transcript lookup */
-  project_encoded_name?: string | null;
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id?: string | null;
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
-  target_vfs_path?: string | null;
+  target_typeid_str?: string | null;
   /**
    * True when a worker-relevant field changed since the last successful start()
    * while status==RUNNING. Backend sets this automatically via the save-hook;
@@ -200,6 +219,15 @@ export interface IAgenticProcess extends IEntity {
    * Cleared only by start() on its success path.
    */
   restart_required?: boolean;
+  /**
+   * Reason the last worker launch failed to start (the worker exited within
+   * the backend's instant-exit window). Non-null LATCHES the process out of
+   * auto-recovery: the os-status sweep skips it and plain `open` calls are
+   * refused server-side, so a worker that dies on arrival isn't relaunched
+   * every 5s forever. Cleared only by an explicit user retry
+   * (`start({ retry: true })`) or a launch that survives the window.
+   */
+  start_failure?: string | null;
   /**
    * MD5 of the worker-relevant snapshot captured at the last successful start().
    * Compared against the current snapshot on every save() to detect drift.
@@ -224,6 +252,18 @@ export interface IAgenticProcess extends IEntity {
    * the trigger to re-fire.
    */
   plan_path?: string | null;
+  /**
+   * User-facing markdown docs this process authored, oldest-first (tail =
+   * latest). Drives the ribbon's "Open Doc" chip. Plan files / agent-internal
+   * docs are excluded server-side. Persists across reloads.
+   */
+  markdown_docs?: MarkdownDoc[];
+  /**
+   * Reflected prompt-queue state. Computed server-side from the on-disk
+   * `prompt_queue.json` and pushed via `data_op`; never persisted on the
+   * entity and never written from the frontend (mutate via the queue actions).
+   */
+  queue?: QueueState | null;
 }
 
 /**
@@ -297,6 +337,116 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Spawn a visible AgenticProcess tab and (optionally) send an initial
+   * prompt. Mirrors the `Start Claude` / `Start Codex` openers in
+   * TabbedTerminal — use this from any UI surface outside the tab strip
+   * (e.g. an editor "discuss this doc" button) that needs to launch a
+   * harness tab pre-filled with a user prompt.
+   *
+   * @param workerType - `'claude_code'`, `'codex'`, or `'copilot'`
+   * @param prompt - Optional initial user prompt. Placed on the process's
+   *   prompt queue (not injected directly): the backend drains the queue head
+   *   as the worker's launch instruction when the dock starts it, so the
+   *   first prompt boots the worker deterministically (no post-spawn stdin
+   *   race).
+   * @param project - Optional project to run the tab in. Defaults to the active
+   *   `dataContext.project`. Pass an explicit project when the prompt relies on
+   *   project-scoped assets (e.g. a `.claude/skills` skill that only lives in a
+   *   specific system project) so the spawned worker's cwd can discover them.
+   * @returns The spawned AgenticProcess (already navigated to).
+   */
+  static async openTab(
+    workerType: 'claude_code' | 'codex' | 'copilot',
+    prompt?: string,
+    project?: { id?: string; fs_storage_mount_path?: string | null } | null,
+    opts?: { ptyMode?: boolean },
+  ): Promise<AgenticProcess> {
+    const computeNode = dataContext.computeNode;
+    if (!computeNode) throw new Error('[AgenticProcess.openTab] No local compute node');
+    const proj = project ?? dataContext.project;
+    // Transport intent: default PTY (today's behaviour). `ptyMode:false` →
+    // headless launch: `visible:false` so the backend skips the PTY auto-start;
+    // the seeded first prompt drains headlessly server-side.
+    const ptyMode = opts?.ptyMode !== false;
+    // Seed the prompt onto the queue via createProcess (`launchPrompt`), which
+    // enqueues it server-side BEFORE the visible auto-start. The worker then
+    // boots with the queued head as its launch instruction — deterministic,
+    // no post-spawn stdin race (the original "lost first prompt" bug). A
+    // separate enqueue after createProcess would land too late (the worker has
+    // already started).
+    const process = await computeNode.createProcess(
+      {
+        workdir: proj?.fs_storage_mount_path ?? undefined,
+        ...(proj?.id ? { projectId: proj.id } : {}),
+        workerType,
+      },
+      { visible: ptyMode, pty_mode: ptyMode, watchProcess: false, ...(prompt ? { launchPrompt: prompt } : {}) },
+    );
+    process.openTerminalDock();
+    return process;
+  }
+
+  /**
+   * Launch a visible agentic worker in an explicit project workdir — the
+   * single seam for "start a session for *this* thing in *its* project".
+   *
+   * Unlike {@link openTab} (which falls back to the global `dataContext.project`
+   * and never touches the assistant flag), `launch` runs in the caller's
+   * `workdir` and can mount the Flowpad Assistant skills via the per-process
+   * `load_flowpad_assistant` flag — so a conversation session runs in the
+   * conversation's OWN project while still discovering the assistant, instead of
+   * switching the cwd to the `@flowpad_assistant` system project.
+   *
+   * The first prompt rides the prompt queue (`launchPrompt`), enqueued
+   * server-side BEFORE the auto-start: the fresh spawn pops the head as its
+   * launch instruction (deterministic, no post-spawn stdin race). The assistant
+   * flag and provenance links are applied on the same createProcess round-trip,
+   * before the worker boots, so the driver's `--add-dir` set is correct on the
+   * first launch.
+   *
+   * @returns The launched AgenticProcess (terminal dock already opened).
+   */
+  static async launch(opts: {
+    workerType: 'claude_code' | 'codex' | 'copilot';
+    workdir: string;
+    projectId?: string | null;
+    /** First prompt — placed on the queue, popped as the launch instruction. */
+    launchPrompt?: string;
+    /** Mount the Flowpad Assistant skills/agents for this worker. */
+    enableAssistant?: boolean;
+    /** String TypeIds stamped onto the process's `shared_context_entities`. */
+    sharedContextEntities?: string[];
+    /** Discriminator stamped on the new process (e.g. ProcessKind.Conversation). */
+    processType?: ProcessKind;
+    /** Attachment key stamped onto `target_typeid_str` — entity-scoped
+     *  (`TypeId#toString()`) or surface-scoped (`<typeid>/<sub_path>`). Lets
+     *  `useProcessesForTarget` find this process later (e.g. the analyzer for a
+     *  received transcript, keyed `claude_session/<sessionId>`). */
+    target?: string;
+    /** Transport intent: true → interactive PTY (default), false → headless
+     *  JSON-stream (no PTY/xterm). */
+    ptyMode?: boolean;
+  }): Promise<AgenticProcess> {
+    const computeNode = dataContext.computeNode;
+    if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
+    const ptyMode = opts.ptyMode !== false;
+    const process = await computeNode.createProcess(
+      {
+        workdir: opts.workdir,
+        ...(opts.projectId ? { projectId: opts.projectId } : {}),
+        workerType: opts.workerType,
+        ...(opts.enableAssistant ? { loadFlowpadAssistant: true } : {}),
+        ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
+        ...(opts.processType ? { processType: opts.processType } : {}),
+        ...(opts.target ? { targetVfsPath: opts.target } : {}),
+      },
+      { visible: ptyMode, pty_mode: ptyMode, watchProcess: false, ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}) },
+    );
+    process.openTerminalDock();
+    return process;
+  }
+
+  /**
    * Create and activate an AgenticProcess in one call.
    *
    * Replaces the manual `createProcess -> start/watch` pattern.
@@ -349,6 +499,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       workdir: options.workdir,
       visible: workerOptions?.visible,
       shell_mode: options.shellMode,
+      ...(options.targetVfsPath ? { target_typeid_str: options.targetVfsPath } : {}),
     }).save(options.scope ?? []);
 
     if (workerOptions?.headless) {
@@ -429,21 +580,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Resolve a worker/session/thread id to a ready-to-use AgenticProcess.
    *
-   * Single round-trip: backend auto-discovers worker_type (Claude or Codex),
+   * Single round-trip: backend auto-discovers worker_type,
    * resolves cwd + project from the on-disk session record, upserts the
    * AgenticProcess (heals existing or creates+starts a new one), and returns
    * the full entity dict. We hydrate the dataManager cache directly — no
    * follow-up `getById` needed.
    *
    * @param workerId - Claude session id, Codex thread id, or any future worker id.
+   * @param workerType - Optional resolver hint when the caller already knows the worker vendor.
    * @returns The AgenticProcess entity, or `null` if no on-disk session matches.
    */
-  static async getByWorkerId(workerId: string): Promise<AgenticProcess | null> {
+  static async getByWorkerId(workerId: string, workerType?: string | null): Promise<AgenticProcess | null> {
+    // Workflow runs (id `wf_<runId>`) are not worker sessions and never have a
+    // backing AgenticProcess — short-circuit so callers (status indicators,
+    // shell/worker deep-link recovery) don't fire a guaranteed 404.
+    if (workerId.startsWith('wf_')) return null;
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.getByWorkerId] No compute node');
 
     const action = new ActionInfo('terminals', 'compute_node', computeNode.id, 'GET');
     action.subpath = `get_by_worker_id/${workerId}`;
+    const normalizedWorkerType = workerType?.toLowerCase() ?? null;
+    const hint = normalizedWorkerType === 'claude_code' ? 'claude' : normalizedWorkerType;
+    if (hint === 'claude' || hint === 'codex' || hint === 'copilot') {
+      action.queryParameters = { worker_type: hint };
+    }
     try {
       const data = await dataManager.callAction<void, IAgenticProcess | null>(action);
       if (!data) return null;
@@ -474,8 +635,45 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return `<!-- <flow-do id="${instrId}"> -->\n${command}\n<!-- </flow-do> -->`;
   }
 
+  /**
+   * Live interactive terminal — `/dock/shell/agentic_process-<id>`.
+   * Use this when the user wants to attach to (or launch) the running PTY.
+   */
+  get terminalDockPointer(): DockPointerData {
+    return new DockPointerData(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${this.id}`);
+  }
+
+  openTerminalDock(extraOptions?: Record<string, string>): void {
+    const nav = (window as any).navigation as
+      | { openDock: (pointer: DockPointerData, extraOptions?: Record<string, string>) => void }
+      | undefined;
+    nav?.openDock(this.terminalDockPointer, extraOptions);
+  }
+
+  /**
+   * Read-only transcript — `/dock/lens/<worker_type>/transcript/<session_id>`.
+   *
+   * Single-segment ref form. The server-side resolver
+   * (``flow_sdk.transcript_analyzer.resolver``) globs the actual on-disk JSONL
+   * from worker_type + session_id, so callers don't need to know any path
+   * encoding. Falls back to the terminal pointer when no session is attached
+   * yet (fresh process before first message).
+   */
+  get transcriptDockPointer(): DockPointerData {
+    if (!this.session_id) return this.terminalDockPointer;
+    const wt = (this.worker_type ?? 'claude').toLowerCase();
+    const worker = wt === 'codex' ? 'codex' : wt === 'copilot' ? 'copilot' : 'claude';
+    return new DockPointerData(ViewType.LENS, `${worker}/transcript/${this.session_id}`);
+  }
+
+  /**
+   * Default dock pointer — the read-only transcript. Surfaces that historically
+   * meant "attach to terminal" should reference {@link terminalDockPointer}
+   * explicitly. The default is transcript because reading prior runs is the
+   * dominant gesture once a process has terminated.
+   */
   get dockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
+    return this.transcriptDockPointer;
   }
 
   /**
@@ -500,13 +698,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * React component via the ``pickProcessIcon`` registry. Two axes drive
    * the choice:
    *
-   * - **vendor**: ``worker_type`` ('claude' / 'codex' / fallback)
+   * - **vendor**: ``worker_type`` ('claude' / 'codex' / 'copilot' / fallback)
    * - **state**: fresh-start vs ``wasRestoredFromSession``
    */
   get icon(): ProcessIconKey {
     const wt = (this.worker_type ?? '').toLowerCase();
     const restored = this.wasRestoredFromSession;
     if (wt === 'codex') return restored ? 'codex-restore' : 'codex';
+    if (wt === 'copilot') return restored ? 'copilot-restore' : 'copilot';
     // Default to claude — that's what AgenticProcess.spawn produces today
     // (ClaudeCliOptions hardcoded), so an unset worker_type means claude.
     if (wt === '' || wt === 'claude' || wt.startsWith('claude_') || wt.startsWith('claude-')) {
@@ -515,11 +714,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return restored ? 'generic-restore' : 'generic';
   }
 
+  /** @deprecated alias of {@link transcriptDockPointer} */
   get searchDockPointer(): DockPointerData {
-    if (this.session_id && this.project_encoded_name) {
-      return new DockPointerData(ViewType.LENS, `claude/transcript/${this.project_encoded_name}/${this.session_id}`);
-    }
-    return this.dockPointer;
+    return this.transcriptDockPointer;
   }
 
   /** Instruction content being executed */
@@ -531,11 +728,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Persisted context data for session restoration */
   context_data?: Record<string, unknown>;
 
-  /** TypeIds of entities this process is contextually about (task / conversation / spec / project / …). */
-  context_entities?: TypeId[];
+  // TypeIds of entities this process is contextually about (task /
+  // conversation / spec / project / …) now live on the base APIEntity as
+  // ``sharedContextEntities`` (wire-bound) and ``privateContextEntities``
+  // (local). The constructor populates them from the wire field
+  // ``shared_context_entities``.
 
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
+
+  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  auto_rename: boolean = true;
 
   /** Backend-owned lifecycle status. */
   private _status: ProcessStatus = ProcessStatus.NEW;
@@ -564,29 +767,45 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Worker session ID for resume capability */
   session_id?: string | null;
 
-  /** Encoded project path for transcript navigation */
-  project_encoded_name?: string | null;
-
   /** Whether worker manages its own history */
   use_worker_history?: boolean;
 
   /** False=direct PTY spawn (default), True=legacy zsh intermediary */
   shell_mode?: boolean;
 
-  /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
+  /** CLI worker vendor (e.g. 'claude', 'codex', 'copilot'). Drives icon selection. */
   worker_type?: string | null;
 
   /** Discriminates how this process is being used (chat vs execution). */
-  process_type?: ProcessType | null;
+  process_type?: ProcessKind | null;
 
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
 
-  /** Whether this process is visible in the tabs view */
+  /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
   visible?: boolean;
+
+  /** Transport intent: true → interactive PTY (default); false → headless
+   *  JSON-stream (no PTY/xterm). Durable across reload; seeds `visible` at launch. */
+  pty_mode?: boolean;
+
+  /** Backend-computed driver capability (claude only, for now). */
+  supports_plan_mode?: boolean;
+
+  /** Tab-strip membership (base-Entity field; see IEntity.tabbed). */
+  tabbed?: boolean;
+
+  /** Strip ordering among member tabs (base-Entity field; 0 = unassigned). */
+  tab_order?: number;
+
+  /** Epoch-ms of last tab activation (base-Entity field; legacy ISO tolerated). */
+  last_active_at?: number | string | null;
 
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
+
+  /** WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted) */
+  connection_id?: string | null;
 
   /** Owning project ID */
   project_id?: string | null;
@@ -595,7 +814,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   collaboration_room_id: string | null = null;
 
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
-  target_vfs_path: string | null = null;
+  target_typeid_str: string | null = null;
 
   /**
    * True when a worker-relevant field changed since the last successful start()
@@ -603,6 +822,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * this as the "Restart" affordance on the process toolbar.
    */
   restart_required: boolean = false;
+
+  /**
+   * Reason the last worker launch failed to start (instant-exit latch).
+   * Non-null excludes this process from auto-recovery; clear it via an
+   * explicit user retry — `start({ retry: true })` — never automatically.
+   */
+  start_failure: string | null = null;
 
   /**
    * MD5 of the worker-relevant snapshot captured at the last successful start().
@@ -643,6 +869,37 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.cli_config = cmd.toJson();
   }
 
+  /** Enable the Flowpad Assistant mount for this process — its
+   *  `.claude/skills` + agents become discoverable via `--add-dir`.
+   *
+   *  Sets the per-process `load_flowpad_assistant` flag, notifies local
+   *  subscribers via an entity event, then persists. The backend driver reads
+   *  the flag via `assistant_enabled` (falling back to the global default) when
+   *  building the worker command; because the flag changes the resolved
+   *  `--add-dir` set, the backend `save()` hook recomputes `restart_required`
+   *  naturally and reflects both the flag and `restart_required` back to the
+   *  frontend "as is" (no special-casing). */
+  async enableAssistant(): Promise<this> {
+    return this.setAssistantEnabled(true);
+  }
+
+  /** Set the per-process Flowpad Assistant mount flag explicitly (true/false)
+   *  and persist. Backs the header toggle chip in the asset manager.
+   *
+   *  Like {@link enableAssistant}, this only flips `load_flowpad_assistant` and
+   *  saves — because the flag changes the resolved `--add-dir` set, the backend
+   *  `save()` hook recomputes `restart_required` on its own and reflects both
+   *  the flag and the restart-required state back to the frontend as-is. */
+  async setAssistantEnabled(enabled: boolean): Promise<this> {
+    this.load_flowpad_assistant = enabled;
+    // Optimistic local notify so subscribers can react before the round-trip.
+    this.onEntityEvent(enabled ? 'assistant.enabled' : 'assistant.disabled', {
+      load_flowpad_assistant: enabled,
+    });
+    await this.save();
+    return this;
+  }
+
   /** Append a directory to additional_dirs (passed to Claude via --add-dir). */
   async addDir(path: string): Promise<void> {
     const actionInfo = new ActionInfo('add-dir', AgenticProcess.type, this.id, 'POST');
@@ -661,10 +918,87 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.additional_dirs = (this.additional_dirs ?? []).filter((d) => d !== path);
   }
 
+  // ── Prompt queue (backend-owned; these are thin action wrappers) ───────────
+  // The backend writes the queue file, runs the drain, and pushes the new
+  // `queue` state back via `data_op`. These methods never mutate `this.queue`
+  // locally — the reflection round-trip is the single source of truth.
+
+  /** Append a prompt to the tail of the queue. */
+  async enqueue(prompt: string, source: string = 'ui'): Promise<void> {
+    const actionInfo = new ActionInfo('enqueue', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { prompt, source };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Remove a queued prompt by its id (string) or list index (number). */
+  async dequeue(idOrIndex: string | number): Promise<void> {
+    const actionInfo = new ActionInfo('dequeue', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = typeof idOrIndex === 'number' ? { index: idOrIndex } : { id: idOrIndex };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Drop every pending prompt. */
+  async clearQueue(): Promise<void> {
+    const actionInfo = new ActionInfo('clear-queue', AgenticProcess.type, this.id, 'POST');
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Enable/disable draining. Disabled keeps entries but stops injection. */
+  async setQueueEnabled(enabled: boolean): Promise<void> {
+    const actionInfo = new ActionInfo('set-queue-enabled', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { enabled };
+    await dataManager.callAction(actionInfo);
+  }
+
+  // ── Pin-from-history (docs/prompt-library.md) ───────────────────────────────
+  // Pin = create/reuse a library Prompt from a history item's text; the
+  // backend mutually cross-links the Prompt and this process into each
+  // other's PRIVATE context entities. Unpin = remove link + delete the
+  // prompt from the library. Private context is backend-mutated only.
+
+  /** Pin a history item's text into the prompt library. Idempotent by normalized text. */
+  async pinPrompt(text: string, name?: string): Promise<{ promptId: string }> {
+    const actionInfo = new ActionInfo('pin-prompt', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { text, ...(name ? { name } : {}) };
+    const result = await dataManager.callAction<
+      { text: string; name?: string },
+      { prompt_id: string; pinned: boolean }
+    >(actionInfo);
+    return { promptId: result.prompt_id };
+  }
+
+  /** Unpin: remove the prompt↔process link and delete the prompt from the library. */
+  async unpinPrompt(promptId: string): Promise<void> {
+    const actionInfo = new ActionInfo('unpin-prompt', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { prompt_id: promptId };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Record that this process executed a library prompt: mutual private
+   *  cross-link + usage bump (conversation Approve & Execute path). */
+  async linkExecutedPrompt(promptId: string): Promise<void> {
+    const actionInfo = new ActionInfo('link-executed-prompt', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { prompt_id: promptId };
+    await dataManager.callAction(actionInfo);
+  }
+
   async shell(): Promise<Shell | null> {
     if (!this.shell_id) return null;
+    const w = (typeof window !== 'undefined' ? window : undefined) as { __shellNavT0?: number } | undefined;
+    const t0 = w?.__shellNavT0;
+    const stamp = (label: string, start: number) => {
+      if (t0 === undefined) return;
+      const now = performance.now();
+      // eslint-disable-next-line no-console
+      console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
+    };
+    const sImport = performance.now();
     const { Shell } = await import('../entities/shell');
-    return Shell.getById(this.shell_id);
+    stamp('process.shell: dynamic import("../entities/shell")', sImport);
+    const sGet = performance.now();
+    const result = await Shell.getById<Shell>(this.shell_id);
+    stamp('process.shell: Shell.getById', sGet);
+    return result;
   }
 
   /** The PTY connection for this process — delegates to the linked Shell. */
@@ -672,6 +1006,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (!this.shell_id) return undefined;
     const entity = dataManager.getByTypeIdFromCache(new TypeId('shell', this.shell_id)) as any;
     return entity?.ptyConnection;
+  }
+
+  async printPty(): Promise<void> {
+    const sh = await this.shell();
+    sh?.printPty();
   }
 
   // ── Line / trigger event surface ──────────────────────────────────────────
@@ -725,10 +1064,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *
    * Returns an unsubscribe function.
    */
-  onPlan<T = string | null>(
-    options: { validate?: boolean },
-    handler: (payload: T) => void,
-  ): () => void {
+  onPlan<T = string | null>(options: { validate?: boolean }, handler: (payload: T) => void): () => void {
     const validate = options.validate ?? false;
 
     const check = async (): Promise<void> => {
@@ -741,7 +1077,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       }
     };
 
-    const unsubStatus = this.on('status', () => { void check(); });
+    const unsubStatus = this.on('status', () => {
+      void check();
+    });
     void check();
 
     return () => unsubStatus();
@@ -782,10 +1120,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const { fromJson, UserMessageEntry } = await import('../transcript-analyzer');
     const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
     actionInfo.subpath = 'prompts';
-    const response = await dataManager.callAction<
-      unknown,
-      { prompts?: Record<string, unknown>[] | null }
-    >(actionInfo);
+    const response = await dataManager.callAction<unknown, { prompts?: Record<string, unknown>[] | null }>(actionInfo);
     const raw = response?.prompts ?? [];
     const out: import('../transcript-analyzer').UserMessageEntry[] = [];
     for (const r of raw) {
@@ -799,12 +1134,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Fetch the parsed worker transcript from the process-specific transcript source.
    */
   async getTranscript(): Promise<import('../transcript-analyzer').AgentTranscript> {
-    const {
-      AgentTranscript,
-      TranscriptFormat,
-      TranscriptSource,
-      fromJson,
-    } = await import('../transcript-analyzer');
+    const { AgentTranscript, TranscriptFormat, TranscriptSource, fromJson } = await import('../transcript-analyzer');
     const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
     actionInfo.subpath = 'full';
     const response = await dataManager.callAction<
@@ -822,10 +1152,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const rawEntries = response?.entries ?? [];
     const entries = rawEntries.map((entry) => fromJson(entry));
     const format = Object.values(TranscriptFormat).includes(response?.transcript_format as never)
-      ? response?.transcript_format as TranscriptFormatType
+      ? (response?.transcript_format as TranscriptFormatType)
       : null;
     const source = Object.values(TranscriptSource).includes(response?.transcript_source as never)
-      ? response?.transcript_source as TranscriptSourceType
+      ? (response?.transcript_source as TranscriptSourceType)
       : null;
     const path = response?.path ?? response?.transcript_path ?? '';
     return new AgentTranscript(
@@ -846,8 +1176,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   _instructionFile?: InstructionFile;
   _context?: AgenticContext;
 
-  /** Completion state */
-  private _completed: boolean = false;
+  /** Last error observed when ``workerStatus`` transitioned to a failure
+   *  state. Set by ``_handleError``; never set autonomously by the SDK. */
   private _error: Error | null = null;
 
   /** History loading state */
@@ -878,21 +1208,52 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.process_type = entity.process_type ?? null;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
+    // Default true so an entity that predates the field (or any caller that
+    // doesn't set it) behaves exactly as today (PTY). Only an explicit `false`
+    // selects headless.
+    this.pty_mode = entity.pty_mode ?? true;
+    this.supports_plan_mode = entity.supports_plan_mode ?? false;
+    this.tabbed = entity.tabbed ?? entity.visible ?? false;
+    this.tab_order = entity.tab_order ?? 0;
+    this.last_active_at = entity.last_active_at ?? null;
     this.sidecar_shell_id = entity.sidecar_shell_id;
+    this.connection_id = entity.connection_id;
+    this.auto_rename = entity.auto_rename ?? true;
     this.project_id = entity.project_id ?? null;
-    this.project_encoded_name = entity.project_encoded_name ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
-    this.target_vfs_path = entity.target_vfs_path ?? null;
+    this.target_typeid_str = entity.target_typeid_str ?? null;
     this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;
     this.input_folder = entity.input_folder ? FSRef.fromJson(entity.input_folder) : null;
     this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;
     this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
     this.plan_path = entity.plan_path ?? null;
+    this.markdown_docs = entity.markdown_docs ?? [];
+    this.queue = entity.queue ?? null;
   }
+
+  // NOTE: project_id projection moved server-side. The base Python
+  // ``Entity.get_implicit_private_context_entities`` projects project_id
+  // for every entity with one; AgenticProcess inherits the projection
+  // automatically. FE displays the merged ``private_context_entities``
+  // from the wire as-is.
 
   // ── Field declarations (populated by constructor / wire data) ──────────────
 
   plan_path: string | null = null;
+
+  /**
+   * User-facing markdown docs authored by this process, oldest-first. Tail is
+   * the latest doc shown by the ribbon's docs chip; the chevron/popover lists
+   * the rest when there is more than one. Backend-owned (persisted field).
+   */
+  markdown_docs: MarkdownDoc[] = [];
+
+  /**
+   * Reflected prompt-queue state (backend-owned). Populated by `deepAssign`
+   * off the wire and refreshed on every `data_op`; the panel reads this and
+   * mutates exclusively through the queue action methods below.
+   */
+  queue: QueueState | null = null;
 
   /**
    * Get the instruction file (if set locally)
@@ -950,10 +1311,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Whether this process has completed execution.
+   * Whether this process has reached a terminal worker_status (complete /
+   * error / interrupted). Derived from ``workerStatus`` — the SDK keeps no
+   * separate completion flag; backend's projection is the single source of
+   * truth and we mirror it.
    */
   get completed(): boolean {
-    return this._completed;
+    return isWorkerTerminal(this.workerStatus);
   }
 
   /**
@@ -961,14 +1325,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   get error(): Error | null {
     return this._error;
-  }
-
-  /**
-   * Handle incoming FlowData from backend entity notification.
-   */
-  handleFlowData(flowData: FlowData): void {
-    super.handleFlowData(flowData);
-    this._handleFlowData(flowData);
   }
 
   /**
@@ -992,8 +1348,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       yield data;
     }
 
-    // If already completed, we're done
-    if (this._completed) {
+    // If the worker has already reached a terminal state, we're done.
+    if (isWorkerTerminal(this.workerStatus)) {
       return;
     }
 
@@ -1101,6 +1457,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.flowDataStream.ingest(userFlowData);
   }
 
+  async reportEvent(
+    name: AgenticProcessEventName,
+    data: Record<string, unknown> = {},
+  ): Promise<AgenticProcessReportEventResult> {
+    const actionInfo = new ActionInfo('report_event', AgenticProcess.type, this.id, 'GET');
+    actionInfo.subpath = name;
+    const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    actionInfo.queryParameters = {
+      data: JSON.stringify(data),
+      request_id: requestId,
+    };
+    return dataManager.callAction<void, AgenticProcessReportEventResult>(actionInfo);
+  }
+
   /**
    * Load history from backend and populate the flowDataStream.
    *
@@ -1187,12 +1557,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
 
-        // Check if the worker already reached a terminal state.
+        // History replay can reveal that the worker already reached a
+        // terminal state by the time we mounted. Fire the matching
+        // handler so consumers waiting on the ``complete`` / ``error``
+        // event resolve instead of hanging.
         if (isWorkerTerminal(this.workerStatus)) {
           if (this.workerStatus === WorkerStatus.COMPLETE) {
-            this._markComplete();
+            this._handleComplete();
           } else {
-            this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+            this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
           }
         }
 
@@ -1223,7 +1596,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @throws Error if execution fails
    */
   async waitForComplete(): Promise<void> {
-    if (this._completed) {
+    if (isWorkerTerminal(this.workerStatus)) {
       if (this._error) throw this._error;
       return;
     }
@@ -1325,8 +1698,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const actionInfo = new ActionInfo('attach-embedded-asset', AgenticProcess.type, this.id, 'POST');
       actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
+      // The WS broadcast lands embedded_asset_refs as plain stringified TypeIds
+      // (the server serializes them that way); avoid duplicating by comparing
+      // on the string form instead of property-by-property on TypeId.
+      const refStr = ref.toString();
       const current = this.embedded_asset_refs ?? [];
-      const has = current.some((r) => r.type === ref.type && r.id === ref.id);
+      const has = current.some((r) => String(r) === refStr);
       if (!has) this.embedded_asset_refs = [...current, ref];
     },
     detach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
@@ -1334,8 +1711,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const actionInfo = new ActionInfo('detach-embedded-asset', AgenticProcess.type, this.id, 'POST');
       actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
-      this.embedded_asset_refs = (this.embedded_asset_refs ?? [])
-        .filter((r) => !(r.type === ref.type && r.id === ref.id));
+      const refStr = ref.toString();
+      this.embedded_asset_refs = (this.embedded_asset_refs ?? []).filter((r) => String(r) !== refStr);
     },
     list: (): TypeId[] => [...(this.embedded_asset_refs ?? [])],
   };
@@ -1360,7 +1737,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * PTY-interactive processes (visible=true) will 409 on this action — they
    * use ``inject``/``executeInstruction`` instead.
    */
-  async prompt(text: string, abortController?: AbortController): Promise<void> {
+  async prompt(
+    text: string,
+    abortController?: AbortController,
+    opts?: { permissionMode?: PermissionMode },
+  ): Promise<void> {
     const { FlowStreamProcessor } = await import('../flow_processing/flow-stream-processor');
     const { FlowEvents } = await import('../flow_processing/flow-events');
 
@@ -1378,7 +1759,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       true, // streaming
       ctrl.signal,
     );
-    actionInfo.bodyParameters = { message: text };
+    actionInfo.bodyParameters = {
+      message: text,
+      ...(opts?.permissionMode ? { permission_mode: opts.permissionMode } : {}),
+    };
 
     const response = await dataManager.callAction<unknown, Response>(actionInfo);
     if (!response || !response.body) {
@@ -1389,7 +1773,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     processor.on(FlowEvents.DATA, (fd: FlowData) => {
       try {
         this.flowDataStream.ingest(fd);
-        this._handleFlowData(fd);
       } catch (err) {
         console.error('[AgenticProcess.prompt] ingest error', err);
       }
@@ -1410,6 +1793,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
   }
 
+  /**
+   * Interrupt the in-flight turn from a single call site. For a visible PTY
+   * process this sends Ctrl-C (``\x03``, no trailing newline) to the same PTY
+   * the xterm types into; for a print-mode process it cancels the streaming
+   * subprocess via ``cancelPrompt``. Lets both the chat pane and the floating
+   * assistant share one "stop generating" handler.
+   */
+  async interruptTurn(): Promise<void> {
+    if (this.visible && this.shell_id) {
+      const pty = this.ptyConnection ?? (await Shell.getById<Shell>(this.shell_id))?.ptyConnection;
+      if (pty) {
+        await pty.sendInput('\x03');
+        return;
+      }
+    }
+    await this.cancelPrompt();
+  }
+
   async executeInstruction(
     instruction: string,
     options: { sync?: boolean; workerSessionId?: string } = {},
@@ -1428,8 +1829,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       throw new Error('Process is already running');
     }
 
-    // Reset completion flag for new instruction (multi-turn support)
-    this._completed = false;
+    // Clear the cached error from any prior turn. We do NOT touch
+    // ``workerStatus`` — that's backend-owned. ``headless_prompt`` on the
+    // server flips its projection to ``running`` and broadcasts, and the
+    // resulting entity-op is what the SDK mirrors as the new turn's edge.
     this._error = null;
 
     // Optimistically echo user message into the stream
@@ -1449,12 +1852,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /**
    * Wait for execution to complete.
-   * Listens for the 'complete' event which is emitted when status FlowData
-   * with complete=true is received (following Flow's pattern of state via FlowData).
+   *
+   * Listens for the ``complete`` / ``error`` events which fire when the
+   * SDK observes ``workerStatus`` transitioning to a terminal value via
+   * an entity-op broadcast. Backend is the sole authority on that
+   * transition; the SDK only reacts.
    */
   private async waitForExecutionComplete(): Promise<void> {
-    // If already completed, return immediately
-    if (this._completed) {
+    if (isWorkerTerminal(this.workerStatus)) {
+      if (this._error) throw this._error;
       return;
     }
 
@@ -1473,7 +1879,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         }
       };
 
-      // Listen for completion event (emitted by _handleFlowData when status with complete=true is received)
       const unsubComplete = this.on('complete', () => {
         done('resolve');
       });
@@ -1482,9 +1887,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         done('reject', err instanceof Error ? err : new Error(String(err)));
       });
 
-      // Check if already completed (race condition safety)
-      if (this._completed) {
-        done('resolve');
+      // Race: a terminal broadcast could land between the entry check above
+      // and listener installation. Re-check after subscribing.
+      if (isWorkerTerminal(this.workerStatus)) {
+        done(this._error ? 'reject' : 'resolve', this._error ?? undefined);
       }
     });
   }
@@ -1599,10 +2005,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async close(): Promise<void> {
     if (this.status === ProcessStatus.STOPPING || this.status === ProcessStatus.STOPPED) return;
 
-    // Permanent teardown — deregister so neither the poll nor the
-    // on_reconnected dispatcher tries to relaunch this process.
+    // Permanent teardown — mark user intent so the backend recovery watchdog
+    // (which respawns dead workers) does not relaunch this process.
     this._userInitiatedStop = true;
-    _agenticProcessRegistry.delete(this);
 
     if (this.shell_id) {
       const shell = Shell.getByIdFromCache(this.shell_id);
@@ -1643,6 +2048,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
      * worker's first paint isn't wrapped at 80 cols on a wide viewport. */
     cols?: number;
     rows?: number;
+    /** Explicit user retry of a failed-to-start process: clears the
+     * server-side `start_failure` latch before launching. Without it the
+     * backend refuses to respawn a latched process. */
+    retry?: boolean;
   }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
     // No client-side STOPPING guard. The server's ``open`` action runs
@@ -1663,7 +2072,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
       unknown,
-      { shell_id: string; pty_id: string; session_id: string; status?: string; shell: Record<string, unknown> } | null
+      {
+        shell_id: string;
+        pty_id: string;
+        session_id: string | null;
+        status?: string;
+        shell: Record<string, unknown>;
+      } | null
     >(actionInfo);
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
@@ -1681,67 +2096,19 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       if (shell.compute_node_id) shell.ptyConnection.computeNodeId = shell.compute_node_id;
     }
     await shell.attachPty({
-      cols: options?.cols ?? Shell.DEFAULT_COLS,
-      rows: options?.rows ?? Shell.DEFAULT_ROWS,
+      // Real xterm size only — undefined means "keep current size, just repaint".
+      cols: options?.cols,
+      rows: options?.rows,
       timeout: options?.ptyTimeout,
       ptyId: result.pty_id,
     });
-    // Successful open clears any prior user-stop intent and registers this
-    // process for auto-recovery (poll + on_reconnected dispatcher).
+    // Successful open clears any prior user-stop intent.
     this._userInitiatedStop = false;
-    _agenticProcessRegistry.add(this);
-    _ensureAgenticStaticListeners();
-    return true;
-  }
-
-  /**
-   * Read-only OS-level status snapshot. Calls the backend ``os-status``
-   * action which checks the PTY session liveness on the compute node and
-   * the worker PID via psutil + cmdline match. Use this whenever you need
-   * ground truth about whether the process is actually running — never
-   * infer it from the cached ``status`` field.
-   */
-  async getOsStatus(): Promise<AgenticProcessOSStatus> {
-    const actionInfo = new ActionInfo('os-status', AgenticProcess.type, this.id, 'GET');
-    const result = await dataManager.callAction<unknown, AgenticProcessOSStatus>(actionInfo);
-    if (!result) throw new Error('os-status returned no data');
-    return result;
-  }
-
-  /**
-   * True iff the backend reports both an alive PTY session and a live
-   * worker PID for this process. Sugar over ``getOsStatus().ready``.
-   */
-  async isAlive(): Promise<boolean> {
-    const status = await this.getOsStatus();
-    return status.ready;
-  }
-
-  /**
-   * Auto-recovery entry point. Driven by the static reconnect dispatcher on
-   * ConnectionManager ``on_reconnected`` events and a 5 s poll. Cheap when
-   * the process is healthy: one GET ``os-status`` and an early return.
-   *
-   * Skipped when:
-   *   - user explicitly stopped this process (``_userInitiatedStop``);
-   *   - status is mid-transition (``STARTING`` / ``STOPPING``) — let the
-   *     in-flight call finish first;
-   *   - status is ``FAILED`` — relaunching would loop because the worker
-   *     can't start with the current ``cli_options``.
-   *
-   * Concurrent triggers (e.g. ``on_reconnected`` arriving while a poll is
-   * already in flight) converge: the backend's per-process ``_OPEN_LOCKS``
-   * mutex serializes ``open``, and the second ``isAlive()`` call sees the
-   * first recovery's result and short-circuits.
-   *
-   * @returns true iff a recovery ``start()`` was issued.
-   */
-  async reconnect(): Promise<boolean> {
-    if (this._userInitiatedStop) return false;
-    if (this.status === ProcessStatus.STARTING || this.status === ProcessStatus.STOPPING) return false;
-    if (this.status === ProcessStatus.FAILED) return false;
-    if (await this.isAlive()) return false;
-    await this.start({ visible: this.visible });
+    // A successful open implies the process is not latched (the backend gate
+    // refuses latched opens; retry clears before launching). Clear locally
+    // too: the entity dump drops None fields, so the server-side clear never
+    // arrives as `start_failure: null`.
+    this.start_failure = null;
     return true;
   }
 
@@ -1762,7 +2129,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const data = await dataManager.callAction<{ visible: boolean }, Record<string, unknown>>(actionInfo);
     if (!data?.id) throw new Error('Fork failed: backend returned no process data');
     dataManager.updateEntityFromJson(data);
-    const newProcess = await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, data.id as string));
+    const newProcess = await dataManager.getByTypeId<AgenticProcess>(
+      new TypeId(AgenticProcess.type, data.id as string),
+    );
     if (!newProcess) throw new Error(`Fork failed: new process ${data.id} not found after registration`);
     await newProcess.start();
     return newProcess;
@@ -1813,6 +2182,61 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (this.shell_id) await this.stop();
     await this.start();
     this.emit('restarted', { process: this });
+  }
+
+  /**
+   * Standardized transport switch — the single way to flip a session between the
+   * interactive PTY terminal (`WorkerMode.Interactive`) and headless CLI /
+   * JSON-stream (`WorkerMode.CLI`). One logical session (one `session_id` /
+   * transcript); routing stays `headless == !visible`, and the durable `pty_mode`
+   * intent is persisted so a reload keeps the chosen transport.
+   *
+   * Frontend → backend: the CLI direction calls the `switch-mode` action (kill
+   * PTY, visible=False, pty_mode=False); the PTY direction routes through the
+   * canonical `start()`/`open` path (which the backend `switch-mode` INTERACTIVE
+   * branch mirrors for non-UI callers) so the live PTY attach happens, plus the
+   * `restarted` event so the terminal clears + re-attaches. Rejected mid-turn
+   * (backend 409); the caller disables the toggle while a turn is in flight.
+   */
+  async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
+    if (mode === WorkerMode.Interactive) {
+      this.pty_mode = true;
+      await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
+      this.emit('restarted', { process: this });
+      return;
+    }
+    // CLI: one `switch-mode` round-trip. Mirror exit()'s optimistic CLOSING +
+    // user-stop guard. Do NOT emit 'restarted' — it drives re-attachPty, wrong
+    // after the PTY is killed; the view's toggle handler owns the chat reconcile.
+    this._userInitiatedStop = true;
+    const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
+    if (shell) {
+      shell.status = ShellStatus.CLOSING;
+      dataManager.notifyEntityChanged(shell);
+    }
+    const actionInfo = new ActionInfo('switch-mode', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { mode };
+    await dataManager.callAction(actionInfo);
+    this.visible = false;
+    this.pty_mode = false;
+  }
+
+  /**
+   * Bridge backend-initiated restarts to the local 'restarted' event.
+   *
+   * The UI restart button drives {@link restart} client-side, which emits
+   * 'restarted' directly. A *server*-initiated restart (e.g. the agent running
+   * `flow process restart` after installing an MCP, via the backend
+   * `self-restart` action) has no such client signal — the backend instead
+   * pushes a `worker.restarted` entity event once the fresh PTY is up. Re-emit
+   * it as the same local 'restarted' event so {@link InteractiveTerminal}
+   * clears and re-attaches to the new PTY without any extra wiring.
+   */
+  onEntityEvent(event: string, payload: Record<string, unknown>): void {
+    super.onEntityEvent(event, payload);
+    if (event === 'worker.restarted') {
+      this.emit('restarted', { process: this, payload });
+    }
   }
 
   /**
@@ -1919,7 +2343,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     };
 
     const stateHandler = () => {
-      if (this._completed) {
+      if (isWorkerTerminal(this.workerStatus)) {
         stepComplete = true;
         if (resolver) {
           resolver(null);
@@ -1949,8 +2373,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           continue;
         }
 
-        // If already completed, we're done
-        if (this._completed) {
+        // Worker already terminal — drain and exit.
+        if (isWorkerTerminal(this.workerStatus)) {
           break;
         }
 
@@ -1980,31 +2404,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * (following Flow's pattern of state management via FlowData messages).
    * @internal
    */
-  _handleFlowData(data: FlowData): void {
-    const elementType = data.attributes?.['element-type'];
-    const isComplete = data.attributes?.['complete'] === 'true';
-
-    if (elementType === 'status' && typeof data.data === 'object' && data.data !== null) {
-      const statusData = data.data as Record<string, unknown>;
-      if (statusData.status && typeof statusData.status === 'string') {
-        const oldWorker = this.workerStatus;
-        this.workerStatus = statusData.status as WorkerStatus;
-        this.emit('state_change', {
-          field: 'workerStatus',
-          oldValue: oldWorker,
-          newValue: this.workerStatus,
-        });
-        if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
-          this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
-        }
-      }
-    }
-
-    if (elementType === 'status' && isComplete) {
-      this._markComplete();
-    }
-  }
-
   /**
    * Called by the store when the backend pushes an entity update via WebSocket.
    * Propagates state changes (including COMPLETE) so output() terminates correctly.
@@ -2016,7 +2415,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @internal
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
-    if (data.status) {
+    // Reflected ``queue`` must REPLACE, not merge. ``deepAssign`` (which runs
+    // right after this hook) recurses into arrays and merges them by index,
+    // never shrinking the target — so a dequeue/clear would leave stale tail
+    // entries (e.g. [A,B] + wire [B] → [B,B]). Assign the wire value wholesale
+    // here and strip it from the payload so the following deepAssign skips it.
+    // (Same "remove from payload before deepAssign" guard the cache path uses
+    // for ``state``.)
+    if ('queue' in data) {
+      const q = data.queue;
+      this.queue = q ? { enabled: !!q.enabled, entries: [...(q.entries ?? [])] } : null;
+      delete data.queue;
+    }
+    // Skip no-op transitions: castAndDeepAssign() runs this hook for every
+    // WS entity-op AND for every REST-response write-through, so the same
+    // status often arrives many times. Without the equality guard, downstream
+    // `state_change` listeners (ProcessToolbar, useProcessState, useActiveTerminals)
+    // would re-render at the broadcast frequency even when nothing changed.
+    if (data.status && data.status !== this.status) {
       const oldStatus = this.status;
       this.status = data.status as ProcessStatus;
       this.emit('state_change', {
@@ -2029,10 +2445,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       // object, benign name overlap.
       this.emit('status', this.status, oldStatus);
       if (this.status === ProcessStatus.FAILED && !isWorkerTerminal(this.workerStatus)) {
-        this._markError(new Error(`Process ended with lifecycle status: ${this.status}`));
+        this._handleError(new Error(`Process ended with lifecycle status: ${this.status}`));
       }
     }
-    if (data.worker_status) {
+    if (data.worker_status && data.worker_status !== this.workerStatus) {
       const oldWorker = this.workerStatus;
       this.workerStatus = data.worker_status as WorkerStatus;
       this.emit('state_change', {
@@ -2041,38 +2457,39 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         newValue: this.workerStatus,
       });
       if (this.workerStatus === WorkerStatus.COMPLETE) {
-        this._markComplete();
+        this._handleComplete();
       } else if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
-        this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+        this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
       }
     }
   }
 
   /**
-   * Mark process as complete.
-   * Closes all open groups and marks the flowDataStream as complete.
+   * Local-side reaction to ``workerStatus`` transitioning to COMPLETE.
+   * Frontend does NOT decide completion; backend's projection does. This
+   * just closes the stream and fires the ``complete`` event so consumers
+   * (``output()``, ``waitForExecutionComplete``) can resolve.
+   *
+   * Caller contract: only invoke on a real transition into COMPLETE. The
+   * call site in ``onEntityUpdate`` is gated by ``newValue !== oldValue`` so
+   * this is naturally one-per-edge.
    * @internal
    */
-  _markComplete(): void {
-    if (!this._completed) {
-      this._completed = true;
-      // Close all open groups before marking complete
-      this.flowDataStream.closeOpenGroups();
-      this.flowDataStream.markComplete();
-      this.emit('complete');
-    }
+  _handleComplete(): void {
+    this.flowDataStream.closeOpenGroups();
+    this.flowDataStream.markComplete();
+    this.emit('complete');
   }
 
   /**
-   * Mark process as failed.
+   * Local-side reaction to ``workerStatus`` transitioning to a failure
+   * state. Same authority model as ``_handleComplete``: backend decides;
+   * SDK reacts.
    * @internal
    */
-  _markError(error: Error): void {
+  _handleError(error: Error): void {
     this._error = error;
-    if (!this._completed) {
-      this._completed = true;
-      this.emit('error', error);
-    }
+    this.emit('error', error);
   }
 
   /**

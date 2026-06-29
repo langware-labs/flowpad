@@ -1,3 +1,7 @@
+---
+id: 8a039501-403a-53d2-922c-932fedbe1888
+---
+
 test 1: Home page shows search bar with scope filter options (All/User/Project)
 - [browser] navigate to {APP_URL}/
 - [browser] wait for page to load (networkidle)

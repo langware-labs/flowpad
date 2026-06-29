@@ -20,6 +20,7 @@ from flow_sdk.core.network.connections import (
 from flow_sdk.core.network.connections import (
     remove_connection as remove_registry_connection,
 )
+from flow_sdk.core.network.connections import is_client_gone as _is_client_gone
 
 from .ws_rest import handle_rest_message
 
@@ -160,7 +161,10 @@ async def send_personal_message(message: str, websocket: WebSocket):
     try:
         await websocket.send_text(message)
     except Exception as e:
-        logger.error(f"Error sending personal message: {e}")
+        if _is_client_gone(e):
+            logger.debug(f"send_personal_message: client gone, dropping message: {e}")
+        else:
+            logger.error(f"Error sending personal message: {e}")
 
 
 async def broadcast(message: str):
@@ -328,6 +332,12 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
                 ctx = message_data.get("context")
                 if isinstance(ctx, dict):
                     info.browser_context = ctx
+                    # Mirror remote entities in this context to hub watches so
+                    # the hub fans their updates back to us (cross-user live
+                    # updates). Cloud-facing + best-effort; never breaks the WS.
+                    from flow_sdk.cloud_client.context_watch import browser_context_watch
+
+                    await browser_context_watch.on_context(connection_id, ctx)
 
         elif message_type == "presence":
             # Per-tab visibility/focus update from the UI. Fire-and-forget:
@@ -416,6 +426,12 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
         return True
 
     except Exception as e:
+        # Client disconnected mid-handling → normal; don't ERROR, and don't try
+        # to send an error_response (that send would fail too). Let the outer
+        # endpoint loop handle disconnect cleanup.
+        if _is_client_gone(e):
+            logger.debug(f"Message handling stopped — client gone ({connection_id}): {e}")
+            return False
         logger.error(f"Error handling message from {connection_id}: {type(e).__name__}: {e}")
         error_response = {
             "message_type": "response_msg",
@@ -428,6 +444,25 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
         except Exception:
             pass
         return True
+
+
+def _dispatch_pty_ws_lifecycle(connection_id: str, event: str) -> None:
+    """Drive the backend PTY connection-membership FSM on a WS lifecycle event.
+
+    ``event="connect"`` resumes parked subscriptions (``on_ws_connect``);
+    ``event="disconnect"`` parks them (``on_ws_disconnect``). Imported lazily to
+    avoid a server<-compute import cycle at module load. Membership lives entirely
+    in the backend, driven by these two transport events.
+    """
+    try:
+        import asyncio
+
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+
+        fn = pty_registry.on_ws_connect if event == "connect" else pty_registry.on_ws_disconnect
+        asyncio.ensure_future(fn(connection_id))
+    except Exception as e:
+        logger.warning(f"PTY membership FSM '{event}' failed for {connection_id}: {e}")
 
 
 @websocket_router.websocket("/api/v1/connect/ws/{connection_id}")
@@ -455,6 +490,10 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
     add_registry_connection(connection_id, websocket)
 
     logger.info(f"Client {connection_id} connected. Total connections: {len(_active_connections)}")
+
+    # Resume any PTY subscriptions this connection_id parked on its previous
+    # socket (sleep/wake reconnect); no-op for a fresh connection.
+    _dispatch_pty_ws_lifecycle(connection_id, "connect")
 
     # Send connection confirmation
     confirmation = {
@@ -527,17 +566,15 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
 
         cleanup_connection(connection_id)
 
-        # Detach this connection from all PTY sessions so stale connection_ids
-        # don't accumulate.  This only removes the connection reference — it does
-        # NOT close PTY processes (they stay alive for reconnection).
-        try:
-            import asyncio
+        # Release this connection's hub context-watches (unwatch any entity no
+        # other connection still holds in context).
+        from flow_sdk.cloud_client.context_watch import browser_context_watch
 
-            from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager as pty_mgr
+        await browser_context_watch.on_disconnect(connection_id)
 
-            asyncio.ensure_future(pty_mgr.detach_all_for_connection(connection_id))
-        except Exception as e:
-            logger.warning(f"Error detaching PTY sessions for {connection_id}: {e}")
+        # Park this connection's PTY subscriptions (kept, not closed) so a
+        # reconnect of the same id auto-restores delivery. PTYs stay alive.
+        _dispatch_pty_ws_lifecycle(connection_id, "disconnect")
 
         logger.info(f"Client {connection_id} removed. Remaining connections: {len(_active_connections)}")
 

@@ -8,8 +8,16 @@ class WorkerType(str, Enum):
     CLAUDE_CODE_CLI = "claude_code_cli"
     UNSECURED_CLAUDE = "unsecured_claude"
     CODEX = "codex"
+    COPILOT = "copilot"
     SIMPLE = "simple"
     MOCK = "mock"
+    # Config-owning agents that aren't executors FlowPad spawns, but DO own MCP
+    # server config files the indexer reads. Used as the source-agent tag on
+    # MCP_SERVER records (see fs_store/indexer/functions/mcp_server.py).
+    CURSOR = "cursor"
+    WINDSURF = "windsurf"
+    VSCODE = "vscode"
+    CLAUDE_DESKTOP = "claude_desktop"
 
 
 class WorkerTaskStatus(str, Enum):

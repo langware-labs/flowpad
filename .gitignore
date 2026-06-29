@@ -2,6 +2,13 @@
 .dockerignore
 docker-compose.local.yml
 
+# i18n: Lingui compiled catalogs (the .po files are the source of truth; the
+# Vite @lingui plugin compiles them at build, so these are regenerable artifacts)
+ui/src/locales/**/*.js
+ui/src/locales/**/*.js.map
+# @lingui/swc-plugin transform cache
+ui/.swc/
+
 # Screenshot PNGs (Playwright / manual testing artifacts)
 /*.png
 /page-*.png
@@ -195,6 +202,7 @@ node_modules/
 
 # Build and dist directories (frontend/UI build outputs)
 dist/
+dist-*/
 build/
 minihub/static/
 
@@ -296,3 +304,13 @@ flow_sdk/server/static/
 # Dev skill planning artifacts
 .flow/skills/dev/feature_plans/
 .flow/skills/dev/instructions.md
+.claude/scheduled_tasks.lock
+
+# internal artifacts — never track
+.flow/skills/agentic-qa/debug_log.md
+/private/
+
+# agent-trace skill scratch (skeletons, annotations, payloads — regenerable)
+.flow/skills/agent-trace/_results/
+
+SOC2/

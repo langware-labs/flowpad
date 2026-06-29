@@ -9,17 +9,22 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { Cloud, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import { Cloud, HelpCircle, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
 
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
-import { Agent, cloudManager, dataContext, ExpansionRequest, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
-import { useAuth, useConnectionStatus, useContext, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
+import { Agent, cloudManager, dataContext, ExpansionRequest, HubConnectionStatus, HubLoginStatus, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { useAuth, useCloudStatus, useConnectionStatus, useContext, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
+import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
+import { guardCloudAction } from '@src/services/privacy-guard';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from 'lexical';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 function isDefaultEmptyLexicalContent(content: { root: { children: SerializedLexicalNode[] } }): boolean {
   if (content.root?.children?.length !== 1) return false;
@@ -102,30 +107,81 @@ const instructionsQueryFilter = new QueryFilter({
   },
 });
 
-function cloudConnectionLabel(): string {
-  if (cloudManager.hubWsVerified) return 'connection verified';
-  if (cloudManager.hubWsConnected) return 'connected';
-  if (cloudManager.hubWsStatus === 'connecting') return 'connecting';
-  return 'not connected';
+function cloudConnectionLabel(status: HubConnectionStatus): string {
+  switch (status) {
+    case 'verified':       return 'connection verified';
+    case 'connected':      return 'connected';
+    case 'connecting':     return 'connecting';
+    case 'auth_rejected':  return 'connection rejected';
+    case 'error':          return 'connection error';
+    case 'disconnected':   return 'not connected';
+  }
 }
 
-function cloudLoginTooltip(loggedIn: boolean, email?: string): string {
-  const url = cloudManager.cloudUrl;
-  if (loggedIn) {
-    const connection = cloudConnectionLabel();
-    if (email && url) return `${email} is logged into ${url} (${connection})`;
-    if (email) return `${email} is logged in (${connection})`;
-    return url ? `Logged in to ${url} (${connection})` : `Logged in (${connection})`;
+function cloudLoginTooltip(
+  loginStatus: HubLoginStatus,
+  connectionStatus: HubConnectionStatus,
+  cloudUrl: string,
+  email?: string,
+): string {
+  if (loginStatus === 'logged_in') {
+    const conn = cloudConnectionLabel(connectionStatus);
+    if (email && cloudUrl) return `${email} is logged into ${cloudUrl} (${conn})`;
+    if (email) return `${email} is logged in (${conn})`;
+    return cloudUrl ? `Logged in to ${cloudUrl} (${conn})` : `Logged in (${conn})`;
   }
-  return url ? `Not logged in (${url})` : 'Not logged in';
+  if (loginStatus === 'logging_in') return cloudUrl ? `Signing in to ${cloudUrl}…` : 'Signing in…';
+  if (loginStatus === 'login_failed') return 'Login failed';
+  return cloudUrl ? `Not logged in (${cloudUrl})` : 'Not logged in';
+}
+
+/**
+ * Avatar status dot. Encodes the (login, connection) tuple:
+ *   logged_in + verified/connected → green
+ *   logged_in + connecting → amber spinner (rendered as pulse)
+ *   logged_in + auth_rejected/error/disconnected → amber/red dot
+ *   logged_out → no dot
+ */
+function statusDotClass(login: HubLoginStatus, connection: HubConnectionStatus): string | null {
+  if (login !== 'logged_in') return null;
+  if (connection === 'verified' || connection === 'connected') {
+    return 'bg-green-500';
+  }
+  if (connection === 'connecting') {
+    return 'bg-amber-400 animate-pulse';
+  }
+  if (connection === 'auth_rejected') {
+    return 'bg-red-500';
+  }
+  // error | disconnected
+  return 'bg-amber-500';
 }
 
 export function UserDropdown() {
+  const { t } = useLingui();
   const { agentId } = useParams();
   const { user, currentUser } = useAuth();
   const { isConnected } = useConnectionStatus();
   const { cloudLoginAvailable } = useContext();
-  const [, setCloudStatusVersion] = useState(0);
+  // In Local (private) data-privacy mode the cloud is off-limits, so no login
+  // affordance is shown at all.
+  const { isLocal } = usePrivacyMode();
+  // App-settings dock viewer — relocated here from the footer (which now hosts
+  // the data-privacy control in place of the old gear).
+  const { navigation } = useDockNavigation();
+  const { login, connection, cloudUrl } = useCloudStatus();
+  const dotClass = statusDotClass(login.status, connection.status);
+  // Logged out of cloud → identity is unknown, so fall back to a neutral
+  // question-mark glyph rather than the local user's initials (a name we can't
+  // actually vouch for). When logged in, derive up-to-2-char initials.
+  const avatarInitials = cloudLoginAvailable
+    ? (currentUser?.name || currentUser?.email?.split('@')[0] || '?')
+        .split(/[\s._-]+/)
+        .map((n: string) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    : null;
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId, {
     query: user ? agentQuery : new ExpansionRequest({}),
@@ -165,9 +221,36 @@ export function UserDropdown() {
   }, []);
 
   const handleCloudLogin = useCallback(async () => {
+    // Hidden in Local mode (below), but route through the single guard too so
+    // every login entry point shares one defensive seam + standardized notice.
+    if (!guardCloudAction('login')) return;
     try {
       await cloudManager.login();
     } catch (e) {
+      // Surface as a Sonner toast immediately so the user gets a visible
+      // popup even if the hub-side hub_client_error WS broadcast didn't
+      // make it through (e.g. WS still reconnecting). The error message
+      // is already user-friendly — produced server-side in
+      // ``flow_sdk/cli/auth/cloud_login.py::_post_cloud_login``.
+      const message = e instanceof Error ? e.message : 'Cloud sign-in failed.';
+      // Categorize for the toast title so the user immediately knows the
+      // KIND of failure; description carries the specific copy.
+      let title = 'Cloud sign-in failed';
+      let description = message;
+      if (/cloud is not available/i.test(message)) {
+        title = 'Cloud is not available';
+        description = message.replace(/^cloud is not available\.?\s*/i, '');
+      } else if (/invalid email or password|invalid credentials/i.test(message)) {
+        title = 'Invalid credentials';
+        description = message;
+      } else if (/access denied/i.test(message)) {
+        title = 'Cloud access denied';
+        description = message;
+      } else if (/not configured/i.test(message)) {
+        title = 'Cloud is not configured';
+        description = message;
+      }
+      notify.error({ title, message: description });
       console.error('[Cloud Login] Failed:', e);
     }
   }, []);
@@ -186,12 +269,7 @@ export function UserDropdown() {
   }, []);
 
   useEffect(() => {
-    const bump = () => setCloudStatusVersion((v) => v + 1);
-    cloudManager.on('cloud_status_changed', bump);
     void cloudManager.refreshStatus();
-    return () => {
-      cloudManager.off('cloud_status_changed', bump);
-    };
   }, []);
 
   const handleSaveRules = useCallback(
@@ -207,7 +285,7 @@ export function UserDropdown() {
           let currentInstructionsPage = instructionsPage;
           if (!currentInstructionsPage) {
             console.log('No page found, creating new one');
-            currentInstructionsPage = new Page({ title: 'Instructions', tags: [PAGE_TYPE.INSTRUCTIONS] });
+            currentInstructionsPage = new Page({ title: t`Instructions`, tags: [PAGE_TYPE.INSTRUCTIONS] });
             await currentInstructionsPage.save([agent.typeId]);
             // Get the chatbot to call ingest
             await agent.ingest([], [], [], [currentInstructionsPage.typeId]);
@@ -266,10 +344,10 @@ export function UserDropdown() {
       />
 
       <Dialog open={isAccountDialogOpen} onOpenChange={setIsAccountDialogOpen}>
-        <DialogContent className="flex h-[520px] max-w-md flex-col">
+        <DialogContent className="flex h-[520px] max-w-lg flex-col">
           <DialogHeader className="shrink-0">
-            <DialogTitle>Account Details</DialogTitle>
-            <DialogDescription>View your account information and user details</DialogDescription>
+            <DialogTitle><Trans>Settings</Trans></DialogTitle>
+            <DialogDescription><Trans>Configure your account, app preferences, and notifications</Trans></DialogDescription>
           </DialogHeader>
           {currentUser && <AccountInfo user={currentUser} />}
         </DialogContent>
@@ -286,34 +364,29 @@ export function UserDropdown() {
                 <div className="relative cursor-pointer">
                   <Avatar
                     className={`h-8 w-8 transition-opacity hover:opacity-80${!isConnected ? ' ring-2 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse' : ''}`}
-                    title={!isConnected ? 'Service unavailable' : undefined}
+                    title={!isConnected ? t`Service unavailable` : undefined}
                     data-testid="agent-page-user-avatar"
                   >
-                    {currentUser?.picture && (
+                    {cloudLoginAvailable && currentUser?.picture && (
                       <AvatarImage src={currentUser.picture} alt={currentUser.name ?? currentUser.email ?? ''} />
                     )}
                     <AvatarFallback>
-                      {(currentUser?.name || currentUser?.email?.split('@')[0] || '?')
-                        .split(/[\s._-]+/)
-                        .map((n: string) => n[0])
-                        .join('')
-                        .toUpperCase()
-                        .slice(0, 2)}
+                      {avatarInitials ?? <HelpCircle className="h-5 w-5 text-muted-foreground" />}
                     </AvatarFallback>
                   </Avatar>
-                  {cloudLoginAvailable && (
-                    <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />
+                  {dotClass && (
+                    <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-background ${dotClass}`} />
                   )}
                 </div>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
-                  <TooltipContent side="top">{cloudLoginTooltip(cloudLoginAvailable, currentUser?.email)}</TooltipContent>
+                  <TooltipContent side="top">{cloudLoginTooltip(login.status, connection.status, cloudUrl, currentUser?.email)}</TooltipContent>
                   <DropdownMenuContent align="end">
                 {isOwner && agentId && (
                   <>
                     <DropdownMenuItem onClick={() => setIsSettingsOpen(true)} className="cursor-pointer">
                       <Settings className="mr-2 h-4 w-4" />
-                      Settings
+                      <Trans>Settings</Trans>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => redirectToConsole(agentId)}
@@ -326,17 +399,25 @@ export function UserDropdown() {
                       className="cursor-pointer"
                     >
                       <Wrench className="mr-2 h-4 w-4" />
-                      Go to Console
+                      <Trans>Go to Console</Trans>
                     </DropdownMenuItem>
                   </>
                 )}
+                <DropdownMenuItem
+                  onClick={() => navigation.openSettings()}
+                  className="cursor-pointer"
+                  data-testid="app-settings-button"
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  <Trans>App Settings</Trans>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setIsAccountDialogOpen(true)}
                   className="cursor-pointer"
                   data-testid="agent-page-account-details-button"
                 >
                   <UserIcon className="mr-2 h-4 w-4" />
-                  Account Details
+                  <Trans>Settings</Trans>
                 </DropdownMenuItem>
                 {/* Logout below = *cloud* logout. A local-only user (no cloud
                     login) is anonymous — the Login branch should fire. If you
@@ -346,24 +427,24 @@ export function UserDropdown() {
                   <>
                     <DropdownMenuItem onClick={handleOpenFlowpadCloud} className="cursor-pointer">
                       <Cloud className="mr-2 h-4 w-4" />
-                      Flowpad Cloud
+                      <Trans>Flowpad Cloud</Trans>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => void handleLogout()}
                       className="cursor-pointer text-red-500 focus:text-red-500"
                     >
                       <LogOut className="mr-2 h-4 w-4" />
-                      Logout
+                      <Trans>Logout</Trans>
                     </DropdownMenuItem>
                   </>
-                ) : (
+                ) : isLocal ? null : (
                   <DropdownMenuItem
                     onClick={() => void handleCloudLogin()}
                     title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
                     className="cursor-pointer"
                   >
                     <LogIn className="mr-2 h-4 w-4" />
-                    Login
+                    <Trans>Login</Trans>
                   </DropdownMenuItem>
                 )}
                   </DropdownMenuContent>
@@ -371,7 +452,7 @@ export function UserDropdown() {
               </Tooltip>
             </TooltipProvider>
           </>
-        ) : (
+        ) : isLocal ? null : (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -383,10 +464,10 @@ export function UserDropdown() {
                     navigator.navigateToLogin();
                   }}
                 >
-                  Login
+                  <Trans>Login</Trans>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top">{cloudLoginTooltip(false)}</TooltipContent>
+              <TooltipContent side="top">{cloudLoginTooltip('logged_out', 'disconnected', cloudUrl)}</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         )}

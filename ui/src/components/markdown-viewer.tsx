@@ -6,8 +6,10 @@ import { ScrollArea } from '@src/components/ui/scroll-area';
 import { useViewerStore } from '@src/hooks/flow-hooks';
 import { RefreshCw, Loader2, FileText } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export function MarkdownViewer() {
+  const { t } = useLingui();
   const { flow } = useAgentContext();
   const { currentContext } = useViewerStore();
   const [content, setContent] = useState<string>('');
@@ -37,11 +39,11 @@ export function MarkdownViewer() {
       if (fileContent !== undefined) {
         setContent(fileContent);
       } else {
-        setError('Failed to load markdown file');
+        setError(t`Failed to load markdown file`);
       }
     } catch (err) {
       console.error('Error fetching markdown file:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load markdown file');
+      setError(err instanceof Error ? err.message : t`Failed to load markdown file`);
     } finally {
       fetchFn(false);
     }
@@ -61,7 +63,7 @@ export function MarkdownViewer() {
       <div className="flex h-full items-center justify-center text-muted-foreground">
         <div className="text-center">
           <FileText className="mx-auto mb-3 h-12 w-12 text-muted-foreground/50" />
-          <p className="text-sm font-medium">No markdown file selected</p>
+          <p className="text-sm font-medium"><Trans>No markdown file selected</Trans></p>
         </div>
       </div>
     );
@@ -77,7 +79,7 @@ export function MarkdownViewer() {
         </div>
         <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing} className="gap-2">
           <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-          Refresh
+          {t`Refresh`}
         </Button>
       </div>
 
@@ -97,7 +99,7 @@ export function MarkdownViewer() {
             <MarkdownView value={content} />
           ) : (
             <div className="flex h-64 items-center justify-center text-muted-foreground">
-              <p className="text-sm">No content available</p>
+              <p className="text-sm"><Trans>No content available</Trans></p>
             </div>
           )}
         </div>

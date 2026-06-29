@@ -2,23 +2,36 @@
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { dataContext, FlowDataSource, fsStore, ProcessStatus, Shell, type AgenticProcess } from '@sdk';
+import {
+  AgenticProcessEventName,
+  connectionManager,
+  dataContext,
+  FlowDataSource,
+  fsStore,
+  isAwaitingUserInput,
+  ProcessStatus,
+  Shell,
+  WorkerMode,
+  type AgenticProcess,
+  type MarkdownDoc,
+} from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
-import { useSettings } from '@src/hooks/use-settings';
-import { useDockNavigation } from '@src/navigation';
-import { useAgenticQueue } from '@src/hooks/useAgenticQueue';
+import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
+import { DockPointer, useDockNavigation, useSideWindows } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
+import { fetchPtyStream, replayPtyStream } from './pty-replay';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { AnnotationGutter } from './AnnotationGutter';
 import { ColumnHeaderBar } from './ColumnHeaderBar';
@@ -26,20 +39,30 @@ import { PaneBar } from './PaneBar';
 import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
+import { ChatComposerBar } from './ChatComposerBar';
+import { ChatPlanModeProvider } from './chat-plan-mode-context';
+import { SimpleChatPane } from './SimpleChatPane';
+import { notify } from '@src/notifications/notify';
+import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
+import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
+  AnalysisPanel,
   GitPanel,
   InputFilesPanel,
   PromptIndexPanel,
   QueuePanel,
+  SIDE_TABS,
   SideTabId,
-  SideWindow,
   SimpleDirTree,
-  parseSideTabIdList,
+  SkillsAgentsPanel,
   parseSideTabId,
   usePromptsForProcess,
   type PromptEntry,
 } from './side-windows';
+import { SideTabTooltipContent } from './LastPromptTooltip';
+import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
 import { SidecarShellTerminal } from './SidecarShellTerminal';
 import { TerminalBottomRibbon } from './TerminalBottomRibbon';
 import { TerminalSearchBar } from './TerminalSearchBar';
@@ -48,6 +71,9 @@ import { TraceGutter } from './TraceGutter';
 import { getAnchors, useAnnotationGutter } from './use-annotation-gutter';
 import { useTimeGutter } from './use-time-gutter';
 import { useTraceGutter } from './use-trace-gutter';
+import { EntityContextPanel } from '@src/components/entity-context';
+import { clipboardDataHasImage, imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 export interface TraceFilters {
   events: boolean;
@@ -78,8 +104,16 @@ export interface ColVisibility {
   annotations: boolean;
 }
 
+// Stable empty-array identity so a doc-less process doesn't hand the ribbon a
+// fresh `[]` every render.
+const EMPTY_DOCS: MarkdownDoc[] = [];
 const DEFAULT_COL_VIS: ColVisibility = { trace: true, time: true, annotations: true };
 const COL_VIS_LS_KEY = 'colVisibility';
+
+// An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
+// signal an image paste delivers to the PTY, which the CLI reads the system
+// clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
+const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
 
 function loadColVis(): ColVisibility {
   try {
@@ -114,46 +148,7 @@ function saveTraceFilters(f: TraceFilters): void {
 }
 
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
-import { FONT_FAMILY, FONT_SIZE_PX } from './terminalConfig';
-
-// ── Side-window state (tabs + active) managed atomically via reducer ─────────
-
-type SideTabState = { tabs: SideTabId[]; active: SideTabId | null };
-type SideTabAction =
-  | { type: 'open'; tab: SideTabId } // add tab (if not present) and activate it
-  | { type: 'close'; tab: SideTabId } // remove tab; activate previous or null
-  | { type: 'select'; tab: SideTabId } // activate an already-open tab
-  | { type: 'toggle'; tab: SideTabId }; // open+activate if closed; close if already active
-
-function sideTabReducer(state: SideTabState, action: SideTabAction): SideTabState {
-  switch (action.type) {
-    case 'open': {
-      const tabs = state.tabs.includes(action.tab) ? state.tabs : [...state.tabs, action.tab];
-      return { tabs, active: action.tab };
-    }
-    case 'close': {
-      const tabs = state.tabs.filter((t) => t !== action.tab);
-      const active = state.active === action.tab ? (tabs[tabs.length - 1] ?? null) : state.active;
-      return { tabs, active };
-    }
-    case 'select': {
-      if (!state.tabs.includes(action.tab)) return state;
-      return { ...state, active: action.tab };
-    }
-    case 'toggle': {
-      if (state.active === action.tab && state.tabs.includes(action.tab)) {
-        // Already the active tab — close it
-        const tabs = state.tabs.filter((t) => t !== action.tab);
-        return { tabs, active: tabs[tabs.length - 1] ?? null };
-      }
-      // Open (if not already present) and activate
-      const tabs = state.tabs.includes(action.tab) ? state.tabs : [...state.tabs, action.tab];
-      return { tabs, active: action.tab };
-    }
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
+import { FONT_FAMILY, FONT_SIZE_PX, openTerminalLink } from './terminalConfig';
 
 interface InteractiveTerminalProps {
   sessionId: string;
@@ -198,6 +193,23 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = propProcess ?? contextProcess ?? undefined;
   const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
+  // Skin layer: by default Standard users get the friendly SimpleChatPane (chat
+  // instead of the raw xterm) and Advanced/Dev keep the terminal. The bottom-
+  // ribbon toggle overrides that per the user's saved choice (chatUiOverride):
+  // once set it takes priority over View mode. The xterm stays mounted underneath
+  // the chat overlay (same session, same PTY — see SimpleChatPane), so toggling
+  // is instant and never resets the terminal. Embedded terminals (chat side
+  // panel) and shell-only tabs (no AgenticProcess) always keep the xterm.
+  const isAdvanced = useIsAdvanced();
+  const chatOverride = useChatUiOverride();
+  const wantChat = chatOverride != null ? chatOverride === 'chat' : !isAdvanced;
+  // Headless (`pty_mode === false`): there is no PTY/xterm to skin — the chat
+  // pane is the ONLY view. Force it on regardless of the chat/terminal skin
+  // override, and (in the render) skip mounting the xterm container entirely so
+  // no PtySync attach is attempted for a process that has no shell.
+  const isHeadless = !embedded && !!process && process.pty_mode === false;
+  const showSimpleChat = isHeadless || (wantChat && !embedded && !!process);
+  const canToggleView = !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
@@ -215,6 +227,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const ptySyncSnapshot = usePtySyncSession(ptySyncRef.current);
 
   const shellRef = useRef<Shell | null>(null);
+  const firstPromptBufferRef = useRef('');
+  const firstPromptReportedRef = useRef(false);
 
   const sessionIdRef = useRef(sessionId);
 
@@ -225,56 +239,108 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [bufferFlushCount, setBufferFlushCount] = useState(0);
   const anchorsResolvedRef = useRef(false);
 
-  const { settings } = useSettings();
+  const { preferences } = useInstancePreferences();
   const { shell } = useShell(sessionId);
   const [shellReady, setShellReady] = useState(false);
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
   const processIsActive = process?.status === ProcessStatus.RUNNING;
 
+  // Live failed-to-start latch → banner. The loader only classifies a latched
+  // process on navigation; when the worker dies instantly while this tab is
+  // already mounted (first death, or a failed Retry), the only signal is the
+  // entity update flipping `start_failure`. The loader-context `process` is
+  // not reactive, so subscribe via useEntity and surface the banner here.
+  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
+  const liveStartFailure = liveProcess?.start_failure ?? null;
+  // The chat⇄terminal toggle is only enabled while the agent is awaiting the
+  // user's input (IDLE/COMPLETE/INTERRUPTED/PENDING_USER). A mode switch
+  // mid-turn is 409'd by the backend, so gating on the (reactive) worker status
+  // keeps the toggle in lock-step with the AP and never lands on a 409 hole.
+  // `liveProcess` is the reactive entity; the loader `process` is the fallback
+  // for the first render before the subscription resolves.
+  const awaitingUserInput = isAwaitingUserInput(
+    liveProcess?.workerStatus ?? process?.workerStatus,
+  );
+  useEffect(() => {
+    if (!liveStartFailure || !process) return;
+    dataContext.setTerminalRuntimeError({
+      kind: 'failed_to_start',
+      processId: process.id,
+      shellId: process.shell_id ?? null,
+    });
+  }, [liveStartFailure, process]);
+
   // Notify parent when the worker session ID becomes known (or clears)
   useEffect(() => {
     onWorkerSessionId?.(process?.session_id ?? null);
   }, [process?.session_id, onWorkerSessionId]);
+
+  useEffect(() => {
+    if (!process) return;
+    let disposed = false;
+    let unwatch: (() => Promise<void>) | null = null;
+    void process.watch().then((release) => {
+      if (disposed) {
+        void release();
+        return;
+      }
+      unwatch = release;
+    });
+    return () => {
+      disposed = true;
+      if (unwatch) void unwatch();
+    };
+  }, [process?.id]);
+
+  useEffect(() => {
+    firstPromptBufferRef.current = '';
+    firstPromptReportedRef.current = false;
+  }, [process?.id]);
   const [cellHeight, setCellHeight] = useState(0);
+  // cellHeight is derived from the observed xterm container's own offsetHeight and
+  // flows back into overlays inside that container — so writing it unconditionally
+  // from the ResizeObserver re-lays-out the container and re-fires the observer
+  // (a self-referential ResizeObserver→setState→relayout loop that pegs the UI
+  // when a sibling panel, e.g. the Analysis expand, perturbs the shared layout).
+  // Commit only on a meaningful (>0.5px) change so the cycle converges and stops.
+  const lastCellHeightRef = useRef(0);
+  const commitCellHeight = useCallback((next: number) => {
+    if (!Number.isFinite(next) || next <= 0) return;
+    if (Math.abs(next - lastCellHeightRef.current) < 0.5) return;
+    lastCellHeightRef.current = next;
+    setCellHeight(next);
+  }, []);
   const [traceFilters, setTraceFiltersState] = useState<TraceFilters>(() => loadTraceFilters());
   const [gutterExpanded, setGutterExpanded] = useState(false);
   const [colVis, setColVisState] = useState<ColVisibility>(() => loadColVis());
-  const [sideTabState, dispatchSideTab] = useReducer(sideTabReducer, { tabs: [], active: null });
-  const sideWindowTabs = sideTabState.tabs;
-  const activeSideTab = sideTabState.active;
+  // Open side windows + active are dock state (URL: ?sideWindows&activeSideWindow),
+  // read/written through the shared useSideWindows() hook. We narrow the generic
+  // string ids back to this surface's SideTabId registry (dropping any stale or
+  // foreign id) so the descriptor lookups below are total.
+  const sideWindows = useSideWindows();
+  const sideWindowTabs = useMemo(
+    () => sideWindows.windows.filter((w): w is SideTabId => parseSideTabId(w) !== null),
+    [sideWindows.windows],
+  );
+  const activeSideTab = useMemo<SideTabId | null>(() => {
+    const parsed = parseSideTabId(sideWindows.active);
+    return parsed && sideWindowTabs.includes(parsed)
+      ? parsed
+      : (sideWindowTabs[sideWindowTabs.length - 1] ?? null);
+  }, [sideWindows.active, sideWindowTabs]);
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [activePane, setActivePane] = useState<'claude' | 'shell'>('claude');
   const handlePasteRef = useRef<() => Promise<void>>(async () => {});
 
-  const openSideTab = useCallback((tab: SideTabId) => {
-    dispatchSideTab({ type: 'open', tab });
-  }, []);
-
-  const closeSideTab = useCallback((tab: SideTabId) => {
-    dispatchSideTab({ type: 'close', tab });
-  }, []);
-
-  // URL-driven side windows: ?windows=team,git&activeWindow=team
-  // One-shot on sessionId change — user closing a tab afterwards does not rewrite the URL.
-  const urlWindowsAppliedRef = useRef<string | null>(null);
-  useEffect(() => {
-    const key = `${sessionId}|${searchParams.get('windows') ?? ''}|${searchParams.get('activeWindow') ?? ''}`;
-    if (urlWindowsAppliedRef.current === key) return;
-    urlWindowsAppliedRef.current = key;
-    const ids = parseSideTabIdList(searchParams.get('windows'));
-    if (ids.length === 0) return;
-    for (const tab of ids) dispatchSideTab({ type: 'open', tab });
-    const active = parseSideTabId(searchParams.get('activeWindow'));
-    if (active && ids.includes(active)) dispatchSideTab({ type: 'select', tab: active });
-  }, [sessionId, searchParams]);
-
-  // Queue hook — idle injection of queued prompts
-  const { queue, addEntry, removeEntry, setEnabled, moveEntry } = useAgenticQueue(
-    process?.id,
-    processIsActive,
-    shellRef,
-  );
+  // Open/close/select/toggle delegate to the shared hook (single URL writer).
+  // Re-exposed under this surface's SideTabId-typed names so the JSX below is
+  // unchanged; the hook itself is id-agnostic.
+  const openSideTab = sideWindows.open;
+  const closeSideTab = sideWindows.close;
+  const selectSideTab = sideWindows.select;
+  const toggleSideTab = sideWindows.toggle;
 
   // Input dir info for file attachment workflow.
   // Only fetch for the active tab — inactive pre-mounted terminals share the
@@ -358,23 +424,29 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (!inputDirInfo) return;
       try {
         const items = await navigator.clipboard.read();
-        for (const item of items) {
-          const imageType = item.types.find((t) => t.startsWith('image/'));
-          if (imageType) {
-            const blob = await item.getType(imageType);
-            const ext = imageType.split('/')[1] ?? 'png';
-            const filename = `screenshot-${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`;
-            const file = new File([blob], filename, { type: imageType });
-            const uploads = await fsStore
-              .getState()
-              .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, [file]);
-            await Promise.all(uploads.map((u) => u.waitForCompletion()));
-            const fullPath = `${inputDirInfo.absPath}/${filename}`;
-            await shellRef.current?.sendInput(`\nFile ${filename} is available here: ${fullPath}\n`);
-            openSideTab(SideTabId.Files);
-            return;
-          }
-        }
+        const [captured] = await imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' });
+        if (!captured) return;
+        // Offer markup before the screenshot is attached. Cancel aborts.
+        const [file] = await annotateImageFiles([captured]);
+        if (!file) return;
+
+        const uploads = await fsStore
+          .getState()
+          .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, [file]);
+        await Promise.all(
+          uploads.map((upload: { waitForCompletion: () => Promise<unknown> }) => upload.waitForCompletion()),
+        );
+        // By now the annotated PNG is on the system clipboard (written inside the
+        // Save gesture; the upload above outlasts that write). Re-emit the empty
+        // bracketed paste so the CLI re-reads the clipboard and inlines the
+        // ANNOTATED image. The original paste-time signal was suppressed (the
+        // capture-phase paste listener), so the CLI never saw the original.
+        await shellRef.current?.sendInput(EMPTY_BRACKETED_PASTE);
+        // Full-resolution fallback: the inline copy the CLI keeps may be downsized,
+        // so also reference the file by path.
+        const fullPath = `${inputDirInfo.absPath}/${file.name}`;
+        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
+        openSideTab(SideTabId.Files);
       } catch {
         // clipboard read failed — fall through to default xterm behavior
       }
@@ -403,7 +475,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       .reduce<string | null>((max, e) => (max === null || e.timestamp > max ? e.timestamp : max), null);
     return last;
   }, [allTraceEvents]);
-
   const showGutter = !!process && traceFilters.events && colVis.trace;
   // Reserve gutter space based on user settings even before process resolves,
   // so xterm fits at the correct width from the start (avoids layout shift).
@@ -451,8 +522,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         : rawAnnotationElements.filter((el) => el.kind !== 'prompt'),
     [rawAnnotationElements, traceFilters.promptAnnotations],
   );
-  const showAnnotationGutter = !!process?.session_id && colVis.annotations;
-  const reserveAnnotationSpace = colVis.annotations;
+  const showAnnotationGutter = isAdvanced && !!process?.session_id && colVis.annotations;
+  const reserveAnnotationSpace = isAdvanced && colVis.annotations;
 
   // Single source of truth: the entity's persisted ``plan_path``.
   // listen.py's ExitPlanMode hook + the PTY-trigger getPlan() flow both
@@ -463,7 +534,21 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const handleOpenLastPlan = useCallback(() => {
     if (!agenticProcessTypeId || !process?.plan_path) return;
     navigation.openPlan(agenticProcessTypeId, process.plan_path);
-  }, [process?.plan_path, agenticProcessTypeId, navigation]);
+  }, [process, agenticProcessTypeId, navigation]);
+
+  // Docs chip: persisted ``markdown_docs`` (oldest-first; tail = latest) drives
+  // the "Open Doc" affordance, mirroring ``plan_path`` / Open Plan. The list is
+  // a persisted entity field, so it restores after a reload via ``useEntity``.
+  const markdownDocs = process?.markdown_docs ?? EMPTY_DOCS;
+  // Open via the markdown asset editor (renders the .md), addressing the file by
+  // its absolute path through the canonical VFS grammar — the same opener the
+  // collaboration Docs sidebar uses (DockPointer.forAssetEditor('markdown', …)).
+  // navigation.openDocs() is wrong here: the DOCS view parses its arg as a
+  // typeId/docs-space id and crashes ("Invalid typeId") on a raw fs path.
+  const handleOpenMarkdown = useCallback(
+    (path: string) => navigation.openDock(DockPointer.forAssetEditor('markdown', path)),
+    [navigation],
+  );
 
   // On mount (and whenever the process identity changes), proactively call
   // getPlan() once so the button restores after a reload — the line trigger
@@ -489,7 +574,31 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // so it survives hook misses and WS drops that historically made the
   // annotation+trace merge unreliable. Annotations remain as an auxiliary
   // index for terminal-row anchoring (click-to-scroll).
-  const { transcriptPrompts } = usePromptsForProcess(process ?? null);
+  const { transcriptPrompts, refresh: refreshPrompts } = usePromptsForProcess(process ?? null);
+
+  // Hold the latest `refreshPrompts` in a ref so the xterm `onData` effect
+  // doesn't have to re-subscribe whenever the hook returns a new identity.
+  const refreshPromptsRef = useRef<typeof refreshPrompts>(refreshPrompts);
+  useEffect(() => {
+    refreshPromptsRef.current = refreshPrompts;
+  }, [refreshPrompts]);
+
+  // Debounced refetch fired ~1s after the user presses Enter in the terminal.
+  // Mashing Enter coalesces into one fetch 1s after the last keystroke.
+  const enterRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleEnterRefetch = useCallback(() => {
+    if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
+    enterRefetchTimerRef.current = setTimeout(() => {
+      enterRefetchTimerRef.current = null;
+      refreshPromptsRef.current?.();
+    }, 1000);
+  }, []);
+  useEffect(
+    () => () => {
+      if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
+    },
+    [],
+  );
 
   // Build a {timestamp → absRow} index from prompt annotations so we can
   // attach click-to-scroll behavior to transcript prompts whose annotation
@@ -525,6 +634,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       return { absRow, text: tp.text, time: tp.time, source: 'transcript' as const };
     });
   }, [transcriptPrompts, promptAnnotationIndex]);
+
+  // Most recent prompt (transcript order is chronological) — shown in the
+  // Prompts-icon hover card on both the ribbon and the side window.
+  const lastPromptText = mergedPrompts.length ? mergedPrompts[mergedPrompts.length - 1].text : null;
 
   const timeGutterRows = useTimeGutter(ptySyncSnapshot.vt, viewportY, rows, ptySyncSnapshot.version);
 
@@ -591,7 +704,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         fit.fit();
         const container = xtermContainerRef.current;
         if (container?.offsetHeight && term.rows > 0) {
-          setCellHeight(container.offsetHeight / term.rows);
+          commitCellHeight(container.offsetHeight / term.rows);
         }
       } catch {
         // ignore
@@ -627,7 +740,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           try {
             fit.fit();
             if (term.rows > 0 && xtermContainerRef.current?.offsetHeight) {
-              setCellHeight(xtermContainerRef.current.offsetHeight / term.rows);
+              commitCellHeight(xtermContainerRef.current.offsetHeight / term.rows);
             }
             const shell = shellRef.current;
             if (shell?.connected) {
@@ -668,6 +781,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       return;
     }
 
+    // Suppress IMAGE pastes from reaching xterm/the PTY. The Cmd+V keydown handler
+    // already routes image pastes through `handlePasteRef` (annotate → upload →
+    // re-emit the paste). Letting the browser's native `paste` event also flow into
+    // xterm would forward a bracketed paste to the PTY at paste-time, making the CLI
+    // read the system clipboard before annotation — i.e. the pre-annotation original.
+    // Eating image pastes here keeps the annotated image the single source of truth.
+    // Text pastes pass through.
+    const onDomPaste = (e: ClipboardEvent) => {
+      if (clipboardDataHasImage(e.clipboardData)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    };
+
     let disposed = false;
     let fitTimeoutId: ReturnType<typeof setTimeout> | null = null;
     let dimensionCheckTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -706,7 +833,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         allowProposedApi: true,
       });
 
-      term.loadAddon(new WebLinksAddon());
+      term.loadAddon(new WebLinksAddon(openTerminalLink));
 
       const fit = new FitAddon();
       term.loadAddon(fit);
@@ -734,6 +861,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         term.open(container);
         terminalRef.current = term;
         fitAddonRef.current = fit;
+        container.addEventListener('paste', onDomPaste, true);
         if (active) {
           const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
           if (t0 !== undefined)
@@ -764,7 +892,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             fit.fit();
             const h = container.offsetHeight;
             const r = term.rows;
-            if (h && r > 0) setCellHeight(h / r);
+            if (h && r > 0) commitCellHeight(h / r);
 
             // Initialize pty-sync session (adapter + VirtualTerminal)
             ptySyncRef.current.initialize(term);
@@ -804,6 +932,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
     return () => {
       disposed = true;
+
+      container.removeEventListener('paste', onDomPaste, true);
 
       if (dimensionCheckTimeout) {
         clearTimeout(dimensionCheckTimeout);
@@ -894,8 +1024,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   // Ref so the output handler always reads the latest bufferSyncUpdates without
   // requiring the effect to re-subscribe when the setting changes.
-  const bufferSyncUpdatesRef = useRef(settings.bufferSyncUpdates);
-  bufferSyncUpdatesRef.current = settings.bufferSyncUpdates;
+  const bufferSyncUpdatesRef = useRef(preferences.bufferSyncUpdates);
+  bufferSyncUpdatesRef.current = preferences.bufferSyncUpdates;
 
   // Unified PTY lifecycle effect driven by Shell 'status' events.
   // On 'connected': reset xterm to a clean slate, write replay chunks,
@@ -981,40 +1111,81 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     };
 
+    let connectGen = 0; // cancellation token: a newer connect/disconnect wins
+
     const onConnected = () => {
-      const term = terminalRef.current;
-      if (!term) return;
+      const gen = ++connectGen;
+      void (async () => {
+        const term = terminalRef.current;
+        if (!term) return;
 
-      // Reset xterm to a clean slate for this session.
-      term.reset();
+        // Fetch + replay the recorded framed stream (full history at the
+        // recorded sizes — see pty-replay.ts). Falls back to live-only on
+        // any failure (404 legacy/no stream, replay error).
+        let historySerialized: string | null = null;
+        let historyLastSeq = 0;
+        try {
+          const ptyId = shell.pty_pid ?? shell.id;
+          const stream = await fetchPtyStream(ptyId);
+          if (stream) {
+            const replay = await replayPtyStream(stream);
+            if (replay) {
+              historySerialized = replay.serialized;
+              historyLastSeq = replay.lastSeq;
+            }
+          }
+        } catch (e) {
+          console.warn('[InteractiveTerminal] history replay failed, live-only:', e);
+        }
+        if (gen !== connectGen) return; // superseded while fetching
 
-      // Replay buffered chunks from the SDK into xterm.
-      const chunks = shell.getPtyChunks();
-      for (const chunk of chunks) {
-        ptySyncRef.current.processChunk(chunk);
-        term.write(chunk.data);
-      }
+        // Reset xterm to a clean slate for this session, then restore the
+        // replayed history (scrollback + final screen + cursor).
+        term.reset();
+        if (historySerialized) term.write(historySerialized);
 
-      // Signal buffer ready after xterm processes replay writes.
-      if (chunks.length > 0) {
-        term.write('', () => {
-          anchorsResolvedRef.current = false;
-          ptySyncRef.current.notifyBufferReady();
-          setBufferFlushCount((c) => c + 1);
-        });
-      }
+        // Write live-session chunks accumulated since attach into xterm,
+        // skipping chunks already covered by the replayed stream (frames
+        // carry the same per-session seq as WS chunks). Chunks are decoded
+        // with a STREAMING TextDecoder — xterm's raw-Uint8Array path drops
+        // multi-byte chars split across writes (xtermjs/xterm.js#6003).
+        // Skipped chunks are decoded too so partial-char state stays aligned
+        // across the dedup boundary.
+        const chunks = shell.getPtyChunks();
+        const chunkDecoder = new TextDecoder('utf-8', { fatal: false });
+        let wrote = Boolean(historySerialized);
+        for (const chunk of chunks) {
+          ptySyncRef.current.processChunk(chunk);
+          const text = chunkDecoder.decode(chunk.data, { stream: true });
+          if (chunk.seq <= historyLastSeq) continue;
+          term.write(text);
+          wrote = true;
+        }
 
-      // Send resize so the process redraws for current dimensions.
-      if (shell.connected) void shell.resize(term.cols, term.rows);
+        // Signal buffer ready after xterm processes the buffered writes.
+        if (wrote) {
+          term.write('', () => {
+            anchorsResolvedRef.current = false;
+            ptySyncRef.current.notifyBufferReady();
+            setBufferFlushCount((c) => c + 1);
+          });
+        }
 
-      // Subscribe to live output (unsubscribe any prior subscription first).
-      unsubOutput?.();
-      unsubOutput = shell.onOutput(handlePtyData);
+        // Assert this client's size on the PTY — the resulting SIGWINCH makes
+        // the running TUI repaint at the real xterm dimensions (the attach-time
+        // jiggle only repainted at the PTY's previous size).
+        if (shell.connected) void shell.resize(term.cols, term.rows);
 
-      setShellReady(true);
+        // Subscribe to live output (unsubscribe any prior subscription first).
+        unsubOutput?.();
+        unsubOutput = shell.onOutput(handlePtyData);
+
+        setShellReady(true);
+      })();
     };
 
     const onDisconnected = () => {
+      connectGen++; // cancel any in-flight history replay
       unsubOutput?.();
       unsubOutput = undefined;
       setShellReady(false);
@@ -1025,7 +1196,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (syncBuf && terminalRef.current) {
         try {
           terminalRef.current.write(syncBuf);
-        } catch {}
+        } catch {
+          // Best-effort flush during disconnect.
+        }
         syncBuf = '';
         inSync = false;
       }
@@ -1036,24 +1209,95 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (s === 'disconnected') onDisconnected();
     });
 
+    // Distinct `recovered` event: the backend's PTY-recovery watchdog respawned
+    // this session's worker after a server restart (see flow_sdk/server/
+    // pty_recovery.py). Re-run the attach handshake — fetch + replay the fresh
+    // scrollback and re-subscribe — so an already-open tab self-heals without a
+    // reopen. connectGen makes re-invocation safe (a newer attach supersedes).
+    const onRecovered = (msg: { shell_id?: string; process_id?: string }) => {
+      if (msg?.shell_id === sessionId || (process && msg?.process_id === process.id)) {
+        onConnected();
+      }
+    };
+    connectionManager.on('on_recovered', onRecovered);
+
+    // WS reconnect (e.g. sleep/wake): connection membership is restored by the
+    // backend (PtyRegistry.on_ws_connect re-attaches this connection_id), so live
+    // output resumes on its own. Re-run the attach handshake to repaint the gap —
+    // fetch + replay the framed stream (seq-deduped against what we already have)
+    // and re-subscribe — so the terminal catches up instead of staying on its
+    // pre-sleep frame. No backend attach call is issued from here. connectGen
+    // makes re-invocation safe (a newer attach supersedes an in-flight one).
+    const onReconnected = () => onConnected();
+    connectionManager.on('on_reconnected', onReconnected);
+
     // Fire immediately if already connected on mount (e.g. navigation to existing terminal).
     if (shell.connected) onConnected();
 
     return () => {
+      connectGen++; // cancel any in-flight history replay
       unsubStatus();
+      connectionManager.off('on_recovered', onRecovered);
+      connectionManager.off('on_reconnected', onReconnected);
       unsubOutput?.();
 
       if (syncTimer) clearTimeout(syncTimer);
       if (syncBuf && terminalRef.current) {
         try {
           terminalRef.current.write(syncBuf);
-        } catch {}
+        } catch {
+          // Best-effort flush during cleanup.
+        }
         syncBuf = '';
         inSync = false;
       }
       setShellReady(false);
     };
   }, [shell, terminalReady]);
+
+  const reportFirstPromptIfNeeded = useCallback(
+    (prompt: string) => {
+      const submittedPrompt = prompt.trim();
+      if (!process || firstPromptReportedRef.current || !submittedPrompt) return;
+      firstPromptReportedRef.current = true;
+      void process
+        .reportEvent(AgenticProcessEventName.FirstPrompt, {
+          prompt: submittedPrompt,
+          sent_at: new Date().toISOString(),
+        })
+        .then((result) => {
+          console.debug('[InteractiveTerminal] first_prompt report_event accepted', result);
+        })
+        .catch((err: unknown) => {
+          firstPromptReportedRef.current = false;
+          console.warn('[InteractiveTerminal] first_prompt report_event failed', err);
+        });
+    },
+    [process],
+  );
+
+  const collectFirstPromptInput = useCallback(
+    (data: string) => {
+      if (firstPromptReportedRef.current || !data || data.startsWith('\x1b')) return;
+      let buffer = firstPromptBufferRef.current;
+      for (const ch of data) {
+        if (ch === '\r' || ch === '\n') {
+          reportFirstPromptIfNeeded(buffer);
+          buffer = '';
+          continue;
+        }
+        if (ch === '\u007f' || ch === '\b') {
+          buffer = buffer.slice(0, -1);
+          continue;
+        }
+        if (ch >= ' ' && ch !== '\u007f') {
+          buffer += ch;
+        }
+      }
+      firstPromptBufferRef.current = buffer;
+    },
+    [reportFirstPromptIfNeeded],
+  );
 
   // Input handler
   useEffect(() => {
@@ -1063,12 +1307,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     const disp = term.onData(async (data: string) => {
       // eslint-disable-next-line no-control-regex
       if (/^\x1b\[\?[0-9;]*c$/.test(data)) return;
+      collectFirstPromptInput(data);
+      if (data.includes('\r') || data.includes('\n')) scheduleEnterRefetch();
       const shell = shellRef.current;
       if (shell?.connected) await shell.sendInput(data);
     });
 
     return () => disp.dispose();
-  }, [terminalReady, sessionId]);
+  }, [collectFirstPromptInput, scheduleEnterRefetch, terminalReady, sessionId]);
 
   // On session restart: clear terminal, reset pty-sync, and re-fit so the
   // resumed session starts on a clean, full-size canvas.
@@ -1080,8 +1326,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       const fit = fitAddonRef.current;
       ptySyncRef.current.resetSession();
 
-      // connect({ force: true }) resets seq + replayDone, then re-attaches
-      // and re-subscribes the output handler once replayDone flips true again.
+      // attachPty({ force: true }) resets attach state, then re-attaches
+      // and re-subscribes the output handler once the attach completes.
       const shell = shellRef.current;
       void shell?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true });
 
@@ -1092,7 +1338,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             fit.fit();
             const container = xtermContainerRef.current;
             if (container?.offsetHeight && term.rows > 0) {
-              setCellHeight(container.offsetHeight / term.rows);
+              commitCellHeight(container.offsetHeight / term.rows);
             }
             // Send updated dimensions to the new PTY
             const shell = shellRef.current;
@@ -1119,6 +1365,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
     const container = xtermContainerRef.current;
 
+    // Circuit-breaker for the self-referential RO loop: fit()/rebuild()/setCellHeight
+    // all mutate DOM *inside* the container but leave the container's own box size
+    // unchanged. So we act ONLY when the observed box actually changed from the last
+    // size we fit to — fit()'s own writes (and a sibling panel / modal that perturbs
+    // the page, e.g. a portal toggling body overflow) can re-fire the observer but
+    // find the box unchanged and bail, converging in one pass instead of pegging.
+    let lastW = -1;
+    let lastH = -1;
+
     const observer = new ResizeObserver(() => {
       if (!active) return;
       if (isTransitioningRef.current) return;
@@ -1127,6 +1382,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       const fit = fitAddonRef.current;
       if (!term || !fit) return;
 
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (Math.abs(w - lastW) < 1 && Math.abs(h - lastH) < 1) return;
+      lastW = w;
+      lastH = h;
+
       try {
         fit.fit();
       } catch {
@@ -1134,7 +1395,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
 
       if (container.offsetHeight && term.rows > 0) {
-        setCellHeight(container.offsetHeight / term.rows);
+        commitCellHeight(container.offsetHeight / term.rows);
       }
 
       // Rebuild VirtualTerminal with new dimensions and replay stored chunks
@@ -1211,11 +1472,150 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [inputDirInfo, openSideTab],
   );
 
+  // Simple-chat composer image paste — same upload + Files-tab-open behaviour as
+  // the PTY paste/drop handlers, but returns the reference line(s) so the chat
+  // composer can splice them into the next prompt (instead of sending to a PTY).
+  const handleChatPasteImages = useCallback(
+    async (incoming: File[]): Promise<string[]> => {
+      if (!inputDirInfo || !incoming.length) return [];
+      // Offer markup before the pasted image(s) are attached. Cancel aborts.
+      const files = await annotateImageFiles(incoming);
+      if (!files.length) return [];
+      const uploads = await fsStore
+        .getState()
+        .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
+      await Promise.all(uploads.map((u) => u.waitForCompletion()));
+      openSideTab(SideTabId.Files);
+      return files.map((file) => `File ${file.name} is available here: ${inputDirInfo.absPath}/${file.name}`);
+    },
+    [inputDirInfo, openSideTab],
+  );
+
+  // ── Chat ⇄ Terminal mode switch (mutually-exclusive execution modes) ───────
+  // Chat = headless print-mode (no PTY); Terminal = interactive PTY. The toggle
+  // is a real lifecycle action now, not just a view flip — one standardized
+  // `switchMode(WorkerMode.Interactive|CLI)`: →terminal spawns + resumes the PTY;
+  // →chat kills the PTY worker, keeping the session, and reverts to headless
+  // routing. Both reconcile the transcript (clear + force-reload) so the
+  // destination view shows turns the other mode produced. The backend 409s a
+  // mid-turn switch; `switching` guards against double-trigger + drives the spinner.
+  const [switching, setSwitching] = useState(false);
+  const handleToggleView = useCallback(async () => {
+    // Mirror the ribbon's disabled gate: never attempt a switch mid-turn (the
+    // backend 409s it). The button is disabled in that state; this is the
+    // belt-and-suspenders guard for any non-click caller.
+    if (!process || switching || !awaitingUserInput) return;
+    const toChat = !showSimpleChat; // currently terminal → go chat
+    setSwitching(true);
+    try {
+      if (toChat) {
+        await process.switchMode(WorkerMode.CLI);
+        setChatUiOverride('chat');
+      } else {
+        const dims = terminalRef.current
+          ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows }
+          : undefined;
+        await process.switchMode(WorkerMode.Interactive, dims);
+        setChatUiOverride('terminal');
+      }
+      // Reconcile: pull in turns the other mode produced. clear() alone leaves
+      // `_historyLoaded` set, so force the reload.
+      process.flowDataStream.clear();
+      await process.loadHistory({ force: true });
+    } catch (err) {
+      console.error('[InteractiveTerminal] mode switch failed', err);
+      notify.error({
+        title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setSwitching(false);
+    }
+  }, [process, switching, showSimpleChat, awaitingUserInput]);
+
   // Compute synthetic shell-pane active state for the ribbon
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
   const ribbonActiveSideTab = activePane === 'shell' && sidecarShellId ? SideTabId.Shell : activeSideTab;
 
+  // Side-window panels keyed by tab id — only the active one is mounted by the
+  // drawer. Null-guards mirror the prior inline conditionals.
+  const sidePanels = useMemo<Partial<Record<SideTabId, React.ReactNode>>>(() => {
+    const panels: Partial<Record<SideTabId, React.ReactNode>> = {
+      [SideTabId.Git]: (
+        <GitPanel
+          computeNodeId={shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? ''}
+          workdir={shellRef.current?.workdir ?? process?.workdir ?? ''}
+          sidecarShellId={sidecarShellId}
+        />
+      ),
+      [SideTabId.Prompts]: (
+        <PromptIndexPanel
+          prompts={mergedPrompts}
+          onScrollToLine={scrollAnnotationToLine}
+          process={process ?? null}
+          projectId={process?.project_id ?? null}
+        />
+      ),
+    };
+    if (process) {
+      panels[SideTabId.Queue] = <QueuePanel process={process} />;
+      panels[SideTabId.Context] = (
+        <div className="h-full overflow-y-auto p-3">
+          <EntityContextPanel entity={process} />
+        </div>
+      );
+      panels[SideTabId.Analysis] = <AnalysisPanel process={process} />;
+      panels[SideTabId.SkillsAgents] = (
+        <SkillsAgentsPanel
+          workerType={process.worker_type ?? null}
+          sessionId={process.session_id ?? null}
+        />
+      );
+    }
+    if (inputDirInfo) {
+      panels[SideTabId.Files] = (
+        <InputFilesPanel
+          computeNodeTypeId={inputDirInfo.computeNodeTypeId}
+          inputDirAbsPath={inputDirInfo.absPath}
+        />
+      );
+      if (process?.workdir || shellRef.current?.workdir) {
+        panels[SideTabId.Dir] = (
+          <SimpleDirTree
+            computeNodeTypeId={inputDirInfo.computeNodeTypeId}
+            topLevel={process?.workdir ?? shellRef.current?.workdir ?? ''}
+          />
+        );
+      }
+    }
+    return panels;
+  }, [process, inputDirInfo, sidecarShellId, mergedPrompts, scrollAnnotationToLine, dataContext.computeNode?.id]);
+
+  const sideTabs = useMemo<TabDescriptor<SideTabId>[]>(
+    () =>
+      sideWindowTabs.map((id) => {
+        const d = SIDE_TABS[id];
+        return {
+          id,
+          label: d.label,
+          icon: d.icon,
+          closable: true,
+          tooltip: (
+            <SideTabTooltipContent
+              side="bottom"
+              isPrompts={id === SideTabId.Prompts}
+              lastPromptText={lastPromptText}
+              promptCount={mergedPrompts.length}
+              fallback={d.description}
+            />
+          ),
+        };
+      }),
+    [sideWindowTabs, lastPromptText, mergedPrompts.length],
+  );
+
   return (
+    <ChatPlanModeProvider process={process}>
     <div className={`relative flex h-full flex-col ${className}`} onDragOver={(e) => e.preventDefault()}>
       {/* Top bar — ProcessToolbar (Claude pane) or PaneBar (Shell pane) */}
       {process && activePane === 'claude' && (
@@ -1234,9 +1634,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       )}
       {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
 
+      {/* Runtime-error banner — populated by the shell-dock loader on soft
+          ProcessLoadError (PTY dead, process stopped, project missing,
+          shell entity missing, network). Renders nothing when null. */}
+      <TerminalRuntimeErrorBanner />
+
       <PtySyncProvider session={ptySyncRef.current}>
-        {/* Column header — only for Claude pane */}
-        {process && activePane === 'claude' ? (
+        {/* Column header — only for Claude pane; terminal debug chrome
+            (trace/annotation/PTY-timing), hidden in Standard view and when the
+            simple chat replaces the xterm. */}
+        {process && activePane === 'claude' && !showSimpleChat && isAdvanced ? (
           <ColumnHeaderBar
             showTrace={showGutter}
             traceWidth={48}
@@ -1281,28 +1688,34 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   paddingRight: showAnnotationGutter || reserveAnnotationSpace ? 24 : 0,
                 }}
               >
-                <div
-                  ref={xtermContainerRef}
-                  className="relative min-h-0 min-w-0 flex-1"
-                  onClick={handleContainerClick}
-                  tabIndex={0}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    void handleFileDrop(e);
-                  }}
-                >
-                  {searchOpen && (
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <TerminalSearchBar
-                        searchAddon={searchAddonRef.current}
-                        onClose={() => {
-                          setSearchOpen(false);
-                          terminalRef.current?.focus();
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
+                {/* Headless (pty_mode=false): don't render the xterm container at
+                    all → the mount effect early-returns on the missing ref, so no
+                    XTerm/PtySync is created. SimpleChatPane (absolute overlay
+                    below) is the whole view. */}
+                {!isHeadless && (
+                  <div
+                    ref={xtermContainerRef}
+                    className="relative min-h-0 min-w-0 flex-1"
+                    onClick={handleContainerClick}
+                    tabIndex={0}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      void handleFileDrop(e);
+                    }}
+                  >
+                    {searchOpen && (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <TerminalSearchBar
+                          searchAddon={searchAddonRef.current}
+                          onClose={() => {
+                            setSearchOpen(false);
+                            terminalRef.current?.focus();
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               {/* Gutters — absolutely positioned over padded areas */}
               {showGutter && (
@@ -1315,7 +1728,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     viewportY={viewportY}
                     rows={rows}
                     cellHeight={metricsCellHeight}
-                    projectEncodedName={dataContext.project?.fs_storage_mount_path?.replace(/\//g, '-')}
                     expanded={gutterExpanded}
                     onOpen={() => setGutterExpanded(true)}
                     onClose={() => setGutterExpanded(false)}
@@ -1351,56 +1763,31 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   />
                 </div>
               )}
+              {/* Standard-view simple chat — opaque overlay above xterm +
+                  gutters. The xterm stays mounted (and fitted) underneath so
+                  toggling Advanced⇄Standard is instant and never resets the
+                  terminal. Same session, same PTY (see SimpleChatPane). */}
+              {showSimpleChat && process && (
+                <div className="absolute inset-0 z-[60]">
+                  <SimpleChatPane process={process} />
+                </div>
+              )}
             </div>
 
             {/* Side window (non-Shell tabs) */}
             {sideWindowTabs.length > 0 && activeSideTab && (
-              <SideWindow
-                tabs={sideWindowTabs}
+              <TabbedSideDrawer<SideTabId>
+                open
+                width="w-80"
+                tabs={sideTabs}
                 activeTab={activeSideTab}
-                onSelect={(tab) => dispatchSideTab({ type: 'select', tab })}
-                onClose={closeSideTab}
+                onActiveTabChange={selectSideTab}
+                onCloseTab={closeSideTab}
+                truncateLabels
+                scrollableTabs
               >
-                {activeSideTab === SideTabId.Git && (
-                  <GitPanel
-                    computeNodeId={shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? ''}
-                    workdir={shellRef.current?.workdir ?? process?.workdir ?? ''}
-                    sidecarShellId={sidecarShellId}
-                  />
-                )}
-                {activeSideTab === SideTabId.Prompts && (
-                  <PromptIndexPanel prompts={mergedPrompts} onScrollToLine={scrollAnnotationToLine} />
-                )}
-                {activeSideTab === SideTabId.Queue && process && (
-                  <QueuePanel
-                    queue={queue}
-                    onAdd={(e) => {
-                      void addEntry(e);
-                    }}
-                    onRemove={(i) => {
-                      void removeEntry(i);
-                    }}
-                    onMove={(i, d) => {
-                      void moveEntry(i, d);
-                    }}
-                    onSetEnabled={(v) => {
-                      void setEnabled(v);
-                    }}
-                  />
-                )}
-                {activeSideTab === SideTabId.Files && inputDirInfo && (
-                  <InputFilesPanel
-                    computeNodeTypeId={inputDirInfo.computeNodeTypeId}
-                    inputDirAbsPath={inputDirInfo.absPath}
-                  />
-                )}
-                {activeSideTab === SideTabId.Dir && inputDirInfo && (process?.workdir || shellRef.current?.workdir) && (
-                  <SimpleDirTree
-                    computeNodeTypeId={inputDirInfo.computeNodeTypeId}
-                    topLevel={process?.workdir ?? shellRef.current?.workdir ?? ''}
-                  />
-                )}
-              </SideWindow>
+                {sidePanels}
+              </TabbedSideDrawer>
             )}
           </div>
 
@@ -1410,6 +1797,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               <SidecarShellTerminal shellId={sidecarShellId} active={true} className="min-h-0 flex-1" />
             </PaneView>
           )}
+
         </div>
       </PtySyncProvider>
 
@@ -1418,27 +1806,34 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           fileCount={fileCount}
           isActive={processIsActive}
           promptCount={mergedPrompts.length}
-          queue={queue}
-          onQueueAdd={(e) => {
-            void addEntry(e);
-          }}
-          onQueueRemove={(i) => {
-            void removeEntry(i);
-          }}
+          lastPromptText={lastPromptText}
+          process={process}
           openTabs={ribbonOpenTabs}
           activeSideTab={ribbonActiveSideTab}
           onOpenSideTab={(tab) => {
             if (tab === SideTabId.Shell) {
               void handleToggleSidecar();
             } else {
-              dispatchSideTab({ type: 'toggle', tab });
+              toggleSideTab(tab);
             }
           }}
           hasLastPlan={hasPlan}
           onOpenLastPlan={handleOpenLastPlan}
+          markdownDocs={markdownDocs}
+          onOpenMarkdown={handleOpenMarkdown}
+          composer={
+            showSimpleChat && process ? (
+              <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} />
+            ) : undefined
+          }
+          chatActive={showSimpleChat}
+          switching={switching}
+          toggleEnabled={awaitingUserInput}
+          onToggleView={canToggleView ? () => void handleToggleView() : undefined}
         />
       )}
     </div>
+    </ChatPlanModeProvider>
   );
 };
 

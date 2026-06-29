@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from flow_sdk.compute.providers.base_pty_session import PtySession
+from flow_sdk.compute.providers.base_pty_state import PtySession
 
 if TYPE_CHECKING:
     from .provider import DockerComputeProvider

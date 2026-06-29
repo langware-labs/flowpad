@@ -11,7 +11,9 @@
  * Exit 0 = pass, non-zero = fail (run full Playwright path)
  */
 
-const API_URL = process.env.API_URL || "http://localhost:9007";
+import { apiOrigin } from "../../_shared/api";
+
+const API_URL = apiOrigin();
 
 interface SearchResult {
   id?: string;

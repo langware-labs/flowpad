@@ -14,6 +14,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AlertTriangle, CheckCircle2, FolderOpen, GitBranch, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 type Step =
   | 'checking'
@@ -51,6 +52,7 @@ interface Props {
 
 export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projectUrl, branch, repoId, onClose }: Props) {
   const { navigation } = useDockNavigation();
+  const { t } = useLingui();
   const [step, setStep] = useState<Step>('checking');
   const [findResult, setFindResult] = useState<FindResult | null>(null);
   const [localPath, setLocalPath] = useState('');
@@ -77,7 +79,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
         setStep(result.found ? 'found' : 'not_found');
       })
       .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : 'Failed to look up project.';
+        const msg = err instanceof Error ? err.message : t`Failed to look up project.`;
         setErrorMsg(msg);
         setStep('error');
       });
@@ -102,11 +104,11 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
       } else if (result.success) {
         setStep('success');
         setTimeout(() => {
-          navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+          navigation.openDock(DockPointer.fromUrl('tasks', taskId));
           handleClose();
         }, 800);
       } else {
-        setErrorMsg(result.error ?? 'Pull failed.');
+        setErrorMsg(result.error ?? t`Pull failed.`);
         setStep('error');
       }
     } catch (err: unknown) {
@@ -126,15 +128,15 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
       } else if (result.success) {
         setStep('success');
         setTimeout(() => {
-          navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+          navigation.openDock(DockPointer.fromUrl('tasks', taskId));
           handleClose();
         }, 800);
       } else {
-        setErrorMsg(result.error ?? 'Clone failed.');
+        setErrorMsg(result.error ?? t`Clone failed.`);
         setStep('error');
       }
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Clone failed.');
+      setErrorMsg(err instanceof Error ? err.message : t`Clone failed.`);
       setStep('error');
     }
   }, [taskId, cloneTarget, projectUrl, branch, navigation, handleClose]);
@@ -160,9 +162,9 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
         {step === 'checking' && (
           <>
             <DialogHeader>
-              <DialogTitle>Looking up project…</DialogTitle>
+              <DialogTitle><Trans>Looking up project…</Trans></DialogTitle>
               <DialogDescription>
-                Checking if you have a local clone of the repository.
+                <Trans>Checking if you have a local clone of the repository.</Trans>
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center justify-center py-8">
@@ -175,15 +177,17 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
         {step === 'found' && (
           <>
             <DialogHeader>
-              <DialogTitle>Pull and open task</DialogTitle>
+              <DialogTitle><Trans>Pull and open task</Trans></DialogTitle>
               <DialogDescription>
-                <strong>{senderName}</strong> shared <em>{taskTitle}</em> with you.
+                <Trans>
+                  <strong>{senderName}</strong> shared <em>{taskTitle}</em> with you.
+                </Trans>
               </DialogDescription>
             </DialogHeader>
             <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
               {repoUrl && (
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <span className="shrink-0">Repo:</span>
+                  <span className="shrink-0"><Trans>Repo:</Trans></span>
                   <code className="truncate text-foreground">{repoUrl}</code>
                 </div>
               )}
@@ -201,8 +205,8 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
               )}
             </div>
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}>Cancel</Button>
-              <Button onClick={() => void handleConfirmPull()}>Pull &amp; Open</Button>
+              <Button variant="ghost" onClick={handleClose}><Trans>Cancel</Trans></Button>
+              <Button onClick={() => void handleConfirmPull()}><Trans>Pull &amp; Open</Trans></Button>
             </DialogFooter>
           </>
         )}
@@ -211,7 +215,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
         {step === 'pulling' && (
           <>
             <DialogHeader>
-              <DialogTitle>Pulling…</DialogTitle>
+              <DialogTitle><Trans>Pulling…</Trans></DialogTitle>
             </DialogHeader>
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -223,16 +227,18 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
         {step === 'not_found' && (
           <>
             <DialogHeader>
-              <DialogTitle>Project not found locally</DialogTitle>
+              <DialogTitle><Trans>Project not found locally</Trans></DialogTitle>
               <DialogDescription>
-                <strong>{senderName}</strong> shared <em>{taskTitle}</em> with you, but we couldn't
-                find a local clone of the repository. Clone it to see the task.
+                <Trans>
+                  <strong>{senderName}</strong> shared <em>{taskTitle}</em> with you, but we couldn't
+                  find a local clone of the repository. Clone it to see the task.
+                </Trans>
               </DialogDescription>
             </DialogHeader>
 
             {knownProjects.length > 0 && (
               <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Known projects (click to clone alongside):</p>
+                <p className="text-xs font-medium text-muted-foreground"><Trans>Known projects (click to clone alongside):</Trans></p>
                 <div className="max-h-28 overflow-y-auto rounded-md border text-xs">
                   {knownProjects.map((p) => (
                     <button
@@ -251,22 +257,22 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
 
             <div className="flex gap-2">
               <Input
-                placeholder="Parent folder to clone into…"
+                placeholder={t`Parent folder to clone into…`}
                 value={cloneTarget}
                 onChange={(e) => setCloneTarget(e.target.value)}
                 className="flex-1 text-sm"
               />
               {computeNode && (
-                <Button variant="outline" size="icon" onClick={() => void handlePickFolder()} title="Browse…">
+                <Button variant="outline" size="icon" onClick={() => void handlePickFolder()} title={t`Browse…`}>
                   <FolderOpen className="h-4 w-4" />
                 </Button>
               )}
             </div>
 
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}>Cancel</Button>
+              <Button variant="ghost" onClick={handleClose}><Trans>Cancel</Trans></Button>
               <Button onClick={() => void handleConfirmClone()} disabled={!cloneTarget}>
-                Clone &amp; Open
+                <Trans>Clone &amp; Open</Trans>
               </Button>
             </DialogFooter>
           </>
@@ -276,7 +282,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
         {step === 'cloning' && (
           <>
             <DialogHeader>
-              <DialogTitle>Cloning…</DialogTitle>
+              <DialogTitle><Trans>Cloning…</Trans></DialogTitle>
             </DialogHeader>
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -290,9 +296,9 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                Done!
+                <Trans>Done!</Trans>
               </DialogTitle>
-              <DialogDescription>Opening task…</DialogDescription>
+              <DialogDescription><Trans>Opening task…</Trans></DialogDescription>
             </DialogHeader>
           </>
         )}
@@ -303,15 +309,17 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-yellow-500" />
-                Merge conflicts
+                <Trans>Merge conflicts</Trans>
               </DialogTitle>
               <DialogDescription>
-                There are merge conflicts in <code>{localPath}</code>. Please resolve them and try again.
+                <Trans>
+                  There are merge conflicts in <code>{localPath}</code>. Please resolve them and try again.
+                </Trans>
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}>Close</Button>
-              <Button onClick={() => void handleConfirmPull()}>Retry pull</Button>
+              <Button variant="ghost" onClick={handleClose}><Trans>Close</Trans></Button>
+              <Button onClick={() => void handleConfirmPull()}><Trans>Retry pull</Trans></Button>
             </DialogFooter>
           </>
         )}
@@ -322,7 +330,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-destructive" />
-                Something went wrong
+                <Trans>Something went wrong</Trans>
               </DialogTitle>
               <DialogDescription asChild>
                 <div>
@@ -330,14 +338,14 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
                     {errorMsg}
                   </pre>
                   <p className="mt-3 text-sm text-muted-foreground">
-                    Please fix the issue in your repository and try again.
+                    <Trans>Please fix the issue in your repository and try again.</Trans>
                   </p>
                 </div>
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}>Close</Button>
-              <Button onClick={() => void handleConfirmPull()}>Retry</Button>
+              <Button variant="ghost" onClick={handleClose}><Trans>Close</Trans></Button>
+              <Button onClick={() => void handleConfirmPull()}><Trans>Retry</Trans></Button>
             </DialogFooter>
           </>
         )}

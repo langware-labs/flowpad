@@ -14,12 +14,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.fs_records.agent_status import (
+from flow_sdk.builtin.worker_status import (
     WorkerStatus,
     is_running as is_worker_running,
     is_terminal as is_worker_terminal,
 )
-from flow_sdk.fs_records.agentic_process_lifecycle import (
+from flow_sdk.builtin.process_lifecycle import (
     ProcessStatus,
     is_running as is_process_running,
     is_startable as is_process_startable,
@@ -82,9 +82,12 @@ def is_ready_for_input(
             AND  worker_status ∈ {IDLE, COMPLETE, INTERRUPTED}
 
     Special case: ``worker_status is None`` means the transcript hasn't been
-    discovered yet. If the process has no ``session_id``, it has never been
-    prompted — treat as ready. Otherwise Claude was just launched and the
-    JSONL hasn't been written yet — treat as busy.
+    discovered yet. The worker is busy only when a turn is actually in flight
+    (the headless drivers set ``_turn_in_flight`` for the duration of a turn);
+    otherwise a RUNNING process with no derivable status is spawned-and-idle,
+    ready for its first prompt. (Previously gated on ``session_id`` presence,
+    which mis-read every freshly-spawned session as busy because the Claude
+    driver mints a ``session_id`` eagerly, before any turn runs.)
 
     The ``worker_status`` argument is optional — if the caller has already
     resolved it (e.g. inside a serializer), pass it to avoid a second tail-read.
@@ -95,9 +98,9 @@ def is_ready_for_input(
         # Don't trigger a transcript read on every call; only resolve if the
         # caller didn't pre-compute it. Callers that do serve hot paths should
         # pass ``worker_status`` explicitly.
-        resolved = process._discover_status_from_transcript()
+        resolved = process.fetch_worker_status()
     else:
         resolved = worker_status
     if resolved is None:
-        return not bool(process.session_id)
+        return not getattr(process, "_turn_in_flight", False)
     return resolved in _READY_WORKER_STATES

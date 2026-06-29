@@ -370,6 +370,11 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
       const typeid = getTypeIdFromItem(item);
       if (!typeid) return false;
 
+      // Mark the rename as committing so onBlur skips cancelRename while the
+      // backend round-trip is in flight. Without this the input can blur mid-
+      // request (test harness focus shift, render reconcile) and the test
+      // races past waitFor(input gone) before the backend write lands.
+      setState((prev) => ({ ...prev, renameCommitting: true }));
       try {
         await fsManager.rename(typeid, item.relativePath || item.name, newName.trim());
 
@@ -377,12 +382,13 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
         const parentPath = (item.relativePath || '/').split('/').slice(0, -1).join('/') || '/';
         fsStore.getState().invalidate(typeid, parentPath, 'browse');
 
-        // Clear rename state
+        // Clear rename state (also clears renameCommitting via cancelRename).
         cancelRename();
 
         return true;
       } catch (error) {
         console.error('[useDirectoryTree] Failed to rename:', error);
+        setState((prev) => ({ ...prev, renameCommitting: false }));
         return false;
       }
     },

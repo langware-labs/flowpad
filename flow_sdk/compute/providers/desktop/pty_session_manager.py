@@ -1,7 +1,21 @@
-"""PTY Session Manager - Manages persistent PTY session state.
+"""PtyRegistry — the backend-owned connection-membership FSM for PTYs.
 
-This module provides session persistence across WebSocket reconnections,
-enabling terminal refresh recovery without losing running processes.
+One ``PtyState`` per running PTY (keyed by ``PtyKey``) holds its output ``seq``,
+its stream file, and — the membership state — which WebSocket connections are
+ATTACHED (receive live output) vs DETACHED (parked, WS dropped). The PTY process
+is decoupled from any connection, so a dropped socket never kills the shell.
+
+The FSM is driven entirely by the WS lifecycle (see server/routes/websocket.py):
+  - ``on_ws_connect``    : DETACHED → ATTACHED  (resume; reconnect of same id)
+  - ``on_ws_disconnect`` : ATTACHED → DETACHED  (park; transport drop, kept)
+  - ``attach`` / ``generate_session`` : NONE → ATTACHED  (client opens a terminal)
+  - ``close_for_connection`` : explicit close — destroys the PtyState if last
+Output fan-out (pty_actions.on_pty_output) delivers to ``attached_connections``
+only. The frontend declares intent once on open and otherwise just renders.
+
+Two bounded reapers prevent leaks (``cleanup_expired_sessions``): a PtyState with
+no attached connections for > TTL is closed; a parked connection that does not
+reconnect within a grace is dropped from ``detached_connections``.
 """
 
 import asyncio
@@ -13,15 +27,28 @@ from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
+# Identity of one PtyState in the registry: (compute_node_id, provider_node_id, shell_id).
+# This is the registry's 3-tuple key — distinct from the provider's own 2-tuple
+# (provider_node_id, session_id) used inside compute providers.
+PtyKey = Tuple[str, str, str]
 
-class PtySessionState(BaseModel):
-    """State for a persistent PTY session.
 
-    Supports multiple concurrent client connections to the same PTY session.
+class PtyState(BaseModel):
+    """Persistent server-side state for one PTY: its identity, output seq, and
+    the set of WebSocket connections currently attached (subscribed to output).
+
+    Survives client reconnects — the PTY process is decoupled from any single
+    connection, so a dropped socket never kills the shell.
     """
 
-    pty_key: Tuple[str, str, str]  # (compute_node_id, provider_node_id, shell_id)
-    connection_ids: set[str] = Field(default_factory=set)  # All attached WebSocket connections
+    pty_key: PtyKey  # (compute_node_id, provider_node_id, shell_id)
+    # Connection-membership FSM. A connection is in exactly one state per PtyState:
+    #   ATTACHED  → in attached_connections, receives live output
+    #   DETACHED  → in detached_connections, parked (WS dropped) — auto-restored on
+    #               reconnect of the same connection_id; reaped after a grace
+    #   NONE      → in neither (never subscribed, or explicitly closed)
+    attached_connections: set[str] = Field(default_factory=set)
+    detached_connections: dict[str, float] = Field(default_factory=dict)  # connection_id -> detached_at
     created_at: float = Field(default_factory=time.time)
     last_attached_at: float = Field(default_factory=time.time)
     last_detached_at: Optional[float] = None
@@ -29,6 +56,7 @@ class PtySessionState(BaseModel):
     name: Optional[str] = None  # Display name for the session
     terminal_id: Optional[str] = None
     last_seq_received: Optional[int] = None
+    seq: int = 0  # Monotonic output-chunk counter (activity signal; no data stored)
     compute_node_id: Optional[str] = None
     cols: int = 80
     rows: int = 24
@@ -38,18 +66,34 @@ class PtySessionState(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    def next_seq(self) -> int:
+        """Advance and return the monotonic output-chunk counter."""
+        self.seq += 1
+        return self.seq
+
+    def mark_attached(self, connection_id: str) -> None:
+        """The single membership-add invariant: a connection becomes ATTACHED.
+
+        Joins the output set, drops any parked (DETACHED) entry, refreshes
+        activity, and disarms the orphan TTL (there is now a live viewer).
+        """
+        self.attached_connections.add(connection_id)
+        self.detached_connections.pop(connection_id, None)
+        self.last_attached_at = time.time()
+        self.last_detached_at = None
+
     @property
     def connection_id(self) -> Optional[str]:
         """Backward compatibility: return first connection or None"""
-        return next(iter(self.connection_ids)) if self.connection_ids else None
+        return next(iter(self.attached_connections)) if self.attached_connections else None
 
     @property
     def is_attached(self) -> bool:
         """Check if any client is attached"""
-        return len(self.connection_ids) > 0
+        return len(self.attached_connections) > 0
 
 
-class PtySessionManager:
+class PtyRegistry:
     """Singleton manager for PTY sessions with persistence and cleanup.
 
     Manages PTY session lifecycle:
@@ -58,17 +102,17 @@ class PtySessionManager:
     - TTL-based cleanup for expired sessions
     """
 
-    _instance: Optional["PtySessionManager"] = None
+    _instance: Optional["PtyRegistry"] = None
 
     def __init__(self):
         """Initialize the PTY session manager."""
-        self.sessions: Dict[Tuple[str, str, str], PtySessionState] = {}
+        self.states: Dict[PtyKey, PtyState] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
-        logger.info("[PtySessionManager] Initialized")
+        logger.info("[PtyRegistry] Initialized")
 
     @classmethod
-    def get_instance(cls) -> "PtySessionManager":
-        """Get singleton instance of PtySessionManager."""
+    def get_instance(cls) -> "PtyRegistry":
+        """Get singleton instance of PtyRegistry."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -82,12 +126,12 @@ class PtySessionManager:
 
     async def generate_session(
         self,
-        pty_key: Tuple[str, str, str],
+        pty_key: PtyKey,
         compute_node_id: str,
         connection_id: str | None,
         cols: int = 80,
         rows: int = 24,
-    ) -> PtySessionState:
+    ) -> PtyState:
         """Get existing session or create new one.
 
         Args:
@@ -98,56 +142,57 @@ class PtySessionManager:
             rows: Terminal rows
 
         Returns:
-            PtySessionState for the session
+            PtyState for the session
         """
-        if pty_key in self.sessions:
-            session = self.sessions[pty_key]
+        if pty_key in self.states:
+            session = self.states[pty_key]
             session.compute_node_id = compute_node_id
             if connection_id is not None:
-                session.connection_ids.add(connection_id)
+                session.attached_connections.add(connection_id)
+                session.detached_connections.pop(connection_id, None)
             session.last_attached_at = time.time()
             session.last_detached_at = None
             session.cols = cols
             session.rows = rows
             logger.info(
                 f"PTY session retrieved: pty_key={pty_key} connection_id={connection_id}"
-                f" total_connections={len(session.connection_ids)} age_seconds={time.time() - session.created_at:.1f}"
+                f" total_connections={len(session.attached_connections)} age_seconds={time.time() - session.created_at:.1f}"
             )
             return session
 
         # Create new session
-        session = PtySessionState(
+        session = PtyState(
             pty_key=pty_key,
             cols=cols,
             rows=rows,
         )
         if connection_id is not None:
-            session.connection_ids.add(connection_id)
-        self.sessions[pty_key] = session
+            session.attached_connections.add(connection_id)
+        self.states[pty_key] = session
 
         logger.info(
-            f"PTY session created: pty_key={pty_key} connection_id={connection_id} total_sessions={len(self.sessions)}"
+            f"PTY session created: pty_key={pty_key} connection_id={connection_id} total_sessions={len(self.states)}"
         )
 
         return session
 
-    async def get_session(self, pty_key: Tuple[str, str, str]) -> Optional[PtySessionState]:
+    async def get_session(self, pty_key: PtyKey) -> Optional[PtyState]:
         """Get existing session by key.
 
         Args:
             pty_key: (compute_node_id, provider_node_id, shell_id) tuple
 
         Returns:
-            PtySessionState if found, None otherwise
+            PtyState if found, None otherwise
         """
-        session = self.sessions.get(pty_key)
+        session = self.states.get(pty_key)
         if session:
-            logger.info(f"PTY session retrieved: pty_key={pty_key}")
+            logger.debug(f"PTY session retrieved: pty_key={pty_key}")
         else:
-            logger.info(f"PTY session not found: pty_key={pty_key}")
+            logger.debug(f"PTY session not found: pty_key={pty_key}")
         return session
 
-    async def attach_session(self, pty_key: Tuple[str, str, str], connection_id: str) -> PtySessionState:
+    async def attach(self, pty_key: PtyKey, connection_id: str) -> PtyState:
         """Attach to existing PTY session.
 
         Args:
@@ -155,93 +200,112 @@ class PtySessionManager:
             connection_id: WebSocket connection ID
 
         Returns:
-            PtySessionState for the session
+            PtyState for the session
 
         Raises:
             KeyError: If session not found
         """
-        session = self.sessions.get(pty_key)
+        session = self.states.get(pty_key)
         if not session:
             logger.error(f"PTY session not found for attach: pty_key={pty_key}")
             raise KeyError(f"Session {pty_key} not found")
 
-        session.connection_ids.add(connection_id)
-        session.last_attached_at = time.time()
-        if session.last_detached_at and len(session.connection_ids) == 1:
-            # First client reattaching after detachment
-            session.last_detached_at = None
-
+        session.mark_attached(connection_id)
         logger.info(
             f"PTY session reattached: pty_key={pty_key} connection_id={connection_id}"
-            f" total_connections={len(session.connection_ids)}"
-            f" detached_duration_seconds={time.time() - session.last_detached_at if session.last_detached_at else 0}"
+            f" total_connections={len(session.attached_connections)}"
         )
-
         return session
 
-    async def detach_session(self, pty_key: Tuple[str, str, str], connection_id: Optional[str] = None) -> None:
+    async def detach(self, pty_key: PtyKey, connection_id: Optional[str] = None) -> None:
         """Remove a connection from the session.
 
         Args:
             pty_key: (compute_node_id, provider_node_id, shell_id) tuple
             connection_id: Specific connection to detach (if None, detaches all)
         """
-        session = self.sessions.get(pty_key)
+        session = self.states.get(pty_key)
         if not session:
             logger.warning(f"PTY session not found for detach: pty_key={pty_key}")
             return
 
         if connection_id:
-            session.connection_ids.discard(connection_id)
-            logger.info(f"[PtySessionManager] Detached connection {connection_id} from session {pty_key}")
+            session.attached_connections.discard(connection_id)
+            logger.info(f"[PtyRegistry] Detached connection {connection_id} from session {pty_key}")
         else:
-            session.connection_ids.clear()
-            logger.info(f"[PtySessionManager] Detached all connections from session {pty_key}")
+            session.attached_connections.clear()
+            logger.info(f"[PtyRegistry] Detached all connections from session {pty_key}")
 
         # Only mark as detached if no connections remain
-        if len(session.connection_ids) == 0:
+        if len(session.attached_connections) == 0:
             session.last_detached_at = time.time()
 
-        logger.info(f"PTY session detached: pty_key={pty_key} remaining_connections={len(session.connection_ids)}")
+        logger.info(f"PTY session detached: pty_key={pty_key} remaining_connections={len(session.attached_connections)}")
 
-    async def close_for_connection(self, pty_key: Tuple[str, str, str], connection_id: str) -> None:
+    async def close_for_connection(self, pty_key: PtyKey, connection_id: str) -> None:
         """Remove a connection and only destroy the session if no connections remain.
 
         Args:
             pty_key: (compute_node_id, provider_node_id, shell_id) tuple
             connection_id: The connection requesting the close
         """
-        session = self.sessions.get(pty_key)
+        session = self.states.get(pty_key)
         if not session:
             logger.warning(f"PTY session not found for close_for_connection: pty_key={pty_key}")
             return
 
-        session.connection_ids.discard(connection_id)
+        session.attached_connections.discard(connection_id)
         logger.info(
-            f"[PtySessionManager] Connection {connection_id} closed on session {pty_key}, "
-            f"remaining connections: {len(session.connection_ids)}"
+            f"[PtyRegistry] Connection {connection_id} closed on session {pty_key}, "
+            f"remaining connections: {len(session.attached_connections)}"
         )
 
-        if len(session.connection_ids) == 0:
+        if len(session.attached_connections) == 0:
             await self.close_session(pty_key)
 
-    async def detach_all_for_connection(self, connection_id: str) -> None:
-        """Remove connection_id from every session it belongs to.
+    async def on_ws_disconnect(self, connection_id: str) -> None:
+        """WS-lifecycle transition: PARK this connection on every PtyState.
 
-        Used by the WebSocket disconnect handler to clean up stale connection
-        references without closing any PTY processes.
+        Called from the WebSocket disconnect handler. Moves the connection from
+        ATTACHED → DETACHED (it stops receiving output) but KEEPS the
+        subscription, so a reconnect of the same connection_id auto-restores
+        delivery via ``on_ws_connect``. The PTY process is never touched.
         """
-        for pty_key, session_state in list(self.sessions.items()):
-            if connection_id in session_state.connection_ids:
-                await self.detach_session(pty_key, connection_id)
+        now = time.time()
+        for pty_key, state in list(self.states.items()):
+            if connection_id in state.attached_connections:
+                state.attached_connections.discard(connection_id)
+                state.detached_connections[connection_id] = now
+                if len(state.attached_connections) == 0:
+                    state.last_detached_at = now  # arms the orphan TTL
+                logger.info(
+                    f"[PtyRegistry] Parked connection {connection_id} on {pty_key} "
+                    f"(attached={len(state.attached_connections)} detached={len(state.detached_connections)})"
+                )
 
-    async def close_session(self, pty_key: Tuple[str, str, str]) -> None:
+    async def on_ws_connect(self, connection_id: str) -> None:
+        """WS-lifecycle transition: RESUME this connection on every PtyState.
+
+        Called from the WebSocket accept handler. Moves the connection from
+        DETACHED → ATTACHED on any PtyState it had a parked subscription for, so
+        live output resumes with no client action. Idempotent and safe for a
+        brand-new connection (no parked entries → no-op).
+        """
+        for pty_key, state in list(self.states.items()):
+            if connection_id in state.detached_connections:
+                state.mark_attached(connection_id)
+                logger.info(
+                    f"[PtyRegistry] Resumed connection {connection_id} on {pty_key} "
+                    f"(attached={len(state.attached_connections)})"
+                )
+
+    async def close_session(self, pty_key: PtyKey) -> None:
         """Close and remove PTY session.
 
         Args:
             pty_key: (compute_node_id, provider_node_id, shell_id) tuple
         """
-        session = self.sessions.pop(pty_key, None)
+        session = self.states.pop(pty_key, None)
         if not session:
             logger.warning(f"PTY session not found for close: pty_key={pty_key}")
             return
@@ -250,20 +314,20 @@ class PtySessionManager:
 
         # Transition shell session record to CLOSED
         try:
-            from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
+            from flow_sdk.builtin.shell import get_shell_record, close_shell_record
 
-            record = ShellRecord.get(shell_id)
+            record = get_shell_record(shell_id)
             if record:
-                record.close()
+                close_shell_record(record)
         except Exception as e:
-            logger.warning(f"[PtySessionManager] Error closing shell session record {shell_id}: {e}")
+            logger.warning(f"[PtyRegistry] Error closing shell session record {shell_id}: {e}")
 
         # Delete PTY stream file if present
         if session.pty_stream_file:
             try:
                 session.pty_stream_file.delete()
             except Exception as e:
-                logger.warning(f"[PtySessionManager] Error deleting PTY stream file for {shell_id}: {e}")
+                logger.warning(f"[PtyRegistry] Error deleting PTY stream file for {shell_id}: {e}")
 
         # Close PTY via provider
         try:
@@ -274,11 +338,11 @@ class PtySessionManager:
             if compute_node and compute_node.node_provider_id:
                 await compute_node.compute_provider.close_pty_session(compute_node.node_provider_id, shell_id)
         except Exception as e:
-            logger.warning(f"[PtySessionManager] Error closing PTY {pty_key}: {e}")
+            logger.warning(f"[PtyRegistry] Error closing PTY {pty_key}: {e}")
 
-        logger.info(f"PTY session closed: pty_key={pty_key} total_sessions={len(self.sessions)}")
+        logger.info(f"PTY session closed: pty_key={pty_key} total_sessions={len(self.states)}")
 
-    def is_expired(self, session: PtySessionState, ttl_seconds: int) -> bool:
+    def is_expired(self, session: PtyState, ttl_seconds: int) -> bool:
         """Check if session has been detached for longer than TTL.
 
         Args:
@@ -294,21 +358,39 @@ class PtySessionManager:
         elapsed = time.time() - session.last_detached_at
         return elapsed > ttl_seconds
 
-    async def cleanup_expired_sessions(self, ttl_seconds: int = 900) -> int:
-        """Close and remove sessions that have been detached for > TTL.
+    async def cleanup_expired_sessions(self, ttl_seconds: int = 900, detach_grace_seconds: int = 900) -> int:
+        """Close orphaned PtyStates and reap stale parked subscriptions.
+
+        Two bounded, explicit reapers:
+          1. Orphan TTL — a PtyState with no ATTACHED connections for > ttl_seconds
+             is closed (PTY killed). ``last_detached_at`` arms this when the last
+             connection parks or detaches.
+          2. Detach grace — a DETACHED connection that hasn't reconnected within
+             detach_grace_seconds is dropped from ``detached_connections`` (its
+             page/socket is gone for good), so long-lived PtyStates can't
+             accumulate stale parked ids.
 
         Args:
-            ttl_seconds: Time-to-live in seconds (default: 15 minutes)
+            ttl_seconds: Orphan TTL in seconds (default: 15 minutes)
+            detach_grace_seconds: How long a parked subscription survives without
+                reconnecting (default: 15 minutes)
 
         Returns:
-            Number of sessions cleaned up
+            Number of sessions closed
         """
         expired_count = 0
         expired_keys = []
 
-        for pty_key, session in self.sessions.items():
+        now = time.time()
+        for pty_key, session in self.states.items():
             if self.is_expired(session, ttl_seconds):
                 expired_keys.append(pty_key)
+                continue
+            # Reap stale parked subscriptions on still-live PtyStates.
+            stale = [cid for cid, since in session.detached_connections.items() if now - since > detach_grace_seconds]
+            for cid in stale:
+                session.detached_connections.pop(cid, None)
+                logger.info(f"[PtyRegistry] Reaped stale parked connection {cid} from {pty_key}")
 
         for pty_key in expired_keys:
             await self.close_session(pty_key)
@@ -316,7 +398,7 @@ class PtySessionManager:
 
         if expired_count > 0:
             logger.info(
-                f"PTY cleanup completed: expired_count={expired_count} total_sessions={len(self.sessions)} ttl_seconds={ttl_seconds}"
+                f"PTY cleanup completed: expired_count={expired_count} total_sessions={len(self.states)} ttl_seconds={ttl_seconds}"
             )
 
         return expired_count
@@ -329,25 +411,25 @@ class PtySessionManager:
             ttl_seconds: Session TTL in seconds (default: 15 minutes)
         """
         if self._cleanup_task and not self._cleanup_task.done():
-            logger.warning("[PtySessionManager] Cleanup task already running")
+            logger.warning("[PtyRegistry] Cleanup task already running")
             return
 
         async def cleanup_loop():
             logger.info(
-                f"[PtySessionManager] Starting cleanup task (interval: {interval_seconds}s, TTL: {ttl_seconds}s)"
+                f"[PtyRegistry] Starting cleanup task (interval: {interval_seconds}s, TTL: {ttl_seconds}s)"
             )
             while True:
                 try:
                     await asyncio.sleep(interval_seconds)
                     await self.cleanup_expired_sessions(ttl_seconds)
                 except asyncio.CancelledError:
-                    logger.info("[PtySessionManager] Cleanup task cancelled")
+                    logger.info("[PtyRegistry] Cleanup task cancelled")
                     break
                 except Exception as e:
-                    logger.error(f"[PtySessionManager] Error in cleanup task: {e}", exc_info=True)
+                    logger.error(f"[PtyRegistry] Error in cleanup task: {e}", exc_info=True)
 
         self._cleanup_task = asyncio.create_task(cleanup_loop())
-        logger.info("[PtySessionManager] Cleanup task started")
+        logger.info("[PtyRegistry] Cleanup task started")
 
     async def stop_cleanup_task(self) -> None:
         """Stop background cleanup task."""
@@ -357,8 +439,8 @@ class PtySessionManager:
                 await self._cleanup_task
             except asyncio.CancelledError:
                 pass
-            logger.info("[PtySessionManager] Cleanup task stopped")
+            logger.info("[PtyRegistry] Cleanup task stopped")
 
 
 # Global singleton instance
-session_manager = PtySessionManager.get_instance()
+pty_registry = PtyRegistry.get_instance()

@@ -14,15 +14,23 @@ send, future email pull) goes through ``materialize_flow_message`` so that:
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from datetime import datetime
 from typing import Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.discovery.notify import send_resource_sync
-from flow_sdk.fs_records.conversation_record import ConversationRecord
+from flow_sdk.fs_store.operations.conversation import (
+    append_message_pointer,
+    default_jsonl_path,
+    from_jsonl,
+    message_pointers,
+    project_pointers_to_entity,
+)
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -37,7 +45,10 @@ async def ensure_conversation_entity(
     remote_project_id: Optional[str] = None,
     remote_project_name: Optional[str] = None,
     participants: Optional[list] = None,
+    title: Optional[str] = None,
     someone_typeid: Optional[str] = None,
+    created_by: Optional[str] = None,
+    remote: bool = False,
 ) -> Conversation:
     """Idempotent: return the local Conversation entity, creating it if missing.
 
@@ -54,10 +65,30 @@ async def ensure_conversation_entity(
     remote→local mapping table can route future messages from the same remote
     project to the same local Project without re-prompting. Null on
     local-origin conversations.
+
+    ``created_by`` — the hub-authoritative creator for REMOTE materialization,
+    carried VERBATIM (may be ``None`` when the hub sent no owner). The receiver
+    must never fabricate it or claim the local user. Pass ``remote=True`` for a
+    hub reflection so the driver preserves created_by/updated_by/dates as-is
+    instead of stamping the local request user. Sender-side callers omit both
+    (a locally-born conversation IS created by the local user).
     """
     conv = await Conversation.get_one({"id": conversation_id})
+    title_clean = (title or "").strip() or None
     if conv is None:
+        # Derive the owning project from the shared/target entity (the parent
+        # Task here), deterministically and once — the same rule the local
+        # create path uses. Falls back to a caller-supplied ``project_id``; a
+        # pure entity-less cross-user chat stays project-less (None) by design.
+        if parent_typeid is not None:
+            project_id = await Conversation.resolve_project_id(
+                [str(parent_typeid)], fallback=project_id
+            )
         payload: dict = {"id": conversation_id}
+        if created_by:
+            payload["created_by"] = created_by
+        if remote:
+            payload["remote"] = True
         if project_id:
             payload["project_id"] = project_id
         if remote_project_id:
@@ -66,16 +97,43 @@ async def ensure_conversation_entity(
             payload["remote_project_name"] = remote_project_name
         if participants:
             payload["participants"] = list(participants)
+        if title_clean:
+            payload["title"] = title_clean
         if parent_typeid is not None:
-            payload["context_entities"] = [str(parent_typeid)]
+            payload["shared_context_entities"] = [str(parent_typeid)]
         conv = Conversation.model_validate(payload)
         conv.id = conversation_id
-        conv = await conv.save(someone_typeid, notify=False)
-    elif participants and not (conv.participants or []):
-        # Existing conv with no participants — backfill from the bundle so
-        # the reply-recipient resolver can find the other party's email.
-        conv.participants = list(participants)
-        conv = await conv.save(someone_typeid, notify=False)
+        # Remote bare row → reflect (preserve hub attribution); local → normal stamp.
+        with (remote_reflection() if remote else nullcontext()):
+            conv = await conv.save(someone_typeid, notify=False)
+    else:
+        dirty = False
+        if participants and not (conv.participants or []):
+            # Backfill participants from the bundle so the reply-recipient
+            # resolver can find the other party's email.
+            conv.participants = list(participants)
+            dirty = True
+        if title_clean and not (conv.title or "").strip():
+            # Backfill title on first receive — keep an existing local override.
+            conv.title = title_clean
+            dirty = True
+        if parent_typeid is not None:
+            # Backfill the parent link on an existing local conv. Recipients
+            # often have a bare Conversation row materialized by the
+            # invitation-preview flow before the bundle unpack runs; that
+            # earlier row has no ``shared_context_entities``. Without this
+            # backfill, ``conversation.firstContextOfType('task')`` returns
+            # null on the recipient, ``useConversation`` resolves a null
+            # task, and the Implement Plan / Approve & Execute chips never
+            # render (they gate on task presence).
+            parent_str = str(parent_typeid)
+            existing_ctx = list(conv.shared_context_entities or [])
+            existing_strs = {str(t) for t in existing_ctx}
+            if parent_str not in existing_strs:
+                conv.shared_context_entities = existing_ctx + [parent_str]
+                dirty = True
+        if dirty:
+            conv = await conv.save(someone_typeid, notify=False)
 
     if parent_typeid is not None and parent_typeid.type == BuiltinEntityType.TASK.value:
         parent_id = parent_typeid.id
@@ -84,12 +142,11 @@ async def ensure_conversation_entity(
         parent_id = project_id or ""
         parent_record_type = RecordType.PROJECT
 
-    rec = ConversationRecord.from_jsonl(
-        ConversationRecord.default_jsonl_path(conv.id),
+    rec = from_jsonl(
+        default_jsonl_path(conv.id),
         parent_id, conv.id, parent_type=parent_record_type,
     )
     rec.save()
-    rec.link_to_parent_record()
     return conv
 
 
@@ -100,6 +157,8 @@ async def materialize_flow_message(
     someone_typeid: Optional[str],
     bundle_ts: Optional[str] = None,
     notify: bool = True,
+    emit_live_create: bool = False,
+    remote: bool = False,
 ) -> FlowMessage:
     """Create or upsert a FlowMessage, append its pointer to the conversation,
     project ``message_ids`` / ``message_count``, and (optionally) notify.
@@ -118,27 +177,90 @@ async def materialize_flow_message(
     ``payload`` is anything ``FlowMessage.model_validate`` accepts; ``id`` may
     be omitted (allocated) or pre-populated (idempotent upsert when the same
     id already exists).
+
+    ``remote=True`` marks the payload as a hub-origin copy: the saved row is
+    flagged ``remote=True`` and, on re-materialize of an existing row, the
+    invalidation rule (LWW by ``updated_date``, see ``Entity.is_stale``) is
+    applied — refreshing hub-owned fields while preserving local-only state.
+    Local-origin producers (e.g. draft send) leave it ``False``; those paths
+    flip ``remote`` themselves after a successful hub push.
     """
     payload = dict(payload)  # don't mutate caller's dict
     payload.setdefault("conversation_id", conversation_id)
 
+    # Single hub-origin signal: either the explicit param or a remote flag
+    # carried in the payload (some callers, e.g. invitation preview, set it
+    # inline). Both route the existing-row path through the LWW invalidation.
+    remote = remote or bool(payload.get("remote"))
+
     fm_id = payload.get("id")
     existing = await FlowMessage.get_one({"id": fm_id}) if fm_id else None
+    is_new = existing is None
     if existing is not None:
-        # Idempotent upsert — keep the row, ensure the pointer exists, return.
         fm = existing
+        # ``remote`` marks this as a hub-origin payload. For those we apply the
+        # invalidation rule (LWW by ``updated_date``): refresh the local copy
+        # only when the hub copy is newer, preserving local-only fields
+        # (body/download state). A local-origin re-materialize keeps the row
+        # untouched (idempotent upsert).
+        if remote and FlowMessage.is_stale(existing, payload):
+            merged = FlowMessage.merge_hub_payload(existing, payload)
+            merged["remote"] = True
+            fm = FlowMessage.model_validate(merged)
+            # Pure reflection: preserve the hub's created_by/updated_by/dates
+            # verbatim, never the local sync user.
+            with remote_reflection():
+                fm = await fm.save(someone_typeid, notify=False)
+        elif remote and not existing.remote:
+            # Not stale, but the local row never got flagged remote (legacy
+            # rows from before remote-marking) — flip the flag without touching
+            # content or re-stamping attribution.
+            existing.remote = True
+            with remote_reflection():
+                fm = await existing.save(someone_typeid, notify=False)
     else:
+        if remote:
+            # Hub-origin row: carry the wire created_by VERBATIM (the hub stamps
+            # it from the sender's auth token; absent → stays null). NEVER
+            # fabricate it from sender_id/'system', and never let the driver
+            # stamp the local request user — the reflection block guarantees the
+            # latter.
+            payload = {**payload, "remote": True}
         fm = FlowMessage.model_validate(payload)
         if not payload.get("id"):
             fm.id = FlowMessage.allocate_id(payload)
-        fm = await fm.save(someone_typeid, notify=False)
+        # Save with notify=False — the CREATE is emitted explicitly below. Remote
+        # rows reflect (preserve hub attribution); local rows stamp normally.
+        with (remote_reflection() if remote else nullcontext()):
+            fm = await fm.save(someone_typeid, notify=False)
+
+    # Emit the explicit local CREATE that drives entity-event subscribers
+    # (TS SDK ``conv.on('message')``).
+    #
+    # A brand-new row always emits. An *existing* row emits too when the
+    # caller passes ``emit_live_create`` — that flag is the hub WS bridge
+    # saying "this is a live arrival". Without it, a background catch-up
+    # that materialized the row first would swallow the live create event
+    # (the "doorbell rings once" bug): the second materialize was silent,
+    # so body-bearing messages never reached the open conversation.
+    if notify and (is_new or emit_live_create):
+        from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+        from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
+        await handle_entity_op(
+            DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid)
+        )
 
     # Resolve parent (Task preferred, else Project) for the record's parent_ref.
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
-        # Caller didn't pre-create the conversation — build a bare one.
+        # Caller didn't pre-create the conversation — build a bare one. For a
+        # hub-origin message the bare row is a remote reflection too: carry the
+        # hub message's created_by VERBATIM (never synthesize an owner from
+        # sender_id/'system'), and never let the driver stamp the local user.
         conv = await ensure_conversation_entity(
-            conversation_id, parent_typeid=None, someone_typeid=someone_typeid
+            conversation_id, parent_typeid=None, someone_typeid=someone_typeid,
+            created_by=payload.get("created_by") if remote else None,
+            remote=remote,
         )
 
     parent_typeid = conv.first_context_of_type(BuiltinEntityType.TASK.value)
@@ -149,31 +271,47 @@ async def materialize_flow_message(
         parent_id = conv.project_id or ""
         parent_type = RecordType.PROJECT
 
-    rec = ConversationRecord.from_jsonl(
-        ConversationRecord.default_jsonl_path(conv.id),
+    rec = from_jsonl(
+        default_jsonl_path(conv.id),
         parent_id, conv.id, parent_type=parent_type,
     )
 
     ts = bundle_ts or datetime.now(UTC).isoformat()
-    existing_ids = {p.id for p in rec.message_pointers()}
+    existing_ids = {p.id for p in message_pointers(rec)}
     if fm.id not in existing_ids:
-        rec.append_message_pointer(fm.id, ts)
+        append_message_pointer(rec, fm.id, ts)
         await rec.sync_to_db(notify=False)
+        await project_pointers_to_entity(rec, notify=False)
 
     if notify:
         try:
             task_id_for_sync = parent_id if parent_type == RecordType.TASK else fm.id
+            # These are sniffer-channel NOTIFICATIONS that materialization
+            # happened — not entity-reflection instructions. The real entity
+            # events already fired: handle_entity_op for the FM CREATE above,
+            # and conv.notify_updated() below. Sent as CRUD ops (CREATE/UPDATE)
+            # they reached the webhook receiver's _reflect_entity, which tried
+            # to *construct* a FlowMessage from this event-shaped payload —
+            # which carries no entity fields — and failed with "text Field
+            # required". EVENT routes to the event handler / sniffer instead,
+            # which is all this channel was ever for.
             send_resource_sync(
                 type="flow_message",
                 id=fm.id,
-                operation=SyncOperation.CREATE,
-                data={"event_data": {"flow_message_id": fm.id, "task_id": task_id_for_sync}},
+                operation=SyncOperation.EVENT,
+                data={
+                    "event_name": "flow_message_materialized",
+                    "event_data": {"flow_message_id": fm.id, "task_id": task_id_for_sync},
+                },
             )
             send_resource_sync(
                 type="conversation",
                 id=conv.id,
-                operation=SyncOperation.UPDATE,
-                data={"event_data": {"task_id": task_id_for_sync, "conversation_id": conv.id}},
+                operation=SyncOperation.EVENT,
+                data={
+                    "event_name": "conversation_updated",
+                    "event_data": {"task_id": task_id_for_sync, "conversation_id": conv.id},
+                },
             )
             # Entity-event channel — required for React useEntity hooks to
             # re-render. send_resource_sync only fires the sniffer channel.

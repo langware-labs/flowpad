@@ -211,6 +211,138 @@
       60% { content: '..'; }
       80%, 100% { content: '...'; }
     }
+
+    /* Startup-timeout recovery panel — shown in place of the OS error popup. */
+    .error-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: hsl(0 0% 3.9%);
+      z-index: 100;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      overflow-y: auto;
+    }
+
+    .error-overlay.visible {
+      display: flex;
+    }
+
+    .error-card {
+      width: 100%;
+      max-width: 620px;
+      text-align: left;
+    }
+
+    .error-card h2 {
+      font-size: 1.5rem;
+      font-weight: 500;
+      margin-bottom: 12px;
+      color: hsl(0 0% 98%);
+    }
+
+    .error-card .error-detail {
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: hsl(0 0% 63.9%);
+      margin-bottom: 28px;
+    }
+
+    .error-step {
+      margin-bottom: 24px;
+    }
+
+    .error-step-label {
+      font-size: 0.9rem;
+      color: hsl(0 0% 85%);
+      margin-bottom: 8px;
+    }
+
+    .error-step-label .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: hsl(0 0% 14.9%);
+      color: hsl(0 0% 98%);
+      font-size: 0.75rem;
+      margin-right: 8px;
+    }
+
+    .cmd-row {
+      display: flex;
+      align-items: stretch;
+      background: hsl(0 0% 8%);
+      border: 1px solid hsl(0 0% 14.9%);
+      border-radius: 0.5rem;
+      overflow: hidden;
+    }
+
+    .cmd-text {
+      flex: 1;
+      padding: 12px 14px;
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+      font-size: 0.85rem;
+      color: hsl(0 0% 90%);
+      white-space: pre;
+      overflow-x: auto;
+      user-select: all;
+    }
+
+    .copy-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 14px;
+      background: hsl(0 0% 12%);
+      border: none;
+      border-left: 1px solid hsl(0 0% 14.9%);
+      color: hsl(0 0% 75%);
+      cursor: pointer;
+      font-size: 0.75rem;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .copy-btn:hover {
+      background: hsl(0 0% 18%);
+      color: hsl(0 0% 98%);
+    }
+
+    .copy-btn.copied {
+      color: hsl(142 70% 60%);
+    }
+
+    .copy-btn svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .error-actions {
+      margin-top: 12px;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .quit-btn {
+      padding: 8px 18px;
+      font-size: 0.8rem;
+      color: hsl(0 0% 63.9%);
+      background: transparent;
+      border: 1px solid hsl(0 0% 14.9%);
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .quit-btn:hover {
+      color: hsl(0 0% 98%);
+      border-color: hsl(0 0% 30%);
+    }
   </style>
 </head>
 <body>
@@ -231,6 +363,40 @@
       <button class="logs-close" id="logs-close">&times;</button>
     </div>
     <pre class="logs-content" id="logs-content"></pre>
+  </div>
+
+  <!-- Startup-timeout recovery panel: replaces the native OS error popup. -->
+  <div class="error-overlay" id="error-overlay">
+    <div class="error-card">
+      <h2>Flowpad couldn’t start</h2>
+      <p class="error-detail" id="error-detail"></p>
+
+      <div class="error-step">
+        <div class="error-step-label"><span class="step-num">1</span>Upgrade Flowpad. Paste this in your terminal, then reopen the app:</div>
+        <div class="cmd-row">
+          <code class="cmd-text" id="upgrade-cmd"></code>
+          <button class="copy-btn" id="copy-upgrade" title="Copy command">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <span class="copy-label">Copy</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="error-step">
+        <div class="error-step-label"><span class="step-num">2</span>If that doesn’t work, run:</div>
+        <div class="cmd-row">
+          <code class="cmd-text" id="diagnose-cmd"></code>
+          <button class="copy-btn" id="copy-diagnose" title="Copy command">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <span class="copy-label">Copy</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="error-actions">
+        <button class="quit-btn" id="quit-btn">Quit</button>
+      </div>
+    </div>
   </div>
 
   <script src="loading-renderer.js"></script>

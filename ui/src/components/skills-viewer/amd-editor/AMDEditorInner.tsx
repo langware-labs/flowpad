@@ -3,6 +3,7 @@ import { ScrollArea } from '@src/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Box, Code, FileText, GitBranch, MonitorPlay, Plus, Repeat, Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { SkillMetadataHeader } from '@src/components/assets/editor/skill/SkillMetadataHeader';
 import { useAMDEditor } from './AMDEditorContext';
 import { BlockPicker } from './components/BlockPicker';
@@ -167,13 +168,13 @@ export function AMDEditorInner({
             <div className="px-3 pb-3 pt-0.5" onClick={handleBackgroundClick}>
               {elements.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
-                  <p className="text-sm">No instructions yet</p>
+                  <p className="text-sm"><Trans>No instructions yet</Trans></p>
                   {hideHeader ? (
                     <div className="mt-4">
                       <NotionAddButton />
                     </div>
                   ) : (
-                    <p className="mt-1 text-xs">Click Add Block above to get started</p>
+                    <p className="mt-1 text-xs"><Trans>Click Add Block above to get started</Trans></p>
                   )}
                 </div>
               ) : (

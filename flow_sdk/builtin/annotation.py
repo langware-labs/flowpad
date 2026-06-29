@@ -13,7 +13,6 @@ class Annotation(Entity):
     session_id: str = APIField("")   # Claude session ID
     iso_timestamp: str = APIField("")
     data: Optional[Dict[str, Any]] = APIField(default_factory=dict)  # PTY: seq, seqOffset, line
-    _api_visible: ClassVar[bool] = True
 
     @property
     def display_name(self) -> str:

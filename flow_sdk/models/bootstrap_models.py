@@ -5,6 +5,7 @@ and flowpad/hub/app/actions/bootstrap_actions.py (BootstrapInfo).
 """
 
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
 
 
@@ -16,15 +17,15 @@ class AppPaths(BaseModel):
     """
 
     root: str  # Filesystem root ("/" on Unix, "C:\\" on Windows)
-    home: str  # User home directory ("Users/shlom")
-    workspace: str  # FlowPad workspace folder ("Users/shlom/Flowpad workspace")
-    skills: str  # Skills folder ("Users/shlom/Flowpad workspace/.claude/skills")
-    user_skills: str  # Personal skills folder ("Users/shlom/.claude/skills")
-    system_skills: str  # System skills folder ("Users/shlom/Flowpad workspace/.flow/system_assets/skills")
-    system_agents: str  # System agents folder ("Users/shlom/Flowpad workspace/.flow/system_assets/agents")
-    user_agents: str = ""  # Personal agents folder ("Users/shlom/.claude/agents")
-    logs: str  # Logs folder ("Users/shlom/Flowpad workspace/.flow/logs")
-    settings: str  # Settings file ("Users/shlom/Flowpad workspace/.flow/settings.json")
+    home: str  # User home directory ("Users/alice")
+    workspace: str  # FlowPad workspace folder ("Users/alice/Flowpad workspace")
+    skills: str  # Skills folder ("Users/alice/Flowpad workspace/.claude/skills")
+    user_skills: str  # Personal skills folder ("Users/alice/.claude/skills")
+    system_skills: str  # System skills folder ("Users/alice/Flowpad workspace/.flow/system_assets/skills")
+    system_agents: str  # System agents folder ("Users/alice/Flowpad workspace/.flow/system_assets/agents")
+    user_agents: str = ""  # Personal agents folder ("Users/alice/.claude/agents")
+    logs: str  # Logs folder ("Users/alice/Flowpad workspace/.flow/logs")
+    preferences: str  # Per-instance UI preferences file ("Users/alice/.flow/instances/<name>/preferences.json")
 
 
 class EnvInfo(BaseModel):
@@ -32,6 +33,7 @@ class EnvInfo(BaseModel):
     env_name: str
     cloud_api_url: Optional[str] = None
     version: Optional[str] = None
+    instance_name: Optional[str] = None
 
 
 class LmInfo(BaseModel):
@@ -47,7 +49,7 @@ class LmInfo(BaseModel):
     # Application paths - all VFS-relative, ready to use
     paths: Optional[AppPaths] = None
     # Legacy desktop paths (deprecated - use paths instead)
-    home: Optional[str] = None  # VFS home path (e.g., "Users/shlom")
+    home: Optional[str] = None  # VFS home path (e.g., "Users/alice")
     workspace: Optional[str] = None  # Workspace folder name (e.g., "Flowpad workspace")
     skills: Optional[str] = None  # Skills folder relative to workspace
     logs: Optional[str] = None  # Logs folder relative to workspace
@@ -59,7 +61,11 @@ class BootstrapInfo(BaseModel):
     Matches production FlowPad BootstrapInfo fields for API compatibility.
     Production source: flowpad/hub/app/actions/bootstrap_actions.py
     """
-    schemas: List[Dict[str, Any]] = []
+    # Unified per-type payloads (TypeInfo + nested JSON ``schema``) for the
+    # frontend SchemaRegistry. One entry per registered type; ``schema`` is
+    # populated only for public api_visible entity types. Replaces the former
+    # ``schemas`` (bare JSON-schema list) channel.
+    types: List[Dict[str, Any]] = []
     user: Optional[Dict[str, Any]] = None
     domain: Optional[Dict[str, Any]] = None
     visitor: Optional[Dict[str, Any]] = None
@@ -72,9 +78,22 @@ class BootstrapInfo(BaseModel):
     docker_compute_nodes: List[Dict[str, Any]] = []
     env: Optional[EnvInfo] = None
     desktop_info: Optional[LmInfo] = None
+    harness_state: Optional[Dict[str, Any]] = None
+    # All capabilities + how to access each, grouped by intent (see
+    # core/capabilities/summary.py). Seeds the FE CapabilityManager so the
+    # Capabilities view paints without a second round-trip.
+    capabilities_summary: Optional[Dict[str, Any]] = None
     sniffer_hook: Optional[Dict[str, Any]] = None
     scan_info: Optional[Dict[str, Any]] = None
     records_root: Optional[str] = None
+    # Data-privacy mode for this instance: "local" (no cloud access — login,
+    # sharing, and outbound hub HTTP disabled) or "connected" (default). Seeds
+    # the frontend privacy manager so the footer control + guards paint without
+    # a second round-trip; live changes arrive over WS.
+    privacy_mode: str = "connected"
+    # One-time, UI-facing notice surfaced as a toast on startup (e.g. the
+    # secrets file was reset after the keychain key was lost). None normally.
+    notice: Optional[Dict[str, Any]] = None
 
 
 __all__ = ["AppPaths", "EnvInfo", "LmInfo", "BootstrapInfo"]

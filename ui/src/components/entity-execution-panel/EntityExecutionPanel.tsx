@@ -3,10 +3,12 @@ import {
   ComputeNode,
   FlowElementTypes,
   isBusy,
-  ProcessType,
+  isWorkerRunning,
+  ProcessKind,
   type StatusBearingProcess,
   TypeId,
   type FlowData,
+  WorkerStatus,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
@@ -14,6 +16,7 @@ import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-
 import ExecutionMessage from './execution-message/execution-message';
 import { useProject } from '@src/hooks/useProject';
 import { cn } from '@src/lib/utils';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,9 +29,10 @@ import { History, MessageSquarePlus, Settings, Trash2, X } from 'lucide-react';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
+import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
 import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
-import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
+import { TurnGroupsList } from './TurnGroupsList';
 import {
   buildHistorySubline,
   pickHistoryTitle,
@@ -43,7 +47,7 @@ import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 interface EntityExecutionPanelProps {
   /**
    * VFS path the session is keyed to, stored as-is in
-   * `AgenticProcess.target_vfs_path`. Either an entity TypeId string
+   * `AgenticProcess.target_typeid_str`. Either an entity TypeId string
    * (`"agent-<uuid>"`, `"plan-<uuid>"`, …) or a `<typeid>/<sub_path>` form
    * (`"compute_node-<id>/Users/.../foo.md"` for a per-document session). Null
    * disables the panel (send is guarded on non-empty target).
@@ -55,7 +59,7 @@ interface EntityExecutionPanelProps {
    * same target don't see each other's history) and the lazy `createProcess`
    * call (so newly-spawned processes get tagged correctly).
    */
-  processType: ProcessType;
+  processType: ProcessKind;
   className?: string;
   /**
    * Invoked once, right after the backing `AgenticProcess` is created and before
@@ -103,6 +107,25 @@ interface EntityExecutionPanelProps {
    */
   defaultProjectId?: string | null;
   defaultWorkdir?: string | null;
+  /**
+   * EXPERIMENT: chat transport. Selects how the process is created; both call
+   * the same `prompt()`, which the backend routes by the process's `visible`
+   * flag.
+   * - 'print' (default): headless print-mode process (visible=false); FlowData
+   *   streamed from the worker's stream-json stdout.
+   * - 'pty-poll': PTY-interactive worker (visible=true); FlowData derived
+   *   server-side by polling the session transcript for new entries; the
+   *   stream closes on transcript inactivity.
+   */
+  transport?: 'print' | 'pty-poll';
+  /**
+   * Imperative prompt injection from the host surface (e.g. the transcript
+   * toolbar's Run/Rerun/Refresh-analysis buttons). When `nonce` changes the
+   * panel sends `text` exactly as if the user typed it. `newSession: true`
+   * bypasses the current process so the send lazy-creates a fresh one — one
+   * process per run, so each run is its own history entry.
+   */
+  autoPrompt?: { text: string; nonce: number; newSession?: boolean } | null;
 }
 
 /**
@@ -110,7 +133,7 @@ interface EntityExecutionPanelProps {
  * trigger, …); drives a single AgenticProcess keyed by `target`.
  *
  * Process lifecycle:
- *   - Queries AgenticProcess by `target_vfs_path === target`.
+ *   - Queries AgenticProcess by `target_typeid_str === target`.
  *   - If a process already exists, reuse it (session persistence survives reloads).
  *   - If none, create one lazily on the first send via `computeNode.createProcess({
  *       targetVfsPath, outputFormat: "stream-json" })`. Print-mode processes
@@ -136,7 +159,10 @@ export function EntityExecutionPanel({
   dense = false,
   defaultProjectId,
   defaultWorkdir,
+  transport = 'print',
+  autoPrompt,
 }: EntityExecutionPanelProps) {
+  const { t } = useLingui();
   const targetStr = target ?? '';
 
   // 1. Pull all processes attached to this target; sort newest-first for picker + auto-select.
@@ -287,11 +313,12 @@ export function EntityExecutionPanel({
     }
   }, [activeProcess]);
 
-  const handleSend = useCallback(async (text: string) => {
+  const handleSend = useCallback(async (text: string, opts?: { forceNewProcess?: boolean }) => {
     if (!targetStr || sending) return;
     setSending(true);
     try {
-      let proc = activeProcess;
+      let proc = opts?.forceNewProcess ? null : activeProcess;
+      const isPtyPoll = transport === 'pty-poll';
 
       // Lazy-create on first send.
       if (!proc) {
@@ -300,13 +327,19 @@ export function EntityExecutionPanel({
         try {
           const computeNode = await ComputeNode.getById('@local');
           if (!computeNode) throw new Error('No local compute node');
-          const newProcess = await computeNode.createProcess({
-            workdir: effectiveWorkdir ?? undefined,
-            projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
-            targetVfsPath: targetStr,
-            processType,
-            outputFormat: 'stream-json',
-          });
+          const newProcess = await computeNode.createProcess(
+            {
+              workdir: effectiveWorkdir ?? undefined,
+              projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
+              targetVfsPath: targetStr,
+              processType,
+              // pty-poll: interactive PTY worker, no stream-json print mode.
+              ...(isPtyPoll ? {} : { outputFormat: 'stream-json' }),
+            },
+            // pty-poll: spawn the interactive PTY right away (visible=true
+            // auto-start) so the first prompt() lands on a live worker.
+            isPtyPoll ? { visible: true } : undefined,
+          );
           if (onProcessCreated) await onProcessCreated(newProcess);
           for (const ref of pendingAttachedRefs) {
             try { await newProcess.embeddedAssets.attach(ref); }
@@ -321,13 +354,37 @@ export function EntityExecutionPanel({
 
       if (!proc) throw new Error('process creation failed');
 
+      // One method, both transports: the backend's prompt action routes by the
+      // process's `visible` flag (PTY-transcript poll vs print-mode stream).
       await proc.prompt(text);
     } catch (err) {
       console.error('[EntityExecutionPanel] prompt failed', err);
+      notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport]);
+
+  const handleStop = useCallback(async () => {
+    if (!activeProcess) return;
+    try {
+      await activeProcess.interruptTurn();
+    } catch (err) {
+      console.error('[EntityExecutionPanel] interrupt failed', err);
+      notify.error({ title: t`Could not stop`, message: err instanceof Error ? err.message : String(err) });
+    }
+  }, [activeProcess]);
+
+  // Host-injected prompt (Run/Rerun/Refresh analysis). Nonce-gated so the
+  // same object can sit in props without re-firing on unrelated renders.
+  const lastAutoNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!autoPrompt || autoPrompt.nonce === lastAutoNonceRef.current) return;
+    lastAutoNonceRef.current = autoPrompt.nonce;
+    if (autoPrompt.newSession) startNewSession();
+    void handleSend(autoPrompt.text, { forceNewProcess: autoPrompt.newSession });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPrompt?.nonce]);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
@@ -394,7 +451,23 @@ export function EntityExecutionPanel({
       }
     : null;
 
-  const busy = !!indicatorProcess && isBusy(indicatorProcess);
+  // EXPERIMENT(pty-poll): a PTY chat session must stay sendable when its
+  // worker is dead (backend restart, worker exit) — the prompt turn relaunches
+  // it with --resume. `isBusy` would lock the composer forever (it requires
+  // status=RUNNING), so the pty arm skips the status gate and blocks only on
+  // the gold mid-turn predicate — mirroring the backend prompt action's own
+  // admission, which rejects only STOPPING/FAILED.
+  // PENDING_USER: the turn finished cleanly and the worker is waiting at its
+  // prompt for the next message — exactly when the user should be able to type.
+  // `isBusy` returns true for PENDING_USER (it isn't in READY_WORKER_STATUSES,
+  // mirroring Python's `is_ready_for_input`) but the drain-local superset and
+  // the prompt action both admit it. Carve it out so the textarea stays enabled.
+  const indicatorWorkerStatus = indicatorProcess?.workerStatus as WorkerStatus | undefined;
+  const busy = !!indicatorProcess && (
+    transport === 'pty-poll'
+      ? isWorkerRunning(indicatorWorkerStatus as WorkerStatus)
+      : isBusy(indicatorProcess) && indicatorWorkerStatus !== WorkerStatus.PENDING_USER
+  );
   const sendDisabled = !targetStr || sending || busy;
 
   const statusSlot = indicatorProcess ? (
@@ -466,24 +539,12 @@ export function EntityExecutionPanel({
           </div>
         )}
         {dense
-          ? turnGroups.map((g) =>
-              g.kind === 'message' ? (
-                <ExecutionMessage
-                  key={`msg-${g.flowData.id ?? g.flowData.timestamp ?? g.index}`}
-                  flowData={g.flowData}
-                  isUser={
-                    g.flowData.elementType === FlowElementTypes.USER_MESSAGE ||
-                    (g.flowData.attributes && g.flowData.attributes.role === 'user')
-                  }
-                />
-              ) : (
-                <ToolEntryRow key={`dense-${g.index}`} events={g.events} />
-              ),
-            )
+          ? <TurnGroupsList groups={turnGroups} worker={activeProcess?.worker_type ?? undefined} />
           : messages.map((m) => (
               <ExecutionMessage
                 key={m.id ?? m.timestamp}
                 flowData={m}
+                worker={activeProcess?.worker_type ?? undefined}
                 isUser={
                   m.elementType === FlowElementTypes.USER_MESSAGE ||
                   (m.attributes && m.attributes.role === 'user')
@@ -491,15 +552,15 @@ export function EntityExecutionPanel({
               />
             ))}
       </AutoScrollContainer>
-      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} statusSlot={statusSlot} placeholder={placeholder} />
+      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} running={busy} onStop={handleStop} statusSlot={statusSlot} placeholder={placeholder} />
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
         variant="destructive"
         title={
           pendingDelete?.kind === 'all'
-            ? `Clear all past chats?`
-            : `Delete this chat?`
+            ? t`Clear all past chats?`
+            : t`Delete this chat?`
         }
         description={
           pendingDelete?.kind === 'all'
@@ -508,7 +569,7 @@ export function EntityExecutionPanel({
               ? `This will permanently delete "${pendingDelete.title}". The conversation transcript saved on disk is kept; only the process record is removed. This cannot be undone.`
               : ''
         }
-        confirmLabel={pendingDelete?.kind === 'all' ? 'Delete all' : 'Delete'}
+        confirmLabel={pendingDelete?.kind === 'all' ? t`Delete all` : t`Delete`}
         onConfirm={() => { void performDelete(); }}
       />
     </div>
@@ -547,6 +608,7 @@ function ExecutionHistoryHeader({
   pastSessionsLabel: string;
   noPastSessionsLabel: string;
 }) {
+  const { t } = useLingui();
   const iconBtn =
     'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
   return (
@@ -559,7 +621,7 @@ function ExecutionHistoryHeader({
           className="text-[11px] tabular-nums text-muted-foreground"
           data-testid="entity-execution-line-badge"
         >
-          line {cursorLine}
+          <Trans>line {cursorLine}</Trans>
         </span>
       )}
       <div className="flex-1" />
@@ -601,11 +663,11 @@ function ExecutionHistoryHeader({
                   onClearAll();
                 }}
                 className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                title="Clear all past chats"
+                title={t`Clear all past chats`}
                 data-testid="entity-execution-history-clear-all"
               >
                 <Trash2 className="h-3 w-3" />
-                Clear all
+                <Trans>Clear all</Trans>
               </button>
             )}
           </div>
@@ -659,7 +721,7 @@ function ExecutionHistoryHeader({
                           onDeleteSession(p.id!, title);
                         }}
                         className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60"
-                        title="Delete this chat"
+                        title={t`Delete this chat`}
                         data-testid={`entity-execution-history-delete-${p.id}`}
                       >
                         <X className="h-3 w-3" />

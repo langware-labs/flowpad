@@ -11,6 +11,8 @@
     "main.js",
     "preload.js",
     "uv-manager.js",
+    "flow-rs-keychain.js",
+    "semver.js",
     "loading.html",
     "loading-renderer.js",
     "loading-logo.png",
@@ -43,6 +45,12 @@
     "notarize": false,
     "entitlements": "entitlements.mac.plist",
     "entitlementsInherit": "entitlements.mac.plist",
+    "extraResources": [
+      {
+        "from": "../flow_sdk/rust/target/release/flow-rs",
+        "to": "flow-rs/flow-rs"
+      }
+    ],
     "target": [
       {
         "target": "dmg"
@@ -73,6 +81,12 @@
   },
   "win": {
     "icon": "resources/icons/icon.ico",
+    "extraResources": [
+      {
+        "from": "../flow_sdk/rust/target/release/flow-rs.exe",
+        "to": "flow-rs/flow-rs.exe"
+      }
+    ],
     "target": [
       {
         "target": "nsis",
@@ -89,7 +103,7 @@
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
-    "artifactName": "${productName} Setup.${ext}",
+    "artifactName": "${productName}-Setup.${ext}",
     "installerIcon": "resources/icons/icon.ico",
     "uninstallerIcon": "resources/icons/icon.ico",
     "installerHeaderIcon": "resources/icons/icon.ico",
@@ -103,6 +117,12 @@
     "artifactName": "${productName}-${arch}.${ext}",
     "maintainer": "Langware Labs <eran@langware.ai>",
     "executableArgs": ["--no-sandbox"],
+    "extraResources": [
+      {
+        "from": "../flow_sdk/rust/target/release/flow-rs",
+        "to": "flow-rs/flow-rs"
+      }
+    ],
     "target": [
       {
         "target": "AppImage",
@@ -118,5 +138,11 @@
       }
     ]
   },
-  "publish": null
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "langware-labs",
+      "repo": "flowpad"
+    }
+  ]
 }

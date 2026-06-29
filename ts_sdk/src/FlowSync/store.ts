@@ -6,7 +6,8 @@ import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
 import config from '../config';
 import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
-import { isTypeId, TypeId } from '../models/TypeId';
+import { TypeId } from '../models/TypeId';
+import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -23,7 +24,7 @@ import { ExpansionType } from './expand';
 import { EntityFactory } from '../schema/factory';
 import { SubscriptionMap, TypeIdMap, WatchMap, WatchQueryMap } from './map';
 import { ExpansionRequest, QueryRequest } from './query';
-import { ActionType, JSONSchemaParser } from './schema';
+import { ActionType, JSONSchemaParser, TypeInfo } from './schema';
 import { IStream, IStreamConfig, WSStream } from './stream';
 import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
 
@@ -37,7 +38,7 @@ export enum EntityStatus {
 export interface EntityExpansion {
   roles?: UserRole[] | null;
   allowed_actions?: ActionType[] | null;
-  auth_scopes?: TypeId[][] | null;
+  auth_scopes?: string[][] | null;
   is_private?: boolean;
   expansions?: ExpansionType[] | null;
 }
@@ -51,6 +52,15 @@ class EntityRef<T> {
   status: EntityStatus = EntityStatus.NA;
   error: ApiError | null = null;
   entity: T | null = null;
+  /**
+   * Terminal "the backend 404'd this id" marker. Set when a by-typeid GET
+   * returns 404 so the read path can short-circuit subsequent fetches instead
+   * of re-hitting the network on every re-subscribe (the dangling
+   * context-entity-chip 404 loop). Cleared whenever the ref is dropped via
+   * ``invalidateCacheByTypeId`` / ``removeEntityFromCache`` (a later WS arrival
+   * or an explicit re-resolve), so a since-materialized entity self-heals.
+   */
+  notFound: boolean = false;
   entityPendingPromises: PendingPromise<T>[] = [];
   pendingUpdate: any = null;
 
@@ -74,6 +84,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   entities: TypeIdMap<EntityRef<T>> = new TypeIdMap<EntityRef<T>>();
 
   schemas: { [type: string]: JSONSchemaParser } = {};
+  /**
+   * Frontend SchemaRegistry — complete reflection of the backend type registry
+   * (TypeInfo + nested JSON schema), populated once from the bootstrap ``types``
+   * payload via {@link loadTypes}. Single source of truth for type metadata
+   * (icon/browseable_by/creatable/fields) and validation schemas.
+   */
+  typeInfos: { [type: string]: TypeInfo } = {};
   streams: WSStream[] = [];
   saveIntervalMs: number = 5000;
   isPopupOpen = false;
@@ -121,33 +138,60 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return this.schemas[type.toLowerCase()];
   }
 
-  public async loadSchemas(allSchemasJson?: any) {
-    if (!Array.isArray(allSchemasJson)) {
+  /** TypeInfo for a type (icon/browseable_by/creatable/fields/schema). */
+  public getTypeInfo(type: string): TypeInfo | undefined {
+    if (typeof type !== 'string') return undefined;
+    return this.typeInfos[type.toLowerCase()];
+  }
+
+  /** All registered TypeInfos (the frontend SchemaRegistry). */
+  public getAllTypeInfos(): TypeInfo[] {
+    return Object.values(this.typeInfos);
+  }
+
+  /**
+   * Single source of truth for a type's icon — the lucide icon name authored on
+   * the backend (TypeInfo.icon). Null when unknown / icon-less; callers fall
+   * back to a generic icon.
+   */
+  public iconForType(type: string): string | null {
+    if (typeof type !== 'string') return null;
+    return this.typeInfos[type.toLowerCase()]?.icon ?? null;
+  }
+
+  /**
+   * Load the bootstrap ``types`` payload into the frontend SchemaRegistry.
+   * Populates {@link typeInfos} and, for entity-backed types, derives the
+   * {@link schemas} (JSONSchemaParser) map so getSchema()/APIEntity validation
+   * keep working off the same single channel. Replaces the former loadSchemas.
+   */
+  public async loadTypes(types?: TypeInfo[]) {
+    if (!Array.isArray(types)) {
       try {
-        allSchemasJson = await apiClient.get(config.API_PREFIXES.schema);
-        if (!allSchemasJson) {
+        types = await apiClient.get<TypeInfo[]>(config.API_PREFIXES.schema);
+        if (!types) {
           return null;
         }
       } catch (error) {
-        console.error('Error loading schemas', error);
+        console.error('Error loading types', error);
         throw error;
       }
     }
-    for (const schemaJson of allSchemasJson) {
-      const schema = new JSONSchemaParser(schemaJson);
-      if (!schema.entity_type) {
-        console.warn('Schema does not have a type property', schemaJson);
+    for (const typeInfo of types) {
+      if (!typeInfo?.type_name) {
+        console.warn('TypeInfo has no type_name', typeInfo);
         continue;
       }
-      if (this.schemas[schema.entity_type]) {
-        // console.warn(
-        //   `Schema already loaded for type: ${schema.entity_type}, skipping`,
-        // );
-        continue;
+      this.typeInfos[typeInfo.type_name.toLowerCase()] = typeInfo;
+      if (typeInfo.schema) {
+        const schema = new JSONSchemaParser(typeInfo.schema);
+        const schemaKey = schema.entity_type ?? typeInfo.type_name.toLowerCase();
+        if (!this.schemas[schemaKey]) {
+          this.schemas[schemaKey] = schema;
+        }
       }
-      this.schemas[schema.entity_type] = schema;
     }
-    return allSchemasJson;
+    return types;
   }
 
   setScanInfo(info: ScanInfo): void {
@@ -341,6 +385,19 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Create FlowData from JSON
     const elementType = flowDataJson.element_type || flowDataJson.elementType || 'notification';
     const attributes = flowDataJson.attributes || {};
+
+    // Transport-level envelope from Python Entity.emit_entity_event — never
+    // ingested into the flow stream or renderer pipeline. Route straight to
+    // the entity's onEntityEvent hook.
+    if (elementType === 'entity_event') {
+      const event = String(attributes.event ?? '');
+      const payload = (attributes.payload as Record<string, unknown>) ?? {};
+      if (typeof (entity as any).onEntityEvent === 'function') {
+        (entity as any).onEntityEvent(event, payload);
+      }
+      return;
+    }
+
     // Backend sends content as 'flow_value', fallback to 'content' for compatibility
     const content = flowDataJson.flow_value ?? flowDataJson.content ?? '';
 
@@ -392,6 +449,30 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       for (const watchedQuery of watchedQueries) {
         if (!watchedQuery.request.query || watchedQuery.request.query.validate(data)) {
           // Rerun query and update results through WatchedQuery
+          void this._query(watchedQuery.request).then((queryResult) => {
+            watchedQuery.updateResults(queryResult);
+          });
+        }
+      }
+    } else if (op === 'update') {
+      // An update can move an entity OUT of (or INTO) a match-filtered live
+      // query — e.g. a Tab whose `visible` flips false on close must drop out of
+      // the `visible:true` strip query. `create`/`delete` already maintain
+      // membership; updates did not, so a soft-closed entity lingered in stale
+      // results until some unrelated refetch happened to re-run the query (the
+      // intermittent "tab won't close" symptom). Reconcile per query: drop rows
+      // that no longer match (local splice, no network); refetch only when a row
+      // newly matches so the server still applies scope.
+      const watchedQueries = this.watchedQueries.getWatchCallbacksByType(typeId.type);
+      for (const watchedQuery of watchedQueries) {
+        if (!watchedQuery.results) continue;
+        const matches = !watchedQuery.request.query || watchedQuery.request.query.validate(data);
+        const index = watchedQuery.results.findIndex((entity: any) => entity.typeId.equals(typeId));
+        const inResults = index !== -1;
+        if (!matches && inResults) {
+          watchedQuery.results.splice(index, 1);
+          watchedQuery.notifyCallbacks();
+        } else if (matches && !inResults) {
           void this._query(watchedQuery.request).then((queryResult) => {
             watchedQuery.updateResults(queryResult);
           });
@@ -615,7 +696,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   public register_new_entity(typeId: TypeId, entity: any) {
     const ref = this.getRef(typeId);
     if (ref.entity && ref.entity !== entity) {
-      console.warn(`Entity ${typeId.toString()} already registered with different entity`, new Error().stack);
+      // NB: do NOT pass `new Error().stack` here. Building the stack string is
+      // synchronous and surprisingly expensive; in a re-registration storm
+      // (the symptom this whole warn exists to catch) it ran hundreds of times
+      // during app init, blocking the main thread long enough to starve the
+      // FlowSync WS `open` callback past loadShellRoute's 5s connect fence.
+      // console.warn already attaches a stack in the devtools console.
+      console.warn(`Entity ${typeId.toString()} already registered with different entity`);
     }
     ref.entity = entity;
     ref.status = EntityStatus.READY;
@@ -634,6 +721,99 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       return ref.entity as U;
     }
     return null;
+  }
+
+  /**
+   * Distinguished initial name for a tab opening on a DockPointer (called ONCE
+   * at Tab creation; docs/tab-management.md). Resolves, in order:
+   *   - entity pointer (`…/typeid/<type>-<id>` or a bare `<type>-<id>`) → the
+   *     entity's `name` from cache;
+   *   - vfs pointer (`…/vfs/<path>`) → the file/folder basename;
+   *   - wiki pointer (`wiki/<space>/<name>`) → the keyword.
+   * Returns null when nothing distinguished resolves (the chip then falls back
+   * to the ViewType title).
+   */
+  public getTabName(
+    dock: { viewType?: string; pointer?: string; options?: Record<string, string> } | null | undefined,
+  ): string | null {
+    // Resolve a cached entity's name by typeid — either a raw `<type>-<id>`
+    // string, or a (viewType, bare-id) pair when the dock's type lives in the
+    // viewType segment (e.g. /dock/conversation/<uuid>).
+    const nameFromCache = (typeOrRaw: string | undefined, id?: string): string | null => {
+      if (!typeOrRaw) return null;
+      try {
+        const tid = id !== undefined ? new TypeId(typeOrRaw, id) : new TypeId(typeOrRaw);
+        // Prefer the entity's canonical display label (e.g. a Conversation
+        // surfaces its `title` via getDisplayName), falling back to the raw
+        // `name` — both for entities with no display override and for plain
+        // cached rows that have no `displayName` getter.
+        const ent = this.getByTypeIdFromCache(tid) as
+          | { displayName?: string | null; name?: string | null }
+          | null;
+        return (ent?.displayName ?? ent?.name) ?? null;
+      } catch {
+        return null;
+      }
+    };
+    // Assets is a single scope-keyed tab — its STORED title follows the SCOPE,
+    // not the (in-tab) sub-pointer: single project → "<project>'s Assets"; user
+    // → "My Assets"; global / all / multi-select → null (chip falls back to the
+    // registry "Assets" title). Runs before the empty-pointer guard because a
+    // scoped assets dock normalizes its pointer to ''. (The strip overlays the
+    // ACTIVE assets tab with the focused asset's own name + icon at render time
+    // — see `useTabStripItems` — so this scope title shows for inactive tabs.)
+    if (dock?.viewType === 'assets') {
+      const scope = dockOptionsToScopeFilter(dock.options);
+      if (scope?.mode === 'project' && scope.activeProjectId) {
+        const name = nameFromCache('project', scope.activeProjectId);
+        return name ? `${name}'s Assets` : 'Assets';
+      }
+      if (scope?.mode === 'user') return 'My Assets';
+      return null;
+    }
+    const pointer = dock?.pointer ?? '';
+    if (!pointer) return null;
+    const lastSegment = (path: string): string | null =>
+      decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
+    // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a
+    //    bare entity id whose type is carried by the dock's viewType.
+    if (pointer.includes('/typeid/')) {
+      const n = nameFromCache(pointer.split('/typeid/').pop() ?? '');
+      if (n) return n;
+    } else if (!pointer.includes('/')) {
+      const n = nameFromCache(pointer) ?? nameFromCache(dock?.viewType, pointer);
+      if (n) return n;
+    }
+    // 2. vfs — basename of the path.
+    if (pointer.includes('/vfs/')) {
+      const base = lastSegment(pointer.split('/vfs/').pop() ?? '');
+      if (base) return base;
+    }
+    // 3. wiki — the keyword (last path segment).
+    if (dock?.viewType === 'wiki' || pointer.startsWith('wiki/')) {
+      const kw = lastSegment(pointer.replace(/^wiki\//, ''));
+      if (kw) return kw;
+    }
+    // 4. lens transcript — the ClaudeSession entity (id = sessionId), fetched
+    //    into cache by the tab mint via `dock.targetTypeId`.
+    if (dock?.viewType === 'lens') {
+      const segs = pointer.split('/').filter(Boolean);
+      if (segs[0] === 'claude' && segs[1] === 'transcript' && segs[2] && !segs[3]) {
+        const n = nameFromCache('claude_session', segs[2]);
+        if (n) return n;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * True when a prior by-typeid GET proved this id is a 404 (the entity has no
+   * local row). Lets the react hooks render a terminal "unavailable" state and
+   * stop re-fetching, rather than looping on the dangling reference. Reset when
+   * the ref is dropped via invalidate/remove.
+   */
+  public isNotFound(typeId: TypeId): boolean {
+    return this.entities.get(typeId)?.notFound === true;
   }
 
   public invalidateCacheByTypeId(typeId: TypeId): void {
@@ -685,7 +865,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
       if (ref.status === EntityStatus.ERROR) {
         ref.entityPendingPromises.forEach((p) => {
-          p.reject(ref.error);
+          // A 404 ("entity is gone") is resolved as null on the direct path
+          // (see getByTypeId), but a concurrent waiter that parked while the
+          // fetch was in-flight must get the SAME treatment. Rejecting here —
+          // with ``ref.error`` that the 404 path never set — surfaced as a
+          // thrown ``null`` in useEntity ("Error fetching entity by type ID:
+          // <typeId> null"). Resolve notFound waiters with null instead.
+          if (ref.notFound) {
+            p.resolve(null);
+          } else {
+            p.reject(ref.error);
+          }
         });
         ref.entityPendingPromises = [];
       }
@@ -701,6 +891,22 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const entityJson = await apiClient.get(`${GRAPH_API_PREFIX}/${typeId.type}/${typeId.id}`, {
       params: expansions?.toJSON(),
     });
+
+    // The backend signals "no such entity for this id" two ways: a bare 404, OR
+    // a 200 carrying a ``{status:'FAIL', data:null}`` envelope (the graph
+    // get-by-id route does the latter for an id it can't resolve — e.g. an
+    // optional ``@uname`` system-project lookup that isn't visible to the current
+    // user, or a since-removed entity still referenced by a stale id). The 404
+    // case is already treated as a quiet not-found in ``getByTypeId``; mirror that
+    // here for the FAIL-envelope case so an expected miss negative-caches and
+    // returns null instead of letting ``castAndDeepAssign`` throw — which would
+    // log a console error and reject for what is not an error. (An *optional*
+    // lookup spamming the console then trips every "no console errors" assertion.)
+    if (!entityJson || !DataManager.getTypeOfObject(entityJson)) {
+      ref.status = EntityStatus.ERROR;
+      ref.notFound = true;
+      return null;
+    }
 
     const entity = this.castAndDeepAssign<U>(entityJson);
     //Load entity if load flag is set in query
@@ -755,8 +961,20 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         return cachedEntity;
       }
     }
+    // A prior fetch already proved this id is a 404. Don't re-hit the network on
+    // every re-subscribe — return the cached "gone" result. The ref is dropped
+    // (and this flag cleared) by invalidate/remove when the entity may exist
+    // again, so this self-heals.
+    if (ref.notFound) {
+      return null;
+    }
     if (ref?.status === EntityStatus.FETCHING) {
       const entity = await this.waitForTypeId(typeId);
+      // The in-flight fetch we waited on may have resolved to a 404. Honor the
+      // negative cache instead of falling through to a redundant re-fetch.
+      if (ref.notFound) {
+        return null;
+      }
       if (entity && entity.isExpanded(requiredExpansions)) {
         return entity as U;
       }
@@ -772,6 +990,26 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
       return entity;
     } catch (error) {
+      // A 404 means the referenced entity no longer exists — e.g. a stale
+      // project_id carried by an old shell/agentic_process record whose
+      // project was since removed. That's an expected "it's gone" case, not a
+      // failure: return null quietly (the signature already allows it) instead
+      // of logging a console error and throwing. Mirrors the 404→null pattern
+      // used by compute-node/agentic-process/shell entity loaders.
+      //
+      // Detect the 404 by HTTP status DIRECTLY — not via ``isApiError``, which
+      // additionally requires the body to carry the ``{status:'FAIL'}`` envelope.
+      // The graph endpoint's 404 is a plain FastAPI ``HTTPException`` with no
+      // such envelope, so gating on ``isApiError`` let real 404s fall through to
+      // the throw below, spamming the console and defeating the negative cache.
+      const httpStatus =
+        (error as { response?: { status?: number }; status?: number })?.response?.status ??
+        (error as { status?: number })?.status;
+      if (httpStatus === 404) {
+        ref.status = EntityStatus.ERROR;
+        ref.notFound = true;
+        return null;
+      }
       console.error(`store.ts:Error fetching entity by type ID: ${typeId.toString()}`, error);
       ref.status = EntityStatus.ERROR;
       throw error;
@@ -804,9 +1042,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (!ref) {
       throw new Error('Can not create, Entity not defined');
     }
-    if (ref.status === EntityStatus.FETCHING) {
-      // TODO There probably should be a better way to handle this
-      await this.waitForTypeId(selfTypeId);
+    // Serialize on any in-flight request for this ref. A loop, not a single
+    // await: a concurrent save() can flip the ref back to FETCHING between our
+    // wake-up and our own status check. A rejection belongs to the *other*
+    // request — this save is a fresh attempt, so swallow it and re-check.
+    while (ref.status === EntityStatus.FETCHING) {
+      await this.waitForTypeId(selfTypeId).catch(() => {});
     }
 
     const entity = ref.entity;
@@ -828,30 +1069,36 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         ref.status = EntityStatus.FETCHING;
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}`;
         newEntityJson = (await apiClient.post<IEntity>(endpoint, entityJson)) as IEntity;
-      } else if (ref.status === EntityStatus.READY) {
-        if (!ref.entity) {
-          throw new Error('Entity missing on ref');
-        }
-        if (!ref.entity.typeId.id) {
+      } else {
+        // Saved entity → always attempt the PUT. Deliberately not gated on
+        // ref.status: a stale ERROR from a previous request would otherwise
+        // skip both branches and latch every subsequent save() into the
+        // 'No data returned' throw below.
+        if (!entity.typeId.id) {
           throw new Error('Entity missing id on ref');
         }
         ref.status = EntityStatus.FETCHING;
-        const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${ref.entity.typeId.id}`;
-        newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson)) as IEntity;
+        const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${entity.typeId.id}`;
+        // A remote entity's save reflects to the hub: the server forwards the PUT,
+        // merges the hub's authoritative response (incl. server times) back onto the
+        // local row + broadcasts, and returns the merged entity. Local-only entities
+        // omit the header and save purely locally. The server still re-gates on
+        // remote + logged-in, so an offline remote entity falls back to local.
+        const reflectConfig = entity.remote ? { headers: { 'Hub-Reflect': 'true' } } : undefined;
+        newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson, reflectConfig)) as IEntity;
       }
       if (!newEntityJson) {
         throw new Error('No data returned');
       }
       ref.entity = this.castAndDeepAssign(newEntityJson);
       ref.status = EntityStatus.READY;
+      ref.error = null;
       if (ref.entity) {
         ref.entity.dirty = false;
       }
       return ref.entity as U;
     } catch (error) {
       console.error(`Error saving entity by ID: ${selfTypeId.toString()}`, error);
-      // @ts-ignore
-      console.log('testUserToken', apiClient.testUserToken);
       ref.status = EntityStatus.ERROR;
       if (isApiError(error)) {
         ref.error = error;
@@ -911,7 +1158,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const endpoint = actionInfo.actionUrl;
 
-    let requestConfig = undefined;
+    let requestConfig: any = undefined;
     if (actionInfo.isRawResponse) {
       requestConfig = {
         transformResponse: (data: any) => {
@@ -919,6 +1166,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         },
         signal: actionInfo.abortSignal || undefined,
         responseType: actionInfo.responseType || undefined,
+      };
+    }
+
+    // Per-call hub-reflection opt-in: send the `Hub-Reflect` header so the local
+    // server forwards this call to the hub (default is don't-reflect). Applies to
+    // every verb branch below since they all pass `requestConfig`.
+    if (actionInfo.hubReflect) {
+      requestConfig = {
+        ...(requestConfig ?? {}),
+        headers: { ...(requestConfig?.headers ?? {}), 'Hub-Reflect': 'true' },
       };
     }
 
@@ -990,10 +1247,32 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       sub_path: actionInfo.subpath,
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
+      hub_reflect: actionInfo.hubReflect,
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);
     return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
+  }
+
+  /**
+   * Call an action over the WebSocket when the socket is OPEN, otherwise fall
+   * back to the REST path. The branch is decided up front from the connection
+   * state — there is no post-failure retry, so a non-idempotent mutation can
+   * never be sent twice.
+   *
+   * For non-file mutations (e.g. a text-only message send) the WS hop skips an
+   * HTTP round-trip when a live socket already exists; REST keeps the call
+   * working when it doesn't. Multipart/file actions must NOT use this — binary
+   * bodies don't travel over the WS rest_api_msg channel.
+   */
+  public async callActionPreferWS<_Req, Res>(
+    actionInfo: ActionInfo,
+    options?: import('../websocket').IWSRestOptions,
+  ): Promise<Res> {
+    if (ConnectionManager.getInstance().connected) {
+      return this.callActionOverWS<_Req, Res>(actionInfo, options);
+    }
+    return this.callAction<_Req, Res>(actionInfo);
   }
 
   public getCachedQueryResults<U extends T>(request: QueryRequest): U[] | undefined {
@@ -1302,6 +1581,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       } else {
         this.deepAssign(cachedSource, source);
       }
+      // ``deepAssign`` re-adds the raw ``shared_context_entities`` /
+      // ``private_context_entities`` string arrays without the constructor's
+      // string→TypeId parse, leaving the internal ``_shared_context_entities_``
+      // / ``_private_context_entities_`` arrays (which the getters read) stale.
+      this._rehydrateContextEntities(cachedSource, source);
       cachedSource.dirty = false;
       return cachedSource;
     }
@@ -1326,11 +1610,26 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   /**
+   * Resolve the single entity whose `asset_ref` equals `path` — a PURE index
+   * lookup (`GET /assets/entity`, backed by `Entity.get_by_asset_ref`). No
+   * recovery, no discovery scan, no indexing — returns the entity or null.
+   * The cheap path→entity conversion (e.g. minting a vfs asset tab's project);
+   * `systemTools.discoverByPath` is the heavy recovery counterpart, used only by
+   * the editor view on a bulk miss. Hydrates + caches the hit via the standard
+   * dedup path.
+   */
+  public async getEntityByPath<U extends T>(path: string): Promise<U | null> {
+    const json = await apiClient.get<any>('/assets/entity', { params: { path } }).catch(() => null);
+    if (!json) return null;
+    return this.updateEntityFromJson<U>(json);
+  }
+
+  /**
    * Field-name whitelist for the TypeId auto-coercion in `deepAssign`.
    *
    * The default heuristic — "if the value looks like a TypeId string, treat it
    * as one" — corrupts plain-string fields whose values happen to match the
-   * `<type>-<id>` shape. The canonical example is `target_vfs_path` on
+   * `<type>-<id>` shape. The canonical example is `target_typeid_str` on
    * `AgenticProcess` / `Run`: the Python schema declares it `str | None`, the
    * on-disk record stores it as the string `"project-<uuid>"`, but
    * `deepAssign` would otherwise wrap it into a TypeId object — breaking
@@ -1345,22 +1644,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * this set — current consumers rely on the auto-coercion for those.
    */
   private static TYPEID_COERCION_DENYLIST: ReadonlySet<string> = new Set([
-    'target_vfs_path',
+    'target_typeid_str',
+    'message',
+    'text',
+    'instruction',
+    'title',
+    'sender_name',
   ]);
 
   public deepAssign(target: any, source: any) {
     for (const key in source) {
-      // Check if source[key] is a TypeId FIRST, before checking if it's an object
-      // This handles TypeId objects in arrays (like auth_scopes) where the key is just an index
-      if (
-        source[key] &&
-        isTypeId(source[key]) &&
-        !DataManager.TYPEID_COERCION_DENYLIST.has(key)
-      ) {
-        target[key] = new TypeId(source[key]);
-      } else if (typeof source[key] === 'object' && source[key] !== null) {
-        // For objects/arrays, recursively deep assign
-        // Initialize target[key] if it doesn't exist
+      if (typeof source[key] === 'object' && source[key] !== null) {
         if (!target[key]) {
           target[key] = Array.isArray(source[key]) ? [] : {};
         }
@@ -1370,6 +1664,33 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
     }
     return target;
+  }
+
+  /**
+   * Re-parse wire-bound context arrays on update. APIEntity's constructor
+   * converts ``shared_context_entities`` / ``private_context_entities`` from
+   * string typeids to ``TypeId`` instances stored in ``_shared_context_entities_``
+   * / ``_private_context_entities_`` and deletes the raw fields. ``deepAssign``
+   * doesn't re-run the constructor, so an incoming UPDATE that ships new
+   * ``shared_context_entities`` strings leaves the internal arrays stale.
+   * Call this after ``deepAssign`` to keep them in sync.
+   *
+   * Only acts when the incoming ``source`` carries the raw field (so we don't
+   * clobber a previously-populated internal array on partial updates).
+   */
+  private _rehydrateContextEntities(target: any, source: any): void {
+    if (!source || typeof source !== 'object') return;
+    const rehydrate = (wireField: string, internalField: string) => {
+      if (!(wireField in source)) return;
+      const wireValue = source[wireField] ?? target[wireField];
+      if (!Array.isArray(wireValue)) return;
+      target[internalField] = wireValue.map((v: unknown) =>
+        v instanceof TypeId ? v : new TypeId(String(v)),
+      );
+      delete target[wireField];
+    };
+    rehydrate('shared_context_entities', '_shared_context_entities_');
+    rehydrate('private_context_entities', '_private_context_entities_');
   }
 
   private mergeArrays<T>(arr1?: T[] | null, arr2?: T[] | null): T[] | null {

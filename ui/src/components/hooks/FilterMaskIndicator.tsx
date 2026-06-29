@@ -3,6 +3,7 @@ import { cn } from '@src/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Filter, X } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 interface FilterMaskIndicatorProps {
   mask: FilterMask;
@@ -27,14 +28,14 @@ export function FilterMaskIndicator({ mask, onRemove, onClearAll }: FilterMaskIn
             </button>
           </PopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent>Active filters</TooltipContent>
+        <TooltipContent><Trans>Active filters</Trans></TooltipContent>
       </Tooltip>
       <PopoverContent side="bottom" align="start" className="w-64 p-2">
         <div className="space-y-1">
           <div className="flex items-center justify-between px-1 pb-1">
-            <span className="text-[10px] font-semibold text-muted-foreground">Active Filters</span>
+            <span className="text-[10px] font-semibold text-muted-foreground"><Trans>Active Filters</Trans></span>
             <button className="text-[10px] text-muted-foreground hover:text-foreground" onClick={onClearAll}>
-              Clear all
+              <Trans>Clear all</Trans>
             </button>
           </div>
           {entries.map(([key, value]) => (

@@ -4,7 +4,8 @@ Schema API tests.
 Ported from FlowPad: flowpad/hub/tests/api/test_schema.py
 
 Adapted for minihub:
-- Schema payload is provided via `/api/v1/graph/bootstrap` (`data.schemas`)
+- Schema payload is provided via `/api/v1/graph/bootstrap` as `data.types`
+  (a list of TypeInfo, each carrying a nested JSON `schema`)
 - There is no standalone `/schema` endpoint in this repo
 """
 
@@ -49,7 +50,9 @@ async def test_get_builtin_single_schema(bootstrapped_client):
     assert bootstrap_res.status_code == 200, bootstrap_res.text
     bootstrap_data = bootstrap_res.json()["data"]
 
-    schemas: List[dict[str, Any]] = bootstrap_data["schemas"]
+    schemas: List[dict[str, Any]] = [
+        t["schema"] for t in bootstrap_data["types"] if isinstance(t.get("schema"), dict)
+    ]
     user_schema = next((s for s in schemas if s.get("properties", {}).get("type", {}).get("const") == "user"), None)
     assert user_schema is not None
 
@@ -81,8 +84,9 @@ async def test_get_builtin_all_schema(bootstrapped_client):
     print(f"\nSchema bootstrap call duration: {duration_ms:.2f} ms")
 
     assert response.status_code == 200, response.text
-    schemas: List[Any] = response.json()["data"]["schemas"]
-    assert schemas is not None
+    types: List[Any] = response.json()["data"]["types"]
+    assert types is not None
+    schemas = [t["schema"] for t in types if isinstance(t.get("schema"), dict)]
     assert len(schemas) > 1
     print(f"Retrieved {len(schemas)} schemas")
 
@@ -93,7 +97,9 @@ async def test_bootstrap_includes_agent_and_skill_schemas(bootstrapped_client):
     response = await client.get("/api/v1/graph/bootstrap")
 
     assert response.status_code == 200, response.text
-    schemas: List[dict[str, Any]] = response.json()["data"]["schemas"]
+    schemas: List[dict[str, Any]] = [
+        t["schema"] for t in response.json()["data"]["types"] if isinstance(t.get("schema"), dict)
+    ]
     schema_types = {
         schema.get("properties", {}).get("type", {}).get("const")
         for schema in schemas

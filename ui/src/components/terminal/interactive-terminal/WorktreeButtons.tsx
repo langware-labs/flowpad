@@ -17,6 +17,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { FolderGit2, GitMerge, Loader2 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const COMMIT_MERGE_PROMPT =
   'Please commit all of my changes, if any (commit only, do not push or open a PR), then merge to parent branch if there are no merge conflicts. If merged successfully (without any merge conflicts) - exit worktree.';
@@ -29,6 +30,7 @@ interface CommitMergeButtonProps {
 }
 
 export function CommitMergeButton({ process, onInjectPrompt }: CommitMergeButtonProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [awaitingCompletion, setAwaitingCompletion] = useState(false);
   const wasActiveRef = useRef(false);
@@ -68,14 +70,14 @@ export function CommitMergeButton({ process, onInjectPrompt }: CommitMergeButton
           }`}
           disabled={awaitingCompletion}
           onClick={handleCommitMergeClick}
-          aria-label="Commit & Merge"
+          aria-label={t`Commit & Merge`}
         >
           {awaitingCompletion ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitMerge className="h-3 w-3" />}
-          {awaitingCompletion ? 'Working…' : 'Commit & Merge'}
+          {awaitingCompletion ? t`Working…` : t`Commit & Merge`}
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-[240px] text-xs">
-        Commit all changes and merge back to the parent branch. Claude will exit the worktree when done.
+        <Trans>Commit all changes and merge back to the parent branch. Claude will exit the worktree when done.</Trans>
       </TooltipContent>
     </Tooltip>
   );
@@ -88,6 +90,7 @@ interface OpenInWorktreeButtonProps {
 }
 
 export function OpenInWorktreeButton({ process }: OpenInWorktreeButtonProps) {
+  const { t } = useLingui();
   const { computeNode } = useContext() as { computeNode: ComputeNode };
   const { navigation } = useDockNavigation();
   const workdir = process.workdir ?? undefined;
@@ -127,7 +130,7 @@ export function OpenInWorktreeButton({ process }: OpenInWorktreeButtonProps) {
         },
         { visible: true },
       );
-      navigation.openDock(newProcess.dockPointer);
+      navigation.openDock(newProcess.terminalDockPointer);
     } finally {
       setLoading(false);
     }
@@ -136,8 +139,8 @@ export function OpenInWorktreeButton({ process }: OpenInWorktreeButtonProps) {
   const disabled = loading || !isGitRepoHasCommit;
 
   const tooltip = isGitRepoHasCommit
-      ? 'Open a new isolated git worktree session on a separate branch'
-      : 'Requires a git repository with at least one commit';
+      ? t`Open a new isolated git worktree session on a separate branch`
+      : t`Requires a git repository with at least one commit`;
 
   return (
     <Tooltip>
@@ -148,7 +151,7 @@ export function OpenInWorktreeButton({ process }: OpenInWorktreeButtonProps) {
           }`}
           disabled={disabled}
           onClick={() => void handleOpenWorktreeClick()}
-          aria-label="Open in Worktree"
+          aria-label={t`Open in Worktree`}
         >
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderGit2 className="h-3.5 w-3.5" />}
         </button>

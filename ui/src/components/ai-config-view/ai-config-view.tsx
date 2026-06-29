@@ -6,9 +6,9 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Key, Terminal, Settings } from 'lucide-react';
 import React from 'react';
+import { Trans } from '@lingui/react/macro';
 import { ApiKeysView } from '../api-keys-view/api-keys-view';
-import { ClaudeAuthStatus } from '../claude-auth-status';
-import { HooksView } from '../hooks-view/hooks-view';
+import { CapabilitiesView } from '../capabilities-view';
 
 export const AIConfigView: React.FC = () => {
   const { agent } = useAgentContext();
@@ -28,11 +28,11 @@ export const AIConfigView: React.FC = () => {
 
   // Get default CLI - this could come from agent config or system settings
   // For now, we'll show a placeholder
-  const defaultCLI = 'Claude Code (Latest)';
+  const defaultCLI = 'Default harness';
 
   // Handle Configure LLM button click
   const handleConfigureLLM = () => {
-    window.dispatchEvent(new CustomEvent('open-desktop-setup'));
+    handleTabChange(AIConfigSubview.LLM_APIS);
   };
 
   return (
@@ -41,21 +41,21 @@ export const AIConfigView: React.FC = () => {
       <div className="border-b bg-muted/30 px-4 py-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold">AI Configuration</h2>
-            <p className="text-xs text-muted-foreground">Manage LLM providers and CLI integrations</p>
+            <h2 className="text-base font-semibold"><Trans>AI Configuration</Trans></h2>
+            <p className="text-xs text-muted-foreground"><Trans>Manage LLM providers and CLI integrations</Trans></p>
           </div>
           <div className="flex gap-4 text-xs">
             <div className="flex items-center gap-2">
               <Settings className="h-4 w-4 text-muted-foreground" />
               <div>
-                <div className="font-medium">Default LLM</div>
+                <div className="font-medium"><Trans>Default LLM</Trans></div>
                 <div className="text-muted-foreground">{defaultLLM}</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <Terminal className="h-4 w-4 text-muted-foreground" />
               <div>
-                <div className="font-medium">Default CLI</div>
+                <div className="font-medium"><Trans>Default CLI</Trans></div>
                 <div className="text-muted-foreground">{defaultCLI}</div>
               </div>
             </div>
@@ -67,7 +67,7 @@ export const AIConfigView: React.FC = () => {
       <div className="border-b bg-background px-4 py-2">
         <Button variant="default" size="sm" onClick={handleConfigureLLM}>
           <Key className="mr-1.5 h-4 w-4" />
-          Configure LLM
+          <Trans>Manage API keys</Trans>
         </Button>
       </div>
 
@@ -77,22 +77,21 @@ export const AIConfigView: React.FC = () => {
           <TabsList className="h-8">
             <TabsTrigger value={AIConfigSubview.LLM_APIS} className="h-7 text-xs">
               <Key className="mr-1.5 h-3.5 w-3.5" />
-              LLM APIs
+              <Trans>LLM APIs</Trans>
             </TabsTrigger>
             <TabsTrigger value={AIConfigSubview.CLIS} className="h-7 text-xs">
               <Terminal className="mr-1.5 h-3.5 w-3.5" />
-              CLIs
+              <Trans>Harnesses</Trans>
             </TabsTrigger>
           </TabsList>
         </div>
 
         <TabsContent value={AIConfigSubview.LLM_APIS} className="mt-0 h-[calc(100%-40px)] overflow-auto p-4">
-          <ClaudeAuthStatus />
           <ApiKeysView />
         </TabsContent>
 
         <TabsContent value={AIConfigSubview.CLIS} className="mt-0 h-[calc(100%-40px)] overflow-auto">
-          <HooksView />
+          <CapabilitiesView />
         </TabsContent>
       </Tabs>
     </div>

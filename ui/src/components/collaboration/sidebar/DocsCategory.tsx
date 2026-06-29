@@ -1,10 +1,11 @@
 import { ChevronRight, FileText, Folder } from 'lucide-react';
 import { useMemo, useEffect, useState } from 'react';
-import { config, Markdown, Project, TypeId } from '@sdk';
+import { apiClient, dataManager, Markdown, Project, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useQuery } from '@tanstack/react-query';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { RoomTab } from '../RoomTabs';
 
 interface Props {
@@ -66,9 +67,16 @@ function FolderRow({
   depth: number;
   onOpen: (d: Markdown) => void;
 }) {
-  // Auto-expand at the root and the first level (`.claude/docs`); deeper
-  // folders start collapsed so the menu doesn't explode on big trees.
-  const [open, setOpen] = useState<boolean>(depth < 2);
+  // Auto-expand:
+  //  - root + first level (depth < 2): preserves the existing UX.
+  //  - "thin chains": a folder whose only child is another folder. Lets
+  //    ``.claude/docs`` unfold so the system docs surface immediately.
+  //  - "leaf-with-few-files": a folder with no subfolders and ≤ 3 files.
+  //    Lets the final folder in a ``.claude/docs/`` chain show its file
+  //    rows without the user clicking through.
+  const isThinChain = node.folders.size === 1 && node.files.length === 0;
+  const isShallowLeaf = node.folders.size === 0 && node.files.length > 0 && node.files.length <= 3;
+  const [open, setOpen] = useState<boolean>(depth < 2 || isThinChain || isShallowLeaf);
   const hasChildren = node.folders.size > 0 || node.files.length > 0;
   const indent = { paddingLeft: `${depth * 12}px` };
 
@@ -128,6 +136,7 @@ function FolderRow({
  * the project's `fs_storage_mount_path`.
  */
 export function DocsCategory({ projectId, onOpenTab }: Props) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
   const projectTypeId = useMemo(
@@ -145,12 +154,12 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
   const { data: rows = [], isLoading } = useQuery<Markdown[]>({
     queryKey: ['docs-include-system'],
     queryFn: async () => {
-      const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/markdown?include_system=true&limit=5000`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Failed to load docs: ${resp.status}`);
-      const body = await resp.json();
-      const records = (body.data ?? []) as Partial<Markdown>[];
-      return records.map((row) => new Markdown(row));
+      const records = await apiClient.get<Partial<Markdown>[]>(
+        '/graph/markdown?include_system=true&limit=5000',
+      );
+      // Hydrate via the cache-deduping path; `new Markdown(row)` self-registers
+      // in the dataManager store and collides on every refetch (see use-entity-by-path).
+      return (records ?? []).map((row) => dataManager.updateEntityFromJson<Markdown>(row));
     },
     staleTime: 30_000,
   });
@@ -185,7 +194,7 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
   };
 
   if (!projectId) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No project linked</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No project linked</Trans></div>;
   }
 
   const showToggleRow = !isSystemProject;
@@ -196,7 +205,7 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
       {showToggleRow && (
         <label
           className="flex cursor-pointer items-center gap-1 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground"
-          title="Show docs from SDK-shipped system projects"
+          title={t`Show docs from SDK-shipped system projects`}
         >
           <input
             type="checkbox"
@@ -204,14 +213,14 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
             checked={includeSystem}
             onChange={(e) => setIncludeSystem(e.target.checked)}
           />
-          Show system
+          <Trans>Show system</Trans>
         </label>
       )}
 
       {isLoading && isEmpty ? (
-        <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>
+        <div className="px-2 py-1.5 text-xs text-muted-foreground"><Trans>Loading…</Trans></div>
       ) : isEmpty ? (
-        <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No docs yet</div>
+        <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No docs yet</Trans></div>
       ) : (
         <FolderRow node={tree} depth={0} onOpen={openDoc} />
       )}

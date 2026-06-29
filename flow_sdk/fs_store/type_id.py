@@ -8,7 +8,7 @@ from flow_sdk.fs_store.identifier import (
     is_valid_key,
     is_valid_named_id,
     is_valid_prop_id,
-    is_valid_uuid4,
+    is_valid_uuid,
     parse_key,
     parse_named_id,
     parse_prop_id,
@@ -94,7 +94,7 @@ class TypeId:
     def identifier_type(self) -> IdentifierType | None:
         if not self.identifier:
             return None
-        if is_valid_uuid4(self.identifier):
+        if is_valid_uuid(self.identifier):
             return IdentifierType.UUID
         if is_namespace_key(self.identifier):
             return IdentifierType.NAMESPACE

@@ -1,6 +1,7 @@
 import type { BrowseCache, ContentCache } from '@sdk';
 import { dataManager, fsManager, fsStore, type FSItem, type TypeId } from '@sdk';
 import { useEffect } from 'react';
+import { notify } from '@src/notifications';
 import { useFSStore } from './useFSStore';
 
 /**
@@ -238,6 +239,20 @@ export function useFS(typeid?: TypeId) {
      */
     invalidate: (path: string, cacheType?: 'content' | 'exists' | 'browse' | 'all') => {
       fsStore.getState().invalidate(typeid, path, cacheType);
+    },
+
+    /**
+     * Re-read a file's content from the server, discarding the cached copy.
+     * Surfaces a toast warning if the discarded cache had unsaved edits, so
+     * the user isn't silently losing work.
+     */
+    refetch: async (path: string, asBlob = false) => {
+      const store = fsStore.getState();
+      if (store.getContentFromCache(typeid, path)?.isDirty) {
+        notify.warning({ title: 'Discarded unsaved edits', message: path });
+      }
+      store.invalidate(typeid, path, 'content');
+      return store.downloadFile(typeid, path, asBlob);
     },
 
     /**

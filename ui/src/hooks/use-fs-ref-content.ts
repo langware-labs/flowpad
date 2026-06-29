@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useToast } from '@src/hooks/use-toast';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+/** Default compare-normalizer: identity. Module-level so the `dirty` memo's
+ *  deps stay stable (a fresh inline closure would defeat the memo). */
+const IDENTITY = (s: string) => s;
 
 /**
  * Minimal file I/O abstraction — passed to useFSRefContent.
@@ -31,8 +34,12 @@ export interface FsRefContentState {
   lastSync: Date | null;
   /** True while performing initial load */
   isLoading: boolean;
-  /** Error from initial load, or null */
+  /** Error from initial load (perms, network, etc.), or null. Mutually exclusive with isMissing. */
   loadError: Error | null;
+  /** True when the file does not exist on disk. Editor should render a re-create prompt instead of the loadError path. */
+  isMissing: boolean;
+  /** Create an empty file at this path (clears isMissing and enters the editor with empty content). No-op when fsRef.create is not available. */
+  recreate: () => Promise<void>;
   /** Trigger a save immediately */
   save: () => Promise<void>;
   /** Reload content from disk (discards unsaved changes) */
@@ -42,6 +49,13 @@ export interface FsRefContentState {
 interface Options {
   autoSave?: boolean;
   autoSaveMs?: number;
+  /**
+   * Optional canonicalizer for the dirty comparison. Content whose normalized
+   * form equals the on-disk normalized form is NOT dirty — so reformatting the
+   * save would re-normalize away (e.g. a rich editor that re-serializes the
+   * loaded content on mount) never marks a phantom edit. Defaults to identity.
+   */
+  normalize?: (content: string) => string;
 }
 
 /**
@@ -61,12 +75,13 @@ interface Options {
 export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefContentState {
   const autoSave = options?.autoSave ?? true;
   const autoSaveMs = options?.autoSaveMs ?? 3000;
-  const { toast } = useToast();
+  const normalize = options?.normalize ?? IDENTITY;
 
   const [content, setContentState] = useState('');
   const [remoteContent, setRemoteContent] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<Error | null>(null);
+  const [isMissing, setIsMissing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [reloadTrigger, setReloadTrigger] = useState(0);
@@ -75,18 +90,40 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
   const contentRef = useRef(content);
   contentRef.current = content;
 
+  // FsRef objects are cheap value wrappers re-minted on nearly every render
+  // (AssetEditorRouter rebuilds `new FSRef(...)`, entity `.doc` getters return a
+  // fresh FrontMatterFsRef each access). Keying the load effect on the object
+  // identity therefore re-fires it on every render — during a backend scan's WS
+  // progress flood that means a reload per frame, blanking the editor to a
+  // spinner ("flicker"). Key on the STABLE path string instead and read the live
+  // ref inside the effect (same pattern as useAgentTraceDoc).
+  const fsRefRef = useRef(fsRef);
+  fsRefRef.current = fsRef;
+  const path = fsRef?.path ?? null;
+
   const savingRef = useRef(false);       // authoritative saving flag (no closure staleness)
   const pendingSaveRef = useRef(false);  // another save was requested while one was in-flight
   const saveRef = useRef<() => Promise<void>>(() => Promise.resolve()); // always current save fn
 
-  const dirty = loaded && content !== remoteContent;
+  // Memoized so `remoteContent` (changes only on load/save) isn't re-normalized
+  // on every keystroke-driven render — recomputes only when an input changes.
+  const dirty = useMemo(
+    () => loaded && normalize(content) !== normalize(remoteContent),
+    [loaded, content, remoteContent, normalize],
+  );
 
   // ── Load ──────────────────────────────────────────────────────────────────
+  // Keyed on `path` (stable string) + `reloadTrigger`, NOT the fsRef object —
+  // see fsRefRef note above. Reads the live `fsRefRef.current` so the closure
+  // always uses the current fsManager binding even though the effect didn't
+  // re-run for an identity-only change.
   useEffect(() => {
+    const fsRef = fsRefRef.current;
     if (!fsRef) return;
     let cancelled = false;
     setLoaded(false);
     setLoadError(null);
+    setIsMissing(false);
 
     const load = async () => {
       try {
@@ -97,46 +134,44 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
         setLoaded(true);
       } catch (err) {
         if (cancelled) return;
-        // Recovery branch: orphan entity row pointing at a missing file, or
-        // file deleted out-of-band. The editor must never surface a hard
-        // "Not Found" — verify exists, and if not, create an empty file,
-        // toast a warning, and continue with empty content. The next save
-        // (autosave on first edit) writes real content.
-        const canRecover = typeof fsRef.exists === 'function' && typeof fsRef.create === 'function';
-        if (!canRecover) {
-          setLoadError(err instanceof Error ? err : new Error(String(err)));
-          return;
-        }
-        try {
-          const exists = await fsRef.exists!();
-          if (cancelled) return;
-          if (exists) {
-            // Different failure (perms, network) — surface to the existing
-            // error path so the editor can show Retry.
-            setLoadError(err instanceof Error ? err : new Error(String(err)));
-            return;
+        // Distinguish "file does not exist" (→ isMissing, editor offers
+        // Re-create) from any other read failure (→ loadError, editor offers
+        // Retry). Auto-creation removed: the user should opt in.
+        if (typeof fsRef.exists === 'function') {
+          try {
+            const exists = await fsRef.exists();
+            if (cancelled) return;
+            if (!exists) {
+              setIsMissing(true);
+              return;
+            }
+          } catch {
+            // exists() failed — fall through to loadError below.
           }
-          await fsRef.create!();
-          if (cancelled) return;
-          console.warn('[useFSRefContent] recovered missing file:', fsRef.path);
-          toast({
-            title: 'Missing file was created',
-            description: fsRef.path,
-            variant: 'default',
-          });
-          setRemoteContent('');
-          setContentState('');
-          setLoaded(true);
-        } catch (recoveryErr) {
-          if (cancelled) return;
-          setLoadError(recoveryErr instanceof Error ? recoveryErr : new Error(String(recoveryErr)));
         }
+        setLoadError(err instanceof Error ? err : new Error(String(err)));
       }
     };
 
     void load();
     return () => { cancelled = true; };
-  }, [fsRef, reloadTrigger, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, reloadTrigger]);
+
+  // ── Re-create (missing-file recovery) ────────────────────────────────────
+  const recreate = useCallback(async () => {
+    if (!fsRef || typeof fsRef.create !== 'function') return;
+    try {
+      await fsRef.create();
+      setRemoteContent('');
+      setContentState('');
+      setIsMissing(false);
+      setLoaded(true);
+    } catch (err) {
+      setIsMissing(false);
+      setLoadError(err instanceof Error ? err : new Error(String(err)));
+    }
+  }, [fsRef]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const save = useCallback(async () => {
@@ -193,8 +228,10 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
     dirty,
     saving,
     lastSync,
-    isLoading: !loaded && loadError === null,
+    isLoading: !loaded && loadError === null && !isMissing,
     loadError,
+    isMissing,
+    recreate,
     save,
     reload,
   };

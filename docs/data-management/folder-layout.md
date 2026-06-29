@@ -1,88 +1,115 @@
+---
+id: 4c405bbb-553d-5d0f-a818-74ba7df07133
+---
+
 # On-Disk Folder Layout
 
-This document describes the complete on-disk structure used by flow-cli: the FlowPad records root (`~/.flow/records/`), the Claude Code directories (`~/.claude/`), all `RecordType` constants, and the `SourceFileRegistry` security check.
+This document describes the complete on-disk structure used by flow-cli: the per-instance FlowPad home (`~/.flow/instances/<name>/`), the Claude Code directories (`~/.claude/`), all `RecordType` constants, and the source-file security check.
 
-## FlowPad Records Root
+## FlowPad Home and Records Root
 
-### Default Root
+### Per-Instance Layout
 
-All owned (writable) FlowPad records live under:
+flow-cli is multi-instance. All per-instance state lives under a named subdirectory of `~/.flow`:
 
 ```
-~/.flow/records/
+~/.flow/instances/<name>/
 ```
 
-This path is defined in `flow_sdk/fs_store/record.py`:
+The instance name resolves to `prod` by default; `dev` and `test` modes select their own names, and an arbitrary name (e.g. `oss`, `app`, `stage`) can be passed via the `FLOW_INSTANCE` env var. This checkout runs as the `oss` instance. Resolution and every per-instance path live in `flow_sdk/instance_settings/` (`base_settings.py` → `BaseInstanceSettings`), reached only through `get_instance_settings()`. Direct `Path.home() / ".flow" / X` construction elsewhere is a contract violation.
+
+Owned (writable) FlowPad records live under the per-instance records root:
+
+```
+~/.flow/instances/<name>/records/
+```
+
+This is `InstanceSettings.records_root`, computed in `_resolve_records_root_in(instance_dir)` (`base_settings.py`) as `instance_dir / "records"`, overridable via the `FS_RECORD_PATH` env var.
+
+The path helpers are in `flow_sdk/fs_store/record_paths.py` (`flow_sdk/fs_store/record.py` was deleted in the Phase-5 refactor):
 
 ```python
-_DEFAULT_RECORDS_ROOT: Path = Path.home() / ".flow" / "records"
+get_default_records_root()        # -> InstanceSettings.records_root
+get_default_records_data_root()   # -> InstanceSettings.records_data_dir
+set_default_records_root(path)    # test-only override
 ```
 
-It can be overridden for testing via `set_default_records_root(path)`. The corresponding getter is `get_default_records_root()` — both are exported from `flow_sdk/fs_store/record.py`.
+`get_default_records_root()` / `set_default_records_root()` delegate to `instance_settings`. The companion `records_data/` root (`InstanceSettings.records_data_dir = instance_dir / "records_data"`) holds the user-facing asset content for types whose `asset_ref` is not a folder under the user's project scope (see below).
 
 ### Folder Naming Convention
 
-Each record occupies its own subdirectory. The directory name follows the pattern:
+Each record occupies its own subdirectory (the "shadow" folder). The directory name follows the pattern:
 
 ```
 <type>-@<uid>
 ```
 
-Examples: `task-@abc123`, `session_analysis-@df9e12c4`, `claude_error-@a3b7f91c2e1d`.
+Examples: `task-@f822d496-f6f0-40b7-b18f-64669be1b766`, `agentic_process-@7d1ae3db-...`, `claude_error-@a3b7f91c2e1d`.
 
-The separator is `-@` (defined as `_NAME_SEP` in `record.py`). The `record_stem()` function builds this name and `parse_record_stem()` splits it back apart.
+The separator is `-@` (defined as `_NAME_SEP` in `record_paths.py`, also in `fs_record.py`). `record_stem()` builds this name and `parse_record_stem()` splits it back apart (both in `record_paths.py`).
 
-Records are organized by type under the root:
+Records are organized by type under the records root:
 
 ```
-~/.flow/records/
+~/.flow/instances/<name>/records/
   <type>/
     <type>-@<uid>/
-      metadata.json         # identity fields: id, type, name
-      _data.json            # domain fields: status, prompt, etc.
-      state.json            # per-record index cache (RecordState)
-      output/               # optional generated output
-      analysis.json         # optional companion file (e.g. SessionAnalysis)
-      analysis.md           # optional companion file
+      metadata.json                    # ALL persisted fields (flat): type, id, name + domain fields
+      <epoch>_<hexdigest>.hash         # index sentinel (zero-byte)
 ```
 
-The `default_path` property on `Record` computes:
+The shadow folder of an `FSRecord` (`flow_sdk/fs_store/fs_record.py`) lives at `<records_root>/<type>/<type>-@<id>/metadata.json`. The class header is explicit that `Record` (the old split-format class) was removed; `FSRecord` is the lean replacement.
+
+### Record Metadata File (Single Flat File)
+
+There is no `_data.json` / `state.json` split anymore, and no `data/` subfolder. Everything persisted to disk lives in one file:
+
+```
+<type>-@<uid>/metadata.json     # identity + domain fields, flat (NOT wrapped in {"data": ...})
+```
+
+`metadata.json` holds `type`, `id`, `name`, and every non-system meta field as top-level keys. A real example:
+
+```json
+{
+  "type": "task",
+  "id": "f822d496-f6f0-40b7-b18f-64669be1b766",
+  "name": "Analyze invite and share task email flows",
+  "status": "to_do",
+  "task_type": "Task",
+  "source_file": "/.../tasks/.../header.json",
+  "scope": "project",
+  "project_id": "56713622-...",
+  "updated_date": "2026-06-01 19:16:35.866973+00:00"
+}
+```
+
+Constants in `fs_record.py`:
 
 ```python
-get_default_records_root() / self.type / record_stem(self.type, self.uid)
+_METADATA_JSON = "metadata.json"
+_HASH_GLOB = "*.hash"
+_SYSTEM_ATTRS = frozenset({"type", "id", "_asset_ref"})
 ```
 
-### Record Data Files (Split Format)
+Which meta fields are mirrored is driven by the registered `TypeInfo.meta_model` (a pydantic model) when present; otherwise meta is a free-form dict view.
 
-Record data is split across two files in the record folder:
+### The `asset_ref` (user-facing source file)
 
-```
-<type>-@<uid>/metadata.json     # identity: id, type, name
-<type>-@<uid>/_data.json        # domain: status, prompt, description, etc.
-```
-
-Both use the wrapped `{"data": {...}}` format. The constants in `record.py`:
+`FSRecord.asset_ref` is an `FSRef` to the primary user-facing content file, which lives **outside** the shadow folder — under the user's project scope or under `records_data/`. The path is resolved by `FSRecord.compute_asset_ref(scope_root, entity)`, which reads `TypeInfo.main_subdir` and `TypeInfo.main_layout`:
 
 ```python
-_META_JSON = "metadata.json"
-_DOMAIN_DATA_JSON = "_data.json"
-_META_FIELDS: frozenset[str] = frozenset({"id", "type", "name"})
+base = Path(scope_root) / info.main_subdir
+target = base / safe if info.main_layout == "folder" else base / f"{safe}.md"
 ```
 
-`_data.json` is only written if there are domain fields to persist.
+Types with no `main_subdir` have no asset file. Examples of `main_subdir` / `main_layout` (see `flow_sdk/schema/type_info/*_info.py`): `skill` → `.claude/skills` / `folder`; `markdown` and `markdown_index` → `docs` / `file`. Only the `asset_ref` path is persisted (as `source_file` in `metadata.json`); the shadow-folder path is computed at runtime.
 
-A third file, `state.json`, is managed by `RecordState` and synced on every `save()` call.
+### Index Sentinel (`.hash`)
 
-See [record-model.md](record-model.md#on-disk-split-format) for full details on the split format, migration, and heal-on-read.
+The single per-record `<epoch>_<hexdigest>.hash` zero-byte file in the shadow folder marks the last-indexed fingerprint. Its absence is what makes a record need re-indexing. There is no separate `state.json` cache.
 
-### Backward-Compatible Migration
-
-Two legacy formats are supported with lazy migration on first read:
-
-1. **Oldest format**: `.flow_record/record.json` — migrated to `data.json` via `_migrate_old_format()`.
-2. **Combined format**: `data.json` (all fields in one file) — migrated to `metadata.json` + `_data.json` via `_migrate_data_to_split_format()`.
-
-All discovery methods (`Record.discover()`, `Record.discover_one()`, `Record.load()`, `Record.init_record()`) trigger migration transparently.
+See [record-model.md](record-model.md) for the full `FSRecord` / `TypeInfo` model.
 
 ---
 
@@ -140,22 +167,14 @@ Claude Code stores its own data under `~/.claude/`. flow-cli reads (and in some 
 
 ### Project Directories
 
-The constant `_DEFAULT_PROJECTS_DIR` (in `claude_root.py`) is:
-
-```python
-_DEFAULT_PROJECTS_DIR = Path.home() / ".claude" / "projects"
-```
+The projects directory is `InstanceSettings.claude_projects_dir` (`claude_home / "projects"`, default `~/.claude/projects`). There is no longer a `_DEFAULT_PROJECTS_DIR` constant or a `claude_root.py` module; the indexer reads the path through `get_instance_settings().claude_projects_dir` (see `flow_sdk/fs_store/indexer/functions/_claude_projects.py`).
 
 Each subdirectory under `projects/` corresponds to a working directory. The directory name is the absolute filesystem path with `/` replaced by `-`. The leading `/` is stripped and the remainder is prefixed with `-`:
 
 - Working directory `/home/alice/myproject` → `~/.claude/projects/-home-alice-myproject/`
-- Working directory `/Users/shlom/Documents/dev/flow-cli` → `~/.claude/projects/-Users-shlom-Documents-dev-flow-cli/`
+- Working directory `/Users/alice/Documents/dev/flow-cli` → `~/.claude/projects/-Users-alice-Documents-dev-flow-cli/`
 
-`ClaudeRootFsRecord.projects` reverses this encoding:
-
-```python
-real = "/" + encoded.lstrip("-").replace("-", "/")
-```
+`decode_claude_project_dir()` (in `_claude_projects.py`) reverses the encoding, preferring the `cwd` recorded inside the session JSONL and falling back to the encoded-name decode (which also handles Windows drive-letter prefixes).
 
 Each project directory contains JSONL session transcript files named `<session-uuid>.jsonl`.
 
@@ -175,16 +194,16 @@ Active sessions are identified by checking the file's mtime against a configurab
 
 ## All RecordType Constants
 
-All record type string constants are defined in `flow_sdk/fs_store/record_types.py` as a `StrEnum`.
+All record type string constants are now defined in a single canonical `StrEnum` named `EntityType` in `flow_sdk/schema/types.py`. `flow_sdk/fs_store/record_types.py` is a backward-compatibility shim: both `RecordType` and `SkillitRecordType` are plain aliases of `EntityType` (same class). New code should import `EntityType` directly. The enum is large (100+ members); the tables below cover the commonly-referenced subset — consult `flow_sdk/schema/types.py` for the authoritative list.
 
 ### FlowPad-Owned Records
 
-These record types are owned by flow-cli and stored under `~/.flow/records/<type>/`.
+These record types are owned by flow-cli and stored under `~/.flow/instances/<name>/records/<type>/`.
 
 | Constant | String value | Description |
 |----------|-------------|-------------|
 | `PROJECT` | `"project"` | Project container |
-| `SESSION` | `"session"` | Session entity |
+| `CLAUDE_SESSION` | `"claude_session"` | Claude session entity |
 | `TASK` | `"task"` | Task record |
 | `RULE` | `"rule"` | Rule record |
 | `SKILL` | `"skill"` | Skill record |
@@ -192,13 +211,14 @@ These record types are owned by flow-cli and stored under `~/.flow/records/<type
 | `LOG` | `"log"` | Log entry |
 | `AGENTIC_PROCESS` | `"agentic_process"` | Agentic execution process |
 | `ARTIFACT` | `"artifact"` | Artifact record |
-| `MEMO` | `"memo"` | Memo record |
+| `MARKDOWN` | `"markdown"` | Markdown document record |
+| `MARKDOWN_INDEX` | `"markdown_index"` | Markdown folder/index record |
 | `COMPUTE_NODE` | `"compute_node"` | Compute node |
 | `SESSION_ANALYSIS` | `"session_analysis"` | Analysis results for a session |
 | `SESSION_CLASSIFICATION` | `"session_classification"` | Session classification |
 | `CLAUDE_ERROR` | `"claude_error"` | Deduplicated, triaged error record |
 | `ENVIRONMENT` | `"environment"` | Environment record |
-| `SHELL_SESSION` | `"shell_session"` | Shell/PTY session |
+| `SHELL` | `"shell"` | Shell/PTY session |
 | `TRIGGER_LOG` | `"trigger_log"` | Trigger execution log |
 | `SCAN_LOG` | `"scan_log"` | Schema scan operation log |
 | `INDEX_LOG` | `"index_log"` | Schema index operation log |
@@ -206,9 +226,11 @@ These record types are owned by flow-cli and stored under `~/.flow/records/<type
 | `RECORD_ERROR` | `"record_error"` | Error encountered during record operations |
 | `TEXT_FILE` | `"text_file"` | Generic text file record |
 
-> **Note — type string reuse**: `PROJECT` (`"project"`) and `SESSION` (`"session"`) are also used by `ClaudeProjectFsRecord` and `ClaudeSessionFsRecord` (read-only Claude Code records). The same type string therefore appears for both FlowPad-owned entities (writable, stored in `~/.flow/records/`) and read-only Claude records. Code filtering by `type == "project"` or `type == "session"` will match both categories.
+> **Note — renames**: The old `SESSION = "session"` and `SHELL_SESSION = "shell_session"` constants no longer exist; sessions are now `CLAUDE_SESSION` / `CODEX_SESSION` and shells are `SHELL`. There is no `MEMO` type; note/document content is represented by `MARKDOWN`.
 
-> **Note — `SkillitRecordType`**: A second StrEnum `SkillitRecordType` is defined in `record_types.py` with two additional constants: `SKILLIT_SESSION = "skillit_session"` and `SKILLIT_CONFIG = "skillit_config"`. These are not FlowPad core record types and are documented separately in the skillit subsystem.
+> **Note — Codex types**: `EntityType` also defines `CODEX_SESSION = "codex_session"` and `CODEX_PROJECT = "codex_project"` for Codex CLI data, alongside the Claude equivalents.
+
+> **Note — skillit constants**: `SKILLIT_SESSION = "skillit_session"` and `SKILLIT_CONFIG = "skillit_config"` are members of the same `EntityType` enum (not a separate StrEnum). `SkillitRecordType` is just an alias of `EntityType`.
 
 ### Claude Code Records (read-only, mapped from Claude directories)
 
@@ -220,7 +242,7 @@ These types represent data sourced from Claude Code's own files. The records are
 | `ACCOUNT` | `"account"` | `~/.claude.json` (deprecated, use `CLAUDE_SETTINGS`) |
 | `HOOK` | `"hook"` | `settings.json` `hooks.<event>[]` groups |
 | `HOOK_ENTRY` | `"hook_entry"` | Individual command within a hook group |
-| `CLAUDE_HOOK` | `"claude_hook"` | Individual hook command (writable overlay at `~/.flow/records/claude_hook/`) |
+| `CLAUDE_HOOK` | `"claude_hook"` | Individual hook command (writable overlay at `<records_root>/claude_hook/`) |
 | `TODO_FILE` | `"todo_file"` | `~/.claude/todos/<session-id>-agent-<session-id>.json` |
 | `TODO_ITEM` | `"todo_item"` | Individual item within a todo file |
 | `PLAN` | `"plan"` | `~/.claude/plans/<slug>.md` |
@@ -233,7 +255,6 @@ These types represent data sourced from Claude Code's own files. The records are
 | `ACTIVE_SESSIONS` | `"active_sessions"` | Virtual container — scans `~/.claude/projects/` for recent sessions |
 | `ACTIVE_SESSION` | `"active_session"` | Single active session (mtime within 5 minutes) |
 | `CLAUDE_DEBUG_LOG` | `"claude_debug_log"` | `~/.claude/debug/<session-uuid>.txt` |
-| `CLAUDE_USAGE` | `"claude_usage"` | API rate-limit/usage (fetched from Anthropic API, not a file) |
 
 ### Transcript Entry Records
 
@@ -299,148 +320,104 @@ These types are extracted from `~/.claude/settings.json` (or project-level `.cla
 
 ---
 
-## How fs_records/ Maps RecordTypes to Directories
+## How Types Map to Directories (per-type indexer functions)
 
-The `flow_sdk/fs_records/` package provides concrete record classes for each type. The table below maps each Claude record class to the directory or file it reads from.
+The old `flow_sdk/fs_records/` per-type record classes (`ClaudeRootFsRecord`, `ClaudeSessionFsRecord`, `SkillRecord`, `AgenticProcess`, …) no longer exist. With `FSRecord` knowing nothing about types, all per-type behavior lives in **free functions registered on `TypeInfo`** and dispatched by the indexer:
 
-| Class | RecordType | Source |
-|-------|-----------|--------|
-| `ClaudeRootFsRecord` | `CLAUDE_ROOT` | `~/.claude/projects/` (directory listing) |
-| `ClaudeProjectFsRecord` | `PROJECT` | `~/.claude/projects/<encoded-cwd>/` (JSONL glob) |
-| `ClaudeSessionFsRecord` | `SESSION` | `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl` |
-| `ClaudeActiveSessionsFsRecord` | `ACTIVE_SESSIONS` | Scans `~/.claude/projects/*/*.jsonl` for recent mtime |
-| `ClaudeActiveSessionFsRecord` | `ACTIVE_SESSION` | `~/.claude/projects/<project>/<uuid>.jsonl` (mtime check) |
-| `ClaudeHistoryFsRecord` | `HISTORY` | `~/.claude/history.jsonl` |
-| `ClaudeHistoryEntryFsRecord` | `HISTORY_ENTRY` | Lines within `~/.claude/history.jsonl` |
-| `ClaudeDebugLogFsRecord` | `CLAUDE_DEBUG_LOG` | `~/.claude/debug/<uuid>.txt` |
-| `ClaudeHookFsRecord` | `HOOK` | `hooks.<event>[]` in `settings.json` |
-| `ClaudeHookEntryFsRecord` | `HOOK_ENTRY` | Individual command within a hook group |
-| `ClaudeHookRecord` | `CLAUDE_HOOK` | `settings.json` hooks (writable, with metadata overlay at `~/.flow/records/claude_hook/`) |
-| `ClaudeCommandFsRecord` | `COMMAND` | `~/.claude/commands/<name>.md` or `.claude/commands/<name>.md` |
-| `ClaudeMdFsRecord` | `CLAUDE_MD` | `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md` |
-| `ClaudePlanFsRecord` | `PLAN` | `~/.claude/plans/<slug>.md` |
-| `ClaudeTodoFsRecord` | `TODO_FILE` | `~/.claude/todos/<session-id>-agent-<session-id>.json` |
-| `ClaudeTodoItemFsRecord` | `TODO_ITEM` | Items within the todo JSON array |
-| `ClaudePluginFsRecord` | `PLUGIN` | `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` |
-| `ClaudeMcpServerFsRecord` | `MCP_SERVER` | Entries in `mcp.json` / `.mcp.json` / `.claude/mcp.json` |
-| `ClaudeAccountFsRecord` | `ACCOUNT` | `~/.claude.json` (deprecated flat record) |
-| `ClaudeUsageFsRecord` | `CLAUDE_USAGE` | Anthropic API (`https://api.anthropic.com/api/oauth/usage`) |
-| `ClaudeErrorRecord` | `CLAUDE_ERROR` | Synced from `~/.claude/debug/*.txt` into `~/.flow/records/claude_error/` |
-| `SessionAnalysis` | `SESSION_ANALYSIS` | `~/.flow/records/session_analysis/<type>-@<uid>/` with companion `analysis.json`/`analysis.md` |
+- `from_disk_fn(FSRef) -> list[FSRecord]` — parse a source file/dir into records (cold path)
+- `gen_uuid_fn(FSRef) -> str` — mint/read the record id (hot path)
+- `asset_hash_fn(FSRef) -> float` — cheap freshness stat
+- `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `main_layout`
 
-The following FlowPad-owned record classes also exist in `fs_records/` but are not listed above (their layout follows the standard `~/.flow/records/<type>/<type>-@<uid>/` pattern):
+These are defined next to their type in `flow_sdk/fs_store/indexer/functions/<type>.py` (e.g. `claude_sessions.py`, `claude_md.py`, `skill.py`, `mcp_server.py`, `plugin.py`, `task.py`, `markdown.py`) and the corresponding `flow_sdk/schema/type_info/<type>_info.py`. The table below maps types to the on-disk location their indexer reads.
 
-| Class | RecordType | Notes |
-|-------|-----------|-------|
-| `SkillRecord` | `SKILL` | `fs_records/skill_record.py` |
-| `AgenticProcess` | `AGENTIC_PROCESS` | `fs_records/agentic_process.py` |
-| `SessionClassification` | `SESSION_CLASSIFICATION` | `fs_records/session_classification.py` |
-| `AgentRecord` | `AGENT` | `fs_records/agent_record.py` |
-| `AgentExecution` | (no dedicated type) | `fs_records/agent_execution.py` |
-| `RelationshipRecord` | custom (`"child"`) | `fs_records/relationship.py` — graph edge record |
+| RecordType | Source |
+|-----------|--------|
+| `CLAUDE_ROOT` | `~/.claude/projects/` (directory listing) |
+| `CLAUDE_SESSION` | `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl` |
+| `ACTIVE_SESSIONS` / `ACTIVE_SESSION` | Scans `~/.claude/projects/*/*.jsonl` for recent mtime |
+| `HISTORY` / `HISTORY_ENTRY` | `~/.claude/history.jsonl` (container + lines) |
+| `CLAUDE_DEBUG_LOG` | `~/.claude/debug/<uuid>.txt` |
+| `HOOK` / `HOOK_ENTRY` / `CLAUDE_HOOK` | `hooks.<event>[]` in `settings.json` (writable overlay under `<records_root>/claude_hook/`) |
+| `COMMAND` | `~/.claude/commands/<name>.md` or `.claude/commands/<name>.md` |
+| `CLAUDE_MD` | `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md` |
+| `PLAN` | `~/.claude/plans/<slug>.md` |
+| `TODO_FILE` / `TODO_ITEM` | `~/.claude/todos/<session-id>-agent-<session-id>.json` |
+| `PLUGIN` | `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` |
+| `MCP_SERVER` | Entries in `mcp.json` / `.mcp.json` / `.claude/mcp.json` |
+| `ACCOUNT` | `~/.claude.json` (deprecated) |
+| `CLAUDE_ERROR` | Synced from `~/.claude/debug/*.txt` into `<records_root>/claude_error/` |
+| `CODEX_SESSION` / `CODEX_PROJECT` | `~/.codex/sessions/` (see `codex_sessions.py` / `codex_projects.py`) |
+| `SESSION_ANALYSIS` / `SESSION_CLASSIFICATION` | `<records_root>/<type>/<type>-@<uid>/` |
 
-> **`ClaudeHookRecord` source files**: `ClaudeHookRecordList` scans multiple settings files, not just `~/.claude/settings.json`. The full discovery order is: user `settings.json`, user `settings.local.json`, project `.claude/settings.json`, project `.claude/settings.local.json` (for each active project), plugin `hooks/hooks.json` files, and the legacy `~/.claude.json`.
+FlowPad-owned types (`SKILL`, `AGENT`, `AGENTIC_PROCESS`, `TASK`, `MARKDOWN`, …) follow the standard `<records_root>/<type>/<type>-@<uid>/` shadow-folder pattern, with their user-facing asset (if any) at the `main_subdir`-derived `asset_ref`.
+
+> **Claude hook source files**: hook discovery scans multiple settings files, not just `~/.claude/settings.json` — user `settings.json` / `settings.local.json`, project `.claude/settings.json` / `.claude/settings.local.json`, plugin `hooks/hooks.json`, and legacy `~/.claude.json`. See `flow_sdk/fs_store/indexer/functions/claude_hook.py` and `flow_sdk/fs_store/operations/claude_hook.py`.
 
 ---
 
-## SourceFileRegistry and the Config File Whitelist
+## Source-File Extractors and the Config File Whitelist
 
-### What is SourceFileRecordList
+### Extractor functions
 
-A `SourceFileRecordList` extracts multiple typed records from a single JSON (or JSONL) file. Each extracted record carries a `source_file` (the path to the file) and a `json_path` (an RFC 6901 JSON Pointer indicating its position within that file).
+A "source file" is a known Claude JSON config file that the system splits into multiple typed records. Each extracted record carries a `source_file` (the path to the file) and a `json_path` (an RFC 6901 JSON Pointer indicating its position within that file).
 
-Examples:
-- `ClaudeSettingsRecordList` parses `~/.claude.json` and yields one `CLAUDE_SETTINGS` root record plus sub-records for OAuth, projects, feature flags, etc.
-- `ClaudeSettingsJsonRecordList` parses `settings.json` and yields `CLAUDE_SETTINGS_JSON`, `CLAUDE_SETTINGS_JSON_PERMISSIONS`, `CLAUDE_SETTINGS_JSON_SANDBOX`, and `CLAUDE_SETTINGS_JSON_ATTRIBUTION`.
-- `ClaudeMcpJsonRecordList` parses `mcp.json` / `.mcp.json` and yields one `MCP_SERVER` record per server.
-- `ClaudeManagedSettingsRecordList` parses `managed-settings.json` and yields a single `CLAUDE_MANAGED_SETTINGS` root record.
-
-### SourceFileRegistry
-
-`flow_sdk/fs_store/source_file_registry.py` maintains a global mapping from filename (e.g., `"settings.json"`) to the `SourceFileRecordList` subclass that can parse files with that name.
-
-Registration happens at import time via `register_file_pattern()`:
+The class-based `SourceFileRecordList` hierarchy and the `SourceFileRegistry` (`flow_sdk/fs_store/source_file_registry.py`) have been **dissolved**. Extraction is now done by pure functions `(data: dict, source_file: str) -> list[dict]` in `flow_sdk/fs_store/source_file_records.py`, keyed by filename in the `_EXTRACTORS` dict:
 
 ```python
-# In claude_settings_json/__init__.py
-register_file_pattern("settings.json", ClaudeSettingsJsonRecordList)
-register_file_pattern("settings.local.json", ClaudeSettingsJsonRecordList)
-
-# In claude_settings/__init__.py
-register_file_pattern(".claude.json", ClaudeSettingsRecordList)
-
-# In claude_mcp_json.py
-register_file_pattern("mcp.json", ClaudeMcpJsonRecordList)
-register_file_pattern(".mcp.json", ClaudeMcpJsonRecordList)
-
-# In claude_managed_settings.py
-register_file_pattern("managed-settings.json", ClaudeManagedSettingsRecordList)
+_EXTRACTORS = {
+    "settings.json":         _extract_settings_json,
+    "settings.local.json":   _extract_settings_json,
+    "managed-settings.json": _extract_managed_settings,
+    "mcp.json":              _extract_mcp_json,
+    ".mcp.json":             _extract_mcp_json,
+}
 ```
 
-The lookup function `resolve_list_class(source_path)` finds the class by filename only (ignoring the directory):
-
-```python
-def resolve_list_class(source_path: str | Path) -> type[SourceFileRecordList] | None:
-    return _FILE_PATTERNS.get(Path(source_path).name)
-```
+The public surface is `known_filename(path)`, `extract_from_data(data, path)`, and `extract_records(path)`. The path-based API handler `FsRecordsActionsMixin._handle_path_based_source_file` (`flow_sdk/builtin/faas/fs_records_actions.py`) delegates here. Note there is **no** `.claude.json` extractor — that file is not split server-side via this path.
 
 ### Allowed Source Filenames Whitelist
 
-The path-based API (`/fs-records/file?path=...`) restricts which files can be accessed via `is_allowed_source_path()`. The complete set of allowed filenames is defined as:
+The path-based API (`/fs-records/file?path=...`) restricts which files can be accessed via `is_allowed_source_path()`. The allow-list is derived directly from `_EXTRACTORS` so it can't drift:
 
 ```python
-_ALLOWED_FILENAMES = frozenset({
-    "settings.json",
-    "settings.local.json",
-    "mcp.json",
-    ".mcp.json",
-    "managed-settings.json",
-    ".claude.json",
-})
+_ALLOWED_FILENAMES = frozenset(_EXTRACTORS.keys())
+# {"settings.json", "settings.local.json", "managed-settings.json",
+#  "mcp.json", ".mcp.json"}
 ```
 
 ### `is_allowed_source_path()` Security Check
 
-Simply having an allowed filename is not sufficient. The path must also match the pattern that places it under a `.claude/` directory, or be one of the known dot-files (`.mcp.json`, `.claude.json`):
+Having an allowed filename is not sufficient — the path must also sit under a `.claude/` directory or be a project-root `.mcp.json`:
 
 ```python
-_ALLOWED_PATH_RE = re.compile(
-    r"(?:^|/)"
-    r"(?:"
-    r"\.claude/"
-    r"|\.mcp\.json$"
-    r"|\.claude\.json$"
-    r")"
-)
+_ALLOWED_PATH_FRAGMENTS = (".claude/", "/.mcp.json")
 
 def is_allowed_source_path(path: str) -> bool:
     expanded = str(Path(path).expanduser())
-    filename = Path(expanded).name
-    if filename not in _ALLOWED_FILENAMES:
+    if Path(expanded).name not in _ALLOWED_FILENAMES:
         return False
-    return bool(_ALLOWED_PATH_RE.search(expanded))
+    return any(frag in expanded for frag in _ALLOWED_PATH_FRAGMENTS)
 ```
 
 The check proceeds in two steps:
 
 1. The filename must be in `_ALLOWED_FILENAMES`.
-2. The expanded path must match `_ALLOWED_PATH_RE`, which requires either:
-   - The path contains a `/.claude/` directory component (matches `settings.json`, `settings.local.json`, `mcp.json`, `managed-settings.json` placed inside any `.claude/` subdirectory), or
-   - The path ends with `/.mcp.json` (project-root dot-file), or
-   - The path ends with `/.claude.json` (home directory global settings).
+2. The expanded path must contain one of the `_ALLOWED_PATH_FRAGMENTS` substrings:
+   - `.claude/` — any file inside a `.claude/` directory, or
+   - `/.mcp.json` — the project-root MCP dot-file.
 
-This prevents the API from opening arbitrary files on disk — only known Claude configuration files are accessible.
+This prevents the API from opening arbitrary files on disk — only known Claude configuration files are accessible. (It is a plain substring match, not an anchored regex.)
 
-### Registered Filename-to-Class Mapping
+### Registered Filename-to-Extractor Mapping
 
-| Filename | RecordList class | Default path |
-|----------|-----------------|-------------|
-| `settings.json` | `ClaudeSettingsJsonRecordList` | `~/.claude/settings.json` |
-| `settings.local.json` | `ClaudeSettingsJsonRecordList` | `~/.claude/settings.local.json` or `.claude/settings.local.json` |
-| `mcp.json` | `ClaudeMcpJsonRecordList` | `~/.claude/mcp.json` or `.claude/mcp.json` |
-| `.mcp.json` | `ClaudeMcpJsonRecordList` | `<project-root>/.mcp.json` |
-| `managed-settings.json` | `ClaudeManagedSettingsRecordList` | `~/.claude/managed-settings.json` |
-| `.claude.json` | `ClaudeSettingsRecordList` | `~/.claude.json` |
+| Filename | Extractor | Yields | Default path |
+|----------|-----------|--------|-------------|
+| `settings.json` | `_extract_settings_json` | `CLAUDE_SETTINGS_JSON` + permissions/sandbox/attribution | `~/.claude/settings.json` |
+| `settings.local.json` | `_extract_settings_json` | same as above | `~/.claude/settings.local.json` or `.claude/settings.local.json` |
+| `mcp.json` | `_extract_mcp_json` | `CLAUDE_MCP_JSON` root + one per-server record | `~/.claude/mcp.json` or `.claude/mcp.json` |
+| `.mcp.json` | `_extract_mcp_json` | same as above | `<project-root>/.mcp.json` |
+| `managed-settings.json` | `_extract_managed_settings` | single `CLAUDE_MANAGED_SETTINGS` root | `~/.claude/managed-settings.json` |
 
 ---
 
@@ -474,48 +451,47 @@ $HOME/
             <version-hash>/           # Plugin cache (ClaudePluginFsRecord)
 
   .flow/
-    schema/                             # SchemaRegistry logs and type info
-      scan_log.jsonl                    # Global scan log
-      index_log.jsonl                   # Global index log
-      types/
-        <sanitized_type>/
-          type_info.json                # Per-type TypeInfo
-          scan_log.jsonl                # Per-type scan log
-          index_log.jsonl               # Per-type index log
-    records/
-      task/
-        task-@<uid>/
-          metadata.json                 # TaskResource identity
-          _data.json                    # TaskResource domain data
-          state.json                    # RecordState cache
-      skill/
-        skill-@<uid>/
-          metadata.json                 # SkillRecord identity
-          _data.json                    # SkillRecord domain data
-      session_analysis/
-        session_analysis-@<uid>/
-          metadata.json                 # SessionAnalysis identity
-          _data.json                    # SessionAnalysis domain data
-          analysis.json                 # Companion: structured analysis data
-          analysis.md                   # Companion: markdown analysis
-      claude_error/
-        claude_error-@<fingerprint>/
-          metadata.json                 # ClaudeErrorRecord (synced from debug/*.txt)
-          _data.json
-      claude_hook/
-        claude_hook-@<content-hash>/
-          metadata.json                 # Metadata overlay for a ClaudeHookRecord
-          _data.json
-      memo/
-        memo-@<uid>/
-          metadata.json                 # MemoRecord identity
-          _data.json                    # MemoRecord domain data
-      agentic_process/
-        agentic_process-@<uid>/
-          metadata.json                 # AgenticProcess identity
-          _data.json                    # AgenticProcess domain data
-      # ... other types follow the same pattern ...
+    global/                             # cross-instance shared state
+      migrations/                       # per-version migration status JSON
+    instances/
+      <name>/                           # per-instance root (prod | dev | test | oss | ...)
+        flowpad.db                      # SQLite entity DB (lives directly here)
+        server.json  server.pid  server.lock   # running-server coordination
+        config.json  preferences.json   # instance config
+        sodot  .secrets_enabled          # encrypted secrets + consent marker
+        logs/                            # per-instance logs
+        schema/                          # SchemaRegistry logs and type info
+          scan_log.jsonl                # scan log
+          types/
+            <type>/
+              type_info.json            # per-type TypeInfo
+              scan_log.jsonl            # per-type scan log
+              index_log.jsonl           # per-type index log
+        records/                         # owned record shadow folders
+          task/
+            task-@<uid>/
+              metadata.json             # ALL persisted fields (flat)
+              <epoch>_<hexdigest>.hash  # index sentinel (zero-byte)
+          skill/
+            skill-@<uid>/
+              metadata.json
+              <epoch>_<hexdigest>.hash
+          claude_error/
+            claude_error-@<fingerprint>/
+              metadata.json
+          claude_hook/
+            claude_hook-@<content-hash>/
+              metadata.json             # writable hook overlay
+          agentic_process/
+            agentic_process-@<uid>/
+              metadata.json
+          # ... other types follow the same metadata.json + .hash pattern ...
+        records_data/                    # user-facing asset content (asset_ref targets)
+          conversation/  markdown_index/  shell/   # per-type asset dirs/files
+        tasks/  skill_rules/              # other per-instance working dirs
 ```
+
+> Note: the shadow folder under `records/<type>/` holds only `metadata.json` and the `.hash` sentinel. There is no `_data.json`, `state.json`, `output/`, or `analysis.json` companion. A type's user-facing content lives at its `asset_ref` — either under `records_data/<type>/` or under the user's project scope at `<scope_root>/<main_subdir>/...` (e.g. `skill` → `.claude/skills/<name>/`).
 
 Project-level Claude configuration (placed in the working directory, not the home directory):
 

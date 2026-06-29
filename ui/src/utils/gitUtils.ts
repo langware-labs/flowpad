@@ -5,7 +5,7 @@
  * exposing tokens in the frontend and to handle rate limits properly.
  */
 
-import { ActionInfo, dataManager } from '@sdk';
+import { ActionInfo, dataContext, dataManager } from '@sdk';
 
 /**
  * Response structure from the proxy action
@@ -146,14 +146,21 @@ export const fetchGitHubBranches = async (gitUrl: string): Promise<GitHubBranch[
   if (!gitUrl) return [];
 
   try {
-    // Use the new repo action to fetch branches
-    const actionInfo = new ActionInfo('repo', null, null, 'POST');
+    // The user typeid must be passed so the backend's _get_github_token can
+    // look up the SOD credential under the signed-in user. Without it, the
+    // call hits as anonymous and 401s on private repos.
+    const userTypeId = dataContext.userTypeId;
+    const actionInfo = new ActionInfo(
+      'repo',
+      userTypeId?.type ?? null,
+      userTypeId?.id ?? null,
+      'POST',
+    );
     actionInfo.subpath = 'branches';
     actionInfo.bodyParameters = {
       repo_url: gitUrl,
     };
 
-    // TODO check which one we need
     const result = await dataManager.callAction(actionInfo);
     if (Array.isArray(result)) {
       return result as GitHubBranch[];

@@ -166,8 +166,19 @@ def _build_delete_flow_data_msg(type_id: str, entity_id: str) -> dict:
 
 
 async def _send_payloads(ws, payloads: list[dict]):
-    for payload in payloads:
-        await ws.send_text(json.dumps(payload))
+    from flow_sdk.core.network.connections import is_client_gone
+
+    try:
+        for payload in payloads:
+            await ws.send_text(json.dumps(payload))
+    except Exception as e:
+        # Fire-and-forget task: a client that disconnected mid-notification is
+        # normal, not a server error. Swallow it (logged at debug) so asyncio
+        # does not surface an unretrieved-task-exception traceback.
+        if is_client_gone(e):
+            logger.debug("Skipped notification to disconnected client: %s", e)
+        else:
+            logger.warning("Failed to send entity notification: %s", e)
 
 
 def _sync_handle_entity_op(op_message: DataOpMessage):
@@ -194,8 +205,24 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
         if type_id:
             message["to_entity"] = type_id
 
-        # Skip notifications for non-API-visible entity types
-        if entity_type:
+        # Explicit watchers (a UI connection that called ``watch`` on this
+        # entity) always receive update/delete ops — even for types absent from
+        # the api-visible schema set. AgenticProcess is runtime-only (not in the
+        # bootstrap schemas, so ``api_visible_by_type`` is False) yet IS watched
+        # and cached by the FE; without this, a persistent-field change like a
+        # file→process cross-link (private_context_entities) never reaches the
+        # watching client and its cached entity goes stale.
+        from flow_sdk.app.actions.watch_registry import get_watched_by
+        explicit_watchers: set[str] = set()
+        if entity_type and entity_id and op in ("update", "delete"):
+            explicit_watchers = {
+                c for c in get_watched_by(f"{entity_type}:{entity_id}") if c in active_connections
+            }
+
+        # Skip notifications for non-API-visible entity types UNLESS an explicit
+        # watcher asked for this entity. The create / broadcast-to-all fallback
+        # still honors the gate so internal-type churn isn't spammed to everyone.
+        if entity_type and not explicit_watchers:
             try:
                 from flow_sdk.core.entity.entity_model import Entity
                 if not Entity.api_visible_by_type(entity_type):
@@ -325,3 +352,31 @@ async def broadcast_progress(to_entity: str, flow_data: dict) -> None:
                 pass
     except Exception as e:
         logger.error(f"Error broadcasting progress: {e}", exc_info=True)
+
+
+def make_flow_message_progress_emitter(fm_id: str, phase: str):
+    """Build an async ``on_progress(bytes_done, bytes_total)`` callback that
+    fans a ``flow_data_msg`` for a FlowMessage's body upload/download bar.
+
+    ``phase`` is ``"upload"`` or ``"download"`` — it becomes the flow_data
+    ``element_type`` (``upload_progress`` / ``download_progress``) the UI's
+    ``useFlowMessageProgress`` hook filters on. Broadcast (not watcher-scoped)
+    so the bar shows regardless of whether the FM is registered as watched.
+    """
+    to_entity = f"flow_message-{fm_id}"
+    element_type = f"{phase}_progress"
+
+    async def _emit(bytes_done: int, bytes_total: int) -> None:
+        try:
+            await broadcast_progress(to_entity, {
+                "element_type": element_type,
+                "attributes": {
+                    "flow_message_id": fm_id,
+                    "bytes_done": bytes_done,
+                    "bytes_total": bytes_total,
+                },
+            })
+        except Exception:  # noqa: BLE001
+            pass
+
+    return _emit

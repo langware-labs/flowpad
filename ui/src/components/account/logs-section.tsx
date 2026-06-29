@@ -2,6 +2,7 @@ import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Terminal } from 'lucide-react';
 import { SystemLog } from './system-log';
+import { SystemDiagnoses } from './system-diagnoses';
 
 export function LogsSection() {
   const { navigation } = useDockNavigation();
@@ -16,6 +17,8 @@ export function LogsSection() {
         <Terminal className="mr-2 h-4 w-4" />
         CLI Invocation Log
       </Button>
+
+      <SystemDiagnoses />
 
       <SystemLog />
     </div>

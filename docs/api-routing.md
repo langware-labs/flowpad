@@ -1,3 +1,7 @@
+---
+id: 566ca793-90ca-5fb4-8fc5-0dc44b466925
+---
+
 # API Routing Specification
 
 This document describes how HTTP requests are routed through the flow-cli system — from URL to action handler — covering both the Python backend and the TypeScript frontend.
@@ -54,7 +58,7 @@ When no explicit action appears in the URL, the HTTP method determines the actio
 | `/agent` | — | — | `agent` | `read` (implicit GET) | — |
 | `/agent/@local` | — | `agent/@local` | — | `read` (implicit GET) | — |
 | `/workspace/@local/agent` | — | `workspace/@local` | `agent` | `read` (implicit GET) | — |
-| `/agent/@local/fs/browse/Users/shlom` | — | `agent/@local` | — | `fs` | `browse/Users/shlom` |
+| `/agent/@local/fs/browse/Users/alice` | — | `agent/@local` | — | `fs` | `browse/Users/alice` |
 | `/compute_node/@local/terminal-command` | — | `compute_node/@local` | — | `terminal-command` | — |
 | `/workspace/@local/agent/@local/control` | `workspace/@local` | `agent/@local` | — | `control` | — |
 | `/agentic_process/{id}/state` | — | `agentic_process/{id}` | — | `state` | — |
@@ -216,7 +220,7 @@ Registered globally as `@action.all(action_name="fs")` in `flow_sdk/actions/fs/m
 The `sub_path` is parsed into `{fs_action}/{entity_sub_path}`:
 
 ```
-GET  /api/v1/graph/compute_node/@local/fs/browse/Users/shlom
+GET  /api/v1/graph/compute_node/@local/fs/browse/Users/alice
                                         ── ────── ──────────
                                         action  fs_action  entity path
 ```
@@ -258,7 +262,7 @@ Entity-specific actions on `AgenticProcessor` (`flow_sdk/builtin/agentic_process
 | `exit` | ALL | `.../agentic_process/{id}/exit` | Exit process |
 | `get-history` | GET | `.../agentic_process/{id}/get-history` | Get execution history |
 | `transcript/plan` | POST | `.../agentic_process/{id}/transcript/plan` | Resolve the latest plan from the worker transcript |
-| `transcript/prompts` | POST | `.../agentic_process/{id}/transcript/prompts` | Return canonical user prompts from `AgentTranscript.prompts` |
+| `transcript/prompts` | POST | `.../agentic_process/{id}/transcript/prompts` | Return canonical user prompts from `AgentTranscriptFile.prompts` |
 | `start-pty` | POST | `.../agentic_process/{id}/start-pty` | Start PTY terminal |
 | `resume-pty` | POST | `.../agentic_process/{id}/resume-pty` | Resume PTY session |
 | `kill-pty` | POST | `.../agentic_process/{id}/kill-pty` | Kill PTY process |
@@ -410,7 +414,7 @@ What `ApiUrl.toString()` produces:
 | List agents | `name='read', resourceType='agent'` | `/graph/agent` |
 | Get agent | `name='read', resourceType='agent', resourceId='@local'` | `/graph/agent/@local` |
 | Create task under workspace | `name='create', resourceType='task', scope=[ws.typeId]` | `/graph/workspace/@local/task` |
-| Browse files | `name='fs', target=cn.typeId, subpath='browse/Users/shlom'` | `/graph/compute_node/@local/fs/browse/Users/shlom` |
+| Browse files | `name='fs', target=cn.typeId, subpath='browse/Users/alice'` | `/graph/compute_node/@local/fs/browse/Users/alice` |
 | Terminal command | `name='terminal-command', target=cn.typeId, method='POST'` | `/graph/compute_node/@local/terminal-command` |
 | Add label | `name='label', target=entity.typeId, subpath='my-tag', method='POST'` | `/graph/agent/@local/label/my-tag` |
 

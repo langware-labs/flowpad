@@ -4,7 +4,6 @@ import httpx
 import pytest
 
 from flow_sdk.cli.app_config import clear_user, set_user
-from flow_sdk.cli.auth import credentials as credentials_mod
 from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials, save_credentials
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
@@ -12,26 +11,14 @@ from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError
 
 
 @pytest.fixture()
-def memory_keyring(monkeypatch):
-    store: dict[tuple[str, str], str] = {}
-
-    def get_password(service: str, name: str):
-        return store.get((service, name))
-
-    def set_password(service: str, name: str, value: str):
-        store[(service, name)] = value
-
-    def delete_password(service: str, name: str):
-        try:
-            del store[(service, name)]
-        except KeyError:
-            raise credentials_mod.keyring.errors.PasswordDeleteError("missing")
-
-    monkeypatch.setattr(credentials_mod.keyring, "get_password", get_password)
-    monkeypatch.setattr(credentials_mod.keyring, "set_password", set_password)
-    monkeypatch.setattr(credentials_mod.keyring, "delete_password", delete_password)
+def memory_keyring(sod_env):
+    """Back-compat name. Phase C moved credentials off keyring into the
+    per-instance sod, so the shared ``sod_env`` fixture (tests/conftest.py)
+    is the right primitive. Tests reference this fixture for parameter
+    injection; the yielded value (the active InstanceSettings) isn't
+    inspected directly by any test in this file."""
     clear_user()
-    yield store
+    yield sod_env
     clear_user()
 
 
@@ -96,13 +83,41 @@ async def test_pre_expired_credentials_short_circuit_without_network(memory_keyr
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status_code", [401, 402, 424])
-async def test_auth_failure_status_clears_credentials_and_broadcasts_auth_expired(
+async def test_auth_failure_status_keeps_credentials_and_reports_warning(
+    monkeypatch,
     memory_keyring,
     capture_broadcast,
     status_code,
 ):
+    """A 401/402/424 alone must NOT log the user out.
+
+    The status can't distinguish "credentials rejected" from "RBAC denial on
+    this entity/action" (the hub uses 401 for both). Dropping login state on
+    every 401 caused the "logged in then suddenly logged out" symptom after
+    an authz-denied call like ``GET /conversation/<id>/members``. Real
+    credential loss is signalled via the 2xx auth-failure envelope or via the
+    WS auth close code, not by the bare status here.
+
+    The request still surfaces — the error reporter receives method/path/
+    status/message so ``createHubRequestFailedWarning`` can render the full
+    detail for debugging.
+    """
+    reports = []
+
+    class Reporter:
+        async def report(self, **kwargs):
+            reports.append(kwargs)
+
+    import flow_sdk.cloud_client.client_hooks as hooks
+
+    monkeypatch.setattr(hooks, "hub_error_reporter", Reporter())
+
     async def handler(request: httpx.Request):
-        return httpx.Response(status_code, json={"detail": "expired"}, request=request)
+        return httpx.Response(
+            status_code,
+            json={"status": "FAIL", "message": "no valid access for role ['member']"},
+            request=request,
+        )
 
     save_credentials(UserHubCredentials(api_key="bad-token", user={"id": "u1"}))
     set_user({"id": "u1"})
@@ -115,9 +130,17 @@ async def test_auth_failure_status_clears_credentials_and_broadcasts_auth_expire
         with pytest.raises(ValueError):
             await client.get_user()
 
-    assert load_credentials() is None
-    assert not is_logged_in()
-    assert any("auth_expired_msg" in message for message in capture_broadcast)
+    # Login state preserved — no auth_expired broadcast, credentials intact.
+    assert load_credentials().api_key == "bad-token"
+    assert is_logged_in()
+    assert not any("auth_expired_msg" in message for message in capture_broadcast)
+    # Full detail forwarded to the warning surface.
+    assert reports == [{
+        "status_code": status_code,
+        "method": "GET",
+        "path": "/api/v1/current-user",
+        "message": "no valid access for role ['member']",
+    }]
 
 
 @pytest.mark.asyncio

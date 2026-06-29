@@ -25,16 +25,38 @@ def _consume_confirmation(ws):
     assert data["status"] == "ok"
 
 
+def _receive_ui_command(ws):
+    """Return the next ``ui_command`` frame, skipping unrelated broadcasts.
+
+    Other server tasks (entity create → ``data_op_msg``, hub status →
+    ``hub_client_error_msg``) can enqueue frames on the same socket between the
+    navigate POST and its ``ui_command``. Drain past them so the assertion locks
+    the command, not whatever happened to arrive first.
+    """
+    last = None
+    for _ in range(50):
+        last = ws.receive_json()
+        if last.get("message_type") == "ui_command":
+            return last
+    pytest.fail(f"timed out waiting for ui_command; last frame={last!r}")
+
+
 def _flush(ws):
     """Round-trip a ping to ensure prior fire-and-forget messages were applied.
 
     `presence` doesn't ACK (the client never awaits one); the WS handler is
     sequential, so a `pong` reply guarantees every earlier message on this
-    socket has been processed.
+    socket has been processed. Other server tasks can enqueue data_op messages
+    on the same socket, so skip unrelated frames until the barrier pong arrives.
     """
-    ws.send_json({"message_type": "ping", "message_id": "barrier", "text": "x"})
-    pong = ws.receive_json()
-    assert pong["message_type"] == "pong"
+    marker = f"barrier-{uuid.uuid4()}"
+    ws.send_json({"message_type": "ping", "message_id": marker, "text": marker})
+    last = None
+    for _ in range(50):
+        last = ws.receive_json()
+        if last.get("message_type") == "pong" and last.get("text") == marker:
+            return
+    pytest.fail(f"timed out waiting for barrier pong; last frame={last!r}")
 
 
 async def _make_project() -> str:
@@ -166,11 +188,118 @@ async def test_navigate_success_sends_ui_command_to_active_tab():
             assert body["type"] == "project"
             assert body["id"] == project_id
 
-            msg = ws.receive_json()
+            msg = _receive_ui_command(ws)
             assert msg["message_type"] == "ui_command"
             assert msg["kind"] == "navigate_entity"
             assert msg["type"] == "project"
             assert msg["id"] == project_id
+
+
+async def _make_markdown(asset_ref: str) -> str:
+    """Create a markdown entity owning ``asset_ref``, return its id.
+
+    Exercises the real ``Entity.get_by_asset_ref`` path the file route uses to
+    decide between the entity view and the raw-vfs fallback.
+    """
+    from flow_sdk.builtin.claude_memory_entities import Markdown
+    from flow_sdk.db.database import init_db
+
+    await init_db()
+    md = Markdown(
+        type="markdown",
+        uname=f"navmd-{uuid.uuid4().hex[:8]}",
+        name="hello",
+        asset_ref=asset_ref,
+        visitor_role="owner",
+    )
+    await md.save()
+    return md.id
+
+
+def _canonical(path: str) -> str:
+    import os
+
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    return canonical_posix_path(os.path.abspath(os.path.expanduser(path)))
+
+
+@pytest.mark.asyncio
+async def test_navigate_file_unindexed_falls_back_to_vfs(tmp_path):
+    """A path no entity owns → 200 mode=vfs, WS gets a navigate_vfs command.
+
+    This is the 'agent writes hello.md, then opens it' path — no indexing.
+    """
+    from flow_sdk.server.app import app
+
+    path = _canonical(str(tmp_path / "hello.md"))
+
+    with TestClient(app) as client:
+        connection_id = str(uuid.uuid4())
+        with client.websocket_connect(f"/api/v1/connect/ws/{connection_id}") as ws:
+            _consume_confirmation(ws)
+            ws.send_json(
+                {"message_type": "presence", "message_id": "p", "visible": True, "focused": True}
+            )
+            _flush(ws)
+
+            resp = client.post("/api/v1/agent/navigate/file", json={"path": path})
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["ok"] is True
+            assert body["mode"] == "vfs"
+            assert body["path"] == path
+            assert body["connection_id"] == connection_id
+
+            msg = _receive_ui_command(ws)
+            assert msg["message_type"] == "ui_command"
+            assert msg["kind"] == "navigate_vfs"
+            assert msg["path"] == path
+
+
+@pytest.mark.asyncio
+async def test_navigate_file_indexed_navigates_to_entity(tmp_path):
+    """A path an entity owns → 200 mode=entity, WS gets navigate_entity."""
+    from flow_sdk.server.app import app
+
+    path = _canonical(str(tmp_path / "hello.md"))
+    md_id = await _make_markdown(path)
+
+    with TestClient(app) as client:
+        connection_id = str(uuid.uuid4())
+        with client.websocket_connect(f"/api/v1/connect/ws/{connection_id}") as ws:
+            _consume_confirmation(ws)
+            ws.send_json(
+                {"message_type": "presence", "message_id": "p", "visible": True, "focused": True}
+            )
+            _flush(ws)
+
+            resp = client.post("/api/v1/agent/navigate/file", json={"path": path})
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["ok"] is True
+            assert body["mode"] == "entity"
+            assert body["type"] == "markdown"
+            assert body["id"] == md_id
+
+            msg = _receive_ui_command(ws)
+            assert msg["message_type"] == "ui_command"
+            assert msg["kind"] == "navigate_entity"
+            assert msg["type"] == "markdown"
+            assert msg["id"] == md_id
+
+
+@pytest.mark.asyncio
+async def test_navigate_file_no_active_tab_returns_409(tmp_path):
+    """No open WS connection → 409 NO_ACTIVE_TAB (CLI exit 3)."""
+    from flow_sdk.server.app import app
+
+    path = _canonical(str(tmp_path / "hello.md"))
+
+    with TestClient(app) as client:
+        resp = client.post("/api/v1/agent/navigate/file", json={"path": path})
+        assert resp.status_code == 409
+        assert resp.json()["error_code"] == "NO_ACTIVE_TAB"
 
 
 @pytest.mark.asyncio
@@ -205,6 +334,6 @@ async def test_navigate_picks_focused_tab_when_multiple_connected():
                 assert resp.status_code == 200
                 assert resp.json()["connection_id"] == id_fg
 
-                msg = ws_fg.receive_json()
+                msg = _receive_ui_command(ws_fg)
                 assert msg["message_type"] == "ui_command"
                 assert msg["id"] == project_id

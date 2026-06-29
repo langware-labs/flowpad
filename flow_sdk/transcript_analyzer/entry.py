@@ -2,13 +2,13 @@
 
 The class hierarchy under ``entries/`` is the canonical type discriminator —
 ``EntryKind`` is a tag exposed for ergonomic filtering on
-``AgentTranscript.filter(kind=...)``.
+``AgentTranscriptFile.filter(kind=...)``.
 """
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
@@ -19,6 +19,24 @@ class EntryKind(str, Enum):
     ASSISTANT_MESSAGE = "assistant_message"
     TOOL_USE = "tool_use"
     TOOL_RESULT = "tool_result"
+    # Semantic operation kinds — the parser maps worker-specific tools onto
+    # these so the renderer never has to sniff input shapes. ``TOOL_USE`` is
+    # the catch-all bucket for anything not recognized.
+    FILE_WRITE = "file_write"
+    FILE_EDIT = "file_edit"
+    FILE_READ = "file_read"
+    SHELL_COMMAND = "shell_command"
+    # A skill invocation, normalized across workers: Claude/Copilot emit a
+    # native ``Skill`` tool-use; Codex loads a skill by reading its
+    # ``SKILL.md``. See ``SkillCallEntry``.
+    SKILL_CALL = "skill_call"
+    SEARCH = "search"
+    WEB_FETCH = "web_fetch"
+    TODO_UPDATE = "todo_update"
+    AGENT_SPAWN = "agent_spawn"
+    # Context compaction / summarization boundary (checkpoint + resume). See
+    # ``entries/compaction.py``.
+    COMPACTION = "compaction"
     SYSTEM = "system"
     SUMMARY = "summary"
     META = "meta"
@@ -48,12 +66,17 @@ class TranscriptEntry:
         raw_data: dict | None = None,
         entry_id: str | None = None,
         model: str | None = None,
+        attribution_skill: str | None = None,
     ) -> None:
         self.id = id
         self.session_id = session_id
         self.timestamp = timestamp
         self.worker = worker
         self.parent_id = parent_id
+        # The skill this line is attributed to (Claude's ``attributionSkill``),
+        # i.e. the authoritative multi-turn owner — survives turn boundaries,
+        # unlike a per-turn skill stack. None for un-skilled / session lines.
+        self.attribution_skill = attribution_skill
         # ``is_sidechain`` distinguishes sub-agent (Task tool) lines from
         # main-session lines. Defaults to False so workers without a
         # sidechain concept (codex stream-events) don't have to populate it.
@@ -80,6 +103,72 @@ class TranscriptEntry:
         """
         return []
 
+    # ── tree traversal ───────────────────────────────────────────────────────
+    # Most entries are leaves. ``AgentSpawnEntry`` is the only composite node —
+    # it carries the spawned sub-agent's entries as ``children`` once a
+    # transcript has been assembled (see ``assembly.assemble_tree``). The
+    # streaming reader never populates children, so ``walk()`` over an
+    # un-assembled transcript is identical to flat iteration.
+
+    def iter_children(self) -> list["TranscriptEntry"]:
+        """Direct child entries; empty for leaves. Composites override."""
+        return []
+
+    def walk(self, _seen: set[int] | None = None) -> Iterator["TranscriptEntry"]:
+        """Yield self then recurse children, depth-first.
+
+        ``id()``-guarded so a malformed cycle (a spawn whose subtree loops
+        back) can't spin forever — each object is yielded at most once.
+        """
+        seen = _seen if _seen is not None else set()
+        oid = id(self)
+        if oid in seen:
+            return
+        seen.add(oid)
+        yield self
+        for child in self.iter_children():
+            yield from child.walk(seen)
+
+    def _tool_flow_data(
+        self,
+        args: dict,
+        *,
+        default_name: str = "Tool",
+        extra: dict | None = None,
+    ) -> list["FlowData"]:
+        """Build a single TOOL_CALL ``FlowData`` carrying the fields the UI needs
+        to name the tool (``tool-name`` attr) and pair it with its result
+        (``tool_call_id`` in flow_value). Semantic tool entries delegate here so
+        replayed tools render identically to the live stream.
+        """
+        from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+            FlowData,
+            FlowDataType,
+            FlowElementType,
+        )
+
+        name = getattr(self, "tool_name", "") or default_name
+        tuid = getattr(self, "tool_use_id", "") or ""
+        flow_value = {
+            "tool_name": name,
+            "tool_use_id": tuid,
+            "tool_call_id": tuid,
+            "input": args,
+            "args": args,
+        }
+        if extra:
+            flow_value.update(extra)
+        return [FlowData(
+            flow_value=flow_value,
+            created_time=self.timestamp,
+            attributes={
+                "element-type": FlowElementType.TOOL_CALL,
+                "data-type": FlowDataType.OBJECT,
+                "tool-name": name,
+                "tool-use-id": tuid,
+            },
+        )]
+
     def to_dict(self) -> dict:
         """Serialize the envelope fields for REST round-trip.
 
@@ -97,6 +186,7 @@ class TranscriptEntry:
             "is_sidechain": self.is_sidechain,
             "entry_id": self.entry_id,
             "model": self.model,
+            "attribution_skill": self.attribution_skill,
         }
 
     # ── string rendering ─────────────────────────────────────────────────────

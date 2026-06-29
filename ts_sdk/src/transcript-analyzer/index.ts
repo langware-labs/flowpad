@@ -7,8 +7,8 @@
  * the right TranscriptEntry subclass.
  */
 
-import { EntryKind, TranscriptEntry } from './entry';
 import {
+  AgentSpawnEntry,
   AssistantMessageEntry,
   ExitPlanModeEntry,
   MetaEntry,
@@ -16,40 +16,43 @@ import {
   SystemEntry,
   ToolResultEntry,
   ToolUseEntry,
-  TokenUsageEntry,
   UnknownEntry,
+  UsageEntry,
   UserMessageEntry,
 } from './entries';
+import { EntryKind, TranscriptEntry } from './entry';
 
-export { AgentTranscript, TranscriptFormat, TranscriptSource } from './transcript';
-export { EntryKind, TranscriptEntry, type TranscriptEntryBase } from './entry';
+export { extract_text, extract_thinking, first_block_of_type, flatten_tool_result } from './_helpers';
 export {
+  AgentSpawnEntry,
   AssistantMessageEntry,
+  CodexUsageEntry,
   ExitPlanModeEntry,
   MetaEntry,
   SummaryEntry,
   SystemEntry,
   ToolResultEntry,
   ToolUseEntry,
-  TokenUsageEntry,
   UnknownEntry,
+  UsageEntry,
   UserMessageEntry,
+  type AgentSpawnEntryData,
   type AssistantMessageEntryData,
+  type CodexUsageEntryData,
   type MetaEntryData,
   type SummaryEntryData,
   type SystemEntryData,
   type ToolResultEntryData,
   type ToolUseEntryData,
-  type TokenUsageEntryData,
   type UnknownEntryData,
+  type UsageEntryData,
   type UserMessageEntryData,
 } from './entries';
-export {
-  extract_text,
-  extract_thinking,
-  flatten_tool_result,
-  first_block_of_type,
-} from './_helpers';
+export { EntryKind, TranscriptEntry, type TranscriptEntryBase } from './entry';
+export { parseClaudeTranscriptUsage } from './parse-claude-usage';
+export { CLAUDE_PRICING, ModelPricing, pricingFor } from './pricing';
+export type { ItemPrice } from './pricing';
+export { AgentTranscriptFile as AgentTranscript, TranscriptFormat, TranscriptSource } from './transcript';
 
 /**
  * Hydrate a REST-serialized entry payload into the right TranscriptEntry
@@ -70,10 +73,15 @@ export function fromJson(raw: Record<string, unknown>): TranscriptEntry {
       return new ToolUseEntry(raw as never);
     case EntryKind.TOOL_RESULT:
       return new ToolResultEntry(raw as never);
+    case EntryKind.AGENT_SPAWN: {
+      // Recurse: the sub-agent's subtree is hydrated then handed to the spawn.
+      const childrenRaw = (raw['children'] as Record<string, unknown>[]) ?? [];
+      return new AgentSpawnEntry(raw as never, childrenRaw.map(fromJson));
+    }
     case EntryKind.META:
       return new MetaEntry(raw as never);
     case EntryKind.TOKEN_USAGE:
-      return new TokenUsageEntry(raw as never);
+      return new UsageEntry(raw as never);
     case EntryKind.SYSTEM:
       return new SystemEntry(raw as never);
     case EntryKind.SUMMARY:

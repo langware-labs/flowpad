@@ -55,7 +55,7 @@ async def find_project_for_task() -> ApiResponse:
             git_repo_full_name,
             repo_id,
         )
-        from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+        from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
         # Build the list of all known local projects
         known_projects: list[dict] = []
@@ -140,7 +140,7 @@ async def pull_for_task() -> ApiResponse:
         # Await scan of this specific task so the entity exists before the UI navigates.
         # Then fire the full scan in the background for any other tasks in the repo.
         try:
-            from flow_sdk.fs_records.notification_scanner import scan_task_in_repo, scan_incoming_notifications
+            from flow_sdk.app.actions.notification_scanner import scan_task_in_repo, scan_incoming_notifications
             local_user = await User.get_one({"uname": "local"})
             if local_user:
                 await scan_task_in_repo(local_user.id, local_path, task_id)
@@ -220,7 +220,7 @@ async def clone_for_task() -> ApiResponse:
         # Then fire the full scan in the background for any other tasks in the repo.
         if clone_ok:
             try:
-                from flow_sdk.fs_records.notification_scanner import scan_task_in_repo, scan_incoming_notifications
+                from flow_sdk.app.actions.notification_scanner import scan_task_in_repo, scan_incoming_notifications
                 local_user = await User.get_one({"uname": "local"})
                 if local_user:
                     await scan_task_in_repo(local_user.id, clone_path, task_id)

@@ -7,7 +7,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { FONT_FAMILY, FONT_SIZE_PX } from './terminalConfig';
+import { FONT_FAMILY, FONT_SIZE_PX, openTerminalLink } from './terminalConfig';
 
 const DARK_THEME = {
   background: '#1e1e1e',
@@ -115,7 +115,7 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
       allowProposedApi: true,
     });
 
-    term.loadAddon(new WebLinksAddon());
+    term.loadAddon(new WebLinksAddon(openTerminalLink));
 
     const fit = new FitAddon();
     term.loadAddon(fit);

@@ -1,8 +1,9 @@
-import { type TypeId } from '@sdk';
+import { type TypeId, isImagePath } from '@sdk';
 import { fsStore } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { ExternalLink, File, RefreshCw, Trash2 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -15,13 +16,6 @@ interface InputFilesPanelProps {
   inputDirAbsPath: string;
 }
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif']);
-
-function isImageFile(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return IMAGE_EXTS.has(ext);
-}
-
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -32,6 +26,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
   computeNodeTypeId,
   inputDirAbsPath,
 }) => {
+  const { t } = useLingui();
   const fs = useFS(computeNodeTypeId);
   const fsRef = React.useRef(fs);
   fsRef.current = fs;
@@ -97,7 +92,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
       onDrop={(e) => { void handleDrop(e); }}
     >
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <span className="text-sm font-medium">Input Files</span>
+        <span className="text-sm font-medium"><Trans>Input Files</Trans></span>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={() => void openExternalFromComputeNode(computeNodeTypeId.id, inputDirAbsPath)} className="h-6 w-6 p-0">
             <ExternalLink className="h-3.5 w-3.5" />
@@ -111,14 +106,14 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
       <div className="flex-1 overflow-y-auto p-2">
         {items.length === 0 ? (
           <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
-            Paste or drag files here
+            <Trans>Paste or drag files here</Trans>
           </p>
         ) : (
           <div className="flex flex-col gap-1">
             {items.map((item) => {
               const itemPath = `${inputDirAbsPath}/${item.name}`;
               const downloadUrl = fs?.getDownloadUrl(item.vfs_abs_path ?? itemPath);
-              const isImage = isImageFile(item.name);
+              const isImage = isImagePath(item.name);
               const isDeleting = deletingPath === itemPath;
               return (
                 <div
@@ -167,7 +162,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
           {selectedImage && (
             <img
               src={selectedImage}
-              alt="Preview"
+              alt={t`Preview`}
               className="max-h-[85vh] max-w-full rounded object-contain"
             />
           )}

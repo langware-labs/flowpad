@@ -35,6 +35,32 @@ async def write_and_collect(
     return bytes(buf)
 
 
+def read_pty_stream(shell_id: str) -> str:
+    """Cumulative raw PTY terminal output from the on-disk .pty stream file.
+
+    The stream file is written on every output chunk from session start, so it
+    is the capture source for tests that used to read the in-memory replay
+    buffer (now removed). Since the framed-format migration the .pty file is an
+    asciinema-style JSONL envelope (``{"v":1,...}`` header + ``["o", b64, seq]``
+    output frames), NOT raw bytes — so reconstruct the terminal byte stream via
+    ``PtyStreamFile.read_all()`` (the canonical decoder) instead of returning
+    the JSONL envelope verbatim, which would defeat any VT100 rendering.
+    """
+    from flow_sdk.builtin.shell import get_shell_record, shell_pty_stream_path
+    from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
+
+    record = get_shell_record(shell_id)
+    if not record:
+        return ""
+    pty_pid = record.__dict__.get("pty_pid")
+    if not pty_pid:
+        return ""
+    path = shell_pty_stream_path(record.id, pty_pid)
+    if not path.exists():
+        return ""
+    return PtyStreamFile(path).read_all().decode("utf-8", errors="replace")
+
+
 async def close_shell(shell) -> None:
     """Best-effort teardown — stops the PTY and deletes the Shell entity."""
     try:

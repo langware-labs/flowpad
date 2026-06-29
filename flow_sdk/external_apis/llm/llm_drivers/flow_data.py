@@ -142,6 +142,7 @@ class FlowElementType(StrEnum):
     CONTINUE = "continue"
     TOOL_CALL = "tool-call"
     TOOL_RESULT = "tool-result"
+    PROGRESS_REPORT = "progress_report"
 
     @classmethod
     def streamable_types(cls) -> set[str]:
@@ -170,6 +171,11 @@ class FlowData(BaseModel):
     part: Optional[int] = 0  # For chunked data parts
     created_time: str = ""  # ISO 8601 timestamp
     focus: Optional[ViewType] = None  # Focus recommendation for UI (e.g., "editor", "shell", "chat")
+    # Phase 9: typed payload for events that are conversational entries.
+    # Populated by event_to_flowdata / hook_to_flowdata / session_history.
+    # None for envelopes that aren't transcript-shaped (status, mode, phase,
+    # checkpoint, error, raw shell I/O, UI directives).
+    process_entry: Optional[dict] = None
     _FLOW_DATA_NEXT_INDEX: ClassVar[int] = 0
 
     def __init__(self, **data):

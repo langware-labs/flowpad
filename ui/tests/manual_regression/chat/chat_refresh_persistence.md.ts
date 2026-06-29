@@ -8,7 +8,7 @@ test.describe('Chat Refresh Persistence', () => {
   });
 
   test('Shell session tab persists after page refresh', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     // Step 1: Navigate to new_terminal and wait for shell to be ready
     await gotoShell(page);
@@ -31,7 +31,7 @@ test.describe('Chat Refresh Persistence', () => {
 
     // Step 7: Validate the session tab is shown in the tab bar
     const shellId = shellUrl.split('/').pop()!;
-    const sessionTab = page.locator(`[data-testid="tab-${shellId}"]`);
+    const sessionTab = page.locator(`[data-testid="tab-shell|${shellId}"]`);
     await expect(sessionTab).toBeVisible({ timeout: 15_000 });
   });
 });

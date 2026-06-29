@@ -19,7 +19,6 @@ from flow_sdk.config import StorageProvider, default_service_config
 from flow_sdk.api.api_types.api_field import APIField, EntityField
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.workspace import Workspace
 from flow_sdk.core import Entity, action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -44,7 +43,7 @@ from flow_sdk.external_apis.llm.utils.utils import clean_json_completion, typed_
 from flow_sdk.external_apis.llm.utils.xml_chunk_parser import process_xml
 from flow_sdk.flowpad_types.machine_status import MachineStatus
 from flow_sdk.flowpad_types.runtime_environment import ExecutionEnvironmentStatus
-from flow_sdk.core.resource_management.scan.system_profile.types import SystemProfile
+from flow_sdk.builtin.faas.system_profile_types import SystemProfile
 
 EMPTY_FLOW_TITLE = "Empty Flow"
 
@@ -115,11 +114,6 @@ class ChatMessageFeedback(BaseModel):
     message_index: int
     sentiment: FeedbackSentiment
     feedback: str
-
-
-class ExpertResponse(BaseModel):
-    status: ApiResponseStatus
-    data: str
 
 
 T = TypeVar("T")
@@ -202,13 +196,11 @@ class Flow(Entity):
     # TODO shall we take it out to a separate entity to avoid contamination?
     slack_thread_ts: Optional[str] = APIField(default=None)
     fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
-    project_id: str | None = APIField(default=None)
     asset_ref: str | None = APIField(default=None)
     current_compute_node_id: str | None = APIField(default=None)
     current_terminal_id: str | None = APIField(default=None)
     worker_session_id: str | None = APIField(default=None)
     created_by_flowpad: bool = APIField(default=True)
-    _api_visible: ClassVar[bool] = True
 
     @property
     def state_persistence(self):
@@ -648,116 +640,6 @@ print(json.dumps({{"running": False}}))
     @action.all(action_name="feedback")
     async def receive_feedback(self, feedback: ChatMessageFeedback, background_tasks: BackgroundTasks) -> ApiResponse:
         raise NotImplementedError("Feedback is not implemented yet")
-
-    @action.post(action_name="open-issue")
-    async def open_issue(self) -> ApiResponse:
-        from flow_sdk.external_apis.llm.utils import markdown_to_lexical
-        try:
-            request_info = get_current_request_info()
-            if not request_info:
-                return ApiFailResponse(message="Open Issue error, No request info")
-            expert_id = request_info.request_parameters.get("expert_id")
-            await self.expand_blobs()
-            messages = await self.messages()
-            if not messages:
-                raise ValueError("No messages in chat to create issue from")
-
-            class ChatIssueInput(BaseModel):
-                chat_messages: list[LLMMessage] = Field(description="Chat messages")
-
-            class ChatIssueOutput(BaseModel):
-                reasoning: str = Field(description="Why this summary fits the issue")
-                title: str = Field(description="Short issue title", examples=["The user doesn't have an API key"])
-                goal: str = Field(
-                    description="User's goal", examples=["The user tries to display billing information using API"]
-                )
-                what_we_did_so_far: str = Field(
-                    description="Chat summary of attempts and current status. What the assistant suggested, what was the feedback, and what the current status is."
-                )
-
-            chat_issue_input = ChatIssueInput(
-                chat_messages=[LLMMessage(role=message.role, content=message.content) for message in messages]
-            )
-
-            messages = typed_messages(
-                instruction=textwrap.dedent(
-                    """
-                    You are a helpful assistant that creates chat summaries from chat messages.
-                    The chat describes an issue or multiple issues the user encountered that needs to be opened and escalated to an expert.
-                    Focus mainly on unresolved issues. Resolved issues could be used as references.
-                    
-                    """
-                ).strip(),
-                input_schema=ChatIssueInput.model_json_schema(),
-                output_schema=ChatIssueOutput.model_json_schema(),
-                input_data=chat_issue_input.model_dump(),
-            )
-
-            llm_response: LLMResponse = await send_request_to_llm(messages, LLMProvider.Anthropic, json_output=True)
-            try:
-                response = clean_json_completion(llm_response.completion)
-            except json.JSONDecodeError:
-                response = llm_response.completion
-
-            chat_issue_output = ChatIssueOutput.model_validate(response)
-
-            # Build the full markdown description
-            markdown_description = (
-                textwrap.dedent("""
-                    **Goal**  
-                    {chat_issue_output.goal}
-
-                    **What we did so far**  
-                    {chat_issue_output.what_we_did_so_far}
-
-                    [View Chat](/{self.typeid.type}/{self.typeid.id})
-                    """)
-                .strip()
-                .format(chat_issue_output=chat_issue_output, self=self)
-            )
-
-            # Convert markdown to Lexical format for the task description
-            lexical_description = json.dumps(markdown_to_lexical.markdown_to_lexical(markdown_description))
-
-            task = Task(
-                title=f"🚨 {chat_issue_output.title}",
-                description=lexical_description,
-                assignee=expert_id,
-            )
-            await task.save(self)
-
-            chat_title = self.title
-            self.title = f"🙋 {chat_title}"
-            await self.save()
-
-            # TODO this may be a security issue
-            # await self.grant_role(
-            #     to_role=AuthRole.EDITOR.value,
-            #     to_e=TypeId(type=User.get_type(), id=expert_id),
-            # )
-
-            workspace = await Workspace.get_entity_with_role_on(self)
-            if not workspace:
-                raise HTTPException(status_code=404, detail="Workspace entity not found")
-            await workspace.add_child(task)
-
-            # Add flow-assistance message to chat history
-            self._inject_user_message("Request assitance.")
-            self._inject_assistant_message(f"Assitance request was sent: {chat_issue_output.title}")
-            await self.update()
-
-            logging.debug(f"Task created with title: {chat_issue_output.title}")
-            logging.debug(f"Reasoning: {chat_issue_output.reasoning}")
-
-            return ApiSuccessResponse(
-                data=ExpertResponse(data=chat_issue_output.title, status=ApiResponseStatus.SUCCESS)
-            )
-
-        except ValueError:
-            logging.warning("No messages in chat to create issue from")
-            return ApiFailResponse(
-                data=ExpertResponse(data="Open Issue: Failed to create issue from chat", status=ApiResponseStatus.FAIL)
-            )
 
     @action.get(action_name="get-trace")
     async def get_trace(self):

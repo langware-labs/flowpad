@@ -1,23 +1,46 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
-import apiClient from '@sdk/client';
+import { useProjectList } from '@src/hooks/use-claude-projects';
 
-// Spy on apiClient.get to return fake projects without mocking the entire module
-let getSpy: ReturnType<typeof vi.spyOn>;
+vi.mock('@src/hooks/use-claude-projects', () => ({
+  useProjectList: vi.fn(),
+  getProjectDisplayName: (project: { name?: string; cwd?: string }) => project.name ?? project.cwd ?? '',
+}));
+
+const mockUseProjectList = vi.mocked(useProjectList);
 
 beforeEach(() => {
-  getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue({
-    results: [
-      { record_id: 'p1', name: 'Project Alpha' },
-      { record_id: 'p2', name: 'Project Beta' },
+  mockUseProjectList.mockReturnValue({
+    projects: [
+      {
+        id: 'project-alpha-id',
+        record_project_id: 'project-alpha-record-id',
+        encoded_name: '-tmp-project-alpha',
+        name: 'Project Alpha',
+        cwd: '/tmp/project-alpha',
+        modified_at: '2024-01-02T00:00:00Z',
+        session_count: 2,
+      },
+      {
+        id: 'project-beta-id',
+        record_project_id: 'project-beta-record-id',
+        encoded_name: '-tmp-project-beta',
+        name: 'Project Beta',
+        cwd: '/tmp/project-beta',
+        modified_at: '2024-01-01T00:00:00Z',
+        session_count: 1,
+      },
     ],
-    total: 2,
+    totalCount: 2,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
   } as any);
 });
 
 afterEach(() => {
-  getSpy?.mockRestore();
+  vi.clearAllMocks();
 });
 
 describe('ProjectPickerModal', () => {
@@ -29,6 +52,6 @@ describe('ProjectPickerModal', () => {
     await waitFor(() => expect(screen.getByText('Project Alpha')).toBeDefined());
     fireEvent.click(screen.getByText('Project Alpha'));
     fireEvent.click(screen.getByText('Confirm'));
-    expect(onConfirm).toHaveBeenCalledWith(['p1']);
+    expect(onConfirm).toHaveBeenCalledWith(['project-alpha-id']);
   });
 });

@@ -4,17 +4,19 @@ import random
 import string
 import sys
 from datetime import datetime, timezone
-from typing import Any, ClassVar, List
+from typing import Any, ClassVar, List, Optional
+
+from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 
 from fastapi import HTTPException
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.flowpad_types.enums import AuthRole
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
@@ -48,12 +50,50 @@ class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
     mcp_connector_init: bool = Field(default=True)
 
 
+class CommunityMode(StrEnum):
+    """Who answers community (support-center) conversations on this project.
+
+    Only ``HUMAN`` is wired in v1: staff pick tickets up from a shared pool and
+    reply under the masked ``display_name``. ``AI`` / ``HYBRID`` are reserved
+    for an automated responder and are intentionally not yet implemented.
+    """
+
+    HUMAN = "human"
+    AI = "ai"
+    HYBRID = "hybrid"
+
+
+class CommunityConfig(BaseModel):
+    """Per-project "support center" configuration.
+
+    When ``enabled``, the project accepts guest-opened community conversations
+    (support tickets). All staff replies in those conversations are displayed
+    under the single ``display_name`` identity regardless of which member
+    actually replied — the responder's real ``sender_id`` is preserved on the
+    wire, only the displayed ``sender_name`` is masked to ``display_name``.
+    """
+
+    enabled: bool = False
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    welcome_message: Optional[str] = None
+    mode: CommunityMode = CommunityMode.HUMAN
+
+
 class Project(Entity):
     type: str = APIField(default=BuiltinEntityType.PROJECT.value)
     name: str | None = APIField(default=None, description="Display name of the project")
     artifacts: List[str] = APIField(
         default_factory=list,
         description="List of artifact IDs belonging to this project",
+    )
+    # Support-center / community config. None on ordinary projects. Persisted
+    # (persist=TRUE) so it round-trips FS<->DB and is readable on the hub at
+    # message-write time to mask responder identity. See ``CommunityConfig``.
+    community: Optional[CommunityConfig] = APIField(
+        default=None,
+        persist=Persist.TRUE,
+        description="Support-center configuration; set on the canonical community project.",
     )
     fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
     fs_storage_mount_path: str | None = APIField(
@@ -78,16 +118,16 @@ class Project(Entity):
     # querying records. Records remain backend-only.
     session_count: int = APIField(
         default=0,
+        persist=Persist.FALSE,
         description="Total session count across providers (Claude + Codex) at this project's cwd. "
                     "Denormalized from the matching ProjectFsRecord at indexer-write time.",
     )
     last_session_at: str | None = APIField(
         default=None,
+        persist=Persist.FALSE,
         description="ISO timestamp of the most recent session activity at this project's cwd, "
                     "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
     )
-    _api_visible: ClassVar[bool] = True
-    _icon: ClassVar[str] = "FolderOpen"
 
     @model_validator(mode="after")
     def set_fs_storage_mount_path(self):
@@ -130,7 +170,11 @@ class Project(Entity):
             try:
                 os.makedirs(self.fs_storage_mount_path, exist_ok=True)
             except OSError as e:
-                logging.warning(
+                # Non-fatal and expected for discovered/external project roots
+                # (e.g. decoded Claude project paths on read-only mounts). Debug,
+                # not warning — otherwise enumerating many such projects floods
+                # the log with hundreds of non-actionable lines.
+                logging.debug(
                     f"Project: could not create mount path {self.fs_storage_mount_path!r}: {e}"
                 )
         if self.fs_storage_mount_path:
@@ -140,19 +184,47 @@ class Project(Entity):
         return self
 
     @classmethod
-    def allocate_id(cls, data: dict) -> str:
-        """Always return a random UUID4.
+    def derive_id_for_path(cls, path: str) -> str | None:
+        """Legacy record ``project_id`` alias for a mount path.
 
-        The Project entity's identity is opaque. The natural key — what makes
-        two Project rows "the same project" — is the canonical
-        ``fs_storage_mount_path`` (i.e., ``cwd``). Dedup happens via
-        :py:meth:`find_by_cwd`, NOT via id derivation. Callers that need to
-        find-or-create a Project for a given path go through
-        :py:meth:`from_record` (which dedupes) or query
-        ``find_by_cwd`` directly.
+        ``Project.id`` is the canonical entity id used by UI scope filters and
+        project routes. Existing fs-record rows may still be stamped with this
+        path-derived uuid5 before a Project row exists, so scope resolution
+        keeps accepting it as a record-match alias. ``None`` when no path is
+        given.
+        """
+        if not path:
+            return None
+        import uuid
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(path)}"))
+
+    @classmethod
+    def allocate_id(cls, data: dict) -> str:
+        """Return a stable id for this Project.
+
+        The canonical ``fs_storage_mount_path`` is the natural key, so the
+        path-derived uuid5 wins when a path is supplied. Clients that pre-mint
+        an optimistic uuid4 still resolve to the same row, and legacy Project
+        records that only have ``cwd`` repair to the path-derived id.
+
+        Order of precedence:
+          1. uuid5 over canonical path when ``fs_storage_mount_path`` or
+             record ``cwd`` is supplied.
+          2. ``data['id']`` if it's a valid uuid (no path supplied).
+          3. Random uuid4 fallback.
         """
         import uuid
         from flow_sdk.fs_store.identifier import is_valid_uuid
+        mount_path = data.get("fs_storage_mount_path") or data.get("cwd") or data.get("real_path")
+        if not mount_path:
+            name = data.get("name", "")
+            if name and os.path.isabs(name):
+                mount_path = name
+        if mount_path:
+            derived = cls.derive_id_for_path(mount_path)
+            if derived:
+                return derived
         rid = data.get("id") or ""
         if rid and is_valid_uuid(rid):
             return rid
@@ -187,7 +259,9 @@ class Project(Entity):
 
         Phase 1 — exact-match an existing Project by canonical mount_path
                   (delegates to ``find_by_cwd``).
-        Phase 2 — construct a fresh Project from the path with a uuid4 id.
+        Phase 2 — construct a fresh Project from the path with a deterministic
+                  uuid5 id (``derive_id_for_path``) so any indexer-stamped
+                  ``project_id`` references on records resolve to the same row.
 
         Returns ``None`` only when ``path`` is empty/falsy.
         """
@@ -201,10 +275,12 @@ class Project(Entity):
         if existing is not None:
             return existing
 
-        # Phase 2: construct a fresh Project. Identity is a fresh uuid4
-        # — the dedup property comes from the canonical mount_path lookup
-        # above, not from id derivation.
+        # Phase 2: construct a fresh Project. Identity is derived from the
+        # canonical path so it matches what the indexer would have stamped
+        # on records via ``derive_id_for_path``.
+        derived_id = cls.derive_id_for_path(canonical)
         proj = cls.model_validate({
+            "id": derived_id,
             "fs_storage_mount_path": canonical,
             "name": os.path.basename(canonical.rstrip(os.sep)) or canonical,
         })
@@ -267,10 +343,16 @@ class Project(Entity):
             await existing.save(notify=notify)
             return existing
 
-        # Net-new project: fresh uuid4 id, canonical mount path.
+        # Net-new project: id is derived from the canonical mount path so it
+        # matches whatever the indexer already stamped on records (via
+        # ``derive_id_for_path``). Falls back to opaque uuid4 only when no
+        # path is available.
         create_kwargs = {k: v for k, v in data.items() if k != "id"}
         if canonical_mp:
             create_kwargs["fs_storage_mount_path"] = canonical_mp
+            derived_id = cls.derive_id_for_path(canonical_mp)
+            if derived_id:
+                create_kwargs["id"] = derived_id
         # Drop record-only fields the Project entity doesn't carry — provenance
         # flags stay on ProjectFsRecord (backend only). Only denormalized
         # activity hints surface on the entity.
@@ -281,13 +363,6 @@ class Project(Entity):
         proj.id = cls.allocate_id(create_kwargs)
         await proj.save(notify=notify)
         return proj
-
-    @property
-    def project_encoded_name(self) -> str | None:
-        """Encoded project path used to locate transcript files."""
-        if not self.fs_storage_mount_path:
-            return None
-        return str(self.fs_storage_mount_path).replace("/", "-")
 
     @property
     def main_ref(self):
@@ -301,9 +376,10 @@ class Project(Entity):
     async def get_compute_node(self):
         from flow_sdk.config import default_service_config
 
-        # In desktop/local mode, always use the @local compute node
+        # In desktop/local mode, always use the @local compute node singleton
+        # (resolved/self-healed by the single source of truth).
         if default_service_config.is_local:
-            return await ComputeNode.get_by_uname("local")
+            return await ComputeNode.get_local()
 
         project_compute_nodes = await ComputeNode.get_all(source_entity=self.typeid)
         if project_compute_nodes:
@@ -444,14 +520,15 @@ class Project(Entity):
                 f"Connected project {self.id} to @local workspace {local_workspace.id}"
             )
 
-        # Get the @local compute node
-        local_compute_node = await ComputeNode.get_by_uname("local")
-        if local_compute_node:
-            # Add compute node as child of project
-            await self.attach_child(local_compute_node.typeid)
-            logging.info(
-                f"Connected @local compute node {local_compute_node.id} to project {self.id}"
-            )
+        # Get (self-healing) the @local compute node. It is a shared singleton
+        # resolved via ComputeNode.get_local(), NOT a project-owned resource —
+        # so we deliberately do NOT attach_child it to the project. Making it a
+        # child created an `is_child` edge that deleteWithChildren's cascading
+        # delete would follow, destroying the global @local compute node and
+        # breaking every PTY/agentic session on the instance. Per-project cloud
+        # compute nodes (cloud mode) are a different path and remain legitimate
+        # project children.
+        local_compute_node = await ComputeNode.get_local()
 
         return ApiSuccessResponse(
             data={
@@ -559,3 +636,119 @@ class Project(Entity):
             return ApiFailResponse(message="member_id is required")
         updated = await self._touch_member(member_id)
         return ApiSuccessResponse(data={"ok": updated, "members": self.members})
+
+    async def _delete_with_children(self) -> dict:
+        """Permanently delete this project and everything that belongs to it.
+
+        Irreversible. Removes, for the project and for every indexed record
+        whose ``project_id`` is this project:
+          * the DB row + FTS entry + wiki edges (via ``FSRecord.destroy``),
+          * the on-disk record shadow under ``records/<type>/<type>-@<id>/``,
+          * the ``records_data`` bundle (both the canonical ``<type>-@<id>``
+            and the legacy ``<id>``-only shape used by index types),
+        and finally the project's own source folder on disk
+        (``fs_storage_mount_path`` — the user's real files).
+
+        Cross-type enumeration walks the shadow store on disk: ``Entity.get_all``
+        is type-locked, but each ``metadata.json`` carries its ``project_id``,
+        so a single sweep of ``records_root`` finds children of every type.
+        """
+        import json  # noqa: PLC0415
+        import logging  # noqa: PLC0415
+        import shutil  # noqa: PLC0415
+
+        from flow_sdk.fs_store import (  # noqa: PLC0415
+            FSRecord,
+            get_default_records_data_root,
+            get_default_records_root,
+            record_stem,
+        )
+
+        log = logging.getLogger(__name__)
+        pid = str(self.id)
+        records_root = get_default_records_root()
+        data_root = get_default_records_data_root()
+
+        def _purge_data(rtype: str, rid: str) -> None:
+            # records_data has two on-disk shapes across types: the canonical
+            # <type>/<type>-@<id>/ and the legacy <id>-only used by index types.
+            for sub in (record_stem(rtype, rid), rid):
+                p = data_root / rtype / sub
+                try:
+                    shutil.rmtree(p)  # idempotent — FileNotFoundError when absent
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    log.warning("[project-delete] records_data rmtree failed %s: %s", p, exc)
+
+        async def _destroy(meta: dict) -> None:
+            rtype, rid = meta["type"], meta["id"]
+            # Build the record from the metadata we already read — no second
+            # read of metadata.json. destroy() = DB row + FTS + wiki + shadow.
+            try:
+                await FSRecord.from_dict(meta).destroy()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[project-delete] destroy %s:%s failed: %s", rtype, rid, exc)
+            _purge_data(rtype, rid)
+
+        # 1. Collect every child record's metadata by scanning the shadow store.
+        #    Materialize the full list first — destroy() rmtree's folders, so we
+        #    must not mutate the directory tree while iterating it.
+        targets: list[dict] = []
+        if records_root.exists():
+            for type_dir in sorted(records_root.iterdir()):
+                if not type_dir.is_dir():
+                    continue
+                for rec_dir in type_dir.iterdir():
+                    meta_path = rec_dir / "metadata.json"
+                    if not meta_path.exists():
+                        continue
+                    try:
+                        data = json.loads(meta_path.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        continue
+                    if data.get("project_id") != pid:
+                        continue
+                    if not data.get("type") or not data.get("id") or data.get("id") == pid:
+                        continue  # skip malformed + the project's own record
+                    targets.append(data)
+
+        # 2. Destroy each child record.
+        for meta in targets:
+            await _destroy(meta)
+
+        # 3. Delete the project's own source folder on disk (the user's files).
+        mount = self.fs_storage_mount_path
+        if mount:
+            try:
+                shutil.rmtree(mount)  # idempotent — FileNotFoundError when absent
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                log.warning("[project-delete] source folder rmtree failed %s: %s", mount, exc)
+
+        # 4. Sever the shared @local compute node before deleting the project
+        #    record. Destroying the project record cascades down `is_child` edges
+        #    (sqlite delete walks get_children_sub_tree), and older projects were
+        #    set up with the @local compute node mistakenly attached as a child
+        #    (see setup_for_desktop). Detaching it here keeps the cascade from
+        #    deleting the global compute node and breaking every PTY/agentic
+        #    session. Idempotent: detach_child is a no-op when no edge exists.
+        try:
+            # Read-only resolve: do NOT mint a node just to detach it.
+            local_compute_node = await ComputeNode.get_local(create=False)
+            if local_compute_node:
+                await self.detach_child(local_compute_node.typeid)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[project-delete] detach @local compute node failed: %s", exc)
+
+        # 5. Delete the project's own record (DB row + FTS + wiki + shadow + data).
+        await _destroy({"type": self.type, "id": pid})
+
+        return {"project_id": pid, "deleted_children": len(targets)}
+
+    @action.post(action_name="delete-with-children")
+    async def _http_delete_with_children(self) -> ApiResponse:
+        """Permanently delete this project and all of its children. Irreversible."""
+        result = await self._delete_with_children()
+        return ApiSuccessResponse(data=result)

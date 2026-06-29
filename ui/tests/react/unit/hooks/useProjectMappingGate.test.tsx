@@ -7,16 +7,16 @@ import { useProjectMappingGate } from '@src/components/conversation/useProjectMa
 
 // Stable uuidv4-shaped ids so TypeId validation accepts them.
 const ID = {
-  taskA:    '11111111-1111-4111-a111-111111111111',
-  taskB:    '22222222-2222-4222-a222-222222222222',
-  taskNew:  '33333333-3333-4333-a333-333333333333',
-  remoteX:  '44444444-4444-4444-a444-444444444444',
-  localY:   '55555555-5555-4555-a555-555555555555',
-  localZ:   '66666666-6666-4666-a666-666666666666',
+  taskA: '11111111-1111-4111-a111-111111111111',
+  taskB: '22222222-2222-4222-a222-222222222222',
+  taskNew: '33333333-3333-4333-a333-333333333333',
+  remoteX: '44444444-4444-4444-a444-444444444444',
+  localY: '55555555-5555-4555-a555-555555555555',
+  localZ: '66666666-6666-4666-a666-666666666666',
   localDef: '77777777-7777-4777-a777-777777777777',
-  convA:    '88888888-8888-4888-a888-888888888888',
-  convB:    '99999999-9999-4999-a999-999999999999',
-  convNew:  'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+  convA: '88888888-8888-4888-a888-888888888888',
+  convB: '99999999-9999-4999-a999-999999999999',
+  convNew: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
 };
 
 /**
@@ -58,13 +58,15 @@ vi.mock('@src/components/conversation/useProjectMapping', () => ({
     const [, force] = (globalThis as any).React.useReducer((x: number) => x + 1, 0);
     (globalThis as any).React.useEffect(() => {
       mappingListeners.add(force);
-      return () => { mappingListeners.delete(force); };
+      return () => {
+        mappingListeners.delete(force);
+      };
     }, [force]);
     return { mapping: mappingState.mapping, loaded: mappingState.loaded, setMapping: vi.fn() };
   },
-  writeProjectMapping: vi.fn(async (remote: string, local: string) => {
+  writeProjectMapping: vi.fn((remote: string, local: string) => {
     setMapping({ mapping: { ...mappingState.mapping, [remote]: local } });
-    return mappingState.mapping;
+    return Promise.resolve(mappingState.mapping);
   }),
 }));
 
@@ -81,7 +83,9 @@ vi.mock('@src/hooks/useContext', () => ({
     const [, force] = (globalThis as any).React.useReducer((x: number) => x + 1, 0);
     (globalThis as any).React.useEffect(() => {
       ctxListeners.add(force);
-      return () => { ctxListeners.delete(force); };
+      return () => {
+        ctxListeners.delete(force);
+      };
     }, [force]);
     return { project: ctxState.project };
   },
@@ -99,23 +103,33 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   }),
 }));
 
-const applyProjectToTaskMock = vi.fn(async (_taskId: string, _project: Project) => ({
-  saved: true,
-  wasReplacement: false,
+// The gate also calls react-router's `useNavigation()` directly (routerNav —
+// in-flight transition state), which throws outside a data router. Stub it to
+// the settled state; these tests never exercise an in-flight transition.
+vi.mock('react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router')>()),
+  useNavigation: () => ({ state: 'idle' }),
 }));
-const applyProjectToConversationMock = vi.fn(async (_convId: string, _project: Project) => ({
-  saved: true,
-  wasReplacement: false,
-}));
-const persistRemoteToLocalMappingMock = vi.fn(
-  async (remote: string | null | undefined, local: string | null | undefined) => {
-    if (remote && local) setMapping({ mapping: { ...mappingState.mapping, [remote]: local } });
-  },
+
+const applyProjectToTaskMock = vi.fn(() =>
+  Promise.resolve({
+    saved: true,
+    wasReplacement: false,
+  }),
 );
+const applyProjectToConversationMock = vi.fn(() =>
+  Promise.resolve({
+    saved: true,
+    wasReplacement: false,
+  }),
+);
+const persistRemoteToLocalMappingMock = vi.fn((remote: string | null | undefined, local: string | null | undefined) => {
+  if (remote && local) setMapping({ mapping: { ...mappingState.mapping, [remote]: local } });
+  return Promise.resolve();
+});
 vi.mock('@src/components/conversation/apply-project-choice', () => ({
   applyProjectToTask: (...args: any[]) => applyProjectToTaskMock(...(args as [string, Project])),
-  applyProjectToConversation: (...args: any[]) =>
-    applyProjectToConversationMock(...(args as [string, Project])),
+  applyProjectToConversation: (...args: any[]) => applyProjectToConversationMock(...(args as [string, Project])),
   persistRemoteToLocalMapping: (...args: any[]) =>
     persistRemoteToLocalMappingMock(...(args as [string | null | undefined, string | null | undefined])),
 }));
@@ -128,9 +142,7 @@ vi.mock('@sdk', async (importOriginal) => {
     ...actual,
     dataManager: {
       ...actual.dataManager,
-      getByTypeId: vi.fn(async (typeId: { id: string }) => {
-        return fakeProjectsById[typeId.id] ?? null;
-      }),
+      getByTypeId: vi.fn((typeId: { id: string }) => Promise.resolve(fakeProjectsById[typeId.id] ?? null)),
     },
   };
 });
@@ -143,7 +155,7 @@ function makeTask(overrides: Partial<ITask> = {}): ITask {
   return {
     id: overrides.id ?? ID.taskA,
     type: 'task',
-project_id: overrides.project_id ?? null,
+    project_id: overrides.project_id ?? null,
     ...overrides,
   } as ITask;
 }
@@ -152,7 +164,7 @@ function makeConv(overrides: Partial<IConversation> = {}): IConversation {
   return {
     id: overrides.id ?? ID.convA,
     type: 'conversation',
-remote_project_id: overrides.remote_project_id ?? null,
+    remote_project_id: overrides.remote_project_id ?? null,
     remote_project_name: overrides.remote_project_name ?? '',
     project_id: overrides.project_id ?? null,
     ...overrides,
@@ -188,8 +200,7 @@ describe('useProjectMappingGate — full mapping lifecycle', () => {
     const taskA = makeTask({ id: ID.taskA });
     const convA = makeConv({ id: ID.convA, remote_project_id: ID.remoteX });
     const { result: gateA, rerender: rerenderA } = renderHook(
-      ({ task, conv }: { task: ITask; conv: IConversation }) =>
-        useProjectMappingGate(task, conv),
+      ({ task, conv }: { task: ITask; conv: IConversation }) => useProjectMappingGate(task, conv),
       { initialProps: { task: taskA, conv: convA } },
     );
 
@@ -199,7 +210,7 @@ describe('useProjectMappingGate — full mapping lifecycle', () => {
     expect(persistRemoteToLocalMappingMock).not.toHaveBeenCalled();
 
     // User picks a project (simulated by dataContext.project change while subject in view).
-    await act(async () => {
+    act(() => {
       setCtxProject({ id: ID.localY, name: 'Y' });
     });
     rerenderA({ task: taskA, conv: convA });
@@ -239,13 +250,14 @@ describe('useProjectMappingGate — project-change detection', () => {
 
     const task = makeTask({ id: ID.taskA });
     const conv = makeConv({ id: ID.convA, remote_project_id: ID.remoteX });
-    const { rerender } = renderHook(
-      ({ t, c }: { t: ITask; c: IConversation }) => useProjectMappingGate(t, c),
-      { initialProps: { t: task, c: conv } },
-    );
+    const { rerender } = renderHook(({ t, c }: { t: ITask; c: IConversation }) => useProjectMappingGate(t, c), {
+      initialProps: { t: task, c: conv },
+    });
 
     // Sim: footer pill click → ctx.project flips to local-y.
-    await act(async () => { setCtxProject({ id: ID.localY }); });
+    act(() => {
+      setCtxProject({ id: ID.localY });
+    });
     rerender({ t: task, c: conv });
     await waitFor(() => {
       expect(persistRemoteToLocalMappingMock).toHaveBeenCalledWith(ID.remoteX, ID.localY);
@@ -256,7 +268,9 @@ describe('useProjectMappingGate — project-change detection', () => {
     persistRemoteToLocalMappingMock.mockClear();
     applyProjectToTaskMock.mockClear();
 
-    await act(async () => { setCtxProject({ id: ID.localZ }); });
+    act(() => {
+      setCtxProject({ id: ID.localZ });
+    });
     rerender({ t: task, c: conv });
     await waitFor(() => {
       expect(persistRemoteToLocalMappingMock).toHaveBeenCalledWith(ID.remoteX, ID.localZ);
@@ -285,15 +299,12 @@ describe('useProjectMappingGate — mapping wins over divergent context', () => 
     renderHook(() => useProjectMappingGate(newTask, newConv));
 
     await waitFor(() => {
-      expect(applyProjectToTaskMock).toHaveBeenCalledWith(
-        ID.taskNew,
-        expect.objectContaining({ id: ID.localY }),
-      );
+      expect(applyProjectToTaskMock).toHaveBeenCalledWith(ID.taskNew, expect.objectContaining({ id: ID.localY }));
     });
     // Mapping wasn't rewritten — the auto-apply path doesn't re-persist.
     expect(persistRemoteToLocalMappingMock).not.toHaveBeenCalled();
     // Critically, the unrelated ctx.project (local-z) was NOT adopted.
-    const stamped = applyProjectToTaskMock.mock.calls[0]?.[1] as Project;
+    const stamped = applyProjectToTaskMock.mock.calls[0]?.[1];
     expect(stamped.id).toBe(ID.localY);
     expect(stamped.id).not.toBe(ID.localZ);
   });
@@ -318,7 +329,50 @@ describe('useProjectMappingGate — mapping wins over divergent context', () => 
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// 4. Two tasks on the same remote project — the second one auto-maps without
+// 4. Silent auto paths are best-effort and must not leak unhandled rejections.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('useProjectMappingGate — silent auto path failures', () => {
+  it('swallows auto-apply stamp failures from an existing mapping', async () => {
+    registerFakeProject(ID.localY, 'Y', '/p/y');
+    setMapping({ mapping: { [ID.remoteX]: ID.localY }, loaded: true });
+    applyProjectToTaskMock.mockRejectedValueOnce(new Error('stamp failed'));
+
+    const task = makeTask({ id: ID.taskA });
+    const conv = makeConv({ id: ID.convA, remote_project_id: ID.remoteX });
+    renderHook(() => useProjectMappingGate(task, conv));
+
+    await waitFor(() => {
+      expect(applyProjectToTaskMock).toHaveBeenCalledWith(ID.taskA, expect.objectContaining({ id: ID.localY }));
+    });
+    expect(persistRemoteToLocalMappingMock).not.toHaveBeenCalled();
+  });
+
+  it('does not persist a first-time mapping when stamping the subject fails', async () => {
+    registerFakeProject(ID.localY, 'Y', '/p/y');
+    applyProjectToTaskMock.mockRejectedValueOnce(new Error('stamp failed'));
+
+    const task = makeTask({ id: ID.taskA });
+    const conv = makeConv({ id: ID.convA, remote_project_id: ID.remoteX });
+    const { rerender } = renderHook(({ t, c }: { t: ITask; c: IConversation }) => useProjectMappingGate(t, c), {
+      initialProps: { t: task, c: conv },
+    });
+
+    act(() => {
+      setCtxProject({ id: ID.localY });
+    });
+    rerender({ t: task, c: conv });
+
+    await waitFor(() => {
+      expect(applyProjectToTaskMock).toHaveBeenCalledWith(ID.taskA, expect.objectContaining({ id: ID.localY }));
+    });
+    expect(persistRemoteToLocalMappingMock).not.toHaveBeenCalled();
+    expect(mappingState.mapping[ID.remoteX]).toBeUndefined();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// 5. Two tasks on the same remote project — the second one auto-maps without
 //    showing the picker.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -334,7 +388,9 @@ describe('useProjectMappingGate — sibling tasks reuse mapping', () => {
       { initialProps: { t: taskA, c: convA } },
     );
 
-    await act(async () => { setCtxProject({ id: ID.localY }); });
+    act(() => {
+      setCtxProject({ id: ID.localY });
+    });
     rerender({ t: taskA, c: convA });
     await waitFor(() => {
       expect(mappingState.mapping[ID.remoteX]).toBe(ID.localY);
@@ -360,7 +416,7 @@ describe('useProjectMappingGate — sibling tasks reuse mapping', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// 5. While mapping is still loading, ensureMapped does NOT pop the dialog —
+// 6. While mapping is still loading, ensureMapped does NOT pop the dialog —
 //    once loaded, if a mapping exists it auto-applies; if not, the dialog
 //    opens against the queued continuation.
 // ────────────────────────────────────────────────────────────────────────────
@@ -376,12 +432,14 @@ describe('useProjectMappingGate — picker stays closed during loading window', 
 
     // User clicks an action chip during the loading window.
     const cont = vi.fn();
-    act(() => { result.current.ensureMapped(cont); });
+    act(() => {
+      result.current.ensureMapped(cont);
+    });
     expect(result.current.dialogProps.open).toBe(false);
     expect(cont).not.toHaveBeenCalled();
 
     // Mapping resolves with an entry → auto-apply silently runs the continuation.
-    await act(async () => {
+    act(() => {
       setMapping({ mapping: { [ID.remoteX]: ID.localY }, loaded: true });
     });
 
@@ -401,11 +459,13 @@ describe('useProjectMappingGate — picker stays closed during loading window', 
     const { result } = renderHook(() => useProjectMappingGate(task, conv));
 
     const cont = vi.fn();
-    act(() => { result.current.ensureMapped(cont); });
+    act(() => {
+      result.current.ensureMapped(cont);
+    });
     expect(result.current.dialogProps.open).toBe(false);
 
     // Mapping loaded, still empty → dialog now opens for the queued continuation.
-    await act(async () => {
+    act(() => {
       setMapping({ mapping: {}, loaded: true });
     });
     await waitFor(() => expect(result.current.dialogProps.open).toBe(true));
@@ -414,7 +474,7 @@ describe('useProjectMappingGate — picker stays closed during loading window', 
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// 6. Task-less conversation (project-scoped chat / hub-direct) — the gate
+// 7. Task-less conversation (project-scoped chat / hub-direct) — the gate
 //    stamps the conversation directly when there is no task subject.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -426,13 +486,12 @@ describe('useProjectMappingGate — task-less conversation subject', () => {
     renderHook(() => useProjectMappingGate(undefined, conv));
 
     // User picks a project via the footer pill while this task-less conv is in view.
-    await act(async () => { setCtxProject({ id: ID.localY }); });
+    act(() => {
+      setCtxProject({ id: ID.localY });
+    });
 
     await waitFor(() => {
-      expect(applyProjectToConversationMock).toHaveBeenCalledWith(
-        ID.convA,
-        expect.objectContaining({ id: ID.localY }),
-      );
+      expect(applyProjectToConversationMock).toHaveBeenCalledWith(ID.convA, expect.objectContaining({ id: ID.localY }));
       expect(persistRemoteToLocalMappingMock).toHaveBeenCalledWith(ID.remoteX, ID.localY);
     });
     // The task path is NOT taken — there's no task subject.
@@ -447,10 +506,7 @@ describe('useProjectMappingGate — task-less conversation subject', () => {
     renderHook(() => useProjectMappingGate(undefined, conv));
 
     await waitFor(() => {
-      expect(applyProjectToConversationMock).toHaveBeenCalledWith(
-        ID.convA,
-        expect.objectContaining({ id: ID.localY }),
-      );
+      expect(applyProjectToConversationMock).toHaveBeenCalledWith(ID.convA, expect.objectContaining({ id: ID.localY }));
     });
     expect(applyProjectToTaskMock).not.toHaveBeenCalled();
     expect(persistRemoteToLocalMappingMock).not.toHaveBeenCalled();
@@ -458,7 +514,7 @@ describe('useProjectMappingGate — task-less conversation subject', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// 7. Feature 1 — when the conversation already had a project and the user
+// 8. Feature 1 — when the conversation already had a project and the user
 //    picks a *different* one, the gate navigates to the new project's home.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -475,7 +531,9 @@ describe('useProjectMappingGate — Feature 1 navigate-on-remap', () => {
     renderHook(() => useProjectMappingGate(undefined, conv));
 
     // User picks a different local project via the footer pill.
-    await act(async () => { setCtxProject({ id: ID.localZ }); });
+    act(() => {
+      setCtxProject({ id: ID.localZ });
+    });
 
     await waitFor(() => {
       // Feature 1: navigation fires with the picked project's dock pointer.
@@ -494,7 +552,9 @@ describe('useProjectMappingGate — Feature 1 navigate-on-remap', () => {
 
     renderHook(() => useProjectMappingGate(undefined, conv));
 
-    await act(async () => { setCtxProject({ id: ID.localY }); });
+    act(() => {
+      setCtxProject({ id: ID.localY });
+    });
 
     await waitFor(() => {
       expect(applyProjectToConversationMock).toHaveBeenCalled();
@@ -512,8 +572,8 @@ describe('useProjectMappingGate — Feature 1 navigate-on-remap', () => {
     registerFakeProject(ID.localZ, 'Z', '/p/z');
     const conv = makeConv({
       id: ID.convA,
-      remote_project_id: null,    // local-origin: no remote provenance
-      project_id: ID.localY,      // already filed under localY
+      remote_project_id: null, // local-origin: no remote provenance
+      project_id: ID.localY, // already filed under localY
     });
     // Loader has set ctx.project to match conv.project_id by the time the
     // gate mounts (load-conversation reads conv.project_id).
@@ -522,7 +582,9 @@ describe('useProjectMappingGate — Feature 1 navigate-on-remap', () => {
     renderHook(() => useProjectMappingGate(undefined, conv));
 
     // First switch (footer pill localY → localZ).
-    await act(async () => { setCtxProject({ id: ID.localZ }); });
+    act(() => {
+      setCtxProject({ id: ID.localZ });
+    });
 
     await waitFor(() => {
       // Feature 1: navigation must fire on the *first* switch.
@@ -547,7 +609,9 @@ describe('useProjectMappingGate — Feature 1 navigate-on-remap', () => {
     renderHook(() => useProjectMappingGate(task, conv));
 
     // Footer pill: user picks a different local project.
-    await act(async () => { setCtxProject({ id: ID.localZ }); });
+    act(() => {
+      setCtxProject({ id: ID.localZ });
+    });
 
     await waitFor(() => {
       // Feature 1: navigation fires because task already had localY.

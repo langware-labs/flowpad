@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react-swc';
+import { lingui } from '@lingui/vite-plugin';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 
@@ -16,7 +17,9 @@ export default defineConfig(({ mode }) => {
       __AUTH_PROVIDER__: JSON.stringify(env.AUTH_PROVIDER || 'local'),
       __DEPLOY_ENV__: JSON.stringify(env.DEPLOY_ENV || 'local'),
       __IS_PACKAGE__: JSON.stringify(!!isPackage),
-      __FLOWPAD_DEV__: JSON.stringify(env.FLOWPAD_DEV === 'true'),
+      // dev mode is a runtime localStorage flag — see dev-mode-context.tsx.
+      // Don't bake it into the bundle; that turned every published wheel into
+      // a dev-mode-on artifact regardless of the user's runtime.
       __CHECK_REFRESH_TOKEN__: JSON.stringify(env.VITE_CHECK_REFRESH_TOKEN === 'true'),
     },
     build: {
@@ -26,7 +29,16 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react({
         tsDecorators: true,
+        // Lingui macro transform. `@lingui/core/macro` (t, msg, plural…) and
+        // `@lingui/react/macro` (<Trans/>, useLingui) compile away to runtime
+        // calls + message ids at build time — this SWC plugin performs that
+        // transform (the babel-macro path is not used with plugin-react-swc).
+        plugins: [['@lingui/swc-plugin', {}]],
       }),
+      // Compiles `*.po` catalogs to runtime messages on import so
+      // `import { messages } from './locales/<locale>/messages.po'` works in
+      // dev and build without a separate `lingui compile` step in dev.
+      lingui(),
       // Workaround for radix-ui/primitives#3799 / #3675: bundled @radix-ui/react-slot
       // calls composeRefs(forwardedRef, childrenRef) inline every render, producing a
       // new ref function each render. Under render storms (e.g. terminal PTY chunk
@@ -54,6 +66,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: 'localhost',
       port: parseInt(env.VITE_PORT || '4097'),
+      strictPort: true,
       fs: {
         allow: [
           path.resolve(__dirname, './'),
@@ -63,6 +76,21 @@ export default defineConfig(({ mode }) => {
       },
       warmup: {
         clientFiles: ['./src/main.tsx', './src/**/*.tsx', './src/!(test)/**/*.ts'],
+      },
+      // Skill-UI iframes (AppHost) load from this origin and call relative
+      // `/api/*` URLs from inside the sandbox. In Electron/wheel this is
+      // same-origin with the backend (no proxy needed); in `npm run dev` the
+      // backend is on a different port, so proxy it here.
+      proxy: {
+        '/api/v1/connect/ws': {
+          target: `ws://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
+          ws: true,
+          changeOrigin: true,
+        },
+        '/api': {
+          target: `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
+          changeOrigin: true,
+        },
       },
     },
     optimizeDeps: {
@@ -92,6 +120,13 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@src': path.resolve(__dirname, './src'),
         '@sdk': path.resolve(__dirname, '../ts_sdk/src'),
+        // @xterm/headless 6.0.0 declares module:"lib/xterm.mjs" but ships
+        // lib-headless/xterm-headless.mjs — Node resolves via main, Vite via
+        // module and fails. Point straight at the shipped ESM build.
+        '@xterm/headless': path.resolve(
+          __dirname,
+          'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs',
+        ),
       },
       dedupe: [
         'react',

@@ -142,7 +142,6 @@ export function buildResourceItems(
       subtitle: session.last_user_message || undefined,
       path: session.cwd || undefined,
       sessionId: resolvedSessionId,
-      projectEncodedName: session.project_encoded_name || undefined,
       sessionPath: session.jsonl_path || session.path || undefined,
       taskPath: session.task_path || undefined,
       messageCount: session.message_count || 0,

@@ -53,11 +53,18 @@ async def setup_context():
         def __init__(self, name, email):
             self.name = name
             self.email = email
+    import os
+    import tempfile
+
+    from flow_sdk.db.database import reinit_db
     from flow_sdk.db.drivers.db_driver import get_db_driver
 
-    # Get driver and set up test database
+    # Point the active DB at a temp benchmark file via the modern reinit
+    # path (which rewires InstanceSettings + driver cache without writing
+    # to env, and is the public replacement for the deleted set_db_name).
+    bench_db = os.path.join(tempfile.gettempdir(), "flowpad_benchmark_test.db")
+    await reinit_db(bench_db)
     driver = get_db_driver()
-    driver.set_db_name("benchmark_test")
     await driver.clean_all_db()
 
     # Create execution context

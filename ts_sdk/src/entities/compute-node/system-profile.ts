@@ -141,6 +141,11 @@ export interface ClaudeMdItem extends SystemProfileItem {
  */
 export interface ProjectItem extends SystemProfileItem {
   type: ItemType.PROJECT | string;
+  /**
+   * Claude project directory name observed at ~/.claude/projects/<name>/.
+   * Scanner-emitted transient — used as the API key when scanning Claude's
+   * project-scoped resources. NOT stored on any Flow record.
+   */
   encoded_name: string;
   cwd: string;
   session_count: number;
@@ -171,8 +176,6 @@ export interface PlanItem extends SystemProfileItem {
   session_ids: string[];
   /** Number of sessions using this plan */
   session_count: number;
-  /** Project this plan belongs to (derived from sessions) */
-  project_encoded_name?: string | null;
 }
 
 /**
@@ -223,8 +226,6 @@ export interface TodoFileItem extends SystemProfileItem {
   agent_id: string;
   /** Whether this is a sub-agent todo file */
   is_sub_agent: boolean;
-  /** Project encoded name for filtering */
-  project_encoded_name?: string | null;
   /** Number of todo entries in the file */
   entry_count: number;
   /** Number of completed entries */
@@ -299,7 +300,7 @@ export interface TranscriptStats {
  */
 export interface SessionCostBreakdown {
   session_id: string;
-  project_encoded_name?: string | null;
+  cwd?: string | null;
   cost_usd: number;
   input_tokens: number;
   output_tokens: number;
@@ -374,7 +375,7 @@ export interface CostByModel {
  * Cost summary for a specific project.
  */
 export interface CostByProject {
-  project_encoded_name: string;
+  cwd: string;
   session_count: number;
   message_count: number;
   tool_use_count: number;
@@ -840,12 +841,27 @@ export async function openResourceExternal(
  * Project summary returned by list-projects API.
  */
 export interface ProjectListItem {
+  /** Real Project entity id. Use this for ScopeFilter.projects and project routes. */
   id: string;
+  /** Legacy fs-record project_id value, derived from uuid5(project:<cwd>). */
+  record_project_id?: string;
   name: string;
+  /**
+   * Claude project directory name observed at ~/.claude/projects/<name>/.
+   * Scanner-emitted transient — used as the API key when scanning Claude's
+   * project-scoped resources. NOT stored on any Flow record.
+   */
   encoded_name: string;
   cwd: string | null;
   session_count: number;
+  claude_session_count?: number;
+  codex_session_count?: number;
+  copilot_session_count?: number;
   modified_at: string | null;
+  claude?: boolean;
+  codex?: boolean;
+  copilot?: boolean;
+  worker_types?: string[];
   /** True when this project entry represents an SDK-shipped system project. */
   system?: boolean;
 }
@@ -856,13 +872,17 @@ export interface ProjectListItem {
 export interface ListProjectsResponse {
   projects: ProjectListItem[];
   total_count: number;
+  claude_count?: number;
+  codex_count?: number;
+  copilot_count?: number;
+  both_count?: number;
+  none_count?: number;
 }
 
 /**
  * Response from scan-project API.
  */
 export interface ScanProjectResponse {
-  project_encoded_name: string;
   project_cwd: string | null;
   scanned_at: string;
   sessions: ClaudeSessionRecordData[];
@@ -887,7 +907,7 @@ export interface ScanProjectResponse {
 }
 
 /**
- * Fast project enumeration - just directory listing (~50ms).
+ * Indexer-backed project enumeration.
  * Use this for the project list sidebar.
  */
 export async function listProjectsFromComputeNode(computeNodeId: string): Promise<ListProjectsResponse> {
@@ -908,8 +928,8 @@ export async function fetchCostOverviewFromComputeNode(
   computeNodeId: string,
   sessionLimit: number = 100,
 ): Promise<CostOverview> {
-  const actionInfo = new ActionInfo('scan-item', 'compute_node', computeNodeId, 'GET');
-  const url = `${actionInfo.fullActionUrl}?type=costOverview&limit=${sessionLimit}`;
+  const actionInfo = new ActionInfo('get-cost-overview', 'compute_node', computeNodeId, 'GET');
+  const url = `${actionInfo.fullActionUrl}?limit=${sessionLimit}`;
   const response = await fetch(url, { credentials: 'include' });
   const result = await response.json();
   if (result.status !== 'SUCCESS') {
@@ -961,7 +981,6 @@ export async function scanProjectFromComputeNode(
   }
   return (
     result.data || {
-      project_encoded_name: projectEncodedName,
       project_cwd: null,
       scanned_at: new Date().toISOString(),
       sessions: [],
@@ -1004,70 +1023,6 @@ export async function fetchAllSkillsFromComputeNode(computeNodeId: string): Prom
 
 // ═══════════════════════════════════════════════════════════════
 // CLAUDE USAGE / RATE-LIMIT INTERFACES
-// ═══════════════════════════════════════════════════════════════
-
-export interface ClaudeRateLimitWindow {
-  /** Utilization percentage (0-100) */
-  pct: number;
-  /** ISO timestamp when the window resets, or null if unknown */
-  resets_at: string | null;
-}
-
-export interface ClaudeExtraUsage {
-  enabled: boolean;
-  /** Utilization percentage (0-100) */
-  pct: number;
-  /** Consumed credits in cents */
-  used_cents: number;
-  /** Monthly limit in cents */
-  limit_cents: number;
-}
-
-export interface ClaudeUsageData {
-  five_hour: ClaudeRateLimitWindow;
-  seven_day: ClaudeRateLimitWindow;
-  extra: ClaudeExtraUsage;
-  /** ISO timestamp when the data was fetched */
-  fetched_at?: string;
-}
-
-/**
- * Fetch Claude Code rate-limit usage from the Anthropic API via a compute node.
- * The backend caches results for 60 seconds.
- */
-export async function fetchClaudeUsageFromComputeNode(
-  computeNodeId: string,
-): Promise<ClaudeUsageData | null> {
-  const actionInfo = new ActionInfo('scan-item', 'compute_node', computeNodeId, 'GET');
-  const url = `${actionInfo.fullActionUrl}?type=claudeUsage`;
-  try {
-    const response = await fetch(url, { credentials: 'include' });
-    const result = await response.json();
-    if (result.status !== 'SUCCESS') return null;
-    const d = result.data || {};
-    if (!d || Object.keys(d).length === 0) return null;
-    return {
-      five_hour: {
-        pct: Math.round(((d.five_hour?.utilization as number) ?? 0) * 100),
-        resets_at: (d.five_hour?.resets_at as string | null) ?? null,
-      },
-      seven_day: {
-        pct: Math.round(((d.seven_day?.utilization as number) ?? 0) * 100),
-        resets_at: (d.seven_day?.resets_at as string | null) ?? null,
-      },
-      extra: {
-        enabled: (d.extra_usage?.is_enabled as boolean) ?? false,
-        pct: Math.round(((d.extra_usage?.utilization as number) ?? 0) * 100),
-        used_cents: (d.extra_usage?.used_credits as number) ?? 0,
-        limit_cents: (d.extra_usage?.monthly_limit as number) ?? 0,
-      },
-      fetched_at: (d.fetched_at as string | undefined) ?? new Date().toISOString(),
-    };
-  } catch {
-    return null;
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════
 // CLAUDE CONTEXT WINDOW DATA  (/context command)
 // ═══════════════════════════════════════════════════════════════
@@ -1135,8 +1090,8 @@ export async function fetchClaudeContextFromComputeNode(
   sessionId?: string,
 ): Promise<ClaudeContextData | null> {
   try {
-    const actionInfo = new ActionInfo('scan-item', 'compute_node', computeNodeId, 'GET');
-    const params = new URLSearchParams({ type: 'claudeContext' });
+    const actionInfo = new ActionInfo('get-claude-context', 'compute_node', computeNodeId, 'GET');
+    const params = new URLSearchParams();
     if (sessionId) params.set('session_id', sessionId);
     const url = `${actionInfo.fullActionUrl}?${params.toString()}`;
     const response = await fetch(url, { credentials: 'include' });

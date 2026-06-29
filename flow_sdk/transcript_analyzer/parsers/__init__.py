@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from ..formats import TranscriptFormat
 from .base import Parser
 from .claude import ClaudeParser
 from .codex import CodexParser, CodexRolloutParser, CodexStreamParser
-from ..formats import TranscriptFormat
+from .copilot import CopilotEventsParser, CopilotParser, CopilotStreamParser
+from .workflow import WorkflowParser
 
 _REGISTRY: dict[str, type[Parser]] = {
     "claude": ClaudeParser,
     "codex": CodexParser,
+    "copilot": CopilotParser,
+    "workflow": WorkflowParser,
 }
 
 
@@ -24,6 +28,11 @@ def get_parser_class(
             return CodexRolloutParser
         if fmt is TranscriptFormat.CODEX_STREAM:
             return CodexStreamParser
+    if worker_type == "copilot":
+        if fmt is TranscriptFormat.COPILOT_EVENTS:
+            return CopilotEventsParser
+        if fmt is TranscriptFormat.COPILOT_STREAM:
+            return CopilotStreamParser
     try:
         return _REGISTRY[worker_type]
     except KeyError as exc:
@@ -39,5 +48,9 @@ __all__ = [
     "CodexParser",
     "CodexRolloutParser",
     "CodexStreamParser",
+    "CopilotEventsParser",
+    "CopilotParser",
+    "CopilotStreamParser",
+    "WorkflowParser",
     "get_parser_class",
 ]

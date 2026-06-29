@@ -50,6 +50,14 @@ async def test_real_login_current_user_and_credentials_roundtrip(hub_base_url, h
 @pytest.mark.asyncio
 async def test_env_api_key_override_works_without_keyring(monkeypatch, hub_base_url, hub_login_payload):
     monkeypatch.setenv("FLOWPAD_CLOUD_API_KEY", hub_login_payload["token"])
+    # InstanceSettings is a cached singleton that snapshots cloud_api_key from
+    # the env at BUILD time (base_settings.py / test_settings.py). The autouse
+    # isolated_hub_keyring fixture already built+cached settings before this
+    # test body ran, so setting the env now does NOT update the cached
+    # cloud_api_key the request auth hook reads (client_hooks.py:34). Reset the
+    # singleton so the next access re-snapshots the now-set env key.
+    from flow_sdk.instance_settings import reset_instance_settings
+    reset_instance_settings()
 
     async with FlowpadClient(_config(hub_base_url)) as client:
         user = await client.get_user()

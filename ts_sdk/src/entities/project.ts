@@ -1,8 +1,8 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId } from '../models';
 import { DockPointerData } from '../models/DockPointer';
-import config from '../config';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
@@ -81,11 +81,11 @@ export class Project extends APIEntity<Project> {
   /**
    * Project's ``name`` is sometimes a full path (legacy data); strip to the
    * basename so the UI shows ``foo-project`` rather than
-   * ``/Users/shlom/Documents/foo-project``. When ``name`` is empty or has no
+   * ``/Users/alice/Documents/foo-project``. When ``name`` is empty or has no
    * path separators, return null and let the default chain handle it.
    */
   override getDisplayName(): string | null {
-    if (!this.name || typeof this.name !== 'string') return null;
+    if (!isNonEmptyString(this.name)) return null;
     const parts = this.name.replace(/\\/g, '/').split('/').filter(Boolean);
     if (parts.length <= 1) return null;
     return parts[parts.length - 1] || null;
@@ -271,19 +271,126 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
+   * Permanently delete this project and everything that belongs to it:
+   * every indexed record whose ``project_id`` is this project (DB row + FTS +
+   * wiki edges + on-disk record shadow + records_data bundle), the project's
+   * own record, and the project source folder on disk. Irreversible.
+   */
+  async deleteWithChildren(): Promise<{ project_id: string; deleted_children: number } | null> {
+    const info = new ActionInfo('delete-with-children', Project.type, this.typeId.id, 'POST');
+    return await dataManager.callAction<void, { project_id: string; deleted_children: number }>(info);
+  }
+
+  /**
+   * Resolve a filesystem path (cwd / workdir) → the owning Project by
+   * longest-prefix match on `fs_storage_mount_path`.
+   *
+   * The single cross-worker, cross-platform FE primitive for "which project
+   * owns this path" — used by both `resolveProjectContext` (loader active-project
+   * resolution) and `Tab.getFromDockPointer` (tab project denormalization), so a
+   * claude/codex/copilot session, shell, or agentic-process target whose entity
+   * lacks `project_id` still resolves to the same real Project entity. Returns
+   * the matched Project, or null when no project contains the path.
+   */
+  static async getProjectByPath(path: string | null | undefined): Promise<Project | null> {
+    if (!path) return null;
+    const projects = await Project.query<Project>(new QueryRequest({ type: Project.type, scope: [] }));
+    const candidates = projects.filter(
+      (p) => p.fs_storage_mount_path && path.startsWith(p.fs_storage_mount_path),
+    );
+    return (
+      candidates.sort(
+        (a, b) => (b.fs_storage_mount_path?.length ?? 0) - (a.fs_storage_mount_path?.length ?? 0),
+      )[0] ?? null
+    );
+  }
+
+  /**
    * Resolve a shareable session_code → project. Used by the join flow.
    * Uses a dedicated FastAPI route at /api/v1/project/resolve/{code}.
    */
   static async resolveByCode(code: string): Promise<ResolveProjectResult | null> {
     const normalized = (code ?? '').toUpperCase().trim();
     if (!normalized) return null;
-    const url = `${config.SERVER_URL}/api/v1/project/resolve/${encodeURIComponent(normalized)}`;
     try {
-      const resp = await fetch(url, { method: 'GET', credentials: 'include' });
-      if (!resp.ok) return null;
-      return (await resp.json()) as ResolveProjectResult;
+      // /project/resolve returns the resource shape directly (no {status,data}
+      // envelope). Wrap the raw body in {data} so apiClient's interceptor
+      // (`.data.data`) yields the parsed payload — same approach as
+      // dataManager.callAction for raw responses.
+      return (await apiClient.get<ResolveProjectResult>(
+        `/project/resolve/${encodeURIComponent(normalized)}`,
+        {
+          transformResponse: (raw: string) => ({ data: JSON.parse(raw) }),
+        },
+      )) as ResolveProjectResult;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Clone a git URL into the desktop workspace and materialize a Project.
+   * Dispatches to the compute_node `create-project-from-git` action.
+   *
+   * Returns one of:
+   *   { kind: 'ok', project }                          — clone succeeded
+   *   { kind: 'collision', suggestedName, attemptedName } — folder existed
+   *   { kind: 'error', message }                        — clone or network failure
+   */
+  static async createFromGitUrl(
+    computeNodeId: string,
+    projectUrl: string,
+    targetName?: string,
+    branch?: string,
+  ): Promise<
+    | { kind: 'ok'; project: Project }
+    | { kind: 'collision'; suggestedName: string; attemptedName: string }
+    | { kind: 'error'; message: string }
+  > {
+    const action = new ActionInfo('create-project-from-git', 'compute_node', computeNodeId, 'POST');
+    action.bodyParameters = {
+      project_url: projectUrl,
+      ...(targetName ? { target_name: targetName } : {}),
+      ...(branch ? { branch } : {}),
+    };
+    try {
+      const response = await dataManager.callAction<
+        { project_url: string; target_name?: string },
+        { project: unknown }
+      >(action);
+      if (!response?.project) return { kind: 'error', message: 'No project returned' };
+      const project = dataManager.updateEntityFromJson<Project>(
+        response.project as Record<string, unknown>,
+      );
+      return { kind: 'ok', project };
+    } catch (err: unknown) {
+      const ax = err as { response?: { status?: number; data?: { data?: unknown; message?: string } }; message?: string };
+      if (ax.response?.status === 409) {
+        const payload = ax.response.data?.data as { suggested_name?: string; attempted_name?: string } | undefined;
+        return {
+          kind: 'collision',
+          suggestedName: payload?.suggested_name ?? '',
+          attemptedName: payload?.attempted_name ?? '',
+        };
+      }
+      const message = ax.response?.data?.message ?? ax.message ?? 'Unknown error';
+      return { kind: 'error', message };
+    }
+  }
+
+  /**
+   * Recover a Project that's been deleted but still has dependents (Shells /
+   * AgenticProcesses with ``project_id == orphanedId``). The backend picks any
+   * dependent's ``workdir``, runs ``Project.recover_by_path`` (same 3-phase
+   * primitive ``AgenticProcess.recoverProject`` uses), and rebinds every
+   * dependent's ``project_id`` to the recovered id. Returns the recovered
+   * Project. Cached via dataManager.
+   */
+  static async recoverOrphaned(orphanedId: string, computeNodeId: string): Promise<Project | null> {
+    const action = new ActionInfo('recover-orphaned-project', 'compute_node', computeNodeId, 'POST');
+    action.bodyParameters = { dangling_id: orphanedId };
+    const response = await dataManager.callAction<{ dangling_id: string }, { project: unknown; rebound: number }>(action);
+    if (!response?.project) return null;
+    return dataManager.updateEntityFromJson<Project>(response.project as Record<string, unknown>);
   }
 }

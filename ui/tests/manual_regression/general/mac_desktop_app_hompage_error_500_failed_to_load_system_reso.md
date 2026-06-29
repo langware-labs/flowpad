@@ -1,3 +1,7 @@
+---
+id: e6190987-95a4-56d5-bd11-e4bd263790ea
+---
+
 test 1: App home page does not produce 500 error on macOS (FLOWPAD-1685)
 - navigate to {APP_URL}/dock/home
 - wait 3 seconds for the home page to load

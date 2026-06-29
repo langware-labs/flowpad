@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
+from tests.long_tests._pty_helpers import read_pty_stream
 
 
 @pytest.mark.asyncio
@@ -42,18 +42,20 @@ async def test_clean_claude_pty(bootstrapped_client, tmp_path):
     try:
         await process.start_pty()
 
+        # start_pty() runs under the per-process open lock against a reloaded
+        # copy (anti-double-spawn) and persists to the DB without mutating this
+        # in-memory object — re-fetch to observe the spawned shell, exactly as
+        # the production HTTP path does.
+        process = await AgenticProcess.get_by_id(process.id)
         shell_id = process.shell_id
         assert shell_id, "process.start() did not set shell_id"
 
-        # Wait briefly for PTY output to land in the replay buffer
+        # Wait briefly for PTY output to land in the .pty stream file
         await asyncio.sleep(1.0)
 
-        # Replay buffer is keyed on the ComputeNode's actual node_provider_id.
-        pty_key = (cn.id, cn.node_provider_id, shell_id)
-        chunks = replay_buffer.get_replay(pty_key, since_seq=0)
-        pty_output = "".join(c.data.decode("utf-8", errors="replace") for c in chunks)
+        pty_output = read_pty_stream(shell_id)
 
-        assert pty_output, f"No PTY output captured — pty_key={pty_key}"
+        assert pty_output, f"No PTY output captured — shell_id={shell_id}"
 
         assert "200~" not in pty_output, (
             f"Leaked bracketed paste start '200~' in PTY output:\n{pty_output[:400]}"

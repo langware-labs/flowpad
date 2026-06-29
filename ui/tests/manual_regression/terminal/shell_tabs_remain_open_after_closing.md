@@ -1,3 +1,7 @@
+---
+id: 0802844a-de7a-54c2-be3c-e99bcf90bdbc
+---
+
 test 1: Shell tabs remain open after closing (FLOWPAD-1610)
 - navigate to app shell tab
 - open 5 terminals
