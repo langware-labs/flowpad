@@ -8,6 +8,7 @@ import { sdkConfig } from '@sdk/config/index';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
 import { useContext } from '@sdk/react/hooks';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Check,
   ChevronDown,
@@ -231,6 +232,7 @@ function CopyableUrlField({ label, value }: { label: string; value: string }) {
 }
 
 function CopyableCommand({ command }: { command: string }) {
+  const { t } = useLingui();
   const [copied, setCopied] = useState(false);
   const handleCopy = useCallback(async () => {
     try {
@@ -246,7 +248,7 @@ function CopyableCommand({ command }: { command: string }) {
       type="button"
       onClick={() => void handleCopy()}
       className="flex w-full items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] transition-colors hover:bg-muted"
-      title="Copy to clipboard"
+      title={t`Copy to clipboard`}
     >
       <span>{command}</span>
       {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
@@ -259,6 +261,7 @@ interface VersionPopoverProps {
 }
 
 export function VersionPopover({ currentVersion }: VersionPopoverProps) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<VersionCheckResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -350,8 +353,8 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
       await new Promise((r) => setTimeout(r, 1500));
     }
     setRestarting(false);
-    setInstallResult({ success: false, error: 'Server did not come back. Restart Flowpad manually.' });
-  }, []);
+    setInstallResult({ success: false, error: t`Server did not come back. Restart Flowpad manually.` });
+  }, [t]);
 
   const handleInstallVersion = useCallback(
     async (version: string) => {
@@ -414,13 +417,13 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
         <button
           type="button"
           className="flex items-center gap-1 rounded-sm px-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          title="Flowpad version"
-          aria-label="Flowpad version"
+          title={t`Flowpad version`}
+          aria-label={t`Flowpad version`}
           data-testid="version-popover-trigger"
         >
           <span>v{currentVersion}</span>
           {(pypi?.update_available || githubUpdateAvailable) && (
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label="Update available" />
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label={t`Update available`} />
           )}
         </button>
       </PopoverTrigger>
@@ -429,7 +432,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold">Flowpad</h3>
+              <h3 className="text-sm font-semibold"><Trans>Flowpad</Trans></h3>
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {mode}
               </span>
@@ -444,8 +447,8 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               onClick={() => void fetchData()}
               disabled={loading}
               className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-              title="Check again"
-              aria-label="Check again"
+              title={t`Check again`}
+              aria-label={t`Check again`}
             >
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             </button>
@@ -453,25 +456,25 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
 
           {error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
-              Couldn't check for updates: {error}
+              <Trans>Couldn't check for updates: {error}</Trans>
             </div>
           )}
 
           {restarting && (
             <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-2 py-1.5 text-[11px] text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-              <span>Installing and restarting Flowpad… this can take up to a minute.</span>
+              <span><Trans>Installing and restarting Flowpad… this can take up to a minute.</Trans></span>
             </div>
           )}
 
           {/* Python / PyPI section */}
           <section className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Python (flow SDK)</h4>
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"><Trans>Python (flow SDK)</Trans></h4>
               <div className="flex items-center gap-2">
                 {pypi?.error && (
                   <span className="text-[10px] text-muted-foreground" title={pypi.error}>
-                    PyPI unavailable
+                    <Trans>PyPI unavailable</Trans>
                   </span>
                 )}
                 {(pypi?.releases?.length ?? 0) > 0 && (
@@ -482,24 +485,24 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                       setPicking((p) => !p);
                     }}
                     className="flex items-center gap-1 rounded-sm px-1 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    title="Change the installed flow SDK version"
+                    title={t`Change the installed flow SDK version`}
                   >
                     <History className="h-3 w-3" />
-                    <span>Change</span>
+                    <span><Trans>Change</Trans></span>
                   </button>
                 )}
               </div>
             </div>
             <VersionRow
-              label="Installed"
+              label={t`Installed`}
               version={currentVersion}
               date={formatDateWithAge(pypiCurrentRelease?.published_at)}
             />
             <VersionRow
-              label="Latest on PyPI"
+              label={t`Latest on PyPI`}
               version={pypi?.latest ?? null}
               date={formatDateWithAge(pypiLatestRelease?.published_at)}
-              badge={pypi?.update_available ? 'Update available' : null}
+              badge={pypi?.update_available ? t`Update available` : null}
               muted={!pypi?.update_available}
             />
             <ReleaseNotes
@@ -519,11 +522,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                     className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                   >
                     {upgrading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                    {upgrading ? 'Upgrading…' : `Upgrade to v${pypi.latest}`}
+                    {upgrading ? t`Upgrading…` : t`Upgrade to v${pypi.latest}`}
                   </button>
                 ) : (
                   <div className="space-y-1">
-                    <p className="text-[10px] text-muted-foreground">Run from your terminal:</p>
+                    <p className="text-[10px] text-muted-foreground"><Trans>Run from your terminal:</Trans></p>
                     <CopyableCommand command="flow upgrade" />
                   </div>
                 )}
@@ -535,12 +538,12 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
             >
               <ExternalLink className="h-3 w-3" />
-              <span>View on PyPI</span>
+              <span><Trans>View on PyPI</Trans></span>
             </button>
 
             {picking && (
               <div className="space-y-1.5 pt-1">
-                <p className="text-[10px] text-muted-foreground">Select a version to install:</p>
+                <p className="text-[10px] text-muted-foreground"><Trans>Select a version to install:</Trans></p>
                 <div className="max-h-48 overflow-y-auto rounded-sm border bg-muted/30 py-0.5">
                   {(pypi?.releases ?? []).map((r) => {
                     const isCurrent = r.version === currentVersion;
@@ -559,17 +562,17 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                           <span className="flex items-center gap-2 text-[10px] text-muted-foreground">
                             {formatDateWithAge(r.published_at)}
                             {isCurrent && (
-                              <span className="rounded-full bg-muted px-1.5 py-0.5 font-medium">current</span>
+                              <span className="rounded-full bg-muted px-1.5 py-0.5 font-medium"><Trans>current</Trans></span>
                             )}
                             {r.yanked && (
-                              <span className="rounded-full bg-muted px-1.5 py-0.5 font-medium">yanked</span>
+                              <span className="rounded-full bg-muted px-1.5 py-0.5 font-medium"><Trans>yanked</Trans></span>
                             )}
                           </span>
                         </button>
                         {isPending && (
                           <div className="space-y-1.5 border-t bg-background/60 px-2 py-2">
                             <p className="text-[11px]">
-                              Install <span className="font-mono">v{r.version}</span> and restart Flowpad?
+                              <Trans>Install v{r.version} and restart Flowpad?</Trans>
                             </p>
                             <div className="flex items-center gap-2">
                               <button
@@ -581,7 +584,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                                 disabled={upgrading}
                                 className="flex-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-accent disabled:opacity-60"
                               >
-                                Cancel
+                                <Trans>Cancel</Trans>
                               </button>
                               <button
                                 type="button"
@@ -590,16 +593,16 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                                 className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                               >
                                 {upgrading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                                {upgrading ? 'Installing…' : 'Install & restart'}
+                                {upgrading ? t`Installing…` : t`Install & restart`}
                               </button>
                             </div>
                             {installResult && !installResult.success && (
                               <div className="space-y-1.5">
                                 <p className="text-[10px] text-destructive">
-                                  {installResult.error ?? 'Install failed.'}
+                                  {installResult.error ?? t`Install failed.`}
                                 </p>
                                 <p className="text-[10px] text-muted-foreground">
-                                  Run from your terminal, then restart Flowpad:
+                                  <Trans>Run from your terminal, then restart Flowpad:</Trans>
                                 </p>
                                 <CopyableCommand command={`uv tool install flowpad==${r.version} --force`} />
                                 <CopyableCommand command={`pip install flowpad==${r.version}`} />
@@ -620,24 +623,24 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           {/* Desktop / GitHub section */}
           <section className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Desktop version</h4>
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"><Trans>Desktop version</Trans></h4>
               {data?.github_error && (
                 <span className="text-[10px] text-muted-foreground" title={data.github_error}>
-                  GitHub unavailable
+                  <Trans>GitHub unavailable</Trans>
                 </span>
               )}
             </div>
             <VersionRow
-              label="Installed"
+              label={t`Installed`}
               version={electronVersion}
               date={formatDateWithAge(electronCurrentRelease?.published_at)}
               muted={!electronVersion}
             />
             <VersionRow
-              label="Latest on GitHub"
+              label={t`Latest on GitHub`}
               version={githubLatest?.tag ?? null}
               date={formatDateWithAge(githubLatest?.published_at)}
-              badge={githubUpdateAvailable ? 'Update available' : null}
+              badge={githubUpdateAvailable ? t`Update available` : null}
               muted={!githubUpdateAvailable}
             />
             {electronCurrentRelease && electronCurrentRelease.tag !== githubLatest?.tag && (
@@ -653,7 +656,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               />
             )}
             {mode === 'Desktop' && !githubUpdateAvailable && !data?.github_error && (
-              <p className="text-[10px] text-muted-foreground">Auto-updates check hourly.</p>
+              <p className="text-[10px] text-muted-foreground"><Trans>Auto-updates check hourly.</Trans></p>
             )}
             {githubLatest?.html_url && (
               <button
@@ -662,7 +665,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                 className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
               >
                 <ExternalLink className="h-3 w-3" />
-                <span>View on GitHub</span>
+                <span><Trans>View on GitHub</Trans></span>
               </button>
             )}
           </section>
@@ -671,19 +674,19 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             <>
               <div className="border-t" />
               <section className="space-y-1.5">
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cloud hub</h4>
-                <VersionRow label="Hub" version={data.hub.version} />
-                <TimestampRow label="Deployed" timestamp={data.hub.deployed_at} />
-                <TimestampRow label="Generated" timestamp={data.hub.generated_at} />
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"><Trans>Cloud hub</Trans></h4>
+                <VersionRow label={t`Hub`} version={data.hub.version} />
+                <TimestampRow label={t`Deployed`} timestamp={data.hub.deployed_at} />
+                <TimestampRow label={t`Generated`} timestamp={data.hub.generated_at} />
               </section>
             </>
           )}
 
           <div className="border-t" />
           <section className="space-y-1.5">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connection Info</h4>
-            <CopyableUrlField label="URL" value={window.location.href} />
-            <CopyableUrlField label="Connection ID" value={connectionManager.id} />
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"><Trans>Connection Info</Trans></h4>
+            <CopyableUrlField label={t`URL`} value={window.location.href} />
+            <CopyableUrlField label={t`Connection ID`} value={connectionManager.id} />
           </section>
 
           {/* Toolbar */}
@@ -696,10 +699,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                 setOpen(false);
                 setDiagnoseOpen(true);
               }}
-              title="Diagnose a Flowpad issue"
+              title={t`Diagnose a Flowpad issue`}
             >
               <Stethoscope />
-              <span>Diagnose</span>
+              <span><Trans>Diagnose</Trans></span>
             </Button>
           </div>
         </div>

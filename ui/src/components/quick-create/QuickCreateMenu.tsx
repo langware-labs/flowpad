@@ -1,5 +1,6 @@
 import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
@@ -43,6 +44,7 @@ interface QuickCreateMenuProps {
  * Top section: a chip showing the active project; click opens ProjectSelectorModal.
  */
 export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickCreateMenuProps) {
+  const { t } = useLingui();
   const { types: serverTypes } = useAssetTypes();
   const { project: currentProject } = useProject();
   const { projects, isLoading: isLoadingProjects } = useProjects();
@@ -61,17 +63,17 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
     if (!computeNode) {
-      notify.error({ title: 'No compute node available' });
+      notify.error({ title: t`No compute node available` });
       return null;
     }
     try {
       return await computeNode.openPathDialog();
     } catch (err) {
       console.error('[QuickCreateMenu] Folder picker failed:', err);
-      notify.error({ title: 'Failed to open folder picker' });
+      notify.error({ title: t`Failed to open folder picker` });
       return null;
     }
-  }, [computeNode]);
+  }, [computeNode, t]);
 
   const handleCreateLocalProject = useCallback(
     async (rawName: string, rawParent: string) => {
@@ -124,12 +126,12 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
       onOpenChange(false);
       const result = await navigation.openNewClaudeProcess({ workerType });
       if (!result) {
-        notify.error({ title: 'Failed to start session' });
+        notify.error({ title: t`Failed to start session` });
         return;
       }
       await navigation.openShellProcess(result.processId);
     },
-    [navigation, onOpenChange],
+    [navigation, onOpenChange, t],
   );
 
   const handleProjectSelect = useCallback(
@@ -169,31 +171,31 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
                 setProjectModalOpen(true);
               }}
               className="flex w-full items-center gap-1.5 rounded-md border border-border bg-transparent px-2 py-1 text-xs transition-colors hover:bg-accent"
-              title="Switch project"
+              title={t`Switch project`}
             >
               <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Project
+                <Trans>Project</Trans>
               </span>
-              <span className="truncate">{currentProject?.displayName ?? 'Select…'}</span>
+              <span className="truncate">{currentProject?.displayName ?? t`Select…`}</span>
             </button>
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>New session</DropdownMenuLabel>
+          <DropdownMenuLabel><Trans>New session</Trans></DropdownMenuLabel>
           <DropdownMenuItem onSelect={() => void handleStartSession('claude_code')}>
             <ClaudeIcon className="mr-2 h-4 w-4 text-orange-500" />
-            Claude Code session
+            <Trans>Claude Code session</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void handleStartSession('codex')}>
             <CodexIcon className="mr-2 h-4 w-4 text-emerald-500" />
-            Codex session
+            <Trans>Codex session</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void handleStartSession('copilot')}>
             <CopilotIcon className="mr-2 h-4 w-4 text-sky-500" />
-            Copilot session
+            <Trans>Copilot session</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>New project</DropdownMenuLabel>
+          <DropdownMenuLabel><Trans>New project</Trans></DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() => {
               onOpenChange(false);
@@ -201,7 +203,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             }}
           >
             <FolderPlus className="mr-2 h-4 w-4" />
-            Project (local)
+            <Trans>Project (local)</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => {
@@ -210,10 +212,10 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             }}
           >
             <GitBranch className="mr-2 h-4 w-4" />
-            From git
+            <Trans>From git</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>Create new…</DropdownMenuLabel>
+          <DropdownMenuLabel><Trans>Create new…</Trans></DropdownMenuLabel>
           {items.map((item) => {
             const Icon = item.Icon;
             return (
@@ -230,7 +232,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             );
           })}
           {items.length === 0 && (
-            <DropdownMenuItem disabled>No creatable types available</DropdownMenuItem>
+            <DropdownMenuItem disabled><Trans>No creatable types available</Trans></DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>

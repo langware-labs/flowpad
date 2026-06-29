@@ -1,6 +1,7 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import './QuickAccessView.css';
 
 // Helper to format relative time
@@ -67,6 +68,7 @@ const TimeChip = ({ timestamp }: { timestamp: string }) => (
 );
 
 export function QuickAccessView({ columns, maxNameLength = 24, isLoading = false }: QuickAccessViewProps) {
+  const { t } = useLingui();
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const truncateName = (name: string): string => {
@@ -96,9 +98,9 @@ export function QuickAccessView({ columns, maxNameLength = 24, isLoading = false
     return (
       <div className="quick-access-view">
         <div className="quick-access-header">
-          <h3>Quick Access</h3>
+          <h3><Trans>Quick Access</Trans></h3>
         </div>
-        <div className="quick-access-loading">Loading...</div>
+        <div className="quick-access-loading"><Trans>Loading...</Trans></div>
       </div>
     );
   }
@@ -110,7 +112,7 @@ export function QuickAccessView({ columns, maxNameLength = 24, isLoading = false
   return (
     <div className="quick-access-view">
       <div className="quick-access-header">
-        <h3>Quick Access</h3>
+        <h3><Trans>Quick Access</Trans></h3>
       </div>
       <div className="quick-access-columns">
         {columns.map((column, columnIndex) => (
@@ -132,7 +134,7 @@ export function QuickAccessView({ columns, maxNameLength = 24, isLoading = false
                         <button
                           className="copy-button-inline"
                           onClick={(e) => void handleCopy(e, item.name, item.id)}
-                          title="Copy to clipboard"
+                          title={t`Copy to clipboard`}
                         >
                           {copiedId === item.id ? <Check className="copy-icon" /> : <Copy className="copy-icon" />}
                         </button>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, Eye, GitCompare, GraduationCap, Loader2, Play, RefreshCw } from 'lucide-react';
+import { useLingui, Trans } from '@lingui/react/macro';
 import { ActionInfo, FSRef, Skill, dataManager } from '@sdk';
 import { getGitStatus, invalidateGitStatus } from '@src/lib/git-status-cache';
 
@@ -50,6 +51,7 @@ const usageScanInFlight = new Map<string, Promise<UsageSession[]>>();
  * links the revision diff. Improve is gated on a clean-git asset.
  */
 export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRef }) {
+  const { t } = useLingui();
   const skillName = skill.name;
   const computeNodeId = skillFile.typeId.id;
   const workdir = skillFile.parent.path;
@@ -121,7 +123,7 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
     try {
       setSessions(await p);
     } catch (e) {
-      notify.error({ title: 'Usage scan failed', message: e instanceof Error ? e.message : String(e) });
+      notify.error({ title: t`Usage scan failed`, message: e instanceof Error ? e.message : String(e) });
     } finally {
       setScanning(false);
     }
@@ -136,7 +138,7 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
   const improve = useCallback(
     async (sid: string) => {
       if (!findings.length) {
-        notify.info({ title: 'Nothing to improve', message: 'No substantiated findings for this skill yet.' });
+        notify.info({ title: t`Nothing to improve`, message: t`No substantiated findings for this skill yet.` });
         return;
       }
       await launchSkillCorrect({ targetSkill: skill, sessionId: sid, findings });
@@ -150,17 +152,17 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
       a.bodyParameters = { workdir, file };
       const r = await dataManager.callAction<null, { committed: boolean; version?: number }>(a);
       if (r?.committed) {
-        notify.success({ title: `Committed ${skillName} v${r.version}` });
+        notify.success({ title: t`Committed ${skillName} v${r.version}` });
         // The commit changed the working tree — drop the cached status so the
         // reload-triggered dirty re-check (and the footer pill) refetch fresh.
         invalidateGitStatus(computeNodeId, workdir);
         setReload((x) => x + 1);
         rev.refresh();
       } else {
-        notify.info({ title: 'Nothing to commit', message: 'The asset matches HEAD.' });
+        notify.info({ title: t`Nothing to commit`, message: t`The asset matches HEAD.` });
       }
     } catch (e) {
-      notify.error({ title: 'Commit failed', message: e instanceof Error ? e.message : String(e) });
+      notify.error({ title: t`Commit failed`, message: e instanceof Error ? e.message : String(e) });
     }
   }, [computeNodeId, workdir, file, skillName, rev]);
 
@@ -177,8 +179,8 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
         else await improve(s.sessionId);
       } else if (doImprove && !cleanGit) {
         notify.warning({
-          title: 'Improve skipped',
-          message: 'Commit/clean this asset first — Improve runs only on a clean-git asset.',
+          title: t`Improve skipped`,
+          message: t`Commit/clean this asset first — Improve runs only on a clean-git asset.`,
         });
       }
     } finally {
@@ -203,7 +205,7 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
       {/* Scan + stage controls */}
       <div className="shrink-0 space-y-2 border-b border-border p-2">
         <div className="flex items-center justify-between">
-          <span className="font-medium">Usage &amp; improvement</span>
+          <span className="font-medium"><Trans>Usage & improvement</Trans></span>
           <button
             type="button"
             onClick={() => void scan()}
@@ -211,18 +213,18 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
             className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
           >
             {scanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            {scanning ? `Scanning ${skillName} usage…` : 'Scan usage'}
+            {scanning ? t`Scanning ${skillName} usage…` : t`Scan usage`}
           </button>
         </div>
         <div className="flex items-center gap-3 text-[11px]">
           <label className="flex items-center gap-1.5">
-            <Checkbox checked={doAnalyze} onCheckedChange={(v) => setDoAnalyze(!!v)} /> Analyze
+            <Checkbox checked={doAnalyze} onCheckedChange={(v) => setDoAnalyze(!!v)} /> <Trans>Analyze</Trans>
           </label>
           <label
             className={cn('flex items-center gap-1.5', !cleanGit && 'opacity-50')}
-            title={cleanGit ? undefined : 'Commit/clean this asset to enable Improve'}
+            title={cleanGit ? undefined : t`Commit/clean this asset to enable Improve`}
           >
-            <Checkbox checked={doImprove} disabled={!cleanGit} onCheckedChange={(v) => setDoImprove(!!v)} /> Improve
+            <Checkbox checked={doImprove} disabled={!cleanGit} onCheckedChange={(v) => setDoImprove(!!v)} /> <Trans>Improve</Trans>
           </label>
           <button
             type="button"
@@ -231,7 +233,7 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
             className="ml-auto flex items-center gap-1 rounded bg-primary px-2 py-1 text-[11px] text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
             {running || pendingImprove ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-            Run
+            <Trans>Run</Trans>
           </button>
         </div>
         {!cleanGit && rev.hasRepo && (
@@ -247,13 +249,13 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
         {scanning ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
-            <span>Scanning sessions for “{skillName}”…</span>
-            <span className="text-[10px]">FSIndexer + transcript analyzer · this can take a few seconds</span>
+            <span><Trans>Scanning sessions for "{skillName}"…</Trans></span>
+            <span className="text-[10px]"><Trans>FSIndexer + transcript analyzer · this can take a few seconds</Trans></span>
           </div>
         ) : sessions === null ? (
-          <p className="p-3 text-center text-muted-foreground">Scan to find sessions that used this skill.</p>
+          <p className="p-3 text-center text-muted-foreground"><Trans>Scan to find sessions that used this skill.</Trans></p>
         ) : sessions.length === 0 ? (
-          <p className="p-3 text-center text-muted-foreground">No past sessions used “{skillName}”.</p>
+          <p className="p-3 text-center text-muted-foreground"><Trans>No past sessions used "{skillName}".</Trans></p>
         ) : (
           <>
             <p className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -293,11 +295,11 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
                 {findings.length} finding{findings.length === 1 ? '' : 's'}
               </span>
               <button type="button" onClick={openTrace} className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted">
-                <Eye className="h-3.5 w-3.5" /> Review
+                <Eye className="h-3.5 w-3.5" /> <Trans>Review</Trans>
               </button>
             </div>
           ) : (
-            <p className="text-[11px] text-muted-foreground">No analysis yet — Analyze to produce a trace.</p>
+            <p className="text-[11px] text-muted-foreground"><Trans>No analysis yet — Analyze to produce a trace.</Trans></p>
           )}
           <div className="flex items-center gap-1">
             <button
@@ -305,25 +307,25 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
               onClick={() => void launchSessionAnalysis(selected, sessions?.find((x) => x.sessionId === selected)?.workerType ?? 'claude')}
               className="flex items-center gap-1 rounded px-2 py-1 text-[11px] hover:bg-muted"
             >
-              <Activity className="h-3.5 w-3.5" /> Analyze
+              <Activity className="h-3.5 w-3.5" /> <Trans>Analyze</Trans>
             </button>
             <button
               type="button"
               onClick={() => void improve(selected)}
               disabled={!cleanGit || !findings.length}
-              title={!cleanGit ? 'Asset must be clean-git' : !findings.length ? 'No substantiated findings' : undefined}
+              title={!cleanGit ? t`Asset must be clean-git` : !findings.length ? t`No substantiated findings` : undefined}
               className="flex items-center gap-1 rounded px-2 py-1 text-[11px] hover:bg-muted disabled:opacity-50"
             >
-              <GraduationCap className="h-3.5 w-3.5" /> Improve
+              <GraduationCap className="h-3.5 w-3.5" /> <Trans>Improve</Trans>
             </button>
             <button
               type="button"
               onClick={() => void commit()}
               disabled={dirty !== true}
-              title={dirty ? 'Version-bump + commit the asset' : 'No uncommitted changes'}
+              title={dirty ? t`Version-bump + commit the asset` : t`No uncommitted changes`}
               className="flex items-center gap-1 rounded px-2 py-1 text-[11px] hover:bg-muted disabled:opacity-50"
             >
-              <GitCompare className="h-3.5 w-3.5" /> Commit
+              <GitCompare className="h-3.5 w-3.5" /> <Trans>Commit</Trans>
             </button>
           </div>
         </div>

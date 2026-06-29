@@ -7,6 +7,7 @@ import { useTheme } from 'next-themes';
 import { useMemo } from 'react';
 import { useParams } from 'react-router';
 import { useColorPalette } from '@src/hooks/useColorPalette';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface FooterProps {
   className?: string;
@@ -22,6 +23,7 @@ interface ArtifactWithMetadata {
 }
 
 export function Footer({ className = '' }: FooterProps) {
+  const { t } = useLingui();
   const { agentId } = useParams();
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId);
@@ -76,7 +78,7 @@ export function Footer({ className = '' }: FooterProps) {
 
         {/* Powered by on the right */}
         <div className="ml-auto flex items-end">
-          <span className="mr-2 text-[10px] text-muted-foreground">Powered by</span>
+          <span className="mr-2 text-[10px] text-muted-foreground"><Trans>Powered by</Trans></span>
           <a
             href="https://flowpad.ai"
             onClick={(e) => {
@@ -89,7 +91,7 @@ export function Footer({ className = '' }: FooterProps) {
           >
             <img
               src={flowpadLogo}
-              alt="Flowpad.ai Logo"
+              alt={t`Flowpad.ai Logo`}
               className={`h-4 ${resolvedTheme === 'dark' ? 'brightness-0 invert' : ''}`}
             />
           </a>

@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
 import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
@@ -19,6 +20,7 @@ import { subscribeRefresh } from './refresh-store';
  *    asked for the ancestor chain and every ancestor is expanded.
  */
 export function BrowseableTree(props: BrowseableTreeProps) {
+  const { t } = useLingui();
   const {
     roots,
     activePointer,
@@ -82,7 +84,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   }, [activePointer, activeKey, tree.expandParentsForPointer]);
 
   if (isLoading) {
-    return <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}>Loading...</div>;
+    return <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}><Trans>Loading...</Trans></div>;
   }
 
   if (error) {
@@ -92,7 +94,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   if (roots.length === 0) {
     return (
       <div className={`p-4 text-center ${className}`}>
-        {emptyState ?? <p className="text-xs text-muted-foreground">No items</p>}
+        {emptyState ?? <p className="text-xs text-muted-foreground"><Trans>No items</Trans></p>}
       </div>
     );
   }
@@ -143,6 +145,7 @@ interface RowProps {
 }
 
 function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate, dragData, onDragStart, onDragEnd }: RowProps) {
+  const { t } = useLingui();
   const expanded = tree.isExpanded(node.id);
   const loadState = tree.getLoadState(node.id);
   const children = tree.getChildren(node.id);
@@ -306,8 +309,8 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
               type="button"
               onClick={handleChevronClick}
               className="flex h-4 w-4 flex-shrink-0 items-center justify-center"
-              title={expanded ? 'Collapse' : 'Expand'}
-              aria-label={expanded ? 'Collapse' : 'Expand'}
+              title={expanded ? t`Collapse` : t`Expand`}
+              aria-label={expanded ? t`Collapse` : t`Expand`}
               data-testid={`browseable-chevron-${node.id}`}
             >
               {loadState.status === 'loading' ? (
@@ -370,17 +373,17 @@ function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate
         <div className="space-y-0.5">
           {loadState.status === 'loading' && children.length === 0 && (
             <div className="p-1 text-xs text-muted-foreground" style={{ marginLeft: `${(level + 1) * 14}px` }}>
-              Loading…
+              <Trans>Loading…</Trans>
             </div>
           )}
           {loadState.status === 'error' && (
             <div className="p-1 text-xs text-destructive" style={{ marginLeft: `${(level + 1) * 14}px` }}>
-              {loadState.message || 'Failed to load'}
+              {loadState.message || t`Failed to load`}
             </div>
           )}
           {loadState.status === 'ready' && children.length === 0 && (
             <div className="p-1 text-xs text-muted-foreground" style={{ marginLeft: `${(level + 1) * 14}px` }}>
-              Empty
+              <Trans>Empty</Trans>
             </div>
           )}
           {children.map((child) => (

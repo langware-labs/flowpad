@@ -1,6 +1,7 @@
 import { Button } from '@src/components/ui/button';
 import { Terminal as TerminalIcon, Webhook } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { Trans } from '@lingui/react/macro';
 
 interface DevMenuItem {
   path: string;
@@ -30,7 +31,7 @@ export function DevMenu() {
 
   return (
     <nav className="flex w-64 flex-col gap-2 border-r bg-background p-4">
-      <h2 className="mb-2 px-2 text-lg font-semibold text-foreground">Developer Tools</h2>
+      <h2 className="mb-2 px-2 text-lg font-semibold text-foreground"><Trans>Developer Tools</Trans></h2>
       <div className="flex flex-col gap-1">
         {DEV_MENU_ITEMS.map((item) => (
           <Button

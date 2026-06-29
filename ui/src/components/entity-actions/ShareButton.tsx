@@ -1,6 +1,7 @@
 import { Share2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface ShareButtonProps {
   onClick: () => void;
@@ -27,6 +28,8 @@ export function ShareButton({
   disabled = false,
   testId,
 }: ShareButtonProps) {
+  const { t } = useLingui();
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -41,10 +44,10 @@ export function ShareButton({
               : 'inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent',
           )}
           data-testid={testId}
-          aria-label="Share"
+          aria-label={t`Share`}
         >
           <Share2 className="h-3.5 w-3.5" />
-          {variant === 'prominent' && 'Share'}
+          {variant === 'prominent' && <Trans>Share</Trans>}
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">

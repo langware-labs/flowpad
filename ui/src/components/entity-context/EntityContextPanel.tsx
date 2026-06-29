@@ -18,6 +18,7 @@ import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ICON_BY_TYPE } from '../conversation/EntityChip';
 import { useReconcileContext } from '../conversation/useReconcileContext';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
  * Single-entity context panel. Renders the entity's merged shared+private
@@ -75,6 +76,8 @@ function dockPointerFor(typeId: TypeId, assetRef?: string | null): DockPointer |
 }
 
 export function EntityContextPanel({ entity }: EntityContextPanelProps) {
+  const { t } = useLingui();
+
   // Prune context refs gone both locally and on the hub (backend-gated to
   // local-origin holders). Fires once per entity.
   useReconcileContext(entity);
@@ -147,7 +150,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
         await spec.save(projectScopeIds);
         if (spec.id) {
           await entity.shareContextEntities(new TypeId(Spec.type, spec.id));
-          notify.success({ title: 'Plan created' });
+          notify.success({ title: t`Plan created` });
           navigation.openDock(DockPointer.forSpec(spec.id));
         }
       } else {
@@ -158,7 +161,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
         await skill.save(projectScopeIds);
         if (skill.id) {
           await entity.shareContextEntities(new TypeId(Skill.type, skill.id));
-          notify.success({ title: 'Skill created' });
+          notify.success({ title: t`Skill created` });
           if (skill.asset_ref) {
             navigation.openDock(DockPointer.forAssetEditor('skill', skill.asset_ref));
           }
@@ -189,9 +192,9 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
   return (
     <div className="space-y-4" data-testid="entity-context-panel">
       <div>
-        <SectionHeader title="Shared Context" icon={Users} />
+        <SectionHeader title={t`Shared Context`} icon={Users} />
         {sharedRows.length === 0 ? (
-          <EmptyHint text="Nothing shared on this process." />
+          <EmptyHint text={t`Nothing shared on this process.`} />
         ) : (
           <ContextTable>
             {sharedRows.map((typeId) => (
@@ -208,9 +211,9 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
       </div>
 
       <div>
-        <SectionHeader title="Private Context" icon={Lock} />
+        <SectionHeader title={t`Private Context`} icon={Lock} />
         {privateRows.length === 0 ? (
-          <EmptyHint text="Nothing in private context yet." />
+          <EmptyHint text={t`Nothing in private context yet.`} />
         ) : (
           <ContextTable>
             {privateRows.map((typeId) => (
@@ -238,7 +241,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
               onChange={(e) => setTitleDraft(e.target.value)}
               onKeyDown={onInputKey}
               disabled={adding}
-              placeholder={pending === 'spec' ? 'Plan title…' : 'Skill name…'}
+              placeholder={pending === 'spec' ? t`Plan title…` : t`Skill name…`}
               className="min-w-0 flex-1 rounded bg-background px-2 py-1 text-[11px] text-foreground outline-none"
               data-testid="entity-context-panel-title-input"
             />
@@ -248,7 +251,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
               className="rounded px-2 py-1 text-[11px] font-medium text-emerald-700 transition-colors hover:bg-emerald-500/10 disabled:opacity-50 dark:text-emerald-300"
               data-testid="entity-context-panel-title-submit"
             >
-              {adding ? 'Adding…' : 'Add'}
+              {adding ? t`Adding…` : t`Add`}
             </button>
             <button
               type="button"
@@ -257,7 +260,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
               className="rounded px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
               data-testid="entity-context-panel-title-cancel"
             >
-              Cancel
+              <Trans>Cancel</Trans>
             </button>
           </form>
         ) : (
@@ -266,13 +269,13 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
               disabled={adding}
-              title="Attach a plan or skill"
-              aria-label="Attach a plan or skill"
+              title={t`Attach a plan or skill`}
+              aria-label={t`Attach a plan or skill`}
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 py-2 text-[11px] font-medium text-muted-foreground transition-colors hover:border-emerald-500/50 hover:bg-emerald-500/5 hover:text-emerald-700 disabled:opacity-50 dark:hover:text-emerald-300"
               data-testid="entity-context-panel-add"
             >
               <Plus className="h-3.5 w-3.5" />
-              Add
+              <Trans>Add</Trans>
             </button>
             {menuOpen && (
               <div
@@ -286,7 +289,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
                   data-testid="entity-context-panel-add-spec"
                 >
                   <FileText className="h-3 w-3 text-muted-foreground" />
-                  Plan
+                  <Trans>Plan</Trans>
                 </button>
                 <button
                   type="button"
@@ -295,7 +298,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
                   data-testid="entity-context-panel-add-skill"
                 >
                   <Sparkles className="h-3 w-3 text-muted-foreground" />
-                  Skill
+                  <Trans>Skill</Trans>
                 </button>
               </div>
             )}
@@ -416,12 +419,13 @@ function ContextRow({
   typeId: TypeId;
   onOpen: (assetRef?: string | null) => void;
 }) {
+  const { t } = useLingui();
   const { data: entity } = useEntity(typeId);
   const name = entity?.displayName ?? typeId.id;
   const assetRef = (entity as unknown as { asset_ref?: string | null })?.asset_ref ?? undefined;
   const Icon = ICON_BY_TYPE[typeId.type] ?? ExternalLink;
   const isSpec = typeId.type === Spec.type;
-  const primaryLabel = isSpec ? 'View' : 'Open';
+  const primaryLabel = isSpec ? t`View` : t`Open`;
   const primaryIcon = isSpec ? <Eye className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />;
   return (
     <RowShell

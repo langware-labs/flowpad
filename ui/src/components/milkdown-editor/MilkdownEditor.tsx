@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx } from '@milkdown/core';
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react';
 import {
@@ -211,6 +212,7 @@ function LinkPopup({
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }) {
+  const { t } = useLingui();
   const { rect, mode, href } = state;
   const [value, setValue] = useState(href);
   useEffect(() => { setValue(href); }, [href, mode]);
@@ -251,7 +253,7 @@ function LinkPopup({
           <button
             type="button"
             onMouseDown={(e) => { e.preventDefault(); onApply(value.trim()); }}
-            title="Apply"
+            title={t`Apply`}
             className="flex items-center rounded px-1 py-0.5 text-xs hover:bg-muted"
             data-testid="milkdown-link-apply"
           >
@@ -260,7 +262,7 @@ function LinkPopup({
           <button
             type="button"
             onMouseDown={(e) => { e.preventDefault(); onClose(); }}
-            title="Cancel"
+            title={t`Cancel`}
             className="flex items-center rounded px-1 py-0.5 text-xs hover:bg-muted"
           >
             <X className="h-3 w-3" />
@@ -274,16 +276,16 @@ function LinkPopup({
             type="button"
             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(href); }}
             className="flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium hover:bg-muted"
-            title="Open link"
+            title={t`Open link`}
           >
             <ExternalLink className="h-3 w-3" />
-            Open
+            <Trans>Open</Trans>
           </button>
           <button
             type="button"
             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
             className="flex items-center rounded px-1 py-0.5 text-xs hover:bg-muted"
-            title="Edit link"
+            title={t`Edit link`}
             data-testid="milkdown-link-edit"
           >
             <Pencil className="h-3 w-3" />
@@ -292,7 +294,7 @@ function LinkPopup({
             type="button"
             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
             className="flex items-center rounded px-1 py-0.5 text-xs hover:bg-muted"
-            title="Remove link"
+            title={t`Remove link`}
             data-testid="milkdown-link-remove"
           >
             <Unlink className="h-3 w-3" />
@@ -501,6 +503,7 @@ function TextFormatButtons({
   activeState: ActiveState;
   onRequestLink: () => void;
 }) {
+  const { t } = useLingui();
   const [loading, get] = useInstance();
   const act = useCallback(
     (fn: (ctx: Ctx) => void) => {
@@ -515,25 +518,25 @@ function TextFormatButtons({
   return (
     <>
       <FormatButton
-        title="Bold"
+        title={t`Bold`}
         icon={<Bold className="h-3.5 w-3.5" />}
         active={bold}
         onMouseDown={(e) => { e.preventDefault(); act(callCommand(toggleStrongCommand.key)); }}
       />
       <FormatButton
-        title="Italic"
+        title={t`Italic`}
         icon={<Italic className="h-3.5 w-3.5" />}
         active={italic}
         onMouseDown={(e) => { e.preventDefault(); act(callCommand(toggleEmphasisCommand.key)); }}
       />
       <FormatButton
-        title="Inline code"
+        title={t`Inline code`}
         icon={<Code className="h-3.5 w-3.5" />}
         active={inlineCode}
         onMouseDown={(e) => { e.preventDefault(); act(callCommand(toggleInlineCodeCommand.key)); }}
       />
       <FormatButton
-        title={link ? 'Edit link' : canAddLink ? 'Add link' : 'Select text to add a link'}
+        title={link ? t`Edit link` : canAddLink ? t`Add link` : t`Select text to add a link`}
         icon={<LinkIcon className="h-3.5 w-3.5" />}
         active={link}
         disabled={!linkEnabled}
@@ -553,6 +556,7 @@ function MilkdownToolbar({
   onRequestLink: () => void;
   rightSlot?: React.ReactNode;
 }) {
+  const { t } = useLingui();
   const [loading, get] = useInstance();
 
   const act = useCallback(
@@ -594,23 +598,23 @@ function MilkdownToolbar({
     <div className="flex flex-shrink-0 items-center gap-0.5 border-b bg-muted/20 px-2 py-1">
       <TextFormatButtons activeState={activeState} onRequestLink={onRequestLink} />
       <div className="mx-1.5 h-4 w-px bg-border" />
-      {headingBtn('Normal text', <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key), headingLevel === 0 && !codeBlock)}
-      {headingBtn('Heading 1', <Heading1 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 1), headingLevel === 1)}
-      {headingBtn('Heading 2', <Heading2 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 2), headingLevel === 2)}
-      {headingBtn('Heading 3', <Heading3 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 3), headingLevel === 3)}
+      {headingBtn(t`Normal text`, <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key), headingLevel === 0 && !codeBlock)}
+      {headingBtn(t`Heading 1`, <Heading1 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 1), headingLevel === 1)}
+      {headingBtn(t`Heading 2`, <Heading2 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 2), headingLevel === 2)}
+      {headingBtn(t`Heading 3`, <Heading3 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 3), headingLevel === 3)}
       <div className="mx-1.5 h-4 w-px bg-border" />
-      {headingBtn('Bullet list', <List className="h-3.5 w-3.5" />, callCommand(wrapInBulletListCommand.key), bulletList)}
-      {headingBtn('Ordered list', <ListOrdered className="h-3.5 w-3.5" />, callCommand(wrapInOrderedListCommand.key), orderedList)}
-      {headingBtn('Code block', <SquareCode className="h-3.5 w-3.5" />, callCommand(createCodeBlockCommand.key), codeBlock)}
+      {headingBtn(t`Bullet list`, <List className="h-3.5 w-3.5" />, callCommand(wrapInBulletListCommand.key), bulletList)}
+      {headingBtn(t`Ordered list`, <ListOrdered className="h-3.5 w-3.5" />, callCommand(wrapInOrderedListCommand.key), orderedList)}
+      {headingBtn(t`Code block`, <SquareCode className="h-3.5 w-3.5" />, callCommand(createCodeBlockCommand.key), codeBlock)}
       <FormatButton
-        title="Insert table"
+        title={t`Insert table`}
         icon={<TableIcon className="h-3.5 w-3.5" />}
         testId="milkdown-toolbar-table"
         onMouseDown={(e) => { e.preventDefault(); act(callCommand(insertTableCommand.key, { row: 3, col: 3 })); }}
       />
       <div className="mx-1.5 h-4 w-px bg-border" />
       <FormatButton
-        title="Left-to-right paragraph"
+        title={t`Left-to-right paragraph`}
         icon={<ChevronsRight className="h-3.5 w-3.5" />}
         active={bidiDir === 'ltr'}
         disabled={dirDisabled}
@@ -618,7 +622,7 @@ function MilkdownToolbar({
         onMouseDown={(e) => { e.preventDefault(); if (!dirDisabled) onDirClick('ltr'); }}
       />
       <FormatButton
-        title="Right-to-left paragraph"
+        title={t`Right-to-left paragraph`}
         icon={<ChevronsLeft className="h-3.5 w-3.5" />}
         active={bidiDir === 'rtl'}
         disabled={dirDisabled}
@@ -626,7 +630,7 @@ function MilkdownToolbar({
         onMouseDown={(e) => { e.preventDefault(); if (!dirDisabled) onDirClick('rtl'); }}
       />
       <FormatButton
-        title="Auto-detect direction from first strong character"
+        title={t`Auto-detect direction from first strong character`}
         icon={<Languages className="h-3.5 w-3.5" />}
         active={bidiDir === 'auto'}
         disabled={dirDisabled}
@@ -643,7 +647,7 @@ function MilkdownToolbar({
         right side in an RTL paragraph.
       */}
       <FormatButton
-        title="Align start (left in LTR, right in RTL)"
+        title={t`Align start (left in LTR, right in RTL)`}
         icon={<AlignLeft className="h-3.5 w-3.5" />}
         active={bidiAlign === 'start'}
         disabled={alignDisabled}
@@ -651,7 +655,7 @@ function MilkdownToolbar({
         onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('start'); }}
       />
       <FormatButton
-        title="Align center"
+        title={t`Align center`}
         icon={<AlignCenter className="h-3.5 w-3.5" />}
         active={bidiAlign === 'center'}
         disabled={alignDisabled}
@@ -659,7 +663,7 @@ function MilkdownToolbar({
         onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('center'); }}
       />
       <FormatButton
-        title="Align end (right in LTR, left in RTL)"
+        title={t`Align end (right in LTR, left in RTL)`}
         icon={<AlignRight className="h-3.5 w-3.5" />}
         active={bidiAlign === 'end'}
         disabled={alignDisabled}
@@ -667,7 +671,7 @@ function MilkdownToolbar({
         onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('end'); }}
       />
       <FormatButton
-        title="Justify"
+        title={t`Justify`}
         icon={<AlignJustify className="h-3.5 w-3.5" />}
         active={bidiAlign === 'justify'}
         disabled={alignDisabled}
@@ -721,6 +725,7 @@ function SelectionToolbar({
   activeState: ActiveState;
   onRequestLink: () => void;
 }) {
+  const { t } = useLingui();
   if (!rect) return null;
   // Position the popup ~36px above the selection, flipping below if too close to top.
   const POPUP_HEIGHT = 36;
@@ -731,7 +736,7 @@ function SelectionToolbar({
   return (
     <div
       role="toolbar"
-      aria-label="Selection toolbar"
+      aria-label={t`Selection toolbar`}
       data-testid="selection-toolbar"
       style={{
         position: 'fixed',

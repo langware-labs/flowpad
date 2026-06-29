@@ -4,6 +4,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useCallback, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { type ITrigger } from '@sdk';
+import { Trans } from '@lingui/react/macro';
 import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import { useTriggers } from '@src/hooks/useTriggers';
 import { useProject } from '@src/hooks/useProject';
@@ -53,7 +54,7 @@ export function TriggersView() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading triggers...</div>
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground"><Trans>Loading triggers...</Trans></div>
     );
   }
 
@@ -65,22 +66,24 @@ export function TriggersView() {
       if (triggers.length === 0) {
         return (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
-            <p className="text-sm">No triggers yet</p>
+            <p className="text-sm"><Trans>No triggers yet</Trans></p>
             <Button variant="outline" size="sm" className="gap-2" onClick={startNewSchedule}>
               <Plus className="h-4 w-4" />
-              New Schedule Trigger
+              <Trans>New Schedule Trigger</Trans>
             </Button>
             <p className="max-w-xs text-center text-xs text-muted-foreground/70">
-              Hook triggers come from rule files under{' '}
-              <code className="rounded bg-muted px-1">~/.flow/skill_rules/</code>. FSOp triggers are installed by the
-              system or via the API.
+              <Trans>
+                Hook triggers come from rule files under{' '}
+                <code className="rounded bg-muted px-1">~/.flow/skill_rules/</code>. FSOp triggers are installed by the
+                system or via the API.
+              </Trans>
             </p>
           </div>
         );
       }
       return (
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          Select a trigger to view
+          <Trans>Select a trigger to view</Trans>
         </div>
       );
     }

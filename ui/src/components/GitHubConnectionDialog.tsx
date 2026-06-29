@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
@@ -47,6 +48,7 @@ export const GitHubConnectionDialog: React.FC<GitHubConnectionDialogProps> = ({
   defaultBranch,
   currentProject,
 }) => {
+  const { t } = useLingui();
   const [isConnecting, setIsConnecting] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
@@ -77,7 +79,7 @@ export const GitHubConnectionDialog: React.FC<GitHubConnectionDialogProps> = ({
         const branchesList = await fetchGitHubBranches(gitUrl);
 
         if (branchesList.length === 0) {
-          setBranchError('Unable to fetch branches. Please check your repository permissions.');
+          setBranchError(t`Unable to fetch branches. Please check your repository permissions.`);
         } else {
           const sortedBranches = sortBranches(branchesList, defaultBranch);
           setBranches(sortedBranches);
@@ -85,7 +87,7 @@ export const GitHubConnectionDialog: React.FC<GitHubConnectionDialogProps> = ({
         }
       } catch (error) {
         console.error('Error loading branches:', error);
-        setBranchError('Failed to load branches from the repository.');
+        setBranchError(t`Failed to load branches from the repository.`);
       } finally {
         setIsLoadingBranches(false);
       }
@@ -127,17 +129,19 @@ export const GitHubConnectionDialog: React.FC<GitHubConnectionDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Github className="h-5 w-5" />
-            Connect to GitHub
+            <Trans>Connect to GitHub</Trans>
           </DialogTitle>
           <DialogDescription>
-            Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the
-            operation.
+            <Trans>
+              Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the
+              operation.
+            </Trans>
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="rounded-lg border bg-gray-50 p-4">
-            <div className="mb-2 text-sm text-gray-600">Repository URL:</div>
+            <div className="mb-2 text-sm text-gray-600"><Trans>Repository URL:</Trans></div>
             <div className="break-all font-mono text-sm">{gitUrl}</div>
           </div>
 
@@ -145,30 +149,30 @@ export const GitHubConnectionDialog: React.FC<GitHubConnectionDialogProps> = ({
             <>
               <div className="flex items-center gap-2 text-green-600">
                 <CheckCircle className="h-4 w-4" />
-                <span className="text-sm">Connected to GitHub</span>
+                <span className="text-sm"><Trans>Connected to GitHub</Trans></span>
               </div>
 
               {isLoadingBranches ? (
                 <div className="flex items-center gap-2 text-sm text-gray-600">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Loading branches...</span>
+                  <span><Trans>Loading branches...</Trans></span>
                 </div>
               ) : branchError ? (
                 <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
                   <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-red-800">Error loading branches</p>
+                    <p className="text-sm font-medium text-red-800"><Trans>Error loading branches</Trans></p>
                     <p className="text-sm text-red-700">{branchError}</p>
                   </div>
                 </div>
               ) : branches.length > 0 ? (
                 <div className="flex items-center gap-3">
                   <label htmlFor="branch-select" className="text-sm font-medium text-gray-700">
-                    Branch:
+                    <Trans>Branch:</Trans>
                   </label>
                   <Select value={selectedBranch || ''} onValueChange={setSelectedBranch}>
                     <SelectTrigger id="branch-select" className="flex-1">
-                      <SelectValue placeholder="Select a branch" />
+                      <SelectValue placeholder={t`Select a branch`} />
                     </SelectTrigger>
                     <SelectContent>
                       {branches.map((branch) => (
@@ -183,14 +187,14 @@ export const GitHubConnectionDialog: React.FC<GitHubConnectionDialogProps> = ({
             </>
           ) : (
             <div className="text-sm text-gray-600">
-              Click the button below to connect your GitHub account and continue with the repository cloning.
+              <Trans>Click the button below to connect your GitHub account and continue with the repository cloning.</Trans>
             </div>
           )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           {!isGitHubConnected && (
             <Button
@@ -202,12 +206,12 @@ export const GitHubConnectionDialog: React.FC<GitHubConnectionDialogProps> = ({
             >
               {(isConnecting || isCurrentlyConnecting) && <Loader2 className="h-4 w-4 animate-spin" />}
               <Github className="h-4 w-4" />
-              Connect to GitHub
+              <Trans>Connect to GitHub</Trans>
             </Button>
           )}
           {isGitHubConnected && (
             <Button onClick={handleContinueWithClone} disabled={!selectedBranch}>
-              Continue
+              <Trans>Continue</Trans>
             </Button>
           )}
         </DialogFooter>

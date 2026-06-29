@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { useDockNavigation } from '@src/navigation';
+import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications/notify';
 import { Loader2, Pencil, Sparkles } from 'lucide-react';
 import { useState } from 'react';
@@ -21,10 +22,11 @@ import { useState } from 'react';
  * external" button does the full navigation to the skill's page and closes.
  */
 export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
+  const { t } = useLingui();
   const content = flowData.content ?? '';
   const skillDir = parseSkillDir(content);
   const skillName = skillDir ? skillDir.replace(/\/+$/, '').split('/').pop() : null;
-  const label = skillName ? `Skill: ${skillName}` : 'System note';
+  const label = skillName ? t`Skill: ${skillName}` : t`System note`;
   const { navigation } = useDockNavigation();
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -35,7 +37,7 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
     try {
       const row = await systemTools.discoverByPath(Skill.type, skillDir);
       if (!row) {
-        notify.error({ title: 'Skill not found', message: skillName ?? skillDir });
+        notify.error({ title: t`Skill not found`, message: skillName ?? skillDir });
         return;
       }
       const rowT = row as Record<string, unknown> & { type?: string };
@@ -46,7 +48,7 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
         setOpen(false);
       }
     } catch (err) {
-      notify.error({ title: 'Could not open skill', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Could not open skill`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setOpening(false);
     }
@@ -58,7 +60,7 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
         type="button"
         disabled={!skillDir}
         onClick={() => setOpen(true)}
-        title={skillDir ? `Preview ${label}` : label}
+        title={skillDir ? t`Preview ${label}` : label}
         className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-70 disabled:hover:bg-muted/40 disabled:hover:text-muted-foreground"
       >
         <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
@@ -83,8 +85,8 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
                 size="icon"
                 onClick={() => void openEditor()}
                 disabled={opening}
-                title="Open in editor"
-                aria-label="Open in editor"
+                title={t`Open in editor`}
+                aria-label={t`Open in editor`}
               >
                 {opening ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
               </Button>

@@ -6,6 +6,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Plus } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import type { RoomTab } from '../RoomTabs';
 
 interface Props {
@@ -21,6 +22,7 @@ interface Props {
  * otherwise it navigates to the standalone asset editor.
  */
 export function NewDocButton({ projectId, onOpenTab }: Props) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [open, setOpen] = useState(false);
 
@@ -36,7 +38,7 @@ export function NewDocButton({ projectId, onOpenTab }: Props) {
       if (!trimmed || !project) return;
       try {
         const md = await Markdown.createInProject(project, trimmed);
-        notify.success({ title: 'Doc created' });
+        notify.success({ title: t`Doc created` });
         if (md.asset_ref) {
           if (onOpenTab) {
             onOpenTab({
@@ -51,7 +53,7 @@ export function NewDocButton({ projectId, onOpenTab }: Props) {
         }
       } catch (err) {
         console.error('[NewDocButton] create failed:', err);
-        notify.error({ title: 'Failed to create doc' });
+        notify.error({ title: t`Failed to create doc` });
       }
     },
     [project, navigation, onOpenTab],
@@ -67,8 +69,8 @@ export function NewDocButton({ projectId, onOpenTab }: Props) {
           e.stopPropagation();
           setOpen(true);
         }}
-        title="New doc"
-        aria-label="New doc"
+        title={t`New doc`}
+        aria-label={t`New doc`}
         className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
       >
         <Plus className="h-3.5 w-3.5" />
@@ -76,10 +78,10 @@ export function NewDocButton({ projectId, onOpenTab }: Props) {
       <InputDialog
         open={open}
         onOpenChange={setOpen}
-        title="New doc"
-        description=".claude/docs/ under this project"
-        placeholder="doc name"
-        confirmLabel="Create"
+        title={t`New doc`}
+        description={t`.claude/docs/ under this project`}
+        placeholder={t`doc name`}
+        confirmLabel={t`Create`}
         onConfirm={(name) => void handleCreate(name)}
       />
     </>

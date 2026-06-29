@@ -9,6 +9,7 @@
 
 import { cn } from '@src/lib/utils';
 import { X } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 import type { MemoryArtifact, StepHistory, StepViewModel, ViewMode } from '../data/types';
 import { BudgetCard } from './BudgetCard';
@@ -55,6 +56,8 @@ export function StepDetailPane({
   viewMode,
   onClose,
 }: StepDetailPaneProps) {
+  const { t } = useLingui();
+
   if (!step) {
     return (
       <div
@@ -62,7 +65,7 @@ export function StepDetailPane({
         data-state="empty"
         className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground"
       >
-        Select a step on the left to see why it passed or failed.
+        <Trans>Select a step on the left to see why it passed or failed.</Trans>
       </div>
     );
   }
@@ -80,13 +83,13 @@ export function StepDetailPane({
       <header className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            Step at line {step.line}
+            <Trans>Step at line {step.line}</Trans>
           </div>
           <h3 className="mt-0.5 truncate text-sm font-medium">{step.step_text}</h3>
         </div>
         <button
           type="button"
-          aria-label="Close"
+          aria-label={t`Close`}
           onClick={onClose}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted"
         >
@@ -96,7 +99,7 @@ export function StepDetailPane({
 
       <section className="grid grid-cols-2 gap-3 text-xs tabular-nums">
         <Stat
-          label="Status"
+          label={t`Status`}
           value={step.status}
           tone={
             step.status === 'error'
@@ -106,16 +109,16 @@ export function StepDetailPane({
                 : 'ok'
           }
         />
-        <Stat label="Duration" value={fmtMs(step.duration_ms)} />
+        <Stat label={t`Duration`} value={fmtMs(step.duration_ms)} />
         <Stat
-          label="Cost"
+          label={t`Cost`}
           value={
             typeof step.cost_usd === 'number'
               ? `$${step.cost_usd.toFixed(step.cost_usd < 0.01 ? 4 : step.cost_usd < 1 ? 3 : 2)}`
               : '—'
           }
         />
-        <Stat label="History" value={runCount > 0 ? `${runCount} run${runCount > 1 ? 's' : ''}` : '—'} />
+        <Stat label={t`History`} value={runCount > 0 ? `${runCount} run${runCount > 1 ? 's' : ''}` : '—'} />
       </section>
 
       {(actualMs !== undefined || thresholdMs !== undefined) && (

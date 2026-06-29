@@ -11,6 +11,7 @@ import { ViewType } from '@src/types/ViewType';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@src/components/ui/sidebar';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
+import { useLingui } from '@lingui/react/macro';
 import {
   ArrowLeft,
   BadgeCheck,
@@ -64,49 +65,6 @@ type NavItem = {
   vis: NavVisMap;
 };
 
-const navItems: readonly NavItem[] = [
-  { title: 'Home', icon: Home, viewType: null, vis: ALL_VISIBLE },
-  { title: 'Chats', icon: MessageSquare, viewType: ViewType.SHELL, vis: ALL_VISIBLE },
-  { title: 'Inbox', icon: Inbox, viewType: ViewType.INBOX, vis: ALL_VISIBLE },
-  // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW, vis: ALL_VISIBLE },
-  {
-    title: 'Assets',
-    icon: BookOpen,
-    viewType: ViewType.ASSETS,
-    vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'visible', [ViewMode.Dev]: 'visible' },
-  },
-  // { title: 'Editor', icon: Code, viewType: ViewType.EDITOR, vis: ALL_VISIBLE },
-  {
-    title: 'Triggers',
-    icon: Zap,
-    viewType: ViewType.TRIGGERS,
-    vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
-  },
-  {
-    title: 'Hooks',
-    icon: Webhook,
-    viewType: ViewType.HOOKS,
-    vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
-  },
-  {
-    title: 'Files',
-    icon: FolderOpen,
-    viewType: ViewType.EXPLORER,
-    vis: { [ViewMode.Standard]: 'collapsed', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
-  },
-  {
-    title: 'Capabilities',
-    icon: BadgeCheck,
-    viewType: ViewType.CAPABILITIES,
-    vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'hidden', [ViewMode.Dev]: 'collapsed' },
-  },
-  // { title: 'Environment', icon: Variable, viewType: ViewType.ENVIRONMENT, vis: ALL_VISIBLE },
-  // { title: 'Web App', icon: Globe, viewType: ViewType.WEB_APP, vis: ALL_VISIBLE },
-  // { title: 'Connections', icon: LogIn, viewType: ViewType.CONNECTIONS, vis: ALL_VISIBLE },
-  // { title: 'API Keys', icon: KeyRound, viewType: ViewType.API_KEYS, vis: ALL_VISIBLE },
-  // { title: 'AI Configuration', icon: Settings, viewType: ViewType.AI_CONFIG, vis: ALL_VISIBLE },
-  // { title: 'Machine', icon: Cpu, viewType: ViewType.MACHINE, vis: ALL_VISIBLE },
-];
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
@@ -119,6 +77,51 @@ export function CollapsedSidebar() {
   const devMode = useDevMode();
   const { unreadCount } = useInboxStore();
   const viewMode = useViewMode();
+  const { t } = useLingui();
+
+  const navItems: readonly NavItem[] = [
+    { title: t`Home`, icon: Home, viewType: null, vis: ALL_VISIBLE },
+    { title: t`Chats`, icon: MessageSquare, viewType: ViewType.SHELL, vis: ALL_VISIBLE },
+    { title: t`Inbox`, icon: Inbox, viewType: ViewType.INBOX, vis: ALL_VISIBLE },
+    // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW, vis: ALL_VISIBLE },
+    {
+      title: t`Assets`,
+      icon: BookOpen,
+      viewType: ViewType.ASSETS,
+      vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'visible', [ViewMode.Dev]: 'visible' },
+    },
+    // { title: 'Editor', icon: Code, viewType: ViewType.EDITOR, vis: ALL_VISIBLE },
+    {
+      title: t`Triggers`,
+      icon: Zap,
+      viewType: ViewType.TRIGGERS,
+      vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
+    },
+    {
+      title: t`Hooks`,
+      icon: Webhook,
+      viewType: ViewType.HOOKS,
+      vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
+    },
+    {
+      title: t`Files`,
+      icon: FolderOpen,
+      viewType: ViewType.EXPLORER,
+      vis: { [ViewMode.Standard]: 'collapsed', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
+    },
+    {
+      title: t`Capabilities`,
+      icon: BadgeCheck,
+      viewType: ViewType.CAPABILITIES,
+      vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'hidden', [ViewMode.Dev]: 'collapsed' },
+    },
+    // { title: 'Environment', icon: Variable, viewType: ViewType.ENVIRONMENT, vis: ALL_VISIBLE },
+    // { title: 'Web App', icon: Globe, viewType: ViewType.WEB_APP, vis: ALL_VISIBLE },
+    // { title: 'Connections', icon: LogIn, viewType: ViewType.CONNECTIONS, vis: ALL_VISIBLE },
+    // { title: 'API Keys', icon: KeyRound, viewType: ViewType.API_KEYS, vis: ALL_VISIBLE },
+    // { title: 'AI Configuration', icon: Settings, viewType: ViewType.AI_CONFIG, vis: ALL_VISIBLE },
+    // { title: 'Machine', icon: Cpu, viewType: ViewType.MACHINE, vis: ALL_VISIBLE },
+  ];
 
   // Partition the nav config by the current view mode: 'visible' items ride the
   // top rail, 'collapsed' items live behind the chevron expander, 'hidden' drop.
@@ -189,7 +192,7 @@ export function CollapsedSidebar() {
           <SidebarMenu>
             <SidebarMenuItem className="flex flex-row">
               <SidebarMenuButton
-                tooltip="Back"
+                tooltip={t`Back`}
                 onClick={goBack}
                 disabled={!canGoBack}
                 className="h-6 w-1/2 justify-center px-0"
@@ -197,7 +200,7 @@ export function CollapsedSidebar() {
                 <ArrowLeft className="h-3 w-3" />
               </SidebarMenuButton>
               <SidebarMenuButton
-                tooltip="Refresh"
+                tooltip={t`Refresh`}
                 onClick={() => window.location.reload()}
                 className="h-6 w-1/2 justify-center px-0"
               >
@@ -215,7 +218,7 @@ export function CollapsedSidebar() {
             <DevOnly reserve={false}>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  tooltip="Discover"
+                  tooltip={t`Discover`}
                   isActive={onDiscover}
                   onClick={() => void navigate('/discover')}
                   className="relative w-full justify-center px-2"
@@ -284,7 +287,7 @@ export function CollapsedSidebar() {
             size="icon"
             className="h-8 w-8 text-orange-500 ring-1 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse"
             onClick={() => window.setDev(false)}
-            title="Dev mode ON — click to disable"
+            title={t`Dev mode ON — click to disable`}
           >
             <Bug className="h-4 w-4" />
           </Button>
@@ -294,7 +297,7 @@ export function CollapsedSidebar() {
           size="icon"
           className="h-8 w-8"
           onClick={() => useSpotlightStore.getState().openSpotlight()}
-          title="Search (⌘K)"
+          title={t`Search (⌘K)`}
           data-testid="sidebar-search-button"
         >
           <Search className="h-4 w-4" />

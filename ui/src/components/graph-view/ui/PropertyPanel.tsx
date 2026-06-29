@@ -1,4 +1,5 @@
 import { MousePointer2, Target } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { EntityIcon } from './EntityIcon';
 import { hexForType } from './typeColors';
 import type { NodeData } from '../graph/graphEngine';
@@ -14,6 +15,8 @@ type Props = {
 };
 
 export function PropertyPanel({ node, localRootKey, onNeighborClick, onFocus }: Props) {
+  const { t } = useLingui();
+
   if (!node) {
     return (
       <aside className="property-panel">
@@ -22,9 +25,7 @@ export function PropertyPanel({ node, localRootKey, onNeighborClick, onFocus }: 
             <MousePointer2 size={26} />
           </div>
           <p className="hint">
-            Click a node to view its properties,
-            <br />
-            edges, and neighbors.
+            <Trans>Click a node to view its properties,<br />edges, and neighbors.</Trans>
           </p>
         </div>
       </aside>
@@ -42,7 +43,7 @@ export function PropertyPanel({ node, localRootKey, onNeighborClick, onFocus }: 
               <EntityIcon type={node.type} size={20} />
             </div>
             <span className="type-pill" style={{ color: pillColor }}>{node.type}</span>
-            {node.isGhost && <span className="ghost-badge" title="referenced but not in entities table">ghost</span>}
+            {node.isGhost && <span className="ghost-badge" title={t`referenced but not in entities table`}><Trans>ghost</Trans></span>}
           </div>
           <h2 title={node.label}>{node.label}</h2>
           <button
@@ -50,15 +51,15 @@ export function PropertyPanel({ node, localRootKey, onNeighborClick, onFocus }: 
             className="focus-btn"
             onClick={() => onFocus(node.key)}
             disabled={localRootKey === node.key}
-            title={localRootKey === node.key ? 'Already focused' : 'Focus local graph here'}
+            title={localRootKey === node.key ? t`Already focused` : t`Focus local graph here`}
           >
             <Target size={12} />
-            {localRootKey === node.key ? 'Focused' : 'Focus local graph'}
+            {localRootKey === node.key ? <Trans>Focused</Trans> : <Trans>Focus local graph</Trans>}
           </button>
         </div>
 
         <div className="section">
-          <h3>Identity</h3>
+          <h3><Trans>Identity</Trans></h3>
           <div className="kv-row"><span className="k">type</span><span className="v">{node.type}</span></div>
           <div className="kv-row"><span className="k">id</span><span className="v">{node.id}</span></div>
           <div className="kv-row"><span className="k">community</span><span className="v">{node.community}</span></div>
@@ -66,9 +67,9 @@ export function PropertyPanel({ node, localRootKey, onNeighborClick, onFocus }: 
         </div>
 
         <div className="section">
-          <h3>Edges by kind</h3>
+          <h3><Trans>Edges by kind</Trans></h3>
           {Object.keys(node.edgeCounts).length === 0 && (
-            <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>no edges</p>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)' }}><Trans>no edges</Trans></p>
           )}
           {Object.entries(node.edgeCounts).map(([kind, n]) => (
             <div key={kind} className="edge-kind-row">
@@ -84,7 +85,7 @@ export function PropertyPanel({ node, localRootKey, onNeighborClick, onFocus }: 
 
         {node.neighbors.length > 0 && (
           <div className="section">
-            <h3>Neighbors ({node.neighbors.length})</h3>
+            <h3><Trans>Neighbors (<span>{node.neighbors.length}</span>)</Trans></h3>
             {node.neighbors.slice(0, 20).map((n) => (
               <div
                 key={n.key + n.edgeKind}

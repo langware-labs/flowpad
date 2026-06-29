@@ -27,6 +27,7 @@ import {
   Webhook,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 // ---------------------------------------------------------------------------
 // Filter persistence (shared keys with EventSnifferChip)
@@ -105,6 +106,7 @@ const FILTER_LABEL = 'text-[10px] font-semibold text-foreground';
 // ---------------------------------------------------------------------------
 
 export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, selectedTimestamp }: Props) {
+  const { t } = useLingui();
   const { events, clear, maxEvents, setMaxEvents } = useSnifferContext();
   const { navigation } = useDockNavigation();
   const { mask, setFilter, removeFilter, clearAll: clearMask } = useEventFilterMask();
@@ -322,14 +324,14 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-border px-4 py-2">
         <Radio className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">Events</span>
+        <span className="text-sm font-medium"><Trans>Events</Trans></span>
         <Badge variant="secondary" className="text-[10px]">
           {filteredEvents.length}
         </Badge>
 
         {/* Max events slider */}
         <div className="flex items-center gap-1.5">
-          <span className={FILTER_LABEL}>Limit</span>
+          <span className={FILTER_LABEL}><Trans>Limit</Trans></span>
           <input
             type="range"
             min={10}
@@ -347,7 +349,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
 
           {/* Scope filter */}
           <div className="flex items-center gap-1.5">
-            <span className={FILTER_LABEL}>Scope</span>
+            <span className={FILTER_LABEL}><Trans>Scope</Trans></span>
             <div className="flex items-center rounded-md border bg-muted/50">
               {([SnifferScope.All, SnifferScope.Project]).map((value, i) => (
                 <button
@@ -362,7 +364,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                   )}
                   onClick={() => handleFilterChange({ scope: value })}
                 >
-                  {value}
+                  <Trans>{value}</Trans>
                 </button>
               ))}
             </div>
@@ -372,7 +374,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
 
           {/* Layer filter */}
           <div className="flex items-center gap-1.5">
-            <span className={FILTER_LABEL}>Layers</span>
+            <span className={FILTER_LABEL}><Trans>Layers</Trans></span>
             <div className="flex items-center gap-1">
               {ALL_LAYERS.map((layer) => {
                 const isActive = activeLayers.includes(layer);
@@ -399,7 +401,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                   setFilters((prev) => ({ ...prev, layers: undefined }));
                 }}
               >
-                all
+                <Trans>all</Trans>
               </button>
               <button
                 className="px-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -408,7 +410,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                   setFilters((prev) => ({ ...prev, layers: [] }));
                 }}
               >
-                none
+                <Trans>none</Trans>
               </button>
             </div>
           </div>
@@ -425,7 +427,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
               onClick={() => navigation.openLens('heartbeat', 'events', 'live')}
             >
               <List className="h-3 w-3" />
-              List
+              <Trans>List</Trans>
             </button>
             <button
               className={cn(
@@ -435,7 +437,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
               onClick={() => navigation.openLens('heartbeat', 'events', 'json')}
             >
               <Braces className="h-3 w-3" />
-              JSON
+              <Trans>JSON</Trans>
             </button>
           </div>
 
@@ -444,7 +446,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
           {/* Clear */}
           <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-[10px]" onClick={() => clear()}>
             <Trash2 className="h-3 w-3" />
-            Clear
+            <Trans>Clear</Trans>
           </Button>
         </div>
       </div>
@@ -459,7 +461,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
           <button
             className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             onClick={handleCopyPath}
-            title="Copy transcript path"
+            title={t`Copy transcript path`}
           >
             {copiedPath ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
           </button>
@@ -472,7 +474,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
           <div className="sticky top-0 z-10 flex items-center justify-end border-b border-border bg-background/80 px-4 py-1.5 backdrop-blur-sm">
             <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-[10px]" onClick={handleCopyJson}>
               {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? t`Copied` : t`Copy`}
             </Button>
           </div>
           <pre className="whitespace-pre-wrap break-all p-4 font-mono text-[11px] leading-relaxed text-muted-foreground">
@@ -483,7 +485,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
           {displayEvents.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              No events captured
+              <Trans>No events captured</Trans>
             </div>
           ) : (
             <div className="divide-y divide-border">
@@ -537,14 +539,14 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                             e.stopPropagation();
                             if (event.session_id) setFilter('session_id', event.session_id);
                           }}
-                          title="Filter by session"
+                          title={t`Filter by session`}
                         >
                           <Crosshair className="h-3.5 w-3.5" />
                         </button>
                         <button
                           className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                           onClick={(e) => handleCopyEvent(e, event)}
-                          title="Copy event JSON"
+                          title={t`Copy event JSON`}
                         >
                           {copiedEventId === event.id ? (
                             <Check className="h-3.5 w-3.5 text-green-500" />
@@ -564,7 +566,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                           )}
                           disabled={!event.transcriptDockPointer}
                           onClick={(e) => handleTranscriptClick(e, event)}
-                          title="View transcript"
+                          title={t`View transcript`}
                         >
                           <FileText className="h-3.5 w-3.5" />
                         </button>
@@ -577,7 +579,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                           )}
                           disabled={!event.hook_entry_id}
                           onClick={(e) => handleHookClick(e, event)}
-                          title="View hook"
+                          title={t`View hook`}
                         >
                           <Webhook className="h-3.5 w-3.5" />
                         </button>
@@ -590,7 +592,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                           )}
                           disabled={!event.triggerLogDockPointer}
                           onClick={(e) => handleTriggerLogClick(e, event)}
-                          title="View trigger log"
+                          title={t`View trigger log`}
                         >
                           <ScrollText className="h-3.5 w-3.5" />
                         </button>

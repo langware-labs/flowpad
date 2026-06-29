@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { AgenticProcess, MarkdownDoc } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -74,6 +75,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   switching = false,
   toggleEnabled = true,
 }) => {
+  const { t } = useLingui();
   const isAdvanced = useIsAdvanced();
   // Skin layer: in Standard view, power-user tabs (flagged advancedOnly on
   // their SIDE_TABS descriptor) and the Prompt Library button are hidden,
@@ -82,10 +84,10 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   // Single source for the toggle's label — reused by both the aria-label and the
   // tooltip (the latter overlays 'Switching…' while a switch is in flight).
   const toggleLabel = !toggleEnabled
-    ? 'Available when the agent is waiting for your input'
+    ? t`Available when the agent is waiting for your input`
     : chatActive
-      ? 'Switch to terminal view'
-      : 'Switch to chat view';
+      ? t`Switch to terminal view`
+      : t`Switch to chat view`;
   return (
     <div className="flex flex-col border-t bg-muted/30">
       {/* Top tier: chat composer (Standard/chat only) — one ribbon, not two rows. */}
@@ -120,7 +122,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs">
-                {switching ? 'Switching…' : toggleLabel}
+                {switching ? t`Switching…` : toggleLabel}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -138,11 +140,11 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                   className="h-6 gap-1.5 px-2 text-[11px] text-blue-400 border-blue-400/40 hover:border-blue-400 hover:text-blue-300"
                 >
                   <FileText className="h-3.5 w-3.5" />
-                  Open Plan
+                  <Trans>Open Plan</Trans>
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs">
-                Open the latest plan
+                <Trans>Open the latest plan</Trans>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -217,8 +219,8 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                   variant="ghost"
                   size="sm"
                   className="h-7 w-7 p-0"
-                  aria-label="Prompt Library"
-                  title="Prompt Library — click a prompt to add it to the queue"
+                  aria-label={t`Prompt Library`}
+                  title={t`Prompt Library — click a prompt to add it to the queue`}
                 >
                   <BookMarked className="h-4 w-4" />
                 </Button>
@@ -244,6 +246,7 @@ const MarkdownDocsChip: React.FC<{
   docs: MarkdownDoc[];
   onOpen: (path: string) => void;
 }> = ({ docs, onOpen }) => {
+  const { t } = useLingui();
   const latest = docs[docs.length - 1];
   const hasMore = docs.length > 1;
   return (
@@ -266,7 +269,7 @@ const MarkdownDocsChip: React.FC<{
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">
-            Open the latest doc
+            <Trans>Open the latest doc</Trans>
           </TooltipContent>
         </Tooltip>
         {hasMore && (
@@ -275,7 +278,7 @@ const MarkdownDocsChip: React.FC<{
               <Button
                 variant="outline"
                 size="sm"
-                aria-label="Choose a doc to open"
+                aria-label={t`Choose a doc to open`}
                 className={cn(DOC_CHIP_CLASSES, 'rounded-l-none px-1')}
               >
                 <ChevronDown className="h-3.5 w-3.5" />
@@ -293,7 +296,7 @@ const MarkdownDocsChip: React.FC<{
                     <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                     <span className="min-w-0 flex-1 truncate text-xs text-foreground">{doc.name}</span>
                     <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
-                      {doc.change === 'create' ? 'new' : 'edit'}
+                      {doc.change === 'create' ? t`new` : t`edit`}
                     </span>
                   </button>
                 ))}

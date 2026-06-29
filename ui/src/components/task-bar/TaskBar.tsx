@@ -15,6 +15,7 @@ import { ViewType } from '@src/types/ViewType';
 import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useTaskMutations } from '@src/hooks/use-task-mutations';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 import { TaskStatusTabs } from './TaskStatusTabs';
 import { TaskCard } from './TaskCard';
@@ -25,6 +26,7 @@ import { BULK_SELECT_MIN_TASKS, isTaskActive, isTaskArchived, isTaskPending, typ
 import './TaskBar.css';
 
 export function TaskBar() {
+  const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
 
   const [selectedTab, setSelectedTab] = useState<TaskTab>('active');
@@ -203,7 +205,7 @@ export function TaskBar() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold">Tasks</h3>
+          <h3 className="text-sm font-semibold"><Trans>Tasks</Trans></h3>
           {tabFiltered.length > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               {tabFiltered.length}
@@ -214,7 +216,7 @@ export function TaskBar() {
           <button
             onClick={handleCreate}
             className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            title="New task"
+            title={t`New task`}
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -235,7 +237,7 @@ export function TaskBar() {
               <RemoveIcon className="h-3.5 w-3.5" />
             </button>
             <BulkReminderButton onSetReminder={(date) => setConfirmBulkReminder(date)} />
-            <button className="task-card-action" title="Exit bulk select" onClick={exitBulkMode}>
+            <button className="task-card-action" title={t`Exit bulk select`} onClick={exitBulkMode}>
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -251,14 +253,14 @@ export function TaskBar() {
         <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <input
           className="task-bar-search-input"
-          placeholder="Search tasks..."
+          placeholder={t`Search tasks...`}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         {showBulkSelectButton && (
           <button
             className={`task-bar-bulk-toggle ${bulkMode ? 'active' : ''}`}
-            title={bulkMode ? 'Exit select mode' : 'Select multiple'}
+            title={bulkMode ? t`Exit select mode` : t`Select multiple`}
             onClick={toggleBulkMode}
           >
             <CheckSquare className="h-3.5 w-3.5" />
@@ -326,7 +328,7 @@ export function TaskBar() {
         }}
         title={`Set reminder for ${selectedIds.size} task${selectedIds.size === 1 ? '' : 's'}`}
         description={`Are you sure you want to set a reminder for ${selectedIds.size} selected task${selectedIds.size === 1 ? '' : 's'}?`}
-        confirmLabel="Set reminder"
+        confirmLabel={t`Set reminder`}
         onConfirm={() => {
           if (confirmBulkReminder) void executeBulkReminder(confirmBulkReminder);
         }}
@@ -372,6 +374,7 @@ export interface AutomationsProps {
 export type ActivationsProps = AutomationsProps;
 
 function AutomationCard({ item, onDelete }: { item: AutomationItem; onDelete?: () => void }) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const Icon = AUTOMATION_ICONS[item.kind];
   const colorClass = AUTOMATION_COLORS[item.kind];
@@ -405,7 +408,7 @@ function AutomationCard({ item, onDelete }: { item: AutomationItem; onDelete?: (
         <div className="automation-card-actions">
           <button
             className="automation-card-archive"
-            title="Delete"
+            title={t`Delete`}
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
@@ -427,6 +430,7 @@ export function Automations({
   onDeleteTrigger,
   onClearCounters,
 }: AutomationsProps) {
+  const { t } = useLingui();
   const [search, setSearch] = useState('');
   const [pendingDelete, setPendingDelete] = useState<AutomationItem | null>(null);
 
@@ -486,7 +490,7 @@ export function Automations({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold">Automations</h3>
+          <h3 className="text-sm font-semibold"><Trans>Automations</Trans></h3>
           {filtered.length > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               {filtered.length}
@@ -496,7 +500,7 @@ export function Automations({
         {onClearCounters && (
           <button
             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            title="Clear all counters"
+            title={t`Clear all counters`}
             onClick={onClearCounters}
           >
             <RotateCcw className="h-3.5 w-3.5" />
@@ -509,7 +513,7 @@ export function Automations({
         <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <input
           className="task-bar-search-input"
-          placeholder="Search automations..."
+          placeholder={t`Search automations...`}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -519,7 +523,7 @@ export function Automations({
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {filtered.length === 0 ? (
           <div className="task-bar-empty">
-            <span>{search.trim() ? 'No matching automations' : 'No automations yet'}</span>
+            <span>{search.trim() ? <Trans>No matching automations</Trans> : <Trans>No automations yet</Trans>}</span>
           </div>
         ) : (
           <div className="space-y-0.5">
@@ -540,7 +544,7 @@ export function Automations({
         onOpenChange={(open) => !open && setPendingDelete(null)}
         title={`Delete ${pendingDelete?.kind}?`}
         description={`This will permanently delete "${pendingDelete?.name}". This cannot be undone.`}
-        confirmLabel="Delete"
+        confirmLabel={t`Delete`}
         variant="destructive"
         onConfirm={() => pendingDelete && handleDelete(pendingDelete)}
       />

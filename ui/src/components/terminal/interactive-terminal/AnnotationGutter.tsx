@@ -8,6 +8,7 @@ import { useDockNavigation } from '@src/navigation';
 import { APIEntity } from '@sdk/APIEntity';
 import { useContext } from '@sdk/react/hooks';
 import React, { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { AnnotationElement, AnnotationElementKind } from './use-annotation-gutter';
 
 interface AnnotationGutterProps {
@@ -85,7 +86,7 @@ function CoordLabel({ children, title }: { children: React.ReactNode; title: str
 /** Hover tooltip body shown above an annotation gutter icon. */
 function AnnotationTooltipBody({ group }: { group: AnnotationElement[] }) {
   if (group.length === 0) {
-    return <span className="text-xs">Click to add annotation</span>;
+    return <span className="text-xs"><Trans>Click to add annotation</Trans></span>;
   }
 
   const items = group.length <= 3 ? group : [...group.slice(-2)];
@@ -94,7 +95,7 @@ function AnnotationTooltipBody({ group }: { group: AnnotationElement[] }) {
   return (
     <div className="space-y-1.5">
       {hiddenCount > 0 && (
-        <p className="text-[10px] text-primary-foreground/60">+{hiddenCount} more…</p>
+        <p className="text-[10px] text-primary-foreground/60"><Trans>+{hiddenCount} more…</Trans></p>
       )}
       {items.map((el, i) => {
         const Icon = getElementIcon(el.kind);
@@ -117,7 +118,7 @@ function AnnotationTooltipBody({ group }: { group: AnnotationElement[] }) {
             <div className="flex items-center gap-1.5">
               <Icon className={cn('h-3 w-3 shrink-0', color)} />
               <span className="text-[10px] font-semibold text-primary-foreground">{label}</span>
-              <span className="ml-auto font-mono text-[10px] text-primary-foreground/70">line {el.absRow}</span>
+              <span className="ml-auto font-mono text-[10px] text-primary-foreground/70"><Trans>line {el.absRow}</Trans></span>
             </div>
             {/* Content preview */}
             {content && (
@@ -127,31 +128,31 @@ function AnnotationTooltipBody({ group }: { group: AnnotationElement[] }) {
             <div className="rounded border border-primary-foreground/20 bg-primary-foreground/10 px-1.5 py-1 font-mono text-[9px] leading-relaxed space-y-0.5">
               {dataLine !== undefined && (
                 <div className="flex justify-between gap-3">
-                  <span className="text-primary-foreground/60">stored line</span>
-                  <span className="text-primary-foreground">{dataLine}{dataLine !== el.absRow ? <span className="ml-1 text-yellow-400">→ {el.absRow} (drifted)</span> : null}</span>
+                  <span className="text-primary-foreground/60"><Trans>stored line</Trans></span>
+                  <span className="text-primary-foreground">{dataLine}{dataLine !== el.absRow ? <span className="ml-1 text-yellow-400"><Trans>→ {el.absRow} (drifted)</Trans></span> : null}</span>
                 </div>
               )}
               {seq !== undefined && (
                 <div className="flex justify-between gap-3">
-                  <span className="text-primary-foreground/60">anchor</span>
+                  <span className="text-primary-foreground/60"><Trans>anchor</Trans></span>
                   <span className="text-primary-foreground">seq {seq} Δ {(seqOffset ?? 0) >= 0 ? `+${seqOffset ?? 0}` : seqOffset ?? 0}</span>
                 </div>
               )}
               {ts && (
                 <div className="flex justify-between gap-3">
-                  <span className="text-primary-foreground/60">created</span>
+                  <span className="text-primary-foreground/60"><Trans>created</Trans></span>
                   <span className="text-primary-foreground">{fmtDate(ts)} <span className="text-primary-foreground/60">({relTime(ts)})</span></span>
                 </div>
               )}
               {sessionId && (
                 <div className="flex justify-between gap-3">
-                  <span className="text-primary-foreground/60">session</span>
+                  <span className="text-primary-foreground/60"><Trans>session</Trans></span>
                   <span className="truncate max-w-[120px] text-primary-foreground" title={sessionId}>{sessionId.slice(0, 8)}…</span>
                 </div>
               )}
               {filePath && (
                 <div className="flex justify-between gap-3">
-                  <span className="text-primary-foreground/60">plan file</span>
+                  <span className="text-primary-foreground/60"><Trans>plan file</Trans></span>
                   <span className="truncate max-w-[120px] text-primary-foreground">{filePath.split('/').pop()}</span>
                 </div>
               )}
@@ -228,6 +229,7 @@ export function AnnotationIndexSquare({
   scrollToLine: (absoluteLine: number) => void;
   triggerClassName?: string;
 }) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { agenticProcessTypeId } = useContext();
   const [open, setOpen] = useState(false);
@@ -241,7 +243,7 @@ export function AnnotationIndexSquare({
   if (bookmarkCount > 0) tooltipParts.push(`${bookmarkCount} bookmark${bookmarkCount === 1 ? '' : 's'}`);
   if (commentCount > 0) tooltipParts.push(`${commentCount} comment${commentCount === 1 ? '' : 's'}`);
   if (promptCount > 0) tooltipParts.push(`${promptCount} prompt${promptCount === 1 ? '' : 's'}`);
-  const tooltipText = total === 0 ? 'No annotations yet' : tooltipParts.join(', ');
+  const tooltipText = total === 0 ? t`No annotations yet` : tooltipParts.join(', ');
 
   const defaultTriggerClass = "absolute left-1/2 top-0 z-10 flex -translate-x-1/2 cursor-pointer items-center justify-center rounded bg-muted/60 hover:bg-muted";
 
@@ -260,10 +262,10 @@ export function AnnotationIndexSquare({
       </PopoverTrigger>
       <PopoverContent side="left" align="start" className="w-56 p-1.5">
         <p className="mb-1 px-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Annotations
+          <Trans>Annotations</Trans>
         </p>
         {total === 0 ? (
-          <p className="px-1.5 py-1 text-xs text-muted-foreground">No annotations yet</p>
+          <p className="px-1.5 py-1 text-xs text-muted-foreground"><Trans>No annotations yet</Trans></p>
         ) : (
           <div className="flex flex-col gap-0.5">
             {elements.map((el, i) => {
@@ -323,6 +325,7 @@ function AnnotationCell({
   deleteBookmark,
   onHoverRow,
 }: AnnotationCellProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { agenticProcessTypeId } = useContext();
   const [open, setOpen] = useState(false);
@@ -404,7 +407,7 @@ function AnnotationCell({
       if (createType === null) {
         return (
           <div className="flex flex-col gap-1">
-            <p className="mb-0.5 px-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Add annotation</p>
+            <p className="mb-0.5 px-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"><Trans>Add annotation</Trans></p>
             <button
               type="button"
               className="flex w-full items-center gap-2.5 rounded px-2 py-2 text-left hover:bg-accent"
@@ -412,8 +415,8 @@ function AnnotationCell({
             >
               <StickyNote className="h-4 w-4 shrink-0 text-yellow-400" />
               <div className="flex flex-col">
-                <span className="text-xs font-medium">Bookmark</span>
-                <span className="text-[10px] text-muted-foreground">Personal note, actionable item</span>
+                <span className="text-xs font-medium"><Trans>Bookmark</Trans></span>
+                <span className="text-[10px] text-muted-foreground"><Trans>Personal note, actionable item</Trans></span>
               </div>
             </button>
             <button
@@ -423,8 +426,8 @@ function AnnotationCell({
             >
               <MessageSquare className="h-4 w-4 shrink-0 text-sky-400" />
               <div className="flex flex-col">
-                <span className="text-xs font-medium">Comment</span>
-                <span className="text-[10px] text-muted-foreground">Inline remark on this line</span>
+                <span className="text-xs font-medium"><Trans>Comment</Trans></span>
+                <span className="text-[10px] text-muted-foreground"><Trans>Inline remark on this line</Trans></span>
               </div>
             </button>
           </div>
@@ -435,8 +438,8 @@ function AnnotationCell({
       const isComment = createType === 'comment';
       const FormIcon = isComment ? MessageSquare : StickyNote;
       const formIconColor = isComment ? 'text-sky-400' : 'text-yellow-400';
-      const formLabel = isComment ? 'Add Comment' : 'Add Bookmark';
-      const formPlaceholder = isComment ? 'Type a comment...' : 'Type a note...';
+      const formLabel = isComment ? t`Add Comment` : t`Add Bookmark`;
+      const formPlaceholder = isComment ? t`Type a comment...` : t`Type a note...`;
       return (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
@@ -463,7 +466,7 @@ function AnnotationCell({
           />
           <div className="flex justify-end gap-1.5">
             <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setOpen(false)}>
-              Cancel
+              <Trans>Cancel</Trans>
             </Button>
             <Button
               size="sm"
@@ -471,7 +474,7 @@ function AnnotationCell({
               disabled={!text.trim() || saving}
               onClick={() => void handleSave()}
             >
-              Save
+              <Trans>Save</Trans>
             </Button>
           </div>
         </div>
@@ -492,7 +495,7 @@ function AnnotationCell({
             className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
             onClick={() => { setSelectedEl(null); setConfirmDelete(false); setShowCoords(false); }}
           >
-            ← Back
+            <Trans>← Back</Trans>
           </button>
           {renderElementDetail(selectedEl)}
         </div>
@@ -503,7 +506,7 @@ function AnnotationCell({
     return (
       <div className="flex flex-col gap-0.5">
         <p className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {group.length} annotations on this row
+          <Trans>{group.length} annotations on this row</Trans>
         </p>
         {group.map((el, i) => {
           const Icon = getElementIcon(el.kind);
@@ -557,7 +560,7 @@ function AnnotationCell({
       <button
         type="button"
         className={cn('ml-auto flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground', showCoords && 'text-foreground')}
-        title="Show coordinates"
+        title={t`Show coordinates`}
         onClick={() => setShowCoords((v) => !v)}
       >
         <Info className="h-3.5 w-3.5" />
@@ -574,32 +577,32 @@ function AnnotationCell({
         )}
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title="Absolute row index in the terminal scroll buffer (0 = top of all output)">buffer row</CoordLabel>
+          <CoordLabel title="Absolute row index in the terminal scroll buffer (0 = top of all output)"><Trans>buffer row</Trans></CoordLabel>
           <span className="text-foreground">
             {rowDrifted
-              ? <>{storedLine} <span className="text-muted-foreground">stored →</span> <span className="text-yellow-400">{absRow} live</span></>
+              ? <>{storedLine} <span className="text-muted-foreground"><Trans>stored →</Trans></span> <span className="text-yellow-400">{absRow} <Trans>live</Trans></span></>
               : absRow}
           </span>
         </div>
         <div className="flex justify-between">
-          <CoordLabel title="PTY write-sequence anchor: seq = write sequence number, Δ = row offset from that write. Used for scroll-stable positioning when buffer scrolls.">anchor</CoordLabel>
+          <CoordLabel title="PTY write-sequence anchor: seq = write sequence number, Δ = row offset from that write. Used for scroll-stable positioning when buffer scrolls."><Trans>anchor</Trans></CoordLabel>
           <span className="text-foreground">
             {seq !== undefined
               ? <>seq {seq} <span className="text-muted-foreground">Δ</span> {sign(seqOffset ?? 0)}</>
-              : <span className="text-muted-foreground">line fallback</span>}
+              : <span className="text-muted-foreground"><Trans>line fallback</Trans></span>}
           </span>
         </div>
         <div className="flex justify-between">
-          <CoordLabel title="Row index within the currently visible viewport (0 = top visible row). viewportTopRow shows the absolute buffer row at the top of the viewport.">viewport row</CoordLabel>
+          <CoordLabel title="Row index within the currently visible viewport (0 = top visible row). viewportTopRow shows the absolute buffer row at the top of the viewport."><Trans>viewport row</Trans></CoordLabel>
           <span className="text-foreground">{row} <span className="text-muted-foreground">of [{viewportTopRow}…]</span></span>
         </div>
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title="Pixel Y offset from the top of the full scroll buffer (absRow × cellHeight). Used for absolute positioning overlays.">buffer px</CoordLabel>
+          <CoordLabel title="Pixel Y offset from the top of the full scroll buffer (absRow × cellHeight). Used for absolute positioning overlays."><Trans>buffer px</Trans></CoordLabel>
           <span className="text-foreground">{absRow} × {cellHeight} = {bufferPx}px</span>
         </div>
         <div className="flex justify-between">
-          <CoordLabel title="Pixel Y offset from the top of the visible viewport (viewportRow × cellHeight). Used for placing UI elements relative to the current view.">viewport px</CoordLabel>
+          <CoordLabel title="Pixel Y offset from the top of the visible viewport (viewportRow × cellHeight). Used for placing UI elements relative to the current view."><Trans>viewport px</Trans></CoordLabel>
           <span className="text-foreground">{row} × {cellHeight} = {viewportPx}px</span>
         </div>
       </div>
@@ -609,7 +612,7 @@ function AnnotationCell({
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-1.5">
           <StickyNote className="h-4 w-4 shrink-0 text-yellow-400" />
-          <span className="text-xs font-medium">Bookmark</span>
+          <span className="text-xs font-medium"><Trans>Bookmark</Trans></span>
           {infoButton}
         </div>
         {showCoords && coordsPanel}
@@ -617,17 +620,17 @@ function AnnotationCell({
         <div className="border-t border-border pt-2">
           {confirmDelete ? (
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Are you sure?</span>
+              <span className="text-xs text-muted-foreground"><Trans>Are you sure?</Trans></span>
               <Button size="sm" variant="destructive" className="h-6 px-2 text-xs" onClick={() => void handleDelete(el)}>
-                Confirm
+                <Trans>Confirm</Trans>
               </Button>
               <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setConfirmDelete(false)}>
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
             </div>
           ) : (
             <Button size="sm" variant="destructive" className="h-6 px-2 text-xs" onClick={() => setConfirmDelete(true)}>
-              Delete
+              <Trans>Delete</Trans>
             </Button>
           )}
         </div>
@@ -650,22 +653,22 @@ function AnnotationCell({
         )}
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title="Absolute buffer row recorded at click time">stored line</CoordLabel>
+          <CoordLabel title="Absolute buffer row recorded at click time"><Trans>stored line</Trans></CoordLabel>
           <span className="text-foreground">{storedLine ?? el.absRow}</span>
         </div>
         <div className="flex justify-between">
-          <CoordLabel title="Current resolved buffer row (may differ from stored line if terminal scrolled)">live row</CoordLabel>
+          <CoordLabel title="Current resolved buffer row (may differ from stored line if terminal scrolled)"><Trans>live row</Trans></CoordLabel>
           <span className={storedLine !== undefined && storedLine !== el.absRow ? 'text-yellow-400' : 'text-foreground'}>{el.absRow}</span>
         </div>
         {sessionId && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="Claude session ID this annotation is associated with">session</CoordLabel>
+            <CoordLabel title="Claude session ID this annotation is associated with"><Trans>session</Trans></CoordLabel>
             <span className="truncate max-w-[130px] text-foreground" title={sessionId}>{sessionId.slice(0, 8)}…</span>
           </div>
         )}
         {annotation.target_id && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="ID of the entity this annotation targets (e.g. AgenticProcess)">target</CoordLabel>
+            <CoordLabel title="ID of the entity this annotation targets (e.g. AgenticProcess)"><Trans>target</Trans></CoordLabel>
             <span className="truncate max-w-[130px] text-foreground" title={annotation.target_id}>{annotation.target_id.slice(0, 8)}…</span>
           </div>
         )}
@@ -675,11 +678,11 @@ function AnnotationCell({
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-1.5">
           <MessageSquare className="h-4 w-4 shrink-0 text-sky-400" />
-          <span className="text-xs font-medium">Comment</span>
+          <span className="text-xs font-medium"><Trans>Comment</Trans></span>
           <button
             type="button"
             className={cn('ml-auto flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground', showCoords && 'text-foreground')}
-            title="Show positioning info"
+            title={t`Show positioning info`}
             onClick={() => setShowCoords((v) => !v)}
           >
             <Info className="h-3.5 w-3.5" />
@@ -714,18 +717,18 @@ function AnnotationCell({
         )}
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title="Current resolved buffer row — prompt annotations position by text-search in xterm buffer">live row</CoordLabel>
+          <CoordLabel title="Current resolved buffer row — prompt annotations position by text-search in xterm buffer"><Trans>live row</Trans></CoordLabel>
           <span className="text-foreground">{el.absRow}</span>
         </div>
         {sessionId && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="Claude session ID from the UserPromptSubmit hook event">session</CoordLabel>
+            <CoordLabel title="Claude session ID from the UserPromptSubmit hook event"><Trans>session</Trans></CoordLabel>
             <span className="truncate max-w-[130px] text-foreground" title={sessionId}>{sessionId.slice(0, 8)}…</span>
           </div>
         )}
         {annotation.target_id && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="AgenticProcess ID this prompt annotation is linked to">target</CoordLabel>
+            <CoordLabel title="AgenticProcess ID this prompt annotation is linked to"><Trans>target</Trans></CoordLabel>
             <span className="truncate max-w-[130px] text-foreground" title={annotation.target_id}>{annotation.target_id.slice(0, 8)}…</span>
           </div>
         )}
@@ -735,11 +738,11 @@ function AnnotationCell({
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-1.5">
           <Tag className="h-4 w-4 shrink-0 text-lime-400" />
-          <span className="text-xs font-medium">Prompt Annotation</span>
+          <span className="text-xs font-medium"><Trans>Prompt Annotation</Trans></span>
           <button
             type="button"
             className={cn('ml-auto flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground', showCoords && 'text-foreground')}
-            title="Show positioning info"
+            title={t`Show positioning info`}
             onClick={() => setShowCoords((v) => !v)}
           >
             <Info className="h-3.5 w-3.5" />
@@ -775,18 +778,18 @@ function AnnotationCell({
         )}
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title="Current resolved buffer row — plan annotations position by text-search in xterm buffer">live row</CoordLabel>
+          <CoordLabel title="Current resolved buffer row — plan annotations position by text-search in xterm buffer"><Trans>live row</Trans></CoordLabel>
           <span className="text-foreground">{el.absRow}</span>
         </div>
         {sessionId && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="Claude session ID from the ExitPlanMode hook event">session</CoordLabel>
+            <CoordLabel title="Claude session ID from the ExitPlanMode hook event"><Trans>session</Trans></CoordLabel>
             <span className="truncate max-w-[130px] text-foreground" title={sessionId}>{sessionId.slice(0, 8)}…</span>
           </div>
         )}
         {filePath && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="Full path to the plan .md file written by the agent">plan file</CoordLabel>
+            <CoordLabel title="Full path to the plan .md file written by the agent"><Trans>plan file</Trans></CoordLabel>
             <span className="truncate max-w-[130px] text-foreground" title={filePath}>{filePath.split('/').pop()}</span>
           </div>
         )}
@@ -796,11 +799,11 @@ function AnnotationCell({
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-1.5">
           <FileText className="h-4 w-4 shrink-0 text-blue-400" />
-          <span className="text-xs font-medium">Plan</span>
+          <span className="text-xs font-medium"><Trans>Plan</Trans></span>
           <button
             type="button"
             className={cn('ml-auto flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground', showCoords && 'text-foreground')}
-            title="Show positioning info"
+            title={t`Show positioning info`}
             onClick={() => setShowCoords((v) => !v)}
           >
             <Info className="h-3.5 w-3.5" />

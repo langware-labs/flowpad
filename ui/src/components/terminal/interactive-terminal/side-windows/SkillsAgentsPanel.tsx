@@ -7,6 +7,7 @@ import { cn } from '@src/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { Bot, Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Entity shape this panel resolves names against — both Skill and Agent fit. */
 type NamedAsset = { name?: string; asset_ref?: string };
@@ -80,6 +81,7 @@ function dedupeByName(
  * Advanced-mode only — gated by the `advancedOnly` flag on its SIDE_TABS entry.
  */
 export function SkillsAgentsPanel({ workerType, sessionId }: Props) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { data, isLoading, error } = useTranscript({
     workerType: normalizeWorkerType(workerType),
@@ -107,28 +109,28 @@ export function SkillsAgentsPanel({ workerType, sessionId }: Props) {
   };
 
   if (!sessionId) {
-    return <Empty>No session yet</Empty>;
+    return <Empty><Trans>No session yet</Trans></Empty>;
   }
   if (isLoading && !data) {
-    return <Empty>Loading transcript…</Empty>;
+    return <Empty><Trans>Loading transcript…</Trans></Empty>;
   }
   if (error) {
-    return <Empty>Couldn’t load transcript</Empty>;
+    return <Empty><Trans>Couldn’t load transcript</Trans></Empty>;
   }
   if (skills.length === 0 && agents.length === 0) {
-    return <Empty>No skills or sub-agents used yet</Empty>;
+    return <Empty><Trans>No skills or sub-agents used yet</Trans></Empty>;
   }
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
       <Section
-        title="Skills"
+        title={t`Skills`}
         icon={Sparkles}
         items={skills}
         onOpen={(ref) => open('skill', ref)}
       />
       <Section
-        title="Sub-agents"
+        title={t`Sub-agents`}
         icon={Bot}
         items={agents}
         onOpen={(ref) => open('agent', ref)}

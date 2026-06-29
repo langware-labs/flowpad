@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import type { Project, ProjectMember } from '@sdk';
 import { systemTools } from '@sdk';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface Props {
   project: Project;
@@ -26,6 +27,7 @@ function onlineWithin(member: ProjectMember, windowMs: number): boolean {
 }
 
 export function ProjectViewHeader({ project, localMemberId }: Props) {
+  const { t } = useLingui();
   const { busy } = useSystemTools();
   const members = project.members ?? [];
   const [editing, setEditing] = useState(false);
@@ -42,7 +44,7 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
   const copy = () => {
     if (!project.session_code) return;
     void navigator.clipboard.writeText(project.session_code);
-    notify.success({ title: 'Code copied', message: project.session_code });
+    notify.success({ title: t`Code copied`, message: project.session_code });
   };
 
   const startEdit = () => {
@@ -58,10 +60,10 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
     try {
       project.name = next ?? undefined;
       await project.save();
-      notify.success({ title: 'Project renamed', message: trimmed || '(cleared)' });
+      notify.success({ title: t`Project renamed`, message: trimmed || t`(cleared)` });
     } catch (err) {
       console.error('[ProjectViewHeader] rename failed', err);
-      notify.info({ title: 'Rename failed', message: String((err as Error).message ?? err) });
+      notify.info({ title: t`Rename failed`, message: String((err as Error).message ?? err) });
     }
   };
 
@@ -93,7 +95,7 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
           type="button"
           onClick={startEdit}
           className="rounded px-1 text-sm font-medium hover:bg-muted"
-          title="Click to rename"
+          title={t`Click to rename`}
         >
           {project.displayName}
         </button>
@@ -102,7 +104,7 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
         <button
           onClick={copy}
           className="flex items-center gap-1 rounded border border-border bg-muted/40 px-2 py-0.5 font-mono text-xs text-foreground hover:bg-muted"
-          title="Copy join code"
+          title={t`Copy join code`}
         >
           <span>{project.session_code}</span>
           <Copy className="h-3 w-3" />
@@ -138,7 +140,7 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
               <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Refresh project index</TooltipContent>
+          <TooltipContent><Trans>Refresh project index</Trans></TooltipContent>
         </Tooltip>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -147,7 +149,7 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
               size="icon"
               className="h-9 w-9"
               data-testid="project-actions-menu"
-              aria-label="Project actions"
+              aria-label={t`Project actions`}
             >
               <Menu className="h-4 w-4" />
             </Button>
@@ -158,8 +160,10 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
               disabled={busy}
               data-testid="project-actions-hard-refresh"
             >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Hard refresh
+              <Trans>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Hard refresh
+              </Trans>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

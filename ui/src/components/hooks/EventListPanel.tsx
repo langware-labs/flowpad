@@ -1,6 +1,7 @@
 import type { SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import { SnifferScope, SnifferLevel, type PipelineFilters } from '@src/hooks/use-sniffer-pipeline';
 import type { FilterMask } from '@src/hooks/use-event-filter-mask';
+import { Trans } from '@lingui/react/macro';
 import { Badge } from '@src/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
@@ -59,7 +60,7 @@ export function EventListPanel({
         </p>
         {onClear && events.length > 0 && (
           <button className="text-[10px] text-muted-foreground hover:text-foreground" onClick={onClear}>
-            Clear
+            <Trans>Clear</Trans>
           </button>
         )}
       </div>
@@ -67,7 +68,7 @@ export function EventListPanel({
       <div className="flex items-center gap-4 border-b border-border px-1 pb-2">
         <FilterMaskIndicator mask={mask} onRemove={onMaskRemove} onClearAll={onMaskClearAll} />
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-medium text-muted-foreground">Scope</span>
+          <span className="text-[10px] font-medium text-muted-foreground"><Trans>Scope</Trans></span>
           <div className="flex items-center rounded-md border bg-muted/50">
             {([SnifferScope.All, SnifferScope.Project]).map((value, i) => (
               <button
@@ -88,7 +89,7 @@ export function EventListPanel({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-medium text-muted-foreground">Level</span>
+          <span className="text-[10px] font-medium text-muted-foreground"><Trans>Level</Trans></span>
           <div className="flex items-center rounded-md border bg-muted/50">
             {([SnifferLevel.Info, SnifferLevel.Debug]).map((value, i) => (
               <button
@@ -111,7 +112,7 @@ export function EventListPanel({
       </div>
       {/* Event list */}
       {displayEvents.length === 0 ? (
-        <p className="px-1 py-2 text-center text-xs text-muted-foreground">No events yet</p>
+        <p className="px-1 py-2 text-center text-xs text-muted-foreground"><Trans>No events yet</Trans></p>
       ) : (
         displayEvents.map((event) => {
           const Icon = getEventIcon(event.event_type, event);
@@ -150,7 +151,7 @@ export function EventListPanel({
                           <FileText className="h-3.5 w-3.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom">View transcript</TooltipContent>
+                      <TooltipContent side="bottom"><Trans>View transcript</Trans></TooltipContent>
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -176,7 +177,7 @@ export function EventListPanel({
                           <Webhook className="h-3.5 w-3.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom">View hook</TooltipContent>
+                      <TooltipContent side="bottom"><Trans>View hook</Trans></TooltipContent>
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -199,7 +200,7 @@ export function EventListPanel({
                           <ScrollText className="h-3.5 w-3.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom">View trigger log</TooltipContent>
+                      <TooltipContent side="bottom"><Trans>View trigger log</Trans></TooltipContent>
                     </Tooltip>
                   </div>
                 </div>

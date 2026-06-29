@@ -1,5 +1,6 @@
 import { ListChecks } from 'lucide-react';
 import { useMemo } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { Plan, Project, QueryRequest, TypeId } from '@sdk';
 import { useEntity, useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -40,15 +41,15 @@ export function PlansCategory({ projectId }: Props) {
   }, [rows, project?.fs_storage_mount_path]);
 
   if (!projectId) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No project linked</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No project linked</Trans></div>;
   }
 
   if (isLoading && items.length === 0) {
-    return <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>;
+    return <div className="px-2 py-1.5 text-xs text-muted-foreground"><Trans>Loading…</Trans></div>;
   }
 
   if (items.length === 0) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No plans shared</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No plans shared</Trans></div>;
   }
 
   return (

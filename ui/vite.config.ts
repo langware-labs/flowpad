@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react-swc';
+import { lingui } from '@lingui/vite-plugin';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 
@@ -28,7 +29,16 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react({
         tsDecorators: true,
+        // Lingui macro transform. `@lingui/core/macro` (t, msg, plural…) and
+        // `@lingui/react/macro` (<Trans/>, useLingui) compile away to runtime
+        // calls + message ids at build time — this SWC plugin performs that
+        // transform (the babel-macro path is not used with plugin-react-swc).
+        plugins: [['@lingui/swc-plugin', {}]],
       }),
+      // Compiles `*.po` catalogs to runtime messages on import so
+      // `import { messages } from './locales/<locale>/messages.po'` works in
+      // dev and build without a separate `lingui compile` step in dev.
+      lingui(),
       // Workaround for radix-ui/primitives#3799 / #3675: bundled @radix-ui/react-slot
       // calls composeRefs(forwardedRef, childrenRef) inline every render, producing a
       // new ref function each render. Under render storms (e.g. terminal PTY chunk

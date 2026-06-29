@@ -14,6 +14,7 @@ import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
 import { CheckCircle2, GitBranch, Github, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface NewProjectFromGitDialogProps {
   open: boolean;
@@ -68,6 +69,7 @@ async function fetchGithubStatus(): Promise<boolean | null> {
 }
 
 export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialUrl, initialBranch }: NewProjectFromGitDialogProps) {
+  const { t } = useLingui();
   const [url, setUrl] = useState(initialUrl ?? '');
   const [branch, setBranch] = useState<string | null>(initialBranch ?? null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -130,7 +132,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
       // Prefer the backend's ApiFailResponse message over axios's generic
       // "Request failed with status code 500".
       const ax = err as { response?: { data?: { message?: string } }; message?: string };
-      const title = ax.response?.data?.message ?? ax.message ?? 'Failed to start GitHub connection';
+      const title = ax.response?.data?.message ?? ax.message ?? t`Failed to start GitHub connection`;
       notify.error({ title });
     }
   }, []);
@@ -150,7 +152,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
         }
       } catch (err) {
         notify.error({
-          title: err instanceof Error ? err.message : 'Failed to clone repository',
+          title: err instanceof Error ? err.message : t`Failed to clone repository`,
         });
       } finally {
         setIsSubmitting(false);
@@ -199,18 +201,18 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
         }}
       >
         <DialogHeader>
-          <DialogTitle>Clone project from git</DialogTitle>
+          <DialogTitle><Trans>Clone project from git</Trans></DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           {githubConnected ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-              GitHub connected — you can clone private repos.
+              <Trans>GitHub connected — you can clone private repos.</Trans>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs">
               <span className="text-muted-foreground">
-                Tip: connect GitHub to clone private repos.
+                <Trans>Tip: connect GitHub to clone private repos.</Trans>
               </span>
               <Button
                 variant="outline"
@@ -219,14 +221,14 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
                 onClick={() => void handleConnectGithub()}
               >
                 <Github className="mr-1.5 h-3 w-3" />
-                Connect
+                <Trans>Connect</Trans>
               </Button>
             </div>
           )}
           {/* URL input (always visible) */}
           <div className="flex items-center gap-2">
             <Input
-              placeholder="https://github.com/owner/repo.git"
+              placeholder={t`https://github.com/owner/repo.git`}
               value={url}
               onChange={(e) => {
                 setUrl(e.target.value);
@@ -247,7 +249,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
                   type="button"
                   className="ml-1 text-muted-foreground hover:text-foreground"
                   onClick={() => setBranch(null)}
-                  title="Clear branch (uses default)"
+                  title={t`Clear branch (uses default)`}
                 >
                   ×
                 </button>
@@ -257,12 +259,12 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
           {suggestion && (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
               <div className="mb-1.5">
-                <span className="font-mono">{suggestion.attemptedName}</span> already exists in the workspace.
+                <Trans><span className="font-mono">{suggestion.attemptedName}</span> already exists in the workspace.</Trans>
               </div>
               <div className="flex items-center gap-2">
-                <span>Use</span>
+                <span><Trans>Use</Trans></span>
                 <span className="font-mono font-medium">{suggestion.suggestedName}</span>
-                <span>instead?</span>
+                <span><Trans>instead?</Trans></span>
                 <Button
                   size="sm"
                   variant="outline"
@@ -270,7 +272,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
                   onClick={() => void submit(suggestion.suggestedName)}
                   disabled={isSubmitting}
                 >
-                  Use suggestion
+                  <Trans>Use suggestion</Trans>
                 </Button>
               </div>
             </div>
@@ -278,7 +280,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
           {isSubmitting && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Cloning…
+              <Trans>Cloning…</Trans>
             </div>
           )}
 
@@ -305,11 +307,11 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => void submit()} disabled={!canSubmit}>
             {isSubmitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-            Clone{branch ? ` @ ${branch}` : ''}
+            {branch ? <Trans>Clone @ {branch}</Trans> : <Trans>Clone</Trans>}
           </Button>
         </DialogFooter>
       </DialogContent>

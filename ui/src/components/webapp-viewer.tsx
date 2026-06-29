@@ -12,12 +12,15 @@ import { useViewerStore } from '@src/hooks/flow-hooks';
 import { ArtifactType, MachineStatus, ViewType, WebappSubview } from '@sdk';
 import { ExternalLink, RefreshCw, Terminal } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 
 interface WebappViewerProps {
   onWebappErrorRetry: (retryMessage: string) => void;
 }
 
 export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }) => {
+  const { t } = useLingui();
   const { flow } = useAgentContext();
   const { currentContext } = useViewerStore();
   const { navigation, currentDock } = useDockNavigation();
@@ -108,7 +111,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
 
   const handleErrorRetry = useCallback(() => {
     const retryMessage =
-      'The web app is not working, please try to fix it.' + (webAppError ? `\n\nError: ${webAppError}` : '');
+      t`The web app is not working, please try to fix it.` + (webAppError ? `\n\nError: ${webAppError}` : '');
     onWebappErrorRetry(retryMessage);
   }, [webAppError, onWebappErrorRetry]);
 
@@ -137,7 +140,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
             <>
               <Select value={selectedWebappId} onValueChange={handleWebappSelect}>
                 <SelectTrigger className="h-7 w-48 text-xs">
-                  <SelectValue placeholder="Select webapp..." />
+                  <SelectValue placeholder={t`Select webapp...`} />
                 </SelectTrigger>
                 <SelectContent>
                   {webappArtifacts.map((webapp) => {
@@ -154,7 +157,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
               <ServiceStatusLed onShowShell={handleShowShell} onRefreshWebapp={handleRefresh} onStatusChange={setMachineStatus} />
             </>
           ) : (
-            <span className="text-xs text-muted-foreground">Webapp not found in artifacts</span>
+            <span className="text-xs text-muted-foreground"><Trans>Webapp not found in artifacts</Trans></span>
           )}
         </div>
 
@@ -173,7 +176,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
-                <p>{showPanel ? 'Hide panel' : 'Show panel'}</p>
+                <p>{showPanel ? <Trans>Hide panel</Trans> : <Trans>Show panel</Trans>}</p>
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -183,7 +186,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
-                <p>Refresh</p>
+                <p><Trans>Refresh</Trans></p>
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -199,7 +202,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
-                <p>Open in new tab</p>
+                <p><Trans>Open in new tab</Trans></p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -217,7 +220,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
               onError={onWebAppError}
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-muted-foreground">No web app available</div>
+            <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No web app available</Trans></div>
           )}
         </div>
 

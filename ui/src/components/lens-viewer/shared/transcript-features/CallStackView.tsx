@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 import { VerdictBanner, type VerdictBannerData } from '@src/components/assets/editor/agent-trace/AgentTraceView';
 import { TraceTimeline, OUTLINE_LEGEND } from '@src/components/assets/editor/agent-trace/TraceTimeline';
@@ -125,7 +126,7 @@ export function CallStackView({
   if (error) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-destructive">
-        Failed to build call stack: {error}
+        <Trans>Failed to build call stack: {error}</Trans>
       </div>
     );
   }
@@ -133,7 +134,7 @@ export function CallStackView({
     return (
       <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Building call stack…
+        <Trans>Building call stack…</Trans>
       </div>
     );
   }
@@ -141,7 +142,7 @@ export function CallStackView({
   if (!outline || outline.length === 0 || effectiveCursor === null) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-        No high-level calls in this session.
+        <Trans>No high-level calls in this session.</Trans>
       </div>
     );
   }
@@ -154,7 +155,7 @@ export function CallStackView({
           lands at the same Y — toggling doesn't shift the layout. The legend
           decodes the timeline markers. */}
       <div className="flex shrink-0 items-center gap-4 border-b border-border bg-card px-3 py-2 text-[11px] text-muted-foreground">
-        <span className="font-medium">Session call stack</span>
+        <span className="font-medium"><Trans>Session call stack</Trans></span>
         <span className="flex items-center gap-3">
           {OUTLINE_LEGEND.filter(({ advancedOnly, requiresLane }) =>
             (advanced || !advancedOnly) &&

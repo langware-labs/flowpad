@@ -24,6 +24,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from 'lexical';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 function isDefaultEmptyLexicalContent(content: { root: { children: SerializedLexicalNode[] } }): boolean {
   if (content.root?.children?.length !== 1) return false;
@@ -157,6 +158,7 @@ function statusDotClass(login: HubLoginStatus, connection: HubConnectionStatus):
 }
 
 export function UserDropdown() {
+  const { t } = useLingui();
   const { agentId } = useParams();
   const { user, currentUser } = useAuth();
   const { isConnected } = useConnectionStatus();
@@ -283,7 +285,7 @@ export function UserDropdown() {
           let currentInstructionsPage = instructionsPage;
           if (!currentInstructionsPage) {
             console.log('No page found, creating new one');
-            currentInstructionsPage = new Page({ title: 'Instructions', tags: [PAGE_TYPE.INSTRUCTIONS] });
+            currentInstructionsPage = new Page({ title: t`Instructions`, tags: [PAGE_TYPE.INSTRUCTIONS] });
             await currentInstructionsPage.save([agent.typeId]);
             // Get the chatbot to call ingest
             await agent.ingest([], [], [], [currentInstructionsPage.typeId]);
@@ -344,8 +346,8 @@ export function UserDropdown() {
       <Dialog open={isAccountDialogOpen} onOpenChange={setIsAccountDialogOpen}>
         <DialogContent className="flex h-[520px] max-w-lg flex-col">
           <DialogHeader className="shrink-0">
-            <DialogTitle>Settings</DialogTitle>
-            <DialogDescription>Configure your account, app preferences, and notifications</DialogDescription>
+            <DialogTitle><Trans>Settings</Trans></DialogTitle>
+            <DialogDescription><Trans>Configure your account, app preferences, and notifications</Trans></DialogDescription>
           </DialogHeader>
           {currentUser && <AccountInfo user={currentUser} />}
         </DialogContent>
@@ -362,7 +364,7 @@ export function UserDropdown() {
                 <div className="relative cursor-pointer">
                   <Avatar
                     className={`h-8 w-8 transition-opacity hover:opacity-80${!isConnected ? ' ring-2 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse' : ''}`}
-                    title={!isConnected ? 'Service unavailable' : undefined}
+                    title={!isConnected ? t`Service unavailable` : undefined}
                     data-testid="agent-page-user-avatar"
                   >
                     {cloudLoginAvailable && currentUser?.picture && (
@@ -384,7 +386,7 @@ export function UserDropdown() {
                   <>
                     <DropdownMenuItem onClick={() => setIsSettingsOpen(true)} className="cursor-pointer">
                       <Settings className="mr-2 h-4 w-4" />
-                      Settings
+                      <Trans>Settings</Trans>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => redirectToConsole(agentId)}
@@ -397,7 +399,7 @@ export function UserDropdown() {
                       className="cursor-pointer"
                     >
                       <Wrench className="mr-2 h-4 w-4" />
-                      Go to Console
+                      <Trans>Go to Console</Trans>
                     </DropdownMenuItem>
                   </>
                 )}
@@ -407,7 +409,7 @@ export function UserDropdown() {
                   data-testid="app-settings-button"
                 >
                   <Settings className="mr-2 h-4 w-4" />
-                  App Settings
+                  <Trans>App Settings</Trans>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setIsAccountDialogOpen(true)}
@@ -415,7 +417,7 @@ export function UserDropdown() {
                   data-testid="agent-page-account-details-button"
                 >
                   <UserIcon className="mr-2 h-4 w-4" />
-                  Settings
+                  <Trans>Settings</Trans>
                 </DropdownMenuItem>
                 {/* Logout below = *cloud* logout. A local-only user (no cloud
                     login) is anonymous — the Login branch should fire. If you
@@ -425,14 +427,14 @@ export function UserDropdown() {
                   <>
                     <DropdownMenuItem onClick={handleOpenFlowpadCloud} className="cursor-pointer">
                       <Cloud className="mr-2 h-4 w-4" />
-                      Flowpad Cloud
+                      <Trans>Flowpad Cloud</Trans>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => void handleLogout()}
                       className="cursor-pointer text-red-500 focus:text-red-500"
                     >
                       <LogOut className="mr-2 h-4 w-4" />
-                      Logout
+                      <Trans>Logout</Trans>
                     </DropdownMenuItem>
                   </>
                 ) : isLocal ? null : (
@@ -442,7 +444,7 @@ export function UserDropdown() {
                     className="cursor-pointer"
                   >
                     <LogIn className="mr-2 h-4 w-4" />
-                    Login
+                    <Trans>Login</Trans>
                   </DropdownMenuItem>
                 )}
                   </DropdownMenuContent>
@@ -462,7 +464,7 @@ export function UserDropdown() {
                     navigator.navigateToLogin();
                   }}
                 >
-                  Login
+                  <Trans>Login</Trans>
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top">{cloudLoginTooltip('logged_out', 'disconnected', cloudUrl)}</TooltipContent>

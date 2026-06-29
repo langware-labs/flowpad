@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { FileText } from 'lucide-react';
 import { AgenticProcess, Conversation, Project, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -55,6 +56,7 @@ export function TaskChips({
   ensureMapped,
   onShowTask,
 }: TaskChipsProps) {
+  const { t } = useLingui();
   const exclude = useChipsExclude();
   const { navigation } = useDockNavigation();
   const localProjectId = task.project_id ?? undefined;
@@ -125,11 +127,11 @@ export function TaskChips({
                 if (ensureMapped) ensureMapped(action);
                 else if (localProjectId) action();
               }}
-              title="Open this conversation under the local project"
+              title={t`Open this conversation under the local project`}
               className="inline-flex h-6 items-center gap-1 rounded border border-dashed border-border px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <FileText className="h-3 w-3" />
-              Pick project…
+              <Trans>Pick project…</Trans>
             </button>
           );
         }

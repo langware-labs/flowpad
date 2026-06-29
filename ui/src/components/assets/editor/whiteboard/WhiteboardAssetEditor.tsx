@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { Trans, useLingui } from '@lingui/react/macro';
 // Without this CSS the canvas inflates to ~2^25 px (unconstrained resize observer).
 import '@excalidraw/excalidraw/index.css';
 import { Button } from '@src/components/ui/button';
@@ -95,7 +96,7 @@ function ConnectingFallback() {
       className="flex h-full items-center justify-center text-sm text-muted-foreground"
     >
       <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-      Loading whiteboard…
+      <Trans>Loading whiteboard…</Trans>
     </div>
   );
 }
@@ -120,6 +121,7 @@ function spliceMermaidBlock(currentDoc: string, mermaid: string): string {
 }
 
 export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEditorProps) {
+  const { t } = useLingui();
   const boardRef = useMemo(() => fsRef.child('board.json'), [fsRef]);
   const docRef = useMemo(() => fsRef.child('WHITE_BOARD.md'), [fsRef]);
   const thumbRef = useMemo(() => fsRef.child('thumbnail.svg'), [fsRef]);
@@ -374,7 +376,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
               <ShareButton
                 variant="compact"
                 onClick={() => setShareOpen(true)}
-                tooltip="Share to a conversation"
+                tooltip={t`Share to a conversation`}
                 testId="whiteboard-editor-share"
               />
             )}
@@ -384,7 +386,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
               onClick={() => setImportOpen(true)}
               data-testid="open-import-mermaid"
             >
-              Import mermaid → board
+              <Trans>Import mermaid → board</Trans>
             </Button>
             <Button
               size="sm"
@@ -392,7 +394,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
               onClick={() => void exportAs('png')}
               data-testid="export-png"
             >
-              Export PNG
+              <Trans>Export PNG</Trans>
             </Button>
             <Button
               size="sm"
@@ -400,7 +402,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
               onClick={() => void exportAs('svg')}
               data-testid="export-svg"
             >
-              Export SVG
+              <Trans>Export SVG</Trans>
             </Button>
             {loadError && (
               <span className="text-xs text-destructive" data-testid="whiteboard-error">
@@ -433,7 +435,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Import mermaid → board</DialogTitle>
+            <DialogTitle><Trans>Import mermaid → board</Trans></DialogTitle>
           </DialogHeader>
           <textarea
             data-testid="mermaid-import-textarea"
@@ -444,14 +446,14 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
           />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setImportOpen(false)} disabled={importBusy}>
-              Cancel
+              <Trans>Cancel</Trans>
             </Button>
             <Button
               onClick={handleImport}
               disabled={importBusy || !importText.trim()}
               data-testid="confirm-import-mermaid"
             >
-              Import
+              <Trans>Import</Trans>
             </Button>
           </DialogFooter>
         </DialogContent>

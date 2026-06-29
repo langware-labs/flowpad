@@ -8,8 +8,10 @@ import { useAuth, useEntity } from '@sdk/react/hooks';
 import { Bug } from 'lucide-react';
 import { useMemo } from 'react';
 import { useParams } from 'react-router';
+import { useLingui } from '@lingui/react/macro';
 
 export function Header() {
+  const { t } = useLingui();
   const { agentId } = useParams();
 
   const { user } = useAuth();
@@ -34,7 +36,7 @@ export function Header() {
             size="icon"
             className="h-8 w-8 text-orange-500 ring-1 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse"
             onClick={() => window.setDev(false)}
-            title="Dev mode ON — click to disable"
+            title={t`Dev mode ON — click to disable`}
           >
             <Bug className="h-4 w-4" />
           </Button>

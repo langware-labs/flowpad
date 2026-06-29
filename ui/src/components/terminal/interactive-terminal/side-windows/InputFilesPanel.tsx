@@ -3,6 +3,7 @@ import { fsStore } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { ExternalLink, File, RefreshCw, Trash2 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -25,6 +26,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
   computeNodeTypeId,
   inputDirAbsPath,
 }) => {
+  const { t } = useLingui();
   const fs = useFS(computeNodeTypeId);
   const fsRef = React.useRef(fs);
   fsRef.current = fs;
@@ -90,7 +92,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
       onDrop={(e) => { void handleDrop(e); }}
     >
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <span className="text-sm font-medium">Input Files</span>
+        <span className="text-sm font-medium"><Trans>Input Files</Trans></span>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={() => void openExternalFromComputeNode(computeNodeTypeId.id, inputDirAbsPath)} className="h-6 w-6 p-0">
             <ExternalLink className="h-3.5 w-3.5" />
@@ -104,7 +106,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
       <div className="flex-1 overflow-y-auto p-2">
         {items.length === 0 ? (
           <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
-            Paste or drag files here
+            <Trans>Paste or drag files here</Trans>
           </p>
         ) : (
           <div className="flex flex-col gap-1">
@@ -160,7 +162,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
           {selectedImage && (
             <img
               src={selectedImage}
-              alt="Preview"
+              alt={t`Preview`}
               className="max-h-[85vh] max-w-full rounded object-contain"
             />
           )}

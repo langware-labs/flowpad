@@ -9,6 +9,7 @@ import {
   Info,
   Loader2,
 } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 import { AgenticProcess, TypeId, type StatusBearingProcess } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -63,6 +64,7 @@ interface Props {
  *   - Path bar with copy-to-clipboard.
  */
 export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, selectedEntryId, selectedTimestamp }: Props) {
+  const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const [, setSearchParams] = useSearchParams();
   const { data, isLoading, error } = useTranscript({ workerType, path, sessionId: sessionIdProp });
@@ -416,7 +418,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
     void (async () => {
       const process = await AgenticProcess.getByWorkerId(sessionId).catch(() => null);
       if (!process) {
-        notify.error({ title: 'Process not found', message: `No live process for session ${sessionId}.` });
+        notify.error({ title: t`Process not found`, message: `No live process for session ${sessionId}.` });
         return;
       }
       navigation.openDockPointer(process.terminalDockPointer);
@@ -482,7 +484,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
     return (
       <div className="flex h-full items-center justify-center p-4 text-destructive">
         <div className="text-center">
-          <p className="font-medium">Error Loading Transcript</p>
+          <p className="font-medium"><Trans>Error Loading Transcript</Trans></p>
           <p className="mt-1 text-sm">{error.message}</p>
           <p className="mt-2 font-mono text-xs text-muted-foreground">{path}</p>
         </div>
@@ -492,7 +494,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   if (!data) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-        <p>No transcript data</p>
+        <p><Trans>No transcript data</Trans></p>
       </div>
     );
   }
@@ -503,7 +505,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Info className="h-4 w-4" />
-            Entry details
+            <Trans>Entry details</Trans>
           </DialogTitle>
         </DialogHeader>
         {infoEntry && (
@@ -514,7 +516,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
                 className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
                 onClick={() => { void navigator.clipboard.writeText(JSON.stringify(infoEntry, null, 2)); }}
               >
-                Copy entry
+                <Trans>Copy entry</Trans>
               </button>
               <button
                 type="button"
@@ -528,7 +530,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
                   }, null, 2));
                 }}
               >
-                Copy all
+                <Trans>Copy all</Trans>
               </button>
             </div>
             <pre className="whitespace-pre-wrap break-all rounded border border-border bg-muted/30 p-3 font-mono text-[11px]">
@@ -593,7 +595,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
               })()}
             </span>
           ) : (
-            <span className="text-muted-foreground/30 text-[10px]">scroll to navigate</span>
+            <span className="text-muted-foreground/30 text-[10px]"><Trans>scroll to navigate</Trans></span>
           )}
           {transcriptEndTs && <span className="mx-2 text-border">·····</span>}
           {transcriptEndTs && (
@@ -620,7 +622,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
                 starting={transcriptSession.starting}
                 onOpen={transcriptSession.open}
                 onLaunch={transcriptSession.launch}
-                openTitle="Open the transcript analysis session"
+                openTitle={t`Open the transcript analysis session`}
                 testIdPrefix="transcript-analyze"
               />
             ) : (
@@ -648,7 +650,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
               className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ChevronsUpDown className="h-3 w-3" />
-              Expand all
+              <Trans>Expand all</Trans>
             </button>
             <button
               type="button"
@@ -656,7 +658,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
               className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ChevronsDownUp className="h-3 w-3" />
-              Collapse all
+              <Trans>Collapse all</Trans>
             </button>
           </div>
         )}
@@ -729,7 +731,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
             <button
               className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               onClick={handleCopyPath}
-              title="Copy transcript path"
+              title={t`Copy transcript path`}
             >
               {copiedPath ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
             </button>
@@ -740,7 +742,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search transcript…"
+              placeholder={t`Search transcript…`}
               className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
             />
           </div>

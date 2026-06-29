@@ -5,6 +5,7 @@ import {
   processIdFromTypeId,
   resolveAgenticProcessName,
 } from '@src/navigation/agentic-process-open';
+import { useLingui } from '@lingui/react/macro';
 import type { NotificationData } from './types';
 import { runCommand } from './commands';
 
@@ -17,6 +18,7 @@ import { runCommand } from './commands';
  * notifications.
  */
 export function NotificationProcessLine({ data }: { data: NotificationData }) {
+  const { t } = useLingui();
   const processId = processIdFromTypeId(data.typeId);
   // The process / session / shell are usually cold here; warm them, then re-read
   // the (non-reactive) cache name once they land. Skip the fetch when the name
@@ -47,8 +49,8 @@ export function NotificationProcessLine({ data }: { data: NotificationData }) {
           e.stopPropagation();
           runCommand('process.open', { processId }, { id: data.id });
         }}
-        title="Open process"
-        aria-label="Open process"
+        title={t`Open process`}
+        aria-label={t`Open process`}
         className="flex-shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
       >
         <ExternalLink className="h-3.5 w-3.5" />

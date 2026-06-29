@@ -1,4 +1,5 @@
 import { Settings } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 import { dataContext } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useClaudeSettings } from '@src/hooks/useClaudeSettings';
@@ -25,17 +26,17 @@ export function SettingsView() {
           <div>
             <div className="flex items-center gap-2">
               <Settings className="h-6 w-6" />
-              <h2 className="text-2xl font-bold text-foreground">Settings</h2>
+              <h2 className="text-2xl font-bold text-foreground"><Trans>Settings</Trans></h2>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              View Claude Code settings across user, project, and local scopes
+              <Trans>View Claude Code settings across user, project, and local scopes</Trans>
             </p>
           </div>
 
           {/* Loading / error states */}
           {isLoading ? (
             <div className="flex items-center justify-center rounded-lg border p-12">
-              <p className="text-sm text-muted-foreground">Loading settings...</p>
+              <p className="text-sm text-muted-foreground"><Trans>Loading settings...</Trans></p>
             </div>
           ) : error ? (
             <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6">

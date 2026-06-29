@@ -18,6 +18,7 @@ import {
 import { notify } from '@src/notifications';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface LlmConfigMsg {
   message_type?: string;
@@ -47,6 +48,7 @@ function openExternal(url: string) {
  * user hits Cancel.
  */
 export function GitHubDeviceFlowModal() {
+  const { t } = useLingui();
   const [payload, setPayload] = useState<OAuthDeviceFlowPayload | null>(null);
   const [remaining, setRemaining] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
@@ -80,10 +82,10 @@ export function GitHubDeviceFlowModal() {
       if (msg.auth_method !== 'github') return;
       if (msg.oauth_request_id && msg.oauth_request_id !== payload.state) return;
       if (msg.status === 'success') {
-        notify.success({ title: 'GitHub connected', durationMs: 3000 });
+        notify.success({ title: t`GitHub connected`, durationMs: 3000 });
         setPayload(null);
       } else if (msg.status === 'error') {
-        setError('Authorization failed or was denied. Click Retry to try again.');
+        setError(t`Authorization failed or was denied. Click Retry to try again.`);
       }
     };
     connectionManager.on('on_llm_config_msg', handler);
@@ -100,16 +102,16 @@ export function GitHubDeviceFlowModal() {
     if (!payload) return;
     try {
       await copyToClipboard(payload.user_code);
-      notify.success({ title: 'Code copied — paste it on the GitHub page', durationMs: 2500 });
+      notify.success({ title: t`Code copied — paste it on the GitHub page`, durationMs: 2500 });
     } catch {
       notify.error({
-        title: 'Could not copy the code',
-        message: 'Type it manually on the GitHub page.',
+        title: t`Could not copy the code`,
+        message: t`Type it manually on the GitHub page.`,
         durationMs: 4000,
       });
     }
     openExternal(payload.verification_uri);
-  }, [payload]);
+  }, [payload, t]);
 
   const handleClose = useCallback(() => {
     // Tell the backend to stop polling so it doesn't keep talking to GitHub
@@ -132,11 +134,9 @@ export function GitHubDeviceFlowModal() {
     <Dialog open onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Connect GitHub</DialogTitle>
+          <DialogTitle><Trans>Connect GitHub</Trans></DialogTitle>
           <DialogDescription>
-            Your one-time code is below. Click <span className="font-medium">Copy code &amp; open
-            GitHub</span> — we&rsquo;ll copy it to your clipboard and open the GitHub activation
-            page so you can paste it there.
+            <Trans>Your one-time code is below. Click <span className="font-medium">Copy code &amp; open GitHub</span> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -148,7 +148,7 @@ export function GitHubDeviceFlowModal() {
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={() => void handleCopyAndOpen()}>
               <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-              Copy code &amp; open GitHub
+              <Trans>Copy code &amp; open GitHub</Trans>
             </Button>
           </div>
 
@@ -158,19 +158,19 @@ export function GitHubDeviceFlowModal() {
             </div>
           ) : expired ? (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
-              Code expired. Close and click Connect again to get a fresh code.
+              <Trans>Code expired. Close and click Connect again to get a fresh code.</Trans>
             </div>
           ) : (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Waiting for authorization… (expires in {mm}:{ss})
+              <Trans>Waiting for authorization… (expires in {mm}:{ss})</Trans>
             </div>
           )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
         </DialogFooter>
       </DialogContent>

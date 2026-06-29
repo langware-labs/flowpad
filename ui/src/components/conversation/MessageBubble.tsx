@@ -13,6 +13,8 @@ import { avatarColorForMessage } from './avatar-color';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -71,13 +73,14 @@ interface MessageBubbleProps {
  * `message_status_visible` flag is false.
  */
 function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
+  const { t } = useLingui();
   if (!status) return null;
   if (status === 'created') {
     // `created` = written to the local store, NOT yet accepted by the hub.
     // Show a clock ("Pending"), not a ✓ — a single check here would give false
     // confidence the recipient got it when the outbound hub push may have failed.
     return (
-      <span title="Pending" className="inline-flex items-center text-muted-foreground/70">
+      <span title={t`Pending`} className="inline-flex items-center text-muted-foreground/70">
         <Clock className="h-3 w-3" strokeWidth={2.5} />
       </span>
     );
@@ -85,21 +88,21 @@ function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
   if (status === 'sent') {
     // `sent` = accepted/stored on the hub (one check). Not yet pulled by the recipient.
     return (
-      <span title="Sent" className="inline-flex items-center text-muted-foreground/70">
+      <span title={t`Sent`} className="inline-flex items-center text-muted-foreground/70">
         <Check className="h-3 w-3" strokeWidth={2.5} />
       </span>
     );
   }
   if (status === 'delivered') {
     return (
-      <span title="Delivered" className="inline-flex items-center text-muted-foreground/70">
+      <span title={t`Delivered`} className="inline-flex items-center text-muted-foreground/70">
         <CheckCheck className="h-3 w-3" strokeWidth={2.5} />
       </span>
     );
   }
   if (status === 'received') {
     return (
-      <span title="Read" className="inline-flex items-center text-sky-500">
+      <span title={t`Read`} className="inline-flex items-center text-sky-500">
         <CheckCheck className="h-3 w-3" strokeWidth={2.5} />
       </span>
     );
@@ -176,6 +179,7 @@ export function MessageBubble({
   onSelect,
   conversationStatusVisible = true,
 }: MessageBubbleProps) {
+  const { t } = useLingui();
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -223,7 +227,7 @@ export function MessageBubble({
   };
 
   const isBot = message.role === 'bot';
-  const displayName = isBot ? 'Claude' : senderName || 'Unknown';
+  const displayName = isBot ? t`Claude` : senderName || t`Unknown`;
   const initial = (displayName.trim()[0] ?? '?').toUpperCase();
   const time = formatTime(message.timestamp);
   const ago = formatTimeAgo(message.timestamp);
@@ -272,7 +276,7 @@ export function MessageBubble({
             <button
               onClick={startEdit}
               className="text-muted-foreground/50 transition-colors hover:text-muted-foreground"
-              title="Edit name"
+              title={t`Edit name`}
             >
               <Pencil className="h-2.5 w-2.5" />
             </button>
@@ -281,8 +285,8 @@ export function MessageBubble({
             <button
               onClick={() => setConfirmingDelete(true)}
               className="text-muted-foreground/50 transition-colors hover:text-destructive"
-              title="Delete message"
-              aria-label="Delete message"
+              title={t`Delete message`}
+              aria-label={t`Delete message`}
             >
               <Trash2 className="h-2.5 w-2.5" />
             </button>
@@ -291,8 +295,8 @@ export function MessageBubble({
             <button
               onClick={onForwardMessage}
               className="text-muted-foreground/50 transition-colors hover:text-foreground"
-              title="Forward to another conversation"
-              aria-label="Forward message"
+              title={t`Forward to another conversation`}
+              aria-label={t`Forward message`}
               data-testid="message-forward"
             >
               <Forward className="h-2.5 w-2.5" />
@@ -301,11 +305,11 @@ export function MessageBubble({
           {flowMessage?.cloned_from_id && (
             <span
               className="inline-flex items-center gap-0.5 text-[10px] italic text-muted-foreground"
-              title="Forwarded from another conversation"
+              title={t`Forwarded from another conversation`}
               data-testid="message-forwarded-marker"
             >
               <Forward className="h-2.5 w-2.5" />
-              forwarded
+              <Trans>forwarded</Trans>
             </span>
           )}
           {time && (
@@ -344,9 +348,9 @@ export function MessageBubble({
         <ConfirmDialog
           open={confirmingDelete}
           onOpenChange={setConfirmingDelete}
-          title="Delete this message?"
-          description="This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
-          confirmLabel="Delete"
+          title={t`Delete this message?`}
+          description={t`This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone.`}
+          confirmLabel={t`Delete`}
           variant="destructive"
           onConfirm={onDeleteMessage}
         />

@@ -15,6 +15,7 @@ import { notify } from '@src/notifications';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const STATUS_REQUEST_PROMPT_TEXT = 'Summarize the task and plan status in 5 lines';
 
@@ -32,6 +33,7 @@ interface SharedTaskViewProps {
 }
 
 export function SharedTaskView({ task, conversationId, onClose }: SharedTaskViewProps) {
+  const { t } = useLingui();
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
 
   const senderName = task.sender_name
@@ -73,12 +75,12 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
         },
       );
       notify.success({
-        title: 'Status request sent',
-        message: 'The recipient will see a PROMPT to approve.',
+        title: t`Status request sent`,
+        message: t`The recipient will see a PROMPT to approve.`,
       });
     } catch (err) {
       console.error('[SharedTaskView] sendReply failed', err);
-      notify.error({ title: 'Failed to send status request' });
+      notify.error({ title: t`Failed to send status request` });
     } finally {
       setRequestingStatus(false);
     }
@@ -91,14 +93,14 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
         <button
           onClick={onClose}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          title="Back to tasks"
+          title={t`Back to tasks`}
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold">{task.displayName}</h2>
           {senderName && (
-            <p className="text-xs text-muted-foreground">From {senderName}</p>
+            <p className="text-xs text-muted-foreground"><Trans>From {senderName}</Trans></p>
           )}
         </div>
         {isAuthor && conversationTypeId && (
@@ -107,10 +109,10 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
             onClick={() => void handleRequestStatus()}
             disabled={requestingStatus}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
-            title="Send a PROMPT to the recipient asking for a status summary"
+            title={t`Send a PROMPT to the recipient asking for a status summary`}
           >
             <Activity className="h-3.5 w-3.5" />
-            {requestingStatus ? 'Sending…' : 'Request status'}
+            {requestingStatus ? t`Sending…` : t`Request status`}
           </button>
         )}
       </div>
@@ -123,13 +125,13 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
           <section className="flex-shrink-0 space-y-3 border-b border-border px-4 py-4">
             {spec?.title && (
               <div>
-                <span className="text-xs font-medium text-muted-foreground">Title</span>
+                <span className="text-xs font-medium text-muted-foreground"><Trans>Title</Trans></span>
                 <p className="mt-0.5 text-sm">{spec.title}</p>
               </div>
             )}
             {spec?.content && (
               <div>
-                <span className="text-xs font-medium text-muted-foreground">Description</span>
+                <span className="text-xs font-medium text-muted-foreground"><Trans>Description</Trans></span>
                 <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/80 whitespace-pre-wrap">
                   {spec.content}
                 </div>
@@ -146,7 +148,7 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
               senderName={senderName}
             />
           ) : (
-            <p className="px-4 py-4 text-xs italic text-muted-foreground/60">No conversation yet.</p>
+            <p className="px-4 py-4 text-xs italic text-muted-foreground/60"><Trans>No conversation yet.</Trans></p>
           )}
         </div>
       </div>

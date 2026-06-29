@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { AgenticProcess } from '@sdk';
 import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
@@ -32,6 +33,7 @@ export function ChatsNavigator() {
   const { activeTerminalTargetTypeId } = useContext();
   const { resumeInTerminal } = useResumeInTerminal();
   const isAdvanced = useIsAdvanced();
+  const { t } = useLingui();
 
   const [search, setSearch] = useState('');
   const [pendingDelete, setPendingDelete] = useState<{
@@ -69,7 +71,7 @@ export function ChatsNavigator() {
   const handleSelect = useCallback(
     (entry: WorkerHistoryEntry) => {
       if (!entry.worker_id) {
-        notify.error({ title: 'Cannot open', message: 'This chat has no resumable session.' });
+        notify.error({ title: t`Cannot open`, message: t`This chat has no resumable session.` });
         return;
       }
       resumeInTerminal(entry.worker_id, undefined, undefined, entry.worker_type);
@@ -85,7 +87,7 @@ export function ChatsNavigator() {
     process.favorite_index = process.favorite_index != null ? null : Date.now();
     void process.save().catch((err) => {
       console.error('[ChatsNavigator] favorite toggle failed', err);
-      notify.error({ title: 'Could not update', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Could not update`, message: err instanceof Error ? err.message : String(err) });
     });
   }, []);
 
@@ -124,7 +126,7 @@ export function ChatsNavigator() {
       refetch();
     } catch (err) {
       console.error('[ChatsNavigator] delete failed', err);
-      notify.error({ title: 'Could not delete', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Could not delete`, message: err instanceof Error ? err.message : String(err) });
     }
   }, [pendingDelete, refetch]);
 
@@ -135,7 +137,7 @@ export function ChatsNavigator() {
       // Standard → headless chat (no PTY); Advanced → interactive PTY terminal.
       void AgenticProcess.openTab(workerType, undefined, null, { ptyMode: isAdvanced }).catch((err) => {
         console.error('[ChatsNavigator] new chat failed', err);
-        notify.error({ title: 'Could not start chat', message: err instanceof Error ? err.message : String(err) });
+        notify.error({ title: t`Could not start chat`, message: err instanceof Error ? err.message : String(err) });
       });
     },
     [isAdvanced],
@@ -145,7 +147,7 @@ export function ChatsNavigator() {
     () => ({
       id: 'chats',
       header: {
-        title: 'Chats',
+        title: t`Chats`,
         countBadge: total,
         headerRight: (
           <ScopeFilterIconBar
@@ -196,9 +198,9 @@ export function ChatsNavigator() {
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(open) => !open && setPendingDelete(null)}
-        title="Delete chat?"
-        description={`"${pendingDelete?.title ?? ''}" will be removed. This cannot be undone.`}
-        confirmLabel="Delete"
+        title={t`Delete chat?`}
+        description={t`"${pendingDelete?.title ?? ''}" will be removed. This cannot be undone.`}
+        confirmLabel={t`Delete`}
         onConfirm={() => void confirmDelete()}
       />
     </>

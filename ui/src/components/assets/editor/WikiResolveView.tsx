@@ -10,6 +10,7 @@ import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { MarkdownEditor } from './markdown/MarkdownEditor';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface WikiResolveViewProps {
   /** Decoded wiki name from the `/dock/assets/wiki/<space>/<name>` pointer. */
@@ -42,6 +43,7 @@ export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [createAs, setCreateAs] = useState<CreateAsType>('markdown');
+  const { t } = useLingui();
 
   const { data, isLoading, error } = useQuery<ResolveResult | null>({
     queryKey: ['wiki-resolve', name, space],
@@ -72,14 +74,14 @@ export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps
     try {
       if (createAs === 'whiteboard') {
         const saved = await Whiteboard.createInProject(dataContext.project ?? null, name);
-        notify.success({ title: 'Whiteboard created', message: `[[${name}]]` });
+        notify.success({ title: t`Whiteboard created`, message: `[[${name}]]` });
         void queryClient.invalidateQueries({ queryKey: ['wiki-resolve', name] });
         if (saved.asset_ref) {
           navigation.openDock(DockPointer.forAssetEditor('whiteboard', saved.asset_ref));
         }
       } else {
         const saved = await Markdown.createInProject(dataContext.project ?? null, name);
-        notify.success({ title: 'Markdown created', message: `[[${name}]]` });
+        notify.success({ title: t`Markdown created`, message: `[[${name}]]` });
         void queryClient.invalidateQueries({ queryKey: ['wiki-resolve', name] });
         if (saved.asset_ref) {
           navigation.openDock(DockPointer.forAssetEditor('markdown', saved.asset_ref));
@@ -98,7 +100,7 @@ export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps
   if (!computeNode?.typeId) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Connecting…
+        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> <Trans>Connecting…</Trans>
       </div>
     );
   }
@@ -106,7 +108,7 @@ export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Resolving [[{name}]]…
+        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> <Trans>Resolving [[{name}]]…</Trans>
       </div>
     );
   }
@@ -128,9 +130,9 @@ export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps
         >
           <FileQuestion className="h-10 w-10 text-muted-foreground/60" />
           <div>
-            <div className="text-lg font-semibold">[[{name}]] not found</div>
+            <div className="text-lg font-semibold"><Trans>[[{name}]] not found</Trans></div>
             <div className="mt-1 text-sm text-muted-foreground">
-              No page exists with this name yet.
+              <Trans>No page exists with this name yet.</Trans>
             </div>
           </div>
           <RadioGroup
@@ -141,21 +143,21 @@ export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps
           >
             <div className="flex items-center gap-2">
               <RadioGroupItem value="markdown" id="wiki-create-markdown" />
-              <Label htmlFor="wiki-create-markdown">Create as Markdown</Label>
+              <Label htmlFor="wiki-create-markdown"><Trans>Create as Markdown</Trans></Label>
             </div>
             <div className="flex items-center gap-2">
               <RadioGroupItem value="whiteboard" id="wiki-create-whiteboard" />
-              <Label htmlFor="wiki-create-whiteboard">Create as Whiteboard</Label>
+              <Label htmlFor="wiki-create-whiteboard"><Trans>Create as Whiteboard</Trans></Label>
             </div>
           </RadioGroup>
           <Button onClick={() => void handleCreate()} disabled={creating}>
             {creating ? (
               <>
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                Creating…
+                <Trans>Creating…</Trans>
               </>
             ) : (
-              <>Create it</>
+              <><Trans>Create it</Trans></>
             )}
           </Button>
         </div>
@@ -168,7 +170,7 @@ export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps
   if (data.type !== 'markdown') {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Opening [[{name}]]…
+        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> <Trans>Opening [[{name}]]…</Trans>
       </div>
     );
   }

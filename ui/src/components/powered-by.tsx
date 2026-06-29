@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import flowpadLogo from '@src/assets/logo.png';
 import { useTheme } from 'next-themes';
 import { useEffect, useRef } from 'react';
@@ -13,6 +14,7 @@ interface PoweredByProps {
 const DOUBLE_CLICK_DELAY = 250;
 
 export function PoweredBy({ className = '' }: PoweredByProps) {
+  const { t } = useLingui();
   const { resolvedTheme } = useTheme();
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -24,7 +26,7 @@ export function PoweredBy({ className = '' }: PoweredByProps) {
 
   return (
     <div className={`flex items-end ${className}`}>
-      <span className="mr-2 text-[10px] text-muted-foreground">Powered by</span>
+      <span className="me-2 text-[10px] text-muted-foreground"><Trans>Powered by</Trans></span>
       <a
         href="https://flowpad.ai"
         onClick={(e) => {
@@ -46,7 +48,7 @@ export function PoweredBy({ className = '' }: PoweredByProps) {
       >
         <img
           src={flowpadLogo}
-          alt="Flowpad.ai Logo"
+          alt={t`Flowpad.ai Logo`}
           className={`h-4 ${resolvedTheme === 'dark' ? 'brightness-0 invert' : ''}`}
         />
       </a>

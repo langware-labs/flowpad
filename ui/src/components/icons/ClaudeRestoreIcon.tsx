@@ -1,3 +1,4 @@
+import { t } from '@lingui/react/macro';
 import { ClaudeIcon } from './ClaudeIcon';
 
 interface ClaudeRestoreIconProps {
@@ -12,7 +13,7 @@ interface ClaudeRestoreIconProps {
  */
 export function ClaudeRestoreIcon({ className }: ClaudeRestoreIconProps) {
   return (
-    <span className={`relative inline-flex ${className ?? ''}`} aria-label="Claude (restored session)">
+    <span className={`relative inline-flex ${className ?? ''}`} aria-label={t`Claude (restored session)`}>
       <ClaudeIcon className="h-full w-full" />
       <svg
         xmlns="http://www.w3.org/2000/svg"

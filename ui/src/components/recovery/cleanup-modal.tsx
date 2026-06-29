@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,14 +60,14 @@ export function CleanupModal() {
     <AlertDialog open={open} onOpenChange={(o) => { if (!o) closeCleanupModal(); }}>
       <AlertDialogContent data-testid="cleanup-modal">
         <AlertDialogHeader>
-          <AlertDialogTitle>Cleaned invalid sessions</AlertDialogTitle>
+          <AlertDialogTitle><Trans>Cleaned invalid sessions</Trans></AlertDialogTitle>
           <AlertDialogDescription>
-            We skipped {count} session{count === 1 ? '' : 's'} that couldn't be restored.
+            <Trans>We skipped {count} session{count === 1 ? '' : 's'} that couldn't be restored.</Trans>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogAction onClick={closeCleanupModal} data-testid="cleanup-modal-ok">
-            OK
+            <Trans>OK</Trans>
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

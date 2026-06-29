@@ -2,6 +2,7 @@ import { cn } from '@src/lib/utils';
 import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
 import { Send, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLingui } from '@lingui/react/macro';
 
 interface CompactExecutionInputProps {
   onSend: (text: string) => void | Promise<void>;
@@ -38,7 +39,7 @@ interface CompactExecutionInputProps {
 export function CompactExecutionInput({
   onSend,
   disabled = false,
-  placeholder = 'Message the agent…',
+  placeholder,
   className,
   statusSlot,
   running = false,
@@ -48,6 +49,7 @@ export function CompactExecutionInput({
   leadingSlot,
   onShiftTab,
 }: CompactExecutionInputProps) {
+  const { t } = useLingui();
   const [value, setValue] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -121,9 +123,9 @@ export function CompactExecutionInput({
           }
         }}
         disabled={disabled}
-        placeholder={placeholder}
+        placeholder={placeholder ?? t`Message the agent…`}
         rows={1}
-        aria-label="Message the agent"
+        aria-label={t`Message the agent`}
         className="min-h-[44px] flex-1 resize-none overflow-y-hidden rounded-2xl border bg-background px-4 py-3 text-[15px] outline-none transition-colors focus:border-primary disabled:opacity-50"
         data-testid="entity-execution-input"
       />
@@ -135,8 +137,8 @@ export function CompactExecutionInput({
             e.preventDefault();
             void onStop?.();
           }}
-          title="Stop generating"
-          aria-label="Stop generating"
+          title={t`Stop generating`}
+          aria-label={t`Stop generating`}
           className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
           data-testid="entity-execution-stop"
         >
@@ -150,8 +152,8 @@ export function CompactExecutionInput({
             void send();
           }}
           disabled={disabled || !value.trim()}
-          title="Send"
-          aria-label="Send message"
+          title={t`Send`}
+          aria-label={t`Send message`}
           className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary"
           data-testid="entity-execution-send"
         >

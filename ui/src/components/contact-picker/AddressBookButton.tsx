@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { BookUser, ShieldCheck } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { ConversationParticipant, User } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -46,6 +47,7 @@ export function AddressBookButton({
   disabled,
   testId = 'address-book-button',
 }: AddressBookButtonProps) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   // The contact whose permissions dialog is open (null = closed).
@@ -79,8 +81,8 @@ export function AddressBookButton({
         className="h-9 w-9 shrink-0"
         onClick={() => setOpen(true)}
         disabled={disabled}
-        aria-label="Open address book"
-        title="Address book"
+        aria-label={t`Open address book`}
+        title={t`Address book`}
         data-testid={testId}
       >
         <BookUser className="h-4 w-4" />
@@ -91,12 +93,12 @@ export function AddressBookButton({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BookUser className="h-4 w-4 text-primary" />
-              Contacts
+              <Trans>Contacts</Trans>
             </DialogTitle>
           </DialogHeader>
 
           <Input
-            placeholder="Search by name or email"
+            placeholder={t`Search by name or email`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             data-testid={`${testId}-search`}
@@ -105,7 +107,7 @@ export function AddressBookButton({
           <div className="max-h-72 overflow-y-auto rounded-md border border-border">
             {filtered.length === 0 ? (
               <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-                No contacts found.
+                <Trans>No contacts found.</Trans>
               </p>
             ) : (
               filtered.map((u) => {
@@ -128,8 +130,8 @@ export function AddressBookButton({
                       type="button"
                       onClick={() => setPermsFor(u)}
                       className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted-foreground/10 hover:text-foreground"
-                      aria-label="Permissions"
-                      title="Prompt permissions"
+                      aria-label={t`Permissions`}
+                      title={t`Prompt permissions`}
                       data-testid={`${testId}-perms-${u.id}`}
                     >
                       <ShieldCheck className="h-3.5 w-3.5" />
@@ -142,7 +144,7 @@ export function AddressBookButton({
 
           <DialogFooter>
             <Button type="button" onClick={() => setOpen(false)}>
-              Done
+              <Trans>Done</Trans>
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -13,6 +13,7 @@ import {
   User,
   Zap,
 } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 import { OperationExpandedDetail, OperationOneLiner } from './OperationRow';
 import { formatDuration, formatEntryTime, formatNumber, operationFilterKey, thinkingPreview, workerIcon, workerLabel } from './transcript-utils';
@@ -67,19 +68,19 @@ export function TranscriptEntryItem({
           <User className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-blue-600">User</span>
+              <span className="text-xs font-medium text-blue-600"><Trans>User</Trans></span>
               <span className="text-[10px] text-muted-foreground">{timestamp}</span>
               {entry.isSidechain && (
-                <span className="rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">sidechain</span>
+                <span className="rounded bg-purple-500/10 px-1 text-[10px] text-purple-600"><Trans>sidechain</Trans></span>
               )}
               {hasToolResult && (
                 <span className={`rounded px-1 text-[10px] ${entry.toolResult!.isError ? 'bg-red-500/10 text-red-600' : 'bg-blue-500/10 text-blue-600'}`}>
-                  {entry.toolResult!.isError ? 'tool error' : 'tool result'}
+                  {entry.toolResult!.isError ? <Trans>tool error</Trans> : <Trans>tool result</Trans>}
                 </span>
               )}
             </div>
             <p className={`mt-0.5 break-all text-xs ${isExpanded ? '' : 'line-clamp-2'} ${entry.toolResult?.isError ? 'text-red-500' : ''}`}>
-              {entry.text || (hasToolResult ? entry.toolResult!.output.slice(0, 200) : '(empty)')}
+              {entry.text || (hasToolResult ? entry.toolResult!.output.slice(0, 200) : <Trans>(empty)</Trans>)}
             </p>
           </div>
           <InfoButton onInfo={onInfo} onInfoHover={onInfoHover} onInfoHoverEnd={onInfoHoverEnd} />
@@ -94,7 +95,7 @@ export function TranscriptEntryItem({
                 <span>{formatDuration(entry.toolResult!.durationMs)}</span>
               )}
               {entry.toolResult!.exitCode != null && (
-                <span>exit {entry.toolResult!.exitCode}</span>
+                <span><Trans>exit {entry.toolResult!.exitCode}</Trans></span>
               )}
             </div>
             <pre className={`mt-1 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] ${entry.toolResult!.isError ? 'text-red-500' : 'text-muted-foreground'}`}>
@@ -165,7 +166,7 @@ export function TranscriptEntryItem({
               <span className="text-xs font-medium text-foreground/80">{workerLabel(entry.worker)}</span>
               <span className="text-[10px] text-muted-foreground">{timestamp}</span>
               {entry.thinking && (
-                <span className="shrink-0 rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">thinking</span>
+                <span className="shrink-0 rounded bg-purple-500/10 px-1 text-[10px] text-purple-600"><Trans>thinking</Trans></span>
               )}
               {entry.usage && totalTokens > 0 && (
                 <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground">
@@ -175,7 +176,7 @@ export function TranscriptEntryItem({
               )}
             </div>
             <p className={`mt-0.5 break-all text-xs ${isExpanded ? '' : 'line-clamp-2'} ${!entry.text && entry.thinking ? 'italic text-purple-600/80' : ''}`}>
-              {entry.text || thinkingPreview(entry.thinking) || '(no text content)'}
+              {entry.text || thinkingPreview(entry.thinking) || <Trans>(no text content)</Trans>}
             </p>
           </div>
           <InfoButton onInfo={onInfo} onInfoHover={onInfoHover} onInfoHoverEnd={onInfoHoverEnd} />
@@ -185,20 +186,20 @@ export function TranscriptEntryItem({
           <div className="ml-10 space-y-2 border-t border-border bg-muted/20 p-2">
             {entry.thinking && (
               <div className="rounded border border-purple-500/20 bg-purple-500/5 p-2">
-                <p className="text-[10px] font-medium text-purple-600">Thinking:</p>
+                <p className="text-[10px] font-medium text-purple-600"><Trans>Thinking:</Trans></p>
                 <p className="mt-1 whitespace-pre-wrap text-xs">{entry.thinking}</p>
               </div>
             )}
 
             {entry.usage && (
               <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
-                <span>Input: {formatNumber(entry.usage.input ?? 0)}</span>
-                <span>Output: {formatNumber(entry.usage.output ?? 0)}</span>
+                <span><Trans>Input: {formatNumber(entry.usage.input ?? 0)}</Trans></span>
+                <span><Trans>Output: {formatNumber(entry.usage.output ?? 0)}</Trans></span>
                 {entry.usage.cacheRead != null && entry.usage.cacheRead > 0 && (
-                  <span className="text-green-600">Cache read: {formatNumber(entry.usage.cacheRead)}</span>
+                  <span className="text-green-600"><Trans>Cache read: {formatNumber(entry.usage.cacheRead)}</Trans></span>
                 )}
                 {entry.usage.cacheCreation != null && entry.usage.cacheCreation > 0 && (
-                  <span className="text-orange-600">Cache write: {formatNumber(entry.usage.cacheCreation)}</span>
+                  <span className="text-orange-600"><Trans>Cache write: {formatNumber(entry.usage.cacheCreation)}</Trans></span>
                 )}
                 {entry.usage.costUsd != null && entry.usage.costUsd > 0 && (
                   <span className="font-medium text-foreground" data-testid="turn-cost-usd">
@@ -232,12 +233,12 @@ export function TranscriptEntryItem({
             <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] text-yellow-600">bash progress</span>
+                <span className="rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] text-yellow-600"><Trans>bash progress</Trans></span>
                 <span className="text-[10px] text-muted-foreground">{timestamp}</span>
                 <span className="text-[10px] text-muted-foreground">{elapsed}s</span>
               </div>
               <p className={`mt-0.5 break-all font-mono text-[10px] ${isExpanded ? '' : 'line-clamp-2'}`}>
-                {output || '(running...)'}
+                {output || <Trans>(running...)</Trans>}
               </p>
             </div>
           </button>
@@ -257,7 +258,7 @@ export function TranscriptEntryItem({
           <div className={`flex min-w-0 items-center gap-2 border-b border-border p-2 text-xs text-muted-foreground ${indentInnerClass}`}>
             {childMarker}
             <Timer className="h-3 w-3 text-blue-400" />
-            <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600">turn duration</span>
+            <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600"><Trans>turn duration</Trans></span>
             <span className="font-medium text-foreground">{formatDuration(durationMs)}</span>
             <span className="shrink-0">{timestamp}</span>
             <InfoButton onInfo={onInfo} onInfoHover={onInfoHover} onInfoHoverEnd={onInfoHoverEnd} className="ml-auto" />
@@ -272,7 +273,7 @@ export function TranscriptEntryItem({
           <div className={`flex min-w-0 items-center gap-2 border-b border-border p-2 text-xs text-muted-foreground ${indentInnerClass}`}>
             {childMarker}
             <Scissors className="h-3 w-3 text-purple-400" />
-            <span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] text-purple-600">compact boundary</span>
+            <span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] text-purple-600"><Trans>compact boundary</Trans></span>
             <span className="shrink-0">{timestamp}</span>
             <InfoButton onInfo={onInfo} onInfoHover={onInfoHover} onInfoHoverEnd={onInfoHoverEnd} className="ml-auto" />
           </div>
@@ -300,7 +301,7 @@ export function TranscriptEntryItem({
             <Square className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-500" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="rounded bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-600">stop hooks</span>
+                <span className="rounded bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-600"><Trans>stop hooks</Trans></span>
                 <span className="text-[10px] text-muted-foreground">{timestamp}</span>
                 <span className="text-[10px] text-muted-foreground">{hookCount} hook{hookCount !== 1 ? 's' : ''}</span>
                 {hookErrors.length > 0 && (
@@ -310,7 +311,7 @@ export function TranscriptEntryItem({
                   </span>
                 )}
                 {preventedContinuation && (
-                  <span className="rounded bg-red-500/10 px-1 text-[10px] text-red-600">blocked</span>
+                  <span className="rounded bg-red-500/10 px-1 text-[10px] text-red-600"><Trans>blocked</Trans></span>
                 )}
                 {stopReason && <span className="truncate text-[10px] text-muted-foreground">{stopReason}</span>}
               </div>
@@ -358,7 +359,7 @@ export function TranscriptEntryItem({
             <Zap className="mt-0.5 h-4 w-4 shrink-0 text-purple-400" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] text-purple-500">hook</span>
+                <span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] text-purple-500"><Trans>hook</Trans></span>
                 <span className="truncate font-mono text-[10px] text-muted-foreground">{hookName}</span>
                 <span className="text-[10px] text-muted-foreground">{timestamp}</span>
               </div>
@@ -371,10 +372,10 @@ export function TranscriptEntryItem({
           {isExpanded && (
             <div className="ml-10 border-t border-border bg-muted/20 p-2">
               <div className="space-y-1 text-[10px]">
-                <div><span className="text-muted-foreground">Event: </span><span className="font-mono">{hookEvent}</span></div>
-                <div><span className="text-muted-foreground">Hook: </span><span className="font-mono">{hookName}</span></div>
+                <div><span className="text-muted-foreground"><Trans>Event: </Trans></span><span className="font-mono">{hookEvent}</span></div>
+                <div><span className="text-muted-foreground"><Trans>Hook: </Trans></span><span className="font-mono">{hookName}</span></div>
                 <div>
-                  <span className="text-muted-foreground">Command: </span>
+                  <span className="text-muted-foreground"><Trans>Command: </Trans></span>
                   <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-[9px] text-muted-foreground">{command}</pre>
                 </div>
               </div>
@@ -402,7 +403,7 @@ export function TranscriptEntryItem({
             <Bot className="mt-0.5 h-4 w-4 shrink-0 text-cyan-500" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="rounded bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-600">agent</span>
+                <span className="rounded bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-600"><Trans>agent</Trans></span>
                 <span className="font-mono text-[10px] text-muted-foreground">{agentId.slice(0, 8)}</span>
                 <span className="text-[10px] text-muted-foreground">{timestamp}</span>
               </div>
@@ -416,7 +417,7 @@ export function TranscriptEntryItem({
             <div className="ml-10 space-y-2 border-t border-border bg-muted/20 p-2">
               {prompt && (
                 <div className="rounded border border-cyan-500/20 bg-cyan-500/5 p-2">
-                  <p className="text-[10px] font-medium text-cyan-600">Prompt:</p>
+                  <p className="text-[10px] font-medium text-cyan-600"><Trans>Prompt:</Trans></p>
                   <p className="mt-1 whitespace-pre-wrap text-xs">{prompt}</p>
                 </div>
               )}
@@ -436,7 +437,7 @@ export function TranscriptEntryItem({
           {childMarker}
           <Activity className="h-3 w-3" />
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="min-w-0 break-all rounded bg-muted px-1.5 py-0.5">system</span>
+            <span className="min-w-0 break-all rounded bg-muted px-1.5 py-0.5"><Trans>system</Trans></span>
             {subtype && <span className="rounded bg-muted px-1 text-[10px]">{subtype}</span>}
             <span className="shrink-0">{timestamp}</span>
           </div>
@@ -491,6 +492,7 @@ function InfoButton({
   onInfoHoverEnd: () => void;
   className?: string;
 }) {
+  const { t } = useLingui();
   return (
     <button
       type="button"
@@ -498,7 +500,7 @@ function InfoButton({
       onMouseEnter={(e) => { e.stopPropagation(); onInfoHover(); }}
       onMouseLeave={(e) => { e.stopPropagation(); onInfoHoverEnd(); }}
       className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted ${className ?? ''}`}
-      title="Entry details"
+      title={t`Entry details`}
     >
       <Info className="h-3.5 w-3.5" />
     </button>

@@ -1,6 +1,7 @@
 import { Button } from '@src/components/ui/button';
 import { ChevronRight, GripVertical, Trash2 } from 'lucide-react';
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
+import { useLingui } from '@lingui/react/macro';
 import { InstructionStatus, useAMDEditor } from '../AMDEditorContext';
 import { AMDElement, BLOCK_CONFIGS, isContainerType } from '../types';
 
@@ -43,6 +44,8 @@ function getStatusStyles(status: InstructionStatus): string {
 }
 
 export function BlockWrapper({ element, depth, children }: BlockWrapperProps) {
+  const { t } = useLingui();
+
   const {
     selectedId,
     selectElement,
@@ -162,7 +165,7 @@ export function BlockWrapper({ element, depth, children }: BlockWrapperProps) {
             size="sm"
             className="h-5 w-5 p-0 text-zinc-400 hover:bg-transparent hover:text-zinc-600 dark:text-zinc-600 dark:hover:text-zinc-400"
             onClick={handleMoveUp}
-            title="Move up"
+            title={t`Move up`}
           >
             <ChevronRight className="h-3 w-3 -rotate-90" />
           </Button>
@@ -171,7 +174,7 @@ export function BlockWrapper({ element, depth, children }: BlockWrapperProps) {
             size="sm"
             className="h-5 w-5 p-0 text-zinc-400 hover:bg-transparent hover:text-zinc-600 dark:text-zinc-600 dark:hover:text-zinc-400"
             onClick={handleMoveDown}
-            title="Move down"
+            title={t`Move down`}
           >
             <ChevronRight className="h-3 w-3 rotate-90" />
           </Button>
@@ -180,7 +183,7 @@ export function BlockWrapper({ element, depth, children }: BlockWrapperProps) {
             size="sm"
             className="h-5 w-5 p-0 text-zinc-400 hover:bg-transparent hover:text-red-500 dark:text-zinc-600 dark:hover:text-red-400"
             onClick={handleDelete}
-            title="Delete"
+            title={t`Delete`}
           >
             <Trash2 className="h-3 w-3" />
           </Button>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
+import { useLingui } from '@lingui/react/macro';
 import { EntityIcon } from './EntityIcon';
 
 export type SearchResultRow = {
@@ -28,6 +29,7 @@ function highlight(text: string, q: string) {
 }
 
 export function SearchInput({ onQueryChange, onSelect }: Props) {
+  const { t } = useLingui();
   const [value, setValue] = useState('');
   const [results, setResults] = useState<SearchResultRow[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -79,7 +81,7 @@ export function SearchInput({ onQueryChange, onSelect }: Props) {
         <Search size={14} />
         <input
           className="search-input"
-          placeholder="Search nodes…"
+          placeholder={t`Search nodes…`}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onFocus={() => results.length > 0 && setOpen(true)}

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 import { LifeBuoy, RefreshCw } from 'lucide-react';
 import {
   Conversation,
@@ -62,6 +64,7 @@ export function ConversationView({
   onMostRecentMessageChange,
   onApproveAndExecuteFired,
 }: ConversationViewProps) {
+  const { t } = useLingui();
   const conversationTypeId = useMemo(
     () => new TypeId(Conversation.type, conversationId),
     [conversationId],
@@ -399,18 +402,18 @@ export function ConversationView({
             type="button"
             onClick={() => void handlePickup()}
             disabled={pickingUp}
-            title="Join this support ticket so you can reply"
+            title={t`Join this support ticket so you can reply`}
             data-testid="pickup-conversation-button"
             className="flex items-center gap-1 rounded border border-violet-500/40 bg-violet-500/15 px-2 py-0.5 text-[11px] font-medium text-violet-600 transition-colors hover:bg-violet-500/25 disabled:opacity-50 dark:text-violet-400"
           >
             <LifeBuoy className="h-3 w-3" />
-            {pickingUp ? 'Picking up…' : 'Pick up'}
+            {pickingUp ? <Trans>Picking up…</Trans> : <Trans>Pick up</Trans>}
           </button>
         )}
         <button
           type="button"
           onClick={() => void handleRefresh()}
-          title="Refresh (pulls from hub)"
+          title={t`Refresh (pulls from hub)`}
           data-testid="refresh-conversation-button"
           className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
@@ -418,7 +421,7 @@ export function ConversationView({
         </button>
       </div>
       {orderedItems.length === 0 ? (
-        <p className="text-xs italic text-muted-foreground/60">No messages yet.</p>
+        <p className="text-xs italic text-muted-foreground/60"><Trans>No messages yet.</Trans></p>
       ) : (
         <div className="flex flex-col gap-3">
           {orderedItems.map((item) => {

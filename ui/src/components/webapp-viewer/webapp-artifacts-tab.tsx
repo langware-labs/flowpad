@@ -2,6 +2,7 @@ import { ScrollArea } from '@src/components/ui/scroll-area';
 import { Artifact, ArtifactType, MachineStatus } from '@sdk';
 import { Server } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { WebappArtifactDetail } from './webapp-artifact-detail';
 
 type ArtifactStatus = 'running' | 'stopped' | 'error';
@@ -77,7 +78,7 @@ export const WebappArtifactsTab: React.FC<WebappArtifactsTabProps> = ({ artifact
       <div className="flex h-full items-center justify-center text-muted-foreground">
         <div className="text-center">
           <Server className="mx-auto mb-2 h-8 w-8 opacity-50" />
-          <p>No webapp or service artifacts found</p>
+          <p><Trans>No webapp or service artifacts found</Trans></p>
         </div>
       </div>
     );
@@ -91,7 +92,7 @@ export const WebappArtifactsTab: React.FC<WebappArtifactsTabProps> = ({ artifact
           <WebappArtifactDetail artifact={selectedArtifact} machineStatus={machineStatus} />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
-            Select an artifact to view details
+            <Trans>Select an artifact to view details</Trans>
           </div>
         )}
       </div>
@@ -100,7 +101,7 @@ export const WebappArtifactsTab: React.FC<WebappArtifactsTabProps> = ({ artifact
       <div className="w-48 flex-shrink-0">
         <ScrollArea className="h-full">
           <div className="p-2">
-            <h3 className="mb-2 px-2 text-xs font-medium text-muted-foreground">Artifacts</h3>
+            <h3 className="mb-2 px-2 text-xs font-medium text-muted-foreground"><Trans>Artifacts</Trans></h3>
             {serviceArtifacts.map((artifact) => {
               const status = getArtifactStatus(artifact);
               const isSelected = artifact.id === selectedArtifactId;

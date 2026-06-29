@@ -8,6 +8,7 @@
 
 import { Archive, Check, CheckCircle, ChevronRight, FileText, Loader2, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
+import { Trans, t } from '@lingui/react/macro';
 import type { Task } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -56,7 +57,7 @@ function AnalysisProgressRow({ task }: { task: Task }) {
           <div className="flex items-center gap-1.5">
             {activityLabel && <span className="text-[9px] font-medium">{activityLabel}</span>}
             {statusMessage && <span className="truncate">{statusMessage}</span>}
-            {!activityLabel && !statusMessage && <span>Analysis in progress...</span>}
+            {!activityLabel && !statusMessage && <span><Trans>Analysis in progress...</Trans></span>}
             {elapsedTime && (
               <span className="ml-auto shrink-0 text-[9px] text-muted-foreground/70">({elapsedTime})</span>
             )}
@@ -64,7 +65,7 @@ function AnalysisProgressRow({ task }: { task: Task }) {
         )}
         {isComplete && (
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-medium text-green-600 dark:text-green-400">Analysis complete</span>
+            <span className="text-[9px] font-medium text-green-600 dark:text-green-400"><Trans>Analysis complete</Trans></span>
             {analysisPath && (
               <button
                 type="button"
@@ -74,7 +75,7 @@ function AnalysisProgressRow({ task }: { task: Task }) {
                   openArtifact(analysisPath, navigation);
                 }}
               >
-                Open report
+                <Trans>Open report</Trans>
               </button>
             )}
             {analysisJsonPath && (
@@ -86,12 +87,12 @@ function AnalysisProgressRow({ task }: { task: Task }) {
                   openArtifact(analysisJsonPath, navigation);
                 }}
               >
-                Open JSON
+                <Trans>Open JSON</Trans>
               </button>
             )}
           </div>
         )}
-        {isError && <span className="text-[9px] font-medium text-red-500">Analysis failed</span>}
+        {isError && <span className="text-[9px] font-medium text-red-500"><Trans>Analysis failed</Trans></span>}
       </div>
     </div>
   );
@@ -114,7 +115,7 @@ function ArtifactsRow({ task }: { task: Task }) {
       <FileText className="h-3 w-3 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[9px] font-medium">Artifacts:</span>
+          <span className="text-[9px] font-medium"><Trans>Artifacts:</Trans></span>
           {artifacts.map((artifact, index) => (
             <button
               key={index}
@@ -128,7 +129,7 @@ function ArtifactsRow({ task }: { task: Task }) {
                   openArtifact(artifact.path, navigation);
                 }
               }}
-              title={artifact.skillDockPath ? `Open in Skills tab` : artifact.path}
+              title={artifact.skillDockPath ? t`Open in Skills tab` : artifact.path}
             >
               {artifact.label}
             </button>
@@ -150,7 +151,7 @@ export function TaskCard({
 }: TaskCardProps) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const isAlreadyArchived = task.status === 'archived' || !!task.archived_at;
-  const actionLabel = isAlreadyArchived ? 'Delete' : 'Archive';
+  const actionLabel = isAlreadyArchived ? t`Delete` : t`Archive`;
   const ActionIcon = isAlreadyArchived ? Trash2 : Archive;
   const dueDateLabel = formatDueDate(task.due_at);
   const isAnalysisTask = task.task_type === TaskType.ANALYSIS;

@@ -6,6 +6,7 @@ import { ActivityIndicator } from '@src/components/search-index/ActivityIndicato
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { RefreshCw, ChevronDown, ChevronRight, Search, Database, FileSearch, Trash2, ScanSearch, Ghost, RotateCw, ListTree } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -140,6 +141,7 @@ function TypeRow({
   indexedCount: number | null;
   active: boolean;
 }) {
+  const { t } = useLingui();
   const dimmed = row.count === 0;
 
   return (
@@ -180,18 +182,18 @@ function TypeRow({
               onClick={(e) => { e.stopPropagation(); onViewIndexed(row.type); }}
               title={`View the ${indexedCount} ${row.type} ${indexedCount === 1 ? 'entity' : 'entities'} indexed this run`}
             >
-              {indexedCount} indexed
+              <Trans>{indexedCount} indexed</Trans>
             </button>
           ) : row.error ? (
-            <span className="text-destructive">error</span>
+            <span className="text-destructive"><Trans>error</Trans></span>
           ) : row.orphan_count > 0 ? (
-            <span className="text-amber-600 dark:text-amber-400">{row.orphan_count} orphan{row.orphan_count === 1 ? '' : 's'}</span>
+            <span className="text-amber-600 dark:text-amber-400"><Trans id="orphan_count">{row.orphan_count} orphan{row.orphan_count === 1 ? '' : 's'}</Trans></span>
           ) : row.stale && !(row.count === 0 && row.last_indexed_at === null) ? (
             <span
               className="text-amber-600 dark:text-amber-400"
-              title={row.last_indexed_at === null ? 'Last indexed: never' : `Last indexed: ${row.last_indexed_at}`}
+              title={row.last_indexed_at === null ? t`Last indexed: never` : `Last indexed: ${row.last_indexed_at}`}
             >
-              {row.last_indexed_at === null ? 'never indexed' : '24h+ idle'}
+              {row.last_indexed_at === null ? <Trans>never indexed</Trans> : <Trans>24h+ idle</Trans>}
             </span>
           ) : (
             <span className="text-emerald-600 dark:text-emerald-400">✓</span>
@@ -213,8 +215,8 @@ function TypeRow({
               </TooltipTrigger>
               <TooltipContent side="left">
                 {indexedCount !== null
-                  ? `Indexed ${indexedCount} records`
-                  : `Sync ${row.type} changes`}
+                  ? t`Indexed ${indexedCount} records`
+                  : t`Sync ${row.type} changes`}
               </TooltipContent>
             </Tooltip>
             {row.count > 0 && (
@@ -231,7 +233,7 @@ function TypeRow({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="left">
-                  Clear {row.type} index
+                  {t`Clear ${row.type} index`}
                 </TooltipContent>
               </Tooltip>
             )}
@@ -244,7 +246,7 @@ function TypeRow({
             {loadingDetail ? (
               <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
                 <RefreshCw className="h-3 w-3 animate-spin" />
-                Loading records…
+                <Trans>Loading records…</Trans>
               </div>
             ) : detail ? (
               <div className="flex flex-col gap-1">
@@ -294,6 +296,7 @@ function TypeRow({
 }
 
 export function FsRecordsScannerViewer() {
+  const { t } = useLingui();
   // Unified scope chip — same component, same shape, same wire format as the
   // assets page. Drives every action and every count on this page so the
   // user sees one consistent view of "what scope am I operating on".
@@ -637,7 +640,7 @@ export function FsRecordsScannerViewer() {
           Per-type Sync and Clear live as hover actions on each row. */}
       <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold">Records Scanner</h1>
+          <h1 className="text-sm font-semibold"><Trans>Records Scanner</Trans></h1>
           <ScopeFilterBar
             scope={scope}
             currentProjectId={currentProjectId}
@@ -648,7 +651,7 @@ export function FsRecordsScannerViewer() {
             onClick={() => handleScopeChange(filterScope(scopeIncludesUser(scope), allProjectIds))}
             disabled={allProjectIds.length === 0}
             aria-pressed={allProjectsSelected}
-            title={allProjectsSelected ? 'Every project is selected' : 'Select every project'}
+            title={allProjectsSelected ? t`Every project is selected` : t`Select every project`}
             data-testid="scope-all-projects"
             className={`flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium transition-colors ${
               allProjectsSelected
@@ -656,7 +659,7 @@ export function FsRecordsScannerViewer() {
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
-            All projects
+            <Trans>All projects</Trans>
             {allProjectIds.length > 0 && (
               <span
                 className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] ${
@@ -680,16 +683,15 @@ export function FsRecordsScannerViewer() {
                 data-testid="toolbar-fast-index"
               >
                 <Database className={`h-3.5 w-3.5 ${refreshing ? 'animate-pulse' : ''}`} />
-                {refreshing ? 'Indexing…' : 'Fast'}
+                {refreshing ? <Trans>Indexing…</Trans> : <Trans>Fast</Trans>}
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              <p className="font-medium">Fast — delta by hash</p>
+              <p className="font-medium"><Trans>Fast — delta by hash</Trans></p>
               <p className="mt-1 text-xs opacity-90">
-                Walks the filesystem and re-indexes only entries whose source changed since last index
-                (each record's <code>.hash</code> sentinel). Changes-pending drops to 0.
+                <Trans>Walks the filesystem and re-indexes only entries whose source changed since last index (each record's <code>.hash</code> sentinel). Changes-pending drops to 0.</Trans>
               </p>
-              <p className="mt-1 text-xs opacity-70">The default — what you want 99% of the time.</p>
+              <p className="mt-1 text-xs opacity-70"><Trans>The default — what you want 99% of the time.</Trans></p>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -703,16 +705,15 @@ export function FsRecordsScannerViewer() {
                 data-testid="toolbar-full-index"
               >
                 <RotateCw className={`h-3.5 w-3.5 ${forceResyncing ? 'animate-spin' : ''}`} />
-                {forceResyncing ? 'Rebuilding…' : 'Full'}
+                {forceResyncing ? <Trans>Rebuilding…</Trans> : <Trans>Full</Trans>}
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              <p className="font-medium">Full — complete rescan</p>
+              <p className="font-medium"><Trans>Full — complete rescan</Trans></p>
               <p className="mt-1 text-xs opacity-90">
-                Re-parses <em>every</em> entry, ignoring the <code>.hash</code> sentinel. Use after a parser
-                or schema change, when stored content is wrong even though the source hasn't moved.
+                <Trans>Re-parses <em>every</em> entry, ignoring the <code>.hash</code> sentinel. Use after a parser or schema change, when stored content is wrong even though the source hasn't moved.</Trans>
               </p>
-              <p className="mt-1 text-xs opacity-70">Slower. To wipe rows first, use Clear Index then Full.</p>
+              <p className="mt-1 text-xs opacity-70"><Trans>Slower. To wipe rows first, use Clear Index then Full.</Trans></p>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -725,16 +726,15 @@ export function FsRecordsScannerViewer() {
                 disabled={scanStatsLoading || refreshing || clearing || forceResyncing}
               >
                 <ScanSearch className={`h-3.5 w-3.5 ${scanStatsLoading ? 'animate-pulse' : ''}`} />
-                {scanStatsLoading ? 'Scanning…' : 'Scan Stats'}
+                {scanStatsLoading ? <Trans>Scanning…</Trans> : <Trans>Scan Stats</Trans>}
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              <p className="font-medium">Scan Stats</p>
+              <p className="font-medium"><Trans>Scan Stats</Trans></p>
               <p className="mt-1 text-xs opacity-90">
-                Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index).
-                Read-only — no DB writes, no <code>last_indexed_at</code> bump.
+                <Trans>Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index). Read-only — no DB writes, no <code>last_indexed_at</code> bump.</Trans>
               </p>
-              <p className="mt-1 text-xs opacity-70">~2s. Use to check what's on disk without changing anything.</p>
+              <p className="mt-1 text-xs opacity-70"><Trans>~2s. Use to check what's on disk without changing anything.</Trans></p>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -748,7 +748,7 @@ export function FsRecordsScannerViewer() {
                 data-testid="toolbar-scan-orphans"
               >
                 <Ghost className="h-3.5 w-3.5" />
-                Scan Orphans
+                <Trans>Scan Orphans</Trans>
                 {totalOrphans > 0 && (
                   <span className="ml-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
                     {totalOrphans}
@@ -757,15 +757,14 @@ export function FsRecordsScannerViewer() {
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              <p className="font-medium">Scan Orphans</p>
+              <p className="font-medium"><Trans>Scan Orphans</Trans></p>
               <p className="mt-1 text-xs opacity-90">
-                An orphan is a DB row (or shadow record dir) whose source file is gone from disk.
-                The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE).
+                <Trans>An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE).</Trans>
               </p>
               <p className="mt-1 text-xs opacity-70">
                 {totalOrphans > 0
-                  ? `${totalOrphans} orphan record${totalOrphans === 1 ? '' : 's'} pending review.`
-                  : 'No orphans right now. Click to re-scan and confirm.'}
+                  ? t`${totalOrphans} orphan record${totalOrphans === 1 ? '' : 's'} pending review.`
+                  : t`No orphans right now. Click to re-scan and confirm.`}
               </p>
             </TooltipContent>
           </Tooltip>
@@ -779,16 +778,15 @@ export function FsRecordsScannerViewer() {
                 data-testid="toolbar-llm-indexers"
               >
                 <ListTree className="h-3.5 w-3.5" />
-                LLM Indexers
+                <Trans>LLM Indexers</Trans>
               </Button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
-              <p className="font-medium">LLM Indexers</p>
+              <p className="font-medium"><Trans>LLM Indexers</Trans></p>
               <p className="mt-1 text-xs opacity-90">
-                Browse and run LLM-generated folder indexes (MarkdownIndex entities).
-                Each indexer (re)builds a Merkle tree of <code>index.md</code> files over a docs root.
+                <Trans>Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle tree of <code>index.md</code> files over a docs root.</Trans>
               </p>
-              <p className="mt-1 text-xs opacity-70">Runs as an AgenticProcess — see per-row status + transcript.</p>
+              <p className="mt-1 text-xs opacity-70"><Trans>Runs as an AgenticProcess — see per-row status + transcript.</Trans></p>
             </TooltipContent>
           </Tooltip>
           <AlertDialog>
@@ -800,26 +798,23 @@ export function FsRecordsScannerViewer() {
                 disabled={clearing || refreshing || forceResyncing}
               >
                 <Trash2 className={`h-3.5 w-3.5 ${clearing ? 'animate-pulse' : ''}`} />
-                {clearing ? 'Clearing…' : 'Clear Index'}
+                {clearing ? <Trans>Clearing…</Trans> : <Trans>Clear Index</Trans>}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Clear search index?</AlertDialogTitle>
+                <AlertDialogTitle><Trans>Clear search index?</Trans></AlertDialogTitle>
                 <AlertDialogDescription>
-                  Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it.
-                  Files on disk are <em>not</em> touched.
-                  <br /><br />
-                  After clearing, click <strong>Fast</strong> to re-index changed entries, or <strong>Full</strong> to re-index everything.
+                  <Trans>Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <em>not</em> touched. After clearing, click <strong>Fast</strong> to re-index changed entries, or <strong>Full</strong> to re-index everything.</Trans>
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   onClick={() => void handleClearIndex()}
                 >
-                  Clear Index
+                  <Trans>Clear Index</Trans>
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -854,13 +849,13 @@ export function FsRecordsScannerViewer() {
       {/* Totals — sourced from index-status, available on mount. */}
       {indexStatus.phase === 'ready' && (
         <div className="shrink-0 border-b bg-muted/30 px-5 py-2 text-sm">
-          <span className="font-medium">{grandTotal.toLocaleString()} records</span>
+          <span className="font-medium"><Trans id="records_count">{grandTotal.toLocaleString()} records</Trans></span>
           {' · '}
-          <span className="text-muted-foreground">{typeRows.length} types</span>
+          <span className="text-muted-foreground"><Trans id="types_count">{typeRows.length} types</Trans></span>
           {lastIndexedLabel && (
             <>
               {' · '}
-              <span className="text-muted-foreground">last indexed {lastIndexedLabel}</span>
+              <span className="text-muted-foreground"><Trans id="last_indexed_at">last indexed {lastIndexedLabel}</Trans></span>
             </>
           )}
           {totalOrphans > 0 && (
@@ -871,7 +866,7 @@ export function FsRecordsScannerViewer() {
                 onClick={() => openSweepDialog(null)}
                 className="text-amber-600 hover:underline dark:text-amber-400"
               >
-                {totalOrphans} orphan{totalOrphans === 1 ? '' : 's'}
+                <Trans id="orphans_count">{totalOrphans} orphan{totalOrphans === 1 ? '' : 's'}</Trans>
               </button>
             </>
           )}
@@ -880,10 +875,10 @@ export function FsRecordsScannerViewer() {
               {' · '}
               <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
                 {scopeHasUser && selectedProjectIds.length > 0
-                  ? `scope: user + ${selectedProjectIds.length} project${selectedProjectIds.length === 1 ? '' : 's'}`
+                  ? t`scope: user + ${selectedProjectIds.length} project${selectedProjectIds.length === 1 ? '' : 's'}`
                   : scopeHasUser
-                    ? 'scope: user only'
-                    : `scope: ${selectedProjectIds.length} project${selectedProjectIds.length === 1 ? '' : 's'} only`}
+                    ? t`scope: user only`
+                    : t`scope: ${selectedProjectIds.length} project${selectedProjectIds.length === 1 ? '' : 's'} only`}
               </span>
             </>
           )}
@@ -896,13 +891,13 @@ export function FsRecordsScannerViewer() {
           {!indexerReady && (
             <div className="mb-3 flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
               <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
-              <span>Search index is warming up. Run Refresh Index to populate it.</span>
+              <span><Trans>Search index is warming up. Run Refresh Index to populate it.</Trans></span>
             </div>
           )}
           {searchLoading && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <RefreshCw className="h-4 w-4 animate-spin" />
-              Searching…
+              <Trans>Searching…</Trans>
             </div>
           )}
           {searchError && (
@@ -921,8 +916,8 @@ export function FsRecordsScannerViewer() {
             <div className="flex flex-col items-center gap-3 py-12 text-center text-muted-foreground">
               <FileSearch className="h-10 w-10 opacity-40" />
               <div>
-                <p className="font-medium">No records found</p>
-                <p className="text-sm">No results for &ldquo;{searchQuery}&rdquo;</p>
+                <p className="font-medium"><Trans>No records found</Trans></p>
+                <p className="text-sm"><Trans id="no_results_for">No results for "{searchQuery}"</Trans></p>
               </div>
             </div>
           )}
@@ -937,7 +932,7 @@ export function FsRecordsScannerViewer() {
                 <Input
                   value={filterText}
                   onChange={(e) => setFilterText(e.target.value)}
-                  placeholder="Filter types…"
+                  placeholder={t`Filter types…`}
                   className="h-7 pl-8 text-xs"
                 />
               </div>
@@ -947,7 +942,7 @@ export function FsRecordsScannerViewer() {
                 className="h-7 text-xs"
                 onClick={() => setShowNonEmpty((v) => !v)}
               >
-                Non-empty
+                <Trans>Non-empty</Trans>
               </Button>
             </div>
           )}
@@ -956,21 +951,19 @@ export function FsRecordsScannerViewer() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             {indexStatus.phase !== 'ready' && (
               <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Loading index status…
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" /> <Trans>Loading index status…</Trans>
               </div>
             )}
             {indexStatus.phase === 'ready' && typeRows.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
                 <p className="text-sm">
-                  Nothing indexed yet.{' '}
-                  <button
+                  <Trans>Nothing indexed yet. <button
                     className="font-medium text-foreground underline-offset-2 hover:underline"
                     onClick={() => void handleRefreshIndex()}
                     disabled={refreshing}
                   >
                     Refresh Index
-                  </button>
-                  {' '}to populate.
+                  </button> to populate.</Trans>
                 </p>
               </div>
             )}
@@ -979,13 +972,13 @@ export function FsRecordsScannerViewer() {
                 <thead className="sticky top-0 z-10 border-b bg-card text-xs text-muted-foreground">
                   <tr>
                     <th className="w-6 py-2 pl-3 pr-2" />
-                    <th className="py-2 pr-4 text-left font-medium">Type</th>
-                    <th className="py-2 pr-4 text-right font-medium">Records</th>
-                    <th className="py-2 pr-4 text-right font-medium" title="DB rows whose source file is gone. Click a non-zero count to sweep.">
-                      Orphans
+                    <th className="py-2 pr-4 text-left font-medium"><Trans>Type</Trans></th>
+                    <th className="py-2 pr-4 text-right font-medium"><Trans>Records</Trans></th>
+                    <th className="py-2 pr-4 text-right font-medium" title={t`DB rows whose source file is gone. Click a non-zero count to sweep.`}>
+                      <Trans>Orphans</Trans>
                     </th>
-                    <th className="py-2 pr-4 text-right font-medium">Last Indexed</th>
-                    <th className="py-2 pr-3 text-right font-medium">Status</th>
+                    <th className="py-2 pr-4 text-right font-medium"><Trans>Last Indexed</Trans></th>
+                    <th className="py-2 pr-3 text-right font-medium"><Trans>Status</Trans></th>
                     <th className="w-16 py-2 pr-2" />
                   </tr>
                 </thead>
@@ -1013,7 +1006,7 @@ export function FsRecordsScannerViewer() {
             )}
             {indexStatus.phase === 'ready' && typeRows.length > 0 && filteredRows.length === 0 && (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No types match filter
+                <Trans>No types match filter</Trans>
               </div>
             )}
           </div>
@@ -1050,41 +1043,40 @@ export function FsRecordsScannerViewer() {
       <Dialog open={scanStatsOpen} onOpenChange={setScanStatsOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Scan Stats</DialogTitle>
+            <DialogTitle><Trans>Scan Stats</Trans></DialogTitle>
             <DialogDescription>
-              Walked the filesystem without writing. Counts and sizes reflect what
-              is on disk right now; compare against the per-type rows to see drift.
+              <Trans>Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare against the per-type rows to see drift.</Trans>
             </DialogDescription>
           </DialogHeader>
           {scanStatsLoading ? (
             <div className="flex items-center gap-3 py-6 text-sm">
               <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
               <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-foreground">Scanning filesystem…</span>
+                <span className="text-foreground"><Trans>Scanning filesystem…</Trans></span>
                 <span className="text-xs text-muted-foreground">
                   {scanStatsProgress
                     ? `${scanStatsProgress.done.toLocaleString()} found so far${
                         scanStatsProgress.current ? ` · ${scanStatsProgress.current}` : ''
                       }`
-                    : 'Starting scan…'}
+                    : <Trans>Starting scan…</Trans>}
                 </span>
               </div>
             </div>
           ) : scanStats ? (
             <div className="flex flex-col gap-2">
               <div className="text-sm">
-                <span className="font-medium">{scanStats.grand_total.toLocaleString()} records on disk</span>
+                <span className="font-medium"><Trans id="records_on_disk">{scanStats.grand_total.toLocaleString()} records on disk</Trans></span>
                 {' · '}
-                <span className="text-muted-foreground">{scanStats.types.length} types · {fmtMs(scanStats.scan_ms)}</span>
+                <span className="text-muted-foreground"><Trans id="types_time">{scanStats.types.length} types · {fmtMs(scanStats.scan_ms)}</Trans></span>
                 {scanStats.diff_included && (
                   <>
                     {' · '}
                     <span className={(scanStats.grand_pending ?? 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
-                      Pending: {(scanStats.grand_pending ?? 0).toLocaleString()}
+                      <Trans id="pending_count">Pending: {(scanStats.grand_pending ?? 0).toLocaleString()}</Trans>
                     </span>
                     {' · '}
                     <span className={(scanStats.grand_orphan ?? 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
-                      Orphans: {(scanStats.grand_orphan ?? 0).toLocaleString()}
+                      <Trans id="orphans_total">Orphans: {(scanStats.grand_orphan ?? 0).toLocaleString()}</Trans>
                     </span>
                   </>
                 )}
@@ -1093,14 +1085,14 @@ export function FsRecordsScannerViewer() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b bg-muted/50 text-muted-foreground">
-                      <th className="py-1 pl-3 pr-3 text-left font-medium">Type</th>
-                      <th className="py-1 pr-3 text-right font-medium">On Disk</th>
-                      <th className="py-1 pr-3 text-right font-medium">In Index</th>
-                      <th className="py-1 pr-3 text-right font-medium" title="Files on disk not yet in the DB">New</th>
-                      <th className="py-1 pr-3 text-right font-medium" title="File mtime is newer than DB updated_date">Stale</th>
-                      <th className="py-1 pr-3 text-right font-medium" title="DB row's scope/project_id no longer matches walk">Mis-Sc</th>
-                      <th className="py-1 pr-3 text-right font-medium" title="DB row or shadow dir, file is gone">Orphan</th>
-                      <th className="py-1 pr-3 text-right font-medium">Size</th>
+                      <th className="py-1 pl-3 pr-3 text-left font-medium"><Trans>Type</Trans></th>
+                      <th className="py-1 pr-3 text-right font-medium"><Trans>On Disk</Trans></th>
+                      <th className="py-1 pr-3 text-right font-medium"><Trans>In Index</Trans></th>
+                      <th className="py-1 pr-3 text-right font-medium" title={t`Files on disk not yet in the DB`}><Trans>New</Trans></th>
+                      <th className="py-1 pr-3 text-right font-medium" title={t`File mtime is newer than DB updated_date`}><Trans>Stale</Trans></th>
+                      <th className="py-1 pr-3 text-right font-medium" title={t`DB row's scope/project_id no longer matches walk`}><Trans>Mis-Sc</Trans></th>
+                      <th className="py-1 pr-3 text-right font-medium" title={t`DB row or shadow dir, file is gone`}><Trans>Orphan</Trans></th>
+                      <th className="py-1 pr-3 text-right font-medium"><Trans>Size</Trans></th>
                       <th className="w-10 py-1 pr-3" />
                     </tr>
                   </thead>
@@ -1141,7 +1133,7 @@ export function FsRecordsScannerViewer() {
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent side="left">
-                                  {isIndexing ? `Syncing ${t.type}…` : `Sync ${t.type} changes and refresh stats`}
+                                  {isIndexing ? t`Syncing ${t.type}…` : t`Sync ${t.type} changes and refresh stats`}
                                 </TooltipContent>
                               </Tooltip>
                             </td>
@@ -1152,13 +1144,11 @@ export function FsRecordsScannerViewer() {
                 </table>
               </div>
               <p className="text-xs text-muted-foreground">
-                <span className="text-amber-600 dark:text-amber-400">New / Stale / Mis-Sc</span> sum to{' '}
-                <strong>Pending</strong>: a Fast index drives them all to 0.{' '}
-                <span className="text-amber-600 dark:text-amber-400">Orphan</span> rows persist until you Scan Orphans → sweep.
+                <Trans><span className="text-amber-600 dark:text-amber-400">New / Stale / Mis-Sc</span> sum to <strong>Pending</strong>: a Fast index drives them all to 0. <span className="text-amber-600 dark:text-amber-400">Orphan</span> rows persist until you Scan Orphans → sweep.</Trans>
               </p>
             </div>
           ) : (
-            <div className="py-6 text-sm text-destructive">Scan failed.</div>
+            <div className="py-6 text-sm text-destructive"><Trans>Scan failed.</Trans></div>
           )}
         </DialogContent>
       </Dialog>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { Switch } from '@src/components/ui/switch';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
@@ -16,6 +17,7 @@ interface QueuePanelProps {
 }
 
 export const QueuePanel: React.FC<QueuePanelProps> = ({ process }) => {
+  const { t } = useLingui();
   // The ONLY local state is the draft text in the add box — pure input UI.
   const [promptText, setPromptText] = useState('');
 
@@ -48,18 +50,18 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({ process }) => {
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        <span className="text-sm font-medium">Prompt Queue</span>
+        <span className="text-sm font-medium"><Trans>Prompt Queue</Trans></span>
         <Switch
           checked={enabled}
           onCheckedChange={(v) => void live.setQueueEnabled(v)}
         />
-        <span className="text-xs text-muted-foreground">{enabled ? 'on' : 'off'}</span>
+        <span className="text-xs text-muted-foreground">{enabled ? t`on` : t`off`}</span>
         {entries.length > 0 && (
           <button
             className="ml-auto text-[10px] text-muted-foreground hover:text-destructive"
             onClick={() => void live.clearQueue()}
           >
-            Clear
+            <Trans>Clear</Trans>
           </button>
         )}
       </div>
@@ -68,7 +70,7 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({ process }) => {
       <div className="flex-1 overflow-y-auto">
         {entries.length === 0 ? (
           <p className="mt-6 px-3 text-center text-xs text-muted-foreground">
-            No prompts queued. Add one below.
+            <Trans>No prompts queued. Add one below.</Trans>
           </p>
         ) : (
           <div className="divide-y">
@@ -90,13 +92,13 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({ process }) => {
       <div className="border-t p-3 space-y-2">
         <textarea
           className="w-full rounded-md border bg-background px-2.5 py-2 text-xs resize-none h-20 focus:outline-none focus:ring-1 focus:ring-ring"
-          placeholder="Next prompt — injected when the agent next goes idle. Press Enter to add."
+          placeholder={t`Next prompt — injected when the agent next goes idle. Press Enter to add.`}
           value={promptText}
           onChange={(e) => setPromptText(e.target.value)}
           onKeyDown={handleKeyDown}
         />
         <Button size="sm" className="w-full h-7 text-xs" onClick={handleAdd} disabled={!promptText.trim()}>
-          Add to Queue
+          <Trans>Add to Queue</Trans>
         </Button>
       </div>
     </div>

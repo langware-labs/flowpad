@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { StackFrame } from '@sdk';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { cn } from '@src/lib/utils';
@@ -33,8 +34,8 @@ export function StackFrameList({ stack, className }: StackFrameListProps) {
       <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-sm hover:bg-muted/50">
         <ChevronRight className={cn('h-4 w-4 text-muted-foreground transition-transform', isOpen && 'rotate-90')} />
         <Layers className="h-4 w-4 text-muted-foreground" />
-        <span className="font-medium">Stack Trace</span>
-        <span className="text-xs text-muted-foreground">(depth: {stack.length})</span>
+        <span className="font-medium"><Trans>Stack Trace</Trans></span>
+        <span className="text-xs text-muted-foreground"><Trans>(depth: {stack.length})</Trans></span>
       </CollapsibleTrigger>
       <CollapsibleContent className="pl-4 pt-1">
         <div className="space-y-1 border-l-2 border-border pl-3">
@@ -54,6 +55,7 @@ interface StackFrameItemProps {
 
 function StackFrameItem({ frame, isLast }: StackFrameItemProps) {
   const [showDetails, setShowDetails] = useState(isLast);
+  const { t } = useLingui();
   const config = frameTypeConfig[frame.type];
   const Icon = config.icon;
   const hasIterator = frame.type === 'each' && frame.iteratorIndex !== undefined && frame.iteratorTotal !== undefined;
@@ -106,19 +108,19 @@ function StackFrameItem({ frame, isLast }: StackFrameItemProps) {
 
           {/* Local variables */}
           {hasLocalVars && (
-            <VariablesInspector variables={frame.localVariables} title="Local Variables" defaultOpen={isLast} />
+            <VariablesInspector variables={frame.localVariables} title={t`Local Variables`} defaultOpen={isLast} />
           )}
 
           {/* Frame metadata */}
           <div className="space-y-0.5 text-xs text-muted-foreground">
             {frame.sourceVfsPath && (
               <div className="flex gap-2">
-                <span className="text-muted-foreground/60">Source:</span>
+                <span className="text-muted-foreground/60"><Trans>Source:</Trans></span>
                 <span className="font-mono">{frame.sourceVfsPath}</span>
               </div>
             )}
             <div className="flex gap-2">
-              <span className="text-muted-foreground/60">Index:</span>
+              <span className="text-muted-foreground/60"><Trans>Index:</Trans></span>
               <span>{frame.index}</span>
             </div>
           </div>

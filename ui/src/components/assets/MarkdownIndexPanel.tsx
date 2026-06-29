@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from 'react';
 import { ListTree, FileText, FolderTree, ExternalLink, RefreshCw } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import apiClient from '@sdk/client';
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
@@ -59,6 +60,7 @@ interface Props {
 
 export function MarkdownIndexPanel({ folderAbsPath }: Props) {
   const { navigation } = useDockNavigation();
+  const { t } = useLingui();
   const [data, setData] = useState<IndexMdJson | null>(null);
   const [state, setState] = useState<'idle' | 'loading' | 'empty' | 'error'>('idle');
   const [tick, setTick] = useState(0);
@@ -90,7 +92,7 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
       title={
         <span className="flex items-center gap-1.5">
           <ListTree className="h-4 w-4 text-muted-foreground" />
-          LLM Index
+          <Trans>LLM Index</Trans>
         </span>
       }
       headerActions={
@@ -99,7 +101,7 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
           size="icon"
           className="h-6 w-6"
           onClick={() => setTick((t) => t + 1)}
-          title="Refresh index"
+          title={t`Refresh index`}
         >
           <RefreshCw className="h-3 w-3" />
         </Button>
@@ -107,12 +109,12 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
     >
       <ScrollArea className="h-full">
         {state === 'loading' && (
-          <div className="p-4 text-xs text-muted-foreground">Loading…</div>
+          <div className="p-4 text-xs text-muted-foreground"><Trans>Loading…</Trans></div>
         )}
         {state === 'empty' && (
           <div className="flex flex-col gap-2 p-4 text-xs">
             <p className="text-muted-foreground">
-              No LLM index for this folder yet.
+              <Trans>No LLM index for this folder yet.</Trans>
             </p>
             <Button
               size="sm"
@@ -121,27 +123,26 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
               onClick={() => navigation.openDock(DockPointer.forLlmIndexers())}
             >
               <ExternalLink className="h-3 w-3" />
-              Open LLM Indexers
+              <Trans>Open LLM Indexers</Trans>
             </Button>
             <p className="text-[10px] text-muted-foreground">
-              Run a rebuild for this folder there; the JSON appears at
-              <code className="ml-1">index.md.json</code> in this folder.
+              <Trans>Run a rebuild for this folder there; the JSON appears at <code className="ml-1">index.md.json</code> in this folder.</Trans>
             </p>
           </div>
         )}
         {state === 'error' && (
           <div className="p-4 text-xs text-destructive">
-            Failed to fetch index.md.json
+            <Trans>Failed to fetch index.md.json</Trans>
           </div>
         )}
         {data && state === 'idle' && (
           <div className="space-y-3 p-3 text-sm">
             <section>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Self-Summary
+                <Trans>Self-Summary</Trans>
               </h3>
               <blockquote className="mt-1 border-l-2 pl-2 text-xs italic text-foreground/80">
-                {data.self_summary || <span className="text-muted-foreground">(empty)</span>}
+                {data.self_summary || <span className="text-muted-foreground"><Trans>(empty)</Trans></span>}
               </blockquote>
             </section>
 
@@ -149,7 +150,7 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
               <div className="flex items-baseline gap-1.5">
                 <FileText className="h-3 w-3 text-muted-foreground" />
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Files
+                  <Trans>Files</Trans>
                 </h3>
                 <span className="text-[10px] text-muted-foreground">({data.files.length})</span>
               </div>
@@ -161,7 +162,7 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
                   </li>
                 ))}
                 {data.files.length === 0 && (
-                  <li className="text-xs text-muted-foreground">No files</li>
+                  <li className="text-xs text-muted-foreground"><Trans>No files</Trans></li>
                 )}
               </ul>
             </section>
@@ -170,7 +171,7 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
               <div className="flex items-baseline gap-1.5">
                 <FolderTree className="h-3 w-3 text-muted-foreground" />
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Subfolders
+                  <Trans>Subfolders</Trans>
                 </h3>
                 <span className="text-[10px] text-muted-foreground">({data.subfolders.length})</span>
               </div>
@@ -182,7 +183,7 @@ export function MarkdownIndexPanel({ folderAbsPath }: Props) {
                   </li>
                 ))}
                 {data.subfolders.length === 0 && (
-                  <li className="text-xs text-muted-foreground">No subfolders</li>
+                  <li className="text-xs text-muted-foreground"><Trans>No subfolders</Trans></li>
                 )}
               </ul>
             </section>

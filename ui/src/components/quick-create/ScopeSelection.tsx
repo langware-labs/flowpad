@@ -8,6 +8,7 @@ import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
 import { cn } from '@src/lib/utils';
 import { CircleSlash, FolderOpen, Layers, Pencil } from 'lucide-react';
 import { useCallback } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export type ScopeKind = 'user' | 'project' | 'folder';
 export type HarnessKind = 'all' | 'claude' | 'codex' | 'copilot' | 'none';
@@ -58,6 +59,8 @@ export function ScopeSelection({
   onPickFolder,
   onOpenProjectPicker,
 }: ScopeSelectionProps) {
+  const { t } = useLingui();
+
   const handleScopeChange = useCallback(
     (next: ScopeKind) => {
       if (next === scope.kind) return;
@@ -86,10 +89,10 @@ export function ScopeSelection({
             size="sm"
             onClick={onOpenProjectPicker}
             className="h-7 max-w-[220px] gap-1.5 text-xs"
-            title="Switch project"
+            title={t`Switch project`}
           >
             <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{projectLabel ?? 'Select project'}</span>
+            <span className="truncate">{projectLabel ?? t`Select project`}</span>
             <Pencil className="h-3 w-3 shrink-0 text-muted-foreground" />
           </Button>
         )}
@@ -99,17 +102,17 @@ export function ScopeSelection({
             size="sm"
             onClick={() => void handleBrowseFolder()}
             className="h-7 gap-1.5 text-xs"
-            title="Choose folder…"
+            title={t`Choose folder…`}
           >
             <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-            Browse…
+            <Trans>Browse…</Trans>
           </Button>
         )}
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Harness path</span>
-        <div className="flex items-center gap-1" role="radiogroup" aria-label="Harness path">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"><Trans>Harness path</Trans></span>
+        <div className="flex items-center gap-1" role="radiogroup" aria-label={t`Harness path`}>
           {HARNESS_OPTIONS.map(({ value, title, Icon }) => {
             const active = value === harness;
             return (
@@ -140,7 +143,7 @@ export function ScopeSelection({
       <Input
         value={path}
         onChange={(e) => onPathChange(e.target.value)}
-        placeholder="Path"
+        placeholder={t`Path`}
         className="font-mono text-xs"
         spellCheck={false}
       />

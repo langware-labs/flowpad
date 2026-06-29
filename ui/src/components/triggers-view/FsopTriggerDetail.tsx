@@ -10,6 +10,7 @@ import { useEntity } from '@sdk/react/hooks';
 import Editor from '@monaco-editor/react';
 import { ChevronRight, Copy } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { scopeColor } from './scope-colors';
 
 interface CallbackInfo {
@@ -63,7 +64,7 @@ function Header({ trigger }: { trigger: ITrigger }) {
       </span>
       <span className="font-medium">{trigger.displayName}</span>
       {trigger.enabled === false && (
-        <Badge variant="secondary" className="h-4 px-1 text-[9px]">disabled</Badge>
+        <Badge variant="secondary" className="h-4 px-1 text-[9px]"><Trans>disabled</Trans></Badge>
       )}
       <Badge variant="outline" className="h-4 px-1 text-[9px] font-mono">fsop</Badge>
       {trigger.description && (
@@ -101,7 +102,7 @@ function FieldRow({ label, value, mono = false, copyable = false }: {
               <Copy className="h-3 w-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Copy</TooltipContent>
+          <TooltipContent><Trans>Copy</Trans></TooltipContent>
         </Tooltip>
       )}
     </div>
@@ -109,6 +110,7 @@ function FieldRow({ label, value, mono = false, copyable = false }: {
 }
 
 function WatchSection({ trigger }: { trigger: ITrigger }) {
+  const { t } = useLingui();
   // step_ms / debounce_ms / respect_gitignore / ignore_patterns aren't yet on
   // the generated ITrigger type — read through an extended view so display
   // works without a TS regen.
@@ -121,21 +123,21 @@ function WatchSection({ trigger }: { trigger: ITrigger }) {
   const ignore = ext.ignore_patterns ?? [];
   return (
     <section className="space-y-1.5">
-      <SectionLabel>Watch</SectionLabel>
-      <FieldRow label="path" value={trigger.watch_path} mono copyable />
-      <FieldRow label="recursive" value={String(trigger.recursive ?? false)} />
-      <FieldRow label="glob" value={trigger.watch_glob || '—'} mono />
+      <SectionLabel><Trans>Watch</Trans></SectionLabel>
+      <FieldRow label={t`path`} value={trigger.watch_path} mono copyable />
+      <FieldRow label={t`recursive`} value={String(trigger.recursive ?? false)} />
+      <FieldRow label={t`glob`} value={trigger.watch_glob || '—'} mono />
       <FieldRow
-        label="pacing"
-        value={`step: ${ext.step_ms ?? 50}ms · debounce: ${ext.debounce_ms ?? 1600}ms`}
+        label={t`pacing`}
+        value={t`step: ${ext.step_ms ?? 50}ms · debounce: ${ext.debounce_ms ?? 1600}ms`}
         mono
       />
       <FieldRow
-        label="gitignore"
-        value={ext.respect_gitignore ? 'respected' : 'not respected'}
+        label={t`gitignore`}
+        value={ext.respect_gitignore ? t`respected` : t`not respected`}
       />
       <FieldRow
-        label="ignore patterns"
+        label={t`ignore patterns`}
         value={ignore.length === 0
           ? '—'
           : (
@@ -169,9 +171,9 @@ function ActionsSection({ trigger }: { trigger: ITrigger }) {
 
   return (
     <section className="space-y-2">
-      <SectionLabel>Actions ({actions.length})</SectionLabel>
+      <SectionLabel><Trans>Actions ({actions.length})</Trans></SectionLabel>
       {actions.length === 0 && (
-        <div className="text-xs text-muted-foreground">No actions configured.</div>
+        <div className="text-xs text-muted-foreground"><Trans>No actions configured.</Trans></div>
       )}
       {actions.map((a, i) => (
         <ActionRow key={i} action={a} triggerId={trigger.id ?? null} />
@@ -233,6 +235,7 @@ function CallbackMeaning({ name }: { name: string }) {
 }
 
 function CallbackSourceCollapsible({ triggerId }: { triggerId: string }) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [content, setContent] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -255,14 +258,14 @@ function CallbackSourceCollapsible({ triggerId }: { triggerId: string }) {
     <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
       <CollapsibleTrigger className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
         <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} />
-        View callback source
+        <Trans>View callback source</Trans>
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="mt-2 h-64 overflow-hidden rounded border">
           {error ? (
-            <div className="p-3 text-xs text-destructive">Could not load source: {error}</div>
+            <div className="p-3 text-xs text-destructive"><Trans>Could not load source: {error}</Trans></div>
           ) : !loaded ? (
-            <div className="p-3 text-xs text-muted-foreground">Loading…</div>
+            <div className="p-3 text-xs text-muted-foreground">{t`Loading…`}</div>
           ) : (
             <Editor
               height="100%"
@@ -290,27 +293,28 @@ function CallbackSourceCollapsible({ triggerId }: { triggerId: string }) {
 }
 
 function StatsSection({ trigger }: { trigger: ITrigger }) {
+  const { t } = useLingui();
   return (
     <section className="space-y-1.5">
-      <SectionLabel>Stats</SectionLabel>
+      <SectionLabel><Trans>Stats</Trans></SectionLabel>
       <FieldRow
-        label="fires"
+        label={t`fires`}
         value={<span className="font-mono">{trigger.counter ?? 0}</span>}
       />
       <FieldRow
-        label="last triggered"
+        label={t`last triggered`}
         value={trigger.last_triggered
           ? new Date(trigger.last_triggered).toLocaleString()
           : '—'}
       />
       <FieldRow
-        label="last_seen_mtime"
+        label={t`last_seen_mtime`}
         value={trigger.last_seen_mtime != null ? String(trigger.last_seen_mtime) : '—'}
         mono
       />
       <FieldRow
-        label="last_seen_size"
-        value={trigger.last_seen_size != null ? `${trigger.last_seen_size} bytes` : '—'}
+        label={t`last_seen_size`}
+        value={trigger.last_seen_size != null ? t`${trigger.last_seen_size} bytes` : '—'}
         mono
       />
     </section>

@@ -3,6 +3,7 @@ import { FSItem } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { ChevronDown, ChevronRight, ExternalLink, Folder, Home } from 'lucide-react';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { FilterDropdown } from './FilterDropdown';
 import { ItemHandler } from './ItemHandler';
 import type { DirectoryTreeHandle, DirectoryTreeProps } from './types';
@@ -41,6 +42,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
 ) {
   // State for built-in delete confirmation
   const [itemToDelete, setItemToDelete] = useState<FSItem | null>(null);
+  const { t } = useLingui();
 
   // Extract event handlers from events object
   const onItemClick = events?.onItemClick;
@@ -400,11 +402,11 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
 
           {/* Empty state for folder */}
           {isExpanded && !isItemLoading && contents.length === 0 && (
-            <div className="ml-8 p-2 text-xs text-muted-foreground">No files or folders</div>
+            <div className="ml-8 p-2 text-xs text-muted-foreground"><Trans>No files or folders</Trans></div>
           )}
 
           {/* Loading state for folder */}
-          {isExpanded && isItemLoading && <div className="ml-8 p-2 text-xs text-muted-foreground">Loading...</div>}
+          {isExpanded && isItemLoading && <div className="ml-8 p-2 text-xs text-muted-foreground"><Trans>Loading...</Trans></div>}
         </div>
       );
     },
@@ -413,7 +415,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
 
   // Show loading state
   if (externalLoading) {
-    return <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}>Loading...</div>;
+    return <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}><Trans>Loading...</Trans></div>;
   }
 
   // Show error state
@@ -426,7 +428,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
     return (
       <div className={`p-4 text-center ${className}`}>
         <Folder className="mx-auto h-8 w-8 text-muted-foreground/50" />
-        <p className="mt-2 text-xs text-muted-foreground">No roots configured</p>
+        <p className="mt-2 text-xs text-muted-foreground"><Trans>No roots configured</Trans></p>
       </div>
     );
   }
@@ -447,7 +449,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
               variant="ghost"
               size="sm"
               onClick={onOpenExternal}
-              title="Open in system file explorer"
+              title={t`Open in system file explorer`}
               className="h-7 px-2"
             >
               <ExternalLink className="h-3.5 w-3.5" />
@@ -483,9 +485,9 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
         onOpenChange={(open) => {
           if (!open) setItemToDelete(null);
         }}
-        title="Delete Item"
-        description={`Are you sure you want to delete "${itemToDelete?.name || ''}"? This cannot be undone.`}
-        confirmLabel="Delete"
+        title={t`Delete Item`}
+        description={t`Are you sure you want to delete "${itemToDelete?.name || ''}"? This cannot be undone.`}
+        confirmLabel={t`Delete`}
         variant="destructive"
         onConfirm={() => void handleDeleteConfirm()}
       />
