@@ -108,7 +108,16 @@ function applyLocaleAttributes(code: string): void {
 
 /** Load (if needed) and activate a locale's catalog in the shared i18n instance. */
 async function loadAndActivate(code: string): Promise<void> {
-  if (!i18n.messages || i18n.locale !== code) {
+  // Load if THIS locale's catalog isn't already populated. The previous guard
+  // (`!i18n.messages || i18n.locale !== code`) was broken: `i18n-init.ts`
+  // pre-activates the source locale with an empty catalog, so for en-US
+  // `i18n.messages` is `{}` (truthy → `!{}` is false) and `i18n.locale === code`
+  // — both false, so the catalog was never loaded. In dev that was masked by
+  // Lingui's inline source fallback; production builds strip that fallback, so
+  // every string rendered as its raw message id (e.g. "Gp4Yi6"). Check the
+  // specific locale's catalog instead of the truthiness of the active one.
+  const loaded = i18n.messages && Object.keys(i18n.messages).length > 0;
+  if (i18n.locale !== code || !loaded) {
     const { messages } = await import(`../locales/${code}/messages.po`);
     i18n.load(code, messages);
   }
