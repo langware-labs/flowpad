@@ -1,10 +1,17 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const log = require('electron-log');
 const crypto = require('crypto');
 const UvManager = require('./uv-manager');
-const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
+const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
+
+// Exact, copy-pasteable terminal commands surfaced to the user when the backend
+// fails to come up in time — mirrors the upgrade uv-manager.js itself runs
+// (`uv tool install flowpad@latest --python 3.10 --force`). Keep these in sync
+// with uv-manager.js's upgrade()/installLatest().
+const UPGRADE_COMMAND = `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force`;
+const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
 
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
@@ -222,6 +229,11 @@ const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — matches uv upgrade() 
 let mainWindow = null;
 let uvManager = null;
 let isQuitting = false;
+// True once the startup-timeout recovery panel is showing. In this state the
+// window is intentionally kept open (so the user can copy the recovery commands)
+// but the backend is stopped — so a "reopen" must relaunch from scratch rather
+// than refocus the dead window. See the second-instance handler.
+let startupFailed = false;
 
 // Deep link that arrived before the window was ready to navigate.
 let pendingDeepLink = null;
@@ -282,6 +294,16 @@ app.on('open-url', (event, url) => {
 
 // Windows / Linux: a second launch passes the URL as a CLI argument.
 app.on('second-instance', (_event, argv) => {
+  // If we're stuck on the startup-timeout panel, a second launch means the user
+  // ran the recovery command and is "reopening" to pick up the fix. The backend
+  // is already stopped, so relaunch from scratch (fresh startApp + upgrade path)
+  // instead of just refocusing the dead window.
+  if (startupFailed) {
+    log.info('[second-instance] reopen while in startup-failed state — relaunching');
+    app.relaunch();
+    app.exit(0);
+    return;
+  }
   const deepLinkUrl = argv.find(arg => arg.startsWith('flowpad://'));
   if (deepLinkUrl) handleDeepLink(deepLinkUrl);
   // Bring the existing window to the front.
@@ -424,6 +446,33 @@ function sendStatus(message) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('startup-status', message);
   }
+}
+
+// Render the in-app startup-timeout panel (loading.html) instead of the bland
+// native OS error box. Gives the user the two exact, copy-pasteable recovery
+// commands — upgrade first, then `flow diagnose` — each with a copy button.
+// Falls back to the native dialog only if the loading window is already gone.
+function showStartupTimeoutError(detail) {
+  const payload = {
+    detail,
+    upgradeCommand: UPGRADE_COMMAND,
+    diagnoseCommand: DIAGNOSE_COMMAND,
+  };
+  startupFailed = true;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('startup-error', payload);
+    mainWindow.show();
+    mainWindow.focus();
+    return true;
+  }
+  // No window to render into — degrade to the native dialog.
+  dialog.showErrorBox(
+    'Flowpad couldn’t start',
+    `${detail}\n\n` +
+      `1) Upgrade Flowpad, then relaunch:\n   ${UPGRADE_COMMAND}\n\n` +
+      `2) If that doesn’t work, run:\n   ${DIAGNOSE_COMMAND}`,
+  );
+  return false;
 }
 
 async function startApp() {
@@ -626,8 +675,25 @@ async function startApp() {
       detail += '\n\nNo monitor log found.';
     }
     log.error(detail);
-    dialog.showErrorBox('Startup Error', detail);
-    app.quit();
+    // Stop the hung/failed backend so it can't hold the tool-venv files open —
+    // otherwise the manual `uv tool install flowpad@latest --force` we tell the
+    // user to run could fail with "file in use" (notably on Windows), and the
+    // port would stay occupied for the next launch. This restores the cleanup
+    // the old app.quit()-on-timeout used to trigger via the before-quit handler;
+    // we just keep the window open (instead of quitting) so the user can read
+    // and copy the recovery commands. Fire-and-forget: the panel shows now.
+    if (uvManager) {
+      uvManager
+        .stop()
+        .catch((e) => log.warn(`[startup-timeout] backend stop failed: ${e.message}`));
+    }
+    // Surface the in-app recovery panel with copy-pasteable commands instead of
+    // the native OS error box. The user quits from the panel's Quit button; the
+    // next launch re-runs startApp() (including the upgrade path) from scratch.
+    showStartupTimeoutError(
+      `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ` +
+        'This usually means the installed Flowpad package is out of date or broken.',
+    );
     return;
   }
 
@@ -673,6 +739,15 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
+  // macOS: clicking the dock icon while stuck on the startup-timeout panel means
+  // the user ran the recovery command and wants to retry — relaunch from scratch
+  // (the dead window is still open, so the 0-windows path below won't fire).
+  if (startupFailed) {
+    log.info('[activate] reopen while in startup-failed state — relaunching');
+    app.relaunch();
+    app.exit(0);
+    return;
+  }
   // On macOS, recreate window when dock icon is clicked
   if (BrowserWindow.getAllWindows().length === 0) {
     startApp();
@@ -707,6 +782,20 @@ app.on('before-quit', (event) => {
 });
 
 // IPC handlers for renderer communication
+// Copy a command to the clipboard for the startup-timeout recovery panel.
+ipcMain.handle('copy-to-clipboard', (_event, text) => {
+  if (typeof text === 'string' && text.length > 0) {
+    clipboard.writeText(text);
+    return true;
+  }
+  return false;
+});
+
+// Quit from the startup-timeout recovery panel's "Quit" button.
+ipcMain.on('quit-app', () => {
+  app.quit();
+});
+
 ipcMain.handle('get-backend-url', () => BACKEND_URL);
 
 ipcMain.handle('get-app-version', () => app.getVersion());
