@@ -14,6 +14,7 @@ Bundle format (.flowmsg — a zip file):
 """
 from __future__ import annotations
 
+import asyncio
 import filecmp
 import json
 import logging
@@ -23,7 +24,7 @@ import tempfile
 import zipfile
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
@@ -305,6 +306,7 @@ async def _pack_conversation_attachment(
 
 async def _pack_attachment_entry(
     entry, flow_message: "FlowMessage", attachment_dir: Path,
+    origins: dict | None = None, repo_cache: dict | None = None,
 ) -> None:
     """Dispatch a single attachment entry to the correct FAMILY packer.
 
@@ -343,7 +345,7 @@ async def _pack_attachment_entry(
     else:
         info = SchemaRegistry.get(entry_type)
         if info is not None and getattr(info, "main_subdir", None) is not None:
-            await _pack_file_backed_attachment(entry_type, entry_id, attachment_dir)
+            await _pack_file_backed_attachment(entry_type, entry_id, attachment_dir, origins, repo_cache)
 
 
 # ---------------------------------------------------------------------------
@@ -393,24 +395,40 @@ async def _resolve_file_backed_source(entry_type: str, entry_id: str):
 
 async def _pack_file_backed_attachment(
     entry_type: str, entry_id: str, attachment_dir: Path,
+    origins: dict | None = None, repo_cache: dict | None = None,
 ) -> None:
     """Copy a file-backed asset's on-disk subtree into the bundle.
 
-    Bundle layout: ``attachment/<type>-@<id>/<main_subdir>/<leaf>``. The leaf
-    name is preserved from the source (not re-slugged) so the round-trip keeps
-    the sender's folder/file name. The sender's id is pinned into the main doc
-    (``TypeInfo.main_file`` for folder types, the file itself for single-file
-    types) so the receiver's ``gen_uuid_fn`` materializes the SAME entity.
+    Bundle layout: ``attachment/<type>-@<id>/<in_bundle_rel>/…`` where
+    ``in_bundle_rel`` is the asset's repo-relative ``rel_path`` when the asset
+    lives inside a git repo (a ``GitOrigin`` is then recorded in ``origins``),
+    else the canonical ``<main_subdir>/<leaf>``. Keying by ``rel_path`` lets the
+    receiver mirror the sender's repo layout via the anchor-free restore. The
+    leaf name is preserved from the source; the sender's id is pinned into the
+    main doc so the receiver's ``gen_uuid_fn`` materializes the SAME entity.
 
     Build/environment cruft is filtered via ``_ASSET_PACK_IGNORE`` (deep
     ``.venv``/cache trees blow past Windows MAX_PATH on extractall).
     """
+    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+
     resolved = await _resolve_file_backed_source(entry_type, entry_id)
     if resolved is None:
         return
     info, ent, src_root = resolved
     entry_root = attachment_dir / f"{entry_type}-@{entry_id}"
     subdir = entry_root / info.main_subdir
+
+    # Git provenance + placement: when the on-disk asset lives inside a repo,
+    # record a GitOrigin and store the subtree keyed by its repo-relative path so
+    # the receiver mirrors the sender's layout (else canonical main_subdir/leaf).
+    # ``for_asset_path`` runs blocking git subprocesses — keep them off the loop.
+    origin = (
+        await asyncio.to_thread(GitOrigin.for_asset_path, str(src_root), repo_cache)
+        if src_root is not None else None
+    )
+    if origin is not None and origins is not None:
+        origins[f"{entry_type}-@{entry_id}"] = origin.model_dump(mode="python")
 
     if src_root is None:
         # No on-disk source — render the body from the type's default_body_fn
@@ -431,7 +449,10 @@ async def _pack_file_backed_attachment(
         _ensure_id_in_md_frontmatter(dest, entry_id)
         return
 
-    dest = subdir / src_root.name
+    # Origin present → key by repo-relative path (mirror sender layout); else the
+    # canonical <main_subdir>/<leaf>. The restore is anchor-free, so the in-bundle
+    # relpath IS the receiver's placement relpath under the project root.
+    dest = (entry_root / PurePosixPath(origin.rel_path)) if origin is not None else (subdir / src_root.name)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if src_root.is_dir():
         shutil.copytree(src_root, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
@@ -494,6 +515,20 @@ async def _resolve_project_root_for_conv(conv_id: str) -> "tuple[Path, str | Non
         mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
         if mount:
             return Path(mount), project_id
+    # Received-share fallback: a remote conversation carries no local
+    # ``project_id``, but the UI's "map project" on an incoming share records a
+    # ``remote_project_id`` → local project mapping (set_project_mapping). Honor
+    # it so bundle-delivered assets place into the chosen local project (and
+    # git-origin assets reconstruct their repo-relative path there).
+    remote_pid = (getattr(conv, "remote_project_id", None) or "").strip()
+    if remote_pid:
+        from flow_sdk.app.actions.notification_action import _load_project_mapping  # noqa: PLC0415
+        local_pid = (_load_project_mapping() or {}).get(remote_pid)
+        if local_pid:
+            project = await Project.get_one({"id": local_pid})
+            mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
+            if mount:
+                return Path(mount), local_pid
     return None
 
 
@@ -508,13 +543,28 @@ def _restore_file_backed_entry(
     ``FlowMessageExistsError`` on a genuine collision when overwrite=False;
     a byte-identical existing file is an idempotent no-op (re-receive).
     """
+    from flow_sdk.builtin.git_origin import is_safe_rel_path  # noqa: PLC0415
+
     conflicts: list[dict] = []
     copied_any = False
+    root_resolved = project_root.resolve()
     for src in entry_dir.rglob("*"):
         if not src.is_file():
             continue
-        rel = src.relative_to(entry_dir)  # "<main_subdir>/<leaf>..."
+        rel = src.relative_to(entry_dir)  # "<main_subdir>/<leaf>..." or "<rel_path>/..."
+        # Path-traversal guard: the in-bundle relpath is sender-controlled (git
+        # origins key the subtree by rel_path). Gate on the SAME named guard the
+        # packer uses (anti-drift), then keep the resolve check as defense in depth
+        # against symlink escapes a string check can't see.
         dest = project_root / rel
+        if not is_safe_rel_path(rel.as_posix()):
+            logger.warning("[bundle] skipping unsafe attachment path %s", rel)
+            continue
+        try:
+            dest.resolve().relative_to(root_resolved)
+        except ValueError:
+            logger.warning("[bundle] skipping unsafe attachment path %s (escapes project root)", rel)
+            continue
         if dest.exists() and not overwrite:
             if filecmp.cmp(src, dest, shallow=False):
                 continue  # same asset already present — no-op
@@ -570,6 +620,93 @@ async def _reindex_received_assets(project_root: Path, types, *, project_id: str
     await _reindex_root(
         project_root, RecordType.REAL_PROJECT_CWD, types=tuple(types) or None, project_id=project_id
     )
+
+
+async def _reindex_git_origin_scopes(
+    project_root: Path, received_entries: "set[tuple[str, str]]", origins_map: dict,
+    *, project_id: str | None = None,
+) -> None:
+    """Reindex each git-origin asset at its repo-relative SCOPE.
+
+    A git-origin asset is placed at ``project_root/<rel_path>`` (mirroring the
+    sender's repo layout), which may be NESTED below the project root (e.g.
+    ``tools/kit/.claude/skills/foo``). The project-root walk doesn't materialize
+    it: the walker IS recursive, but the received reindex prunes ignored ancestor
+    directories (``.gitignore`` / the hardcoded ``_WALK_IGNORED`` basenames), and
+    force-include only protects paths *under* a ``.claude`` ancestor — not the
+    prefix *above* it. So a denied/ignored intermediate dir stops the descent
+    before the nested ``.claude`` is reached. Re-rooting the walk at the asset's
+    own scope (``project_root`` joined with the rel_path prefix BEFORE
+    ``main_subdir``) starts below any pruned ancestor, so the entity (hence the
+    git_origin stamp) materializes. A canonical/top-level placement has no prefix
+    and is already covered by the project-root walk.
+    """
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    scopes: dict[Path, set] = {}
+    for entry_type, entry_id in received_entries:
+        raw = origins_map.get(f"{entry_type}-@{entry_id}")
+        if not raw:
+            continue
+        rel = str(raw.get("rel_path") or "").replace("\\", "/")
+        info = SchemaRegistry.get(entry_type)
+        main_subdir = getattr(info, "main_subdir", None) if info else None
+        if not rel or not main_subdir:
+            continue
+        # rel_path ends with "<main_subdir>/<leaf>"; the scope is everything above
+        # main_subdir. Strip those trailing components structurally (robust to a
+        # main_subdir token appearing earlier in the path than a substring search).
+        drop = len(PurePosixPath(main_subdir.replace("\\", "/")).parts) + 1  # main_subdir parts + leaf
+        rel_parts = PurePosixPath(rel).parts
+        prefix_parts = rel_parts[:-drop] if len(rel_parts) > drop else ()
+        if not prefix_parts:
+            continue  # canonical/top-level — the project-root walk already covers it
+        scope = project_root / PurePosixPath(*prefix_parts)
+        try:
+            scopes.setdefault(scope, set()).add(RecordType(entry_type))
+        except ValueError:
+            continue
+    for scope, types in scopes.items():
+        if scope.is_dir():
+            await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=tuple(types), project_id=project_id)
+
+
+async def _stamp_git_origins(
+    received_entries: "set[tuple[str, str]]", origins_map: dict, owner_typeid: str | None,
+) -> None:
+    """Stamp ``git_origin`` on received file-backed entities (best-effort).
+
+    The indexer materialized the rows from disk (preserving the sender's pinned
+    id); here we attach the git provenance carried in ``git_origins.json`` so the
+    receiver records the asset's upstream repo + repo-relative position. Written
+    to the backend record metadata (``persist=TRUE``), never the user-facing file
+    and never the hub. Validated through ``GitOrigin`` so a malformed entry is
+    dropped rather than persisted raw.
+    """
+    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    for entry_type, entry_id in received_entries:
+        raw = origins_map.get(f"{entry_type}-@{entry_id}")
+        if not raw:
+            continue
+        try:
+            origin = GitOrigin.model_validate(raw)
+        except Exception:
+            logger.warning("[bundle] invalid git_origin for %s-@%s; skipping", entry_type, entry_id)
+            continue
+        cls = SchemaRegistry.get_entity_cls(entry_type)
+        if cls is None:
+            continue
+        ent = await cls.get_one({"id": entry_id})
+        if ent is None:
+            continue
+        ent.git_origin = origin.model_dump(mode="python")
+        try:
+            await ent.save(owner_typeid)
+        except Exception:
+            logger.warning("[bundle] failed to stamp git_origin on %s-@%s", entry_type, entry_id, exc_info=True)
 
 
 async def _notify_received_assets(entries: "set[tuple[str, str]]") -> None:
@@ -677,14 +814,30 @@ def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Pat
 
 
 async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None) -> Path:
-    """Build a .flowmsg zip from a FlowMessage entity. Returns the zip path."""
+    """Build a .flowmsg zip from a FlowMessage entity. Returns the zip path.
+
+    File-backed assets that live inside a git repo on the sender contribute a
+    ``GitOrigin`` to the top-level ``git_origins.json`` map (keyed by the asset
+    typeid). Those entries are stored in the bundle keyed by their repo-relative
+    ``rel_path`` so the receiver mirrors the sender's repo layout; assets with no
+    git origin keep the canonical ``<main_subdir>/<leaf>`` layout.
+    """
     tmp_root = Path(tempfile.mkdtemp(prefix="flowmsg_pack_"))
     try:
         _write_top_level_header(flow_message, tmp_root)
         attachment_dir = tmp_root / "attachment"
         attachment_dir.mkdir()
+        # type-@id -> GitOrigin dict; populated by file-backed packing when the
+        # asset resolves to a git repo. Written once at the top level. ``repo_cache``
+        # memoizes per-repo git reads so co-shared assets from one checkout probe once.
+        origins: dict[str, dict] = {}
+        repo_cache: dict = {}
         for entry in flow_message.attachment:
-            await _pack_attachment_entry(entry, flow_message, attachment_dir)
+            await _pack_attachment_entry(entry, flow_message, attachment_dir, origins, repo_cache)
+        if origins:
+            (tmp_root / "git_origins.json").write_text(
+                json.dumps(origins, default=_json_default, ensure_ascii=False), encoding="utf-8"
+            )
         return _zip_bundle(tmp_root, dest_dir, flow_message.id)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
@@ -1005,6 +1158,19 @@ async def unpack_bundle(
         received_entries: set[tuple[str, str]] = set()
         no_project_pending: list[str] = []
 
+        # Git provenance/placement map (type-@id -> GitOrigin dict). Optional; only
+        # present when the sender packed assets that lived inside a git repo. Used
+        # to (a) place assets at their repo-relative path — already encoded in the
+        # bundle layout by the packer — and (b) stamp ``git_origin`` on the
+        # materialized receiver entities after reindex.
+        git_origins_map: dict = {}
+        _go_path = tmp_root / "git_origins.json"
+        if _go_path.exists():
+            try:
+                git_origins_map = json.loads(_go_path.read_text(encoding="utf-8")) or {}
+            except Exception:
+                logger.warning("[bundle] unreadable git_origins.json; ignoring", exc_info=True)
+
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -1211,6 +1377,17 @@ async def unpack_bundle(
         # types; zero-cost when the bundle carried no file-backed assets.
         if received_types and project_root is not None:
             await _reindex_received_assets(project_root, received_types, project_id=project_pid)
+            # Stamp git provenance on the just-materialized receiver entities so
+            # the asset knows its intended repo-relative origin even without git
+            # access (local-only; written to backend record metadata).
+            if git_origins_map:
+                # Non-canonical (nested) git-origin placements aren't reached by a
+                # project-root walk — reindex each at its rel_path scope first so
+                # the entity exists to stamp.
+                await _reindex_git_origin_scopes(
+                    project_root, received_entries, git_origins_map, project_id=project_pid
+                )
+                await _stamp_git_origins(received_entries, git_origins_map, owner_typeid)
             # The indexer materializes those rows silently (notify=False), so
             # announce the just-created assets to the receiver's live UI — one
             # CREATE data_op each — or their conversation chips stay stuck on the
