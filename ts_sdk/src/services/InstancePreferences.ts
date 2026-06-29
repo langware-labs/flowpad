@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { dataContext } from '../FlowSync/context';
+import { dataContext, ContextEventType } from '../FlowSync/context';
 import { fsManager } from './fsService';
 import { TerminalType } from './shell/builtInShells';
 import {
@@ -8,6 +8,11 @@ import {
   LEGACY_KEY_MAP,
   coercePrefValue,
   defaultPreferences,
+  getAllPrefInfos,
+  getBootPrefInfos,
+  storageKeyFor,
+  parseStoredValue,
+  serializeStoredValue,
 } from '../preferences/prefRegistry';
 
 /**
@@ -38,12 +43,61 @@ export class InstancePreferences extends EventEmitter {
   private _loaded = false;
   private _loadPromise: Promise<void> | null = null;
   private _saveTimeout: ReturnType<typeof setTimeout> | null = null;
-  // Two-flag save state.
-  // `_dirty` means there are in-memory changes not yet flushed to disk.
   // `_savingInFlight` guards against concurrent writes (out-of-order risk).
-  private _dirty = false;
   private _savingInFlight = false;
   private _version = 0;
+  // Dotted keys this session has actually changed since the last flush. The save
+  // writes ONLY these over the current on-disk file, so keys another writer owns
+  // (the backend's onboarding gate; another browser tab) are never clobbered by a
+  // stale in-memory snapshot. It also IS the dirty flag — pending changes ⇔ non-empty.
+  private _changedKeys = new Set<string>();
+
+  /** Are there in-memory changes not yet flushed to disk? */
+  private get _dirty(): boolean {
+    return this._changedKeys.size > 0;
+  }
+
+  constructor() {
+    super();
+    // Boot keys (locale, viewMode, …) are read at module load before the backend
+    // is reachable; seed them synchronously from localStorage so get() returns the
+    // user's last value immediately and first paint isn't a flash-to-default.
+    this._seedBootFromLocalStorage();
+    // Self-load once the compute node + desktop paths land. usePreference consumers
+    // may call loadJson() during first paint (before bootstrap wired the node) — that
+    // early call is a retryable no-op; this reaction is the load that actually reads
+    // preferences.json, so no caller has to know prefMan's load ordering.
+    dataContext.on(ContextEventType.CONTEXT_CHANGED, () => {
+      if (!this._loaded && this.computeNodeTypeId && this.preferencesPath) void this.loadJson();
+    });
+  }
+
+  // ===== localStorage interop (private-mode / non-browser safe) =====
+
+  private _localGet(key: string): string | null {
+    try {
+      return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private _localSet(key: string, value: string): void {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
+    } catch {
+      // private mode / quota — ignore, backend remains the source of truth.
+    }
+  }
+
+  private _seedBootFromLocalStorage(): void {
+    for (const info of getBootPrefInfos()) {
+      const raw = this._localGet(storageKeyFor(info));
+      if (raw == null) continue;
+      const value = parseStoredValue(info, raw);
+      if (value !== undefined) this._prefs[info.key] = value;
+    }
+  }
 
   get isLoaded(): boolean {
     return this._loaded;
@@ -70,6 +124,10 @@ export class InstancePreferences extends EventEmitter {
     const next = info ? coercePrefValue(info.dataType, value) : value;
     if (this._equals(this._prefs[key], next)) return;
     this._prefs[key] = next;
+    this._changedKeys.add(key);
+    // Boot keys write through to localStorage synchronously so the next module-load
+    // read (before the backend loads) sees the latest value — no first-paint flash.
+    if (info?.boot) this._localSet(storageKeyFor(info), serializeStoredValue(info, next));
     this._handleUpdate();
   }
 
@@ -155,9 +213,11 @@ export class InstancePreferences extends EventEmitter {
     const path = this.preferencesPath;
 
     if (!typeId || !path) {
-      console.warn('[InstancePreferences] Cannot load: no compute node or preferences path');
-      this._loaded = true;
-      this.emit(InstancePreferencesEvent.PREFERENCES_LOADED, this._prefs);
+      // Called before bootstrap wired up the compute node / preferences path (e.g. a
+      // usePreference consumer mounted during first paint). Do NOT mark loaded — leave
+      // it retryable so the post-bootstrap loadJson() (triggered in main.ts once the
+      // compute node is set) actually reads preferences.json. get() keeps serving the
+      // boot-seeded localStorage values meanwhile, so there's no flash.
       return;
     }
 
@@ -166,15 +226,53 @@ export class InstancePreferences extends EventEmitter {
       if (typeof content === 'string') {
         const parsed = JSON.parse(content) as Record<string, unknown>;
         this._prefs = this._migrate(parsed);
+        // One-time migration: adopt any pref the backend file didn't supply but the
+        // user has under its legacy localStorage key. Backend always wins when set.
+        this._adoptLegacyLocalStorage(this._backendProvidedKeys(parsed));
       }
     } catch (error) {
       console.warn('[InstancePreferences] Load failed, using defaults:', error);
       this._prefs = defaultPreferences();
     }
 
+    // Mirror the canonical (post-reconcile) boot values back to localStorage so the
+    // next module-load seed matches the backend, not a stale device value.
+    for (const info of getBootPrefInfos()) {
+      this._localSet(storageKeyFor(info), serializeStoredValue(info, this.get(info.key)));
+    }
+
     this._loaded = true;
     this._version++;
     this.emit(InstancePreferencesEvent.PREFERENCES_LOADED, this._prefs);
+    if (this._dirty) this._scheduleFlush(); // persist adopted legacy values up
+  }
+
+  /** Dotted PrefKeys the backend file actually supplied (after legacy re-keying). */
+  private _backendProvidedKeys(parsed: Record<string, unknown>): Set<string> {
+    const provided = new Set<string>();
+    for (const rawKey of Object.keys(parsed)) {
+      const key = LEGACY_KEY_MAP[rawKey] ?? rawKey;
+      if (PREF_REGISTRY[key as PrefKey]) provided.add(key);
+    }
+    return provided;
+  }
+
+  /**
+   * Adopt a user's existing localStorage value for any registry pref the backend
+   * file didn't provide. Marks dirty so the adopted value persists up on the next
+   * flush, making the migration permanent (after which the legacy key is ignored).
+   */
+  private _adoptLegacyLocalStorage(providedByBackend: Set<string>): void {
+    for (const info of getAllPrefInfos()) {
+      if (!info.legacyLocalStorageKey) continue; // only migratable prefs
+      if (providedByBackend.has(info.key)) continue; // backend already owns it
+      const raw = this._localGet(info.legacyLocalStorageKey);
+      if (raw == null) continue;
+      const value = parseStoredValue(info, raw);
+      if (value === undefined) continue;
+      this._prefs[info.key] = value;
+      this._changedKeys.add(info.key); // persist the adopted value up on next flush (⇒ dirty)
+    }
   }
 
   /**
@@ -204,7 +302,11 @@ export class InstancePreferences extends EventEmitter {
 
   private _handleUpdate(): void {
     this._version++;
-    this._dirty = true;
+    // Caller (set) already added the key to _changedKeys ⇒ _dirty is true.
+    // Announce the in-memory change immediately so every subscriber (not just the
+    // component that called set) re-renders now — the backend save is debounced,
+    // but reactivity must be synchronous (global prefs like locale/viewMode).
+    this.emit(InstancePreferencesEvent.PREFERENCES_CHANGED, this._prefs);
     this._scheduleFlush();
   }
 
@@ -242,21 +344,34 @@ export class InstancePreferences extends EventEmitter {
       return;
     }
 
-    // Snapshot before await so concurrent mutations during the write don't bleed
-    // into the bytes we're persisting. Optimistically clear _dirty; any mutation
-    // during the write will re-set it via _handleUpdate.
-    const snapshot: Record<string, unknown> = { ...this._prefs };
-    this._dirty = false;
+    // Snapshot the keys+values we're about to persist before the await, then clear
+    // the change set (⇒ not dirty). Concurrent mutations during the write re-add to
+    // _changedKeys (⇒ dirty again) via _handleUpdate, so they flush next round.
+    const changed = [...this._changedKeys];
+    const values = new Map(changed.map((k) => [k, this._prefs[k]]));
+    this._changedKeys.clear();
     this._savingInFlight = true;
     try {
-      const content = JSON.stringify(snapshot, null, 2);
-      await fsManager.writeFile(typeId, path, content);
-      this.emit(InstancePreferencesEvent.PREFERENCES_CHANGED, snapshot);
+      // Read-modify-write MERGE: start from the current on-disk file and overlay only
+      // the keys we changed this session. This preserves keys owned by another writer
+      // (the backend's onboarding gate, another browser tab) instead of clobbering
+      // them with our possibly-stale snapshot.
+      let disk: Record<string, unknown> = {};
+      try {
+        const current = await fsManager.download(typeId, path);
+        if (typeof current === 'string') disk = JSON.parse(current) as Record<string, unknown>;
+      } catch {
+        // No file yet / unreadable — write a fresh object from our changes.
+      }
+      const merged = { ...disk };
+      for (const k of changed) merged[k] = values.get(k);
+      await fsManager.writeFile(typeId, path, JSON.stringify(merged, null, 2));
+      // Note: PREFERENCES_CHANGED was already emitted synchronously in
+      // _handleUpdate; the persisted state == the announced state, so no re-emit.
     } catch (error) {
-      // Save failed — preserve the dirty state so the next mutation (or an
-      // explicit saveJson() call) retries. Don't auto-retry on a timer: that
-      // risks tight loops against a persistently-failing endpoint.
-      this._dirty = true;
+      // Save failed — re-arm the keys (⇒ dirty again) so the next flush retries.
+      // Don't auto-retry on a timer: that risks tight loops against a failing endpoint.
+      for (const k of changed) this._changedKeys.add(k);
       console.error('[InstancePreferences] Save failed, prefs remain dirty:', error);
     } finally {
       this._savingInFlight = false;
@@ -266,3 +381,17 @@ export class InstancePreferences extends EventEmitter {
 }
 
 export const instancePreferences = new InstancePreferences();
+
+/**
+ * Run `fn` whenever any preference changes (a set) OR the backend file finishes
+ * loading — the two events a non-React consumer needs to keep a derived side-effect
+ * (e.g. an `<html>` attribute) in sync. Returns an unsubscribe fn.
+ */
+export function onPreferenceChange(fn: () => void): () => void {
+  instancePreferences.on(InstancePreferencesEvent.PREFERENCES_CHANGED, fn);
+  instancePreferences.on(InstancePreferencesEvent.PREFERENCES_LOADED, fn);
+  return () => {
+    instancePreferences.off(InstancePreferencesEvent.PREFERENCES_CHANGED, fn);
+    instancePreferences.off(InstancePreferencesEvent.PREFERENCES_LOADED, fn);
+  };
+}

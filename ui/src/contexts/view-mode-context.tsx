@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { instancePreferences, onPreferenceChange, PrefKey } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 
 declare global {
@@ -16,59 +17,53 @@ export enum ViewMode {
   Dev = 'dev',
 }
 
-const VIEW_MODE_KEY = 'viewMode';
+// View mode is a *user* preference, now owned by prefMan (`preferences.ui.view_mode`,
+// a boot key mirrored to localStorage for instant first paint). It is reflected as a
+// `data-view` attribute on the document root so CSS / other surfaces can react app-wide.
+// Default Standard (calm/minimal); opt up to Advanced; Dev for developers. Toggle with
+// window.setView() or the footer pill.
 
-// View mode is a *user* toggle persisted in localStorage. It is NOT inherited
-// from any build-time constant. Like the theme, it is also reflected as a
-// `data-view` attribute on the document root so CSS / other surfaces can react
-// to it app-wide. Default is Standard so new users start on the calm/minimal
-// surface and opt up to Advanced. Developers can toggle into Dev. Toggle with
-// window.setView() or the footer pill. Legacy devMode boolean is migrated here.
-function readInitial(): ViewMode {
-  // Migration: old system used separate localStorage.devMode boolean
-  const legacyDev = localStorage.getItem('devMode');
-  if (legacyDev === 'true') {
-    localStorage.removeItem('devMode');
-    localStorage.setItem(VIEW_MODE_KEY, ViewMode.Dev);
-    return ViewMode.Dev;
-  }
-
-  const stored = localStorage.getItem(VIEW_MODE_KEY);
-  return stored === ViewMode.Standard || stored === ViewMode.Advanced || stored === ViewMode.Dev
-    ? (stored as ViewMode)
-    : ViewMode.Standard;
+function toViewMode(v: unknown): ViewMode {
+  return v === ViewMode.Advanced || v === ViewMode.Dev ? (v as ViewMode) : ViewMode.Standard;
 }
-
-let _mode: ViewMode = readInitial();
-const _listeners = new Set<(val: ViewMode) => void>();
 
 function applyAttribute(val: ViewMode): void {
-  document.documentElement.setAttribute('data-view', val);
+  // Guard: prefMan fires on EVERY pref change, but only a view-mode change need
+  // touch the DOM. Skip the write when the attribute already matches.
+  if (document.documentElement.getAttribute('data-view') !== val) {
+    document.documentElement.setAttribute('data-view', val);
+  }
 }
 
-// Apply on import so the attribute is present on first paint.
-applyAttribute(_mode);
-
-export function setViewMode(val: ViewMode): void {
-  _mode = val;
-  localStorage.setItem(VIEW_MODE_KEY, val);
-  applyAttribute(val);
-  _listeners.forEach((fn) => fn(val));
+// One-time migration of the legacy separate `devMode` boolean → viewMode=dev.
+if (typeof localStorage !== 'undefined' && localStorage.getItem('devMode') === 'true') {
+  localStorage.removeItem('devMode');
+  instancePreferences.set(PrefKey.VIEW_MODE, ViewMode.Dev);
 }
 
 export function getViewMode(): ViewMode {
-  return _mode;
+  return toViewMode(instancePreferences.get(PrefKey.VIEW_MODE));
 }
+
+export function setViewMode(val: ViewMode): void {
+  instancePreferences.set(PrefKey.VIEW_MODE, val);
+  applyAttribute(val);
+}
+
+// Keep `data-view` in sync with prefMan: on import (first paint) and on every change,
+// including a cross-device backend value reconciled in on load.
+applyAttribute(getViewMode());
+onPreferenceChange(() => applyAttribute(getViewMode()));
 
 defineGlobal('setView', setViewMode);
 defineGlobal('getView', getViewMode);
 
-// --- Dev mode globals (overrides any shim registration) ---
+// --- Dev mode globals ---
 
 export function setDev(val?: boolean): void {
   if (val === undefined) {
     // No-arg = toggle: Dev ↔ Advanced
-    setViewMode(_mode === ViewMode.Dev ? ViewMode.Advanced : ViewMode.Dev);
+    setViewMode(getViewMode() === ViewMode.Dev ? ViewMode.Advanced : ViewMode.Dev);
   } else if (val) {
     setViewMode(ViewMode.Dev);
   } else {
@@ -77,23 +72,15 @@ export function setDev(val?: boolean): void {
 }
 
 function getDev(): boolean {
-  return _mode === ViewMode.Dev;
+  return getViewMode() === ViewMode.Dev;
 }
 
 defineGlobal('setDev', setDev);
 defineGlobal('getDev', getDev);
 
 export function useViewMode(): ViewMode {
-  const [mode, setModeState] = useState(_mode);
-
-  useEffect(() => {
-    _listeners.add(setModeState);
-    return () => {
-      _listeners.delete(setModeState);
-    };
-  }, []);
-
-  return mode;
+  const [value] = usePreference<string>(PrefKey.VIEW_MODE);
+  return toViewMode(value);
 }
 
 /** Semantic boolean accessor — true if Advanced or Dev (hierarchy). */

@@ -9,6 +9,7 @@ import {
   FlowDataSource,
   fsStore,
   isAwaitingUserInput,
+  PrefKey,
   ProcessStatus,
   Shell,
   WorkerMode,
@@ -22,6 +23,7 @@ import { useContext } from '@src/hooks/useContext';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
+import { usePreference } from '@src/hooks/use-preference';
 import { DockPointer, useDockNavigation, useSideWindows } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
@@ -86,18 +88,6 @@ export interface TraceFilters {
   promptAnnotations: boolean;
 }
 
-const DEFAULT_FILTERS: TraceFilters = {
-  events: true,
-  time: false,
-  index: false,
-  line: false,
-  absLine: false,
-  debugTime: false,
-  refTime: false,
-  promptAnnotations: false,
-};
-const LS_KEY = 'traceFilters';
-
 export interface ColVisibility {
   trace: boolean;
   time: boolean;
@@ -107,45 +97,11 @@ export interface ColVisibility {
 // Stable empty-array identity so a doc-less process doesn't hand the ribbon a
 // fresh `[]` every render.
 const EMPTY_DOCS: MarkdownDoc[] = [];
-const DEFAULT_COL_VIS: ColVisibility = { trace: true, time: true, annotations: true };
-const COL_VIS_LS_KEY = 'colVisibility';
 
 // An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
 // signal an image paste delivers to the PTY, which the CLI reads the system
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
 const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
-
-function loadColVis(): ColVisibility {
-  try {
-    return { ...DEFAULT_COL_VIS, ...JSON.parse(localStorage.getItem(COL_VIS_LS_KEY) ?? 'null') };
-  } catch {
-    return DEFAULT_COL_VIS;
-  }
-}
-
-function saveColVis(v: ColVisibility): void {
-  try {
-    localStorage.setItem(COL_VIS_LS_KEY, JSON.stringify(v));
-  } catch {
-    /* ignore */
-  }
-}
-
-function loadTraceFilters(): TraceFilters {
-  try {
-    return { ...DEFAULT_FILTERS, ...JSON.parse(localStorage.getItem(LS_KEY) ?? 'null') };
-  } catch {
-    return DEFAULT_FILTERS;
-  }
-}
-
-function saveTraceFilters(f: TraceFilters): void {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(f));
-  } catch {
-    /* ignore */
-  }
-}
 
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 import { FONT_FAMILY, FONT_SIZE_PX, openTerminalLink } from './terminalConfig';
@@ -311,9 +267,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     lastCellHeightRef.current = next;
     setCellHeight(next);
   }, []);
-  const [traceFilters, setTraceFiltersState] = useState<TraceFilters>(() => loadTraceFilters());
+  const [traceFilters, setTraceFilters] = usePreference<TraceFilters>(PrefKey.TRACE_FILTERS);
   const [gutterExpanded, setGutterExpanded] = useState(false);
-  const [colVis, setColVisState] = useState<ColVisibility>(() => loadColVis());
+  const [colVis, setColVis] = usePreference<ColVisibility>(PrefKey.COLUMN_VISIBILITY);
   // Open side windows + active are dock state (URL: ?sideWindows&activeSideWindow),
   // read/written through the shared useSideWindows() hook. We narrow the generic
   // string ids back to this surface's SideTabId registry (dropping any stale or
@@ -352,16 +308,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   inputFsRef.current = inputFs;
   const inputDirBrowse = inputDirInfo ? (inputFs?.browse(inputDirInfo.absPath) ?? null) : null;
   const fileCount = inputDirBrowse?.items.length ?? 0;
-
-  const setTraceFilters = useCallback((f: TraceFilters) => {
-    setTraceFiltersState(f);
-    saveTraceFilters(f);
-  }, []);
-
-  const setColVis = useCallback((v: ColVisibility) => {
-    setColVisState(v);
-    saveColVis(v);
-  }, []);
 
   // Sidecar shell state derived from entity
   const sidecarShellId = process?.sidecar_shell_id ?? null;
