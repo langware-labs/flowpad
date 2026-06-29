@@ -249,7 +249,13 @@ export function useAssetsModel() {
         return;
       }
       try {
-        const res = await descriptor.create({ project: dataContext.project ?? null, name });
+        // Place the new asset per the SELECTED scope, not the ambient active
+        // project. In user scope the create must be user-level (project=null) —
+        // otherwise it POSTs to /graph/project/<active>/skill, lands in that
+        // project's folder, and (now that scope follows project_id) is tagged
+        // `project`, so a user-scope create wrongly shows up under a project.
+        const createProject = effectiveFilter.scope.mode === 'user' ? null : (dataContext.project ?? null);
+        const res = await descriptor.create({ project: createProject, name });
         notify.success({ title: res.toastTitle });
         // Local create: poke this type's tree root so the new entity shows
         // immediately. The useAssetTreeRefresh subscription also covers it
