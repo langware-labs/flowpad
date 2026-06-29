@@ -455,17 +455,21 @@ def _safe_entity_name(entity) -> str:
     return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in str(raw)) or "asset"
 
 
-async def _resolve_project_root_for_conv(conv_id: str) -> "Path | None":
-    """The receiver's mapped PROJECT directory for this conversation, or None.
+async def _resolve_project_root_for_conv(conv_id: str) -> "tuple[Path, str | None] | None":
+    """The receiver's mapped PROJECT for this conversation, or None.
 
-    Received file-backed assets are copied into the conversation's project (the
-    UI forces project selection on an incoming share). Mirrors
-    ``_resolve_workdir_and_project_async`` (flow_message_action) but keyed off
-    the conversation id directly. None ⇒ no project mapped yet (gate the copy).
+    Returns ``(project_root, project_id)``: the directory received file-backed
+    assets are copied into, plus the owning ``project_id`` to stamp onto the
+    materialized rows (None when the root comes from a context Task's
+    ``project_root`` that has no Project entity behind it). The UI forces project
+    selection on an incoming share. Mirrors ``_resolve_workdir_and_project_async``
+    (flow_message_action) but keyed off the conversation id directly. ``None`` ⇒
+    no project mapped yet (gate the copy).
     """
     if not conv_id:
         return None
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
     conv = await Conversation.get_one({"id": conv_id})
     if conv is None:
@@ -480,14 +484,16 @@ async def _resolve_project_root_for_conv(conv_id: str) -> "Path | None":
         task = await Task.get_one({"id": task_typeid.id})
         wd = (getattr(task, "project_root", "") or "").strip() if task else ""
         if wd:
-            return Path(wd)
+            # The Project entity owning this root, if one exists — stamp its id so
+            # received rows aren't projectless when a Project backs the path.
+            task_pid = getattr(conv, "project_id", None) or Project.derive_id_for_path(wd)
+            return Path(wd), task_pid
     project_id = getattr(conv, "project_id", None)
     if project_id:
-        from flow_sdk.builtin.project import Project  # noqa: PLC0415
         project = await Project.get_one({"id": project_id})
         mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
         if mount:
-            return Path(mount)
+            return Path(mount), project_id
     return None
 
 
@@ -522,14 +528,17 @@ def _restore_file_backed_entry(
     return copied_any
 
 
-async def _reindex_root(root: Path, record_type, *, types=None) -> None:
+async def _reindex_root(root: Path, record_type, *, types=None, project_id: str | None = None) -> None:
     """Drive ``FSIndexer.index(force=True)`` over a single restored ``root``.
 
     ``build_default_indexer()`` for the full function registry; the root is
     overridden per-call so we never walk the user's real home dir. ``record_type``
     selects which walkers fire: ``USER_HOME_FOLDER`` for FS-rooted assets
     (``.claude/…``), ``REAL_PROJECT_CWD`` for project-scoped types (``specs/…``).
-    ``types`` optionally scopes the materialized set.
+    ``types`` optionally scopes the materialized set. ``project_id`` is stamped
+    onto the root ref so received rows inherit the owning project (the receive
+    path resolves the conversation's project; without this every materialized
+    row would land projectless — see ``_resolve_project_root_for_conv``).
     """
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer import IndexerOptions
@@ -538,7 +547,7 @@ async def _reindex_root(root: Path, record_type, *, types=None) -> None:
     indexer = build_default_indexer()
     await indexer.index(
         IndexerOptions(
-            roots=(FSRef(root, record_type=record_type, scope="user"),),
+            roots=(FSRef(root, record_type=record_type, scope="user", project_id=project_id),),
             types=types,
             force=True,
             verbose=False,
@@ -546,17 +555,21 @@ async def _reindex_root(root: Path, record_type, *, types=None) -> None:
     )
 
 
-async def _reindex_received_assets(project_root: Path, types) -> None:
+async def _reindex_received_assets(project_root: Path, types, *, project_id: str | None = None) -> None:
     """Reindex the project after received file-backed assets were copied in.
 
     One project-cwd walk scoped to the received types materializes every row
     from its real file (idempotent + body-aware). ``REAL_PROJECT_CWD`` reaches
     all file-backed families; markdown is reached via the FOLDER walker, kept by
-    the type-gating since FOLDER → MARKDOWN.
+    the type-gating since FOLDER → MARKDOWN. ``project_id`` (the conversation's
+    owning project) is threaded onto the root ref so received rows are stamped
+    with it instead of landing projectless.
     """
     from flow_sdk.fs_store.record_types import RecordType
 
-    await _reindex_root(project_root, RecordType.REAL_PROJECT_CWD, types=tuple(types) or None)
+    await _reindex_root(
+        project_root, RecordType.REAL_PROJECT_CWD, types=tuple(types) or None, project_id=project_id
+    )
 
 
 async def _notify_received_assets(entries: "set[tuple[str, str]]") -> None:
@@ -986,7 +999,8 @@ async def unpack_bundle(
              if TypeId(c).type == BuiltinEntityType.CONVERSATION.value),
             None,
         )
-        project_root = await _resolve_project_root_for_conv(staging_conv_id) if staging_conv_id else None
+        resolved_project = await _resolve_project_root_for_conv(staging_conv_id) if staging_conv_id else None
+        project_root, project_pid = resolved_project or (None, None)
         received_types: set = set()
         received_entries: set[tuple[str, str]] = set()
         no_project_pending: list[str] = []
@@ -1196,7 +1210,7 @@ async def unpack_bundle(
         # FTS5 entries land before any UI sync fires. Scoped to the received
         # types; zero-cost when the bundle carried no file-backed assets.
         if received_types and project_root is not None:
-            await _reindex_received_assets(project_root, received_types)
+            await _reindex_received_assets(project_root, received_types, project_id=project_pid)
             # The indexer materializes those rows silently (notify=False), so
             # announce the just-created assets to the receiver's live UI — one
             # CREATE data_op each — or their conversation chips stay stuck on the
