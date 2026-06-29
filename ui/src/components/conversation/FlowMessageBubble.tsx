@@ -16,7 +16,7 @@ import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
 import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
 import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
-import { editorPathForLocalFile } from './attachment-url';
+import { dockPointerForLocalFile } from './attachment-url';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { messageForwardShareSource } from '@src/hooks/share-sources';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -481,7 +481,7 @@ export function FlowMessageBubble({
             filename={item.filename}
             state={item.state}
             onOpenInEditor={
-              item.localPath ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!)) : undefined
+              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
             }
             onRevealInFolder={
               item.localPath
@@ -519,7 +519,7 @@ export function FlowMessageBubble({
                 downloading={item.state === AttachmentChipState.Ready && downloading}
                 onDownload={item.state === AttachmentChipState.Ready ? triggerDownload : undefined}
                 onOpenInEditor={
-                  item.localPath ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!)) : undefined
+                  item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
                 }
                 onRevealInFolder={
                   item.localPath

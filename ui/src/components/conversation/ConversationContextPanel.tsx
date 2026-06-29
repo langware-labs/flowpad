@@ -31,7 +31,7 @@ import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
-import { localAttachmentUrl, editorPathForLocalFile } from './attachment-url';
+import { localAttachmentUrl, dockPointerForLocalFile } from './attachment-url';
 import { ICON_BY_TYPE, buildDockPointer } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
 import type { WorkerType } from './conversation-session-constants';
@@ -607,7 +607,10 @@ interface AttachmentRowProps {
   onSelect?: () => void;
 }
 
-function AttachmentRow({
+// Exported for the conversation-shared-md routing test (mirrors
+// DownloadAttachmentsButton's test-export): the "Open" action must route a
+// shared .md attachment to the markdown document editor, not the code editor.
+export function AttachmentRow({
   messageId,
   attachment,
   kind,
@@ -643,7 +646,7 @@ function AttachmentRow({
       {localPath && (
         <>
           <RowAction
-            onClick={() => navigation.openEditor(editorPathForLocalFile(localPath))}
+            onClick={() => navigation.openDock(dockPointerForLocalFile(localPath))}
             title={`Open ${filename} in the editor`}
           >
             <ExternalLink className="h-3 w-3" />
