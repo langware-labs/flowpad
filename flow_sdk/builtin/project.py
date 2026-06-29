@@ -376,9 +376,10 @@ class Project(Entity):
     async def get_compute_node(self):
         from flow_sdk.config import default_service_config
 
-        # In desktop/local mode, always use the @local compute node
+        # In desktop/local mode, always use the @local compute node singleton
+        # (resolved/self-healed by the single source of truth).
         if default_service_config.is_local:
-            return await ComputeNode.get_by_uname("local")
+            return await ComputeNode.get_local()
 
         project_compute_nodes = await ComputeNode.get_all(source_entity=self.typeid)
         if project_compute_nodes:
@@ -519,14 +520,15 @@ class Project(Entity):
                 f"Connected project {self.id} to @local workspace {local_workspace.id}"
             )
 
-        # Get the @local compute node
-        local_compute_node = await ComputeNode.get_by_uname("local")
-        if local_compute_node:
-            # Add compute node as child of project
-            await self.attach_child(local_compute_node.typeid)
-            logging.info(
-                f"Connected @local compute node {local_compute_node.id} to project {self.id}"
-            )
+        # Get (self-healing) the @local compute node. It is a shared singleton
+        # resolved via ComputeNode.get_local(), NOT a project-owned resource —
+        # so we deliberately do NOT attach_child it to the project. Making it a
+        # child created an `is_child` edge that deleteWithChildren's cascading
+        # delete would follow, destroying the global @local compute node and
+        # breaking every PTY/agentic session on the instance. Per-project cloud
+        # compute nodes (cloud mode) are a different path and remain legitimate
+        # project children.
+        local_compute_node = await ComputeNode.get_local()
 
         return ApiSuccessResponse(
             data={
@@ -725,7 +727,22 @@ class Project(Entity):
             except OSError as exc:
                 log.warning("[project-delete] source folder rmtree failed %s: %s", mount, exc)
 
-        # 4. Delete the project's own record (DB row + FTS + wiki + shadow + data).
+        # 4. Sever the shared @local compute node before deleting the project
+        #    record. Destroying the project record cascades down `is_child` edges
+        #    (sqlite delete walks get_children_sub_tree), and older projects were
+        #    set up with the @local compute node mistakenly attached as a child
+        #    (see setup_for_desktop). Detaching it here keeps the cascade from
+        #    deleting the global compute node and breaking every PTY/agentic
+        #    session. Idempotent: detach_child is a no-op when no edge exists.
+        try:
+            # Read-only resolve: do NOT mint a node just to detach it.
+            local_compute_node = await ComputeNode.get_local(create=False)
+            if local_compute_node:
+                await self.detach_child(local_compute_node.typeid)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[project-delete] detach @local compute node failed: %s", exc)
+
+        # 5. Delete the project's own record (DB row + FTS + wiki + shadow + data).
         await _destroy({"type": self.type, "id": pid})
 
         return {"project_id": pid, "deleted_children": len(targets)}

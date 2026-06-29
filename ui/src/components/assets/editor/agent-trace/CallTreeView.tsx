@@ -9,6 +9,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { cn } from '@src/lib/utils';
 import { useSkillsByName } from '@src/hooks/useSkillsByName';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -88,7 +89,7 @@ export function CallTreeView({ doc, selectedFrameId, onSelectFrame, onEvaluateSk
   if (!root) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-        This trace predates the call-stack view. Re-run the analysis (Refresh) to generate it.
+        <Trans>This trace predates the call-stack view. Re-run the analysis (Refresh) to generate it.</Trans>
       </div>
     );
   }
@@ -96,7 +97,7 @@ export function CallTreeView({ doc, selectedFrameId, onSelectFrame, onEvaluateSk
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="call-tree-view">
       <div className="flex flex-shrink-0 items-center gap-2 border-b px-3 py-1.5">
-        <span className="text-xs text-muted-foreground">Drill by</span>
+        <span className="text-xs text-muted-foreground"><Trans>Drill by</Trans></span>
         <div className="inline-flex rounded-md bg-muted p-0.5">
           {METRICS.map((m) => (
             <button
@@ -159,6 +160,7 @@ function FrameRow({
   advanced,
   defaultOpen,
 }: FrameRowProps) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(defaultOpen ?? depth < 2);
   const hasChildren = frame.children.length > 0;
   const Icon = KIND_ICON[frame.kind] ?? Wrench;
@@ -206,8 +208,8 @@ function FrameRow({
         {underEval && (
           <span
             className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded bg-blue-500/15 text-blue-600 ring-1 ring-blue-500/20 dark:text-blue-400"
-            title="Under eval"
-            aria-label="Under eval"
+            title={t`Under eval`}
+            aria-label={t`Under eval`}
             data-testid="call-frame-under-eval"
           >
             <FlaskConical className="h-2.5 w-2.5" />
@@ -220,11 +222,11 @@ function FrameRow({
               e.stopPropagation();
               onEvaluateSkill(frame.callable);
             }}
-            title={`Evaluate "${frame.callable}"`}
+            title={t`Evaluate "${frame.callable}"`}
             data-testid="call-frame-evaluate-skill"
             className="flex-shrink-0 rounded px-1 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           >
-            Eval
+            <Trans>Eval</Trans>
           </button>
         )}
         {frame.kind === 'tool' && frame.tool_call_count > 1 && (

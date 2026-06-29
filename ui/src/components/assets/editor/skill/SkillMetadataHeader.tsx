@@ -1,5 +1,6 @@
 import { SkillMetadata } from '@sdk';
 import { Input } from '@src/components/ui/input';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface SkillMetadataHeaderProps {
   metadata: SkillMetadata | null;
@@ -7,6 +8,7 @@ interface SkillMetadataHeaderProps {
 }
 
 export function SkillMetadataHeader({ metadata, onMetadataChange }: SkillMetadataHeaderProps) {
+  const { t } = useLingui();
   if (!metadata) {
     return null;
   }
@@ -20,17 +22,17 @@ export function SkillMetadataHeader({ metadata, onMetadataChange }: SkillMetadat
             <Input
               value={metadata.name}
               onChange={(e) => onMetadataChange('name', e.target.value)}
-              placeholder="skill-name"
+              placeholder={t`skill-name`}
               className="h-8 text-lg font-semibold"
             />
           ) : (
-            <span className="truncate text-sm font-medium text-foreground">{metadata.name || 'Untitled Skill'}</span>
+            <span className="truncate text-sm font-medium text-foreground">{metadata.name || t`Untitled Skill`}</span>
           )}
           {onMetadataChange ? (
             <Input
               value={metadata.description}
               onChange={(e) => onMetadataChange('description', e.target.value)}
-              placeholder="Brief description of what this skill does"
+              placeholder={t`Brief description of what this skill does`}
               className="h-7 text-sm"
             />
           ) : (
@@ -45,7 +47,7 @@ export function SkillMetadataHeader({ metadata, onMetadataChange }: SkillMetadat
           {/* Tags */}
           {metadata.tags.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Tags:</span>
+              <span className="text-xs text-muted-foreground"><Trans>Tags:</Trans></span>
               {metadata.tags.map((tag) => (
                 <span
                   key={tag}
@@ -60,7 +62,7 @@ export function SkillMetadataHeader({ metadata, onMetadataChange }: SkillMetadat
           {/* Allowed Tools */}
           {metadata.allowedTools.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Tools:</span>
+              <span className="text-xs text-muted-foreground"><Trans>Tools:</Trans></span>
               {metadata.allowedTools.map((tool) => (
                 <span key={tool} className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs">
                   {tool}

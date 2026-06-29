@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
@@ -80,6 +81,7 @@ function DesktopTile({ Icon, label, iconClassName, disabled, onClick }: DesktopT
  * project dialogs.
  */
 export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModalProps) {
+  const { t } = useLingui();
   const { types: serverTypes } = useAssetTypes();
   const { project: currentProject } = useProject();
   const { projects, isLoading: isLoadingProjects } = useProjects();
@@ -103,7 +105,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
       onOpenChange(false);
       const result = await navigation.openNewClaudeProcess({ workerType });
       if (!result) {
-        notify.error({ title: 'Failed to start session' });
+        notify.error({ title: t`Failed to start session` });
         return;
       }
       await navigation.openShellProcess(result.processId);
@@ -113,14 +115,14 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
     if (!computeNode) {
-      notify.error({ title: 'No compute node available' });
+      notify.error({ title: t`No compute node available` });
       return null;
     }
     try {
       return await computeNode.openPathDialog();
     } catch (err) {
       console.error('[QuickCreateModal] Folder picker failed:', err);
-      notify.error({ title: 'Failed to open folder picker' });
+      notify.error({ title: t`Failed to open folder picker` });
       return null;
     }
   }, [computeNode]);
@@ -148,12 +150,12 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
         projectId: project.id,
       });
       if (!result) {
-        notify.error({ title: 'Failed to start session' });
+        notify.error({ title: t`Failed to start session` });
         return;
       }
       await navigation.openShellProcess(result.processId);
     } catch (err) {
-      notify.error({ title: err instanceof Error ? err.message : 'Failed to open folder' });
+      notify.error({ title: err instanceof Error ? err.message : t`Failed to open folder` });
     }
   }, [onOpenChange, handlePickFolder, ensureProject, navigation]);
 
@@ -217,21 +219,21 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
     {
       key: 'claude_code',
       Icon: ClaudeIcon,
-      label: 'Claude Code',
+      label: t`Claude Code`,
       iconClassName: 'text-orange-500',
       onClick: () => void handleStartSession('claude_code'),
     },
     {
       key: 'codex',
       Icon: CodexIcon,
-      label: 'Codex',
+      label: t`Codex`,
       iconClassName: 'text-emerald-500',
       onClick: () => void handleStartSession('codex'),
     },
     {
       key: 'copilot',
       Icon: CopilotIcon,
-      label: 'Copilot',
+      label: t`Copilot`,
       iconClassName: 'text-sky-500',
       onClick: () => void handleStartSession('copilot'),
     },
@@ -241,13 +243,13 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
     {
       key: 'open-folder',
       Icon: FolderOpen,
-      label: 'Open folder',
+      label: t`Open folder`,
       onClick: () => void handleOpenFolder(),
     },
     {
       key: 'new-local',
       Icon: FolderPlus,
-      label: 'Project',
+      label: t`Project`,
       onClick: () => {
         onOpenChange(false);
         setNewLocalProjectOpen(true);
@@ -256,7 +258,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
     {
       key: 'new-git',
       Icon: GitBranch,
-      label: 'Git',
+      label: t`Git`,
       onClick: () => {
         onOpenChange(false);
         setNewGitProjectOpen(true);
@@ -269,7 +271,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Create new</DialogTitle>
+            <DialogTitle><Trans>Create new</Trans></DialogTitle>
             <DialogDescription>
               <button
                 type="button"
@@ -278,20 +280,20 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
                   setProjectModalOpen(true);
                 }}
                 className="inline-flex items-center gap-1.5 rounded-md border border-border bg-transparent px-2 py-1 text-xs transition-colors hover:bg-accent"
-                title="Switch project"
+                title={t`Switch project`}
               >
                 <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Project
+                  <Trans>Project</Trans>
                 </span>
-                <span className="max-w-[160px] truncate">{currentProject?.displayName ?? 'Select…'}</span>
+                <span className="max-w-[160px] truncate">{currentProject?.displayName ?? t`Select…`}</span>
               </button>
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-4 pt-1">
             <section>
-              <h3 className="mb-2 text-xs font-medium text-muted-foreground">New session</h3>
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>New session</Trans></h3>
               <div className="flex flex-wrap gap-3">
                 {sessionTiles.map((t) => (
                   <DesktopTile
@@ -307,7 +309,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
 
             {assetItems.length > 0 && (
               <section>
-                <h3 className="mb-2 text-xs font-medium text-muted-foreground">New asset</h3>
+                <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>New asset</Trans></h3>
                 <div className="flex flex-wrap gap-3">
                   {assetItems.map((item) => (
                     <DesktopTile
@@ -325,7 +327,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
             )}
 
             <section>
-              <h3 className="mb-2 text-xs font-medium text-muted-foreground">New project</h3>
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>New project</Trans></h3>
               <div className="flex flex-wrap gap-3">
                 {projectTiles.map((t) => (
                   <DesktopTile key={t.key} Icon={t.Icon} label={t.label} onClick={t.onClick} />

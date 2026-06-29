@@ -4,6 +4,7 @@ import { AssetTypeCountsContext } from '@src/components/browseable-tree/adapters
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { useAssetsModel } from './useAssetsModel';
+import { useLingui } from '@lingui/react/macro';
 
 /**
  * Assets left-menu — the navigator (Zone B). The tree (asset types + markdown
@@ -11,6 +12,7 @@ import { useAssetsModel } from './useAssetsModel';
  * `useAssetsModel`; the body (`AssetsPage`) keeps the header + content router.
  */
 export function AssetsNavigator() {
+  const { t } = useLingui();
   const m = useAssetsModel();
 
   // Not memoized: `useAssetsModel` returns a fresh object each render, so a memo
@@ -24,7 +26,7 @@ export function AssetsNavigator() {
     activeKey: m.openAssetId,
     onNavigate: m.navigateAsset,
     header: {
-      title: m.isProjectView ? 'Project assets' : 'Assets',
+      title: m.isProjectView ? t`Project assets` : t`Assets`,
       headerRight: (
         <ScopeFilterIconBar
           scope={m.scope}
@@ -45,19 +47,19 @@ export function AssetsNavigator() {
       <InputDialog
         open={m.newTypeDialogOpen}
         onOpenChange={m.setNewTypeDialogOpen}
-        title={`New ${m.newTypeTarget ?? ''}`}
-        description={`Enter a name for the new ${m.newTypeTarget ?? 'item'}.`}
-        placeholder="Name"
-        confirmLabel="Create"
+        title={t`New ${m.newTypeTarget ?? ''}`}
+        description={t`Enter a name for the new ${m.newTypeTarget ?? 'item'}.`}
+        placeholder={t`Name`}
+        confirmLabel={t`Create`}
         onConfirm={(name) => void m.handleNewConfirm(name)}
       />
       <InputDialog
         open={m.newFolderDialogOpen}
         onOpenChange={m.setNewFolderDialogOpen}
-        title="New Folder"
-        description={`Create a folder in ${m.newFolderTarget?.label ?? 'this folder'}.`}
-        placeholder="Folder name"
-        confirmLabel="Create"
+        title={t`New Folder`}
+        description={t`Create a folder in ${m.newFolderTarget?.label ?? 'this folder'}.`}
+        placeholder={t`Folder name`}
+        confirmLabel={t`Create`}
         onConfirm={(name) => void m.handleNewFolderConfirm(name)}
       />
     </>

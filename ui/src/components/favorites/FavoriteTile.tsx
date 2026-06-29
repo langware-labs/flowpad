@@ -14,6 +14,7 @@ import { canNavigateFavorite, navigateToFavorite } from '@src/navigation/favorit
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import type { Bookmark } from '@sdk';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Bookmark as BookmarkIcon,
   Box,
@@ -90,6 +91,7 @@ interface FavoriteTileProps {
 export function FavoriteTile({ bookmark, summary }: FavoriteTileProps) {
   const { navigation } = useDockNavigation();
   const { removeFavorite, renameFavorite } = useFavorites();
+  const { t } = useLingui();
 
   const Icon = resolveIcon(bookmark);
   // User-set bookmark.name (from rename) wins over live entity summary.
@@ -133,7 +135,8 @@ export function FavoriteTile({ bookmark, summary }: FavoriteTileProps) {
     [bookmark, removeFavorite],
   );
 
-  const tooltipName = navigable ? title : `${title} (missing)`;
+  const missingLabel = t`(missing)`;
+  const tooltipName = navigable ? title : `${title} ${missingLabel}`;
   const createdAgo = formatTimeAgo(bookmark.created_date);
   const entityType = bookmark.data?.entity_type as string | undefined;
 
@@ -212,18 +215,18 @@ export function FavoriteTile({ bookmark, summary }: FavoriteTileProps) {
               </div>
             )}
             {createdAgo && (
-              <div className="mt-1 text-[10px] opacity-60">Favorited {createdAgo}</div>
+              <div className="mt-1 text-[10px] opacity-60"><Trans>Favorited {createdAgo}</Trans></div>
             )}
             <div className="mt-1 border-t border-border/40 pt-1 text-[10px] opacity-60">
-              Right-click to rename
+              <Trans>Right-click to rename</Trans>
             </div>
           </TooltipContent>
         </Tooltip>
         <ContextMenuContent>
-          <ContextMenuItem onSelect={() => setTimeout(startEditing, 0)}>Rename</ContextMenuItem>
+          <ContextMenuItem onSelect={() => setTimeout(startEditing, 0)}><Trans>Rename</Trans></ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => void removeFavorite(bookmark)}>
-            Remove favorite
+            <Trans>Remove favorite</Trans>
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -231,8 +234,8 @@ export function FavoriteTile({ bookmark, summary }: FavoriteTileProps) {
       <button
         type="button"
         onClick={handleRemove}
-        aria-label="Remove favorite"
-        title="Remove favorite"
+        aria-label={t`Remove favorite`}
+        title={t`Remove favorite`}
         className="absolute -right-1 -top-1 hidden h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-amber-500 shadow-sm transition-colors hover:bg-amber-500 hover:text-white group-hover:flex focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {navigable ? (

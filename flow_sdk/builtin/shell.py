@@ -198,7 +198,7 @@ class Shell(Entity):
         if bound_node is None:
             bound_node = await ComputeNode.get_by_id(candidate_id) if candidate_id else None
         if bound_node is None:
-            bound_node = await ComputeNode.get_by_uname("local") if not self.compute_node_uname else None
+            bound_node = await ComputeNode.get_local() if not self.compute_node_uname else None
         if bound_node is None and candidate_id and not self.compute_node_uname:
             # Preserve the historical local-shell behavior for ephemeral sessions
             # that were created with only a raw local compute-node id.

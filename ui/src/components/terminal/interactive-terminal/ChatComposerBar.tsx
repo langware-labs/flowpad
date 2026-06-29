@@ -13,6 +13,7 @@ import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications/notify';
 import { ScrollText } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useChatPlanMode } from './chat-plan-mode-context';
 
 interface ChatComposerBarProps {
@@ -34,6 +35,7 @@ interface ChatComposerBarProps {
  * `interruptTurn()`. Status + busy come from the gold entity, reflected live.
  */
 export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps) {
+  const { t } = useLingui();
   const [sending, setSending] = useState(false);
   const plan = useChatPlanMode();
 
@@ -46,12 +48,12 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
         await process.prompt(text, undefined, plan.planPending ? { permissionMode: 'plan' } : undefined);
       } catch (err) {
         console.error('[ChatComposerBar] prompt failed', err);
-        notify.error({ title: 'Message not sent', message: err instanceof Error ? err.message : String(err) });
+        notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
       } finally {
         setSending(false);
       }
     },
-    [process, sending, plan.planPending],
+    [process, sending, plan.planPending, t],
   );
 
   const handleStop = useCallback(async () => {
@@ -59,9 +61,9 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       await process.interruptTurn();
     } catch (err) {
       console.error('[ChatComposerBar] interrupt failed', err);
-      notify.error({ title: 'Could not stop', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Could not stop`, message: err instanceof Error ? err.message : String(err) });
     }
-  }, [process]);
+  }, [process, t]);
 
   // Reflect the gold entity reactively — the prop comes from the loader context
   // and may not re-render on data_op patches (worker_status flips on transcript
@@ -88,14 +90,14 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       running={busy}
       onStop={handleStop}
       onPasteImages={onPasteImages}
-      placeholder={plan.planPending ? 'Plan mode — describe what to plan…' : 'Message the agent…'}
+      placeholder={plan.planPending ? t`Plan mode — describe what to plan…` : t`Message the agent…`}
       onShiftTab={plan.enabled ? plan.togglePlan : undefined}
       leadingSlot={
         plan.enabled ? (
           <button
             type="button"
             onClick={plan.togglePlan}
-            title="Toggle plan mode (Shift+Tab)"
+            title={t`Toggle plan mode (Shift+Tab)`}
             data-testid="plan-mode-pill"
             aria-pressed={plan.planPending}
             className={cn(
@@ -106,7 +108,7 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
             )}
           >
             <ScrollText className="h-3.5 w-3.5" />
-            Plan
+            <Trans>Plan</Trans>
           </button>
         ) : undefined
       }

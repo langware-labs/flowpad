@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Search } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Dialog,
   DialogContent,
@@ -88,6 +89,7 @@ export function ProjectPickerModal({
   selectedIds,
   onConfirm,
 }: ProjectPickerModalProps): React.ReactElement {
+  const { t } = useLingui();
   const { projects, isLoading } = useProjectList({ enabled: open });
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set(selectedIds));
   const [search, setSearch] = useState('');
@@ -163,14 +165,14 @@ export function ProjectPickerModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Select Projects</DialogTitle>
-          <DialogDescription>Choose which projects to filter by. Sorted by latest activity.</DialogDescription>
+          <DialogTitle><Trans>Select Projects</Trans></DialogTitle>
+          <DialogDescription><Trans>Choose which projects to filter by. Sorted by latest activity.</Trans></DialogDescription>
         </DialogHeader>
 
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search projects…"
+            placeholder={t`Search projects…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="h-8 pl-8 text-sm"
@@ -180,7 +182,7 @@ export function ProjectPickerModal({
 
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>
-            {checkedIds.size} selected
+            <Trans>{checkedIds.size} selected</Trans>
             {search.trim() ? ` · ${filtered.length} match${filtered.length === 1 ? '' : 'es'}` : ''}
           </span>
           <div className="flex gap-1">
@@ -190,7 +192,7 @@ export function ProjectPickerModal({
               disabled={filtered.length === 0}
               className="rounded-md px-2 py-1 hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {search.trim() ? 'Select all matches' : 'Select all'}
+              {search.trim() ? t`Select all matches` : t`Select all`}
             </button>
             <button
               type="button"
@@ -198,7 +200,7 @@ export function ProjectPickerModal({
               disabled={checkedIds.size === 0}
               className="rounded-md px-2 py-1 hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Clear selection
+              <Trans>Clear selection</Trans>
             </button>
           </div>
         </div>
@@ -207,18 +209,18 @@ export function ProjectPickerModal({
           {isLoading ? (
             <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading projects...
+              <Trans>Loading projects...</Trans>
             </div>
           ) : filtered.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
-              {rows.length === 0 ? 'No projects found' : 'No matches'}
+              {rows.length === 0 ? t`No projects found` : t`No matches`}
             </div>
           ) : (
             <div className="divide-y divide-border">
               {selectedRows.map((r) => renderRow(r, checkedIds.has(r.pid), toggle))}
               {selectedRows.length > 0 && otherRows.length > 0 && (
                 <div className="bg-muted/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Other projects
+                  <Trans>Other projects</Trans>
                 </div>
               )}
               {otherRows.map((r) => renderRow(r, checkedIds.has(r.pid), toggle))}
@@ -231,13 +233,13 @@ export function ProjectPickerModal({
             onClick={() => onOpenChange(false)}
             className="h-8 rounded-md border border-input bg-background px-3 text-sm text-muted-foreground hover:text-foreground"
           >
-            Cancel
+            <Trans>Cancel</Trans>
           </button>
           <button
             onClick={() => onConfirm(Array.from(checkedIds))}
             className="h-8 rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90"
           >
-            Confirm
+            <Trans>Confirm</Trans>
           </button>
         </DialogFooter>
       </DialogContent>

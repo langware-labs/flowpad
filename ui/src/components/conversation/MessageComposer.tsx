@@ -16,6 +16,7 @@ import { useLocalUser } from './useLocalUser';
 import { discardDraftFlowMessage } from './flow-message-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
@@ -99,7 +100,7 @@ function PendingFileChip({
         type="button"
         onClick={onRemove}
         disabled={disabled}
-        title="Remove attachment"
+        title={t`Remove attachment`}
         className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:pointer-events-none"
       >
         <X className="h-3 w-3" />
@@ -124,6 +125,7 @@ export function MessageComposer({
   draft,
   onAfterDiscard,
 }: MessageComposerProps) {
+  const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
   const { localUser } = useLocalUser();
   const isDraftMode = !!draft;
@@ -215,8 +217,8 @@ export function MessageComposer({
       tooBig.length === 0
         ? null
         : tooBig.length === 1
-          ? `"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
-          : `${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
+          ? t`"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
+          : t`${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
     );
     return annotated.length;
   };
@@ -295,8 +297,8 @@ export function MessageComposer({
       onSent?.();
     } catch (err: unknown) {
       console.error('[MessageComposer] send failed', err);
-      setError(err instanceof Error ? err.message : 'Failed to send reply.');
-      if (isDraftMode) notify.error({ title: 'Failed to send draft' });
+      setError(err instanceof Error ? err.message : t`Failed to send reply.`);
+      if (isDraftMode) notify.error({ title: t`Failed to send draft` });
     } finally {
       setSending(false);
     }
@@ -306,14 +308,14 @@ export function MessageComposer({
 
   const handleDiscard = async () => {
     if (!draft || isBusy) return;
-    if (!window.confirm('Discard this draft?')) return;
+    if (!window.confirm(t`Discard this draft?`)) return;
     setDiscarding(true);
     try {
       await discardDraftFlowMessage(draft);
       onAfterDiscard?.();
     } catch (err: unknown) {
       console.error('[MessageComposer] discard failed', err);
-      notify.error({ title: 'Failed to discard draft' });
+      notify.error({ title: t`Failed to discard draft` });
     } finally {
       setDiscarding(false);
     }
@@ -390,7 +392,7 @@ export function MessageComposer({
         type="button"
         onClick={() => fileInputRef.current?.click()}
         disabled={isDisabled}
-        title="Attach files"
+        title={t`Attach files`}
         data-testid="attach-file-button"
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
       >
@@ -401,7 +403,7 @@ export function MessageComposer({
           <button
             type="button"
             disabled={isDisabled}
-            title="Attach an asset (skill, agent, doc, spec)"
+            title={t`Attach an asset (skill, agent, doc, spec)`}
             data-testid="attach-asset-button"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
           >
@@ -411,7 +413,7 @@ export function MessageComposer({
         onPick={addAssetRef}
         filter={() => true}
         side="top"
-        searchPlaceholder="Search assets…"
+        searchPlaceholder={t`Search assets…`}
       />
       <EmojiPicker
         side="top"
@@ -420,7 +422,7 @@ export function MessageComposer({
           <button
             type="button"
             disabled={isDisabled}
-            title="Insert emoji"
+            title={t`Insert emoji`}
             data-testid="insert-emoji-button"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
           >
@@ -436,7 +438,7 @@ export function MessageComposer({
       type="button"
       onClick={() => setShowPromptDialog(true)}
       disabled={isDisabled}
-      title={activePrompt ? 'Edit attached prompt' : 'Suggest a prompt for the other user to approve'}
+      title={activePrompt ? t`Edit attached prompt` : t`Suggest a prompt for the other user to approve`}
       className={cn(
         'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
         activePrompt
@@ -445,7 +447,7 @@ export function MessageComposer({
       )}
     >
       <MessageSquarePlus className="h-3 w-3" />
-      {activePrompt ? 'Edit prompt' : 'Suggest prompt'}
+      {activePrompt ? <Trans>Edit prompt</Trans> : <Trans>Suggest prompt</Trans>}
     </button>
   ) : null;
 
@@ -454,7 +456,7 @@ export function MessageComposer({
       type="button"
       onClick={handleSend}
       disabled={!canSend}
-      title="Send"
+      title={t`Send`}
       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
     >
       <Send className="h-3.5 w-3.5" />
@@ -496,7 +498,7 @@ export function MessageComposer({
         <button
           type="button"
           onClick={() => setActivePrompt(null)}
-          title="Remove queued prompt"
+          title={t`Remove queued prompt`}
           className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
         >
           <X className="h-3 w-3" />
@@ -531,7 +533,7 @@ export function MessageComposer({
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-foreground">{senderName}</span>
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-              Draft
+              <Trans>Draft</Trans>
             </span>
           </div>
 
@@ -550,7 +552,7 @@ export function MessageComposer({
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={(e) => void handlePaste(e)}
-              placeholder={dragging ? 'Drop files here' : 'Edit your draft…'}
+              placeholder={dragging ? t`Drop files here` : t`Edit your draft…`}
               rows={Math.max(2, Math.min(10, text.split('\n').length + 1))}
               disabled={isDisabled}
               className="min-h-[2.5rem] w-full resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
@@ -563,7 +565,7 @@ export function MessageComposer({
                   type="button"
                   onClick={() => void handleDiscard()}
                   disabled={isDisabled}
-                  title="Discard draft"
+                  title={t`Discard draft`}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -603,7 +605,7 @@ export function MessageComposer({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={(e) => void handlePaste(e)}
-          placeholder={dragging ? 'Drop files here' : 'Reply to sender…'}
+          placeholder={dragging ? t`Drop files here` : t`Reply to sender…`}
           rows={1}
           disabled={isDisabled}
           className="min-h-[1.5rem] flex-1 resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"

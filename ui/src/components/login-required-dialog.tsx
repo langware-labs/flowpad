@@ -4,6 +4,7 @@ import { Button } from '@src/components/ui/button';
 import { AlertDialogFooter } from '@src/components/ui/alert-dialog';
 import { LogIn, Mail, PartyPopper, X } from 'lucide-react';
 import React, { useEffect } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { trackEvent } from '../utils/analytics';
 import { guardCloudAction } from '@src/services/privacy-guard';
 
@@ -70,6 +71,7 @@ const GoogleIcon = () => (
 );
 
 const LoginDialog: React.FC<LoginDialogProps> = ({ open, onOpenChange, variant = 'require_login' }) => {
+  const { t } = useLingui();
   const config = VARIANT_CONFIG[variant];
   const Icon = config.icon;
 
@@ -97,7 +99,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ open, onOpenChange, variant =
             size="icon"
             onClick={() => onOpenChange(false)}
             className="absolute right-3 top-3 h-8 w-8"
-            aria-label="Close"
+            aria-label={t`Close`}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -114,16 +116,16 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ open, onOpenChange, variant =
         <AlertDialogFooter className="flex-col items-stretch gap-2 space-x-0 sm:flex-col sm:space-x-0">
           <Button onClick={handleLogin('google')} title={tooltip} className="w-full justify-center border border-primary">
             <GoogleIcon />
-            <span className="ml-2">Continue with Google</span>
+            <span className="ml-2"><Trans>Continue with Google</Trans></span>
           </Button>
 
           <Button variant="outline" onClick={handleLogin('email')} title={tooltip} className="w-full justify-center">
             <Mail className="h-5 w-5" />
-            <span className="ml-2">Continue with Email</span>
+            <span className="ml-2"><Trans>Continue with Email</Trans></span>
           </Button>
 
           <p className="text-center text-xs text-muted-foreground">
-            By continuing, you agree to our{' '}
+            <Trans>By continuing, you agree to our{' '}
             <a
               href="https://flowpad.ai/terms-and-conditions"
               target="_blank"
@@ -141,7 +143,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ open, onOpenChange, variant =
             >
               Privacy Policy
             </a>
-            .
+            .</Trans>
           </p>
         </AlertDialogFooter>
       </AlertDialogContent>

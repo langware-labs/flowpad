@@ -7,6 +7,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
 import { GitBranch, ScrollText } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { FlowsPanel, FlowsPanelRef } from './flows-panel';
 import { useProcessExecutor } from './hooks/use-process-executor';
 import { InstructionPanel } from './instruction-panel/instruction-panel';
@@ -313,14 +314,14 @@ export function ExecuteFlowView() {
                         className="flex items-center gap-1.5 rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
                       >
                         <GitBranch className="h-3.5 w-3.5" />
-                        Flows
+                        <Trans>Flows</Trans>
                       </TabsTrigger>
                       <TabsTrigger
                         value="log"
                         className="flex items-center gap-1.5 rounded-none border-b-2 border-transparent px-3 py-1.5 text-xs data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
                       >
                         <ScrollText className="h-3.5 w-3.5" />
-                        Execution Log
+                        <Trans>Execution Log</Trans>
                       </TabsTrigger>
                     </TabsList>
                   </div>
@@ -328,7 +329,7 @@ export function ExecuteFlowView() {
                     <FlowsPanel ref={flowsPanelRef} sourceFile={activeFile} />
                   </TabsContent>
                   <TabsContent value="log" className="mt-0 flex-1 overflow-hidden">
-                    <div className="p-4 text-muted-foreground">No execution log available</div>
+                    <div className="p-4 text-muted-foreground"><Trans>No execution log available</Trans></div>
                   </TabsContent>
                 </Tabs>
               </ResizablePanel>

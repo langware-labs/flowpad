@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Download,
   ExternalLink,
@@ -158,6 +159,7 @@ export function AttachmentChip({
   onOpenInEditor,
   onRevealInFolder,
 }: AttachmentChipProps) {
+  const { t } = useLingui();
   const [menuOpen, setMenuOpen] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
@@ -195,12 +197,12 @@ export function AttachmentChip({
     const inert = isUploading || isUnavailable;
     const clickable = state === AttachmentChipState.Ready && !downloading && !!onDownload;
     const { sub, title } = isUploading
-      ? { sub: 'Uploading…', title: 'File not uploaded yet' }
+      ? { sub: t`Uploading…`, title: t`File not uploaded yet` }
       : isUnavailable
-        ? { sub: 'Unavailable', title: 'Attachment unavailable — no body was uploaded' }
+        ? { sub: t`Unavailable`, title: t`Attachment unavailable — no body was uploaded` }
         : downloading
-          ? { sub: 'Downloading…', title: 'Downloading…' }
-          : { sub: `${label} · Download`, title: 'Click to download' };
+          ? { sub: t`Downloading…`, title: t`Downloading…` }
+          : { sub: `${label} · Download`, title: t`Click to download` };
     return (
       <div className="max-w-[360px]">
         <button
@@ -249,7 +251,7 @@ export function AttachmentChip({
         <a
           href={url}
           download={filename}
-          title="Download"
+          title={t`Download`}
           onClick={(e) => e.stopPropagation()}
           className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
@@ -258,7 +260,7 @@ export function AttachmentChip({
         {onRevealInFolder && (
           <button
             type="button"
-            title="Reveal in folder"
+            title={t`Reveal in folder`}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -271,7 +273,7 @@ export function AttachmentChip({
         )}
         <button
           type="button"
-          title="More actions"
+          title={t`More actions`}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -298,7 +300,7 @@ export function AttachmentChip({
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted"
             >
               <FileText className="h-3 w-3 text-muted-foreground" />
-              Open in editor
+              <Trans>Open in editor</Trans>
             </button>
           )}
           <a
@@ -309,7 +311,7 @@ export function AttachmentChip({
             className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground transition-colors hover:bg-muted"
           >
             <ExternalLink className="h-3 w-3 text-muted-foreground" />
-            Open in new tab
+            <Trans>Open in new tab</Trans>
           </a>
           {onRevealInFolder && (
             <button
@@ -321,7 +323,7 @@ export function AttachmentChip({
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted"
             >
               <FolderOpen className="h-3 w-3 text-muted-foreground" />
-              Reveal in folder
+              <Trans>Reveal in folder</Trans>
             </button>
           )}
           <button
@@ -330,7 +332,7 @@ export function AttachmentChip({
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted"
           >
             <LinkIcon className="h-3 w-3 text-muted-foreground" />
-            Copy link
+            <Trans>Copy link</Trans>
           </button>
           <a
             href={url}
@@ -339,7 +341,7 @@ export function AttachmentChip({
             className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground transition-colors hover:bg-muted"
           >
             <Download className="h-3 w-3 text-muted-foreground" />
-            Download
+            <Trans>Download</Trans>
           </a>
         </div>
       )}
@@ -420,7 +422,7 @@ export function AttachmentChip({
             is an explicit affordance rather than a click-anywhere target. */}
         <button
           type="button"
-          title="Expand"
+          title={t`Expand`}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();

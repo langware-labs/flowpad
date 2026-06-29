@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tab
 import { Input } from '@src/components/ui/input';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { cn } from '@src/lib/utils';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
  * IconPicker — generic, reusable two-tab icon chooser.
@@ -49,6 +50,7 @@ export interface IconPickerProps {
 }
 
 export const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, className }) => {
+  const { t } = useLingui();
   const [query, setQuery] = useState('');
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -65,18 +67,18 @@ export const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, classNa
   return (
     <Tabs defaultValue="lucide" className={className}>
       <TabsList className="h-7">
-        <TabsTrigger value="lucide" className="h-6 px-2 text-xs">Icons</TabsTrigger>
-        <TabsTrigger value="emoji" className="h-6 px-2 text-xs">Emoji</TabsTrigger>
+        <TabsTrigger value="lucide" className="h-6 px-2 text-xs"><Trans>Icons</Trans></TabsTrigger>
+        <TabsTrigger value="emoji" className="h-6 px-2 text-xs"><Trans>Emoji</Trans></TabsTrigger>
       </TabsList>
       <TabsContent value="lucide" className="mt-2 space-y-2">
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search icons…"
+          placeholder={t`Search icons…`}
           className="h-7 text-xs"
-          aria-label="Search icons"
+          aria-label={t`Search icons`}
         />
-        <div role="listbox" aria-label="Icon" className="grid max-h-40 grid-cols-8 gap-1 overflow-y-auto">
+        <div role="listbox" aria-label={t`Icon`} className="grid max-h-40 grid-cols-8 gap-1 overflow-y-auto">
           {filtered.map((name) => {
             const Icon = lucideByName(name);
             return (
@@ -97,7 +99,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, classNa
         </div>
       </TabsContent>
       <TabsContent value="emoji" className="mt-2">
-        <div role="listbox" aria-label="Emoji" className="grid max-h-40 grid-cols-8 gap-1 overflow-y-auto">
+        <div role="listbox" aria-label={t`Emoji`} className="grid max-h-40 grid-cols-8 gap-1 overflow-y-auto">
           {ICON_PICKER_EMOJI.map((emoji) => (
             <button
               key={emoji}

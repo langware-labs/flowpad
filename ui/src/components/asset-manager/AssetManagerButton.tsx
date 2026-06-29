@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { AgenticProcess, type AssetDescriptor, type TypeId } from '@sdk';
 import { Boxes } from 'lucide-react';
 import { AssetManagerPopover } from './AssetManagerPopover';
@@ -44,6 +45,7 @@ export function AssetManagerButton({
   footer,
   trigger,
 }: AssetManagerButtonProps) {
+  const { t } = useLingui();
   // Live attached set — read off the process when present, fall back to
   // pendingRefs when staging pre-create.
   const [attachedRefs, setAttachedRefs] = useState<string[]>([]);
@@ -81,7 +83,7 @@ export function AssetManagerButton({
     trigger ?? (
       <button
         type="button"
-        title="Manage assets"
+        title={t`Manage assets`}
         className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
         data-testid="asset-manager-button"
       >

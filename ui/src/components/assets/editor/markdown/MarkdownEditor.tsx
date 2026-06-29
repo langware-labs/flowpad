@@ -25,6 +25,7 @@ import { ShareToConversationDialog } from '@src/components/share-to-conversation
 import { genericEntityShareSource } from '@src/hooks/share-sources';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
 export type EditorMode = (typeof EDITOR_MODES)[number];
@@ -206,6 +207,7 @@ function MarkdownEditorContent({
   onDelete?: MarkdownEditorProps['onDelete'];
   deleteLabel?: MarkdownEditorProps['deleteLabel'];
 }) {
+  const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
 
   // Standard vs Advanced (Advanced || Dev) skin gating. Standard hides the
@@ -301,9 +303,9 @@ function MarkdownEditorContent({
 
   const revisionsTab = useMemo<ExtraSideTab>(() => ({
     id: 'revisions',
-    label: revisionStatus.version != null ? `Revisions v${revisionStatus.version}` : 'Revisions',
+    label: revisionStatus.version != null ? t`Revisions v${revisionStatus.version}` : t`Revisions`,
     icon: History,
-    description: 'Revision history of this file',
+    description: t`Revision history of this file`,
     panel: (
       <RevisionsPanel
         computeNodeId={gitComputeNodeId}
@@ -456,11 +458,11 @@ function MarkdownEditorContent({
           showLearningMode={showLearningMode}
         />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-          <p className="text-sm font-medium text-foreground">Note: File is missing</p>
+          <p className="text-sm font-medium text-foreground"><Trans>Note: File is missing</Trans></p>
           <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
           <Button variant="outline" size="sm" onClick={() => void recreate()}>
             <FilePlus2 className="mr-1 h-4 w-4" />
-            Re-create it
+            <Trans>Re-create it</Trans>
           </Button>
         </div>
       </div>
@@ -488,7 +490,7 @@ function MarkdownEditorContent({
           <p className="text-sm text-muted-foreground">{loadError.message}</p>
           <Button variant="outline" size="sm" onClick={reload}>
             <RefreshCw className="mr-1 h-4 w-4" />
-            Retry
+            <Trans>Retry</Trans>
           </Button>
         </div>
       </div>
@@ -516,15 +518,14 @@ function MarkdownEditorContent({
           showLearningMode={showLearningMode}
         />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-          <p className="text-sm font-medium text-foreground">This file isn&apos;t text</p>
+          <p className="text-sm font-medium text-foreground"><Trans>This file isn't text</Trans></p>
           <p className="max-w-md text-xs text-muted-foreground">
-            Its contents look like binary data (for example an image), so it can&apos;t be
-            shown in the editor.
+            <Trans>Its contents look like binary data (for example an image), so it can't be shown in the editor.</Trans>
           </p>
           <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
           <Button variant="outline" size="sm" onClick={handleDownload}>
             <Download className="mr-1 h-4 w-4" />
-            Download
+            <Trans>Download</Trans>
           </Button>
         </div>
       </div>
@@ -535,7 +536,7 @@ function MarkdownEditorContent({
   const shareButton = shareSource ? (
     <ShareButton
       onClick={() => setShareOpen(true)}
-      tooltip="Share to a conversation"
+      tooltip={t`Share to a conversation`}
       testId="markdown-editor-share"
     />
   ) : null;
@@ -604,7 +605,7 @@ function MarkdownEditorContent({
             ) : (
               <ChevronRight className="h-3 w-3" />
             )}
-            Properties
+            <Trans>Properties</Trans>
           </button>
 
           {propsExpanded && (
@@ -673,6 +674,7 @@ function MarkdownEditorContent({
 // Slim toolbar shown only in read-only "view" mode. For now a single action:
 // copy the raw markdown body to the clipboard.
 function ViewToolbar({ body }: { body: string }) {
+  const { t } = useLingui();
   const [copied, setCopied] = useState(false);
   const handleCopy = useCallback(async () => {
     await copyToClipboard(body);
@@ -687,10 +689,10 @@ function ViewToolbar({ body }: { body: string }) {
         size="sm"
         className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
         onClick={handleCopy}
-        title="Copy content to clipboard"
+        title={t`Copy content to clipboard`}
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        {copied ? 'Copied' : 'Copy'}
+        {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
       </Button>
     </div>
   );
@@ -785,6 +787,7 @@ interface EditorHeaderProps {
 // (copy/open-external/download — Delete stays), and the review/markdown
 // editor-mode chips.
 function EditorHeader({ fileName, entityType, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, nameExtras, showLearningMode }: EditorHeaderProps) {
+  const { t } = useLingui();
   const advanced = useIsAdvanced();
   const TypeIcon = entityType ? iconForType(entityType) : null;
   const visibleModes = EDITOR_MODES.filter((m) => {
@@ -807,7 +810,7 @@ function EditorHeader({ fileName, entityType, dirPath, dirty, viewMode, onViewMo
           )}
           {advanced && (
             <button
-              title="Copy path"
+              title={t`Copy path`}
               onClick={() => void navigator.clipboard.writeText(dirPath ? `${dirPath}/${fileName}` : fileName)}
               data-testid="markdown-editor-copy-path"
               className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -817,7 +820,7 @@ function EditorHeader({ fileName, entityType, dirPath, dirty, viewMode, onViewMo
           )}
           {advanced && (
             <button
-              title="Reveal in Finder"
+              title={t`Reveal in Finder`}
               onClick={onOpenExternal}
               data-testid="markdown-editor-open-external"
               className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -827,7 +830,7 @@ function EditorHeader({ fileName, entityType, dirPath, dirty, viewMode, onViewMo
           )}
           {advanced && onDownload && (
             <button
-              title="Download file"
+              title={t`Download file`}
               onClick={onDownload}
               data-testid="markdown-editor-download"
               className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -837,7 +840,7 @@ function EditorHeader({ fileName, entityType, dirPath, dirty, viewMode, onViewMo
           )}
           {onDelete && (
             <button
-              title="Delete file"
+              title={t`Delete file`}
               onClick={onDelete}
               data-testid="markdown-editor-delete"
               className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"

@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { dataContext, Project } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
@@ -55,6 +56,7 @@ function initialScope(project: Project | null): Scope {
 }
 
 export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialogProps) {
+  const { t } = useLingui();
   const descriptor = type ? getDescriptor(type) : undefined;
   const { navigation } = useDockNavigation();
   const { project } = useProject();
@@ -151,17 +153,17 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
     if (!computeNode) {
-      notify.error({ title: 'No compute node available' });
+      notify.error({ title: t`No compute node available` });
       return null;
     }
     try {
       return await computeNode.openPathDialog();
     } catch (err) {
       console.error('[QuickCreateDialog] Folder picker failed:', err);
-      notify.error({ title: 'Failed to open folder picker' });
+      notify.error({ title: t`Failed to open folder picker` });
       return null;
     }
-  }, [computeNode]);
+  }, [computeNode, t]);
 
   const folderVfsPath = useMemo<string | undefined>(() => {
     if (!descriptor || scope.kind !== 'project') return undefined;
@@ -188,11 +190,11 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
       onOpenChange(false);
     } catch (err) {
       console.error('[QuickCreateDialog] Create failed:', err);
-      notify.error({ title: 'Failed to create' });
+      notify.error({ title: t`Failed to create` });
     } finally {
       setIsSubmitting(false);
     }
-  }, [descriptor, name, path, scope.kind, harness, folderVfsPath, isSubmitting, commit, navigation, onOpenChange]);
+  }, [descriptor, name, path, scope.kind, harness, folderVfsPath, isSubmitting, commit, navigation, onOpenChange, t]);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -213,19 +215,21 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Icon className="h-4 w-4" />
-              New {descriptor.label}
+              <Trans>New {descriptor.label}</Trans>
             </DialogTitle>
-            <DialogDescription>Create a new {descriptor.label.toLowerCase()}.</DialogDescription>
+            <DialogDescription>
+              <Trans>Create a new {descriptor.label.toLowerCase()}.</Trans>
+            </DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-3 pt-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">{t`Name`}</label>
               <Input
                 ref={nameRef}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={`New ${descriptor.label.toLowerCase()} name`}
+                placeholder={t`New ${descriptor.label.toLowerCase()} name`}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && canCreate) void handleCreate();
                 }}
@@ -234,7 +238,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Scope</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">{t`Scope`}</label>
               <ScopeSelection
                 scope={scope}
                 onScopeChange={handleScopeChange}
@@ -250,11 +254,11 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
 
           <DialogFooter>
             <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isSubmitting}>
-              Cancel
+              {t`Cancel`}
             </Button>
             <Button onClick={() => void handleCreate()} disabled={!canCreate}>
               {isSubmitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-              Create
+              {t`Create`}
             </Button>
           </DialogFooter>
         </DialogContent>

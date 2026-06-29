@@ -11,6 +11,7 @@
 import { cn } from '@src/lib/utils';
 import { AlertOctagon, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 import type { AttentionItem } from '../data/types';
 
@@ -59,6 +60,7 @@ function AttentionRow({
   onDismiss: () => void;
   onAnchor?: (line: number) => void;
 }) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const expandable = !!item.detail && item.detail !== item.headline;
   return (
@@ -97,7 +99,7 @@ function AttentionRow({
               onClick={() => onAnchor(item.anchor!.line)}
               className="text-[11px] text-destructive underline-offset-2 hover:underline"
             >
-              jump to L{item.anchor.line}
+              <Trans>jump to L{item.anchor.line}</Trans>
             </button>
           )}
         </div>
@@ -109,7 +111,7 @@ function AttentionRow({
       </div>
       <button
         type="button"
-        aria-label="Dismiss"
+        aria-label={t`Dismiss`}
         onClick={onDismiss}
         className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted"
       >

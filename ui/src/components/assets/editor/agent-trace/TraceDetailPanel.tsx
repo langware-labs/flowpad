@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { cn } from '@src/lib/utils';
 import type {
   AgentTraceDoc,
@@ -65,6 +66,7 @@ export function TraceDetailPanel({
   selectedLaneId,
   selectedFrame,
 }: TraceDetailPanelProps) {
+  const { t } = useLingui();
   const laneId = selectedLaneId ?? 'root';
   const lane = doc.lanes.find((l) => l.id === laneId) ?? doc.lanes[0];
 
@@ -109,7 +111,7 @@ export function TraceDetailPanel({
   if (!lane) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Empty trace
+        <Trans>Empty trace</Trans>
       </div>
     );
   }
@@ -128,7 +130,7 @@ export function TraceDetailPanel({
 
       <div className="text-xs text-muted-foreground">
         <span className="font-medium text-foreground">
-          {lane.kind === 'root' ? 'root' : (lane.agent_type ?? lane.id)}
+          {lane.kind === 'root' ? t`root` : (lane.agent_type ?? lane.id)}
         </span>
         {lane.description ? <span> — {lane.description}</span> : null}
         {seg?.label ? <span> · {seg.label}</span> : null}
@@ -148,7 +150,7 @@ export function TraceDetailPanel({
 
       <div className="space-y-0.5 font-mono text-[11px]" data-testid="trace-call-list">
         {callsAroundCursor.length === 0 && (
-          <div className="text-muted-foreground">No tool calls before cursor in this segment</div>
+          <div className="text-muted-foreground"><Trans>No tool calls before cursor in this segment</Trans></div>
         )}
         {callsAroundCursor.map((c) => (
           <CallLine key={c.entry_id} call={c} />
@@ -223,7 +225,7 @@ function CallLine({ call }: { call: TraceToolCall }) {
       </span>
       <span className="truncate text-muted-foreground">{call.preview}</span>
       {call.exit_code != null && call.exit_code !== 0 && (
-        <span className="flex-shrink-0 text-red-500">exit {call.exit_code}</span>
+        <span className="flex-shrink-0 text-red-500"><Trans>exit {call.exit_code}</Trans></span>
       )}
     </div>
   );
@@ -247,8 +249,8 @@ function FrameDetail({ frame }: { frame: CallFrame }) {
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
         <span>{fmtDuration(frame.total_duration_ms)}</span>
         {frame.total_cost_usd > 0 && <span>${frame.total_cost_usd.toFixed(2)}</span>}
-        <span className={frame.issue_count > 0 ? 'text-red-500' : ''}>{frame.issue_count} issues</span>
-        <span>{frame.tool_call_count} tool calls</span>
+        <span className={frame.issue_count > 0 ? 'text-red-500' : ''}><Trans>{frame.issue_count} issues</Trans></span>
+        <span><Trans>{frame.tool_call_count} tool calls</Trans></span>
         {frame.issues_per_usd != null && <span>{frame.issues_per_usd}/$</span>}
         {frame.issues_per_min != null && <span>{frame.issues_per_min}/min</span>}
       </div>

@@ -1,5 +1,7 @@
 import { Users } from 'lucide-react';
 import { useMemo } from 'react';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -24,6 +26,7 @@ function formatWhen(iso: string | null): string {
 }
 
 export function RoomsCategory({ projectId }: Props) {
+  const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const { items, isLoading } = useCollaborationRooms({ projectId: projectId ?? undefined, limit: 20 });
 
@@ -33,15 +36,15 @@ export function RoomsCategory({ projectId }: Props) {
   );
 
   if (!projectId) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No project linked</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No project linked</Trans></div>;
   }
 
   if (isLoading && items.length === 0) {
-    return <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>;
+    return <div className="px-2 py-1.5 text-xs text-muted-foreground"><Trans>Loading…</Trans></div>;
   }
 
   if (items.length === 0) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No rooms yet</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No rooms yet</Trans></div>;
   }
 
   return (
@@ -66,7 +69,7 @@ export function RoomsCategory({ projectId }: Props) {
             <div className="flex min-w-0 flex-col">
               <span className="truncate font-medium text-foreground">{s.name}</span>
               <span className="truncate text-[10px] text-muted-foreground">
-                {s.hostName ?? 'unknown host'}
+                {s.hostName ?? t('unknown host')}
                 {s.updatedAt && <> · {formatWhen(s.updatedAt)}</>}
               </span>
             </div>

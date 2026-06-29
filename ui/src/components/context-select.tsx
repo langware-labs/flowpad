@@ -2,6 +2,7 @@ import { ontologyStore } from '@sdk';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from 'cmdk';
 import { Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { LabelChipBlock } from './label-chip-block';
 
 interface ContextSelectProps {
@@ -17,11 +18,13 @@ export function ContextSelect({
   onSelect,
   onRemove,
   onAdd,
-  placeholder = 'Search labels...',
+  placeholder,
 }: ContextSelectProps) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+  const resolvedPlaceholder = placeholder ?? t`Search labels...`;
 
   // Get all ontologies and their labels
   const ontologyNames = ontologyStore.getOntologyNames();
@@ -104,7 +107,7 @@ export function ContextSelect({
                 // Otherwise, let cmdk handle Enter to select highlighted item
               }
             }}
-            placeholder={placeholder}
+            placeholder={resolvedPlaceholder}
             className="w-full border-none bg-transparent px-2 py-1 text-xs outline-none placeholder:text-muted-foreground"
           />
 
@@ -113,7 +116,7 @@ export function ContextSelect({
               open ? 'block animate-in fade-in-0 zoom-in-95' : 'hidden'
             }`}
           >
-            <CommandEmpty className="py-6 text-center text-sm text-muted-foreground">No labels found.</CommandEmpty>
+            <CommandEmpty className="py-6 text-center text-sm text-muted-foreground"><Trans>No labels found.</Trans></CommandEmpty>
 
             {ontologies.map(({ name, ontology }) => {
               const labels = ontology.getAllLabels();

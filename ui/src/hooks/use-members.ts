@@ -41,11 +41,11 @@ export interface UseMembersResult {
   /** Re-fetch via ``getMembers``. Caller uses this after actions that may
    *  have changed membership (invite, leave, role change). */
   refresh: () => Promise<void>;
-  /** Invite a new member by email. Delegates to the entity's existing
-   *  ``share(recipients=[email])`` path — the same one every other invite
-   *  flow uses — then refreshes the members list. The recipient only shows
-   *  up in ``members`` after they accept + join hub-side. */
-  addMember: (email: string) => Promise<void>;
+  /** Invite one or more members by email in a single ``share`` round-trip —
+   *  the same path every other invite flow uses. De-dupes + drops blanks
+   *  first; recipients only appear in ``members`` after they accept + join
+   *  hub-side. */
+  addMembers: (emails: string[]) => Promise<void>;
   /** Remove a member by user id. OWNER ONLY — the hub rejects non-owner (and
    *  owner-self) callers with 403, which throws here. Refreshes after. */
   removeMember: (userId: string) => Promise<void>;
@@ -116,12 +116,14 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     };
   }, [typeId]);
 
-  const addMember = useCallback(
-    async (email: string) => {
-      const trimmed = email.trim();
-      if (!trimmed) return;
+  const addMembers = useCallback(
+    async (emails: string[]) => {
+      const cleaned = Array.from(
+        new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean)),
+      );
+      if (!cleaned.length) return;
       if (!entity) throw new Error('useMembers: entity not loaded; cannot invite');
-      await entity.share([trimmed]);
+      await entity.share(cleaned);
       await refresh();
     },
     [entity, refresh],
@@ -172,5 +174,5 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     [refreshed, error],
   );
 
-  return { members, loading, ready, error, refresh, addMember, removeMember, setRole };
+  return { members, loading, ready, error, refresh, addMembers, removeMember, setRole };
 }

@@ -767,23 +767,11 @@ class AgenticProcess(Entity):
         """
         from flow_sdk.builtin.faas.compute_node import ComputeNode
 
-        cn = await ComputeNode.get_by_uname("local")
-        if cn is None:
-            from flow_sdk.core.cache.entity_cache import uname_cache
-            uname_cache.invalidate("compute_node", "local")
-            cn = await ComputeNode.get_by_uname("local")
-        if cn is None:
-            from flow_sdk.server.routes.bootstrap import (
-                get_or_create_local_compute_node,
-                get_or_create_local_project,
-                get_or_create_local_user,
-            )
-            user = await get_or_create_local_user()
-            project = await get_or_create_local_project(desktop_user=user)
-            cn = await get_or_create_local_compute_node(
-                local_project=project, desktop_user=user
-            )
-        return cn
+        # The whole resolve→retry→recreate sequence now lives in get_local():
+        # it resolves by stable id, invalidates a stale uname_cache and retries,
+        # falls back to the legacy uname row, and self-heals by minting the
+        # singleton when it is genuinely gone. Never returns None by default.
+        return await ComputeNode.get_local()
 
     async def _latched_failure_recovered(self) -> bool:
         """True iff the current ``start_failure`` latch names a cause we can

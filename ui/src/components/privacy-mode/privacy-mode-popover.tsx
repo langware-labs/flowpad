@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Cloud, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { privacyManager, type PrivacyMode } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Switch } from '@src/components/ui/switch';
@@ -35,6 +36,7 @@ const MODE_META: Record<
  * (the SSoT) via usePrivacyMode, so it updates live on toggle + WS broadcast.
  */
 export function PrivacyModePopover() {
+  const { t } = useLingui();
   const { mode, isLocal } = usePrivacyMode();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -49,7 +51,7 @@ export function PrivacyModePopover() {
       await privacyManager.toggle();
     } catch (e: any) {
       notify.error({
-        title: 'Could not change privacy mode',
+        title: t`Could not change privacy mode`,
         message: e?.response?.data?.message ?? e?.message ?? String(e),
       });
     } finally {
@@ -77,13 +79,13 @@ export function PrivacyModePopover() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold">{meta.name}</p>
-              <p className="text-[11px] text-muted-foreground">Data privacy mode</p>
+              <p className="text-[11px] text-muted-foreground"><Trans>Data privacy mode</Trans></p>
             </div>
             <Switch
               checked={!isLocal}
               onCheckedChange={() => void handleToggle()}
               disabled={busy}
-              aria-label="Toggle Connected mode"
+              aria-label={t`Toggle Connected mode`}
               data-testid="privacy-mode-switch"
             />
           </div>
@@ -96,7 +98,7 @@ export function PrivacyModePopover() {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
           >
-            Learn about your data
+            <Trans>Learn about your data</Trans>
             <ExternalLink className="h-3 w-3" />
           </a>
         </div>

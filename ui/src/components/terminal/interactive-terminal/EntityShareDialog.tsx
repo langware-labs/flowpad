@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { TypeId } from '@sdk';
 import { useEntityShare } from '@src/hooks/use-entity-share';
 import { notify } from '@src/notifications';
@@ -42,8 +43,10 @@ interface EntityShareDialogProps {
 }
 
 export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCopyLink = false }: EntityShareDialogProps) {
+  const { t } = useLingui();
   const entityShare = useEntityShare(typeId);
   const isProcess = entityShare.isAgenticProcess;
+  const entityType = isProcess ? 'session' : 'entity';
 
   const [mode, setMode] = useState<ShareMode>(allowCopyLink ? 'link' : 'bundle');
   const [title, setTitle] = useState('');
@@ -80,7 +83,7 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
       const url = await entityShare.copyLink();
       setShareUrl(url);
       setLinkCopied(true);
-      notify.success({ title: 'Link copied to clipboard' });
+      notify.success({ title: t`Link copied to clipboard` });
     } catch (err: unknown) {
       const fallbackMsg = err instanceof Error ? err.message : 'Could not copy link.';
       setError(fallbackMsg);
@@ -102,7 +105,7 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      notify.success({ title: 'Bundle ready — download started.' });
+      notify.success({ title: t`Bundle ready — download started.` });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create task bundle.');
     } finally {
@@ -116,9 +119,9 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Export / link</DialogTitle>
+          <DialogTitle><Trans>Export / link</Trans></DialogTitle>
           <DialogDescription>
-            Copy a link or download this {isProcess ? 'session' : 'entity'} as a portable bundle.
+            <Trans>Copy a link or download this {entityType} as a portable bundle.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -130,14 +133,14 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
                 onClick={() => setMode('link')}
                 disabled={busy}
                 icon={<Link2 className="h-3.5 w-3.5" />}
-                label="Copy link"
+                label={t`Copy link`}
               />
               <ModeButton
                 active={mode === 'bundle'}
                 onClick={() => setMode('bundle')}
                 disabled={busy}
                 icon={<Download className="h-3.5 w-3.5" />}
-                label="Download bundle"
+                label={t`Download bundle`}
               />
             </div>
           )}
@@ -145,7 +148,7 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
           {mode === 'link' && allowCopyLink && (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Anyone with access can open this {isProcess ? 'session' : 'entity'} directly via the link below.
+                <Trans>Anyone with access can open this {entityType} directly via the link below.</Trans>
               </p>
               {shareUrl && (
                 <div className="rounded-md border border-input bg-muted px-3 py-2 text-xs text-foreground break-all">
@@ -159,7 +162,7 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
                 className="w-full gap-2"
               >
                 {linkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                {linkCopied ? 'Copied' : 'Copy link'}
+                {linkCopied ? t`Copied` : t`Copy link`}
               </Button>
               {error && <p className="text-xs text-destructive">{error}</p>}
             </div>
@@ -168,23 +171,23 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
           {mode === 'bundle' && (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Package this share into a portable <code>.flowmsg</code> file that recipients can import.
+                <Trans>Package this share into a portable <code>.flowmsg</code> file that recipients can import.</Trans>
               </p>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Title</label>
+                <label className="text-xs font-medium text-muted-foreground"><Trans>Title</Trans></label>
                 <Input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Title"
+                  placeholder={t`Title`}
                   disabled={busy}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Message (optional)</label>
+                <label className="text-xs font-medium text-muted-foreground"><Trans>Message (optional)</Trans></label>
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Add a personal note..."
+                  placeholder={t`Add a personal note...`}
                   rows={3}
                   disabled={busy}
                   className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -197,7 +200,7 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
                 className="w-full gap-2"
               >
                 <Download className="h-4 w-4" />
-                Download .flowmsg
+                <Trans>Download .flowmsg</Trans>
               </Button>
               {error && <p className="text-xs text-destructive">{error}</p>}
             </div>
@@ -207,7 +210,7 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
         <DialogFooter>
           <div className="flex w-full justify-end gap-2">
             <Button variant="outline" onClick={handleClose} disabled={busy}>
-              Close
+              <Trans>Close</Trans>
             </Button>
           </div>
         </DialogFooter>

@@ -1,6 +1,7 @@
 import { useAgentContext } from '@src/contexts/agent-context';
 import { ActionInfo } from '@sdk';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface MetricsChartHandle {
   refresh: () => Promise<void>;
@@ -32,6 +33,7 @@ interface MetricsChartProps {
 export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
   ({ fetchOnMount = true, isPaused = false }, ref) => {
     const { computeNode } = useAgentContext();
+    const { t } = useLingui();
     const [metrics, setMetrics] = useState<MetricEntry[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
 
       // Skip fetch if sandbox is paused or in error state - E2B API will timeout
       if (isPaused) {
-        setError('Sandbox is unavailable. Resume or recreate to view metrics.');
+        setError(t`Sandbox is unavailable. Resume or recreate to view metrics.`);
         return;
       }
 
@@ -67,7 +69,7 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
           setError(data.message);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
+        setError(err instanceof Error ? err.message : t`Failed to fetch metrics`);
       } finally {
         setIsLoading(false);
       }
@@ -105,15 +107,15 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h3 className="text-sm font-semibold">Sandbox Metrics</h3>
+            <h3 className="text-sm font-semibold"><Trans>Sandbox Metrics</Trans></h3>
             {(hasHighCpu || hasHighMemory) && (
               <div className="flex items-center gap-2 text-xs text-orange-500">
                 <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-orange-500" />
                 {hasHighCpu && hasHighMemory
-                  ? 'High CPU & Memory usage detected'
+                  ? <Trans>High CPU & Memory usage detected</Trans>
                   : hasHighCpu
-                    ? 'High CPU usage detected'
-                    : 'High Memory usage detected'}
+                    ? <Trans>High CPU usage detected</Trans>
+                    : <Trans>High Memory usage detected</Trans>}
               </div>
             )}
           </div>
@@ -124,18 +126,18 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
           <div className="flex flex-1 items-center justify-center text-muted-foreground">
             <div className="text-center">
               <p className="text-red-500">{error}</p>
-              <p className="mt-1 text-xs">Use the refresh button in the toolbar to retry</p>
+              <p className="mt-1 text-xs"><Trans>Use the refresh button in the toolbar to retry</Trans></p>
             </div>
           </div>
         ) : chartData.length === 0 ? (
           <div className="flex flex-1 items-center justify-center text-muted-foreground">
-            {isLoading ? 'Loading metrics...' : 'No metrics data available'}
+            {isLoading ? <Trans>Loading metrics...</Trans> : <Trans>No metrics data available</Trans>}
           </div>
         ) : (
           <div className="flex flex-1 flex-col gap-4">
             {/* CPU Chart */}
             <div className="flex-1 rounded-lg border bg-card p-4">
-              <h4 className="mb-2 text-xs font-medium text-muted-foreground">CPU Usage (%)</h4>
+              <h4 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>CPU Usage (%)</Trans></h4>
               <ResponsiveContainer width="100%" height={150} minWidth={1} minHeight={1}>
                 <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -151,7 +153,7 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
                     labelFormatter={(label: string, payload: readonly { payload?: ChartDataPoint }[]) =>
                       payload?.[0]?.payload?.fullTime || label
                     }
-                    formatter={(value: number) => [`${value.toFixed(1)}%`, 'CPU']}
+                    formatter={(value: number) => [`${value.toFixed(1)}%`, t`CPU`]}
                   />
                   <ReferenceLine
                     y={80}
@@ -178,7 +180,7 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
 
             {/* Memory Chart */}
             <div className="flex-1 rounded-lg border bg-card p-4">
-              <h4 className="mb-2 text-xs font-medium text-muted-foreground">Memory Usage (%)</h4>
+              <h4 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>Memory Usage (%)</Trans></h4>
               <ResponsiveContainer width="100%" height={150} minWidth={1} minHeight={1}>
                 <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -194,7 +196,7 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
                     labelFormatter={(label: string, payload: readonly { payload?: ChartDataPoint }[]) =>
                       payload?.[0]?.payload?.fullTime || label
                     }
-                    formatter={(value: number) => [`${value.toFixed(1)}%`, 'Memory']}
+                    formatter={(value: number) => [`${value.toFixed(1)}%`, t`Memory`]}
                   />
                   <ReferenceLine
                     y={80}
@@ -223,15 +225,15 @@ export const MetricsChart = forwardRef<MetricsChartHandle, MetricsChartProps>(
             <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground">
               <div className="flex items-center gap-2">
                 <div className="h-2 w-4 rounded bg-blue-500" />
-                <span>CPU</span>
+                <span><Trans>CPU</Trans></span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-2 w-4 rounded bg-green-500" />
-                <span>Memory</span>
+                <span><Trans>Memory</Trans></span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-0.5 w-4 border-t-2 border-dashed border-orange-500" />
-                <span>80% Alert Threshold</span>
+                <span><Trans>80% Alert Threshold</Trans></span>
               </div>
             </div>
           </div>

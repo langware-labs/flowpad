@@ -2,6 +2,7 @@ import { dataContext, fsManager } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { notify } from '@src/notifications';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ChevronDown, FileText, FolderOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -65,6 +66,7 @@ async function findNewestLogFile(
 }
 
 export function SystemLog() {
+  const { t } = useLingui();
   const [isOpen, setIsOpen] = useState(false);
   const [currentLogFile, setCurrentLogFile] = useState<{ path: string; name: string } | null>(null);
 
@@ -95,8 +97,8 @@ export function SystemLog() {
     } catch (error) {
       console.error('Failed to open log file:', error);
       notify.error({
-        title: 'Error',
-        message: 'Failed to open log file',
+        title: t`Error`,
+        message: t`Failed to open log file`,
       });
     }
   };
@@ -108,8 +110,8 @@ export function SystemLog() {
     } catch (error) {
       console.error('Failed to open logs folder:', error);
       notify.error({
-        title: 'Error',
-        message: 'Failed to open logs folder',
+        title: t`Error`,
+        message: t`Failed to open logs folder`,
       });
     }
   };
@@ -123,7 +125,7 @@ export function SystemLog() {
           <div className="flex cursor-pointer items-center justify-between border-b pb-3 text-sm font-medium text-muted-foreground hover:text-foreground">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              <span>System Log</span>
+              <span><Trans>System Log</Trans></span>
             </div>
             <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
           </div>
@@ -131,7 +133,7 @@ export function SystemLog() {
         <CollapsibleContent className="pt-4">
           <div className="flex flex-col gap-3 p-4">
             <div className="text-sm text-muted-foreground">
-              {currentLogFile ? `Active log: ${currentLogFile.name}` : 'No log file found'}
+              {currentLogFile ? <Trans>Active log: {currentLogFile.name}</Trans> : <Trans>No log file found</Trans>}
             </div>
             <div className="flex gap-2">
               <Button
@@ -141,11 +143,11 @@ export function SystemLog() {
                 className="flex-1"
               >
                 <FileText className="mr-2 h-4 w-4" />
-                Open Log File
+                <Trans>Open Log File</Trans>
               </Button>
               <Button variant="outline" onClick={() => void handleOpenArchive()} className="flex-1">
                 <FolderOpen className="mr-2 h-4 w-4" />
-                Archive
+                <Trans>Archive</Trans>
               </Button>
             </div>
           </div>

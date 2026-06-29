@@ -1,6 +1,7 @@
 // WorkflowTraceGutter.tsx — pure display component, no event collection
 import { getEventColor, getEventIcon } from '@src/components/hooks/event-utils';
 import type { TraceEvent } from '@src/types/trace-event';
+import { Trans } from '@lingui/react/macro';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 interface BlockPosition {
@@ -135,10 +136,10 @@ export function WorkflowTraceGutter({
             onSelectHistory(v === 'current' ? null : Number(v));
           }}
         >
-          <option value="current">Current run</option>
+          <option value="current"><Trans>Current run</Trans></option>
           {traceHistory.map((h, i) => (
             <option key={h.sessionId} value={i}>
-              Run {i + 1} ({h.events.length} events)
+              <Trans>Run {i + 1} ({h.events.length} events)</Trans>
             </option>
           ))}
         </select>
@@ -172,7 +173,7 @@ export function WorkflowTraceGutter({
           );
         })}
         {displayEvents.length === 0 && workerSessionId && (
-          <div className="p-2 text-[10px] text-muted-foreground/50">Waiting for trace events…</div>
+          <div className="p-2 text-[10px] text-muted-foreground/50"><Trans>Waiting for trace events…</Trans></div>
         )}
       </div>
     </div>

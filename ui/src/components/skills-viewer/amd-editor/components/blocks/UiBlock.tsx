@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { useAMDEditor } from '../../AMDEditorContext';
 import { AMDElement } from '../../types';
 
@@ -47,7 +48,7 @@ export function UiBlock({ element }: UiBlockProps) {
           onChange={handleNonBlockingChange}
           className="h-3 w-3 rounded border-muted-foreground/30"
         />
-        <span>async</span>
+        <span><Trans>async</Trans></span>
       </label>
     </div>
   );

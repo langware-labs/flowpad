@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { useProjects } from '@src/hooks/use-projects';
 import { ContextEntitiesEnum, dataContext, fsManager, FSItem } from '@sdk';
 import { Button } from '@src/components/ui/button';
@@ -108,8 +109,8 @@ export function OnboardingCard({ onVisibilityChange }: OnboardingCardProps) {
         <X className="h-3 w-3" />
       </Button>
       <CardContent className="p-5">
-        <h3 className="mb-1 text-base font-medium">Get Started</h3>
-        <p className="mb-4 text-sm text-muted-foreground">Try a sample flow to see FlowPad in action</p>
+        <h3 className="mb-1 text-base font-medium"><Trans>Get Started</Trans></h3>
+        <p className="mb-4 text-sm text-muted-foreground"><Trans>Try a sample flow to see FlowPad in action</Trans></p>
 
         {isLoading ? (
           <div className="flex gap-2">
@@ -132,7 +133,7 @@ export function OnboardingCard({ onVisibilityChange }: OnboardingCardProps) {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No sample flows found</p>
+          <p className="text-sm text-muted-foreground"><Trans>No sample flows found</Trans></p>
         )}
       </CardContent>
     </Card>

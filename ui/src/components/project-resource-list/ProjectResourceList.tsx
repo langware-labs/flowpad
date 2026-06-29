@@ -19,6 +19,7 @@ import {
   Sparkles,
   Terminal,
 } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import './ProjectResourceList.css';
@@ -118,6 +119,7 @@ export function ProjectResourceList({
   onResourceClick,
   onSessionResume,
 }: ProjectResourceListProps) {
+  const { t } = useLingui();
   const [activeFilters, setActiveFilters] = useState<Set<ProjectResourceType>>(() => new Set(DEFAULT_FILTERS));
   const [query, setQuery] = useState('');
 
@@ -183,7 +185,7 @@ export function ProjectResourceList({
         <div className="project-resource-list-header-row">
           <Select value={selectedProjectId || ''} onValueChange={onProjectSelect}>
             <SelectTrigger className="project-resource-list-project-trigger">
-              <SelectValue placeholder="Select a project" />
+              <SelectValue placeholder={t`Select a project`} />
             </SelectTrigger>
             <SelectContent>
               {projects.map((project) => (
@@ -202,12 +204,12 @@ export function ProjectResourceList({
                 size="icon"
                 className="project-resource-list-manage-button"
                 onClick={onManageProjectClick}
-                aria-label="Open or create project"
+                aria-label={t`Open or create project`}
               >
                 <FolderOpen className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Open or create project</TooltipContent>
+            <TooltipContent><Trans>Open or create project</Trans></TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -219,7 +221,7 @@ export function ProjectResourceList({
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search..."
+            placeholder={t`Search...`}
             className="project-resource-list-search-input"
           />
         </div>
@@ -228,7 +230,7 @@ export function ProjectResourceList({
             <button
               type="button"
               className={`project-resource-filter-button ${isNonDefaultFilters ? 'project-resource-filter-active' : ''}`}
-              aria-label="Filter resources"
+              aria-label={t`Filter resources`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
             </button>
@@ -237,7 +239,7 @@ export function ProjectResourceList({
             <label className="project-resource-filter-option">
               <input type="checkbox" checked={showSessions} onChange={toggleSessions} />
               <FolderOpen className="h-3 w-3" />
-              <span>Show Sessions</span>
+              <span><Trans>Show Sessions</Trans></span>
             </label>
             <div className="project-resource-filter-separator" />
             {availableResourceTypes.map((type) => {
@@ -259,21 +261,21 @@ export function ProjectResourceList({
         {isLoading ? (
           <div className="project-resource-list-loading">
             <FusionSpinner size="xs" />
-            <span>Loading resources...</span>
+            <span><Trans>Loading resources...</Trans></span>
           </div>
         ) : !selectedProjectId ? (
           <div className="project-resource-list-empty">
             <Folder className="h-8 w-8 opacity-30" />
-            <span>Select a project to view resources</span>
+            <span><Trans>Select a project to view resources</Trans></span>
           </div>
         ) : totalItems === 0 ? (
           <div className="project-resource-list-empty">
             <Folder className="h-8 w-8 opacity-30" />
-            <span>No resources found in this project</span>
+            <span><Trans>No resources found in this project</Trans></span>
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="project-resource-list-empty">
-            <span>No resources match those filters</span>
+            <span><Trans>No resources match those filters</Trans></span>
           </div>
         ) : (
           <ul className="project-resource-list-items">
@@ -302,7 +304,7 @@ export function ProjectResourceList({
                               <button
                                 type="button"
                                 className="project-resource-resume-button"
-                                title="Resume session in terminal"
+                                title={t`Resume session in terminal`}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onSessionResume(resource);

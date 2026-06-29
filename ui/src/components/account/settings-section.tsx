@@ -11,11 +11,13 @@ import { setDev, useIsDev } from '@src/components/view-mode';
 import { notify } from '@src/notifications';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export function SettingsSection() {
   const { preferences } = useInstancePreferences();
   const [cliLogLevel, setCliLogLevel] = useState('info');
   const isDev = useIsDev();
+  const { t } = useLingui();
 
   const { data: onboarding, refetch: refetchOnboarding } = useQuery({
     queryKey: ['onboarding-status'],
@@ -30,13 +32,13 @@ export function SettingsSection() {
     try {
       await apiClient.post('/api/v1/onboarding/reset');
       await refetchOnboarding();
-      notify.success({ title: 'Onboarding reset', message: 'Welcome bookmark + feed entry re-created.' });
+      notify.success({ title: t`Onboarding reset`, message: t`Welcome bookmark + feed entry re-created.` });
     } catch (err) {
-      notify.error({ title: 'Reset failed', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Reset failed`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setResettingOnboarding(false);
     }
-  }, [refetchOnboarding]);
+  }, [refetchOnboarding, t]);
 
   const computeNode = dataContext.computeNode;
 
@@ -69,9 +71,9 @@ export function SettingsSection() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2">
         <Label htmlFor="dev-mode" className="cursor-pointer text-sm">
-          Dev mode
+          <Trans>Dev mode</Trans>
           <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-            Surface developer-only views and controls across the app.
+            <Trans>Surface developer-only views and controls across the app.</Trans>
           </span>
         </Label>
         <Switch
@@ -83,9 +85,9 @@ export function SettingsSection() {
 
       <div className="flex items-center justify-between gap-2">
         <Label className="text-sm">
-          Onboarding
+          <Trans>Onboarding</Trans>
           <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-            Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}
+            <Trans>Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}</Trans>
           </span>
         </Label>
         <Button
@@ -94,7 +96,7 @@ export function SettingsSection() {
           onClick={() => void handleResetOnboarding()}
           disabled={resettingOnboarding}
         >
-          {resettingOnboarding ? 'Resetting…' : 'Reset'}
+          {resettingOnboarding ? <Trans>Resetting…</Trans> : <Trans>Reset</Trans>}
         </Button>
       </div>
 
@@ -107,15 +109,14 @@ export function SettingsSection() {
           }}
         />
         <Label htmlFor="show-system-skills" className="cursor-pointer text-sm">
-          Show system skills
+          <Trans>Show system skills</Trans>
         </Label>
       </div>
 
       <div>
-        <Label className="mb-2 block text-sm font-medium">External Terminal</Label>
+        <Label className="mb-2 block text-sm font-medium"><Trans>External Terminal</Trans></Label>
         <p className="mb-2 text-xs text-muted-foreground">
-          The in-app terminal is always the primary shell. This setting controls whether a
-          sidecar OS Terminal window is also opened.
+          <Trans>The in-app terminal is always the primary shell. This setting controls whether a sidecar OS Terminal window is also opened.</Trans>
         </p>
         <RadioGroup
           value={preferences.defaultTerminal}
@@ -126,13 +127,13 @@ export function SettingsSection() {
           <div className="flex items-center gap-2">
             <RadioGroupItem value={TerminalType.BUILTIN_XTERM} id="terminal-builtin" />
             <Label htmlFor="terminal-builtin" className="cursor-pointer text-sm">
-              In-app only
+              <Trans>In-app only</Trans>
             </Label>
           </div>
           <div className="flex items-center gap-2">
             <RadioGroupItem value={TerminalType.EXTERNAL_TERMINAL} id="terminal-external" />
             <Label htmlFor="terminal-external" className="cursor-pointer text-sm">
-              Also open sidecar OS Terminal
+              <Trans>Also open sidecar OS Terminal</Trans>
             </Label>
           </div>
         </RadioGroup>
@@ -147,23 +148,23 @@ export function SettingsSection() {
           }}
         />
         <Label htmlFor="buffer-sync-updates" className="cursor-pointer text-sm">
-          Buffer terminal sync updates (prevents scroll jumps)
+          <Trans>Buffer terminal sync updates (prevents scroll jumps)</Trans>
         </Label>
       </div>
 
       <div>
-        <Label className="mb-2 block text-sm font-medium">CLI Log Level</Label>
+        <Label className="mb-2 block text-sm font-medium"><Trans>CLI Log Level</Trans></Label>
         <Select value={cliLogLevel} onValueChange={handleLevelChange}>
           <SelectTrigger className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="info">Info</SelectItem>
-            <SelectItem value="debug">Debug</SelectItem>
+            <SelectItem value="info"><Trans>Info</Trans></SelectItem>
+            <SelectItem value="debug"><Trans>Debug</Trans></SelectItem>
           </SelectContent>
         </Select>
         <p className="mt-1 text-xs text-muted-foreground">
-          Debug level includes hook invocations.
+          <Trans>Debug level includes hook invocations.</Trans>
         </p>
       </div>
     </div>

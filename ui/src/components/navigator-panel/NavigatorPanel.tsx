@@ -1,5 +1,6 @@
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { BrowseableTree, ToolbarButton } from '@src/components/browseable-tree/BrowseableTree';
 import type { NavigatorDescriptor, NavigatorWidth } from './types';
 
@@ -43,6 +44,7 @@ export function NavigatorPanel({
 }) {
   const bounds = descriptor.width ?? DEFAULT_WIDTH;
   const { id } = descriptor;
+  const { t } = useLingui();
 
   // Open by default on first sight; an explicit choice (incl. '0' = open) is
   // remembered across reloads.
@@ -106,8 +108,8 @@ export function NavigatorPanel({
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          title={descriptor.header?.title ? `Show ${descriptor.header.title}` : 'Show panel'}
-          aria-label="Expand navigator"
+          title={descriptor.header?.title ? t`Show ${descriptor.header.title}` : t`Show panel`}
+          aria-label={t`Expand navigator`}
           className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted"
           data-testid={`navigator-expand-${id}`}
         >
@@ -132,8 +134,8 @@ export function NavigatorPanel({
               <button
                 type="button"
                 onClick={() => setCollapsed(true)}
-                title={header.title ? `Hide ${header.title}` : 'Hide panel'}
-                aria-label="Collapse navigator"
+                title={header.title ? t`Hide ${header.title}` : t`Hide panel`}
+                aria-label={t`Collapse navigator`}
                 className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-muted"
                 data-testid={`navigator-collapse-${id}`}
               >
@@ -168,7 +170,7 @@ export function NavigatorPanel({
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize navigator"
+        aria-label={t`Resize navigator`}
         onMouseDown={handleResizeStart}
         onDoubleClick={() => setWidth(bounds.default)}
         className={`group relative w-1 flex-shrink-0 cursor-col-resize select-none ${

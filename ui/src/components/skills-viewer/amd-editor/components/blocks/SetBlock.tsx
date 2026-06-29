@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { useAMDEditor } from '../../AMDEditorContext';
 import { AMDElement } from '../../types';
 
@@ -7,6 +8,7 @@ interface SetBlockProps {
 }
 
 export function SetBlock({ element }: SetBlockProps) {
+  const { t } = useLingui();
   const { updateElement } = useAMDEditor();
   const el = element.element;
 
@@ -29,14 +31,14 @@ export function SetBlock({ element }: SetBlockProps) {
       <input
         value={el.name || ''}
         onChange={handleNameChange}
-        placeholder="variable"
+        placeholder={t`variable`}
         className="w-28 border-0 border-b border-transparent bg-transparent px-0 py-0.5 text-foreground outline-none focus:border-primary/50"
       />
       <span className="text-muted-foreground">=</span>
       <input
         value={el.value || ''}
         onChange={handleValueChange}
-        placeholder="value"
+        placeholder={t`value`}
         className="min-w-0 flex-1 border-0 border-b border-transparent bg-transparent px-0 py-0.5 text-foreground outline-none focus:border-primary/50"
       />
     </div>

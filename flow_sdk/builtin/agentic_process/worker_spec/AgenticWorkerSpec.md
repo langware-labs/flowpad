@@ -1039,9 +1039,9 @@ integration cost.
 - **Maps to:** _____________________
 - **Effort if missing:** S
 
-### Dedup by `message.id`
-- **Need:** Streaming + final snapshots share an id — parser must emit usage exactly once per id to avoid 1.78×-2.95× cost inflation.
-- **Claude:** `_usage_seen_msg_ids` set, populated/checked at transcript_analyzer/parsers/claude.py:94, 211-215
+### Dedup by `message.id` (keep-last)
+- **Need:** Streaming + final snapshots share an id, and `output_tokens` GROWS across them — parser must bill each id exactly once **from its final snapshot**. Keeping the first snapshot under-counts output (partial/zero); summing all over-counts (1.78×-2.95× inflation).
+- **Claude:** `_usage_entries_by_msg_id` map — a repeated id zeroes the prior snapshot's entries and re-emits from the latest (transcript_analyzer/parsers/claude.py).
 - **Codex:** not supported (Codex `token_count` events aren't duplicated; no dedup needed — transcript_analyzer/parsers/codex.py:332-395)
 - **Required:** Yes (if worker emits streaming + final snapshots with shared ids)
 - **Vendor must expose:** Stable `message.id` per logical assistant turn — repeated snapshots reuse the same id

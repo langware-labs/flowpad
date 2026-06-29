@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
   GraphContext,
@@ -25,6 +26,7 @@ import { Play } from 'lucide-react';
  * executes *on* the context.
  */
 export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [runNonce, setRunNonce] = useState(0);
   const [instruction, setInstruction] = useState('');
@@ -38,8 +40,8 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
     const name = displayLabelForTypeid(d.typeid);
     setInstruction(
       type === 'agent'
-        ? `Act as the "${name}" agent and work on the current context.`
-        : `Run the skill "${name}" on the current context.`,
+        ? t`Act as the "${name}" agent and work on the current context.`
+        : t`Run the skill "${name}" on the current context.`,
     );
     setOpen(true);
     setRunNonce((n) => n + 1);
@@ -65,8 +67,8 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
       } catch (err) {
         console.error('[RunAutomationPanel] run setup failed', err);
         notify.error({
-          title: 'Could not start automation',
-          message: err instanceof Error ? err.message : 'Run setup failed.',
+          title: t`Could not start automation`,
+          message: err instanceof Error ? err.message : t`Run setup failed.`,
         });
       }
     },
@@ -81,8 +83,8 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
           trigger={
             <button
               type="button"
-              title="Run automation"
-              aria-label="Run automation"
+              title={t`Run automation`}
+              aria-label={t`Run automation`}
               className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               data-testid="run-automation-rail-button"
             >
@@ -104,7 +106,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
       data-testid="run-automation-drawer"
       headerActions={
         <AssetPickerPopover
-          trigger={<RunButton idleLabel="Run automation" />}
+          trigger={<RunButton idleLabel={t`Run automation`} />}
           onPick={handlePick}
         />
       }

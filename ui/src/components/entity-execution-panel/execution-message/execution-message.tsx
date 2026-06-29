@@ -6,6 +6,7 @@ import { MarkdownView } from '@src/components/markdown-view';
 import { cn } from '@src/lib/utils';
 import { User } from 'lucide-react';
 import React, { useMemo } from 'react';
+import { useLingui } from '@lingui/react/macro';
 
 interface ExecutionMessageProps {
   flowData: FlowData;
@@ -18,6 +19,7 @@ interface ExecutionMessageProps {
 }
 
 const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, animateIn = false, className, worker }) => {
+  const { t } = useLingui();
   // Determine if this message type should stream
   // Must check both elementType AND dataType since useDataStreamText only supports string data
   const messageTypes: string[] = [FlowElementTypes.TEXT, FlowElementTypes.CHAT, FlowElementTypes.USER_MESSAGE];
@@ -56,7 +58,7 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, a
   // identity row (colored icon + name) over the message body — no left/right
   // bubble split. User = blue, worker = emerald, so the two read distinctly.
   const Icon = isUser ? User : workerIcon(worker);
-  const name = isUser ? 'You' : workerLabel(worker);
+  const name = isUser ? t`You` : workerLabel(worker);
   const accent = isUser
     ? { circle: 'bg-blue-500/15 text-blue-600 dark:text-blue-400', body: 'text-blue-700 dark:text-blue-200' }
     : { circle: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', body: 'text-foreground' };
@@ -77,7 +79,7 @@ const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, a
       <div className={cn('min-w-0 break-words pl-7 text-[15px] leading-7', accent.body)}>
         <MarkdownView value={currentContent} compact />
         {isStreaming && (
-          <span className="mt-1 inline-flex" aria-label="Assistant is responding">
+          <span className="mt-1 inline-flex" aria-label={t`Assistant is responding`}>
             <DotPulse />
           </span>
         )}

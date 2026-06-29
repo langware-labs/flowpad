@@ -28,6 +28,7 @@ import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LastScanResult } from '@sdk';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -44,6 +45,7 @@ const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
 const _SCAN_DISMISSED_KEY = 'flowpad-scan-dismissed';
 
 export function HomeLanding() {
+  const { t } = useLingui();
   const { user } = useAuth();
   const { navigation } = useDockNavigation();
   useProjects();
@@ -159,7 +161,7 @@ export function HomeLanding() {
 
   const handleSessionSubmit = (message: string) => {
     if (!currentProject?.typeId) {
-      notify.error({ title: 'Project Required', message: 'Please select or create a project first.' });
+      notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
       return;
     }
 
@@ -191,7 +193,7 @@ export function HomeLanding() {
             onFiltersChange={setSearchFilters}
             onSubmit={handleSearchSubmit}
             onKeyDown={handleSearchKeyDown}
-            placeholder="Search..."
+            placeholder={t`Search...`}
           />
           {searchQuery.trim().length >= 2 && (
             <div className="absolute right-0 top-full z-50 w-[600px] pt-1">
@@ -225,13 +227,14 @@ export function HomeLanding() {
           {/* Hero — fixed at the top, never scrolls */}
           <div className="flex shrink-0 flex-col items-center gap-6 text-center">
             <h1 className="text-4xl font-bold tracking-tight">
-              Hey{' '}
-              <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+              <Trans>
+                Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+              </Trans>
             </h1>
 
             <div className="w-full max-w-3xl flex flex-col items-end gap-2">
               <SessionInput
-                placeholder="What would you like to work on?"
+                placeholder={t`What would you like to work on?`}
                 value={draftPrompt}
                 onChange={setDraftPrompt}
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
@@ -243,7 +246,7 @@ export function HomeLanding() {
                   onClick={() => setShowCommunityAssistance(true)}
                 >
                   <Users className="h-3 w-3" />
-                  Community assistance
+                  <Trans>Community assistance</Trans>
                 </button>
               </div>
             </div>
@@ -268,7 +271,7 @@ export function HomeLanding() {
                 <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
                   <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Scan & index complete — {postScanResult.grand_total.toLocaleString()} records found
+                    <Trans>Scan & index complete — {postScanResult.grand_total.toLocaleString()} records found</Trans>
                   </span>
                   <button
                     type="button"
@@ -291,7 +294,7 @@ export function HomeLanding() {
                       ))}
                   </div>
                 ) : (
-                  <p className="px-3 py-2 text-xs text-muted-foreground">No records found on disk.</p>
+                  <p className="px-3 py-2 text-xs text-muted-foreground"><Trans>No records found on disk.</Trans></p>
                 )}
               </div>
             </div>

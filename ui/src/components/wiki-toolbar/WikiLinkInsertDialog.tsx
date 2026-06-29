@@ -30,6 +30,7 @@ import {
 } from '@src/components/ui/select';
 import { useRecordSearch, type SearchFilters, type SearchResult } from '@src/hooks/use-record-search';
 import { cn } from '@src/lib/utils';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const ALL_TYPES_VALUE = '__all__';
 
@@ -79,6 +80,7 @@ export function WikiLinkInsertDialog({
   const [stage, setStage] = useState<Stage>({ kind: 'search' });
   const [pendingName, setPendingName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const { t } = useLingui();
 
   const filters: SearchFilters = useMemo(
     () =>
@@ -183,9 +185,9 @@ export function WikiLinkInsertDialog({
         {stage.kind === 'search' && (
           <>
             <DialogHeader>
-              <DialogTitle>Add entity link</DialogTitle>
+              <DialogTitle><Trans>Add entity link</Trans></DialogTitle>
               <DialogDescription>
-                Search any entity. Selecting one inserts a [[wikilink]] at the cursor.
+                <Trans>Search any entity. Selecting one inserts a [[wikilink]] at the cursor.</Trans>
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2">
@@ -193,16 +195,16 @@ export function WikiLinkInsertDialog({
                 ref={inputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by name…"
+                placeholder={t`Search by name…`}
                 data-testid="wiki-link-search-input"
                 className="flex-1"
               />
               <Select value={recordTypeFilter} onValueChange={setRecordTypeFilter}>
                 <SelectTrigger className="w-40" data-testid="wiki-link-type-filter">
-                  <SelectValue placeholder="All types" />
+                  <SelectValue placeholder={t`All types`} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ALL_TYPES_VALUE}>All types</SelectItem>
+                  <SelectItem value={ALL_TYPES_VALUE}><Trans>All types</Trans></SelectItem>
                   {FILTERABLE_RECORD_TYPES.map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
@@ -213,10 +215,10 @@ export function WikiLinkInsertDialog({
             </div>
             <div className="max-h-72 overflow-y-auto rounded-md border bg-card">
               {isLoading && query.length >= 2 && (
-                <div className="px-3 py-2 text-sm text-muted-foreground">Searching…</div>
+                <div className="px-3 py-2 text-sm text-muted-foreground"><Trans>Searching…</Trans></div>
               )}
               {!isLoading && query.length >= 2 && results.length === 0 && (
-                <div className="px-3 py-2 text-sm text-muted-foreground">No matches.</div>
+                <div className="px-3 py-2 text-sm text-muted-foreground"><Trans>No matches.</Trans></div>
               )}
               {results.slice(0, 20).map((r) => (
                 <button
@@ -230,7 +232,7 @@ export function WikiLinkInsertDialog({
                   onClick={() => void handleSelect(r)}
                 >
                   <span className="truncate">
-                    {r.name || <span className="italic text-muted-foreground">(unnamed)</span>}
+                    {r.name || <span className="italic text-muted-foreground"><Trans>(unnamed)</Trans></span>}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">{r.record_type}</span>
                 </button>
@@ -242,16 +244,16 @@ export function WikiLinkInsertDialog({
         {stage.kind === 'name-prompt' && (
           <>
             <DialogHeader>
-              <DialogTitle>Name this entity</DialogTitle>
+              <DialogTitle><Trans>Name this entity</Trans></DialogTitle>
               <DialogDescription>
-                The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text.
+                <Trans>The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text.</Trans>
               </DialogDescription>
             </DialogHeader>
             <Input
               autoFocus
               value={pendingName}
               onChange={(e) => setPendingName(e.target.value)}
-              placeholder="Entity name"
+              placeholder={t`Entity name`}
               data-testid="wiki-link-name-input"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -262,14 +264,14 @@ export function WikiLinkInsertDialog({
             />
             <DialogFooter>
               <Button variant="ghost" onClick={() => setStage({ kind: 'search' })}>
-                Back
+                <Trans>Back</Trans>
               </Button>
               <Button
                 disabled={!pendingName.trim()}
                 onClick={() => void submitNamePrompt()}
                 data-testid="wiki-link-name-confirm"
               >
-                Save & insert
+                <Trans>Save & insert</Trans>
               </Button>
             </DialogFooter>
           </>

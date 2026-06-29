@@ -6,8 +6,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { ClipboardCopy, Info, Pause, Play, Power, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export function HooksSnifferViewMock() {
+  const { t } = useLingui();
   const { snifferEnabled } = useContext();
   const { events, isLoading, isToggling, isPaused, enable, disable, togglePause, clear } = useSnifferContext();
   const [selectedRaw, setSelectedRaw] = useState<string | null>(null);
@@ -31,29 +33,29 @@ export function HooksSnifferViewMock() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-4">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">Hooks Sniffer</h3>
+          <h3 className="text-sm font-semibold text-foreground"><Trans>Hooks Sniffer</Trans></h3>
           <p className="text-xs text-muted-foreground">
-            Live view of hook traffic. Uses a catch-all hook in the Claude user folder.
+            <Trans>Live view of hook traffic. Uses a catch-all hook in the Claude user folder.</Trans>
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Badge variant="outline" className="text-xs">
-            Total {summary.total}
+            <Trans>Total {summary.total}</Trans>
           </Badge>
           <Badge variant={snifferEnabled ? 'secondary' : 'destructive'} className="text-xs">
-            {snifferEnabled ? 'Enabled' : 'Disabled'}
+            {snifferEnabled ? <Trans>Enabled</Trans> : <Trans>Disabled</Trans>}
           </Badge>
           <Button size="sm" variant="outline" onClick={togglePause} disabled={!snifferEnabled}>
             {isPaused ? <Play className="mr-1 h-3 w-3" /> : <Pause className="mr-1 h-3 w-3" />}
-            {isPaused ? 'Resume' : 'Pause'}
+            {isPaused ? <Trans>Resume</Trans> : <Trans>Pause</Trans>}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => clear()} disabled={!snifferEnabled}>
             <Trash2 className="mr-1 h-3 w-3" />
-            Clear
+            <Trans>Clear</Trans>
           </Button>
           <Button size="sm" variant="ghost" onClick={() => void handleCopyLog()} disabled={events.length === 0}>
             <ClipboardCopy className="mr-1 h-3 w-3" />
-            Copy Log
+            <Trans>Copy Log</Trans>
           </Button>
           <Button
             size="sm"
@@ -62,7 +64,7 @@ export function HooksSnifferViewMock() {
             disabled={isLoading || isToggling}
           >
             <Power className="mr-1 h-3 w-3" />
-            {snifferEnabled ? 'Disable' : 'Enable'}
+            {snifferEnabled ? <Trans>Disable</Trans> : <Trans>Enable</Trans>}
           </Button>
         </div>
       </div>
@@ -72,24 +74,24 @@ export function HooksSnifferViewMock() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[160px]">Timestamp</TableHead>
-                <TableHead className="min-w-[130px]">Event</TableHead>
-                <TableHead className="min-w-[180px]">Hook Entry</TableHead>
-                <TableHead className="min-w-[220px]">Source</TableHead>
-                <TableHead className="w-[90px] text-center">Info</TableHead>
+                <TableHead className="min-w-[160px]"><Trans>Timestamp</Trans></TableHead>
+                <TableHead className="min-w-[130px]"><Trans>Event</Trans></TableHead>
+                <TableHead className="min-w-[180px]"><Trans>Hook Entry</Trans></TableHead>
+                <TableHead className="min-w-[220px]"><Trans>Source</Trans></TableHead>
+                <TableHead className="w-[90px] text-center"><Trans>Info</Trans></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {!snifferEnabled ? (
                 <TableRow>
                   <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
-                    Enable the sniffer to start capturing hook traffic
+                    <Trans>Enable the sniffer to start capturing hook traffic</Trans>
                   </TableCell>
                 </TableRow>
               ) : events.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
-                    No events captured yet
+                    <Trans>No events captured yet</Trans>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -114,7 +116,7 @@ export function HooksSnifferViewMock() {
                         size="sm"
                         variant="ghost"
                         onClick={() => setSelectedRaw(event.raw_line)}
-                        title="View raw hook payload"
+                        title={t`View raw hook payload`}
                       >
                         <Info className="h-4 w-4" />
                       </Button>
@@ -130,8 +132,8 @@ export function HooksSnifferViewMock() {
       <Dialog open={!!selectedRaw} onOpenChange={(open) => !open && setSelectedRaw(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Hook Payload</DialogTitle>
-            <DialogDescription>Copy the full JSON payload for this hook event.</DialogDescription>
+            <DialogTitle><Trans>Hook Payload</Trans></DialogTitle>
+            <DialogDescription><Trans>Copy the full JSON payload for this hook event.</Trans></DialogDescription>
           </DialogHeader>
           <div className="rounded-md border bg-muted/30 p-3">
             <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap break-all font-mono text-[11px]">
@@ -140,10 +142,10 @@ export function HooksSnifferViewMock() {
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setSelectedRaw(null)}>
-              Close
+              <Trans>Close</Trans>
             </Button>
             <Button size="sm" onClick={() => void handleCopyRaw()} disabled={!selectedRaw}>
-              Copy
+              <Trans>Copy</Trans>
             </Button>
           </div>
         </DialogContent>

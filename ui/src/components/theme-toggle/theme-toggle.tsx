@@ -1,6 +1,8 @@
 import { Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
+import { useLingui } from '@lingui/react/macro';
+
 import { Button } from '@src/components/ui/button';
 
 /**
@@ -9,6 +11,7 @@ import { Button } from '@src/components/ui/button';
  * but this component only toggles between light and dark.
  */
 export function ThemeToggle() {
+  const { t } = useLingui();
   const { resolvedTheme, setTheme } = useTheme();
 
   const toggleTheme = () => {
@@ -23,10 +26,10 @@ export function ThemeToggle() {
       size="icon"
       className="h-8 w-8"
       onClick={toggleTheme}
-      title={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={resolvedTheme === 'dark' ? t`Switch to light mode` : t`Switch to dark mode`}
     >
       {resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-      <span className="sr-only">Toggle theme</span>
+      <span className="sr-only">{t`Toggle theme`}</span>
     </Button>
   );
 }

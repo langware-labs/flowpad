@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { dataContext, fsManager } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AlertTriangle, CheckCircle2, Circle, Clock, FileText, Loader2, ArrowRight } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
+import { t } from '@lingui/macro';
 
 interface TaskData {
   id: string;
@@ -21,19 +23,19 @@ interface Props {
 const STATUS_CONFIG = {
   in_progress: {
     icon: Clock,
-    label: 'In Progress',
+    label: t`In Progress`,
     badgeClass: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
     borderClass: 'border-blue-300 dark:border-blue-700',
   },
   pending: {
     icon: Circle,
-    label: 'Pending',
+    label: t`Pending`,
     badgeClass: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
     borderClass: 'border-gray-200 dark:border-gray-700',
   },
   completed: {
     icon: CheckCircle2,
-    label: 'Completed',
+    label: t`Completed`,
     badgeClass: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
     borderClass: 'border-green-300 dark:border-green-700',
   },
@@ -94,7 +96,7 @@ function TaskCard({
               {task.blockedBy?.length ? (
                 <span className="flex items-center gap-1">
                   <ArrowRight className="h-3 w-3 rotate-180" />
-                  Blocked by:{' '}
+                  <Trans>Blocked by: </Trans>
                   {task.blockedBy.map((id, i) => (
                     <span key={id}>
                       {i > 0 && ', '}
@@ -106,7 +108,7 @@ function TaskCard({
               {task.blocks?.length ? (
                 <span className="flex items-center gap-1">
                   <ArrowRight className="h-3 w-3" />
-                  Blocks:{' '}
+                  <Trans>Blocks: </Trans>
                   {task.blocks.map((id, i) => (
                     <span key={id}>
                       {i > 0 && ', '}
@@ -134,7 +136,7 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
     const home = dataContext.bootstrapInfo?.desktop_info?.paths?.home;
     const computeNode = dataContext.computeNode;
     if (!home || !computeNode?.typeId) {
-      setError('Could not resolve compute node or home directory');
+      setError(t`Could not resolve compute node or home directory`);
       setLoading(false);
       return;
     }
@@ -160,7 +162,7 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
             const data = JSON.parse(text);
             loadedTasks.push({
               id: data.id || file.name.replace('.json', ''),
-              subject: data.subject || 'Untitled task',
+              subject: data.subject || t`Untitled task`,
               description: data.description,
               activeForm: data.activeForm,
               status: data.status || 'pending',
@@ -178,7 +180,7 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load tasks');
+          setError(err instanceof Error ? err.message : t`Failed to load tasks`);
           setLoading(false);
         }
       }
@@ -247,7 +249,7 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        <span>Loading tasks...</span>
+        <span><Trans>Loading tasks...</Trans></span>
       </div>
     );
   }
@@ -264,7 +266,7 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
   if (tasks.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-        <span>No tasks found for this session.</span>
+        <span><Trans>No tasks found for this session.</Trans></span>
       </div>
     );
   }
@@ -275,21 +277,21 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 text-primary" />
-          <span className="text-sm font-medium">Session Tasks</span>
+          <span className="text-sm font-medium"><Trans>Session Tasks</Trans></span>
           <span className="text-xs text-muted-foreground">({sessionId.slice(0, 8)}...)</span>
           {sessionId && (
             <button
               onClick={() => navigation.openLens('claude', 'transcript', sessionId)}
               className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20"
-              title="View session transcript"
+              title={t`View session transcript`}
             >
               <FileText className="h-3 w-3" />
-              Transcript
+              <Trans>Transcript</Trans>
             </button>
           )}
         </div>
         <span className="text-xs text-muted-foreground">
-          {completedCount}/{totalCount} completed
+          <Trans>{completedCount}/{totalCount} completed</Trans>
         </span>
       </div>
 

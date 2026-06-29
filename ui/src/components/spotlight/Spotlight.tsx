@@ -12,6 +12,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { FileText, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { EntityTypePopover } from './EntityTypePopover';
 import { ScopeFilterPopover } from './ScopeFilterPopover';
 import { searchResultToRow, searchResultToTerminalRow, timeAgo } from './adapters';
@@ -40,6 +41,7 @@ function RowIcon({ recordType }: { recordType: string }) {
 }
 
 export function Spotlight() {
+  const { t } = useLingui();
   const open = useSpotlightStore((s) => s.open);
   const closeSpotlight = useSpotlightStore((s) => s.closeSpotlight);
   const { navigation, currentDock } = useDockNavigation();
@@ -126,14 +128,14 @@ export function Spotlight() {
     }
   };
 
-  const placeholder = profile.placeholder ?? 'Search…';
+  const placeholder = profile.placeholder ?? t`Search…`;
   // Hide the entity chip when only one type is allowed AND it's pinned (no meaningful choice).
   const hideEntityChip = profile.allowedEntityTypes?.length === 1 && !!profile.defaultEntityType;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) closeSpotlight(); }}>
       <DialogContent className="overflow-hidden p-0 sm:max-w-[720px]">
-        <DialogTitle className="sr-only">{profile.label ?? 'Search'}</DialogTitle>
+        <DialogTitle className="sr-only">{profile.label ?? t`Search`}</DialogTitle>
         <Command
           shouldFilter={false}
           className="[&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2"
@@ -160,19 +162,19 @@ export function Spotlight() {
           <CommandList className="max-h-[440px]">
             {!trimmed && initialInfo?.isLoading && visible.length === 0 ? (
               <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading history…
+                <Loader2 className="h-4 w-4 animate-spin" /> <Trans>Loading history…</Trans>
               </div>
             ) : trimmed && isSearching && visible.length === 0 ? (
               <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Searching…
+                <Loader2 className="h-4 w-4 animate-spin" /> <Trans>Searching…</Trans>
               </div>
             ) : visible.length === 0 ? (
               <CommandEmpty className="py-6 text-sm text-muted-foreground">
                 {trimmed
-                  ? 'No matches.'
+                  ? t`No matches.`
                   : profile.showTerminalHistory
-                    ? 'No recent items.'
-                    : 'Type to search…'}
+                    ? t`No recent items.`
+                    : t`Type to search…`}
               </CommandEmpty>
             ) : (
               visible.map((row) => (

@@ -1,3 +1,7 @@
+/* SVG country/region flags for the language picker (see LanguageSelector).
+   Must precede the @tailwind directives so postcss-import hoists it correctly. */
+@import 'flag-icons/css/flag-icons.min.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

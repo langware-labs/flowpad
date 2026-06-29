@@ -1,3 +1,4 @@
+import { Trans } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
@@ -24,15 +25,15 @@ export const ArtifactsView: React.FC<ArtifactsViewProps> = ({ className = '' }) 
       {/* Top Bar */}
       <div className="flex items-center justify-between border-b bg-background px-4 py-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold">Project Artifacts</h2>
+          <h2 className="text-lg font-semibold"><Trans>Project Artifacts</Trans></h2>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-            {totalArtifacts} {totalArtifacts === 1 ? 'artifact' : 'artifacts'}
+            {totalArtifacts} {totalArtifacts === 1 ? <Trans>artifact</Trans> : <Trans>artifacts</Trans>}
           </span>
         </div>
 
         <Button size="sm" onClick={() => setShowAddForm(true)}>
           <Plus className="mr-1 h-4 w-4" />
-          Add Artifact
+          <Trans>Add Artifact</Trans>
         </Button>
       </div>
 

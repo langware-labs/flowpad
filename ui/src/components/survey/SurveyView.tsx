@@ -4,6 +4,7 @@ import { Model } from 'survey-core';
 import { Survey } from 'survey-react-ui';
 import { DefaultLight, DefaultDark } from 'survey-core/themes';
 import 'survey-core/survey-core.min.css';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { FlowSurvey, SurveyResults, SurveyType } from '@sdk';
 
 interface SurveyViewProps {
@@ -13,6 +14,7 @@ interface SurveyViewProps {
 
 export function SurveyView({ surveyData, onComplete }: SurveyViewProps) {
   const { resolvedTheme } = useTheme();
+  const { t } = useLingui();
   const [survey, setSurvey] = useState<Model | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +31,7 @@ export function SurveyView({ surveyData, onComplete }: SurveyViewProps) {
       setError(null);
     } catch (err) {
       console.error('[SurveyView] Failed to initialize survey:', err);
-      setError(err instanceof Error ? err.message : 'Invalid survey JSON');
+      setError(err instanceof Error ? err.message : t`Invalid survey JSON`);
       setSurvey(null);
     }
   }, [surveyData]);
@@ -61,11 +63,11 @@ export function SurveyView({ surveyData, onComplete }: SurveyViewProps) {
     return (
       <div className="survey-view h-full overflow-auto p-6">
         <div className="mb-4 rounded border border-destructive bg-destructive/10 p-4">
-          <h3 className="font-semibold text-destructive">Survey Error</h3>
+          <h3 className="font-semibold text-destructive"><Trans>Survey Error</Trans></h3>
           <p className="text-sm text-destructive">{error}</p>
         </div>
         <div className="rounded bg-muted p-4">
-          <h4 className="mb-2 text-sm font-semibold">Survey Data:</h4>
+          <h4 className="mb-2 text-sm font-semibold"><Trans>Survey Data:</Trans></h4>
           <pre className="overflow-auto text-xs">{JSON.stringify(surveyData, null, 2)}</pre>
         </div>
       </div>
@@ -73,7 +75,7 @@ export function SurveyView({ surveyData, onComplete }: SurveyViewProps) {
   }
 
   if (!survey) {
-    return <div className="p-6">Loading survey...</div>;
+    return <div className="p-6"><Trans>Loading survey...</Trans></div>;
   }
 
   return (
@@ -85,7 +87,7 @@ export function SurveyView({ surveyData, onComplete }: SurveyViewProps) {
           disabled={survey.isCurrentPageHasErrors}
           className="rounded bg-primary px-6 py-2 text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Continue
+          <Trans>Continue</Trans>
         </button>
       </div>
     </div>

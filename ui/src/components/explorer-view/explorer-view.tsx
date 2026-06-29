@@ -2,6 +2,7 @@ import { VFSPath } from '@sdk';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { FolderOpen } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { allScope, type ScopeFilter } from '@src/lib/scope-filter';
@@ -124,7 +125,7 @@ export function ExplorerView({
     return (
       <div className="explorer-view-empty">
         <FolderOpen className="h-12 w-12 text-muted-foreground/50" />
-        <p className="text-sm text-muted-foreground">No project context available</p>
+        <p className="text-sm text-muted-foreground"><Trans>No project context available</Trans></p>
       </div>
     );
   }

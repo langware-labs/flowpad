@@ -17,8 +17,10 @@ import { Textarea } from '@src/components/ui/textarea';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ArrowLeft, Save, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export function TasksViewer() {
+  const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const { project } = useProject();
   const pointer = currentDock?.pointer;
@@ -123,7 +125,7 @@ export function TasksViewer() {
   // Wait for the task to load before deciding which layout to show — avoids
   // flashing the empty edit form before switching to SharedTaskView or the populated form.
   if (taskTypeId && (isLoading || !existingTask)) {
-    return <div className="flex h-full items-center justify-center text-muted-foreground">Loading…</div>;
+    return <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>Loading…</Trans></div>;
   }
 
   // Shared tasks (sent via notification) show the SharedTaskView instead of the edit form.
@@ -149,53 +151,53 @@ export function TasksViewer() {
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <h2 className="text-base font-semibold">{isEditing ? 'Edit Task' : 'New Task'}</h2>
+        <h2 className="text-base font-semibold">{isEditing ? t`Edit Task` : t`New Task`}</h2>
       </div>
 
       {/* Form */}
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         <div className="space-y-1.5">
-          <Label htmlFor="task-title">Title</Label>
-          <Input id="task-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task title" />
+          <Label htmlFor="task-title"><Trans>Title</Trans></Label>
+          <Input id="task-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t`Task title`} />
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="task-desc">Description</Label>
+          <Label htmlFor="task-desc"><Trans>Description</Trans></Label>
           <Textarea
             id="task-desc"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe the task..."
+            placeholder={t`Describe the task...`}
             rows={4}
           />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>Status</Label>
+            <Label><Trans>Status</Trans></Label>
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="open">Open</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="done">Done</SelectItem>
-                <SelectItem value="archived">Archived</SelectItem>
+                <SelectItem value="open"><Trans>Open</Trans></SelectItem>
+                <SelectItem value="in_progress"><Trans>In Progress</Trans></SelectItem>
+                <SelectItem value="done"><Trans>Done</Trans></SelectItem>
+                <SelectItem value="archived"><Trans>Archived</Trans></SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-1.5">
-            <Label>Priority</Label>
+            <Label><Trans>Priority</Trans></Label>
             <Select value={priority} onValueChange={setPriority}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="high"><Trans>High</Trans></SelectItem>
+                <SelectItem value="medium"><Trans>Medium</Trans></SelectItem>
+                <SelectItem value="low"><Trans>Low</Trans></SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -203,36 +205,36 @@ export function TasksViewer() {
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="task-due">Due date</Label>
+            <Label htmlFor="task-due"><Trans>Due date</Trans></Label>
             <Input id="task-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="task-start">Start date</Label>
+            <Label htmlFor="task-start"><Trans>Start date</Trans></Label>
             <Input id="task-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="task-ttl">TTL (hours)</Label>
+            <Label htmlFor="task-ttl"><Trans>TTL (hours)</Trans></Label>
             <Input
               id="task-ttl"
               type="number"
               min={0}
               value={ttl}
               onChange={(e) => setTtl(e.target.value)}
-              placeholder="Auto-archive after..."
+              placeholder={t`Auto-archive after...`}
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="task-target">Target entity</Label>
+            <Label htmlFor="task-target"><Trans>Target entity</Trans></Label>
             <Input
               id="task-target"
               value={targetEntity}
               onChange={(e) => setTargetEntity(e.target.value)}
-              placeholder="TypeId string"
+              placeholder={t`TypeId string`}
             />
           </div>
         </div>
@@ -245,14 +247,14 @@ export function TasksViewer() {
           <>
             <Button variant="destructive" size="sm" onClick={() => setConfirmDelete(true)}>
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-              Archive
+              <Trans>Archive</Trans>
             </Button>
             <ConfirmDialog
               open={confirmDelete}
               onOpenChange={setConfirmDelete}
-              title="Archive task"
+              title={t`Archive task`}
               description={`Are you sure you want to archive "${title || 'Untitled'}"?`}
-              confirmLabel="Archive"
+              confirmLabel={t`Archive`}
               variant="destructive"
               onConfirm={() => void handleDelete()}
             />
@@ -262,7 +264,7 @@ export function TasksViewer() {
         )}
         <Button size="sm" onClick={() => void handleSave()} disabled={!title.trim()}>
           <Save className="mr-1.5 h-3.5 w-3.5" />
-          {isEditing ? 'Save' : 'Create'}
+          {isEditing ? t`Save` : t`Create`}
         </Button>
       </div>
     </div>

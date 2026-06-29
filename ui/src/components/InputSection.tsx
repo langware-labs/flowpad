@@ -2,6 +2,7 @@ import { trackEvent } from '@src/utils/analytics';
 import { TypeId, navigator } from '@sdk';
 import { ContentCard } from '@src/components/ui/content-card';
 import { notify } from '@src/notifications';
+import { Trans } from '@lingui/react/macro';
 import { ContentCardAction } from '@src/components/ui/content-card';
 import { ContentCardActionButton } from '@src/components/ui/content-card';
 import { ContentCardBody } from '@src/components/ui/content-card';
@@ -75,7 +76,7 @@ const InputSection = ({ input, readOnly, className, currentProject }: InputSecti
             <ContentCardHeader>
               <ContentCardTitle>{input['provider-name']}</ContentCardTitle>
             </ContentCardHeader>
-            <ContentCardSubtext>OAuth connection established successfully</ContentCardSubtext>
+            <ContentCardSubtext><Trans>OAuth connection established successfully</Trans></ContentCardSubtext>
           </ContentCardBody>
         </ContentCardContainer>
       </ContentCard>
@@ -91,7 +92,7 @@ const InputSection = ({ input, readOnly, className, currentProject }: InputSecti
           </ContentCardIcon>
           <ContentCardBody>
             <ContentCardHeader>
-              <ContentCardTitle>OAuth Connection Required</ContentCardTitle>
+              <ContentCardTitle><Trans>OAuth Connection Required</Trans></ContentCardTitle>
             </ContentCardHeader>
             <ContentCardSubtext>{input['provider-name']}</ContentCardSubtext>
           </ContentCardBody>
@@ -110,7 +111,7 @@ const InputSection = ({ input, readOnly, className, currentProject }: InputSecti
           <ContentCardHeader>
             <ContentCardTitle>{input['provider-name']}</ContentCardTitle>
           </ContentCardHeader>
-          <ContentCardSubtext>Connect to {input['provider-name']} to continue</ContentCardSubtext>
+          <ContentCardSubtext><Trans>Connect to {input['provider-name']} to continue</Trans></ContentCardSubtext>
         </ContentCardBody>
         <ContentCardAction>
           {user?.id ? (
@@ -122,7 +123,7 @@ const InputSection = ({ input, readOnly, className, currentProject }: InputSecti
               disabled={isConnecting}
               className="w-[110px]"
             >
-              {isConnecting ? 'Connecting...' : 'Connect'}
+              {isConnecting ? <Trans>Connecting...</Trans> : <Trans>Connect</Trans>}
             </ContentCardActionButton>
           ) : (
             <ContentCardActionButton
@@ -133,7 +134,7 @@ const InputSection = ({ input, readOnly, className, currentProject }: InputSecti
               className="flex w-[110px] items-center gap-2"
             >
               <LogIn className="h-4 w-4" />
-              Login
+              <Trans>Login</Trans>
             </ContentCardActionButton>
           )}
         </ContentCardAction>

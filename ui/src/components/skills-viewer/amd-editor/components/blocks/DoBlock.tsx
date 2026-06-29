@@ -1,5 +1,6 @@
 import { Textarea } from '@src/components/ui/textarea';
 import { useCallback, useEffect, useRef } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { useAMDEditor } from '../../AMDEditorContext';
 import { AMDElement } from '../../types';
 
@@ -8,6 +9,7 @@ interface DoBlockProps {
 }
 
 export function DoBlock({ element }: DoBlockProps) {
+  const { t } = useLingui();
   const { updateElement } = useAMDEditor();
   const el = element.element;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -42,7 +44,7 @@ export function DoBlock({ element }: DoBlockProps) {
       ref={textareaRef}
       value={el.content}
       onChange={handleContentChange}
-      placeholder="Enter instructions..."
+      placeholder={t`Enter instructions...`}
       className="min-h-[40px] resize-none overflow-hidden border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
     />
   );

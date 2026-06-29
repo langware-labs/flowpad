@@ -124,6 +124,42 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
+   * Resolve the singleton `@local` compute node — "this machine".
+   *
+   * The robust frontend counterpart to the backend `ComputeNode.get_local()`.
+   * Resolution order (cheap → authoritative):
+   *   1. the current context compute node, when it is the @local one
+   *   2. the bootstrap-issued `default_compute_node`
+   *   3. a fetch by the `@local` alias typeid (server resolves it)
+   *
+   * This is a READ: minting the node is a backend concern (the client cannot
+   * create entities). The backend self-heals on any action that touches @local
+   * — including {@link Project.getComputeNode} — so a missing row is recreated
+   * server-side rather than here. Returns null only if the backend has no
+   * @local node AND cannot resolve the alias (should not happen in local mode).
+   */
+  static async getLocal(): Promise<ComputeNode | null> {
+    const { dataContext } = await import('../../FlowSync/context');
+    const current = dataContext.computeNode;
+    // The context node is @local unless a cloud/sandbox node is active. Treat a
+    // local_machine-provider node as @local; otherwise fall through.
+    if (current && current.node_provider_type === ComputeProviderType.LOCAL_MACHINE) {
+      return current;
+    }
+    const fromBootstrap = dataContext.bootstrapInfo?.default_compute_node;
+    if (fromBootstrap) {
+      const node = new ComputeNode(fromBootstrap as any);
+      node.markAsExpanded();
+      return node;
+    }
+    try {
+      return await dataManager.getByTypeId<ComputeNode>(new TypeId(ComputeNode.type, '@local'));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Create a new idle AgenticProcess on this ComputeNode.
    *
    * @param context - Execution context (workdir, permissionMode, model, etc.)

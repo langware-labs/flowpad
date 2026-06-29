@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Badge } from '@src/components/ui/badge';
 import { Check, ClipboardList, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, X, Zap } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { Shell } from '@sdk';
 
 interface PtyEventFire {
@@ -74,6 +75,7 @@ function buildLogText(shellId: string, fires: readonly PtyEventFire[]): string {
 }
 
 export function PTYEventsViewer({ open, onClose, shell }: Props) {
+  const { t } = useLingui();
   const [fires, setFires] = useState<PtyEventFire[]>([]);
   const [registeredCount, setRegisteredCount] = useState(0);
   const [selected, setSelected] = useState<PtyEventFire | null>(null);
@@ -162,7 +164,7 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 pr-8 text-sm">
             <Zap className="h-3.5 w-3.5 text-amber-400" />
-            PTY Events
+            <Trans>PTY Events</Trans>
             {shell && <span className="text-xs text-muted-foreground font-mono">{shell.id.slice(0, 8)}</span>}
             <div className="ml-auto flex items-center gap-1">
               {fires.length > 0 && (
@@ -173,7 +175,7 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
                         {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <ClipboardList className="h-3.5 w-3.5" />}
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" className="text-xs">Copy as log</TooltipContent>
+                    <TooltipContent side="bottom" className="text-xs"><Trans>Copy as log</Trans></TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               )}
@@ -193,7 +195,7 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
             type="text"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter by label, pattern, or matched line…"
+            placeholder={t`Filter by label, pattern, or matched line…`}
             className="ml-auto w-72 rounded border bg-background px-2 py-0.5 font-mono text-[11px] outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
@@ -201,9 +203,9 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
         {fires.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
             <Zap className="h-8 w-8 text-muted-foreground/40" />
-            <span>No PTY events have fired yet.</span>
+            <span><Trans>No PTY events have fired yet.</Trans></span>
             <span className="text-xs">
-              Watchers register patterns via <code className="font-mono">Shell.addTrigger</code>; matched lines appear here.
+              <Trans>Watchers register patterns via <code className="font-mono">Shell.addTrigger</code>; matched lines appear here.</Trans>
             </span>
             {registeredCount > 0 && (
               <span className="text-xs">
@@ -221,14 +223,14 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
               <table className="w-full text-xs font-mono">
                 <thead className="sticky top-0 bg-background">
                   <tr className="border-b text-muted-foreground">
-                    <th className="text-left px-2 py-1 w-24">time</th>
-                    <th className="text-left px-2 py-1 w-12">replay</th>
-                    <th className="text-left px-2 py-1 w-48">label / pattern</th>
+                    <th className="text-left px-2 py-1 w-24"><Trans>time</Trans></th>
+                    <th className="text-left px-2 py-1 w-12"><Trans>replay</Trans></th>
+                    <th className="text-left px-2 py-1 w-48"><Trans>label / pattern</Trans></th>
                     <th className="text-left px-2 py-1">
                       <span className="flex items-center gap-1">
-                        matched line
+                        <Trans>matched line</Trans>
                         {tableExpanded && selected && (
-                          <button onClick={() => setTableExpanded(false)} className="hover:text-foreground" title="Show detail panel">
+                          <button onClick={() => setTableExpanded(false)} className="hover:text-foreground" title={t`Show detail panel`}>
                             <PanelLeftClose className="h-3 w-3" />
                           </button>
                         )}
@@ -250,7 +252,7 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
                         </td>
                         <td className="px-2 py-0.5">
                           {fire.duringReplay ? (
-                            <span className="text-[9px] text-yellow-400" title="Fired during replay (pre-attach)">replay</span>
+                            <span className="text-[9px] text-yellow-400" title={t`Fired during replay (pre-attach)`}><Trans>replay</Trans></span>
                           ) : (
                             <span className="text-[9px] text-muted-foreground/50">—</span>
                           )}
@@ -261,7 +263,7 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
                           </Badge>
                         </td>
                         <td className="px-2 py-0.5 truncate max-w-[400px] text-muted-foreground" title={fire.line}>
-                          {fire.line || '(empty line)'}
+                          {fire.line || <Trans>(empty line)</Trans>}
                         </td>
                       </tr>
                     );
@@ -294,7 +296,7 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
                     {selected.duringReplay && <span className="ml-2 text-yellow-400">(replay)</span>}
                   </span>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => setTableExpanded(true)} className="hover:text-foreground" title="Expand table">
+                    <button onClick={() => setTableExpanded(true)} className="hover:text-foreground" title={t`Expand table`}>
                       <PanelLeftOpen className="h-3 w-3" />
                     </button>
                     <button onClick={() => setSelected(null)} className="hover:text-foreground">
@@ -303,24 +305,24 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
                   </div>
                 </div>
                 <div className="flex-1 overflow-auto min-h-0 space-y-2 text-xs">
-                  <DetailRow label="label">
-                    {selected.label ?? <span className="text-muted-foreground italic">(none)</span>}
+                  <DetailRow label={t`label`}>
+                    {selected.label ?? <span className="text-muted-foreground italic"><Trans>(none)</Trans></span>}
                   </DetailRow>
-                  <DetailRow label="pattern">
+                  <DetailRow label={t`pattern`}>
                     <code className="font-mono break-all">{selected.patternSource}</code>
                   </DetailRow>
-                  <DetailRow label="time">
+                  <DetailRow label={t`time`}>
                     <span className="font-mono">{formatAbsolute(selected.ts)}</span>
-                    <span className="ml-2 text-muted-foreground">({formatRelative(selected.ts, baseTs)} from first)</span>
+                    <span className="ml-2 text-muted-foreground">({formatRelative(selected.ts, baseTs)} <Trans>from first</Trans>)</span>
                   </DetailRow>
-                  <DetailRow label="line">
-                    <pre className="whitespace-pre-wrap break-all font-mono bg-muted/20 rounded p-2">{selected.line || '(empty)'}</pre>
+                  <DetailRow label={t`line`}>
+                    <pre className="whitespace-pre-wrap break-all font-mono bg-muted/20 rounded p-2">{selected.line || <Trans>(empty)</Trans>}</pre>
                   </DetailRow>
                   {selected.match.length > 1 && (
                     <DetailRow label={`groups (${selected.match.length - 1})`}>
                       <ol className="list-decimal pl-5 font-mono">
                         {selected.match.slice(1).map((g, i) => (
-                          <li key={i} className="break-all">{g ?? <span className="text-muted-foreground italic">(undefined)</span>}</li>
+                          <li key={i} className="break-all">{g ?? <span className="text-muted-foreground italic"><Trans>(undefined)</Trans></span>}</li>
                         ))}
                       </ol>
                     </DetailRow>

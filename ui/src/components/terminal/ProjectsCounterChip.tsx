@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Project } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
@@ -101,6 +102,7 @@ const ProjectPickerPanel: React.FC<{
   onBack: () => void;
   onPick: (cwd: string) => void;
 }> = ({ worker, excludePaths, onBack, onPick }) => {
+  const { t } = useLingui();
   const WorkerIcon = workerIcon(worker);
   const { projects, isLoading } = useAllProjects();
 
@@ -112,13 +114,13 @@ const ProjectPickerPanel: React.FC<{
         <button
           type="button"
           onClick={onBack}
-          aria-label="Back to open projects"
+          aria-label={t`Back to open projects`}
           className="rounded p-1 hover:bg-muted"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
         <WorkerIcon className="h-3.5 w-3.5 shrink-0" />
-        <span className="text-xs font-medium text-muted-foreground">Open {workerLabel(worker)} on…</span>
+        <span className="text-xs font-medium text-muted-foreground"><Trans>Open {workerLabel(worker)} on…</Trans></span>
       </div>
       <div className="min-h-0 flex-1">
         <ProjectSelector
@@ -126,7 +128,7 @@ const ProjectPickerPanel: React.FC<{
           selectedId={null}
           excludeIds={excludePaths}
           isLoading={isLoading}
-          emptyMessage="All projects are already open"
+          emptyMessage={t`All projects are already open`}
           onSelect={(id) => {
             if (!id) return;
             const picked = items.find((i) => i.id === id);
@@ -144,6 +146,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   onLaunchProjectPath,
   onOpenHistory,
 }) => {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   // Non-null while the picker is shown; carries the worker armed by the
   // clicked icon on the action strip.
@@ -226,7 +229,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
       const recovered = await bucket.recover();
       if (!recovered) {
         notify.error({
-          title: 'Recovery failed',
+          title: t`Recovery failed`,
           message: `Couldn't recover the project for ${bucket.tabCount} open tab${
             bucket.tabCount === 1 ? '' : 's'
           } (${bucket.projectId.slice(0, 8)}).`,
@@ -328,7 +331,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                       <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
                       {isMissing && !isRecovering ? (
                         <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-                          recover
+                          <Trans>recover</Trans>
                         </span>
                       ) : null}
                       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
@@ -365,8 +368,8 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                           handleOpenChange(false);
                           onOpenHistory();
                         }}
-                        aria-label="Open from history"
-                        title="Open from history"
+                        aria-label={t`Open from history`}
+                        title={t`Open from history`}
                         data-testid="projects-counter-open-history"
                       >
                         <History className="h-4 w-4" />

@@ -4,19 +4,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { cn } from '@src/lib/utils';
 import { ActionInfo, dataManager, Trigger as TriggerEntity, type ITrigger } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { FlaskConical } from 'lucide-react';
 import { useState } from 'react';
 import { scopeColor } from './scope-colors';
-
-/** Per-trigger-type label for the Test button tooltip. Each source has very
- * different "Test" semantics — schedule spawns an agentic process for real;
- * hook synthesizes a fake hook event; FSOp fires the callback with a
- * synthetic path. Same icon, different real-world effect — surface that. */
-const TEST_TOOLTIPS: Record<string, string> = {
-  hook: 'Synthesize event',
-  schedule: 'Run now (spawns a process)',
-  fsop: 'Fire (synthetic test)',
-};
 
 interface Props {
   trigger: ITrigger;
@@ -27,10 +18,21 @@ interface Props {
 
 export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog }: Props) {
   const [testing, setTesting] = useState(false);
+  const { t } = useLingui();
   // `useEntitiesQuery` fires only on add/remove; per-entity field updates
   // (counter, last_triggered) need this single-entity subscription to re-render.
   const { data: live } = useEntity<TriggerEntity>(trigger.id ? trigger.typeId : null);
-  const t = live ?? trigger;
+  const liveOrTrigger = live ?? trigger;
+
+  /** Per-trigger-type label for the Test button tooltip. Each source has very
+   * different "Test" semantics — schedule spawns an agentic process for real;
+   * hook synthesizes a fake hook event; FSOp fires the callback with a
+   * synthetic path. Same icon, different real-world effect — surface that. */
+  const TEST_TOOLTIPS: Record<string, string> = {
+    hook: t`Synthesize event`,
+    schedule: t`Run now (spawns a process)`,
+    fsop: t`Fire (synthetic test)`,
+  };
 
   const handleTest = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -92,7 +94,7 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog }: Pr
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {TEST_TOOLTIPS[trigger.trigger_type ?? 'hook'] ?? 'Test trigger'}
+              {TEST_TOOLTIPS[trigger.trigger_type ?? 'hook'] ?? t`Test trigger`}
             </TooltipContent>
           </Tooltip>
 
@@ -102,10 +104,10 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog }: Pr
               value={trigger.log_mode || 'activations'}
               onChange={(e) => { void handleLogModeChange(e); }}
               className="h-5 rounded border border-input bg-background px-1 text-[10px] text-muted-foreground"
-              title="Log mode"
+              title={t`Log mode`}
             >
-              <option value="activations">Activations only</option>
-              <option value="all">All calls</option>
+              <option value="activations"><Trans>Activations only</Trans></option>
+              <option value="all"><Trans>All calls</Trans></option>
             </select>
           )}
         </div>
@@ -138,13 +140,13 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog }: Pr
       {/* FSOp-specific metadata: watched path. Type-specific because hook +
           schedule have their own per-type rows above; everyone shares the
           universal stats line below. */}
-      {t.trigger_type === 'fsop' && t.watch_path && (
+      {liveOrTrigger.trigger_type === 'fsop' && liveOrTrigger.watch_path && (
         <div className="flex items-center gap-1.5">
           <span
             className="truncate font-mono text-[10px] text-muted-foreground"
-            title={t.watch_path}
+            title={liveOrTrigger.watch_path}
           >
-            {t.watch_path}
+            {liveOrTrigger.watch_path}
           </span>
         </div>
       )}
@@ -155,15 +157,15 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog }: Pr
           show their counter and last fire. */}
       <div className="flex items-center gap-1.5">
         <Badge variant="outline" className="h-4 px-1 text-[9px] font-mono">
-          fires: {t.counter ?? 0}
+          <Trans>fires: {liveOrTrigger.counter ?? 0}</Trans>
         </Badge>
-        {t.last_triggered && (
+        {liveOrTrigger.last_triggered && (
           <span className="text-[10px] text-muted-foreground">
-            last {new Date(t.last_triggered).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            <Trans>last {new Date(liveOrTrigger.last_triggered).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</Trans>
           </span>
         )}
-        {t.enabled === false && (
-          <Badge variant="secondary" className="h-4 px-1 text-[9px]">disabled</Badge>
+        {liveOrTrigger.enabled === false && (
+          <Badge variant="secondary" className="h-4 px-1 text-[9px]"><Trans>disabled</Trans></Badge>
         )}
       </div>
     </div>

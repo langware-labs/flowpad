@@ -19,6 +19,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 import type { LearningLogArtifact, LearningLogEntry } from '../data/types';
 
@@ -54,7 +55,7 @@ export function PastAttemptsPane({
       >
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         <History className="h-3.5 w-3.5" />
-        <span className="font-medium uppercase tracking-wide">Past attempts</span>
+        <span className="font-medium uppercase tracking-wide"><Trans>Past attempts</Trans></span>
         <span className="ml-1 rounded-sm bg-muted px-1 py-px text-[10px] tabular-nums">
           {count}
         </span>
@@ -71,6 +72,7 @@ export function PastAttemptsPane({
 }
 
 function AttemptCard({ entry }: { entry: LearningLogEntry }) {
+  const { t } = useLingui();
   const [showRaw, setShowRaw] = useState(false);
   const { date, time } = formatHeading(entry.heading);
   const structured = !!(entry.issue || entry.fix);
@@ -107,7 +109,7 @@ function AttemptCard({ entry }: { entry: LearningLogEntry }) {
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
               <p>
                 <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Issue
+                  <Trans>Issue</Trans>
                 </span>
                 <br />
                 {entry.issue}
@@ -119,7 +121,7 @@ function AttemptCard({ entry }: { entry: LearningLogEntry }) {
               <Wrench className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
               <p>
                 <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Fix
+                  <Trans>Fix</Trans>
                 </span>
                 <br />
                 {entry.fix}
@@ -139,7 +141,7 @@ function AttemptCard({ entry }: { entry: LearningLogEntry }) {
           onClick={() => setShowRaw((s) => !s)}
           className="mt-2 text-[10px] text-muted-foreground hover:text-foreground"
         >
-          {showRaw ? '− hide raw' : '+ show raw'}
+          {showRaw ? t`− hide raw` : t`+ show raw`}
         </button>
       )}
       {structured && showRaw && (

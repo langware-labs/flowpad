@@ -7,6 +7,7 @@ import { useViewerStore } from '@src/hooks/flow-hooks';
 import { FileText, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
  * Docs body — renders the active file's content. The file list moved to the
@@ -14,6 +15,7 @@ import { useParams } from 'react-router';
  * (`currentContext.codeRef.path` === currentDock.pointer).
  */
 export function DocsViewer() {
+  const { t } = useLingui();
   const { processId } = useParams();
   // Guard the TypeId ctor (throws on undefined id) for processId-less docs URLs.
   const flowTypeId = useMemo(
@@ -66,12 +68,12 @@ export function DocsViewer() {
     return (
       <div className="flex h-full flex-1 flex-col bg-background">
         <div className="flex h-[52px] items-center border-b bg-muted/50 px-3">
-          <h3 className="text-sm font-medium text-muted-foreground">No Document Selected</h3>
+          <h3 className="text-sm font-medium text-muted-foreground"><Trans>No Document Selected</Trans></h3>
         </div>
         <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
           <FileText className="h-16 w-16 text-muted-foreground/50" />
-          <p className="mt-4 text-lg text-muted-foreground">Select a document</p>
-          <p className="mt-2 text-sm text-muted-foreground">Choose a document from the sidebar to view its contents</p>
+          <p className="mt-4 text-lg text-muted-foreground"><Trans>Select a document</Trans></p>
+          <p className="mt-2 text-sm text-muted-foreground"><Trans>Choose a document from the sidebar to view its contents</Trans></p>
         </div>
       </div>
     );
@@ -89,7 +91,7 @@ export function DocsViewer() {
           size="icon"
           onClick={loadFile}
           disabled={loading}
-          title="Refresh document"
+          title={t`Refresh document`}
           className="h-8 w-8"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -98,7 +100,7 @@ export function DocsViewer() {
 
       <ScrollArea className="flex-1">
         {loading ? (
-          <div className="p-8 text-center text-muted-foreground">Loading document...</div>
+          <div className="p-8 text-center text-muted-foreground"><Trans>Loading document...</Trans></div>
         ) : fileContent ? (
           <div className="p-6">
             <MarkdownView value={fileContent} />
@@ -106,7 +108,7 @@ export function DocsViewer() {
         ) : (
           <div className="p-8 text-center text-muted-foreground">
             <FileText className="mx-auto h-12 w-12 text-muted-foreground/50" />
-            <p className="mt-4">No content available</p>
+            <p className="mt-4"><Trans>No content available</Trans></p>
           </div>
         )}
       </ScrollArea>

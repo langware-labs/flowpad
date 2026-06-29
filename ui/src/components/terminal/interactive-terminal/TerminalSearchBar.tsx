@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { SearchAddon } from '@xterm/addon-search';
+import { useLingui } from '@lingui/react/macro';
 
 interface TerminalSearchBarProps {
   searchAddon: SearchAddon | null;
@@ -8,6 +9,7 @@ interface TerminalSearchBarProps {
 }
 
 export const TerminalSearchBar: React.FC<TerminalSearchBarProps> = ({ searchAddon, onClose }) => {
+  const { t } = useLingui();
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -53,13 +55,13 @@ export const TerminalSearchBar: React.FC<TerminalSearchBarProps> = ({ searchAddo
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Search terminal…"
+        placeholder={t`Search terminal…`}
         className="h-6 w-48 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
       />
       <button
         onClick={findPrevious}
         disabled={!query}
-        title="Previous match (Shift+Enter)"
+        title={t`Previous match (Shift+Enter)`}
         className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
       >
         <ChevronUp className="h-3.5 w-3.5" />
@@ -67,14 +69,14 @@ export const TerminalSearchBar: React.FC<TerminalSearchBarProps> = ({ searchAddo
       <button
         onClick={findNext}
         disabled={!query}
-        title="Next match (Enter)"
+        title={t`Next match (Enter)`}
         className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
       >
         <ChevronDown className="h-3.5 w-3.5" />
       </button>
       <button
         onClick={onClose}
-        title="Close (Escape)"
+        title={t`Close (Escape)`}
         className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
       >
         <X className="h-3.5 w-3.5" />

@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { useFloatingChat } from './FloatingChatContext';
 import { useFlowpadAssistantProject } from './useFlowpadAssistantProject';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface Bounds {
   x: number;
@@ -90,6 +91,7 @@ function loadPtyChatExperiment(): boolean {
 }
 
 export function FloatingChatWindow() {
+  const { t } = useLingui();
   const { open, closeChat, triggerRect, restoredFromStorage } = useFloatingChat();
   const { project: flowpadAssistantProject, target, isLoading } = useFlowpadAssistantProject();
   const [ptyExperiment] = useState<boolean>(() => loadPtyChatExperiment());
@@ -235,7 +237,7 @@ export function FloatingChatWindow() {
     <div
       ref={containerRef}
       role="dialog"
-      aria-label="Flowpad Assistant"
+      aria-label={t`Flowpad Assistant`}
       data-testid="floating-chat-window"
       onTransitionEnd={(e) => {
         if (e.target !== e.currentTarget) return;
@@ -288,13 +290,13 @@ export function FloatingChatWindow() {
           className="h-5 w-5 flex-shrink-0 object-contain"
         />
         <span className="flex-1 truncate text-xs font-medium">
-          Flowpad Assistant
+          <Trans>Flowpad Assistant</Trans>
           {ptyExperiment && (
             <span
               className="ml-1.5 rounded bg-amber-500/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400"
               data-testid="floating-chat-pty-experiment-badge"
             >
-              pty experiment
+              <Trans>pty experiment</Trans>
             </span>
           )}
         </span>
@@ -305,7 +307,7 @@ export function FloatingChatWindow() {
           className="h-6 w-6"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={closeChat}
-          title="Close"
+          title={t`Close`}
           data-testid="floating-chat-close"
         >
           <X className="h-3.5 w-3.5" />
@@ -318,12 +320,12 @@ export function FloatingChatWindow() {
             target={target}
             processType={ProcessKind.Chat}
             className="h-full"
-            emptyStateText="Ask the Flowpad Assistant anything."
-            newSessionLabel="New chat"
-            historyLabel="Chat history"
-            pastSessionsLabel="Past chats"
-            noPastSessionsLabel="No past chats"
-            placeholder="What can flowpad do for you ?"
+            emptyStateText={t`Ask the Flowpad Assistant anything.`}
+            newSessionLabel={t`New chat`}
+            historyLabel={t`Chat history`}
+            pastSessionsLabel={t`Past chats`}
+            noPastSessionsLabel={t`No past chats`}
+            placeholder={t`What can flowpad do for you ?`}
             dense
             // Pin newly-spawned chat processes to the Flowpad Assistant
             // project so the asset manager and workdir are sourced from
@@ -335,7 +337,7 @@ export function FloatingChatWindow() {
           />
         ) : (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">
-            {isLoading ? 'Loading Flowpad Assistant…' : 'Flowpad Assistant project not available.'}
+            {isLoading ? <Trans>Loading Flowpad Assistant…</Trans> : <Trans>Flowpad Assistant project not available.</Trans>}
           </div>
         )}
       </div>

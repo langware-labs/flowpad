@@ -4,6 +4,7 @@ import { fsManager, VFSPath } from '@sdk';
 import { SANDBOX_URL } from '@src/lib/mcp-sandbox';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { Trans } from '@lingui/react/macro';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveAppHtml } from './app-resolver';
@@ -121,9 +122,9 @@ export function AppHost() {
   if (!params) {
     return (
       <div className="h-full w-full p-8 font-mono">
-        <h2 className="mb-4 text-xl font-bold">Invalid App Path</h2>
-        <p>Expected format: /dock/apps/&lt;uname&gt;/&lt;routerPath&gt;?&lt;options&gt;</p>
-        <p className="mt-2">Received pointer: {currentDock?.pointer || 'none'}</p>
+        <h2 className="mb-4 text-xl font-bold"><Trans>Invalid App Path</Trans></h2>
+        <p><Trans>Expected format: /dock/apps/&lt;uname&gt;/&lt;routerPath&gt;?&lt;options&gt;</Trans></p>
+        <p className="mt-2"><Trans>Received pointer: {currentDock?.pointer || 'none'}</Trans></p>
       </div>
     );
   }
@@ -131,7 +132,7 @@ export function AppHost() {
   if (error) {
     return (
       <div className="h-full w-full p-8 font-mono text-red-600">
-        <h2 className="mb-4 text-xl font-bold">Error Loading App</h2>
+        <h2 className="mb-4 text-xl font-bold"><Trans>Error Loading App</Trans></h2>
         <p>{error}</p>
       </div>
     );
@@ -140,7 +141,7 @@ export function AppHost() {
   if (html === null) {
     return (
       <div className="flex h-full w-full items-center justify-center">
-        <p className="text-gray-500">Loading {params.uname}...</p>
+        <p className="text-gray-500"><Trans>Loading {params.uname}...</Trans></p>
       </div>
     );
   }

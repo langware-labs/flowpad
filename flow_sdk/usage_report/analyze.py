@@ -22,6 +22,8 @@ from flow_sdk.transcript_analyzer import (
     EntryKind,
     ToolResultEntry,
 )
+from flow_sdk.transcript_analyzer.assembly import assemble_tree
+from flow_sdk.transcript_analyzer.pricing import pricing_for
 
 # How many distinct entries to keep in each "top N" breakdown / sample list.
 _TOP_N = 8
@@ -109,6 +111,12 @@ def _parse_iso(value: Optional[str]) -> Optional[datetime]:
     return dt
 
 
+def _in_window(ts: Optional[str], start: datetime, end: datetime) -> bool:
+    """True iff ISO timestamp ``ts`` falls in ``[start, end)`` (per-event bucketing)."""
+    dt = _parse_iso(ts)
+    return dt is not None and start <= dt < end
+
+
 def _session_start(rec) -> Optional[datetime]:
     created = getattr(rec, "created_at", None)
     dt = _parse_iso(created)
@@ -156,61 +164,104 @@ def analyze_usage(start: datetime, end: datetime) -> UsageReportData:
     sample_prompts: list[str] = []
 
     for path in discover_claude_session_paths_iter():
+        # Cheap overlap pre-gate. A session contributes to this window iff some of
+        # its activity lands inside it, so we keep any session that *could* overlap
+        # and let the per-event filter below decide. Skip only sessions that
+        # provably can't: started at/after `end`, or last written before `start`.
         try:
             rec = extract_claude_session_from_path(path, include_content=False)
-            # Cheap head-only timestamp check BEFORE the expensive stats parse —
-            # a daily range admits only a small fraction of all sessions, so
-            # parsing every out-of-range session's stats would be wasted work.
-            started = _session_start(rec)
-            if started is None or not (start <= started < end):
-                continue
-            ensure_claude_session_stats(rec)
         except Exception:  # noqa: BLE001 — a single unreadable session must not abort the run
             continue
+        started = _session_start(rec)
+        if started is not None and started >= end:
+            continue
+        try:
+            last_activity = datetime.fromtimestamp(Path(path).stat().st_mtime, tz=timezone.utc)
+        except OSError:
+            last_activity = None
+        if last_activity is not None and last_activity < start:
+            continue
 
-        cost = float(getattr(rec, "estimated_cost_usd", 0.0) or 0.0)
-        in_tok = int(getattr(rec, "input_tokens", 0) or 0)
-        out_tok = int(getattr(rec, "output_tokens", 0) or 0)
-        cache_read = int(getattr(rec, "cache_read_input_tokens", 0) or 0)
-        cache_creation = int(getattr(rec, "cache_creation_input_tokens", 0) or 0)
-        duration = int(getattr(rec, "duration_ms", 0) or 0)
-        sess_tokens = in_tok + out_tok + cache_read + cache_creation
-
-        skills: list[str] = []
-        agents: list[str] = []
-        prompt_count = 0
-        tool_failures = 0
+        # Single source of truth for cost + tokens: the transcript analyzer.
+        # `usage_deep()` is deduped by message id (Claude rewrites each assistant
+        # message 2-3× in the JSONL) and split per cache tier; we then bucket each
+        # entry by its OWN timestamp so a multi-day session lands on the right day
+        # — matching ccusage's per-event day accounting. The headline
+        # `_estimate_cost` estimator (no dedup, flat 5m cache) is never used here.
         try:
             transcript = AgentTranscriptFile("claude", Path(path))
-            # One pass for skill/agent/tool/error tallies (each .filter() would
-            # otherwise re-walk the whole entry list).
-            for e in transcript.entries:
-                kind = e.kind
-                if kind is EntryKind.SKILL_CALL:
-                    skills.append(e.skill_name)
-                    skill_counter[e.skill_name] += 1
-                elif kind is EntryKind.AGENT_SPAWN:
-                    agents.append(e.agent_type)
-                    agent_counter[e.agent_type] += 1
-                elif kind is EntryKind.TOOL_USE:
-                    if getattr(e, "tool_name", None):
-                        tool_counter[e.tool_name] += 1
-                elif isinstance(e, ToolResultEntry) and e.is_error:
-                    tool_failures += 1
-            # `.prompts` applies the canonical sidechain/synthetic/empty filter.
-            prompts = transcript.prompts
-            prompt_count = len(prompts)
-            for p in prompts:
-                if len(sample_prompts) < _SAMPLE_PROMPTS and p.text:
-                    sample_prompts.append(p.text.strip()[:_PROMPT_PREVIEW_CHARS])
+            # Stitch sub-agent transcripts (`<sid>/subagents/agent-*.jsonl`) onto
+            # their spawn so `usage_deep()` includes them. They live in a subdir
+            # the session glob never sees, and hold all Explore/Haiku + sub-agent
+            # cost — without this the day total is short by every sub-agent token.
+            try:
+                assemble_tree(transcript)
+            except Exception:  # noqa: BLE001 — assembly is best-effort
+                pass
+            usage_in = [e for e in transcript.usage_deep() if _in_window(e.timestamp, start, end)]
+            prompts_in = [p for p in transcript.prompts if _in_window(p.timestamp, start, end)]
+            entries_in = [e for e in transcript.entries if _in_window(e.timestamp, start, end)]
         except Exception:  # noqa: BLE001 — transcript parse is best-effort
-            pass
+            continue
 
-        models = getattr(rec, "models_used", None) or []
-        if models:
-            share = cost / len(models)
-            for m in models:
-                model_cost[str(m)] += share
+        if not usage_in and not prompts_in:
+            continue  # nothing inside the window
+
+        # One pass over the (deduped, in-window) usage entries → total cost,
+        # per-model cost, and the per-cache-tier token split. Cost is resolved
+        # per entry by model + cache tier via the analyzer's price tables, never
+        # the headline `_estimate_cost` estimator (no dedup, flat 5m cache, no
+        # sub-agents). "<synthetic>" / other non-model markers carry ~no usage,
+        # so we drop them from the per-model breakdown (the old uniform split
+        # mis-attributed ~a quarter of the total to them).
+        cost = 0.0
+        in_tok = out_tok = cache_read = cache_creation = 0
+        for e in usage_in:
+            entry_cost = pricing_for(e.model, "claude").cost_of(e)
+            cost += entry_cost
+            model = str(e.model or "")
+            if model and not model.startswith("<"):
+                model_cost[model] += entry_cost
+            if e.io == "output":
+                out_tok += e.count
+            elif e.io == "input":
+                if e.cache == "none":
+                    in_tok += e.count
+                elif e.cache == "read":
+                    cache_read += e.count
+                elif e.cache == "write":
+                    cache_creation += e.count
+        sess_tokens = in_tok + out_tok + cache_read + cache_creation
+
+        # Activity tallies — in-window entries only.
+        skills: list[str] = []
+        agents: list[str] = []
+        tool_failures = 0
+        for e in entries_in:
+            kind = e.kind
+            if kind is EntryKind.SKILL_CALL:
+                skills.append(e.skill_name)
+                skill_counter[e.skill_name] += 1
+            elif kind is EntryKind.AGENT_SPAWN:
+                agents.append(e.agent_type)
+                agent_counter[e.agent_type] += 1
+            elif kind is EntryKind.TOOL_USE:
+                if getattr(e, "tool_name", None):
+                    tool_counter[e.tool_name] += 1
+            elif isinstance(e, ToolResultEntry) and e.is_error:
+                tool_failures += 1
+
+        prompt_count = len(prompts_in)
+        for p in prompts_in:
+            if len(sample_prompts) < _SAMPLE_PROMPTS and p.text:
+                sample_prompts.append(p.text.strip()[:_PROMPT_PREVIEW_CHARS])
+
+        # Duration is a soft whole-session metric (not splittable per message).
+        try:
+            ensure_claude_session_stats(rec)
+        except Exception:  # noqa: BLE001
+            pass
+        duration = int(getattr(rec, "duration_ms", 0) or 0)
 
         cwd = str(getattr(rec, "cwd", "") or "")
         row = SessionRow(
@@ -218,7 +269,7 @@ def analyze_usage(start: datetime, end: datetime) -> UsageReportData:
             title=str(getattr(rec, "name", "") or ""),
             cwd=cwd,
             project=Path(cwd).name if cwd else "",
-            start=started.isoformat(),
+            start=started.isoformat() if started else None,
             duration_ms=duration,
             cost_usd=round(cost, 4),
             total_tokens=sess_tokens,

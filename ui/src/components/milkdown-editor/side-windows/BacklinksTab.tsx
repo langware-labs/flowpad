@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { APIEntity, TypeId } from '@sdk';
 import type { WikiLink } from '@sdk/types/wiki';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
@@ -11,6 +12,7 @@ interface BacklinksTabProps {
 }
 
 export function BacklinksTab({ target }: BacklinksTabProps) {
+  const { t } = useLingui();
   const typeId = useMemo(() => {
     if (!target) return null;
     try {
@@ -75,7 +77,7 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
   if (!target) {
     return (
       <Empty data-testid="md-backlinks-panel">
-        No source for backlinks (this doc has no entity).
+        <Trans>No source for backlinks (this doc has no entity).</Trans>
       </Empty>
     );
   }
@@ -83,19 +85,19 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
     return (
       <Empty data-testid="md-backlinks-panel">
         <RefreshCw className="mr-1 inline h-3 w-3 animate-spin" />
-        Loading backlinks…
+        <Trans>Loading backlinks…</Trans>
       </Empty>
     );
   }
   if (error) {
     return (
       <Empty data-testid="md-backlinks-panel">
-        Failed to load backlinks: {error}
+        <Trans>Failed to load backlinks: {error}</Trans>
       </Empty>
     );
   }
   if (!links || links.length === 0) {
-    return <Empty data-testid="md-backlinks-panel">No backlinks yet.</Empty>;
+    return <Empty data-testid="md-backlinks-panel"><Trans>No backlinks yet.</Trans></Empty>;
   }
 
   return (
@@ -108,7 +110,7 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
         <button
           onClick={refresh}
           className="rounded px-1 hover:bg-muted"
-          title="Refresh"
+          title={t`Refresh`}
           data-testid="md-backlinks-refresh"
         >
           <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} />
@@ -124,7 +126,7 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
             <span className="truncate font-mono text-[10px] text-muted-foreground">
               {link.src_type}
             </span>
-            <span className="text-[10px] text-muted-foreground">line {link.line}</span>
+            <span className="text-[10px] text-muted-foreground"><Trans>line {link.line}</Trans></span>
           </div>
           <div className="truncate" title={link.src_id}>{link.src_id}</div>
           {link.raw && (

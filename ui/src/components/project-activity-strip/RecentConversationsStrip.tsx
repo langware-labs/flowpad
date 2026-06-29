@@ -28,6 +28,7 @@ import { CheckCheck, EyeOff, MailPlus, MessageSquare, Plus, RefreshCw, Upload } 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { formatTimeAgo } from './project-activity-utils';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const VISIBLE_COUNT = 5;
 
@@ -70,6 +71,7 @@ interface RecentConversationsStripProps {
 }
 
 export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: RecentConversationsStripProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
   const isAdvanced = useIsAdvanced();
@@ -242,7 +244,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium">Inbox</span>
+          <span className="text-xs font-medium"><Trans>Inbox</Trans></span>
           {visibleCountActual > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
               {visibleCountActual}
@@ -265,7 +267,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
                 type="button"
                 className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 onClick={() => fileInputRef.current?.click()}
-                title="Upload message"
+                title={t`Upload message`}
                 data-testid="upload-message-button"
               >
                 <Upload className="h-3.5 w-3.5" />
@@ -275,7 +277,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
                 className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
                 onClick={() => void handleDismissAll()}
                 disabled={dismissingAll || visibleCountActual === 0}
-                title="Dismiss all notifications"
+                title={t`Dismiss all notifications`}
                 data-testid="dismiss-all-notifications-button"
               >
                 <CheckCheck className="h-3.5 w-3.5" />
@@ -286,7 +288,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             onClick={() => void handleRefresh()}
-            title="Refresh (pulls from hub)"
+            title={t`Refresh (pulls from hub)`}
             data-testid="refresh-conversations-button"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isLoading || hubSyncing ? 'animate-spin' : ''}`} />
@@ -297,7 +299,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       {uploadError && <p className="px-3 pb-2 text-xs text-destructive">{uploadError}</p>}
       {uploadConflicts && (
         <div className="mx-3 mb-2 space-y-1 rounded-md border border-border bg-muted/40 p-2 text-xs">
-          <p className="font-medium text-foreground">Entities already exist:</p>
+          <p className="font-medium text-foreground"><Trans>Entities already exist:</Trans></p>
           <p className="text-muted-foreground">{uploadConflicts.map((c) => `${c.type}:${c.id}`).join(', ')}</p>
           <div className="flex gap-1.5 pt-0.5">
             <button
@@ -305,14 +307,14 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
               onClick={() => void handleOverwrite()}
               className="rounded bg-destructive px-2 py-1 text-xs font-medium text-destructive-foreground hover:bg-destructive/90"
             >
-              Overwrite
+              <Trans>Overwrite</Trans>
             </button>
             <button
               type="button"
               onClick={() => { setPendingFile(null); setUploadConflicts(null); }}
               className="rounded border border-border px-2 py-1 text-xs font-medium hover:bg-muted"
             >
-              Cancel
+              <Trans>Cancel</Trans>
             </button>
           </div>
         </div>
@@ -320,7 +322,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
 
       <div className="pb-1">
         {visibleCountActual === 0 ? (
-          <div className="px-3 pb-3 text-xs text-muted-foreground">No conversations</div>
+          <div className="px-3 pb-3 text-xs text-muted-foreground"><Trans>No conversations</Trans></div>
         ) : (
           visible.map((conv) => (
             <ConversationRow
@@ -346,7 +348,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
           data-testid="new-conversation-footer-button"
         >
           <Plus className="h-3.5 w-3.5" />
-          New
+          <Trans>New</Trans>
         </button>
         {visibleCountActual > 0 && (
           <button
@@ -356,7 +358,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
             data-testid="open-all-conversations"
           >
             <MessageSquare className="h-3.5 w-3.5" />
-            All{hasMore ? ` (${visibleCountActual})` : ''}
+            <Trans>All</Trans>{hasMore ? ` (${visibleCountActual})` : ''}
           </button>
         )}
       </div>
@@ -390,6 +392,7 @@ function ConversationRow({
   onDismiss,
   onHiddenChange,
 }: ConversationRowProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { cloudUser, currentUser } = useAuth();
   const projectTypeId = useMemo(
@@ -478,8 +481,8 @@ function ConversationRow({
   // chip below. Mirrors the inbox row fix.
   const derivedTitle = deriveConversationTitle(conv);
   const title = isInvitationRow
-    ? 'Invitation'
-    : (isTypeId(derivedTitle) ? 'Conversation' : derivedTitle);
+    ? t`Invitation`
+    : (isTypeId(derivedTitle) ? t`Conversation` : derivedTitle);
   const taskFirstWord = taskTitle ? taskTitle.split(/\s+/)[0] : null;
   // Preview text: an invitation preview's body is often just the raw
   // ``conversation-<uuid>`` typeid — never surface that; use a friendly
@@ -488,8 +491,8 @@ function ConversationRow({
     ? firstMessage?.text?.trim()
     : latestMessage?.text?.trim().split('\n').find((l) => l.trim());
   const previewText = isTypeId(rawPreview)
-    ? (isInvitationRow ? 'You’ve been invited to a conversation' : null)
-    : (rawPreview || (isInvitationRow ? 'You’ve been invited to a conversation' : null));
+    ? (isInvitationRow ? t`You've been invited to a conversation` : null)
+    : (rawPreview || (isInvitationRow ? t`You've been invited to a conversation` : null));
   // Row label. A pending invitation shows "from <sender>" so the recipient
   // sees who invited them. An accepted / ongoing conversation instead lists
   // the participants ("Alice, bob@local.test"). Both are carried by the
@@ -530,7 +533,7 @@ function ConversationRow({
         <div className="flex items-start justify-between gap-1.5">
           <span className="flex items-center gap-1 truncate text-xs font-medium" data-testid="conversation-from">
             {isInvitationRow && (
-              <MailPlus className="h-3 w-3 flex-shrink-0 text-violet-500" aria-label="invitation" />
+              <MailPlus className="h-3 w-3 flex-shrink-0 text-violet-500" aria-label={t`invitation`} />
             )}
             <span className="truncate">{fromName ?? title}</span>
           </span>
@@ -591,7 +594,7 @@ function ConversationRow({
             className="rounded bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             data-testid="accept-invitation-button"
           >
-            {acceptingId === invitationId ? 'Accepting…' : 'Accept'}
+            {acceptingId === invitationId ? t`Accepting…` : t`Accept`}
           </button>
         )}
         {conv.id && (
@@ -600,8 +603,8 @@ function ConversationRow({
             onClick={() => onDismiss(conv.id!)}
             disabled={dismissingId === conv.id}
             className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 disabled:opacity-40"
-            title="Hide from Recent — still visible in Inbox; reappears when a new message arrives"
-            aria-label="Hide from Recent conversations"
+            title={t`Hide from Recent — still visible in Inbox; reappears when a new message arrives`}
+            aria-label={t`Hide from Recent conversations`}
             data-testid="dismiss-conversation-button"
           >
             <EyeOff className="h-3 w-3" />

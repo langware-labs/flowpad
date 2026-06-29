@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
@@ -43,6 +44,7 @@ export function DiagnosisActionButtons({
   onForward,
   trailing,
 }: DiagnosisActionButtonsProps) {
+  const { t } = useLingui();
   const [forwardOpen, setForwardOpen] = useState(false);
   // Forward target list: most recent conversations, fetched only while open. The
   // suggested support conversation is excluded — "Report issue" already targets it.
@@ -64,8 +66,8 @@ export function DiagnosisActionButtons({
         {showDismiss && (
           <button
             type="button"
-            aria-label="Dismiss"
-            title="Dismiss"
+            aria-label={t`Dismiss`}
+            title={t`Dismiss`}
             disabled={busy}
             onClick={onDismiss}
             className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
@@ -80,7 +82,7 @@ export function DiagnosisActionButtons({
           onClick={onReportIssue}
           className="h-6 px-2 text-xs"
         >
-          Report issue
+          <Trans>Report issue</Trans>
         </Button>
         <Button
           type="button"
@@ -93,7 +95,7 @@ export function DiagnosisActionButtons({
           data-testid="feed-forward-toggle"
         >
           <Forward className="h-3.5 w-3.5" />
-          Forward
+          <Trans>Forward</Trans>
         </Button>
         {trailing && <div className="ml-auto flex items-center">{trailing}</div>}
       </div>
@@ -105,7 +107,7 @@ export function DiagnosisActionButtons({
           data-testid="feed-forward-conversations"
         >
           {conversations.length === 0 ? (
-            <li className="px-2 py-1 text-xs text-muted-foreground">No conversations yet.</li>
+            <li className="px-2 py-1 text-xs text-muted-foreground"><Trans>No conversations yet.</Trans></li>
           ) : (
             conversations.map((conv) => (
               <li key={conv.id}>

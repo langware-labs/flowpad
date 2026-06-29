@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
   Conversation,
@@ -311,7 +312,7 @@ export function ConversationContextPanel({
   if (orderedMessages.length === 0) {
     return (
       <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
-        No messages yet — context will appear here as they arrive.
+        <Trans>No messages yet — context will appear here as they arrive.</Trans>
       </div>
     );
   }
@@ -376,6 +377,7 @@ function SharedContextSection({
   onDownloadEntity,
   projectId,
 }: SharedContextSectionProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
 
@@ -395,9 +397,9 @@ function SharedContextSection({
 
   return (
     <div>
-      <SectionHeader title="Shared Context" icon={Users} />
+      <SectionHeader title={t`Shared Context`} icon={Users} />
       {isEmpty ? (
-        <EmptyHint text="Nothing shared in this conversation." />
+        <EmptyHint text={t`Nothing shared in this conversation.`} />
       ) : (
         <ContextTable>
           {sharedEntities.map((entry) => {
@@ -494,6 +496,7 @@ function SharedEntityRow({
   needsDownload,
   onDownload,
 }: SharedEntityRowProps) {
+  const { t } = useLingui();
   const { data: entity } = useEntity(typeId);
   const name = entity?.displayName ?? typeId.id;
   const assetRef = (entity as unknown as { asset_ref?: string | null })?.asset_ref ?? undefined;
@@ -501,7 +504,7 @@ function SharedEntityRow({
   // Spec rows say "View" (they open in the Milkdown editor — see
   // DockPointer.forSpec → /dock/spec/<id>); everything else stays "Open".
   const isSpec = typeId.type === Spec.type;
-  const primaryLabel = isSpec ? 'View' : 'Open';
+  const primaryLabel = isSpec ? t`View` : t`Open`;
   const primaryIcon = isSpec ? <Eye className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />;
   return (
     <Row
@@ -548,6 +551,7 @@ function TranscriptRow({
   isHighlighted,
   onSelect,
 }: TranscriptRowProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   // ``attachment.local_path`` is synthesized at serialization time by
   // ``flow_message.py::_serialize_with_local_paths`` from the local backend's
@@ -577,18 +581,18 @@ function TranscriptRow({
   return (
     <Row
       icon={ICON_BY_TYPE.conversation ?? ExternalLink}
-      type="Transcript"
+      type={t`Transcript`}
       name={dataStr.split('/').pop() || dataStr || '(unknown)'}
       isHighlighted={isHighlighted}
       onFocus={onSelect}
-      focusTitle="Reveal the message that produced this transcript"
+      focusTitle={t`Reveal the message that produced this transcript`}
     >
       <RowAction
         onClick={handleView}
-        title={localPath ? 'Open in the transcript viewer' : 'Open the raw JSONL in a new tab'}
+        title={localPath ? t`Open in the transcript viewer` : t`Open the raw JSONL in a new tab`}
       >
         <Eye className="h-3 w-3" />
-        View
+        <Trans>View</Trans>
       </RowAction>
     </Row>
   );
@@ -610,6 +614,7 @@ function AttachmentRow({
   isHighlighted,
   onSelect,
 }: AttachmentRowProps) {
+  const { t } = useLingui();
   // Same URL helper FlowMessageBubble uses to render its inline chips
   // (FlowMessageBubble.tsx:131) — points at the backend endpoint that streams
   // bytes from the FlowMessage's embedded VFS.
@@ -624,7 +629,7 @@ function AttachmentRow({
   // file dock pointer), mirroring the message bubble's file chip.
   const localPath = attachment.local_path ?? null;
   const filename = dataStr.split('/').pop() || dataStr || '(unknown)';
-  const typeLabel = kind === 'prompt-file' ? 'Prompt file' : 'File';
+  const typeLabel = kind === 'prompt-file' ? t`Prompt file` : t`File`;
 
   return (
     <Row
@@ -633,7 +638,7 @@ function AttachmentRow({
       name={filename}
       isHighlighted={isHighlighted}
       onFocus={onSelect}
-      focusTitle="Reveal the message this file is attached to"
+      focusTitle={t`Reveal the message this file is attached to`}
     >
       {localPath && (
         <>
@@ -642,14 +647,14 @@ function AttachmentRow({
             title={`Open ${filename} in the editor`}
           >
             <ExternalLink className="h-3 w-3" />
-            Open
+            <Trans>Open</Trans>
           </RowAction>
           <RowAction
             onClick={() => void openExternalFromComputeNode('@local', localPath, { select: true })}
             title={`Reveal ${filename} in the file manager`}
           >
             <FolderOpen className="h-3 w-3" />
-            Reveal
+            <Trans>Reveal</Trans>
           </RowAction>
         </>
       )}
@@ -659,7 +664,7 @@ function AttachmentRow({
           title={`Download ${filename}`}
         >
           <Download className="h-3 w-3" />
-          Download
+          <Trans>Download</Trans>
         </RowAction>
       )}
     </Row>
@@ -708,6 +713,7 @@ function PrivateContextSection({
   onStartAssistance,
   starting,
 }: PrivateContextSectionProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
   const [adding, setAdding] = useState(false);
@@ -752,11 +758,11 @@ function PrivateContextSection({
           console.error('[PrivateContext] linking spec to conversation failed', convErr);
         }
       }
-      notify.success({ title: 'Spec created' });
+      notify.success({ title: t`Spec created` });
       if (spec.id) navigation.openDock(DockPointer.forSpec(spec.id));
     } catch (err) {
       console.error('[PrivateContext] add-spec failed', err);
-      notify.error({ title: 'Failed to create spec' });
+      notify.error({ title: t`Failed to create spec` });
     } finally {
       setAdding(false);
     }
@@ -778,13 +784,13 @@ function PrivateContextSection({
       const skill = new Skill({ name, shared_context_entities: [fmTypeIdString] } as Partial<Skill>);
       const scopeIds = projectTypeId ? [projectTypeId] : [];
       await skill.save(scopeIds);
-      notify.success({ title: 'Skill created' });
+      notify.success({ title: t`Skill created` });
       if (skill.asset_ref) {
         navigation.openDock(DockPointer.forAssetEditor('skill', skill.asset_ref));
       }
     } catch (err) {
       console.error('[PrivateContext] add-skill failed', err);
-      notify.error({ title: 'Failed to create skill' });
+      notify.error({ title: t`Failed to create skill` });
     } finally {
       setAdding(false);
     }
@@ -853,9 +859,9 @@ function PrivateContextSection({
 
   return (
     <div>
-      <SectionHeader title="Private Context" icon={Lock} />
+      <SectionHeader title={t`Private Context`} icon={Lock} />
       {isEmpty ? (
-        <EmptyHint text="Nothing here yet — use the + below to add one." />
+        <EmptyHint text={t`Nothing here yet — use the + below to add one.`} />
       ) : (
         <ContextTable>
           {projectTypeId && (
@@ -950,12 +956,12 @@ function PrivateContextSection({
             type="button"
             onClick={() => setMenuOpen((v) => !v)}
             disabled={adding || starting}
-            title="Add to Private Context"
+            title={t`Add to Private Context`}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 py-2 text-[11px] font-medium text-muted-foreground transition-colors hover:border-emerald-500/50 hover:bg-emerald-500/5 hover:text-emerald-700 disabled:opacity-50 dark:hover:text-emerald-300"
             data-testid="private-context-add"
           >
             <Plus className="h-3.5 w-3.5" />
-            Add
+            <Trans>Add</Trans>
           </button>
           {menuOpen && (
             <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md">
@@ -979,7 +985,7 @@ function PrivateContextSection({
                     const Icon = ICON_BY_TYPE.spec;
                     return <Icon className="h-3 w-3 text-muted-foreground" />;
                   })()}
-                Spec
+                <Trans>Spec</Trans>
               </button>
               <button
                 type="button"
@@ -993,7 +999,7 @@ function PrivateContextSection({
                     const Icon = ICON_BY_TYPE.skill;
                     return <Icon className="h-3 w-3 text-muted-foreground" />;
                   })()}
-                Skill
+                <Trans>Skill</Trans>
               </button>
             </div>
           )}
@@ -1006,14 +1012,15 @@ function PrivateContextSection({
 /** Project row pinned at the top of Private Context — Open jumps to the
  *  project's primary dock, mirroring the EntityChip behaviour. */
 function ProjectRow({ typeId, onOpen }: { typeId: TypeId; onOpen: () => void }) {
+  const { t } = useLingui();
   const { data: entity } = useEntity(typeId);
   const name = entity?.displayName ?? typeId.id;
   const Icon = ICON_BY_TYPE.project ?? ExternalLink;
   return (
-    <Row icon={Icon} type="Project" name={name}>
+    <Row icon={Icon} type={t`Project`} name={name}>
       <RowAction onClick={onOpen} title={`Open Project: ${name}`}>
         <ExternalLink className="h-3 w-3" />
-        Open
+        <Trans>Open</Trans>
       </RowAction>
     </Row>
   );
@@ -1034,27 +1041,28 @@ function PrivateTaskRow({
   onView: () => void;
   onEdit: () => void;
 }) {
+  const { t } = useLingui();
   const Icon = ICON_BY_TYPE.task ?? ExternalLink;
   return (
     <Row
       icon={Icon}
-      type="Task"
+      type={t`Task`}
       name={task.displayName ?? task.id ?? '(unnamed)'}
       isHighlighted={isHighlighted}
       onFocus={onSelect}
       focusTitle={
         originMessageIds.length > 1
           ? `Light up the ${originMessageIds.length} messages this task is linked to`
-          : 'Reveal the message this task was derived from'
+          : t`Reveal the message this task was derived from`
       }
     >
       <RowAction onClick={onEdit} title={`Edit Task: ${task.displayName ?? ''}`}>
         <Pencil className="h-3 w-3" />
-        Edit
+        <Trans>Edit</Trans>
       </RowAction>
       <RowAction onClick={onView} title={`View Task: ${task.displayName ?? ''}`}>
         <Eye className="h-3 w-3" />
-        View
+        <Trans>View</Trans>
       </RowAction>
     </Row>
   );
@@ -1078,32 +1086,33 @@ function PrivateProcessRow({
   /** Live PTY terminal. */
   onOpen: () => void;
 }) {
+  const { t } = useLingui();
   const Icon = ICON_BY_TYPE.agentic_process ?? ExternalLink;
   const hasSession = !!process.session_id;
   return (
     <Row
       icon={Icon}
-      type="Session"
+      type={t`Session`}
       name={process.displayName ?? process.id ?? '(running)'}
       isHighlighted={isHighlighted}
       onFocus={onSelect}
       focusTitle={
         originMessageIds.length > 1
           ? `Light up the ${originMessageIds.length} messages this session is linked to`
-          : 'Reveal the message this session was started from'
+          : t`Reveal the message this session was started from`
       }
     >
       <RowAction
         onClick={onView}
         disabled={!hasSession}
-        title={hasSession ? 'View the session transcript' : 'No transcript yet — the worker has not produced one'}
+        title={hasSession ? t`View the session transcript` : t`No transcript yet — the worker has not produced one`}
       >
         <Eye className="h-3 w-3" />
-        View
+        <Trans>View</Trans>
       </RowAction>
-      <RowAction onClick={onOpen} title="Open the live session in a terminal">
+      <RowAction onClick={onOpen} title={t`Open the live session in a terminal`}>
         <ExternalLink className="h-3 w-3" />
-        Open session
+        <Trans>Open session</Trans>
       </RowAction>
     </Row>
   );
@@ -1131,24 +1140,25 @@ function PrivateDerivationRow({
   onSelect?: () => void;
   onOpenTask: () => void;
 }) {
+  const { t } = useLingui();
   const Icon = ICON_BY_TYPE.task ?? ExternalLink;
   const status = process.status;
   const ready = status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED;
   const name =
     linkedTask?.displayName ??
     linkedTask?.id ??
-    (process.displayName ? `Deriving task… (${process.displayName})` : 'Deriving task…');
+    (process.displayName ? `Deriving task… (${process.displayName})` : t`Deriving task…`);
   return (
     <Row
       icon={Icon}
-      type="Task"
+      type={t`Task`}
       name={name}
       isHighlighted={isHighlighted}
       onFocus={onSelect}
       focusTitle={
         originMessageIds.length > 1
           ? `Light up the ${originMessageIds.length} messages this task is linked to`
-          : 'Reveal the message this task was derived from'
+          : t`Reveal the message this task was derived from`
       }
     >
       <RowAction
@@ -1157,11 +1167,11 @@ function PrivateDerivationRow({
         title={
           ready
             ? `Open Task: ${linkedTask?.displayName ?? ''}`
-            : 'Deriving with Claude…'
+            : t`Deriving with Claude…`
         }
       >
         <ExternalLink className="h-3 w-3" />
-        Open
+        <Trans>Open</Trans>
       </RowAction>
     </Row>
   );

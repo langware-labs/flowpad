@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@src/components/ui/select';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ProcessStatusLine } from '@src/components/agentic-progress/shared/process-status-line';
 import { processStatusConfig, workerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
 import { getOneLiner } from '@src/components/hooks/event-utils';
@@ -54,6 +55,7 @@ function capabilityIcon(name: string | null | undefined): LucideIcon {
  * hidden for untyped rows.
  */
 function CapabilityValueLine({ access }: { access: CapabilityAccess }) {
+  const { t } = useLingui();
   if (!access.value_type) return null;
   const value = access.value;
   const path = value && typeof value === 'object' ? (value as { path?: unknown }).path : null;
@@ -62,7 +64,7 @@ function CapabilityValueLine({ access }: { access: CapabilityAccess }) {
     <div
       className="mt-1 truncate font-mono text-[11px] text-muted-foreground"
       data-testid="capability-value"
-      title={text ?? 'No value discovered'}
+      title={text ?? t`No value discovered`}
     >
       {text ?? '—'}
     </div>
@@ -74,7 +76,7 @@ function StatusBadge({ access, loading }: { access: CapabilityAccess; loading: b
     return (
       <Badge variant="secondary" className="gap-1.5">
         <Loader2 className="h-3 w-3 animate-spin" />
-        Checking
+        <Trans>Checking</Trans>
       </Badge>
     );
   }
@@ -82,7 +84,7 @@ function StatusBadge({ access, loading }: { access: CapabilityAccess; loading: b
     return (
       <Badge variant="outline" className="gap-1.5 text-muted-foreground" title={access.message}>
         <CircleHelp className="h-3 w-3" />
-        Not runnable here
+        <Trans>Not runnable here</Trans>
       </Badge>
     );
   }
@@ -90,7 +92,7 @@ function StatusBadge({ access, loading }: { access: CapabilityAccess; loading: b
     return (
       <Badge className="gap-1.5 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
         <BadgeCheck className="h-3 w-3" />
-        Available
+        <Trans>Available</Trans>
       </Badge>
     );
   }
@@ -98,14 +100,14 @@ function StatusBadge({ access, loading }: { access: CapabilityAccess; loading: b
     return (
       <Badge variant="outline" className="gap-1.5 text-muted-foreground">
         <CircleHelp className="h-3 w-3" />
-        Not checked
+        <Trans>Not checked</Trans>
       </Badge>
     );
   }
   return (
     <Badge variant="outline" className="gap-1.5 border-destructive/30 text-destructive">
       <XCircle className="h-3 w-3" />
-      Unavailable
+      <Trans>Unavailable</Trans>
     </Badge>
   );
 }
@@ -113,7 +115,7 @@ function StatusBadge({ access, loading }: { access: CapabilityAccess; loading: b
 /** Dependency chips, colored by the dependency's RESOLVED availability. */
 function DependencyChips({ dependencies }: { dependencies: CapabilityDependency[] }) {
   if (dependencies.length === 0) {
-    return <span className="text-xs text-muted-foreground">None</span>;
+    return <span className="text-xs text-muted-foreground"><Trans>None</Trans></span>;
   }
   return (
     <div className="flex flex-wrap gap-1">
@@ -151,6 +153,7 @@ function ReferenceTargetSelect({
   disabled: boolean;
   onChanged: () => Promise<unknown>;
 }) {
+  const { t } = useLingui();
   const options = siblings.filter((s) => s.kind !== access.kind && s.reference_kind === null);
   const onChange = async (kind: string) => {
     await capabilityManager.setReferenceKind(access.kind, kind);
@@ -159,7 +162,7 @@ function ReferenceTargetSelect({
   return (
     <Select value={access.reference_kind ?? undefined} onValueChange={(v) => void onChange(v)} disabled={disabled}>
       <SelectTrigger className="h-7 w-[200px] text-xs" data-testid="reference-target-select">
-        <SelectValue placeholder="Select capability…" />
+        <SelectValue placeholder={t`Select capability…`} />
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
@@ -301,7 +304,7 @@ function CapabilityAccessRow({
           <RowProcess processId={access.last_process_id} />
         ) : (
           <div className="truncate text-xs text-muted-foreground/70" title={access.message}>
-            {access.message || 'No run'}
+            {access.message || <Trans>No run</Trans>}
           </div>
         )}
       </div>
@@ -315,7 +318,7 @@ function CapabilityAccessRow({
                   <RefreshCw className={cn('h-3.5 w-3.5', busy && 'animate-spin')} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Refresh status</TooltipContent>
+              <TooltipContent><Trans>Refresh status</Trans></TooltipContent>
             </Tooltip>
             {access.installable && (
               <Tooltip>
@@ -324,7 +327,7 @@ function CapabilityAccessRow({
                     <Download className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Set up (runs an agentic process)</TooltipContent>
+                <TooltipContent><Trans>Set up (runs an agentic process)</Trans></TooltipContent>
               </Tooltip>
             )}
             {access.last_process_id && (
@@ -332,7 +335,7 @@ function CapabilityAccessRow({
                 <TooltipTrigger asChild>
                   <OpenProcessButton processId={access.last_process_id} />
                 </TooltipTrigger>
-                <TooltipContent>Open process</TooltipContent>
+                <TooltipContent><Trans>Open process</Trans></TooltipContent>
               </Tooltip>
             )}
           </div>
@@ -390,11 +393,11 @@ function IntentSection({
         {intent.available ? (
           <Badge className="gap-1.5 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
             <BadgeCheck className="h-3 w-3" />
-            Available
+            <Trans>Available</Trans>
           </Badge>
         ) : (
           <Badge variant="outline" className="text-muted-foreground">
-            Not available
+            <Trans>Not available</Trans>
           </Badge>
         )}
       </button>
@@ -416,6 +419,7 @@ function IntentSection({
 
 /** "I want …" — resolve a plain-language request to a setup agent. */
 function IntentInstaller({ onLaunched }: { onLaunched: () => Promise<unknown> }) {
+  const { t } = useLingui();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const submit = useCallback(async () => {
@@ -440,13 +444,13 @@ function IntentInstaller({ onLaunched }: { onLaunched: () => Promise<unknown> })
         onKeyDown={(e) => {
           if (e.key === 'Enter') void submit();
         }}
-        placeholder="I want…  (e.g. email, slack, calendar)"
+        placeholder={t`I want…  (e.g. email, slack, calendar)`}
         className="h-8 max-w-md text-sm"
         data-testid="capability-intent-input"
         disabled={busy}
       />
       <Button size="sm" className="h-8" disabled={busy || !text.trim()} onClick={() => void submit()}>
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Set up'}
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Set up</Trans>}
       </Button>
     </div>
   );
@@ -475,11 +479,11 @@ export function CapabilitiesView() {
       <div className="flex h-[52px] shrink-0 items-center justify-between border-b px-4">
         <div className="flex min-w-0 items-center gap-2">
           <BadgeCheck className="h-4 w-4 text-muted-foreground" />
-          <div className="truncate text-sm font-medium">Capabilities</div>
+          <div className="truncate text-sm font-medium"><Trans>Capabilities</Trans></div>
         </div>
         <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => void refresh()}>
           <RefreshCw className="h-3.5 w-3.5" />
-          Refresh
+          <Trans>Refresh</Trans>
         </Button>
       </div>
 
@@ -490,7 +494,7 @@ export function CapabilitiesView() {
           {intents.length === 0 ? (
             <div className="flex items-center gap-2 px-1 py-8 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading capabilities…
+              <Trans>Loading capabilities…</Trans>
             </div>
           ) : (
             intents.map((intent) => (

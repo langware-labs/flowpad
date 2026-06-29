@@ -6,6 +6,7 @@ import { editor } from 'monaco-editor';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createHighlighter, Highlighter } from 'shiki';
+import { Trans } from '@lingui/react/macro';
 
 let shikiHighlighter: Highlighter | null = null;
 let themeLoadingPromise: Promise<void> | null = null;
@@ -151,13 +152,13 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
           <div className="grid grid-cols-2 border-b bg-muted/40">
             <div className="flex items-center gap-1.5 border-r px-4 py-1.5">
               <GitBranch className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">HEAD</span>
-              <span className="ml-1 text-xs text-muted-foreground/60">— before</span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide"><Trans>HEAD</Trans></span>
+              <span className="ml-1 text-xs text-muted-foreground/60"><Trans>— before</Trans></span>
             </div>
             <div className="flex items-center gap-1.5 px-4 py-1.5">
               <HardDrive className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Working Tree</span>
-              <span className="ml-1 text-xs text-muted-foreground/60">— current</span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide"><Trans>Working Tree</Trans></span>
+              <span className="ml-1 text-xs text-muted-foreground/60"><Trans>— current</Trans></span>
             </div>
           </div>
           <div className="space-y-2">
@@ -177,7 +178,7 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
   if (parsedDiff.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-        No changes to show
+        <Trans>No changes to show</Trans>
       </div>
     );
   }

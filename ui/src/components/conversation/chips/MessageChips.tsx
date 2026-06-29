@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
+import { useLingui } from '@lingui/react/macro';
 import { AgenticProcess, Conversation, TypeId } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { useEntity } from '@sdk/react/hooks';
@@ -45,6 +46,7 @@ function firstWords(text: string | undefined, n: number): string {
  * is suppressed via ``ChipsExcludeContext``.
  */
 export function MessageChips({ flowMessageId, conversationId, messageText }: MessageChipsProps) {
+  const { t } = useLingui();
   const exclude = useChipsExclude();
   const [pending, setPending] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -93,7 +95,7 @@ export function MessageChips({ flowMessageId, conversationId, messageText }: Mes
           <a
             href={localDownloadUrl(flowMessageId)}
             download
-            title="Download message"
+            title={t`Download message`}
             className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-60 transition-opacity hover:opacity-100"
           >
             <Download className="h-3 w-3" />
@@ -105,8 +107,8 @@ export function MessageChips({ flowMessageId, conversationId, messageText }: Mes
               type="button"
               onClick={() => setDialogOpen(true)}
               disabled={pending}
-              title={`Add a note to the running session about this message`}
-              aria-label="Add a note to the running session about this message"
+              title={t`Add a note to the running session about this message`}
+              aria-label={t`Add a note to the running session about this message`}
               data-testid="message-append-current"
               className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-60 transition-opacity hover:opacity-100 disabled:cursor-not-allowed"
             >
@@ -127,10 +129,10 @@ export function MessageChips({ flowMessageId, conversationId, messageText }: Mes
       <InputDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        title="Add to the running session"
-        description="Appended to the current worker's prompt queue, tagged with this message."
-        placeholder="What should the worker do with this message?"
-        confirmLabel="Add to queue"
+        title={t`Add to the running session`}
+        description={t`Appended to the current worker's prompt queue, tagged with this message.`}
+        placeholder={t`What should the worker do with this message?`}
+        confirmLabel={t`Add to queue`}
         onConfirm={(value) => void handleAppend(value)}
       />
     </>

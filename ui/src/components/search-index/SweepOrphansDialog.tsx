@@ -12,6 +12,7 @@ import { useIndexStatus, type IndexStatusPerType } from '@src/hooks/use-index-st
 import { applyScopeToParams, type ScopeFilter } from '@src/lib/scope-filter';
 import { Ghost, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const BASE = '/graph/compute_node/@local/fs-records';
 
@@ -52,6 +53,7 @@ export function SweepOrphansDialog({
   const [scanning, setScanning] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const { refresh: refreshIndexStatus } = useIndexStatus(scope);
+  const { t } = useLingui();
 
   const orphanRows = useMemo(() => {
     const rows = perType.filter((p) => p.orphan_count > 0);
@@ -96,7 +98,7 @@ export function SweepOrphansDialog({
   }, [scopeType, action, refreshIndexStatus, onOpenChange, scope]);
 
   const busy = scanning || sweeping;
-  const title = scopeType ? `Orphan ${scopeType} records` : 'Orphan records';
+  const title = scopeType ? t`Orphan ${scopeType} records` : t`Orphan records`;
   const headerCount = scopeType ? scopeTotal : totalOrphans;
 
   return (
@@ -113,21 +115,18 @@ export function SweepOrphansDialog({
             )}
           </DialogTitle>
           <DialogDescription className="text-xs leading-relaxed">
-            An <span className="font-medium">orphan</span> is a row in the search index whose source
-            file is gone from disk. The indexer detects them on every run and marks them with{' '}
-            <code className="font-mono">orphan_since</code>. The file is already gone; sweeping just
-            removes the stale row from search so results stay clean.
+            <Trans>An <span className="font-medium">orphan</span> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <code className="font-mono">orphan_since</code>. The file is already gone; sweeping just removes the stale row from search so results stay clean.</Trans>
           </DialogDescription>
         </DialogHeader>
 
         {orphanRows.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
             <Ghost className="h-8 w-8 opacity-30" />
-            <p className="font-medium text-foreground">No orphans found.</p>
+            <p className="font-medium text-foreground"><Trans>No orphans found.</Trans></p>
             <p className="text-xs">
               {scopeType
-                ? `Every ${scopeType} row has a source file on disk.`
-                : 'Every indexed row has a source file on disk.'}
+                ? <Trans>Every {scopeType} row has a source file on disk.</Trans>
+                : <Trans>Every indexed row has a source file on disk.</Trans>}
             </p>
             <Button
               variant="outline"
@@ -137,7 +136,7 @@ export function SweepOrphansDialog({
               disabled={busy}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${scanning ? 'animate-spin' : ''}`} />
-              {scanning ? 'Rescanning…' : 'Re-scan now'}
+              {scanning ? t`Rescanning…` : t`Re-scan now`}
             </Button>
           </div>
         ) : (
@@ -146,8 +145,8 @@ export function SweepOrphansDialog({
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b bg-muted/50 text-muted-foreground">
-                    <th className="py-1.5 pl-3 pr-4 text-left font-medium">Type</th>
-                    <th className="py-1.5 pr-3 text-right font-medium">Orphans</th>
+                    <th className="py-1.5 pl-3 pr-4 text-left font-medium"><Trans>Type</Trans></th>
+                    <th className="py-1.5 pr-3 text-right font-medium"><Trans>Orphans</Trans></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -164,7 +163,7 @@ export function SweepOrphansDialog({
             </div>
 
             <fieldset className="flex flex-col gap-2 text-xs">
-              <legend className="font-medium">Sweep action</legend>
+              <legend className="font-medium"><Trans>Sweep action</Trans></legend>
               <label className="flex items-start gap-2 cursor-pointer">
                 <input
                   type="radio"
@@ -175,9 +174,7 @@ export function SweepOrphansDialog({
                   disabled={busy}
                 />
                 <span>
-                  <span className="font-medium">Ignore</span> — remove the DB row, keep the shadow
-                  record dir at <code className="font-mono">~/.flow/records/&lt;type&gt;/&lt;id&gt;/</code>{' '}
-                  as a forensic breadcrumb. <span className="text-muted-foreground">(recommended)</span>
+                  <Trans><span className="font-medium">Ignore</span> — remove the DB row, keep the shadow record dir at <code className="font-mono">~/.flow/records/&lt;type&gt;/&lt;id&gt;/</code> as a forensic breadcrumb. <span className="text-muted-foreground">(recommended)</span></Trans>
                 </span>
               </label>
               <label className="flex items-start gap-2 cursor-pointer">
@@ -190,8 +187,7 @@ export function SweepOrphansDialog({
                   disabled={busy}
                 />
                 <span>
-                  <span className="font-medium">Delete</span> — remove the DB row{' '}
-                  <em>and</em> the shadow record dir. Reclaims disk space; no recovery path.
+                  <Trans><span className="font-medium">Delete</span> — remove the DB row <em>and</em> the shadow record dir. Reclaims disk space; no recovery path.</Trans>
                 </span>
               </label>
             </fieldset>
@@ -208,11 +204,11 @@ export function SweepOrphansDialog({
               disabled={busy}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${scanning ? 'animate-spin' : ''}`} />
-              Re-scan
+              <Trans>Re-scan</Trans>
             </Button>
           )}
           <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenChange(false)} disabled={busy}>
-            Close
+            <Trans>Close</Trans>
           </Button>
           {orphanRows.length > 0 && (
             <Button
@@ -227,7 +223,7 @@ export function SweepOrphansDialog({
               ) : (
                 <Trash2 className="h-3.5 w-3.5" />
               )}
-              {sweeping ? 'Sweeping…' : `Sweep ${scopeTotal} (${action})`}
+              {sweeping ? t`Sweeping…` : t`Sweep ${scopeTotal} (${action})`}
             </Button>
           )}
         </DialogFooter>
