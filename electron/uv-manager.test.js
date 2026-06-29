@@ -79,6 +79,19 @@ ok(!mgr.isBrokenInstallError({ message: "ModuleNotFoundError: No module named 'r
 ok(!mgr.isBrokenInstallError({}), 'empty error object → not broken');
 ok(!mgr.isBrokenInstallError(null), 'null error → not broken (no throw)');
 
+// ── isToolDirLockedError (the Windows tool-dir lock that aborts an upgrade) ──
+ok(mgr.isToolDirLockedError({
+  stderr: "error: failed to remove directory `C:\\Users\\me\\AppData\\Roaming\\uv\\tools\\flowpad\\Scripts`: Access is denied. (os error 5)",
+}), 'uv "failed to remove directory …flowpad…: os error 5" → tool dir locked');
+ok(mgr.isToolDirLockedError({ message: 'Access is denied. (os error 5)' }),
+  'bare "os error 5" → tool dir locked');
+ok(!mgr.isToolDirLockedError({ stderr: 'error: Failed to fetch: network unreachable' }),
+  'an unrelated network error → NOT a lock (no retry)');
+ok(!mgr.isToolDirLockedError({ message: "ModuleNotFoundError: No module named 'flow_sdk'" }),
+  'a broken-install error → NOT a tool-dir lock');
+ok(!mgr.isToolDirLockedError({}), 'empty error object → not a lock');
+ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
+
 // ── _ensureShimOnPath (puts ~/.local/bin on the user's terminal PATH) ───────
 // Best-effort: it must call `uv tool update-shell`, and must NEVER throw even
 // when uv fails — otherwise a transient PATH-fixer error would abort an
@@ -144,6 +157,34 @@ ok(!mgr.isBrokenInstallError(null), 'null error → not broken (no throw)');
     const b = make();
     await b.m.checkForUpdatesInBackground(null, { beforeBackendStart: false });
     ok(b.cloud() && !b.pypi(), 'post-boot → cloud policy, not the standalone PyPI check');
+  }
+
+  // ── _uvToolInstallForce (lock-aware install retry) ──────────────────────────
+  // Retry ONLY the Windows tool-dir lock; any other error fails fast. Re-kills
+  // the holding processes before each attempt.
+  {
+    // Non-lock error → throw immediately, one attempt, no retry.
+    const m = new UvManager(silentLog);
+    let uvCalls = 0, kills = 0;
+    m._killStaleToolProcesses = async () => { kills++; };
+    m._uv = async () => { uvCalls++; throw new Error('network unreachable'); };
+    let threw = false;
+    try { await m._uvToolInstallForce(['tool', 'install', 'flowpad']); } catch { threw = true; }
+    ok(threw && uvCalls === 1 && kills === 1,
+      '_uvToolInstallForce: non-lock error throws immediately (1 attempt, no retry)');
+
+    // Lock error once, then success → retries and resolves; re-kills each attempt.
+    const m2 = new UvManager(silentLog);
+    let uv2 = 0, kills2 = 0;
+    m2._killStaleToolProcesses = async () => { kills2++; };
+    m2._uv = async () => {
+      uv2++;
+      if (uv2 === 1) throw new Error('failed to remove directory flowpad Scripts: Access is denied. (os error 5)');
+      return { stdout: '', stderr: '' };
+    };
+    const res = await m2._uvToolInstallForce(['tool', 'install', 'flowpad']);
+    ok(uv2 === 2 && kills2 === 2 && res && typeof res === 'object',
+      '_uvToolInstallForce: retries once on a lock error, re-kills, then succeeds');
   }
 
   console.log(`uv-manager.test.js: ${passed} assertions passed`);

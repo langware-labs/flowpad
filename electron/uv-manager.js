@@ -531,12 +531,48 @@ class UvManager {
   }
 
   /**
+   * Run `uv tool install … --force` resiliently against the Windows tool-dir
+   * lock. On Windows, `--force` must delete and recreate
+   * `…\uv\tools\flowpad\Scripts\`, which fails with "Access is denied (os
+   * error 5)" while ANY process under that venv still holds a file open. We
+   * kill those processes first, but `taskkill` returns before Windows has
+   * actually released the handles, so a same-instant install can still lose
+   * the race (observed in the field: a post-boot upgrade aborts here and the
+   * app is left stuck on the loading splash).
+   *
+   * Strategy: kill the stale tool processes, attempt the install, and ONLY on
+   * a tool-dir-locked error re-kill and wait a bounded moment for the
+   * already-terminating processes to release their handles, then retry — up to
+   * MAX_LOCK_RETRIES. This is not a blind retry to paper over a flake: we retry
+   * exclusively the "dir is locked by a process we just killed" error, giving
+   * the OS time to finish a teardown that is already in progress. Any other
+   * failure throws immediately. On Unix the lock can't occur (unlinking a
+   * running exe is allowed), so the first attempt always succeeds.
+   */
+  async _uvToolInstallForce(installArgs) {
+    const MAX_LOCK_RETRIES = 3;
+    const HANDLE_RELEASE_WAIT_MS = 1500;
+    for (let attempt = 1; ; attempt++) {
+      await this._killStaleToolProcesses();
+      try {
+        return await this._uv(installArgs, { timeout: 120000 });
+      } catch (err) {
+        if (attempt >= MAX_LOCK_RETRIES || !this.isToolDirLockedError(err)) throw err;
+        this.log.warn(
+          `[uv] tool dir locked (attempt ${attempt}/${MAX_LOCK_RETRIES}) — re-killing ` +
+          `holders and waiting ${HANDLE_RELEASE_WAIT_MS}ms for handles to release`
+        );
+        await new Promise((r) => setTimeout(r, HANDLE_RELEASE_WAIT_MS));
+      }
+    }
+  }
+
+  /**
    * First-time install: `uv tool install flowpad` (latest from PyPI).
    */
   async installLatest() {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
-    await this._killStaleToolProcesses();
-    await this._uv(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--force'], { timeout: 120000 });
+    await this._uvToolInstallForce(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--force']);
     await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
@@ -1110,7 +1146,75 @@ class UvManager {
       }
       return true;
     } catch (err) {
-      this.log.warn(`[uv] Background update check failed: ${err.message}`);
+      this.log.warn(`[uv] Background update/upgrade failed: ${err.message}`);
+      // Pre-start failures fall through to startApp's own start path (which
+      // handles broken installs), so there's nothing to restore here. Post-boot
+      // we have ALREADY stopped the backend and swapped the window to the
+      // loading splash, so returning here would strand the user on "Upgrading
+      // Flowpad…" forever with a dead backend (no timeout screen — that only
+      // exists in the startup path). Restore the running app instead.
+      if (!beforeBackendStart) {
+        const restored = await this._recoverRunningBackendAfterFailedUpgrade(
+          mainWindow, { waitForBackend, backendUrl, sendStatus }
+        );
+        if (!restored && mainWindow && !mainWindow.isDestroyed()) {
+          await require('electron').dialog.showMessageBox(mainWindow, {
+            type: 'error',
+            title: 'Update failed',
+            message: 'FlowPad couldn’t finish updating and couldn’t restart automatically.',
+            detail:
+              'Please quit and reopen FlowPad. If it keeps happening, run:\n\n' +
+              `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force\n\n` +
+              'then reopen FlowPad, or run "flow diagnose".',
+            buttons: ['OK'],
+            defaultId: 0,
+          });
+        }
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Bring the desktop UI back to a working state after a POST-BOOT upgrade
+   * attempt failed. By the time `upgrade()` throws we have already stopped the
+   * running backend and shown the loading splash, so without this the user is
+   * stranded on "Upgrading Flowpad…" with a dead backend. We restart the
+   * still-installed (old) version — repairing it if the failed `--force` left
+   * the tool dir partially removed — and reload the UI, so the user keeps using
+   * the current version. The upgrade is retried automatically on the next
+   * launch's pre-start check, when nothing holds the tool dir open.
+   *
+   * Returns true if the app was restored, false if recovery itself failed (the
+   * caller then surfaces a real error instead of a frozen splash).
+   */
+  async _recoverRunningBackendAfterFailedUpgrade(mainWindow, { waitForBackend, backendUrl, sendStatus }) {
+    try {
+      if (sendStatus) sendStatus('Update failed — restoring Flowpad');
+      this.isShuttingDown = false;
+      // The failed `--force` may have left the tool dir partially removed.
+      this._flowBin = this.getInstalledFlowBin() || this._flowBin;
+      if (!this._flowBin) {
+        this.log.warn('[uv] flow binary missing after failed upgrade — repairing install…');
+        await this.reinstall();
+        this._flowBin = this.getInstalledFlowBin() || this._flowBin;
+      }
+      try {
+        await this.start();
+      } catch (startErr) {
+        if (!this.isBrokenInstallError(startErr)) throw startErr;
+        this.log.warn('[uv] Existing install broken after failed upgrade — repairing…');
+        await this.reinstall();
+        await this.start();
+      }
+      if (waitForBackend) await waitForBackend({ maxChecks: 240 });
+      if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
+        mainWindow.loadURL(backendUrl);
+      }
+      this.log.info('[uv] Restored the running version after a failed upgrade; will retry the upgrade next launch.');
+      return true;
+    } catch (recoverErr) {
+      this.log.error(`[uv] Recovery after failed upgrade failed: ${recoverErr.message}`);
       return false;
     }
   }
@@ -1120,8 +1224,7 @@ class UvManager {
    */
   async upgrade() {
     this.log.info('[uv] Upgrading flowpad...');
-    await this._killStaleToolProcesses();
-    await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', PYTHON_VERSION, '--force'], { timeout: 120000 });
+    await this._uvToolInstallForce(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', PYTHON_VERSION, '--force']);
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
@@ -1136,8 +1239,7 @@ class UvManager {
    */
   async reinstall() {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
-    await this._killStaleToolProcesses();
-    await this._uv(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--reinstall', '--force'], { timeout: 120000 });
+    await this._uvToolInstallForce(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--reinstall', '--force']);
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
@@ -1161,6 +1263,22 @@ class UvManager {
     const importFailure = /\b(ModuleNotFoundError|ImportError)\b/.test(text);
     return /No module named ['"]flow_sdk/.test(text)
       || (importFailure && /flow_sdk/.test(text));
+  }
+
+  /**
+   * True when a `uv tool install … --force` failed because the flowpad tool
+   * dir is locked by a still-running process (Windows): uv can't remove
+   * `…\flowpad\Scripts` while a file under it is held open. The canonical
+   * symptom is `failed to remove directory …flowpad…: Access is denied. (os
+   * error 5)`. Deliberately narrow — a normal install/network error must NOT
+   * trigger the lock-retry loop. Windows-only signature; never matches on the
+   * Unix path (where the lock can't happen).
+   */
+  isToolDirLockedError(error) {
+    const text = `${error?.message || ''}\n${error?.stderr || ''}\n${error?.stdout || ''}`;
+    return (/failed to remove directory/i.test(text) && /flowpad/i.test(text))
+      || /\bos error 5\b/i.test(text)
+      || (/access is denied/i.test(text) && /flowpad/i.test(text));
   }
 
   /**
