@@ -250,12 +250,17 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
           {running && (
             <div className="flex items-start gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-2 text-[11px] font-medium text-blue-700 dark:border-blue-400/40 dark:text-blue-300">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>
-                <Trans>
-                  This runs in the background — feel free to close this and keep working. When it's
-                  done, the result (and any actions) will be waiting on your Home feed.
-                </Trans>
-              </span>
+              <div className="space-y-0.5">
+                <div className="font-semibold">
+                  <Trans>You can close this window.</Trans>
+                </div>
+                <div className="font-normal">
+                  <Trans>
+                    This runs in the background — feel free to keep working. When it's done, the
+                    result (and any actions) will be waiting on your Home feed.
+                  </Trans>
+                </div>
+              </div>
             </div>
           )}
 
