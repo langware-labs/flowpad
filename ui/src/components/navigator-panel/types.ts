@@ -1,6 +1,30 @@
 import type { ReactNode } from 'react';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import type { BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
+import type { ScopeFilter } from '@src/lib/scope-filter';
+
+/**
+ * Context-aware search for a navigator. When present, `NavigatorPanel` shows a
+ * search icon in the header; activating it morphs the title row into a realtime
+ * search input (with a settings popover + close) and renders backend FTS results
+ * — of the menu's own entity types — in place of the list. The navigator only
+ * declares *what* to search; the panel owns the entire search UX.
+ */
+export interface NavigatorSearchConfig {
+  /** Entity/record types this menu lists — the search's context. Used both as
+   *  the default type filter and as the multi-type fan-out set (e.g.
+   *  `['claude_session','codex_session','copilot_session']` for Chats,
+   *  `['markdown']` for Docs, `['workflow']` for Workflows). */
+  recordTypes: string[];
+  /** Scope filter to seed the search with (the navigator's current scope).
+   *  Omitted → the panel uses the default project-derived scope. */
+  scope?: ScopeFilter | null;
+  /** Route a session result click through the live terminal dock (Chats).
+   *  Mirrors `SpotlightProfile.routeViaTerminal`. */
+  routeViaTerminal?: boolean;
+  /** Input placeholder, e.g. "Search chats…". */
+  placeholder?: string;
+}
 
 /**
  * NavigatorDescriptor — what a view contributes to the shared left-menu slot
@@ -47,6 +71,10 @@ export interface NavigatorDescriptor {
 
   /** Optional header (title, count, filter bar, actions). */
   header?: NavigatorHeader;
+
+  /** Optional context-aware search. When set, the panel renders a search icon
+   *  in the header and owns the inline search experience. */
+  search?: NavigatorSearchConfig;
 
   /** Active pointer (from currentDock/URL) — drives selection + auto-expand. */
   activePointer?: DockPointer | null;

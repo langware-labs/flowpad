@@ -1,7 +1,7 @@
 import { AgenticProcess, TypeId } from '@sdk';
 import { useMemo } from 'react';
 import { cn } from '@src/lib/utils';
-import { MessageSquare, Star, Trash2 } from 'lucide-react';
+import { Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import {
   WorkerIcon,
@@ -10,6 +10,7 @@ import {
 } from '@src/components/entity-execution-panel/history-row';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
+import { useIsBurning } from '@src/store/pending-actions-store';
 import { ChatPromptsPopover } from './ChatPromptsPopover';
 
 /**
@@ -45,6 +46,8 @@ export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, on
   const { data: watched } = useEntity<AgenticProcess>(typeId, { enabled: !!cached });
   const process = watched ?? cached;
   const title = pickHistoryTitle(process, entry);
+  // Live "this chat is working" signal — true while its worker is mid-turn.
+  const busy = useIsBurning(entry.agentic_process_id);
   // Project · branch survive only as a hover tooltip on the row (no visible subline).
   const meta = [entry.project_name, entry.git_branch].filter(Boolean).join(' · ');
   const hasMsgs = !!entry.message_count && entry.message_count > 0;
@@ -69,6 +72,17 @@ export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, on
       title={meta || undefined}
     >
       <div className="flex items-center gap-1.5">
+        {/* Leftmost status gutter — fills with a spinner only while this chat's
+            worker is actively doing work; reserved so rows stay aligned. */}
+        <span
+          className="flex h-3 w-3 shrink-0 items-center justify-center"
+          title={busy ? t`Working…` : undefined}
+          aria-label={busy ? t`Working` : undefined}
+          data-testid="chat-history-row-busy"
+          data-busy={busy ? 'true' : 'false'}
+        >
+          {busy && <Loader2 className="h-3 w-3 animate-spin text-emerald-500" />}
+        </span>
         <WorkerIcon workerType={entry.worker_type} />
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">{title}</span>
         {/* Default: favorite marker + time-ago; swapped for the actions on hover. */}
