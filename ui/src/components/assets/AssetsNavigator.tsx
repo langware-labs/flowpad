@@ -5,6 +5,7 @@ import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIcon
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { useAssetsModel } from './useAssetsModel';
 import { useLingui } from '@lingui/react/macro';
+import { useMemo } from 'react';
 
 /**
  * Assets left-menu — the navigator (Zone B). The tree (asset types + markdown
@@ -14,6 +15,10 @@ import { useLingui } from '@lingui/react/macro';
 export function AssetsNavigator() {
   const { t } = useLingui();
   const m = useAssetsModel();
+
+  // Stable identity for the search context (the asset types the menu lists), so
+  // the descriptor's fresh-each-render literal doesn't churn the search hooks.
+  const searchRecordTypes = useMemo(() => Array.from(m.typeCounts.keys()), [m.typeCounts]);
 
   // Not memoized: `useAssetsModel` returns a fresh object each render, so a memo
   // keyed on it would never hit. NavigatorPanel doesn't depend on descriptor
@@ -25,6 +30,11 @@ export function AssetsNavigator() {
     activePointer: m.treeActivePointer,
     activeKey: m.openAssetId,
     onNavigate: m.navigateAsset,
+    search: {
+      recordTypes: searchRecordTypes,
+      scope: m.scope,
+      placeholder: t`Search assets…`,
+    },
     header: {
       title: m.isProjectView ? t`Project assets` : t`Assets`,
       headerRight: (

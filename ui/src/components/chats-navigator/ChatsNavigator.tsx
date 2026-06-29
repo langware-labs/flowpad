@@ -15,6 +15,7 @@ import { pickHistoryTitle } from '@src/components/entity-execution-panel/history
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
+import { terminalProfile } from '@src/components/spotlight/profiles';
 import { useChatHistory } from './useChatHistory';
 import { ChatsFilterBar } from './ChatsFilterBar';
 import { ChatsList } from './ChatsList';
@@ -35,7 +36,6 @@ export function ChatsNavigator() {
   const isAdvanced = useIsAdvanced();
   const { t } = useLingui();
 
-  const [search, setSearch] = useState('');
   const [pendingDelete, setPendingDelete] = useState<{
     workerId: string;
     workerType: string | null;
@@ -48,7 +48,7 @@ export function ChatsNavigator() {
     [currentDock, project?.id],
   );
 
-  const filters = useMemo(() => ({ scope, search }), [scope, search]);
+  const filters = useMemo(() => ({ scope, search: '' }), [scope]);
   const { buckets, total, isLoading, refetch } = useChatHistory(filters);
 
   // Active row = the process the Shell URL currently targets (URL-first).
@@ -157,13 +157,13 @@ export function ChatsNavigator() {
             onScopeChange={handleScopeChange}
           />
         ),
-        filterBar: (
-          <ChatsFilterBar
-            search={search}
-            onSearchChange={setSearch}
-            onNewChat={handleNewChat}
-          />
-        ),
+        filterBar: <ChatsFilterBar onNewChat={handleNewChat} />,
+      },
+      search: {
+        recordTypes: terminalProfile.allowedEntityTypes ?? [],
+        scope,
+        routeViaTerminal: true,
+        placeholder: t`Search chats…`,
       },
       customBody: (
         <ChatsList
@@ -179,7 +179,6 @@ export function ChatsNavigator() {
     [
       total,
       handleNewChat,
-      search,
       scope,
       project,
       handleScopeChange,

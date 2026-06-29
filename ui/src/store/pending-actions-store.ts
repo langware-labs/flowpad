@@ -1,6 +1,6 @@
 import { AgenticProcess, classifyExecutionMode, dataManager, ExecutionMode, isReadyForInput, isWorkerRunning, WorkerStatus, type StatusBearingProcess } from '@sdk';
 import { subscribeToEntityOps } from '@sdk/react/hooks';
-import { useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 /**
  * Pending Actions store.
@@ -374,6 +374,23 @@ export function useLastStatusChange(processId: string | null | undefined): numbe
   if (!processId) return null;
   const t = trackers.get(processId);
   return t ? t.lastStatusChangedAt : null;
+}
+
+/** True while ``processId``'s worker is mid-turn (actively doing work). Live —
+ *  re-renders on every status change via the `activeTick` signal (status flips
+ *  that don't change the pending snapshot still bump it). Drives the per-row
+ *  "working" indicator in the Chats navigator. */
+export function useIsBurning(processId: string | null | undefined): boolean {
+  // Snapshot THIS process's burning boolean. useSyncExternalStore bails out of
+  // re-render when the value is unchanged (Object.is) — so a row re-renders only
+  // when its own worker flips burning, not on every store tick (avoids O(N)
+  // re-renders across the chats list when any one worker changes status).
+  const getBurning = useCallback((): boolean => {
+    if (!processId) return false;
+    const t = trackers.get(processId);
+    return t ? isBurningTracker(t) : false;
+  }, [processId]);
+  return useSyncExternalStore(subscribe, getBurning, getBurning);
 }
 
 /** Shared shape for a tracked worker surfaced to a React view. */
