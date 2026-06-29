@@ -5,6 +5,7 @@ import { Input } from '@src/components/ui/input';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { AlertTriangle, Cpu, Heart, MemoryStick } from 'lucide-react';
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface LogsViewerHandle {
   refresh: () => Promise<void>;
@@ -61,6 +62,7 @@ interface LogsViewerProps {
 export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
   ({ fetchOnMount = true, isPaused = false }, ref) => {
     const { computeNode } = useAgentContext();
+    const { t } = useLingui();
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
 
       // Skip fetch if sandbox is paused or in error state - E2B API will timeout
       if (isPaused) {
-        setError('Sandbox is unavailable. Resume or recreate to view logs.');
+        setError(t`Sandbox is unavailable. Resume or recreate to view logs.`);
         return;
       }
 
@@ -99,7 +101,7 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
           setError(data.message);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch logs');
+        setError(err instanceof Error ? err.message : t`Failed to fetch logs`);
       } finally {
         setIsLoading(false);
       }
@@ -152,25 +154,25 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
         {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-2">
           <div className="flex items-center gap-4">
-            <h3 className="text-sm font-semibold">Sandbox Logs</h3>
+            <h3 className="text-sm font-semibold"><Trans>Sandbox Logs</Trans></h3>
             {totalAlerts > 0 && (
               <div className="flex items-center gap-3 text-xs">
                 {alertCounts.cpu > 0 && (
                   <span className="flex items-center gap-1 text-orange-500">
                     <Cpu className="h-3 w-3" />
-                    {alertCounts.cpu} CPU
+                    {alertCounts.cpu} <Trans>CPU</Trans>
                   </span>
                 )}
                 {alertCounts.memory > 0 && (
                   <span className="flex items-center gap-1 text-orange-500">
                     <MemoryStick className="h-3 w-3" />
-                    {alertCounts.memory} Memory
+                    {alertCounts.memory} <Trans>Memory</Trans>
                   </span>
                 )}
                 {alertCounts.healthcheck > 0 && (
                   <span className="flex items-center gap-1 text-red-500">
                     <Heart className="h-3 w-3" />
-                    {alertCounts.healthcheck} Health
+                    {alertCounts.healthcheck} <Trans>Health</Trans>
                   </span>
                 )}
               </div>
@@ -181,7 +183,7 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
         {/* Filters */}
         <div className="flex items-center gap-2 border-b px-4 py-2">
           <Input
-            placeholder="Filter logs..."
+            placeholder={t`Filter logs...`}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             className="h-7 flex-1 text-xs"
@@ -193,7 +195,7 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
             onClick={() => setAlertsOnly(!alertsOnly)}
           >
             <AlertTriangle className="mr-1 h-3 w-3" />
-            Alerts Only ({totalAlerts})
+            <Trans>Alerts Only ({totalAlerts})</Trans>
           </Button>
         </div>
 
@@ -202,12 +204,12 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
           <div className="flex flex-1 items-center justify-center text-muted-foreground">
             <div className="text-center">
               <p className="text-red-500">{error}</p>
-              <p className="mt-1 text-xs">Use the refresh button in the toolbar to retry</p>
+              <p className="mt-1 text-xs"><Trans>Use the refresh button in the toolbar to retry</Trans></p>
             </div>
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="flex flex-1 items-center justify-center text-muted-foreground">
-            {isLoading ? 'Loading logs...' : alertsOnly ? 'No alert logs found' : 'No logs available'}
+            {isLoading ? <Trans>Loading logs...</Trans> : alertsOnly ? <Trans>No alert logs found</Trans> : <Trans>No logs available</Trans>}
           </div>
         ) : (
           <ScrollArea className="flex-1">

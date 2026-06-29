@@ -2,6 +2,7 @@ import { dataContext, TypeId, VFSPath } from '@sdk';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { FolderOpen } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { FilterDefinition, FilterName, SimpleFileManager } from '../simple-file-manager';
 import './explorer-view.css';
 
@@ -189,7 +190,7 @@ export function ExplorerView({
     return (
       <div className="explorer-view-empty">
         <FolderOpen className="h-12 w-12 text-muted-foreground/50" />
-        <p className="text-sm text-muted-foreground">No project context available</p>
+        <p className="text-sm text-muted-foreground"><Trans>No project context available</Trans></p>
       </div>
     );
   }

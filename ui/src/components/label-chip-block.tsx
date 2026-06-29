@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { MoreHorizontal, X } from 'lucide-react';
+import { useLingui } from '@lingui/react/macro';
 import { Chip } from './label-chip';
 
 interface LabelChipBlockProps {
@@ -11,6 +12,7 @@ interface LabelChipBlockProps {
 }
 
 export function LabelChipBlock({ labels, selected, maxChips = 3, onToggle, onRemove }: LabelChipBlockProps) {
+  const { t } = useLingui();
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Auto-close expansion when labels count drops below maxChips
@@ -41,7 +43,7 @@ export function LabelChipBlock({ labels, selected, maxChips = 3, onToggle, onRem
           className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-muted"
           onClick={() => setIsExpanded(true)}
           type="button"
-          aria-label={`Show ${labels.length - maxChips} more labels`}
+          aria-label={t`Show ${labels.length - maxChips} more labels`}
         >
           <MoreHorizontal className="h-4 w-4" />
         </button>
@@ -53,7 +55,7 @@ export function LabelChipBlock({ labels, selected, maxChips = 3, onToggle, onRem
           className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-muted"
           onClick={() => setIsExpanded(false)}
           type="button"
-          aria-label="Show fewer labels"
+          aria-label={t`Show fewer labels`}
         >
           <X className="h-4 w-4" />
         </button>

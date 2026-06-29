@@ -8,6 +8,7 @@ import type { Editor } from '@milkdown/core';
 import { FormatButton } from '@src/components/milkdown-editor/MilkdownEditor';
 import { Link2 } from 'lucide-react';
 import { useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { WikiLinkInsertDialog } from './WikiLinkInsertDialog';
 
 interface WikiToolbarProps {
@@ -23,12 +24,13 @@ interface WikiToolbarProps {
 }
 
 export function WikiToolbar({ editorRef, sourceTypeId }: WikiToolbarProps) {
+  const { t } = useLingui();
   const [dialogOpen, setDialogOpen] = useState(false);
 
   return (
     <>
       <FormatButton
-        title="Add entity link"
+        title={t`Add entity link`}
         icon={<Link2 className="h-3.5 w-3.5" />}
         testId="wiki-toolbar-add-link"
         onMouseDown={(e) => {

@@ -2,6 +2,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { PROGRESS_TEXT_COMPLETE, type IndexProgressTable, type TypeProgressRow } from '@sdk';
 import { rowState } from './activity-labels';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export type { IndexProgressTable, TypeProgressRow };
 
@@ -40,13 +41,13 @@ export function ActivityProgressBar({
       className="w-full text-left rounded-md px-1 py-0.5 hover:bg-accent/30 transition-colors"
     >
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium tabular-nums">{label} records</span>
+        <span className="text-xs font-medium tabular-nums"><Trans>{label} records</Trans></span>
         {table.current ? (
           <span className="text-xs text-muted-foreground truncate max-w-[180px] ml-2 font-mono">
             {table.current}
           </span>
         ) : isDone ? (
-          <span className="text-xs text-emerald-600 dark:text-emerald-400">done</span>
+          <span className="text-xs text-emerald-600 dark:text-emerald-400"><Trans>done</Trans></span>
         ) : null}
       </div>
       <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -63,15 +64,17 @@ export function ActivityProgressModal({
   open,
   onOpenChange,
   table,
-  title = 'Progress',
+  title,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   table: IndexProgressTable | null;
   title?: string;
 }) {
+  const { t } = useLingui();
   if (!table) return null;
 
+  const displayTitle = title || t`Progress`;
   const headerLabel = table.total > 0
     ? `${table.done.toLocaleString()}/${table.total.toLocaleString()}`
     : `${table.done.toLocaleString()} records`;
@@ -81,13 +84,13 @@ export function ActivityProgressModal({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold">
-            {title} — {headerLabel}
+            {displayTitle} — {headerLabel}
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-1 max-h-[70vh] overflow-y-auto pr-1">
           {table.rows.length === 0 && (
-            <p className="text-xs text-muted-foreground italic px-3 py-2">No records discovered yet.</p>
+            <p className="text-xs text-muted-foreground italic px-3 py-2"><Trans>No records discovered yet.</Trans></p>
           )}
           {table.rows.map((row) => {
             const state = rowState(row, table.current);

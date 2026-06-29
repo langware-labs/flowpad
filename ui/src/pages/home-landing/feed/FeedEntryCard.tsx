@@ -2,6 +2,7 @@ import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-actio
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { AgentTrace, FlowMessage, Markdown, MessageSuggest, UsageReport, UserNote, type FeedEntry } from '@sdk';
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
 import { useEntity } from '@src/hooks/entity-hooks';
@@ -55,7 +56,7 @@ export function FeedEntryCard({
   if (isLoading || entity === undefined) {
     return (
       <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
-        <p className="text-xs text-muted-foreground">Loading feed item</p>
+        <p className="text-xs text-muted-foreground"><Trans>Loading feed item</Trans></p>
       </FeedEntryFrame>
     );
   }
@@ -168,9 +169,11 @@ function FeedEntryFrame({
   highlight = false,
   pulsing = false,
 }: FeedEntryFrameProps) {
+  const { t } = useLingui();
   const Icon = feedData.icon;
   const recorded = formatRecorded(entry.created_date);
   const ref = useRef<HTMLDivElement>(null);
+  const hideLabel = t`Hide feed entry`;
 
   useEffect(() => {
     if (highlight) ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -201,8 +204,8 @@ function FeedEntryFrame({
           )}
           <button
             type="button"
-            aria-label="Hide feed entry"
-            title="Hide feed entry"
+            aria-label={hideLabel}
+            title={hideLabel}
             disabled={busy}
             onClick={() => onDismiss(entry)}
             className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
@@ -237,9 +240,10 @@ function MessageSuggestFeedEntryCard({
   onReportIssue,
   onForward,
 }: MessageSuggestFeedEntryCardProps) {
+  const { t } = useLingui();
   const [expanded, setExpanded] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
-  const title = suggest.text ?? 'Flowpad diagnostics';
+  const title = suggest.text ?? t`Flowpad diagnostics`;
   const body = suggest.message_text ?? '';
   const expandable = body.length > 80 || body.includes('\n');
   const isDiagnosis = suggest.kind !== 'draft_reply';
@@ -255,7 +259,7 @@ function MessageSuggestFeedEntryCard({
         className="h-6 gap-1 px-2 text-xs"
       >
         <Eye className="h-3.5 w-3.5" />
-        View
+        <Trans>View</Trans>
       </Button>
     ) : null;
 
@@ -269,7 +273,7 @@ function MessageSuggestFeedEntryCard({
             {expandable && (
               <button
                 type="button"
-                aria-label="Collapse"
+                aria-label={t`Collapse`}
                 className="mt-0.5 shrink-0 self-start text-muted-foreground hover:text-foreground"
                 onClick={() => setExpanded(false)}
               >
@@ -293,7 +297,7 @@ function MessageSuggestFeedEntryCard({
             {expandable && (
               <button
                 type="button"
-                aria-label="Expand"
+                aria-label={t`Expand`}
                 className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
                 onClick={() => setExpanded(true)}
               >
@@ -314,7 +318,7 @@ function MessageSuggestFeedEntryCard({
                   className="shrink-0 text-primary hover:underline"
                   onClick={() => setExpanded(true)}
                 >
-                  more
+                  <Trans>more</Trans>
                 </button>
               )}
             </div>
@@ -374,6 +378,7 @@ interface DraftReplyActionButtonsProps {
  * conversation with the draft still pending). Mirrors the feed buttons' sizing.
  */
 function DraftReplyActionButtons({ conversationId, draftFlowMessageId, onDone }: DraftReplyActionButtonsProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -412,7 +417,7 @@ function DraftReplyActionButtons({ conversationId, draftFlowMessageId, onDone }:
           onClick={() => void handleSend()}
           className="h-6 bg-green-600 px-2 text-xs text-white hover:bg-green-700"
         >
-          Send
+          <Trans>Send</Trans>
         </Button>
         <Button
           type="button"
@@ -422,7 +427,7 @@ function DraftReplyActionButtons({ conversationId, draftFlowMessageId, onDone }:
           onClick={handleOpen}
           className="h-6 px-2 text-xs"
         >
-          Open
+          <Trans>Open</Trans>
         </Button>
       </div>
       {err && <p className="mt-1 text-xs text-destructive">{err}</p>}
@@ -480,7 +485,7 @@ function WikiTipFeedEntryCard({ entry, page, busy, feedData, onDismiss }: WikiTi
     >
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         <WikiLabel wikiword={wikiword} label={wikiword} />
-        <span className="text-muted-foreground">— open, peek, or get highlighted here</span>
+        <span className="text-muted-foreground"><Trans>— open, peek, or get highlighted here</Trans></span>
       </div>
     </FeedEntryFrame>
   );
@@ -504,9 +509,9 @@ function AgentTraceFeedEntryCard({ entry, trace, busy, feedData, onDismiss }: Ag
         className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => navigation.openDock(trace.editorDockPointer)}
       >
-        <p className="min-w-0 text-xs font-medium leading-snug text-foreground">Skill analysis</p>
+        <p className="min-w-0 text-xs font-medium leading-snug text-foreground"><Trans>Skill analysis</Trans></p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          Skill analysis ready for review and improvements
+          <Trans>Skill analysis ready for review and improvements</Trans>
         </p>
       </button>
     </FeedEntryFrame>
@@ -522,9 +527,10 @@ interface UsageReportFeedEntryCardProps {
 }
 
 function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: UsageReportFeedEntryCardProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const day = report.period_start ? report.period_start.slice(0, 10) : '';
-  const headline = report.period_kind === 'day' ? 'Yesterday' : `Last ${report.period_kind}`;
+  const headline = report.period_kind === 'day' ? t`Yesterday` : t`Last ${report.period_kind}`;
 
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
@@ -555,7 +561,7 @@ interface UnavailableFeedEntryCardProps {
 function UnavailableFeedEntryCard({ entry, busy, feedData, onDismiss }: UnavailableFeedEntryCardProps) {
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
-      <p className="min-w-0 text-xs font-medium leading-snug text-foreground">Unavailable feed item</p>
+      <p className="min-w-0 text-xs font-medium leading-snug text-foreground"><Trans>Unavailable feed item</Trans></p>
     </FeedEntryFrame>
   );
 }

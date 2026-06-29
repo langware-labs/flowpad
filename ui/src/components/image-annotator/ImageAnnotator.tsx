@@ -12,6 +12,7 @@
  * in ./image-annotator-store; surfaces never mount it directly.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { AnnotatorToolbar } from './AnnotatorToolbar';
@@ -38,6 +39,7 @@ export interface ImageAnnotatorProps {
 }
 
 export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel }: ImageAnnotatorProps) {
+  const { t } = useLingui();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
@@ -255,9 +257,9 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel }: Im
             requestClose();
           }}
         >
-          <DialogTitle className="sr-only">Annotate image</DialogTitle>
+          <DialogTitle className="sr-only"><Trans>Annotate image</Trans></DialogTitle>
           <DialogDescription className="sr-only">
-            Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy.
+            <Trans>Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy.</Trans>
           </DialogDescription>
 
           <AnnotatorToolbar
@@ -307,10 +309,10 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel }: Im
       <ConfirmDialog
         open={confirmDiscard}
         onOpenChange={setConfirmDiscard}
-        title="Discard changes?"
-        description="Your markup on this image will be lost."
-        confirmLabel="Discard"
-        cancelLabel="Keep editing"
+        title={t`Discard changes?`}
+        description={t`Your markup on this image will be lost.`}
+        confirmLabel={t`Discard`}
+        cancelLabel={t`Keep editing`}
         variant="destructive"
         onConfirm={onCancel}
       />

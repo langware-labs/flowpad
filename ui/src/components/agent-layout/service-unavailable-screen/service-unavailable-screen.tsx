@@ -1,4 +1,5 @@
 import { Button } from '@src/components/ui/button';
+import { Trans } from '@lingui/react/macro';
 
 interface ServiceUnavailableScreenProps {
   statusCode?: number | string;
@@ -20,15 +21,15 @@ const ServiceUnavailableScreen = ({ statusCode, onClose }: ServiceUnavailableScr
               />
             </svg>
           </div>
-          <h1 className="mb-2 text-2xl font-bold">Service Unavailable</h1>
-          {statusCode && <p className="mb-2 font-mono text-lg text-orange-600">Error: {statusCode}</p>}
-          <p className="mb-2 text-muted-foreground">The FlowPad backend server is not responding.</p>
-          <p className="text-sm text-muted-foreground">Please make sure the server is running.</p>
+          <h1 className="mb-2 text-2xl font-bold"><Trans>Service Unavailable</Trans></h1>
+          {statusCode && <p className="mb-2 font-mono text-lg text-orange-600"><Trans>Error: {statusCode}</Trans></p>}
+          <p className="mb-2 text-muted-foreground"><Trans>The FlowPad backend server is not responding.</Trans></p>
+          <p className="text-sm text-muted-foreground"><Trans>Please make sure the server is running.</Trans></p>
         </div>
 
         {onClose && (
           <Button onClick={onClose} className="w-full" variant="outline">
-            OK
+            <Trans>OK</Trans>
           </Button>
         )}
       </div>

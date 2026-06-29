@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, MessageSquarePlus, Send } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   hasRemoteParticipant,
   type ConversationParticipant,
@@ -88,6 +89,7 @@ export function ShareToConversationDialog({
   onShared,
   commit,
 }: ShareToConversationDialogProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const ctx = useDataContext();
   const { cloudUser } = useAuth();
@@ -243,7 +245,7 @@ export function ShareToConversationDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5 text-primary" />
-            Share
+            <Trans>Share</Trans>
           </DialogTitle>
         </DialogHeader>
 
@@ -252,10 +254,10 @@ export function ShareToConversationDialog({
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/15 text-green-600 dark:text-green-400">
               <Check className="h-6 w-6" />
             </div>
-            <p className="font-medium text-foreground">Shared</p>
+            <p className="font-medium text-foreground"><Trans>Shared</Trans></p>
             <div className="flex gap-2">
               <Button variant="outline" onClick={onClose}>
-                Close
+                <Trans>Close</Trans>
               </Button>
               <Button
                 onClick={() => {
@@ -267,7 +269,7 @@ export function ShareToConversationDialog({
                 disabled={!sharedConversationId}
                 data-testid="share-open-message"
               >
-                Open message
+                <Trans>Open message</Trans>
               </Button>
             </div>
           </div>
@@ -289,7 +291,7 @@ export function ShareToConversationDialog({
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                To
+                <Trans>To</Trans>
               </label>
               <div className="flex items-end gap-2">
                 <div className="flex-1">
@@ -313,12 +315,12 @@ export function ShareToConversationDialog({
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                Title
+                <Trans>Title</Trans>
               </label>
               <Input
                 value={titleInput}
                 onChange={(e) => setTitleInput(e.target.value)}
-                placeholder={source.requiresTitle ? 'What do you need help with?' : defaultTitle || 'Conversation title'}
+                placeholder={source.requiresTitle ? t`What do you need help with?` : defaultTitle || t`Conversation title`}
                 disabled={busy}
                 data-testid="share-title-input"
               />
@@ -326,12 +328,12 @@ export function ShareToConversationDialog({
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                Note (optional)
+                <Trans>Note (optional)</Trans>
               </label>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Add a personal note…"
+                placeholder={t`Add a personal note…`}
                 rows={2}
                 disabled={busy}
                 className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -349,7 +351,7 @@ export function ShareToConversationDialog({
                       onChange={(e) => setAttachTranscript(e.target.checked)}
                       disabled={busy}
                     />
-                    Attach session transcript
+                    <Trans>Attach session transcript</Trans>
                   </label>
                 )}
                 <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
@@ -358,11 +360,11 @@ export function ShareToConversationDialog({
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                Recent conversations
+                <Trans>Recent conversations</Trans>
               </label>
               {!hasContacts ? (
                 <p className="text-xs text-muted-foreground">
-                  Pick a contact to see your conversations with them.
+                  <Trans>Pick a contact to see your conversations with them.</Trans>
                 </p>
               ) : (
                 <ul className="flex flex-col gap-1" data-testid="share-conversation-list">
@@ -407,7 +409,7 @@ export function ShareToConversationDialog({
                     >
                       <MessageSquarePlus className="h-3.5 w-3.5 shrink-0 text-primary" />
                       <span className="flex-1 truncate" title={effectiveTitle}>
-                        Start new conversation · {effectiveTitle}
+                        <Trans>Start new conversation · {effectiveTitle}</Trans>
                       </span>
                     </button>
                   </li>
@@ -419,7 +421,7 @@ export function ShareToConversationDialog({
 
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" onClick={onClose} disabled={busy}>
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
               <Button
                 onClick={() => void doShare(isNewSelected ? null : selected)}
@@ -428,7 +430,7 @@ export function ShareToConversationDialog({
                 className="gap-1.5"
               >
                 <Send className="h-4 w-4" />
-                {busy ? 'Sharing…' : 'Share'}
+                {busy ? t`Sharing…` : t`Share`}
               </Button>
             </div>
           </div>

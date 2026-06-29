@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Trans } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
@@ -369,7 +370,7 @@ const FileDiffModal: React.FC<FileDiffModalProps> = ({ file, computeNodeId, work
             </div>
           ) : (
             <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-              No diff to display
+              <Trans>No diff to display</Trans>
             </div>
           )}
         </div>
@@ -546,12 +547,12 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
               <span className="text-[10px] text-muted-foreground">{confirming.label}?</span>
               <IconBtn
                 icon={Check}
-                tooltip="Confirm"
+                tooltip={<Trans>Confirm</Trans>}
                 disabled={busy}
                 className="text-red-500 hover:text-red-600"
                 onClick={() => { if (confirming.subpath) void runFileOp(f, confirming.subpath); }}
               />
-              <IconBtn icon={X} tooltip="Cancel" className="text-muted-foreground" onClick={() => setConfirmingKey(null)} />
+              <IconBtn icon={X} tooltip={<Trans>Cancel</Trans>} className="text-muted-foreground" onClick={() => setConfirmingKey(null)} />
             </div>
           ) : (
             <>
@@ -601,7 +602,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="truncate text-sm font-medium">
-            {data?.error ? 'Not a git repo' : (data?.branch ?? 'git')}
+            {data?.error ? <Trans>Not a git repo</Trans> : (data?.branch ?? 'git')}
           </span>
           {data && !data.error && data.ahead > 0 && (
             <span className="shrink-0 rounded-full bg-green-500/20 px-1.5 py-0.5 text-[9px] font-bold text-green-500">
@@ -629,11 +630,11 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
-                <span className="font-medium">{mode === 'standard' ? 'Standard mode' : 'Advanced mode'}</span>
+                <span className="font-medium">{mode === 'standard' ? <Trans>Standard mode</Trans> : <Trans>Advanced mode</Trans>}</span>
                 <span className="block text-muted-foreground">
                   {mode === 'standard'
-                    ? 'Simple actions — click to show all git operations'
-                    : 'All git operations — click for simplified actions'}
+                    ? <Trans>Simple actions — click to show all git operations</Trans>
+                    : <Trans>All git operations — click for simplified actions</Trans>}
                 </span>
               </TooltipContent>
             </Tooltip>
@@ -649,7 +650,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
               data-testid="git-panel-push"
             >
               <GitPushIcon busy={pushing} />
-              Push
+              <Trans>Push</Trans>
             </Button>
           )}
           {!data?.error && (
@@ -657,7 +658,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
               variant="compact"
               onClick={() => void handleShare()}
               disabled={sharing}
-              tooltip={sharing ? 'Preparing…' : 'Share this repo to a conversation'}
+              tooltip={sharing ? <Trans>Preparing…</Trans> : <Trans>Share this repo to a conversation</Trans>}
               testId="git-panel-share"
             />
           )}
@@ -682,7 +683,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
           </div>
         ) : data?.error ? (
           <div className="flex flex-col items-center gap-3 px-3 py-6">
-            <p className="text-center text-xs text-muted-foreground">Not a git repository</p>
+            <p className="text-center text-xs text-muted-foreground"><Trans>Not a git repository</Trans></p>
             <TooltipProvider delayDuration={400}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -694,12 +695,12 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
                     onClick={() => { void handleGitInit(); }}
                   >
                     <GitBranch className="h-3.5 w-3.5" />
-                    {initing ? 'Initializing…' : 'Initialize git repo'}
+                    {initing ? <Trans>Initializing…</Trans> : <Trans>Initialize git repo</Trans>}
                   </Button>
                 </TooltipTrigger>
                 {!sidecarShellId && (
                   <TooltipContent side="bottom" className="text-xs">
-                    Open the sidecar shell first to enable git operations
+                    <Trans>Open the sidecar shell first to enable git operations</Trans>
                   </TooltipContent>
                 )}
               </Tooltip>
@@ -709,13 +710,13 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
             )}
           </div>
         ) : !data || !data.files || data.files.length === 0 ? (
-          <p className="mt-4 px-2 text-center text-xs text-muted-foreground">No changes</p>
+          <p className="mt-4 px-2 text-center text-xs text-muted-foreground"><Trans>No changes</Trans></p>
         ) : (
           <div className="flex flex-col gap-2">
             {changed.length > 0 && (
               <div>
                 <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Changes ({changed.length})
+                  <Trans>Changes ({changed.length})</Trans>
                 </p>
                 <div className="flex flex-col gap-0.5">
                   {changed.map((f, i) => renderFileRow(f, i))}
@@ -725,7 +726,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
             {newFiles.length > 0 && (
               <div>
                 <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  New Files ({newFiles.length})
+                  <Trans>New Files ({newFiles.length})</Trans>
                 </p>
                 <div className="flex flex-col gap-0.5">
                   {newFiles.map((f, i) => renderFileRow(f, i))}

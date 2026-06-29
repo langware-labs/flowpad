@@ -4,6 +4,7 @@
  * events only when the text tool is active (so pen/arrow can draw over text).
  */
 import { cn } from '@src/lib/utils';
+import { useLingui } from '@lingui/react/macro';
 import type { TextBox } from './types';
 import type { UseTextBoxes } from './use-text-boxes';
 
@@ -38,6 +39,8 @@ export function TextBoxLayer({
   onCommit,
   onDelete,
 }: TextBoxLayerProps) {
+  const { t } = useLingui();
+
   return (
     <div className="pointer-events-none absolute inset-0">
       {boxes.map((b) => (
@@ -76,7 +79,7 @@ export function TextBoxLayer({
           />
           <button
             type="button"
-            title="Delete text"
+            title={t`Delete text`}
             onPointerDown={(e) => {
               e.stopPropagation();
               e.preventDefault();

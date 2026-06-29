@@ -7,6 +7,7 @@ import { useConversation } from '@src/components/conversation/useConversation';
 import { FileText, X } from 'lucide-react';
 import { ICON_BY_TYPE } from '@src/components/conversation/EntityChip';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
  * A single tab in RoomTabs. Distinct from terminal tabs (those are tracked by
@@ -45,7 +46,7 @@ export function RoomTabs({ tabs, activeKey, onActivate, onClose, onRename, class
   if (tabs.length === 0) {
     return (
       <div className={`flex h-full items-center justify-center text-xs text-muted-foreground ${className}`}>
-        No assets open. Click a doc or skill in the sidebar to open it here.
+        <Trans>No assets open. Click a doc or skill in the sidebar to open it here.</Trans>
       </div>
     );
   }
@@ -82,6 +83,7 @@ interface ChipProps {
 }
 
 function RoomTabChip({ tab, active, onActivate, onClose, onRename }: ChipProps) {
+  const { t } = useLingui();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tab.title);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -137,7 +139,7 @@ function RoomTabChip({ tab, active, onActivate, onClose, onRename }: ChipProps) 
           ? 'border-primary bg-background text-foreground'
           : 'border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground'
       }`}
-      title={editing ? 'Press Enter to save, Esc to cancel' : `${tab.title} — double-click to rename`}
+      title={editing ? t`Press Enter to save, Esc to cancel` : `${tab.title} — double-click to rename`}
     >
       {(() => {
         const TabIcon = ICON_BY_TYPE[tab.type] ?? FileText;
@@ -176,7 +178,7 @@ function RoomTabChip({ tab, active, onActivate, onClose, onRename }: ChipProps) 
       <span
         role="button"
         tabIndex={0}
-        aria-label="Close tab"
+        aria-label={t`Close tab`}
         onClick={handleClose}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -201,7 +203,7 @@ function RoomTabContent({ tab }: { tab: RoomTab }) {
     case 'conversation':
       return <ConversationTab conversationId={tab.asset_ref} />;
     default:
-      return <div className="p-4 text-sm text-muted-foreground">Unsupported tab type.</div>;
+      return <div className="p-4 text-sm text-muted-foreground"><Trans>Unsupported tab type.</Trans></div>;
   }
 }
 
@@ -211,7 +213,7 @@ function ConversationTab({ conversationId }: { conversationId: string }) {
   // project-scoped ones.
   const { task, senderName, taskMissing } = useConversation(conversationId);
   if (taskMissing) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading task context…</div>;
+    return <div className="p-4 text-sm text-muted-foreground"><Trans>Loading task context…</Trans></div>;
   }
   return (
     <div className="h-full overflow-y-auto">
@@ -235,7 +237,7 @@ function MarkdownTabContent({ assetRef }: { assetRef: string }) {
   }, [assetRef, computeNode?.typeId]);
 
   if (!fsRef) {
-    return <div className="p-4 text-xs text-muted-foreground">Connecting…</div>;
+    return <div className="p-4 text-xs text-muted-foreground"><Trans>Connecting…</Trans></div>;
   }
 
   return <MarkdownEditor fsRef={fsRef} chatTarget={null} />;
@@ -256,7 +258,7 @@ function SkillTabContent({ assetRef }: { assetRef: string }) {
   }, [assetRef, computeNode?.typeId]);
 
   if (!fsRef) {
-    return <div className="p-4 text-xs text-muted-foreground">Connecting…</div>;
+    return <div className="p-4 text-xs text-muted-foreground"><Trans>Connecting…</Trans></div>;
   }
 
   return <SkillAssetEditor fsRef={fsRef} />;

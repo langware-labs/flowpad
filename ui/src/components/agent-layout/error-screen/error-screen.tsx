@@ -4,8 +4,10 @@ import { Button } from '@src/components/ui/button';
 import { ChevronDown, ChevronUp, Home } from 'lucide-react';
 import { useState } from 'react';
 import { useRouteError } from 'react-router';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const ErrorScreen = () => {
+  const { t } = useLingui();
   const error = useRouteError();
   const [showDetails, setShowDetails] = useState(false);
 
@@ -39,11 +41,11 @@ const ErrorScreen = () => {
                 />
               </svg>
             </div>
-            <h1 className="mb-2 text-2xl font-bold">Service Unavailable</h1>
-            <p className="text-muted-foreground">Backend server is not responding. Please try again later.</p>
+            <h1 className="mb-2 text-2xl font-bold"><Trans>Service Unavailable</Trans></h1>
+            <p className="text-muted-foreground"><Trans>Backend server is not responding. Please try again later.</Trans></p>
           </div>
           <Button onClick={() => setDismissed(true)} className="w-full" variant="outline">
-            OK
+            <Trans>OK</Trans>
           </Button>
         </div>
       </div>
@@ -74,14 +76,14 @@ const ErrorScreen = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-            <h1 className="mb-2 text-2xl font-bold text-foreground">Agent not found</h1>
+            <h1 className="mb-2 text-2xl font-bold text-foreground"><Trans>Agent not found</Trans></h1>
             <p className="text-muted-foreground">
-              {errorAny?.response?.data?.message || errorAny?.message || 'The requested agent could not be found.'}
+              {errorAny?.response?.data?.message || errorAny?.message || t`The requested agent could not be found.`}
             </p>
           </div>
           <Button onClick={() => (window.location.href = '/')} className="w-full">
             <Home className="mr-2 h-4 w-4" />
-            Go to Homepage
+            <Trans>Go to Homepage</Trans>
           </Button>
         </div>
       </div>
@@ -104,7 +106,7 @@ const ErrorScreen = () => {
     if (errorAny?.message) {
       return errorAny.message;
     }
-    return 'Something went wrong while loading this page.';
+    return t`Something went wrong while loading this page.`;
   };
 
   // Helper to format error details for display
@@ -134,13 +136,13 @@ const ErrorScreen = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
-          <h1 className="mb-2 text-2xl font-bold text-foreground">Error</h1>
+          <h1 className="mb-2 text-2xl font-bold text-foreground"><Trans>Error</Trans></h1>
           <p className="text-muted-foreground">{errorMessage}</p>
         </div>
 
         <Button onClick={handleGoHome} className="flex w-full items-center justify-center">
           <Home className="mr-2 h-4 w-4" />
-          Go to Homepage
+          <Trans>Go to Homepage</Trans>
         </Button>
 
         <div className="mb-6 mt-4">
@@ -149,7 +151,7 @@ const ErrorScreen = () => {
             className="mx-auto flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             {showDetails ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-            Details
+            <Trans>Details</Trans>
           </button>
         </div>
       </div>

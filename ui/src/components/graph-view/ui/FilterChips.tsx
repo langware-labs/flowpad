@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import type Graph from 'graphology';
 import { EyeOff, Eye } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 import { EntityIcon } from './EntityIcon';
 import { hexForType } from './typeColors';
 
@@ -13,6 +15,7 @@ type Props = {
 };
 
 export function FilterChips({ graph, hidden, onToggle, onSelectAll, onClearAll }: Props) {
+  const { t } = useLingui();
   const types = useMemo(() => {
     if (!graph) return [] as Array<{ type: string; count: number }>;
     const counts = new Map<string, number>();
@@ -32,27 +35,27 @@ export function FilterChips({ graph, hidden, onToggle, onSelectAll, onClearAll }
   const allOff = activeCount === 0;
 
   return (
-    <div className="filters-row" role="group" aria-label="Filter by entity type">
+    <div className="filters-row" role="group" aria-label={t`Filter by entity type`}>
       <div className="filter-actions">
         <button
           type="button"
           className="chip-action"
           onClick={onSelectAll}
           disabled={allOn}
-          title="Show all types"
+          title={t`Show all types`}
         >
           <Eye size={11} />
-          All
+          <Trans>All</Trans>
         </button>
         <button
           type="button"
           className="chip-action"
           onClick={onClearAll}
           disabled={allOff}
-          title="Hide all types"
+          title={t`Hide all types`}
         >
           <EyeOff size={11} />
-          None
+          <Trans>None</Trans>
         </button>
         <span className="filter-summary">
           {activeCount}/{types.length}
@@ -73,7 +76,7 @@ export function FilterChips({ graph, hidden, onToggle, onSelectAll, onClearAll }
                 ? { borderColor: `${color}66`, background: `${color}22` }
                 : undefined
             }
-            title={active ? `Hide ${type}` : `Show ${type}`}
+            title={active ? t`Hide ${type}` : t`Show ${type}`}
           >
             <span
               className="chip-dot"

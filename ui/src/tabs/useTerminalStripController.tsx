@@ -40,6 +40,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Cloud, Container, History, SquareTerminal } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { ProjectsCounterChip, type ProjectWorkerType } from '@src/components/terminal/ProjectsCounterChip';
 import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
@@ -89,6 +90,7 @@ export function useTerminalStripController({
   addTabButton,
   spawnProjectId,
 }: TerminalStripControllerOptions = {}): TerminalStripController {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const isAdvanced = useIsAdvanced();
   // Per-type icon from the backend TypeInfo registry (never hardcode a glyph).
@@ -177,7 +179,7 @@ export function useTerminalStripController({
         );
       } catch (error) {
         notify.error({
-          title: 'Failed to open project',
+          title: t`Failed to open project`,
           message: error instanceof Error ? error.message : String(error),
         });
       }
@@ -231,8 +233,8 @@ export function useTerminalStripController({
       // Surface the failure instead of silently doing nothing — the most common
       // cause is a backend that predates the graph_context type (needs restart).
       notify.error({
-        title: 'Could not freeze context',
-        message: e instanceof Error ? e.message : 'Failed to save the context snapshot.',
+        title: t`Could not freeze context`,
+        message: e instanceof Error ? e.message : t`Failed to save the context snapshot.`,
       });
       return;
     }
@@ -266,7 +268,7 @@ export function useTerminalStripController({
     () => [
       {
         id: 'claude',
-        label: `Start Claude (${modLabel}+C)`,
+        label: t`Start Claude (${modLabel}+C)`,
         Icon: PROVIDER_META.claude.Icon,
         iconClassName: PROVIDER_META.claude.iconClassName,
         onActivate: () => void handleStartClaude(),
@@ -277,7 +279,7 @@ export function useTerminalStripController({
       },
       {
         id: 'codex',
-        label: 'Start Codex',
+        label: t`Start Codex`,
         Icon: PROVIDER_META.codex.Icon,
         iconClassName: PROVIDER_META.codex.iconClassName,
         onActivate: () => void handleStartCodex(),
@@ -288,7 +290,7 @@ export function useTerminalStripController({
       },
       {
         id: 'copilot',
-        label: 'Start Copilot',
+        label: t`Start Copilot`,
         Icon: PROVIDER_META.copilot.Icon,
         iconClassName: PROVIDER_META.copilot.iconClassName,
         onActivate: () => void handleStartCopilot(),
@@ -299,7 +301,7 @@ export function useTerminalStripController({
       },
       {
         id: 'claude-resume-by-id',
-        label: 'Resume Claude session…',
+        label: t`Resume Claude session…`,
         Icon: ClaudeResumeIcon,
         onActivate: () => setResumeByIdOpen(true),
         available: true,
@@ -307,7 +309,7 @@ export function useTerminalStripController({
       },
       {
         id: 'terminal',
-        label: `Open terminal (${modLabel}+T)`,
+        label: t`Open terminal (${modLabel}+T)`,
         Icon: SquareTerminal,
         onActivate: () => void handleStartTerminal(),
         available: true,
@@ -316,7 +318,7 @@ export function useTerminalStripController({
       },
       {
         id: 'sandbox',
-        label: 'Open sandbox terminal (E2B)',
+        label: t`Open sandbox terminal (E2B)`,
         Icon: Cloud,
         iconClassName: 'text-sky-500',
         onActivate: () => void handleStartSandbox(),
@@ -326,7 +328,7 @@ export function useTerminalStripController({
       },
       {
         id: 'docker',
-        label: 'Open docker terminal',
+        label: t`Open docker terminal`,
         Icon: Container,
         iconClassName: 'text-blue-500',
         onActivate: () => {
@@ -340,7 +342,7 @@ export function useTerminalStripController({
       },
       {
         id: 'history',
-        label: 'Open from history',
+        label: t`Open from history`,
         Icon: History,
         onActivate: () => setHistoryModalOpen(true),
         available: true,
@@ -348,7 +350,7 @@ export function useTerminalStripController({
       {
         // Advanced-only: freeze the current global context into a GraphContext.
         id: 'open-context',
-        label: 'Open Context',
+        label: t`Open Context`,
         Icon: ContextIcon,
         onActivate: () => void handleOpenContext(),
         available: isAdvanced,
@@ -386,11 +388,11 @@ export function useTerminalStripController({
 
   const newTabMenuItems = useMemo<TabStripContextMenuItem[]>(
     () => [
-      { label: 'New Claude Session', shortcut: `${modLabel}+C`, onSelect: () => void handleStartClaude() },
-      { label: 'New Terminal', shortcut: `${modLabel}+T`, onSelect: () => void handleStartTerminal() },
+      { label: t`New Claude Session`, shortcut: `${modLabel}+C`, onSelect: () => void handleStartClaude() },
+      { label: t`New Terminal`, shortcut: `${modLabel}+T`, onSelect: () => void handleStartTerminal() },
       // Advanced-only: freeze the current context into a GraphContext and open it.
       ...(isAdvanced
-        ? [{ label: 'Open Context', Icon: ContextIcon, onSelect: () => void handleOpenContext() }]
+        ? [{ label: t`Open Context`, Icon: ContextIcon, onSelect: () => void handleOpenContext() }]
         : []),
     ],
     [modLabel, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
@@ -425,8 +427,8 @@ export function useTerminalStripController({
               }
               if (!processId) {
                 notify.error({
-                  title: 'Session not found',
-                  message: `Session ${entry.worker_id} is not in Claude, Codex, or Copilot history.`,
+                  title: t`Session not found`,
+                  message: t`Session ${entry.worker_id} is not in Claude, Codex, or Copilot history.`,
                   id: `session-not-found:${entry.worker_id}`,
                 });
                 return;
@@ -441,10 +443,10 @@ export function useTerminalStripController({
       <InputDialog
         open={resumeByIdOpen}
         onOpenChange={setResumeByIdOpen}
-        title="Resume Claude session"
-        description="Paste a Claude CLI session id (UUID) to resume it in a new tab."
+        title={t`Resume Claude session`}
+        description={t`Paste a Claude CLI session id (UUID) to resume it in a new tab.`}
         placeholder="e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa"
-        confirmLabel="Resume"
+        confirmLabel={t`Resume`}
         onConfirm={(sessionId) => resumeInTerminal(sessionId)}
       />
     </>

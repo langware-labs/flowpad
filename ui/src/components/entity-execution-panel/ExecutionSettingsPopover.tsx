@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { AgenticProcess, Project, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import {
@@ -38,6 +40,7 @@ export function ExecutionSettingsPopover({
   onProjectChange,
   trigger,
 }: ExecutionSettingsPopoverProps) {
+  const { t } = useLingui();
   const projectsQuery = useMemo(() => new QueryRequest({ type: Project.type }), []);
   const { data: projects = [] } = useEntitiesQuery<Project>(projectsQuery);
   const projectLocked = !!activeProcess;
@@ -53,11 +56,11 @@ export function ExecutionSettingsPopover({
         <div className="space-y-1.5 px-3 py-2" data-testid="execution-settings-project-section">
           <div className="flex items-center justify-between">
             <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Project
+              <Trans>Project</Trans>
             </div>
             {projectLocked && (
               <span className="text-[10px] text-muted-foreground">
-                locked after first message
+                <Trans>locked after first message</Trans>
               </span>
             )}
           </div>
@@ -71,11 +74,11 @@ export function ExecutionSettingsPopover({
               data-testid="execution-settings-project"
               title={
                 projectLocked
-                  ? 'Project is fixed after the first message — start a new session to change it.'
+                  ? t`Project is fixed after the first message — start a new session to change it.`
                   : undefined
               }
             >
-              <SelectValue placeholder="Select project" />
+              <SelectValue placeholder={t`Select project`} />
             </SelectTrigger>
             <SelectContent>
               {projects.map((p) => (

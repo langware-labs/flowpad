@@ -13,6 +13,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { DiffContent } from '@src/components/code-editor/DiffContent';
 import {
   buildAtlasLayout,
@@ -178,6 +179,7 @@ function CommandPalette({ open, docs, onClose, onNav }: {
   onClose: () => void;
   onNav: (id: string) => void;
 }) {
+  const { t } = useLingui();
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -237,7 +239,7 @@ function CommandPalette({ open, docs, onClose, onNav }: {
       <div className="cmd" onMouseDown={(e) => e.stopPropagation()}>
         <div className="cmd-in">
           <span style={{ color: 'var(--ink-faint)' }}><Icon d={ICONS.search} s={18} /></span>
-          <input ref={inputRef} value={q} placeholder="Search the docs…" onChange={(e) => setQ(e.target.value)} />
+          <input ref={inputRef} value={q} placeholder={t`Search the docs…`} onChange={(e) => setQ(e.target.value)} />
           <span className="esc">ESC</span>
         </div>
         <div className="cmd-list">
@@ -245,7 +247,7 @@ function CommandPalette({ open, docs, onClose, onNav }: {
             <div className="cmd-empty">Nothing in the docs matches “{q}”.</div>
           ) : (
             <>
-              <div className="cmd-grp">{q.trim() ? 'Results' : 'All entries'} · {results.length}</div>
+              <div className="cmd-grp">{q.trim() ? t`Results` : t`All entries`} · {results.length}</div>
               {results.map((r, i) => (
                 <div key={r.id} className={'cmd-item' + (i === sel ? ' sel' : '')}
                   onMouseEnter={() => setSel(i)} onClick={() => choose(i)}>
@@ -264,6 +266,7 @@ function CommandPalette({ open, docs, onClose, onNav }: {
 
 /* ---- the Atlas ------------------------------------------------------------ */
 export function KnowledgeAtlas({ root }: { root: string }) {
+  const { t } = useLingui();
   const stageRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
   const pan = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
@@ -524,7 +527,7 @@ export function KnowledgeAtlas({ root }: { root: string }) {
   return (
     <div className="kb-atlas" ref={stageRef} onMouseDown={onDown}>
       {loadErr && <div className="kb-status err">{loadErr}</div>}
-      {!loadErr && !layout && <div className="kb-status">Scanning docs…</div>}
+      {!loadErr && !layout && <div className="kb-status"><Trans>Scanning docs…</Trans></div>}
 
       {layout && (
         <div className="world" style={{
@@ -602,43 +605,43 @@ export function KnowledgeAtlas({ root }: { root: string }) {
       {/* chrome */}
       <div className="chrome">
         <div className="topbar">
-          <div className="brand"><span className="mark" /><div><b>Knowledge Atlas</b><span>{rootName}</span></div></div>
+          <div className="brand"><span className="mark" /><div><b><Trans>Knowledge Atlas</Trans></b><span>{rootName}</span></div></div>
           <div className="spacer" />
           {changedCount > 0 && (
             <div
               className={'pill warn' + (changesMode ? ' on' : '')}
               data-testid="kb-changed-chip"
-              title="Highlight changes since the last stamp"
+              title={t`Highlight changes since the last stamp`}
               onClick={() => setChangesMode((m) => !m)}
             >
-              <span className="wdot" /><span>{changedCount} changed</span>
+              <span className="wdot" /><span><Trans>{changedCount} changed</Trans></span>
             </div>
           )}
-          <div className="pill" data-testid="kb-stamp" title="Stamp the current state as the baseline" onClick={stamp}>
-            <Icon d={ICONS.stamp} s={14} /><span>{stamping ? 'Stamping…' : 'Stamp baseline'}</span>
+          <div className="pill" data-testid="kb-stamp" title={t`Stamp the current state as the baseline`} onClick={stamp}>
+            <Icon d={ICONS.stamp} s={14} /><span>{stamping ? t`Stamping…` : t`Stamp baseline`}</span>
           </div>
           <div className="pill" onClick={() => setCmdOpen(true)}>
-            <Icon d={ICONS.search} s={14} /><span>Search</span><span className="kbd">⌘K</span>
+            <Icon d={ICONS.search} s={14} /><span><Trans>Search</Trans></span><span className="kbd">⌘K</span>
           </div>
         </div>
 
         <div className="zoomer">
-          <button onClick={() => zoom(1)} title="Zoom in"><Icon d="M12 5v14M5 12h14" s={16} sw={2} /></button>
+          <button onClick={() => zoom(1)} title={t`Zoom in`}><Icon d="M12 5v14M5 12h14" s={16} sw={2} /></button>
           <div className="lvl">{Math.round(view.s * 100)}</div>
-          <button onClick={() => zoom(-1)} title="Zoom out"><Icon d="M5 12h14" s={16} sw={2} /></button>
-          <button onClick={() => fit(!!focus)} title="Fit (f)"><Icon d={['M4 9V4h5', 'M20 9V4h-5', 'M4 15v5h5', 'M20 15v5h-5']} s={15} /></button>
-          <button onClick={() => setReloadKey((k) => k + 1)} title="Rescan docs"><Icon d={ICONS.refresh} s={15} /></button>
+          <button onClick={() => zoom(-1)} title={t`Zoom out`}><Icon d="M5 12h14" s={16} sw={2} /></button>
+          <button onClick={() => fit(!!focus)} title={t`Fit (f)`}><Icon d={['M4 9V4h5', 'M20 9V4h-5', 'M4 15v5h5', 'M20 15v5h-5']} s={15} /></button>
+          <button onClick={() => setReloadKey((k) => k + 1)} title={t`Rescan docs`}><Icon d={ICONS.refresh} s={15} /></button>
         </div>
 
         <div className="legend">
-          <div className="lt">Legend</div>
-          <div className="lr"><svg width="22" height="8"><path d="M1 4 C8 4 14 4 21 4" fill="none" stroke="var(--flow)" strokeWidth="1.8" /></svg>Structure</div>
-          <div className="lr"><svg width="22" height="8"><path d="M1 4 C8 4 14 4 21 4" fill="none" stroke="var(--rubric)" strokeWidth="1.6" strokeDasharray="2 4" /></svg>Cross-link</div>
-          <div className="lr"><span className="sw warn" />Changed</div>
-          <div className="lr"><span className="sw ghost" />Removed</div>
+          <div className="lt"><Trans>Legend</Trans></div>
+          <div className="lr"><svg width="22" height="8"><path d="M1 4 C8 4 14 4 21 4" fill="none" stroke="var(--flow)" strokeWidth="1.8" /></svg><Trans>Structure</Trans></div>
+          <div className="lr"><svg width="22" height="8"><path d="M1 4 C8 4 14 4 21 4" fill="none" stroke="var(--rubric)" strokeWidth="1.6" strokeDasharray="2 4" /></svg><Trans>Cross-link</Trans></div>
+          <div className="lr"><span className="sw warn" /><Trans>Changed</Trans></div>
+          <div className="lr"><span className="sw ghost" /><Trans>Removed</Trans></div>
         </div>
 
-        {!drawerOpen && layout && <div className="hint">Drag to pan · scroll to zoom · click a node to read</div>}
+        {!drawerOpen && layout && <div className="hint"><Trans>Drag to pan · scroll to zoom · click a node to read</Trans></div>}
       </div>
 
       {/* drawer */}
@@ -649,7 +652,7 @@ export function KnowledgeAtlas({ root }: { root: string }) {
             <div className="drawer-head">
               <div>
                 <div className="eye">
-                  {focusNode.kicker ?? 'Docs'}
+                  {focusNode.kicker ?? t`Docs`}
                   {focusNode.status !== 'fresh' && focusNode.status !== 'unindexed' ? ` · ${focusNode.status}` : ''}
                 </div>
                 <h2>{focusNode.title}</h2>
@@ -667,38 +670,38 @@ export function KnowledgeAtlas({ root }: { root: string }) {
                 <div className="d-tabs">
                   {!focusNode.isGhost && (
                     <span className={'d-tab' + (drawerTab === 'doc' ? ' active' : '')}
-                      onClick={() => setDrawerTab('doc')}>Entry</span>
+                      onClick={() => setDrawerTab('doc')}><Trans>Entry</Trans></span>
                   )}
                   <span className={'d-tab' + (drawerTab === 'changes' ? ' active' : '')}
-                    data-testid="kb-changes-tab" onClick={() => setDrawerTab('changes')}>Changes</span>
+                    data-testid="kb-changes-tab" onClick={() => setDrawerTab('changes')}><Trans>Changes</Trans></span>
                 </div>
               )}
               {drawerTab === 'changes' ? (
                 <div className="d-diff" data-testid="kb-diff-panel">
                   {diffBody.loading ? (
-                    <p className="d-diff-note">Computing diff…</p>
+                    <p className="d-diff-note"><Trans>Computing diff…</Trans></p>
                   ) : diffBody.skipped ? (
                     <p className="d-diff-note">Diff unavailable ({diffBody.skipped}).</p>
                   ) : diffBody.diff ? (
                     <DiffContent diffString={diffBody.diff} sideBySide={false} />
                   ) : (
-                    <p className="d-diff-note">No line changes vs the stamped baseline.</p>
+                    <p className="d-diff-note"><Trans>No line changes vs the stamped baseline.</Trans></p>
                   )}
                 </div>
               ) : focusNode.isGhost ? (
                 <div className="d-prose">
-                  <p className="lead">This entry was removed since the last stamp — it exists only in the baseline.</p>
+                  <p className="lead"><Trans>This entry was removed since the last stamp — it exists only in the baseline.</Trans></p>
                 </div>
               ) : (
                 <>
                   <div className="d-prose">
                     {docBody.loading
-                      ? <p className="lead" style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>Reading…</p>
+                      ? <p className="lead" style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}><Trans>Reading…</Trans></p>
                       : <ProseBlocks blocks={docBody.blocks} resolve={resolveTarget} onNav={openDoc} />}
                   </div>
                   {partners.length > 0 && (
                     <div className="d-links">
-                      <div className="lh">Connected · {partners.length}</div>
+                      <div className="lh"><Trans>Connected · {partners.length}</Trans></div>
                       {partners.map((p) => (
                         <span className="d-chip" key={p.id} onClick={() => openDoc(p.id)}>
                           <span className="cd" />{p.title}

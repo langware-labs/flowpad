@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { BookMarked, ListPlus, Pencil, Plus } from 'lucide-react';
 import { Prompt, type AgenticProcess, type IEntity } from '@sdk';
 import type { DockPointer } from '@src/navigation/DockPointer';
@@ -31,6 +32,7 @@ export interface PromptLibraryMenuProps {
 }
 
 export const PromptLibraryMenu: React.FC<PromptLibraryMenuProps> = ({ process, projectId = null, trigger }) => {
+  const { t } = useLingui();
   const { requestName, confirm, dialogs } = useMenuDialogs();
   const [editState, setEditState] = useState<{ prompt?: Prompt; groupId: string | null } | null>(null);
   const [open, setOpen] = useState(false);
@@ -57,7 +59,7 @@ export const PromptLibraryMenu: React.FC<PromptLibraryMenuProps> = ({ process, p
     () =>
       groupRoot({
         namespace: PROMPT_LIBRARY_NAMESPACE,
-        label: 'Prompt Library',
+        label: t`Prompt Library`,
         rootIcon: <BookMarked className="h-4 w-4" />,
         leafTypes: [Prompt.type],
         projectId,
@@ -77,13 +79,13 @@ export const PromptLibraryMenu: React.FC<PromptLibraryMenuProps> = ({ process, p
               {
                 id: `enqueue:${prompt.id}`,
                 icon: <ListPlus />,
-                label: 'Add to queue',
+                label: t`Add to queue`,
                 run: () => (prompt as Prompt).enqueueTo(process),
               },
               {
                 id: `edit:${prompt.id}`,
                 icon: <Pencil />,
-                label: 'Edit prompt',
+                label: t`Edit prompt`,
                 run: () => setEditState({ prompt, groupId: prompt.group_id ?? null }),
                 showBusyIndicator: false,
               },
@@ -94,7 +96,7 @@ export const PromptLibraryMenu: React.FC<PromptLibraryMenuProps> = ({ process, p
           {
             id: `new-prompt:${groupId ?? 'root'}`,
             icon: <Plus />,
-            label: 'New prompt',
+            label: t`New prompt`,
             run: () => setEditState({ groupId }),
             showBusyIndicator: false,
           },
@@ -119,7 +121,7 @@ export const PromptLibraryMenu: React.FC<PromptLibraryMenuProps> = ({ process, p
         persistKey="flowpad.promptLibrary.expanded"
         defaultExpandedIds={[handle.root.id]}
         activePointer={activePointer}
-        emptyState={<p className="p-3 text-center text-xs text-muted-foreground">No prompts yet — create one below.</p>}
+        emptyState={<p className="p-3 text-center text-xs text-muted-foreground"><Trans>No prompts yet — create one below.</Trans></p>}
       />
       <PromptEditDialog
         open={editState !== null}

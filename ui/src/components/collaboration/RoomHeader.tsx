@@ -3,6 +3,7 @@ import { Button } from '@src/components/ui/button';
 import { notify } from '@src/notifications';
 import { Radio, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface Props {
   room: CollaborationRoom;
@@ -22,6 +23,7 @@ function formatStarted(iso: string | null | undefined): string {
 }
 
 export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) {
+  const { t } = useLingui();
   const live = room.status === 'active';
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(room.displayName);
@@ -37,11 +39,11 @@ export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) 
   const handleEnd = async () => {
     try {
       await room.end();
-      notify.success({ title: 'Room ended' });
+      notify.success({ title: t`Room ended` });
       onEnded?.();
     } catch (err) {
       console.error('[RoomHeader] end failed', err);
-      notify.info({ title: 'Could not end room', message: String((err as Error).message ?? err) });
+      notify.info({ title: t`Could not end room`, message: String((err as Error).message ?? err) });
     }
   };
 
@@ -58,10 +60,10 @@ export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) 
     try {
       room.name = next;
       await room.save();
-      notify.success({ title: 'Room renamed', message: trimmed || '(cleared)' });
+      notify.success({ title: t`Room renamed`, message: trimmed || '(cleared)' });
     } catch (err) {
       console.error('[RoomHeader] rename failed', err);
-      notify.info({ title: 'Rename failed', message: String((err as Error).message ?? err) });
+      notify.info({ title: t`Rename failed`, message: String((err as Error).message ?? err) });
     }
   };
 
@@ -97,27 +99,27 @@ export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) 
           type="button"
           onClick={startEdit}
           className="rounded px-1 font-medium text-foreground hover:bg-muted"
-          title="Click to rename room"
+          title={t`Click to rename room`}
         >
           {room.displayName}
         </button>
       )}
-      <span className="text-muted-foreground">· started {formatStarted(room.started_at)}</span>
+      <span className="text-muted-foreground">· <Trans>started</Trans> {formatStarted(room.started_at)}</span>
       {isSupport && (
         <span
           className="flex items-center gap-1 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] uppercase tracking-wide text-muted-foreground"
-          title="Room hosted by the Flowpad team"
+          title={t`Room hosted by the Flowpad team`}
         >
           <Sparkles className="h-2.5 w-2.5" />
-          Support room
+          <Trans>Support room</Trans>
         </span>
       )}
       <span className="ml-auto text-muted-foreground">
-        {(room.members?.length ?? 0)} {room.members?.length === 1 ? 'member' : 'members'}
+        {(room.members?.length ?? 0)} {room.members?.length === 1 ? t`member` : t`members`}
       </span>
       {isHost && live && (
         <Button size="sm" variant="outline" className="h-6 text-[11px]" onClick={() => void handleEnd()}>
-          End room
+          <Trans>End room</Trans>
         </Button>
       )}
     </div>

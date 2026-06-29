@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Check, ClipboardList, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -252,6 +253,7 @@ function buildLogText(
 }
 
 export function PTYViewer({ open, onClose, shell }: Props) {
+  const { t } = useLingui();
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<PtyViewerData | null>(null);
   const [chunks, setChunks] = useState<PtyMemoryChunk[]>([]);
@@ -314,7 +316,7 @@ export function PTYViewer({ open, onClose, shell }: Props) {
       <DialogContent className={`flex flex-col ${expanded ? 'max-w-[95vw] max-h-[95vh]' : 'max-w-4xl max-h-[85vh]'}`}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 pr-8 text-sm">
-            PTY Viewer
+            <Trans>PTY Viewer</Trans>
             {shell && <span className="text-xs text-muted-foreground font-mono">{shell.id.slice(0, 8)}</span>}
             <div className="ml-auto flex items-center gap-1">
               {data && (
@@ -328,7 +330,7 @@ export function PTYViewer({ open, onClose, shell }: Props) {
                         {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <ClipboardList className="h-3.5 w-3.5" />}
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" className="text-xs">Copy as log</TooltipContent>
+                    <TooltipContent side="bottom" className="text-xs"><Trans>Copy as log</Trans></TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               )}
@@ -349,7 +351,7 @@ export function PTYViewer({ open, onClose, shell }: Props) {
           <>
             {/* Summary stats */}
             <div className="flex gap-4 text-xs text-muted-foreground border-b pb-2 mb-2">
-              <span>xterm memory: <b className="text-foreground">{data.totalChunks}</b> chunks ({formatBytes(data.totalSizeBytes)})</span>
+              <span><Trans>xterm memory: <b className="text-foreground">{data.totalChunks}</b> chunks ({formatBytes(data.totalSizeBytes)})</Trans></span>
             </div>
 
             <div ref={splitContainerRef} className="flex flex-1 min-h-0">
@@ -366,9 +368,9 @@ export function PTYViewer({ open, onClose, shell }: Props) {
                       <th className="text-right px-2 py-1 w-16">size</th>
                       <th className="text-left px-2 py-1">
                         <span className="flex items-center gap-1">
-                          preview
+                          <Trans>preview</Trans>
                           {tableExpanded && selectedChunk && (
-                            <button onClick={() => setTableExpanded(false)} className="hover:text-foreground" title="Show detail panel">
+                            <button onClick={() => setTableExpanded(false)} className="hover:text-foreground" title={t`Show detail panel`}>
                               <PanelLeftClose className="h-3 w-3" />
                             </button>
                           )}
@@ -435,9 +437,9 @@ export function PTYViewer({ open, onClose, shell }: Props) {
                           onChange={(e) => setShowCursor(e.target.checked)}
                           className="h-3 w-3"
                         />
-                        <span className="text-[10px]">cursor</span>
+                        <span className="text-[10px]"><Trans>cursor</Trans></span>
                       </label>
-                      <button onClick={() => setTableExpanded(true)} className="hover:text-foreground" title="Expand table">
+                      <button onClick={() => setTableExpanded(true)} className="hover:text-foreground" title={t`Expand table`}>
                         <PanelLeftOpen className="h-3 w-3" />
                       </button>
                       <button onClick={() => setSelectedChunk(null)} className="hover:text-foreground">

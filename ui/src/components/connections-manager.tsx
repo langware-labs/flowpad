@@ -1,6 +1,7 @@
 import { ConnectionStatus, TypeId, type OAuthConnection, type OAuthDetachResult } from '@sdk';
 import { CheckCircle } from 'lucide-react';
 import * as React from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useOAuthConnection } from '@sdk/react/hooks/useOAuthConnection';
 import { Button } from './ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
@@ -23,6 +24,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   onConnectionDisconnect,
   currentProject,
 }) => {
+  const { t } = useLingui();
   const [connectionTimestamps, setConnectionTimestamps] = React.useState<Record<string, Date>>(() => {
     // Load from localStorage on initialization
     try {
@@ -111,7 +113,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     // Check if we have a current project
     if (!currentProject) {
       console.error('[ConnectionsManager] ERROR - No current project available for OAuth connection');
-      alert('No current project available. Please create a project first before connecting OAuth providers.');
+      alert(t`No current project available. Please create a project first before connecting OAuth providers.`);
       return;
     }
 
@@ -145,14 +147,14 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   };
 
   const formatConnectionDate = (date?: Date) => {
-    if (!date) return 'Never connected';
+    if (!date) return t`Never connected`;
 
     const now = new Date();
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
     // Show relative time for recent connections
     if (diffInSeconds < 60) {
-      return 'Just now';
+      return t`Just now`;
     } else if (diffInSeconds < 3600) {
       const minutes = Math.floor(diffInSeconds / 60);
       return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
@@ -178,16 +180,16 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   return (
     <div className="flex h-full flex-col p-4">
       <div className="mb-4">
-        <h2 className="text-xl font-semibold">OAuth Connections</h2>
+        <h2 className="text-xl font-semibold"><Trans>OAuth Connections</Trans></h2>
       </div>
 
       <div className="flex-1 overflow-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[200px]">Provider</TableHead>
-              <TableHead className="w-[250px]">Status</TableHead>
-              <TableHead className="w-[150px]">Actions</TableHead>
+              <TableHead className="w-[200px]"><Trans>Provider</Trans></TableHead>
+              <TableHead className="w-[250px]"><Trans>Status</Trans></TableHead>
+              <TableHead className="w-[150px]"><Trans>Actions</Trans></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -205,7 +207,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                         return iconUrl ? (
                           <img
                             src={iconUrl}
-                            alt={`${connection.provider} icon`}
+                            alt={t`${connection.provider} icon`}
                             className="h-5 w-5 flex-shrink-0"
                             onError={(e) => {
                               // Hide the image if it fails to load
@@ -223,7 +225,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                         {connection.status === ConnectionStatus.CONNECTED ? (
                           <>
                             <CheckCircle className="h-4 w-4 text-green-600" />
-                            <span className="text-green-600">Connected</span>
+                            <span className="text-green-600"><Trans>Connected</Trans></span>
                             {connection.connectedAt && (
                               <span className="text-gray-500">- {formatConnectionDate(connection.connectedAt)}</span>
                             )}
@@ -233,14 +235,14 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                             <div className="h-4 w-4 rounded-full border-2 border-gray-400 flex items-center justify-center">
                               <div className="h-2 w-2 rounded-full bg-gray-400" />
                             </div>
-                            <span className="text-gray-500">Ready to Connect</span>
+                            <span className="text-gray-500"><Trans>Ready to Connect</Trans></span>
                           </>
                         ) : (
                           <>
                             <div className="h-4 w-4 rounded-full border-2 border-gray-400 flex items-center justify-center">
                               <div className="h-2 w-2 rounded-full bg-gray-400" />
                             </div>
-                            <span className="text-gray-500">Disconnected</span>
+                            <span className="text-gray-500"><Trans>Disconnected</Trans></span>
                           </>
                         )}
                       </div>
@@ -264,10 +266,10 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                       }
                     >
                       {connectingConnectionId === connection.id
-                        ? 'Connecting...'
+                        ? t`Connecting...`
                         : connection.status === ConnectionStatus.CONNECTED
-                          ? 'Disconnect'
-                          : 'Connect'}
+                          ? t`Disconnect`
+                          : t`Connect`}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -276,7 +278,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             {allConnections.length === 0 && (
               <TableRow>
                 <TableCell colSpan={3} className="text-center text-gray-500">
-                  No OAuth connections found
+                  <Trans>No OAuth connections found</Trans>
                 </TableCell>
               </TableRow>
             )}

@@ -4,6 +4,7 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Slider } from '@src/components/ui/slider';
 import { cn } from '@src/lib/utils';
 import { Minus, Plus } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { buildContextModel, MAX_NODES, type ContextModel, type ContextNode } from './buildContextModel';
 import './context-graph.css';
 
@@ -79,6 +80,7 @@ function edgePath(a: XY, b: XY): string {
  * theme-awareness via app tokens. Radial-by-distance layout with pan/zoom.
  */
 export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
+  const { t } = useLingui();
   const containerRef = useRef<HTMLDivElement>(null);
   const [distance, setDistance] = useState(1);
   const [model, setModel] = useState<ContextModel | null>(null);
@@ -310,7 +312,7 @@ export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
         {/* Chrome */}
         <div className="ctx-chrome">
           <div className="ctx-bar">
-            <span className="whitespace-nowrap text-muted-foreground">Distance</span>
+            <span className="whitespace-nowrap text-muted-foreground"><Trans>Distance</Trans></span>
             <Slider
               min={1}
               max={MAX_DISTANCE}
@@ -318,7 +320,7 @@ export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
               value={[distance]}
               onValueChange={(v) => setDistance(v[0])}
               className="w-36"
-              aria-label="Context graph distance"
+              aria-label={t`Context graph distance`}
             />
             <span className="w-4 text-center font-medium tabular-nums text-foreground">{distance}</span>
             <span className="text-muted-foreground">
@@ -327,21 +329,21 @@ export default function ContextGraphCanvas({ root }: { root: GraphContext }) {
           </div>
 
           <div className="ctx-legend">
-            <span className="lr"><span className="sw" style={{ background: 'var(--ctx-member)' }} />Member</span>
-            <span className="lr"><span className="sw" style={{ background: 'var(--ctx-shared)' }} />Shared</span>
-            <span className="lr"><span className="sw" style={{ background: 'var(--ctx-private)' }} />Private</span>
+            <span className="lr"><span className="sw" style={{ background: 'var(--ctx-member)' }} /><Trans>Member</Trans></span>
+            <span className="lr"><span className="sw" style={{ background: 'var(--ctx-shared)' }} /><Trans>Shared</Trans></span>
+            <span className="lr"><span className="sw" style={{ background: 'var(--ctx-private)' }} /><Trans>Private</Trans></span>
           </div>
 
           <div className="ctx-zoom">
-            <button type="button" onClick={() => zoomBy(1.2)} title="Zoom in" aria-label="Zoom in">
+            <button type="button" onClick={() => zoomBy(1.2)} title={t`Zoom in`} aria-label={t`Zoom in`}>
               <Plus className="h-4 w-4" />
             </button>
-            <button type="button" onClick={() => zoomBy(1 / 1.2)} title="Zoom out" aria-label="Zoom out">
+            <button type="button" onClick={() => zoomBy(1 / 1.2)} title={t`Zoom out`} aria-label={t`Zoom out`}>
               <Minus className="h-4 w-4" />
             </button>
           </div>
 
-          {loading && <div className="ctx-status">Building graph…</div>}
+          {loading && <div className="ctx-status"><Trans>Building graph…</Trans></div>}
         </div>
       </div>
     </div>

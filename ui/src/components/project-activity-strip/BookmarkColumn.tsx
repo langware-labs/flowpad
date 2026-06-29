@@ -4,6 +4,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { BookmarkType, type Annotation, type Bookmark, type Task } from '@sdk';
 import { ArchiveX, MessageSquarePlus, RefreshCw, StickyNote, Tag, X } from 'lucide-react';
 import { useRef, useMemo, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 import { LearningCard } from './LearningCard';
 import { BookmarkCard } from './BookmarkCard';
 import { ErrorAlertCard } from './ErrorAlertCard';
@@ -37,12 +39,11 @@ type BookmarkEntry =
 
 function AnnotationCard({ annotation }: { annotation: Annotation }) {
   const isComment = annotation.labels?.includes('comment:');
-  const label = isComment ? 'Comment' : 'Prompt';
   return (
     <div className="bookmark-card flex flex-col gap-1 rounded border border-border bg-card p-2.5" data-testid="comment-card">
       <div className="flex items-center gap-1.5">
         <Tag className={`h-3.5 w-3.5 ${isComment ? 'text-sky-400' : 'text-lime-400'}`} />
-        <span className="text-xs font-medium text-foreground/80">{label}</span>
+        <span className="text-xs font-medium text-foreground/80">{isComment ? <Trans>Comment</Trans> : <Trans>Prompt</Trans>}</span>
         {annotation.labels?.map(l => (
           <span key={l} className={`rounded px-1 py-0.5 text-[9px] font-mono ${isComment ? 'bg-sky-400/10 text-sky-500' : 'bg-lime-400/10 text-lime-500'}`}>{l}</span>
         ))}
@@ -145,6 +146,7 @@ export function BookmarkColumn({
   sessionEventCounts,
   snifferEvents,
 }: BookmarkColumnProps) {
+  const { t } = useLingui();
   const [bookmarkFilter, setBookmarkFilter] = useState<BookmarkFilter>(BookmarkFilter.Open);
   const [pendingDeleteBookmark, setPendingDeleteBookmark] = useState<Bookmark | null>(null);
   const [pendingRemindBookmark, setPendingRemindBookmark] = useState<Bookmark | null>(null);
@@ -202,7 +204,7 @@ export function BookmarkColumn({
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">
           <StickyNote className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Todos</h3>
+          <h3 className="text-sm font-semibold"><Trans>Todos</Trans></h3>
           {filteredBookmarkCount > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               {filteredBookmarkCount}
@@ -211,7 +213,7 @@ export function BookmarkColumn({
           {onRefresh && (
             <button
               type="button"
-              title="Refresh — git pull and scan for new notifications"
+              title={t`Refresh — git pull and scan for new notifications`}
               disabled={refreshing}
               className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
               onClick={() => {
@@ -227,7 +229,7 @@ export function BookmarkColumn({
           {onArchiveAllLearnings && learningTasks.length > 0 && (
             <button
               type="button"
-              title="Archive all todos"
+              title={t`Archive all todos`}
               className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={onArchiveAllLearnings}
             >
@@ -238,7 +240,7 @@ export function BookmarkColumn({
             <button
               type="button"
               data-testid="add-comment-button"
-              title="Add comment"
+              title={t`Add comment`}
               className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => {
                 setCommentOpen((v) => !v);
@@ -258,7 +260,7 @@ export function BookmarkColumn({
             ref={commentInputRef}
             data-testid="comment-input"
             rows={2}
-            placeholder="Add a comment..."
+            placeholder={t`Add a comment...`}
             className="w-full resize-none rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             value={commentText}
             onChange={(e) => setCommentText(e.target.value)}
@@ -272,7 +274,7 @@ export function BookmarkColumn({
               className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
               onClick={() => { setCommentOpen(false); setCommentText(''); }}
             >
-              Cancel
+              <Trans>Cancel</Trans>
             </button>
             <button
               type="button"
@@ -281,7 +283,7 @@ export function BookmarkColumn({
               className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground disabled:opacity-50"
               onClick={() => void handleAddComment()}
             >
-              Add
+              <Trans>Add</Trans>
             </button>
           </div>
         </div>
@@ -294,10 +296,10 @@ export function BookmarkColumn({
           value={bookmarkFilter}
           onChange={(e) => setBookmarkFilter(e.target.value as BookmarkFilter)}
         >
-          <option value="open">Open</option>
-          <option value="pending">Pending</option>
-          <option value="closed">Closed</option>
-          <option value="all">All</option>
+          <option value="open"><Trans>Open</Trans></option>
+          <option value="pending"><Trans>Pending</Trans></option>
+          <option value="closed"><Trans>Closed</Trans></option>
+          <option value="all"><Trans>All</Trans></option>
         </select>
       </div>
 
@@ -310,7 +312,7 @@ export function BookmarkColumn({
 
       {/* Bookmark list */}
       {learningTasks.length === 0 && bookmarks.length === 0 && (!annotations || annotations.length === 0) ? (
-        <div className="activity-cell-empty">No bookmarks yet</div>
+        <div className="activity-cell-empty"><Trans>No bookmarks yet</Trans></div>
       ) : (
         <BookmarksList
           learningTasks={learningTasks}
@@ -346,9 +348,9 @@ export function BookmarkColumn({
       <ConfirmDialog
         open={!!pendingDeleteBookmark}
         onOpenChange={(open) => !open && setPendingDeleteBookmark(null)}
-        title="Delete bookmark?"
+        title={t`Delete bookmark?`}
         description={`This will permanently delete "${pendingDeleteBookmark?.displayName ?? ''}". This cannot be undone.`}
-        confirmLabel="Delete"
+        confirmLabel={t`Delete`}
         variant="destructive"
         onConfirm={() => {
           if (pendingDeleteBookmark && onDeleteBookmark) onDeleteBookmark(pendingDeleteBookmark);
@@ -360,14 +362,14 @@ export function BookmarkColumn({
       <Dialog open={!!pendingRemindBookmark} onOpenChange={(open) => !open && setPendingRemindBookmark(null)}>
         <DialogContent className="max-w-xs p-4">
           <DialogHeader>
-            <DialogTitle className="text-sm">Snooze bookmark</DialogTitle>
+            <DialogTitle className="text-sm"><Trans>Snooze bookmark</Trans></DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-1.5 pt-1">
             {[
-              { label: '15 minutes', minutes: 15 },
-              { label: '1 hour', minutes: 60 },
-              { label: '4 hours', minutes: 240 },
-              { label: 'Tomorrow', minutes: 1440 },
+              { label: <Trans>15 minutes</Trans>, minutes: 15 },
+              { label: <Trans>1 hour</Trans>, minutes: 60 },
+              { label: <Trans>4 hours</Trans>, minutes: 240 },
+              { label: <Trans>Tomorrow</Trans>, minutes: 1440 },
             ].map(({ label, minutes }) => (
               <button
                 key={minutes}

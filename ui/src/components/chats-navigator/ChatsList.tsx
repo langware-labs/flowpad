@@ -1,5 +1,6 @@
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import type { ChatBucket } from './useChatHistory';
+import { Trans } from '@lingui/react/macro';
 import { ChatHistoryRow } from './ChatHistoryRow';
 
 /**
@@ -31,9 +32,9 @@ export function ChatsList({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading && empty ? (
-          <div className="p-4 text-center text-xs text-muted-foreground">Loading chats…</div>
+          <div className="p-4 text-center text-xs text-muted-foreground"><Trans>Loading chats…</Trans></div>
         ) : empty ? (
-          <div className="p-4 text-center text-xs text-muted-foreground">No chats yet</div>
+          <div className="p-4 text-center text-xs text-muted-foreground"><Trans>No chats yet</Trans></div>
         ) : (
           buckets.map((bucket) => (
             <div key={bucket.label}>

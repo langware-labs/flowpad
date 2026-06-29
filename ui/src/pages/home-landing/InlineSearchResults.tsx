@@ -6,6 +6,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { ScopeFilter } from '@src/lib/scope-filter';
 import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const MAX_INLINE = 5;
 
@@ -53,6 +54,7 @@ export function InlineSearchResults({
   onOpenFullSearch,
   onNavigateResult,
 }: InlineSearchResultsProps) {
+  const { t } = useLingui();
   const hasFilter = !!(filters.record_type || filters.status || filters.scope || filters.time_preset);
   const { navigation } = useDockNavigation();
 
@@ -131,15 +133,15 @@ export function InlineSearchResults({
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="text-xs text-muted-foreground">
           {isLoading
-            ? 'Searching…'
+            ? <Trans>Searching…</Trans>
             : elapsedMs !== null
               ? `${results.length} result${results.length !== 1 ? 's' : ''}${scanInfo?.total_indexed ? ` · ${scanInfo.total_indexed.toLocaleString()} indexed` : ''} · ${elapsedMs}ms`
-              : 'Ready'}
+              : <Trans>Ready</Trans>}
         </span>
         <button
           type="button"
           onClick={onOpenFullSearch}
-          title="Open full search"
+          title={t`Open full search`}
           className="rounded p-0.5 text-muted-foreground hover:text-foreground"
         >
           <ArrowUpRight className="h-3.5 w-3.5" />
@@ -157,7 +159,7 @@ export function InlineSearchResults({
 
       {/* Empty state */}
       {!isLoading && results.length === 0 && (
-        <div className="px-3 py-3 text-sm text-muted-foreground">No results</div>
+        <div className="px-3 py-3 text-sm text-muted-foreground"><Trans>No results</Trans></div>
       )}
 
       {/* Result rows — div+role=button (not <button>) so the per-action
@@ -241,7 +243,7 @@ export function InlineSearchResults({
           onMouseEnter={() => onSelectedIndexChange(MAX_INLINE - 1)}
         >
           <ArrowUpRight className="h-3.5 w-3.5" />
-          See all {results.length} results →
+          <Trans>See all {results.length} results →</Trans>
         </button>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { dataContext, isAbsoluteMachinePath } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { Trans } from '@lingui/react/macro';
 import { useMemo } from 'react';
 import { CliLogViewer } from './CliLogViewer';
 import { ClaudeContextViewer } from './ClaudeContextViewer';
@@ -33,8 +34,8 @@ export function LensViewer() {
     return (
       <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
         <div className="text-center">
-          <p className="text-lg font-medium">Invalid Lens URL</p>
-          <p className="mt-1 text-sm">The lens path could not be parsed.</p>
+          <p className="text-lg font-medium"><Trans>Invalid Lens URL</Trans></p>
+          <p className="mt-1 text-sm"><Trans>The lens path could not be parsed.</Trans></p>
         </div>
       </div>
     );
@@ -87,8 +88,8 @@ export function LensViewer() {
           return (
             <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
               <div className="text-center">
-                <p className="text-lg font-medium">Invalid transcript path</p>
-                <p className="mt-1 text-sm">Got a relative-looking ref with multiple segments: <code>{ref}</code></p>
+                <p className="text-lg font-medium"><Trans>Invalid transcript path</Trans></p>
+                <p className="mt-1 text-sm"><Trans>Got a relative-looking ref with multiple segments: <code>{ref}</code></Trans></p>
               </div>
             </div>
           );
@@ -100,7 +101,7 @@ export function LensViewer() {
         if (!home) {
           return (
             <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-              <p>Could not resolve home directory from bootstrap info</p>
+              <p><Trans>Could not resolve home directory from bootstrap info</Trans></p>
             </div>
           );
         }
@@ -156,9 +157,9 @@ export function LensViewer() {
       return (
         <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
           <div className="text-center">
-            <p className="text-lg font-medium">Unknown Lens Type</p>
+            <p className="text-lg font-medium"><Trans>Unknown Lens Type</Trans></p>
             <p className="mt-1 text-sm">
-              Lens type &quot;{lensParts.category}/{lensParts.type}&quot; is not supported.
+              <Trans>Lens type "{lensParts.category}/{lensParts.type}" is not supported.</Trans>
             </p>
           </div>
         </div>

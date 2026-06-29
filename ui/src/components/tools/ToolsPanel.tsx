@@ -6,6 +6,7 @@ import { Separator } from '@src/components/ui/separator';
 import { Switch } from '@src/components/ui/switch';
 import { Globe, RotateCcw, Zap } from 'lucide-react';
 import React from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface ToolsPanelProps {
   value: IChatOptionsValues;
@@ -39,6 +40,7 @@ const flowModeOptions: FlowModeOption[] = [
 ];
 
 const ToolsPanel: React.FC<ToolsPanelProps> = ({ value, onChange, disabled = false, onClose }) => {
+  const { t } = useLingui();
   const flowMode = value.mode;
   const enableSearch = value.search;
 
@@ -63,11 +65,11 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ value, onChange, disabled = fal
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Zap className="h-4 w-4 text-muted-foreground" />
-          <Label className="text-sm font-medium">Execution Mode</Label>
+          <Label className="text-sm font-medium"><Trans>Execution Mode</Trans></Label>
         </div>
         <Select value={flowMode} onValueChange={handleFlowModeChange} disabled={disabled}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select mode">{flowModeDisplay}</SelectValue>
+            <SelectValue placeholder={t`Select mode`}>{flowModeDisplay}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {flowModeOptions.map((option) => (
@@ -88,16 +90,16 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ value, onChange, disabled = fal
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Globe className="h-4 w-4 text-muted-foreground" />
-          <Label className="text-sm font-medium">Additional Tools</Label>
+          <Label className="text-sm font-medium"><Trans>Additional Tools</Trans></Label>
         </div>
         <div className="flex items-center justify-between rounded-md border p-3">
           <div className="flex items-center gap-2">
             <Globe className="h-4 w-4 text-muted-foreground" />
             <div className="space-y-0.5">
               <Label htmlFor="web-search" className="text-sm font-medium">
-                Web Search
+                <Trans>Web Search</Trans>
               </Label>
-              <p className="text-xs text-muted-foreground">Allow AI to search the web</p>
+              <p className="text-xs text-muted-foreground"><Trans>Allow AI to search the web</Trans></p>
             </div>
           </div>
           <Switch id="web-search" checked={enableSearch} onCheckedChange={handleSearchChange} disabled={disabled} />
@@ -108,11 +110,11 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ value, onChange, disabled = fal
       <div className="flex gap-2 pt-2">
         <Button variant="outline" size="sm" onClick={handleReset} disabled={disabled} className="flex-1">
           <RotateCcw className="mr-2 h-3 w-3" />
-          Reset
+          <Trans>Reset</Trans>
         </Button>
         {onClose && (
           <Button variant="default" size="sm" onClick={onClose} disabled={disabled} className="flex-1">
-            Done
+            <Trans>Done</Trans>
           </Button>
         )}
       </div>

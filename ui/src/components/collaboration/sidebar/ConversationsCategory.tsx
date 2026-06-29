@@ -2,6 +2,7 @@ import { Conversation, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { MessageSquare } from 'lucide-react';
 import { useMemo } from 'react';
+import { Trans } from '@lingui/react/macro';
 import type { RoomTab } from '../RoomTabs';
 
 interface Props {
@@ -35,13 +36,13 @@ export function ConversationsCategory({ projectId, onOpenTab }: Props) {
   );
 
   if (!projectId) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No project linked</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No project linked</Trans></div>;
   }
   if (isLoading && items.length === 0) {
-    return <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>;
+    return <div className="px-2 py-1.5 text-xs text-muted-foreground"><Trans>Loading…</Trans></div>;
   }
   if (items.length === 0) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No conversations yet</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No conversations yet</Trans></div>;
   }
 
   return (

@@ -1,6 +1,7 @@
 import { createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
@@ -43,19 +44,20 @@ export function DownloadAttachmentsButton({
   downloading: boolean;
   onDownload: () => void;
 }) {
+  const { t } = useLingui();
   const disabled = uploading || downloading;
   const sub = uploading
-    ? 'Uploading…'
+    ? t('Uploading…')
     : downloading
-      ? 'Downloading…'
-      : `Download ${count} ${count === 1 ? 'attachment' : 'attachments'}`;
+      ? t('Downloading…')
+      : t`Download ${count} ${count === 1 ? 'attachment' : 'attachments'}`;
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={disabled ? undefined : onDownload}
       data-testid="download-attachments-button"
-      title={labels.length ? labels.join('\n') : 'Download attachments'}
+      title={labels.length ? labels.join('\n') : t('Download attachments')}
       className={cn(
         'flex w-full max-w-[360px] items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors',
         uploading
@@ -70,11 +72,11 @@ export function DownloadAttachmentsButton({
       </div>
       <div className="flex min-w-0 flex-col">
         <span className="truncate text-sm font-medium text-foreground">
-          {count} {count === 1 ? 'asset' : 'assets'} attached
+          <Trans>{count} {count === 1 ? 'asset' : 'assets'} attached</Trans>
         </span>
         <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{sub}</span>
         {typeChips.length > 0 && (
-          <span className="mt-1 flex flex-wrap gap-1" aria-label="Attached asset types">
+          <span className="mt-1 flex flex-wrap gap-1" aria-label={t('Attached asset types')}>
             {typeChips.map((chip) => {
               const Icon = chip.type === 'file' ? File : iconForEntity(chip.type);
               return (
@@ -195,6 +197,7 @@ export function FlowMessageBubble({
     fm?.created_by && isValidIdentifier(fm.created_by) ? new TypeId(User.type, fm.created_by) : null,
   );
   const { localUser, updateName } = useLocalUser();
+  const { t } = useLingui();
   // `created_by` on receiver-materialized rows is whoever ran the local sync
   // (the recipient), not the author. A creator that resolves to the LOCAL
   // user on a message the local user didn't send is exactly that artifact —
@@ -282,7 +285,7 @@ export function FlowMessageBubble({
       <div className="flex gap-2 opacity-60">
         <div className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted" />
         <div className="flex min-w-0 flex-1 flex-col gap-1 pt-1">
-          <span className="text-[11px] italic text-muted-foreground/70">Loading message…</span>
+          <span className="text-[11px] italic text-muted-foreground/70"><Trans>Loading message…</Trans></span>
         </div>
       </div>
     );
@@ -328,7 +331,7 @@ export function FlowMessageBubble({
   } else if (rosterLabel) {
     displayName = rosterLabel;
   } else if (isCurrentUser) {
-    displayName = localUser?.name?.trim() || 'You';
+    displayName = localUser?.name?.trim() || t('You');
   } else if (wireSenderName) {
     displayName = wireSenderName;
   } else if (creatorLabel) {
@@ -336,7 +339,7 @@ export function FlowMessageBubble({
   } else if (fm.sender_id && rosterReady && !isCommunity) {
     displayName = UNRESOLVED_SENDER_LABEL;
   } else {
-    displayName = 'unknown';
+    displayName = t('unknown');
   }
 
   // When task is present, role tracks the original task initiator (sender) vs
@@ -429,7 +432,7 @@ export function FlowMessageBubble({
         {isBareTranscriptShare && (
           <div className="flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
             <FileText className="h-3 w-3 shrink-0" />
-            Shared a session transcript — see the Context tab
+            <Trans>Shared a session transcript — see the Context tab</Trans>
           </div>
         )}
         {downloadError && (
@@ -439,7 +442,7 @@ export function FlowMessageBubble({
           >
             <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="font-medium">Could not download</div>
+              <div className="font-medium"><Trans>Could not download</Trans></div>
               <div className="break-all text-[10px] text-orange-700/80 dark:text-orange-300/80">
                 {downloadError.method} {downloadError.path} {downloadError.statusCode}: {downloadError.message}
               </div>
@@ -448,8 +451,8 @@ export function FlowMessageBubble({
               type="button"
               onClick={dismissDownloadError}
               className="shrink-0 rounded p-0.5 text-orange-700/70 hover:bg-orange-500/20 hover:text-orange-700 dark:text-orange-300/70 dark:hover:text-orange-200"
-              title="Dismiss"
-              aria-label="Dismiss download error"
+              title={t('Dismiss')}
+              aria-label={t('Dismiss download error')}
             >
               <X className="h-3 w-3" />
             </button>
@@ -464,7 +467,7 @@ export function FlowMessageBubble({
               />
             </div>
             <span className="text-[10px] tabular-nums text-muted-foreground">
-              {progress.phase === 'upload' ? 'Uploading' : 'Downloading'}
+              <Trans>{progress.phase === 'upload' ? 'Uploading' : 'Downloading'}</Trans>
               {progressPct === null ? '…' : ` ${progressPct}%`}
             </span>
           </div>
@@ -526,7 +529,7 @@ export function FlowMessageBubble({
                 className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <Download className="h-3 w-3" />
-                Download all attachments
+                <Trans>Download all attachments</Trans>
               </a>
             )}
           </>

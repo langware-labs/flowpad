@@ -8,6 +8,7 @@ import { useTerminalTabs } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { History, Loader2, SquareTerminal } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 import InteractiveTerminal from './interactive-terminal';
 import { TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
 import { allowRename, shouldAutoSaveTitleForTarget } from './rename-rules';
@@ -139,7 +140,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         <div className="relative flex-1 overflow-hidden" data-testid="terminal-panels">
           {tabs.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
-              <p className="text-sm">No terminal sessions</p>
+              <p className="text-sm"><Trans>No terminal sessions</Trans></p>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -154,7 +155,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   ) : (
                     <ClaudeIcon className="h-4 w-4 text-orange-500" />
                   )}
-                  Claude Code
+                  <Trans>Claude Code</Trans>
                 </Button>
                 <Button
                   variant="outline"
@@ -168,7 +169,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   ) : (
                     <SquareTerminal className="h-4 w-4" />
                   )}
-                  Terminal
+                  <Trans>Terminal</Trans>
                 </Button>
                 <Button
                   variant="outline"
@@ -179,7 +180,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   data-testid="open-history-button"
                 >
                   <History className="h-4 w-4" />
-                  Open from history
+                  <Trans>Open from history</Trans>
                 </Button>
               </div>
             </div>

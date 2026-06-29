@@ -10,6 +10,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { notify } from '@src/notifications';
 import { Copy, Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface DiagnosisDetailsProps {
   /** The FlowpadDiagnosis entity id (UUID, no type prefix). */
@@ -72,6 +73,7 @@ export function DiagnosisDetails({
   onActionDone,
   variant = 'modal',
 }: DiagnosisDetailsProps) {
+  const { t } = useLingui();
   const isPage = variant === 'page';
   const typeId = useMemo(
     () => (diagnosisId ? new TypeId(FlowpadDiagnosis.type, diagnosisId) : null),
@@ -87,8 +89,8 @@ export function DiagnosisDetails({
   const handleCopy = useCallback(async () => {
     if (!diag) return;
     await copyToClipboard(diagnosisToText(diag));
-    notify.success({ title: 'Diagnosis copied to clipboard' });
-  }, [diag]);
+    notify.success({ title: t`Diagnosis copied to clipboard` });
+  }, [diag, t]);
 
   // "Report issue" — email the diagnosis to the Flowpad team.
   const handleReportIssue = useCallback(async () => {
@@ -99,11 +101,11 @@ export function DiagnosisDetails({
       await sendDiagnosisEmailReport(diagnosisId);
       onActionDone?.();
     } catch (e) {
-      setReportError(e instanceof Error ? e.message : 'Failed to send report');
+      setReportError(e instanceof Error ? e.message : t`Failed to send report`);
     } finally {
       setReporting(false);
     }
-  }, [diagnosisId, onActionDone]);
+  }, [diagnosisId, onActionDone, t]);
 
   // "Forward" — post the formatted report into the chosen conversation.
   const handleForward = useCallback(
@@ -117,25 +119,25 @@ export function DiagnosisDetails({
         });
         onActionDone?.();
       } catch (e) {
-        setReportError(e instanceof Error ? e.message : 'Failed to send report');
+        setReportError(e instanceof Error ? e.message : t`Failed to send report`);
       } finally {
         setReporting(false);
       }
     },
-    [diag, flowMessageId, onActionDone],
+    [diag, flowMessageId, onActionDone, t],
   );
 
   if (isLoading) {
     return (
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        <span>Loading diagnosis…</span>
+        <span><Trans>Loading diagnosis…</Trans></span>
       </div>
     );
   }
 
   if (!diag) {
-    return <p className="text-xs text-muted-foreground">Diagnosis not found.</p>;
+    return <p className="text-xs text-muted-foreground"><Trans>Diagnosis not found.</Trans></p>;
   }
 
   return (
@@ -145,11 +147,11 @@ export function DiagnosisDetails({
           type="button"
           onClick={() => void handleCopy()}
           className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-          title="Copy diagnosis to clipboard"
-          aria-label="Copy diagnosis to clipboard"
+          title={t`Copy diagnosis to clipboard`}
+          aria-label={t`Copy diagnosis to clipboard`}
         >
           <Copy className="h-3.5 w-3.5" />
-          Copy
+          <Trans>Copy</Trans>
         </button>
       </div>
 

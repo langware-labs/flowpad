@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 import apiClient from '@sdk/client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { AssetDataTable } from '@src/components/assets/AssetDataTable';
@@ -79,11 +80,11 @@ export function EntitySearchModal({
           </DialogTitle>
         </DialogHeader>
         {loading ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
+          <div className="py-8 text-center text-sm text-muted-foreground"><Trans>Loading…</Trans></div>
         ) : error ? (
-          <div className="py-8 text-center text-sm text-destructive">Failed to load entities.</div>
+          <div className="py-8 text-center text-sm text-destructive"><Trans>Failed to load entities.</Trans></div>
         ) : results.length === 0 ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">No entities.</div>
+          <div className="py-8 text-center text-sm text-muted-foreground"><Trans>No entities.</Trans></div>
         ) : (
           <div className="max-h-[60vh] overflow-auto">
             <AssetDataTable

@@ -11,6 +11,7 @@ import { Textarea } from '@src/components/ui/textarea';
 import { useDocComments } from '@src/hooks/use-doc-comments';
 import { Plus } from 'lucide-react';
 import { useCallback, useMemo, useState, type MouseEvent } from 'react';
+import { useLingui, Trans } from '@lingui/react/macro';
 
 interface ReviewSurfaceProps {
   body: string;
@@ -67,6 +68,8 @@ interface AddCommentOverlayProps {
 function AddCommentOverlay({ provider, enabled, onSubmit, children }: AddCommentOverlayProps) {
   // Repositions the "+" when font-load / resize bumps the provider's rects.
   useAnchorVersion(provider);
+
+  const { t } = useLingui();
 
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const [composer, setComposer] = useState<{ line: number } | null>(null);
@@ -128,7 +131,7 @@ function AddCommentOverlay({ provider, enabled, onSubmit, children }: AddComment
             <button
               type="button"
               data-testid={`comment-add-line-${activeLine}`}
-              aria-label={`Add comment at line ${activeLine}`}
+              aria-label={t`Add comment at line ${activeLine}`}
               className="absolute right-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-amber-500/30 bg-background/85 text-amber-600 opacity-70 transition-opacity hover:opacity-100 dark:text-amber-400"
               style={{ top: activeRect.top }}
               onClick={openComposer}
@@ -146,7 +149,7 @@ function AddCommentOverlay({ provider, enabled, onSubmit, children }: AddComment
             <div className="space-y-2">
               <Textarea
                 autoFocus
-                placeholder="Add a comment…"
+                placeholder={t`Add a comment…`}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
@@ -170,7 +173,7 @@ function AddCommentOverlay({ provider, enabled, onSubmit, children }: AddComment
                   onClick={closeComposer}
                   disabled={busy}
                 >
-                  Cancel
+                  <Trans>Cancel</Trans>
                 </Button>
                 <Button
                   type="button"
@@ -179,7 +182,7 @@ function AddCommentOverlay({ provider, enabled, onSubmit, children }: AddComment
                   disabled={busy || !text.trim()}
                   data-testid="comment-composer-submit"
                 >
-                  Comment
+                  <Trans>Comment</Trans>
                 </Button>
               </div>
             </div>

@@ -13,6 +13,7 @@ import { useProject } from '@src/hooks/useProject';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ArrowDown, ArrowUp, MessageSquare, RotateCw, Search, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -112,6 +113,7 @@ function entryKey(entry: WorkerHistoryEntry): string {
 }
 
 export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps) {
+  const { t } = useLingui();
   const { entries, isLoading, refetch } = useWorkerHistory(30, { enabled: open });
   const { project: currentProject } = useProject();
   const { indexProjectSessions } = useSystemTools();
@@ -290,10 +292,10 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
         <DialogHeader>
           <div className="flex items-center justify-between gap-2 pr-7">
             <div className="flex items-center gap-3">
-              <DialogTitle className="text-sm font-semibold">Recent Sessions</DialogTitle>
+              <DialogTitle className="text-sm font-semibold"><Trans>Recent Sessions</Trans></DialogTitle>
               <label
                 className="flex cursor-pointer select-none items-center gap-1 text-[11px] text-muted-foreground"
-                title={currentProject ? undefined : 'No active project'}
+                title={currentProject ? undefined : t`No active project`}
                 data-testid="history-all-projects"
               >
                 <Checkbox
@@ -302,14 +304,14 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                   onCheckedChange={(v) => setAllProjects(v === true)}
                   disabled={!currentProject}
                 />
-                <span>All projects</span>
+                <span><Trans>All projects</Trans></span>
               </label>
             </div>
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
-                title="Refresh — re-index this project's sessions"
-                aria-label="Refresh sessions"
+                title={t`Refresh — re-index this project's sessions`}
+                aria-label={t`Refresh sessions`}
                 data-testid="history-refresh"
                 disabled={refreshing}
                 className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-50"
@@ -321,20 +323,20 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                 type="button"
                 title={
                   sortDir === 'desc'
-                    ? 'Sort by time: newest first (click for oldest first)'
-                    : 'Sort by time: oldest first (click for newest first)'
+                    ? t`Sort by time: newest first (click for oldest first)`
+                    : t`Sort by time: oldest first (click for newest first)`
                 }
                 className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
                 onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
                 data-testid="history-sort-time"
-                aria-label="Sort by time"
+                aria-label={t`Sort by time`}
               >
                 {sortDir === 'desc' ? <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />}
               </button>
               <button
                 type="button"
-                title="Filter recent sessions"
-                aria-label="Filter recent sessions"
+                title={t`Filter recent sessions`}
+                aria-label={t`Filter recent sessions`}
                 aria-pressed={searchOpen}
                 data-testid="history-search-toggle"
                 className={cn(
@@ -365,7 +367,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter by name or last prompt…"
+              placeholder={t`Filter by name or last prompt…`}
               className="h-7 w-full bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/60"
               data-testid="history-search-input"
             />
@@ -373,8 +375,8 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
               <button
                 type="button"
                 className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                title="Clear filter"
-                aria-label="Clear filter"
+                title={t`Clear filter`}
+                aria-label={t`Clear filter`}
                 onClick={() => {
                   setQuery('');
                   searchInputRef.current?.focus();
@@ -394,7 +396,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
           )}
           data-testid="history-selection-bar"
         >
-          <span className="text-[11px] text-muted-foreground">{selectedKeys.size} selected</span>
+          <span className="text-[11px] text-muted-foreground"><Trans>{selectedKeys.size} selected</Trans></span>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -402,7 +404,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
               className="rounded border border-border px-2 py-0.5 text-[11px] font-medium hover:bg-muted"
               data-testid="history-clear-selection"
             >
-              Clear
+              <Trans>Clear</Trans>
             </button>
             <button
               type="button"
@@ -410,17 +412,17 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
               className="rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
               data-testid="history-open-selected"
             >
-              Open all
+              <Trans>Open all</Trans>
             </button>
           </div>
         </div>
         <div className="flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
             {isLoading && visible.length === 0 ? (
-              <p className="py-4 text-center text-xs text-muted-foreground">Loading…</p>
+              <p className="py-4 text-center text-xs text-muted-foreground"><Trans>Loading…</Trans></p>
             ) : visible.length === 0 ? (
               <p className="py-4 text-center text-xs text-muted-foreground">
-                {query.trim() ? 'No matching sessions' : 'No recent sessions'}
+                {query.trim() ? <Trans>No matching sessions</Trans> : <Trans>No recent sessions</Trans>}
               </p>
             ) : (
               <ul className="mt-1 flex flex-col gap-0.5 overflow-y-auto">
@@ -446,7 +448,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                             className="h-3.5 w-3.5"
                             checked={selected}
                             onCheckedChange={() => toggleSelected(key)}
-                            aria-label="Select session"
+                            aria-label={t`Select session`}
                             data-testid="history-row-checkbox"
                           />
                         </span>
@@ -494,7 +496,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                               </span>
                             ) : (
                               <span className="truncate font-medium italic text-muted-foreground/60">
-                                Untitled session
+                                <Trans>Untitled session</Trans>
                               </span>
                             )}
                             {meta ? (
@@ -524,7 +526,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                           data-testid="history-row-prompts-button"
                         >
                           <MessageSquare className="h-3 w-3" />
-                          <span>Prompts</span>
+                          <span><Trans>Prompts</Trans></span>
                         </button>
                       </li>
                     );
@@ -539,16 +541,16 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
               onOpenChange={(v) => {
                 if (!v) setPeekKey(null);
               }}
-              title="Prompts"
+              title={t`Prompts`}
               count={peekPromptEntries.length}
               width="w-72"
               data-testid="history-prompts-peek"
             >
               <div className="flex h-full min-h-0 flex-col">
                 {peekResolving || (peekPromptsLoading && peekPromptEntries.length === 0) ? (
-                  <p className="px-3 py-4 text-center text-xs text-muted-foreground">Loading prompts…</p>
+                  <p className="px-3 py-4 text-center text-xs text-muted-foreground"><Trans>Loading prompts…</Trans></p>
                 ) : peekPromptEntries.length === 0 ? (
-                  <p className="px-3 py-4 text-center text-xs text-muted-foreground">No prompts found</p>
+                  <p className="px-3 py-4 text-center text-xs text-muted-foreground"><Trans>No prompts found</Trans></p>
                 ) : (
                   <PromptIndexPanel
                     prompts={peekPromptEntries}

@@ -27,6 +27,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { ChevronLeft, ChevronRight, ExternalLink, X, type LucideIcon } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 
 /** One chip in the strip. Kind-agnostic: terminals, entity tabs, and the
  *  transient preview tab all render through this shape. */
@@ -117,6 +119,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
   onReorderCancel,
   testId = 'terminal-tab-bar',
 }) => {
+  const { t } = useLingui();
   // One ordered list (backend-owned) — projectless tabs are inline, no section.
   const allVisibleItems = items;
   // The rich per-tab info card is an Advanced/Dev affordance; Standard mode keeps
@@ -449,8 +452,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
             }}
             disabled={isDisabled}
             className="rounded p-0.5 opacity-0 transition-opacity hover:bg-muted-foreground/20 group-hover:opacity-100"
-            aria-label="Open in external browser"
-            title="Open in external browser"
+            aria-label={t`Open in external browser`}
+            title={t`Open in external browser`}
             data-testid={`tab-open-external-${item.dataAttributes?.['data-indicator-key'] ?? key}`}
           >
             <ExternalLink className="h-3 w-3" />
@@ -464,7 +467,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           }}
           disabled={isDisabled}
           className="rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/20 group-hover:opacity-100"
-          aria-label="Close tab"
+          aria-label={t`Close tab`}
         >
           <X className="h-3 w-3" />
         </button>
@@ -492,30 +495,30 @@ export const TabStrip: React.FC<TabStripProps> = ({
         <ContextMenuContent>
           {item.renameable && (
             <>
-              <ContextMenuItem onSelect={() => startRename(key, item.title)}>Rename</ContextMenuItem>
+              <ContextMenuItem onSelect={() => startRename(key, item.title)}><Trans>Rename</Trans></ContextMenuItem>
               <ContextMenuSeparator />
             </>
           )}
           {renderMenuGroup(item.contextMenuItems)}
           {renderMenuGroup(newTabMenuItems)}
           <ContextMenuItem onSelect={() => onClose(key)}>
-            Close{' '}
+            <Trans>Close</Trans>{' '}
             {closeShortcutLabel && (
               <span className="ml-auto pl-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
             )}
           </ContextMenuItem>
-          <ContextMenuItem onSelect={() => closeMany(allVisibleItems.map((i) => i.key))}>Close All</ContextMenuItem>
+          <ContextMenuItem onSelect={() => closeMany(allVisibleItems.map((i) => i.key))}><Trans>Close All</Trans></ContextMenuItem>
           <ContextMenuItem
             onSelect={() => closeMany(list.filter((i) => i.key !== key).map((i) => i.key))}
             disabled={list.length <= 1}
           >
-            Close All But This
+            <Trans>Close All But This</Trans>
           </ContextMenuItem>
           <ContextMenuItem
             onSelect={() => closeMany(list.slice(index + 1).map((i) => i.key))}
             disabled={index >= list.length - 1}
           >
-            Close to the Right
+            <Trans>Close to the Right</Trans>
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -537,7 +540,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           size="icon"
           className={`h-7 w-7 shrink-0 rounded-none ${canScrollLeft ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           onClick={() => scrollTabs('left')}
-          aria-label="Scroll tabs left"
+          aria-label={t`Scroll tabs left`}
           tabIndex={canScrollLeft ? 0 : -1}
         >
           <ChevronLeft className="h-4 w-4" />
@@ -570,7 +573,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           size="icon"
           className={`h-7 w-7 shrink-0 rounded-none ${canScrollRight ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           onClick={() => scrollTabs('right')}
-          aria-label="Scroll tabs right"
+          aria-label={t`Scroll tabs right`}
           data-testid="scroll-tabs-right-button"
           tabIndex={canScrollRight ? 0 : -1}
         >
@@ -589,7 +592,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 size="sm"
                 className="mx-1.5 h-6 shrink-0 gap-1.5 rounded-md border-border bg-background px-2 text-foreground shadow-sm hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => closeMany(allVisibleItems.map((i) => i.key))}
-                aria-label={`Close all ${allVisibleItems.length} tabs`}
+                aria-label={t`Close all ${allVisibleItems.length} tabs`}
                 data-testid="close-all-tabs-button"
               >
                 <X className="h-3.5 w-3.5" />
@@ -598,7 +601,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 </span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Close all {allVisibleItems.length} tabs</TooltipContent>
+            <TooltipContent side="bottom"><Trans>Close all {allVisibleItems.length} tabs</Trans></TooltipContent>
           </Tooltip>
         </TooltipProvider>
       )}

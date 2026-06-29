@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ArrowLeft, FolderOpen, Loader2 } from 'lucide-react';
 import { Conversation, Project, type Task, TypeId } from '@sdk';
 import { useAuth, useProject } from '@sdk/react/hooks';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
@@ -37,6 +38,7 @@ function ConversationSetProjectButton({
   conversation: Conversation;
   task?: Task | null;
 }) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const { projects, isLoading } = useAllProjects({ enabled: open });
@@ -68,10 +70,10 @@ function ConversationSetProjectButton({
 
         await persistRemoteToLocalMapping(conversation.remote_project_id, project.id);
         await selectProjectContext(project);
-        notify.success({ title: 'Conversation project set', message: project.displayName });
+        notify.success({ title: t`Conversation project set`, message: project.displayName });
       } catch (err) {
         console.error('[conversation] set project failed', err);
-        notify.error({ title: 'Failed to set project' });
+        notify.error({ title: t`Failed to set project` });
       } finally {
         setSaving(false);
       }
@@ -94,11 +96,11 @@ function ConversationSetProjectButton({
         type="button"
         onClick={() => setOpen(true)}
         disabled={saving}
-        title="Set conversation project"
+        title={t`Set conversation project`}
         className="inline-flex h-7 items-center gap-1.5 rounded border border-dashed border-border px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
       >
         {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />}
-        <span>Set project</span>
+        <span><Trans>Set project</Trans></span>
       </button>
       <ProjectSelectorModal
         open={open}
@@ -107,7 +109,7 @@ function ConversationSetProjectButton({
         selectedId={selectedId}
         onSelect={(id) => void handleSelect(id)}
         isLoading={isLoading}
-        title="Set project"
+        title={t`Set project`}
       />
     </>
   );
@@ -127,6 +129,7 @@ function ConversationSetProjectButton({
  * issue where a hidden tab would otherwise see another route's pointer.
  */
 export function ConversationRoute() {
+  const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const { cloudUser } = useAuth();
 
@@ -171,7 +174,7 @@ export function ConversationRoute() {
   if (!conversationId) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        No conversation specified.
+        <Trans>No conversation specified.</Trans>
       </div>
     );
   }
@@ -188,13 +191,13 @@ export function ConversationRoute() {
           type="button"
           onClick={goBack}
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          title="Back to inbox"
+          title={t`Back to inbox`}
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
         <EditableConversationTitle
           conv={conversation ?? null}
-          fallback="Conversation"
+          fallback={t`Conversation`}
           className="min-w-0 flex-1 truncate text-sm font-semibold"
         />
       </div>
@@ -221,7 +224,7 @@ export function ConversationRoute() {
   if (!cloudUser) {
     return (
       <div className="relative flex h-full flex-col">
-        <LoginRequiredOverlay description="Sign in to your Flowpad Cloud account to view and reply to this conversation." />
+        <LoginRequiredOverlay description={t`Sign in to your Flowpad Cloud account to view and reply to this conversation.`} />
         {header}
       </div>
     );
@@ -230,7 +233,7 @@ export function ConversationRoute() {
   if (!conversation) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading conversation…
+        <Trans>Loading conversation…</Trans>
       </div>
     );
   }
@@ -241,7 +244,7 @@ export function ConversationRoute() {
   if (taskMissing) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading task context…
+        <Trans>Loading task context…</Trans>
       </div>
     );
   }

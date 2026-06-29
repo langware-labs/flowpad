@@ -1,3 +1,4 @@
+import { useLingui } from '@lingui/react/macro';
 import { CopilotIcon } from './CopilotIcon';
 
 interface CopilotRestoreIconProps {
@@ -9,8 +10,9 @@ interface CopilotRestoreIconProps {
  * corner. Used to flag a process that resumed an existing session.
  */
 export function CopilotRestoreIcon({ className }: CopilotRestoreIconProps) {
+  const { t } = useLingui();
   return (
-    <span className={`relative inline-flex ${className ?? ''}`} aria-label="GitHub Copilot (restored session)">
+    <span className={`relative inline-flex ${className ?? ''}`} aria-label={t`GitHub Copilot (restored session)`}>
       <CopilotIcon className="h-full w-full" />
       <svg
         xmlns="http://www.w3.org/2000/svg"

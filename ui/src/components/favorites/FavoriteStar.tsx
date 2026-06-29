@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { useFavorites, type FavoriteRef } from '@src/hooks/use-favorites';
 import { cn } from '@src/lib/utils';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, Pencil, Star, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -41,6 +42,7 @@ export function FavoriteStar({
   className,
   size = 16,
 }: FavoriteStarProps) {
+  const { t } = useLingui();
   const { isFavorited, toggleFavorite, renameFavorite } = useFavorites();
   const bookmark = isFavorited(entityType, entityId);
   const favorited = !!bookmark;
@@ -92,7 +94,7 @@ export function FavoriteStar({
   const starButton = (
     <button
       type="button"
-      aria-label={favorited ? `Favorited: ${displayName}` : 'Add to favorites'}
+      aria-label={favorited ? t`Favorited: ${displayName}` : t`Add to favorites`}
       onClick={handleClick}
       className={cn(
         'inline-flex items-center justify-center rounded p-1 text-muted-foreground transition-colors hover:text-amber-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -109,7 +111,7 @@ export function FavoriteStar({
     return (
       <Tooltip>
         <TooltipTrigger asChild>{starButton}</TooltipTrigger>
-        <TooltipContent side="bottom">Add to favorites</TooltipContent>
+        <TooltipContent side="bottom"><Trans>Add to favorites</Trans></TooltipContent>
       </Tooltip>
     );
   }
@@ -152,7 +154,7 @@ export function FavoriteStar({
                 />
                 <button
                   type="button"
-                  title="Save"
+                  title={t`Save`}
                   className="rounded p-0.5 text-emerald-500 hover:bg-muted"
                   onMouseDown={(e) => e.preventDefault()} // keep input focus until click fires
                   onClick={() => void commitRename()}
@@ -161,7 +163,7 @@ export function FavoriteStar({
                 </button>
                 <button
                   type="button"
-                  title="Cancel"
+                  title={t`Cancel`}
                   className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={cancelEditing}
@@ -174,8 +176,8 @@ export function FavoriteStar({
                 <span className="min-w-0 flex-1 truncate text-xs font-medium">{displayName}</span>
                 <button
                   type="button"
-                  title="Rename"
-                  aria-label="Rename favorite"
+                  title={t`Rename`}
+                  aria-label={t`Rename favorite`}
                   className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                   onClick={startEditing}
                 >
@@ -192,22 +194,22 @@ export function FavoriteStar({
             </div>
           )}
           {createdAgo && (
-            <div className="mt-1 text-[10px] opacity-60">Favorited {createdAgo}</div>
+            <div className="mt-1 text-[10px] opacity-60"><Trans>Favorited {createdAgo}</Trans></div>
           )}
           {!editing && (
             <div className="mt-1 border-t border-border/40 pt-1 text-[10px] opacity-60">
-              Click the pencil or right-click to rename
+              <Trans>Click the pencil or right-click to rename</Trans>
             </div>
           )}
         </HoverCardContent>
       </HoverCard>
       <ContextMenuContent>
-        <ContextMenuItem onSelect={() => setTimeout(startEditing, 0)}>Rename</ContextMenuItem>
+        <ContextMenuItem onSelect={() => setTimeout(startEditing, 0)}><Trans>Rename</Trans></ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
           onSelect={() => void toggleFavorite({ entityType, entityId, title, icon, nav })}
         >
-          Remove favorite
+          <Trans>Remove favorite</Trans>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

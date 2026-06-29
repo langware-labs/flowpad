@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { DiffContent } from '@src/components/code-editor/DiffContent';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { MarkdownReviewDiff } from './MarkdownReviewDiff';
@@ -26,14 +27,17 @@ export function AssetDiffTabs({
   diff,
   loading,
   error,
-  emptyLabel = 'No differences from the current version.',
+  emptyLabel,
 }: AssetDiffTabsProps) {
+  const { t } = useLingui();
+  const resolvedEmptyLabel = emptyLabel ?? t`No differences from the current version.`;
+
   if (loading) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
         <div className="flex flex-col items-center gap-2">
           <Loader2 className="h-6 w-6 animate-spin" />
-          <span className="text-sm">Loading comparison…</span>
+          <span className="text-sm"><Trans>Loading comparison…</Trans></span>
         </div>
       </div>
     );
@@ -42,13 +46,13 @@ export function AssetDiffTabs({
     return <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-sm text-destructive">{error}</div>;
   }
 
-  const empty = <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">{emptyLabel}</div>;
+  const empty = <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">{resolvedEmptyLabel}</div>;
 
   return (
     <Tabs defaultValue="review" className="flex min-h-0 flex-1 flex-col">
       <TabsList className="w-fit shrink-0">
-        <TabsTrigger value="review" data-testid="compare-tab-review">Review</TabsTrigger>
-        <TabsTrigger value="code" data-testid="compare-tab-code">Code diff</TabsTrigger>
+        <TabsTrigger value="review" data-testid="compare-tab-review"><Trans>Review</Trans></TabsTrigger>
+        <TabsTrigger value="code" data-testid="compare-tab-code"><Trans>Code diff</Trans></TabsTrigger>
       </TabsList>
       <TabsContent value="review" className="mt-2 min-h-0 flex-1 overflow-hidden rounded-md border">
         {oldBody === newBody ? empty : <MarkdownReviewDiff oldContent={oldBody} newContent={newBody} />}

@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, Check, Copy, Loader2, MessageSquare, Pin } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { AgenticProcess } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -46,6 +47,7 @@ const PromptItem: React.FC<{
   /** Pin/unpin toggle — absent hides the pin button entirely. */
   onTogglePin?: () => Promise<void>;
 }> = ({ entry, onScrollToLine, isPinned = false, onTogglePin }) => {
+  const { t } = useLingui();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pinBusy, setPinBusy] = useState(false);
@@ -106,7 +108,7 @@ const PromptItem: React.FC<{
                         isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
                       )}
                       onClick={handleTogglePin}
-                      title={isPinned ? 'Unpin — remove from prompt library' : 'Pin to prompt library'}
+                      title={isPinned ? t`Unpin — remove from prompt library` : t`Pin to prompt library`}
                       data-testid="prompt-index-pin"
                       aria-pressed={isPinned}
                     >
@@ -122,7 +124,7 @@ const PromptItem: React.FC<{
                   <button
                     className="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
                     onClick={handleCopy}
-                    title="Copy prompt"
+                    title={t`Copy prompt`}
                   >
                     {copied ? (
                       <Check className="h-3 w-3 text-lime-400" />
@@ -166,6 +168,7 @@ export const PromptIndexPanel: React.FC<PromptIndexPanelProps> = ({
   process = null,
   projectId,
 }) => {
+  const { t } = useLingui();
   const [sortDir, setSortDir] = useState<SortDir>(readStoredSortDir);
 
   // Pin-from-history: library prompts keyed by normalized text. Disabled
@@ -200,19 +203,19 @@ export const PromptIndexPanel: React.FC<PromptIndexPanelProps> = ({
       <div className="flex items-center justify-between gap-1.5 border-b px-3 py-2">
         <span className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-lime-400" />
-          <span className="text-sm font-medium">Prompts ({prompts.length})</span>
+          <span className="text-sm font-medium"><Trans>Prompts ({prompts.length})</Trans></span>
         </span>
         <button
           type="button"
           title={
             sortDir === 'desc'
-              ? 'Sort by time: newest first (click for oldest first)'
-              : 'Sort by time: oldest first (click for newest first)'
+              ? t`Sort by time: newest first (click for oldest first)`
+              : t`Sort by time: oldest first (click for newest first)`
           }
           className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
           onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
           data-testid="prompt-index-sort-time"
-          aria-label="Sort prompts by time"
+          aria-label={t`Sort prompts by time`}
         >
           {sortDir === 'desc' ? <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />}
         </button>
@@ -220,7 +223,7 @@ export const PromptIndexPanel: React.FC<PromptIndexPanelProps> = ({
 
       <div className="flex-1 overflow-y-auto p-1">
         {prompts.length === 0 ? (
-          <p className="mt-4 px-2 text-center text-xs text-muted-foreground">No prompts yet</p>
+          <p className="mt-4 px-2 text-center text-xs text-muted-foreground"><Trans>No prompts yet</Trans></p>
         ) : (
           <TooltipProvider delayDuration={600}>
             <div className="flex flex-col gap-0.5">

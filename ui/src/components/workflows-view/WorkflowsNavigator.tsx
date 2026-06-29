@@ -12,6 +12,7 @@ import { QueryRequest, Workflow } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { ExternalLink, FilePlus, Trash2, Workflow as WorkflowIcon } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 
 /**
  * Workflows left-menu — the navigator (Zone B). Owns the list, create/rename/
@@ -19,6 +20,7 @@ import { useCallback, useMemo, useState } from 'react';
  * `DockPointer.forWorkflows(id)`.
  */
 export function WorkflowsNavigator() {
+  const { t } = useLingui();
   const { computeNode } = useAgentContext();
   const { navigation, currentDock } = useDockNavigation();
   const fsTypeId = computeNode?.typeId;
@@ -37,10 +39,10 @@ export function WorkflowsNavigator() {
         const saved = await Workflow.create(name);
         await refetch();
         navigation.openDock(DockPointer.forWorkflows(saved.id));
-        notify.success({ title: 'Workflow created' });
+        notify.success({ title: t`Workflow created` });
       } catch (err) {
         console.error('[WorkflowsNavigator] Failed to create workflow:', err);
-        notify.error({ title: 'Failed to create workflow' });
+        notify.error({ title: t`Failed to create workflow` });
       }
     },
     [navigation, refetch],
@@ -52,10 +54,10 @@ export function WorkflowsNavigator() {
         await workflow.delete();
         await refetch();
         if (selectedId === workflow.id) navigation.openDock(DockPointer.forWorkflows());
-        notify.success({ title: 'Workflow deleted' });
+        notify.success({ title: t`Workflow deleted` });
       } catch (err) {
         console.error('[WorkflowsNavigator] Failed to delete workflow:', err);
-        notify.error({ title: 'Failed to delete workflow' });
+        notify.error({ title: t`Failed to delete workflow` });
       }
     },
     [navigation, refetch, selectedId],
@@ -64,14 +66,14 @@ export function WorkflowsNavigator() {
   const handleOpenExternal = useCallback(
     async (workflow: Workflow) => {
       if (!workflow.asset_ref || !fsTypeId?.id) {
-        notify.error({ title: 'No file linked to this workflow' });
+        notify.error({ title: t`No file linked to this workflow` });
         return;
       }
       try {
         await openExternalFromComputeNode(fsTypeId.id, workflow.asset_ref);
       } catch (err) {
         console.error('[WorkflowsNavigator] Open external failed:', err);
-        notify.error({ title: 'Failed to open file' });
+        notify.error({ title: t`Failed to open file` });
       }
     },
     [fsTypeId],
@@ -84,7 +86,7 @@ export function WorkflowsNavigator() {
         await refetch();
       } catch (err) {
         console.error('[WorkflowsNavigator] Rename failed:', err);
-        notify.error({ title: 'Failed to rename workflow' });
+        notify.error({ title: t`Failed to rename workflow` });
       }
     },
     [refetch],
@@ -103,13 +105,13 @@ export function WorkflowsNavigator() {
             {
               id: 'open-external',
               icon: <ExternalLink />,
-              label: 'Open in external editor',
+              label: t`Open in external editor`,
               run: () => void handleOpenExternal(w),
             },
             {
               id: 'delete',
               icon: <Trash2 className="text-destructive" />,
-              label: 'Delete workflow',
+              label: t`Delete workflow`,
               run: () => setDeleteTarget(w),
             },
           ],
@@ -124,13 +126,13 @@ export function WorkflowsNavigator() {
       roots,
       isLoading,
       header: {
-        title: 'Workflows',
+        title: t`Workflows`,
         countBadge: workflows.length,
         toolbar: [
           {
             id: 'new',
             icon: <FilePlus />,
-            label: 'New Workflow',
+            label: t`New Workflow`,
             run: () => setNewDialogOpen(true),
             showBusyIndicator: false,
           },
@@ -148,10 +150,10 @@ export function WorkflowsNavigator() {
       <InputDialog
         open={newDialogOpen}
         onOpenChange={setNewDialogOpen}
-        title="New Workflow"
-        description="Enter a name for the new workflow."
-        placeholder="Workflow name"
-        confirmLabel="Create"
+        title={t`New Workflow`}
+        description={t`Enter a name for the new workflow.`}
+        placeholder={t`Workflow name`}
+        confirmLabel={t`Create`}
         onConfirm={(name) => void handleNewWorkflow(name)}
       />
       <ConfirmDialog
@@ -159,9 +161,9 @@ export function WorkflowsNavigator() {
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        title="Delete Workflow"
-        description={`Are you sure you want to delete "${deleteTarget?.displayName}"?`}
-        confirmLabel="Delete"
+        title={t`Delete Workflow`}
+        description={t`Are you sure you want to delete "${deleteTarget?.displayName}"?`}
+        confirmLabel={t`Delete`}
         onConfirm={() => {
           if (deleteTarget) void handleDeleteWorkflow(deleteTarget);
         }}

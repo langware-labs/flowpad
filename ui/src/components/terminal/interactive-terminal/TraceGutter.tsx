@@ -5,6 +5,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { TraceGutterEntry } from './use-trace-gutter';
 import React, { useEffect, useRef, useState } from 'react';
 import { FileText, X } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 function formatTimeAgo(timestamp: string): string {
   const then = new Date(timestamp).getTime();
@@ -143,12 +144,12 @@ export const TraceGutter = React.memo(function TraceGutter({
             {/* Panel header with X button */}
             <div className="flex shrink-0 items-center justify-between border-b border-border px-2 py-1">
               <span className="text-xs font-medium text-muted-foreground">
-                {selectedEntries ? `${selectedEntries.length} event${selectedEntries.length === 1 ? '' : 's'}` : 'Trace events'}
+                {selectedEntries ? `${selectedEntries.length} event${selectedEntries.length === 1 ? '' : 's'}` : <Trans>Trace events</Trans>}
               </span>
               <button
                 className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={onClose}
-                aria-label="Close"
+                aria-label={t`Close`}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -171,6 +172,7 @@ function EventCountBadge({ total, historicalCount, liveCount, onOpen }: {
   liveCount: number;
   onOpen: () => void;
 }) {
+  const { t } = useLingui();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -192,7 +194,7 @@ function EventCountBadge({ total, historicalCount, liveCount, onOpen }: {
       </TooltipTrigger>
       <TooltipContent side="right" sideOffset={4} className="text-xs">
         {total === 0
-          ? 'No trace events captured yet'
+          ? <Trans>No trace events captured yet</Trans>
           : `${total} trace event${total === 1 ? '' : 's'} captured`}
       </TooltipContent>
     </Tooltip>
@@ -284,6 +286,7 @@ function ExpandedEventLine({
   entry: TraceGutterEntry;
 }) {
   const { navigation } = useDockNavigation();
+  const { t } = useLingui();
   const Icon = getEventIcon(entry.event.event_type, entry.event);
   const colorClass = getEventColor(entry.event);
   const oneLiner = getOneLiner(entry.event);
@@ -354,7 +357,7 @@ function ExpandedEventLine({
                 <FileText className="h-3 w-3" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">View transcript</TooltipContent>
+            <TooltipContent side="bottom"><Trans>View transcript</Trans></TooltipContent>
           </Tooltip>
         </div>
       </TooltipTrigger>

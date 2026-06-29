@@ -2,6 +2,7 @@ import { systemTools, DatabaseStats } from '@sdk';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Database, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface DbStatsDialogProps {
   open: boolean;
@@ -17,6 +18,7 @@ function formatBytes(bytes: number): string {
 export function DbStatsDialog({ open, onOpenChange }: DbStatsDialogProps) {
   const [stats, setStats] = useState<DatabaseStats | null>(null);
   const [loading, setLoading] = useState(false);
+  const { t } = useLingui();
 
   const fetchStats = async () => {
     setLoading(true);
@@ -39,11 +41,11 @@ export function DbStatsDialog({ open, onOpenChange }: DbStatsDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Database className="h-4 w-4" />
-            Database Stats
+            <Trans>Database Stats</Trans>
             <button
               onClick={() => void fetchStats()}
               className="ml-auto text-muted-foreground hover:text-foreground"
-              title="Refresh stats"
+              title={t`Refresh stats`}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -51,21 +53,21 @@ export function DbStatsDialog({ open, onOpenChange }: DbStatsDialogProps) {
         </DialogHeader>
 
         {loading && !stats ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>
+          <div className="py-8 text-center text-sm text-muted-foreground"><Trans>Loading...</Trans></div>
         ) : stats ? (
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-md border p-3 text-center">
                 <div className="text-lg font-semibold">{formatBytes(stats.file_size_bytes)}</div>
-                <div className="text-xs text-muted-foreground">File Size</div>
+                <div className="text-xs text-muted-foreground"><Trans>File Size</Trans></div>
               </div>
               <div className="rounded-md border p-3 text-center">
                 <div className="text-lg font-semibold">{stats.total_entities.toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Entities</div>
+                <div className="text-xs text-muted-foreground"><Trans>Entities</Trans></div>
               </div>
               <div className="rounded-md border p-3 text-center">
                 <div className="text-lg font-semibold">{stats.total_relationships.toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Relations</div>
+                <div className="text-xs text-muted-foreground"><Trans>Relations</Trans></div>
               </div>
             </div>
 
@@ -74,8 +76,8 @@ export function DbStatsDialog({ open, onOpenChange }: DbStatsDialogProps) {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Type</th>
-                      <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Count</th>
+                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground"><Trans>Type</Trans></th>
+                      <th className="px-3 py-1.5 text-right font-medium text-muted-foreground"><Trans>Count</Trans></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -91,7 +93,7 @@ export function DbStatsDialog({ open, onOpenChange }: DbStatsDialogProps) {
             )}
           </div>
         ) : (
-          <div className="py-8 text-center text-sm text-muted-foreground">Failed to load stats</div>
+          <div className="py-8 text-center text-sm text-muted-foreground"><Trans>Failed to load stats</Trans></div>
         )}
       </DialogContent>
     </Dialog>

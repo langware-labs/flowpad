@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Users, X } from 'lucide-react';
 import { type TypeId } from '@sdk';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
@@ -37,6 +38,7 @@ interface MembersAvatarStackProps {
  * pattern; this component is purely presentational.
  */
 export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
+  const { t } = useLingui();
   const { members, addMember, removeMember, setRole } = useMembers(typeId);
   const { localUser } = useLocalUser();
   const [open, setOpen] = useState(false);
@@ -88,7 +90,7 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
   const handleInvite = async () => {
     const candidate = email.trim();
     if (!EMAIL_RE.test(candidate)) {
-      setInviteError('Enter a valid email');
+      setInviteError(t`Enter a valid email`);
       return;
     }
     setInviting(true);
@@ -101,7 +103,7 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
       // Re-inviting an accepted member is hub-rejected (400 "use change_role")
       // — point at the roster's role selector instead of echoing the raw error.
       setInviteError(/change_role/i.test(message)
-        ? 'Already a member — change their role in the list above'
+        ? t`Already a member — change their role in the list above`
         : message);
     } finally {
       setInviting(false);
@@ -159,7 +161,7 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
       <PopoverContent className="w-64 p-2" align="start">
         {members.length === 0 && (
           <div className="px-1 py-1 text-[11px] text-muted-foreground">
-            No members yet — invite someone below.
+            <Trans>No members yet — invite someone below.</Trans>
           </div>
         )}
         <ul className="flex flex-col gap-1.5">
@@ -272,7 +274,7 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
                 setEmail(e.target.value);
                 if (inviteError) setInviteError(null);
               }}
-              placeholder="Invite by email…"
+              placeholder={t`Invite by email…`}
               className="flex-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs outline-none focus:border-primary"
               disabled={inviting}
               data-testid="members-invite-input"
@@ -283,7 +285,7 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
               className="rounded border border-border bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground hover:bg-accent disabled:opacity-50"
               data-testid="members-invite-submit"
             >
-              {inviting ? 'Inviting…' : '+ Add'}
+              {inviting ? t`Inviting…` : t`+ Add`}
             </button>
           </form>
           {inviteError && (

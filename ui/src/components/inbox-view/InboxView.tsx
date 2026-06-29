@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Archive, Inbox as InboxIcon, LifeBuoy, Mail, MailOpen, MailPlus, RefreshCw, Search, SquarePen, Trash2, X } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import {
@@ -163,11 +165,12 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
 
   // Trash does different things depending on ownership — say which one
   // up-front so the tooltip distinguishes it from the (reversible) Archive.
+  const { t } = useLingui();
   const deleteLabel = !conv.remote
-    ? 'Delete — removes permanently'
+    ? t`Delete — removes permanently`
     : cloudUserId && conv.created_by === cloudUserId
-      ? 'Delete for everyone — permanent'
-      : 'Leave conversation';
+      ? t`Delete for everyone — permanent`
+      : t`Leave conversation`;
 
   // The facets are intrinsic to the conversation; the *hide* rule combines them
   // with the active view + search (view-state, not category):
@@ -210,7 +213,7 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
   const participantNames = useMemo(() => {
     if (isInvitationRow) {
       const inviter = (firstMessage?.sender_name || '').trim();
-      return [inviter || 'Invitation'];
+      return [inviter || t`Invitation`];
     }
     const names: string[] = [];
     const seen = new Set<string>();
@@ -226,8 +229,8 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
     for (const p of (conv.participants ?? [])) {
       pushName(p?.name || (p?.email ? p.email.split('@')[0] : ''));
     }
-    return names.length > 0 ? names : ['Unknown'];
-  }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.participants]);
+    return names.length > 0 ? names : [t`Unknown`];
+  }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.participants, t]);
 
   if (isHidden) return null;
 
@@ -241,8 +244,8 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
   // "(no subject)" placeholder only when there's no title. The snippet (latest
   // message preview) still renders after it.
   const subject = isInvitationRow
-    ? 'You’ve been invited to a conversation'
-    : (conv.title?.trim() || '(no subject)');
+    ? t`You've been invited to a conversation`
+    : (conv.title?.trim() || t`(no subject)`);
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
@@ -307,7 +310,7 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
         <Checkbox
           checked={!!selected}
           onCheckedChange={() => convId && onToggleSelect?.(convId)}
-          aria-label="Select conversation"
+          aria-label={t`Select conversation`}
           data-testid="inbox-row-select"
           className="h-3.5 w-3.5 border-muted-foreground/30 opacity-50 transition-opacity hover:opacity-100 data-[state=checked]:border-primary data-[state=checked]:opacity-100"
         />
@@ -376,6 +379,7 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
 // ── InboxView ───────────────────────────────────────────────────────────────
 
 export function InboxView() {
+  const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
   // 'inbox' (default) shows active conversations; 'archived' shows only
   // rows whose ``archived_at`` is set and not yet revived by newer activity.
@@ -641,13 +645,13 @@ export function InboxView() {
     if (selectedConvs.length === 0) return;
     if (selectedNeedsHub && !hubReachable) {
       notify.error({
-        title: 'Cloud disconnected',
-        message: 'Reconnect to the cloud to delete shared conversations.',
+        title: t`Cloud disconnected`,
+        message: t`Reconnect to the cloud to delete shared conversations.`,
       });
       return;
     }
     setSelDeleteOpen(true);
-  }, [selectedConvs.length, selectedNeedsHub, hubReachable]);
+  }, [selectedConvs.length, selectedNeedsHub, hubReachable, t]);
 
   const runBulkDeleteSelected = useCallback(async () => {
     // No single server endpoint for an arbitrary set, so loop per conversation
@@ -675,28 +679,28 @@ export function InboxView() {
       }
     }
     if (failed.length === 0) {
-      notify.success({ title: `Deleted ${ok} conversation${ok === 1 ? '' : 's'}` });
+      notify.success({ title: ok === 1 ? t`Deleted 1 conversation` : t`Deleted ${ok} conversations` });
     } else {
       notify.error({
-        title: `Deleted ${ok}, ${failed.length} failed`,
+        title: t`Deleted ${ok}, ${failed.length} failed`,
         message: failed.slice(0, 3).join(', '),
       });
     }
     clearSelection();
     void refetch();
-  }, [selectedConvs, seemsInvitationConv, cloudUserId, clearSelection, refetch]);
+  }, [selectedConvs, seemsInvitationConv, cloudUserId, clearSelection, refetch, t]);
 
   const handleDeleteArchived = useCallback(() => {
     if (archivedConvs.length === 0) return;
     if (needsHub && !hubReachable) {
       notify.error({
-        title: 'Cloud disconnected',
-        message: 'Reconnect to the cloud to delete shared conversations.',
+        title: t`Cloud disconnected`,
+        message: t`Reconnect to the cloud to delete shared conversations.`,
       });
       return;
     }
     setBulkDialogOpen(true);
-  }, [archivedConvs.length, hubReachable, needsHub]);
+  }, [archivedConvs.length, hubReachable, needsHub, t]);
 
   const runBulkDelete = useCallback(async () => {
     try {
@@ -704,39 +708,39 @@ export function InboxView() {
       const ok = res.deleted?.length ?? 0;
       const failed = res.failed ?? [];
       if (failed.length === 0) {
-        notify.success({ title: `Deleted ${ok} conversation${ok === 1 ? '' : 's'}` });
+        notify.success({ title: ok === 1 ? t`Deleted 1 conversation` : t`Deleted ${ok} conversations` });
       } else {
         const firstFew = failed
           .slice(0, 3)
           .map((f) => `${f.id.slice(0, 8)}: ${f.reason}`)
           .join('\n');
         notify.error({
-          title: `Deleted ${ok}, ${failed.length} failed`,
+          title: t`Deleted ${ok}, ${failed.length} failed`,
           message: firstFew,
         });
       }
     } catch (e) {
       notify.error({
-        title: 'Delete all failed',
+        title: t`Delete all failed`,
         message: e instanceof Error ? e.message : String(e),
       });
     } finally {
       void refetch();
     }
-  }, [refetch]);
+  }, [refetch, t]);
 
   const handleRowDelete = useCallback(
     (action: RowDeleteAction) => {
       if (action.kind !== 'local' && !hubReachable) {
         notify.error({
-          title: 'Cloud disconnected',
-          message: 'Reconnect to the cloud to delete this conversation.',
+          title: t`Cloud disconnected`,
+          message: t`Reconnect to the cloud to delete this conversation.`,
         });
         return;
       }
       setRowDelete(action);
     },
-    [hubReachable],
+    [hubReachable, t],
   );
 
   const confirmRowDelete = useCallback(async () => {
@@ -744,49 +748,49 @@ export function InboxView() {
     try {
       if (rowDelete.kind === 'invitation') {
         await declineInvitation({ invitation_id: rowDelete.invitationId });
-        notify.success({ title: 'Invitation declined' });
+        notify.success({ title: t`Invitation declined` });
       } else if (rowDelete.kind === 'owner') {
         await deleteConversation({
           conversation_id: rowDelete.conversationId,
           mode: 'delete_for_all',
         });
-        notify.success({ title: 'Conversation deleted' });
+        notify.success({ title: t`Conversation deleted` });
       } else if (rowDelete.kind === 'leave') {
         await leaveConversation({ conversation_id: rowDelete.conversationId });
-        notify.success({ title: 'Left conversation' });
+        notify.success({ title: t`Left conversation` });
       } else {
         await deleteConversation({
           conversation_id: rowDelete.conversationId,
           mode: 'local',
         });
-        notify.success({ title: 'Conversation deleted' });
+        notify.success({ title: t`Conversation deleted` });
       }
     } catch (e) {
       notify.error({
-        title: 'Delete failed',
+        title: t`Delete failed`,
         message: e instanceof Error ? e.message : String(e),
       });
     } finally {
       void refetch();
     }
-  }, [refetch, rowDelete]);
+  }, [refetch, rowDelete, t]);
 
   const dismissInvitationRow = useCallback(
     async (action: RowDeleteAction) => {
       if (action.kind !== 'invitation') return;
       try {
         await dismissConversation({ conversation_id: action.conversationId });
-        notify.success({ title: 'Invitation dismissed' });
+        notify.success({ title: t`Invitation dismissed` });
       } catch (e) {
         notify.error({
-          title: 'Dismiss failed',
+          title: t`Dismiss failed`,
           message: e instanceof Error ? e.message : String(e),
         });
       } finally {
         void refetch();
       }
     },
-    [refetch],
+    [refetch, t],
   );
 
   const setView = useCallback((next: InboxViewMode) => {
@@ -880,7 +884,7 @@ export function InboxView() {
   return (
     <div className="relative flex h-full flex-col">
       {!cloudUser && (
-        <LoginRequiredOverlay description="Sign in to your Flowpad Cloud account to view your inbox and conversations." />
+        <LoginRequiredOverlay description={t`Sign in to your Flowpad Cloud account to view your inbox and conversations.`} />
       )}
       <div className="flex shrink-0 items-center border-b px-3 py-1.5">
         {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
@@ -888,13 +892,13 @@ export function InboxView() {
           <div
             className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
             role="tablist"
-            aria-label="Inbox view"
+            aria-label={t`Inbox view`}
             data-testid="inbox-view-bar"
           >
-            {renderViewPill('inbox', 'Inbox', InboxIcon)}
-            {renderViewPill('unread', 'Unread', MailPlus)}
-            {renderViewPill('archived', 'Archived', Archive)}
-            {renderViewPill('community', 'Community', LifeBuoy)}
+            {renderViewPill('inbox', t`Inbox`, InboxIcon)}
+            {renderViewPill('unread', t`Unread`, MailPlus)}
+            {renderViewPill('archived', t`Archived`, Archive)}
+            {renderViewPill('community', t`Community`, LifeBuoy)}
           </div>
           {/* Text search — filters the list below to conversations whose
               messages contain the query, spanning archived rows. Hidden in
@@ -906,17 +910,17 @@ export function InboxView() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search messages"
+                placeholder={t`Search messages`}
                 className="h-7 w-44 rounded-md border border-border/60 bg-background pl-7 pr-6 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 data-testid="inbox-search-input"
-                aria-label="Search messages"
+                aria-label={t`Search messages`}
               />
               {searchActive && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
                   className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                  aria-label="Clear search"
+                  aria-label={t`Clear search`}
                   data-testid="inbox-search-clear"
                 >
                   <X className="h-3 w-3" />
@@ -933,10 +937,10 @@ export function InboxView() {
             className="h-7 text-xs"
             onClick={() => setShowNewConversation(true)}
             data-testid="inbox-new-conversation-button"
-            title="Start a new conversation"
+            title={t`Start a new conversation`}
           >
             <SquarePen className="mr-1 h-3.5 w-3.5" />
-            New
+            <Trans>New</Trans>
           </Button>
         </div>
         {/* RIGHT — actions for the current view */}
@@ -944,7 +948,7 @@ export function InboxView() {
           {selectedCount > 0 && !inCommunityView ? (
             <div className="flex items-center gap-1" data-testid="inbox-selection-bar">
               <span className="mr-1 text-xs text-muted-foreground" data-testid="inbox-selection-count">
-                {selectedCount} selected
+                <Trans>{selectedCount} selected</Trans>
               </span>
               <Button
                 variant="ghost"
@@ -954,7 +958,7 @@ export function InboxView() {
                 data-testid="inbox-selection-mark-read"
               >
                 <MailOpen className="mr-1 h-3.5 w-3.5" />
-                Read
+                <Trans>Read</Trans>
               </Button>
               <Button
                 variant="ghost"
@@ -964,7 +968,7 @@ export function InboxView() {
                 data-testid="inbox-selection-mark-unread"
               >
                 <Mail className="mr-1 h-3.5 w-3.5" />
-                Unread
+                <Trans>Unread</Trans>
               </Button>
               {!inArchivedView && (
                 <Button
@@ -975,7 +979,7 @@ export function InboxView() {
                   data-testid="inbox-selection-archive"
                 >
                   <Archive className="mr-1 h-3.5 w-3.5" />
-                  Archive
+                  <Trans>Archive</Trans>
                 </Button>
               )}
               <Button
@@ -986,14 +990,14 @@ export function InboxView() {
                 data-testid="inbox-selection-delete"
               >
                 <Trash2 className="mr-1 h-3.5 w-3.5" />
-                Delete
+                <Trans>Delete</Trans>
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
                 onClick={clearSelection}
-                title="Clear selection"
+                title={t`Clear selection`}
                 data-testid="inbox-selection-clear"
               >
                 <X className="h-3.5 w-3.5" />
@@ -1008,7 +1012,7 @@ export function InboxView() {
               className="h-7 w-7"
               onClick={() => void loadCommunityTickets()}
               disabled={communityLoading}
-              title="Refresh community tickets"
+              title={t`Refresh community tickets`}
               data-testid="inbox-community-refresh-button"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${communityLoading ? 'animate-spin' : ''}`} />
@@ -1022,7 +1026,7 @@ export function InboxView() {
               onClick={() => void handleMarkAllRead()}
               disabled={isLoading || visibleCount === 0}
             >
-              Mark all read
+              <Trans>Mark all read</Trans>
             </Button>
           )}
           {/* Archive all archives every conversation regardless of read state;
@@ -1036,7 +1040,7 @@ export function InboxView() {
               disabled={isLoading || visibleCount === 0}
               data-testid="inbox-archive-all-button"
             >
-              Archive all
+              <Trans>Archive all</Trans>
             </Button>
           )}
           {inArchivedView && (
@@ -1049,7 +1053,7 @@ export function InboxView() {
               data-testid="inbox-delete-archived-button"
             >
               <Trash2 className="mr-1 h-3.5 w-3.5" />
-              Delete all
+              <Trans>Delete all</Trans>
             </Button>
           )}
           {!inCommunityView && (
@@ -1059,7 +1063,7 @@ export function InboxView() {
               className="h-7 w-7"
               onClick={() => void handleRefresh()}
               disabled={fetching}
-              title="Fetch new messages from hub"
+              title={t`Fetch new messages from hub`}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
             </Button>
@@ -1073,14 +1077,14 @@ export function InboxView() {
         {/* Community staff queue — hub-sourced tickets, including unpicked ones
             that don't appear in the local conversation list. */}
         {inCommunityView && communityLoading && communityTickets.length === 0 && (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground"><Trans>Loading…</Trans></div>
         )}
         {inCommunityView && !communityLoading && communityTickets.length === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
-            <span className="text-sm">No community tickets</span>
+            <span className="text-sm"><Trans>No community tickets</Trans></span>
             <Button variant="outline" size="sm" onClick={() => void loadCommunityTickets()} disabled={communityLoading}>
               <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${communityLoading ? 'animate-spin' : ''}`} />
-              Refresh
+              <Trans>Refresh</Trans>
             </Button>
           </div>
         )}
@@ -1095,16 +1099,16 @@ export function InboxView() {
               <LifeBuoy className="h-3.5 w-3.5 shrink-0 text-violet-500" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm text-foreground">
-                  {ticket.title || ticket.preview || 'Support ticket'}
+                  {ticket.title || ticket.preview || t`Support ticket`}
                 </div>
                 {ticket.preview && ticket.title && (
                   <div className="truncate text-xs text-muted-foreground">{ticket.preview}</div>
                 )}
               </div>
-              <span className="shrink-0 text-[11px] text-muted-foreground">{ticket.message_count} msg</span>
+              <span className="shrink-0 text-[11px] text-muted-foreground"><Trans>{ticket.message_count} msg</Trans></span>
               {ticket.picked_up && (
                 <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  Joined
+                  <Trans>Joined</Trans>
                 </span>
               )}
               <button
@@ -1115,28 +1119,28 @@ export function InboxView() {
                 data-testid="community-ticket-pickup-button"
               >
                 {pickingUpId === ticket.conversation_id
-                  ? 'Picking up…'
-                  : ticket.picked_up ? 'Open' : 'Pick up'}
+                  ? t`Picking up…`
+                  : ticket.picked_up ? t`Open` : t`Pick up`}
               </button>
             </div>
           ))}
 
         {!inCommunityView && initialLoading && (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground"><Trans>Loading…</Trans></div>
         )}
 
         {!inCommunityView && !initialLoading && visibleCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
-              {searchActive ? 'No matching conversations'
-                : inArchivedView ? 'No archived conversations'
-                : inUnreadView ? 'No unread conversations'
-                : 'No conversations'}
+              {searchActive ? t`No matching conversations`
+                : inArchivedView ? t`No archived conversations`
+                : inUnreadView ? t`No unread conversations`
+                : t`No conversations`}
             </span>
             {!inArchivedView && !searchActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
-                Check for new messages
+                <Trans>Check for new messages</Trans>
               </Button>
             )}
           </div>
@@ -1150,12 +1154,12 @@ export function InboxView() {
             <Checkbox
               checked={allVisibleSelected ? true : selectedCount > 0 ? 'indeterminate' : false}
               onCheckedChange={toggleSelectAll}
-              aria-label="Select all conversations"
+              aria-label={t`Select all conversations`}
               data-testid="inbox-select-all"
               className="h-3.5 w-3.5"
             />
             <span className="text-xs text-muted-foreground">
-              {selectedCount > 0 ? `${selectedCount} selected` : 'Select all'}
+              {selectedCount > 0 ? <Trans>{selectedCount} selected</Trans> : t`Select all`}
             </span>
           </div>
         )}
@@ -1195,74 +1199,74 @@ export function InboxView() {
       <BulkConfirmDialog
         open={bulkDialogOpen}
         onOpenChange={setBulkDialogOpen}
-        title="Delete archived conversations"
+        title={t`Delete archived conversations`}
         intro={
           needsHub
-            ? 'This sends a cloud action per conversation:'
-            : 'These conversations exist only on this device.'
+            ? t`This sends a cloud action per conversation:`
+            : t`These conversations exist only on this device.`
         }
         buckets={[
           {
-            label: 'You own — delete for everyone',
+            label: t`You own — delete for everyone`,
             count: buckets.ownerCount,
             tone: 'destructive',
-            description: 'Removed for all participants',
+            description: t`Removed for all participants`,
           },
           {
-            label: 'You will leave',
+            label: t`You will leave`,
             count: buckets.nonOwnerCount,
-            description: 'Removed for you; other members keep it',
+            description: t`Removed for you; other members keep it`,
           },
           {
-            label: 'Invitations — decline',
+            label: t`Invitations — decline`,
             count: buckets.invitationCount,
-            description: 'Notifies the inviter',
+            description: t`Notifies the inviter`,
           },
           {
-            label: 'Local only — permanent',
+            label: t`Local only — permanent`,
             count: buckets.localCount,
             tone: 'destructive',
-            description: 'Never synced to cloud',
+            description: t`Never synced to cloud`,
           },
         ]}
-        confirmLabel="Delete all"
+        confirmLabel={t`Delete all`}
         onConfirm={() => void runBulkDelete()}
       />
 
       <BulkConfirmDialog
         open={selDeleteOpen}
         onOpenChange={setSelDeleteOpen}
-        title={`Delete ${selectedCount} conversation${selectedCount === 1 ? '' : 's'}`}
+        title={selectedCount === 1 ? t`Delete 1 conversation` : t`Delete ${selectedCount} conversations`}
         intro={
           selectedNeedsHub
-            ? 'This sends a cloud action per conversation:'
-            : 'These conversations exist only on this device.'
+            ? t`This sends a cloud action per conversation:`
+            : t`These conversations exist only on this device.`
         }
         buckets={[
           {
-            label: 'You own — delete for everyone',
+            label: t`You own — delete for everyone`,
             count: selectedBuckets.ownerCount,
             tone: 'destructive',
-            description: 'Removed for all participants',
+            description: t`Removed for all participants`,
           },
           {
-            label: 'You will leave',
+            label: t`You will leave`,
             count: selectedBuckets.nonOwnerCount,
-            description: 'Removed for you; other members keep it',
+            description: t`Removed for you; other members keep it`,
           },
           {
-            label: 'Invitations — dismiss',
+            label: t`Invitations — dismiss`,
             count: selectedBuckets.invitationCount,
-            description: 'Hidden from your inbox',
+            description: t`Hidden from your inbox`,
           },
           {
-            label: 'Local only — permanent',
+            label: t`Local only — permanent`,
             count: selectedBuckets.localCount,
             tone: 'destructive',
-            description: 'Never synced to cloud',
+            description: t`Never synced to cloud`,
           },
         ]}
-        confirmLabel="Delete"
+        confirmLabel={t`Delete`}
         onConfirm={() => void runBulkDeleteSelected()}
       />
 
@@ -1270,18 +1274,18 @@ export function InboxView() {
         <BulkConfirmDialog
           open
           onOpenChange={(o) => !o && setRowDelete(null)}
-          title="Invitation"
-          intro="Pick what to do with this invitation."
+          title={t`Invitation`}
+          intro={t`Pick what to do with this invitation.`}
           buckets={[
             {
-              label: 'Decline (notifies the inviter)',
+              label: t`Decline (notifies the inviter)`,
               count: 1,
               tone: 'destructive',
-              description: 'Removes it everywhere',
+              description: t`Removes it everywhere`,
             },
           ]}
-          confirmLabel="Decline"
-          cancelLabel="Cancel"
+          confirmLabel={t`Decline`}
+          cancelLabel={t`Cancel`}
           onConfirm={() => {
             void confirmRowDelete();
             setRowDelete(null);
@@ -1299,17 +1303,17 @@ export function InboxView() {
         <BulkConfirmDialog
           open
           onOpenChange={(o) => !o && setRowDelete(null)}
-          title="Delete this conversation"
-          intro="You own this conversation — pick how you want to leave."
+          title={t`Delete this conversation`}
+          intro={t`You own this conversation — pick how you want to leave.`}
           buckets={[
             {
-              label: 'Delete for everyone',
+              label: t`Delete for everyone`,
               count: 1,
               tone: 'destructive',
-              description: 'Removed for all participants on the cloud',
+              description: t`Removed for all participants on the cloud`,
             },
           ]}
-          confirmLabel="Delete for everyone"
+          confirmLabel={t`Delete for everyone`}
           onConfirm={() => {
             void confirmRowDelete();
             setRowDelete(null);
@@ -1321,9 +1325,9 @@ export function InboxView() {
         <ConfirmDialog
           open
           onOpenChange={(o) => !o && setRowDelete(null)}
-          title="Leave this conversation?"
-          description="You'll be removed from the participant list. Other members keep the conversation."
-          confirmLabel="Leave"
+          title={t`Leave this conversation?`}
+          description={t`You'll be removed from the participant list. Other members keep the conversation.`}
+          confirmLabel={t`Leave`}
           variant="destructive"
           onConfirm={() => {
             void confirmRowDelete();
@@ -1336,9 +1340,9 @@ export function InboxView() {
         <ConfirmDialog
           open
           onOpenChange={(o) => !o && setRowDelete(null)}
-          title="Permanently delete?"
-          description="This conversation is local-only. It will be removed from this device."
-          confirmLabel="Delete"
+          title={t`Permanently delete?`}
+          description={t`This conversation is local-only. It will be removed from this device.`}
+          confirmLabel={t`Delete`}
           variant="destructive"
           onConfirm={() => {
             void confirmRowDelete();

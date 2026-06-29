@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { AgentTrace, AgenticProcess, FSRef, TypeId } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { WorkerIcon } from '@src/components/entity-execution-panel/history-row';
@@ -31,6 +32,7 @@ function normalizeWorker(workerType?: string | null): WorkerType {
  * (optional input). The structural base is the fresh skeleton for the session.
  */
 export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorProps) {
+  const { t } = useLingui();
   const { doc } = useAgentTraceDoc(fsRef);
   const { navigation } = useDockNavigation();
   const advanced = useIsAdvanced();
@@ -68,10 +70,10 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
 
     if (!process) {
       notify.error({
-        title: 'Process not found',
+        title: t`Process not found`,
         message: trace.session_id
-          ? `No terminal process was found for session ${trace.session_id}.`
-          : 'This trace is not linked to a worker session.',
+          ? t`No terminal process was found for session ${trace.session_id}.`
+          : t`This trace is not linked to a worker session.`,
       });
       return;
     }
@@ -96,14 +98,14 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
         actions={
           <button
             type="button"
-            title={`Open ${workerName} terminal`}
-            aria-label={`Open ${workerName} terminal`}
+            title={t`Open ${workerName} terminal`}
+            aria-label={t`Open ${workerName} terminal`}
             data-testid="agent-trace-open-process"
             className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={() => void handleOpenAnalyzedProcess()}
           >
             <WorkerIcon workerType={trace.worker_type} className="h-3.5 w-3.5 shrink-0" />
-            <span>Open process</span>
+            <span><Trans>Open process</Trans></span>
           </button>
         }
       />
@@ -117,10 +119,10 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
         <Tabs defaultValue="summary" className="flex min-h-0 flex-1 flex-col">
           <TabsList className="mx-3 mt-2 h-8 self-start">
             <TabsTrigger value="summary" className="py-0.5 text-xs">
-              Summary
+              <Trans>Summary</Trans>
             </TabsTrigger>
             <TabsTrigger value="timeline" className="py-0.5 text-xs">
-              Timeline
+              <Trans>Timeline</Trans>
             </TabsTrigger>
           </TabsList>
           <TabsContent

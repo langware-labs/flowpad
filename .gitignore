@@ -2,6 +2,13 @@
 .dockerignore
 docker-compose.local.yml
 
+# i18n: Lingui compiled catalogs (the .po files are the source of truth; the
+# Vite @lingui plugin compiles them at build, so these are regenerable artifacts)
+ui/src/locales/**/*.js
+ui/src/locales/**/*.js.map
+# @lingui/swc-plugin transform cache
+ui/.swc/
+
 # Screenshot PNGs (Playwright / manual testing artifacts)
 /*.png
 /page-*.png

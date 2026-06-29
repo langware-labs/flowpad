@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AlertTriangle,
   PlayCircle,
@@ -204,6 +205,7 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
 export function TerminalRuntimeErrorBanner() {
   const { terminalRuntimeError } = useDataContext();
   const [busy, setBusy] = useState(false);
+  const { t } = useLingui();
 
   if (!terminalRuntimeError) return null;
   const cfg = KIND_CONFIG[terminalRuntimeError.kind];
@@ -252,7 +254,7 @@ export function TerminalRuntimeErrorBanner() {
         className="shrink-0"
       >
         <ActionIcon className="h-3.5 w-3.5" />
-        {busy ? 'Working…' : cfg.actionLabel}
+        {busy ? t`Working…` : cfg.actionLabel}
       </Button>
       <Button
         type="button"
@@ -262,9 +264,9 @@ export function TerminalRuntimeErrorBanner() {
         onClick={() => dataContext.setTerminalRuntimeError(null)}
         data-testid="terminal-runtime-error-banner-dismiss"
         className="shrink-0 opacity-70 hover:opacity-100"
-        title="Dismiss banner (the runtime error stays — this just hides the affordance)"
+        title={t`Dismiss banner (the runtime error stays — this just hides the affordance)`}
       >
-        Dismiss
+        <Trans>Dismiss</Trans>
       </Button>
     </div>
   );

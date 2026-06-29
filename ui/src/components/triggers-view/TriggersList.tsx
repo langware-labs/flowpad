@@ -5,6 +5,7 @@ import { isAllScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from
 import { ActionInfo, dataManager, type ITrigger } from '@sdk';
 import { HelpCircle, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { TriggerListItem } from './TriggerListItem';
 import { SCOPE_LABELS } from './scope-colors';
 
@@ -75,6 +76,7 @@ export function TriggersList({
   scope,
   includeSystem,
 }: Props) {
+  const { t } = useLingui();
   const visibleTriggers = useMemo(
     () => filterTriggers(triggers, scope, includeSystem),
     [triggers, scope, includeSystem],
@@ -92,7 +94,7 @@ export function TriggersList({
     <div>
       {/* Schedule Triggers section (always rendered — empty state shows a "Create one" affordance). */}
       <TypeSection
-        title="Schedule Triggers"
+        title={t`Schedule Triggers`}
         grouped={scheduleGrouped}
         count={scheduleTriggers.length}
         trailing={
@@ -101,7 +103,7 @@ export function TriggersList({
             size="icon"
             className={`h-4 w-4 ${isCreatingSchedule ? 'text-primary' : ''}`}
             onClick={onNewSchedule}
-            title="New schedule trigger"
+            title={t`New schedule trigger`}
           >
             <Plus className="h-3 w-3" />
           </Button>
@@ -118,10 +120,11 @@ export function TriggersList({
         emptyState={
           !isCreatingSchedule && (
             <div className="px-3 py-3 text-[11px] text-muted-foreground">
-              No schedule triggers yet.{' '}
-              <button className="underline hover:text-foreground" onClick={onNewSchedule}>
-                Create one
-              </button>
+              <Trans>No schedule triggers yet.{' '}
+                <button className="underline hover:text-foreground" onClick={onNewSchedule}>
+                  Create one
+                </button>
+              </Trans>
             </div>
           )
         }
@@ -131,13 +134,13 @@ export function TriggersList({
           section types are discoverable; each header carries a `?` popover
           explaining the type-specific creation flow. */}
       <TypeSection
-        title="FSOp Triggers"
+        title={t`FSOp Triggers`}
         grouped={fsopGrouped}
         count={fsopTriggers.length}
         trailing={<FsopHelpPopover />}
         emptyState={
           <div className="px-3 py-3 text-[11px] text-muted-foreground">
-            No FSOp triggers visible. Toggle <em>Include system</em> above to see system-installed watchers.
+            <Trans>No FSOp triggers visible. Toggle <em>Include system</em> above to see system-installed watchers.</Trans>
           </div>
         }
         renderItem={(trigger) => (
@@ -151,15 +154,15 @@ export function TriggersList({
         )}
       />
       <TypeSection
-        title="Hook Triggers"
+        title={t`Hook Triggers`}
         grouped={hookGrouped}
         count={hookTriggers.length}
         trailing={<HookHelpPopover />}
         emptyState={
           <div className="px-3 py-3 text-[11px] text-muted-foreground">
-            No hook triggers yet. Drop a rule file under{' '}
-            <code className="rounded bg-muted px-1">~/.flow/skill_rules/</code> then click the{' '}
-            <em>?</em> above to discover.
+            <Trans>No hook triggers yet. Drop a rule file under{' '}
+              <code className="rounded bg-muted px-1">~/.flow/skill_rules/</code> then click the{' '}
+              <em>?</em> above to discover.</Trans>
           </div>
         }
         renderItem={(trigger) => (
@@ -180,6 +183,7 @@ export function TriggersList({
  *  rules; this surface gives the user the path + a Discover button that
  *  calls the existing POST /api/v1/graph/trigger/discover action. */
 function HookHelpPopover() {
+  const { t } = useLingui();
   const [discovering, setDiscovering] = useState(false);
   const handleDiscover = async () => {
     setDiscovering(true);
@@ -199,15 +203,15 @@ function HookHelpPopover() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-4 w-4" onClick={(e) => e.stopPropagation()} title="About hook triggers">
+        <Button variant="ghost" size="icon" className="h-4 w-4" onClick={(e) => e.stopPropagation()} title={t`About hook triggers`}>
           <HelpCircle className="h-3 w-3" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72 text-xs" onClick={(e) => e.stopPropagation()}>
         <p className="mb-2">
-          Hook triggers come from rule files at{' '}
-          <code className="rounded bg-muted px-1">~/.flow/skill_rules/</code>.
-          Drop in a Python rule, then click <em>Discover</em> to load it.
+          <Trans>Hook triggers come from rule files at{' '}
+            <code className="rounded bg-muted px-1">~/.flow/skill_rules/</code>.
+            Drop in a Python rule, then click <em>Discover</em> to load it.</Trans>
         </p>
         <Button
           size="sm"
@@ -216,7 +220,7 @@ function HookHelpPopover() {
           disabled={discovering}
           className="h-7 w-full text-xs"
         >
-          {discovering ? 'Discovering…' : 'Discover rules'}
+          {discovering ? t`Discovering…` : t`Discover rules`}
         </Button>
       </PopoverContent>
     </Popover>
@@ -227,22 +231,23 @@ function HookHelpPopover() {
  *  system-installed via set_service_triggers(); user-facing creation is
  *  API-only. The popover documents that, leaving room for a future + button. */
 function FsopHelpPopover() {
+  const { t } = useLingui();
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-4 w-4" onClick={(e) => e.stopPropagation()} title="About FSOp triggers">
+        <Button variant="ghost" size="icon" className="h-4 w-4" onClick={(e) => e.stopPropagation()} title={t`About FSOp triggers`}>
           <HelpCircle className="h-3 w-3" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72 text-xs" onClick={(e) => e.stopPropagation()}>
         <p>
-          FSOp triggers watch a file or folder and fire on changes. They run
-          a configured action (callback, script, or NotifyEntity) each time.
+          <Trans>FSOp triggers watch a file or folder and fire on changes. They run
+            a configured action (callback, script, or NotifyEntity) each time.</Trans>
         </p>
         <p className="mt-2">
-          System-installed triggers are seeded at boot via{' '}
-          <code className="rounded bg-muted px-1">set_service_triggers()</code>.{' '}
-          User-driven creation is API-only for now (UI builder coming soon).
+          <Trans>System-installed triggers are seeded at boot via{' '}
+            <code className="rounded bg-muted px-1">set_service_triggers()</code>.{' '}
+            User-driven creation is API-only for now (UI builder coming soon).</Trans>
         </p>
       </PopoverContent>
     </Popover>

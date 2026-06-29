@@ -1,4 +1,5 @@
 import { useCallback, useState, type ReactNode } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
   ComputeNode,
@@ -63,6 +64,7 @@ export function useRunOnFile({
   onOpenSideWindow,
 }: UseRunOnFileArgs): UseRunOnFileResult {
   const { project } = useProject();
+  const { t } = useLingui();
 
   const [isStarting, setIsStarting] = useState(false);
   const [processEntry, setProcessEntry] = useState<ProcessEntry | null>(null);
@@ -108,8 +110,8 @@ export function useRunOnFile({
     async (descriptor: AssetDescriptor) => {
       if (!targetVfsPath) {
         notify.error({
-          title: 'Cannot run',
-          message: 'This file has no backing entity yet.',
+          title: t`Cannot run`,
+          message: t`This file has no backing entity yet.`,
         });
         return;
       }
@@ -124,7 +126,7 @@ export function useRunOnFile({
         await doRun(descriptor);
       } catch (err) {
         console.error('[useRunOnFile] run failed', err);
-        notify.error({ title: 'Failed to start run' });
+        notify.error({ title: t`Failed to start run` });
       } finally {
         setIsStarting(false);
       }
@@ -146,7 +148,7 @@ export function useRunOnFile({
         await doRun(pendingDescriptor);
       } catch (err) {
         console.error('[useRunOnFile] enable MCP failed', err);
-        notify.error({ title: 'Failed to enable MCP' });
+        notify.error({ title: t`Failed to enable MCP` });
       } finally {
         setMcpEnabling(false);
         setPendingDescriptor(null);
@@ -165,19 +167,18 @@ export function useRunOnFile({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Flow MCP not enabled</AlertDialogTitle>
+          <AlertDialogTitle><Trans>Flow MCP not enabled</Trans></AlertDialogTitle>
           <AlertDialogDescription>
-            The <code>flow-sdk-mcp</code> server is required to run with progress
-            tracing. Enable it to continue.
+            <Trans>The <code>flow-sdk-mcp</code> server is required to run with progress tracing. Enable it to continue.</Trans>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
           <Button disabled={mcpEnabling} onClick={() => void handleEnableMcp('project')}>
-            Enable for project
+            <Trans>Enable for project</Trans>
           </Button>
           <Button disabled={mcpEnabling} onClick={() => void handleEnableMcp('user')}>
-            Enable for user
+            <Trans>Enable for user</Trans>
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

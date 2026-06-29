@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -94,9 +95,9 @@ export function DeleteAssetModal() {
     >
       <AlertDialogContent data-testid="delete-asset-modal">
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete {request?.name ?? 'asset'}?</AlertDialogTitle>
+          <AlertDialogTitle><Trans>Delete {request?.name ?? 'asset'}?</Trans></AlertDialogTitle>
           <AlertDialogDescription>
-            {request?.description ?? 'This permanently removes the file from disk. This cannot be undone.'}
+            {request?.description ?? <Trans>This permanently removes the file from disk. This cannot be undone.</Trans>}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error && (
@@ -105,7 +106,7 @@ export function DeleteAssetModal() {
           </p>
         )}
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={busy}><Trans>Cancel</Trans></AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
@@ -116,7 +117,7 @@ export function DeleteAssetModal() {
             data-testid="delete-asset-modal-confirm"
           >
             {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-            Delete
+            <Trans>Delete</Trans>
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

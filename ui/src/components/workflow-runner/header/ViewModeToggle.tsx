@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Switch } from '@src/components/ui/switch';
 import { ListTree } from 'lucide-react';
 
@@ -9,6 +10,7 @@ interface ViewModeToggleProps {
 }
 
 export function ViewModeToggle({ viewMode, onChange }: ViewModeToggleProps) {
+  const { t } = useLingui();
   const detailed = viewMode === 'expert';
   return (
     <label
@@ -17,11 +19,11 @@ export function ViewModeToggle({ viewMode, onChange }: ViewModeToggleProps) {
       className="flex cursor-pointer items-center gap-2 rounded-md border bg-background px-2 py-1 text-xs"
     >
       <ListTree className="h-3 w-3 text-muted-foreground" />
-      <span className="font-medium">Detailed view</span>
+      <span className="font-medium"><Trans>Detailed view</Trans></span>
       <Switch
         checked={detailed}
         onCheckedChange={(next) => onChange(next ? 'expert' : 'simple')}
-        aria-label="Toggle detailed view"
+        aria-label={t`Toggle detailed view`}
       />
     </label>
   );

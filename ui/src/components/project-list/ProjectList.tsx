@@ -2,6 +2,7 @@ import { Flow, Project, timeAgo } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Badge } from '@src/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@src/components/ui/card';
+import { Trans, useLingui } from '@lingui/react/macro';
 import React from 'react';
 
 export interface ProjectListProps {
@@ -40,12 +41,14 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   isLoading,
   onProjectClick,
   onFlowClick,
-  title = 'Your Projects',
+  title,
   requireAuth = true,
   compact = false,
   maxItems,
 }) => {
   const { user } = useAuth();
+  const { t } = useLingui();
+  const displayTitle = title || t`Your Projects`;
 
   // Don't show for visitors if auth is required
   if (requireAuth && !user) {
@@ -91,7 +94,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   if (compact) {
     return (
       <div data-testid="project-list-compact" className="w-64">
-        {title && <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>}
+        {displayTitle && <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{displayTitle}</h3>}
         <div className="space-y-1">
           {displayProjects.map((project) => (
             <div
@@ -119,7 +122,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
       <div className="mx-16 w-full bg-muted/70 pb-16 pt-4">
         <div className="mx-auto w-full max-w-7xl px-6">
           <div className="mb-8">
-            <h2 className="mb-2 text-2xl font-bold">{title}</h2>
+            <h2 className="mb-2 text-2xl font-bold">{displayTitle}</h2>
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -150,7 +153,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                         <span className="truncate">{project.displayName}</span>
                         {showFlows && (
                           <Badge variant="outline" className="ml-2">
-                            {projectFlows.length} {projectFlows.length === 1 ? 'flow' : 'flows'}
+                            {projectFlows.length} {projectFlows.length === 1 ? t`flow` : t`flows`}
                           </Badge>
                         )}
                       </CardTitle>
@@ -160,7 +163,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       <CardContent>
                         {projectFlows.length > 0 ? (
                           <div className="space-y-3">
-                            <h4 className="text-sm font-medium text-muted-foreground">Flows:</h4>
+                            <h4 className="text-sm font-medium text-muted-foreground"><Trans>Flows:</Trans></h4>
                             <div className="max-h-48 space-y-2 overflow-y-auto">
                               {projectFlows.map((flow) => (
                                 <div
@@ -178,7 +181,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                           </div>
                         ) : (
                           <div className="py-6 text-center">
-                            <p className="text-sm text-muted-foreground">No flows in this project</p>
+                            <p className="text-sm text-muted-foreground"><Trans>No flows in this project</Trans></p>
                           </div>
                         )}
                       </CardContent>

@@ -1,6 +1,7 @@
 import { Button } from '@src/components/ui/button';
 import { ExternalLink, Save } from 'lucide-react';
 import React from 'react';
+import { useLingui } from '@lingui/react/macro';
 
 interface AssetToolbarProps {
   title: string;
@@ -13,6 +14,7 @@ interface AssetToolbarProps {
 }
 
 export function AssetToolbar({ title, sourcePath, isDirty, isSaving, onSave, onOpenExternal, children }: AssetToolbarProps) {
+  const { t } = useLingui();
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center justify-between border-b bg-muted/50 px-3">
       <div className="flex min-w-0 flex-col justify-center">
@@ -26,10 +28,10 @@ export function AssetToolbar({ title, sourcePath, isDirty, isSaving, onSave, onO
         {isDirty && (
           <Button size="sm" onClick={onSave} disabled={isSaving}>
             <Save className={`mr-1 h-4 w-4 ${isSaving ? 'animate-pulse' : ''}`} />
-            {isSaving ? 'Saving...' : 'Save'}
+            {isSaving ? t`Saving...` : t`Save`}
           </Button>
         )}
-        <Button variant="ghost" size="sm" onClick={onOpenExternal} title="Open in external editor">
+        <Button variant="ghost" size="sm" onClick={onOpenExternal} title={t`Open in external editor`}>
           <ExternalLink className="h-4 w-4" />
         </Button>
       </div>

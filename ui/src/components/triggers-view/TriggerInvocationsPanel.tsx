@@ -9,19 +9,11 @@ import { AgenticProcess, ProcessKind, Trigger, TypeId, type ITrigger, type Proce
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { ExternalLink } from 'lucide-react';
 import { useMemo } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface Props {
   trigger: ITrigger | null;
 }
-
-const EVENT_LABELS: Record<string, string> = {
-  schedule_fire: 'Scheduled',
-  file_change: 'File change',
-  UserPromptSubmit: 'Prompt',
-  PreToolUse: 'Pre-tool',
-  PostToolUse: 'Post-tool',
-  Stop: 'Stop',
-};
 
 /** Trim a long path to a readable head…tail when shown inline. */
 function shortenPath(p: string, max = 56): string {
@@ -47,11 +39,11 @@ function BatchedChangesRow({
     <div className="flex flex-col gap-0.5">
       <div className="flex items-center gap-1.5">
         <Badge variant="outline" className="h-4 px-1 text-[9px]">
-          {total} file events
+          <Trans>{total} file events</Trans>
         </Badge>
         {truncated > 0 && (
           <Badge variant="outline" className="h-4 px-1 text-[9px] text-muted-foreground">
-            +{truncated} not stored
+            <Trans>+{truncated} not stored</Trans>
           </Badge>
         )}
       </div>
@@ -68,7 +60,7 @@ function BatchedChangesRow({
           </li>
         ))}
         {remaining > 0 && (
-          <li className="text-[10px] text-muted-foreground">+{remaining} more</li>
+          <li className="text-[10px] text-muted-foreground"><Trans>+{remaining} more</Trans></li>
         )}
       </ul>
     </div>
@@ -87,8 +79,18 @@ function formatTs(ts: string): string {
 }
 
 export function TriggerInvocationsPanel({ trigger }: Props) {
+  const { t } = useLingui();
   const { entries, isLoading } = useTriggerLog(trigger?.id ?? null);
   const { navigation } = useDockNavigation();
+
+  const EVENT_LABELS: Record<string, string> = {
+    schedule_fire: t`Scheduled`,
+    file_change: t`File change`,
+    UserPromptSubmit: t`Prompt`,
+    PreToolUse: t`Pre-tool`,
+    PostToolUse: t`Post-tool`,
+    Stop: t`Stop`,
+  };
 
   // Subscribe to all agentic processes this trigger spawned so each row can show
   // live status. Shares the generic `useProcessesForTarget` hook with EntityExecutionPanel.
@@ -112,7 +114,7 @@ export function TriggerInvocationsPanel({ trigger }: Props) {
   if (!trigger) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Select a trigger to view invocations
+        <Trans>Select a trigger to view invocations</Trans>
       </div>
     );
   }
@@ -127,7 +129,7 @@ export function TriggerInvocationsPanel({ trigger }: Props) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        <span className="text-sm font-medium">Invocations</span>
+        <span className="text-sm font-medium"><Trans>Invocations</Trans></span>
         {entries.length > 0 && (
           <Badge variant="secondary" className="text-[10px]">{entries.length}</Badge>
         )}
@@ -136,11 +138,11 @@ export function TriggerInvocationsPanel({ trigger }: Props) {
       <div className="flex-1 overflow-auto">
         {isLoading && entries.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Loading…
+            <Trans>Loading…</Trans>
           </div>
         ) : entries.length === 0 ? (
           <div className="flex h-full items-center justify-center p-4 text-center text-sm text-muted-foreground">
-            No invocations yet
+            <Trans>No invocations yet</Trans>
           </div>
         ) : (
           <div className="divide-y">
@@ -163,7 +165,7 @@ export function TriggerInvocationsPanel({ trigger }: Props) {
                       {EVENT_LABELS[entry.hook_event] ?? entry.hook_event}
                     </span>
                     {entry.is_test && (
-                      <Badge variant="outline" className="h-4 px-1 text-[9px]">test</Badge>
+                      <Badge variant="outline" className="h-4 px-1 text-[9px]"><Trans>test</Trans></Badge>
                     )}
                     {status && (
                       <StatusIndicator status={status} size="sm" className="ml-1" />
@@ -183,7 +185,7 @@ export function TriggerInvocationsPanel({ trigger }: Props) {
                             <ExternalLink className="h-3 w-3" />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Open process</TooltipContent>
+                        <TooltipContent><Trans>Open process</Trans></TooltipContent>
                       </Tooltip>
                     )}
                   </div>

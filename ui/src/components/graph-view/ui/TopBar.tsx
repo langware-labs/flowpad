@@ -1,5 +1,6 @@
 import { RefreshCw, Target, X } from 'lucide-react';
 import type Graph from 'graphology';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { SearchInput, type SearchResultRow } from './SearchInput';
 import { FilterChips } from './FilterChips';
 
@@ -46,22 +47,24 @@ export function TopBar({
   onChangeDepth,
   onExitLocal,
 }: Props) {
+  const { t } = useLingui();
+
   return (
     <div className="top-bar">
       <div className="top-bar-row">
         <div className="title">
           <span className="title-dot" />
-          <span>Context Graph</span>
+          <span><Trans>Context Graph</Trans></span>
         </div>
         <SearchInput onQueryChange={onSearch} onSelect={onSelectResult} />
         <div className="spacer" />
         <div className="counts">
-          <span><strong>{visibleNodeCount}</strong> / {nodeCount} nodes</span>
-          <span><strong>{edgeCount}</strong> edges</span>
+          <span><strong>{visibleNodeCount}</strong> / {nodeCount} <Trans>nodes</Trans></span>
+          <span><strong>{edgeCount}</strong> <Trans>edges</Trans></span>
         </div>
         <button className="btn" onClick={onRebuild} disabled={building}>
           <RefreshCw size={12} className={building ? 'spin' : ''} />
-          {building ? 'Building…' : 'Rebuild'}
+          {building ? t`Building…` : t`Rebuild`}
         </button>
       </div>
       <FilterChips
@@ -74,11 +77,11 @@ export function TopBar({
       {localMode && (
         <div className="local-banner">
           <Target size={12} />
-          <span className="local-label">Local graph:</span>
+          <span className="local-label"><Trans>Local graph:</Trans></span>
           <span className="local-root">{localMode.rootLabel}</span>
           <span className="local-meta">({localMode.rootType})</span>
           <span className="local-sep" />
-          <span className="local-meta">depth</span>
+          <span className="local-meta"><Trans>depth</Trans></span>
           {[1, 2, 3].map((d) => (
             <button
               key={d}
@@ -92,12 +95,12 @@ export function TopBar({
           ))}
           <span className="local-sep" />
           <span className="local-meta">
-            {localMode.visibleCount} {localMode.visibleCount === 1 ? 'node' : 'nodes'} visible
+            {localMode.visibleCount} {localMode.visibleCount === 1 ? t`node` : t`nodes`} <Trans>visible</Trans>
           </span>
           <div className="local-spacer" />
-          <button type="button" className="chip-action" onClick={onExitLocal} title="Back to full graph">
+          <button type="button" className="chip-action" onClick={onExitLocal} title={t`Back to full graph`}>
             <X size={11} />
-            Exit local
+            <Trans>Exit local</Trans>
           </button>
         </div>
       )}

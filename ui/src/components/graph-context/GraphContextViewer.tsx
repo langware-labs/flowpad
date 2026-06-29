@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { APIEntity, GraphContext, QueryRequest, TypeId, isTypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -37,6 +38,7 @@ interface GraphContextViewerProps {
  * never mutates context, and the active item is derived from the URL pointer.
  */
 export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
+  const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
 
   const typeId = useMemo(
@@ -80,8 +82,8 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
         await c.save();
       } catch (e) {
         notify.error({
-          title: 'Could not rename context',
-          message: e instanceof Error ? e.message : 'Rename failed.',
+          title: t`Could not rename context`,
+          message: e instanceof Error ? e.message : t`Rename failed.`,
         });
       }
     },
@@ -118,8 +120,8 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
       setSelected(new Set());
       if (failed > 0) {
         notify.error({
-          title: 'Some contexts could not be deleted',
-          message: `${failed} of ${ids.length} failed to delete.`,
+          title: t`Some contexts could not be deleted`,
+          message: t`${failed} of ${ids.length} failed to delete.`,
         });
       }
       // If the open context was deleted, route to a remaining one (or close).
@@ -147,21 +149,21 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
       <aside className="flex w-64 shrink-0 flex-col border-r bg-muted/20">
         <div className="flex items-center gap-2 border-b px-3 py-2 text-sm font-medium">
           <ContextIcon className="h-4 w-4" />
-          Saved Contexts
+          <Trans>Saved Contexts</Trans>
           <DropdownMenu>
             <DropdownMenuTrigger
               className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Context list actions"
+              aria-label={t`Context list actions`}
               disabled={contexts.length === 0}
             >
               <MoreVertical className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={selectAll} disabled={allSelected}>
-                Select all
+                <Trans>Select all</Trans>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={clearAll} disabled={selected.size === 0}>
-                Clear selection
+                <Trans>Clear selection</Trans>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -175,7 +177,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                 className="text-destructive focus:text-destructive"
                 onSelect={() => setPendingDelete(contexts.map((c) => c.id))}
               >
-                Delete all
+                <Trans>Delete all</Trans>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -184,17 +186,17 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
         {/* Bulk-action bar — only when something is selected */}
         {selected.size > 0 && (
           <div className="flex items-center justify-between border-b px-3 py-1.5 text-xs">
-            <span className="text-muted-foreground">{selected.size} selected</span>
+            <span className="text-muted-foreground"><Trans>{selected.size} selected</Trans></span>
             <div className="flex items-center gap-2">
               <button className="hover:text-foreground" onClick={clearAll}>
-                Clear
+                <Trans>Clear</Trans>
               </button>
               <button
                 className="inline-flex items-center gap-1 text-destructive hover:underline"
                 onClick={() => setPendingDelete([...selected])}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Delete
+                <Trans>Delete</Trans>
               </button>
             </div>
           </div>
@@ -202,7 +204,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
 
         <div className="flex-1 overflow-y-auto py-1">
           {contexts.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-muted-foreground">No saved contexts yet.</div>
+            <div className="px-3 py-2 text-xs text-muted-foreground"><Trans>No saved contexts yet.</Trans></div>
           ) : (
             contexts.map((c) => {
               const isActive = currentDock?.pointer === c.id;
@@ -218,7 +220,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                   <Checkbox
                     checked={isChecked}
                     onCheckedChange={() => toggleOne(c.id)}
-                    aria-label={`Select ${c.displayName}`}
+                    aria-label={t`Select ${c.displayName}`}
                     onClick={(e) => e.stopPropagation()}
                   />
                   {renamingId === c.id ? (
@@ -255,8 +257,8 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                     <button
                       onClick={() => startRename(c)}
                       className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-                      aria-label={`Rename ${c.displayName}`}
-                      title="Rename context"
+                      aria-label={t`Rename ${c.displayName}`}
+                      title={t`Rename context`}
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
@@ -264,8 +266,8 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                   <button
                     onClick={() => setPendingDelete([c.id])}
                     className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                    aria-label={`Delete ${c.displayName}`}
-                    title="Delete context"
+                    aria-label={t`Delete ${c.displayName}`}
+                    title={t`Delete context`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -280,10 +282,10 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
       <main className="relative flex-1 overflow-hidden">
         {!typeId ? (
           <div className="flex h-full items-center justify-center text-muted-foreground">
-            Select a context.
+            <Trans>Select a context.</Trans>
           </div>
         ) : isLoading || !ctx ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">Loading…</div>
+          <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>Loading…</Trans></div>
         ) : (
           <>
             {/* Maps-style mode toggle (graph ⟷ list) */}
@@ -294,8 +296,8 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                   'flex h-7 w-8 items-center justify-center text-muted-foreground hover:bg-muted',
                   mode === 'graph' && 'bg-muted text-foreground',
                 )}
-                aria-label="Graph view"
-                title="Graph view"
+                aria-label={t`Graph view`}
+                title={t`Graph view`}
               >
                 <Network className="h-4 w-4" />
               </button>
@@ -305,8 +307,8 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                   'flex h-7 w-8 items-center justify-center border-l text-muted-foreground hover:bg-muted',
                   mode === 'list' && 'bg-muted text-foreground',
                 )}
-                aria-label="List view"
-                title="List view"
+                aria-label={t`List view`}
+                title={t`List view`}
               >
                 <List className="h-4 w-4" />
               </button>
@@ -316,7 +318,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
               <Suspense
                 fallback={
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    Loading graph…
+                    <Trans>Loading graph…</Trans>
                   </div>
                 }
               >
@@ -330,7 +332,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
                     {rows.length} {rows.length === 1 ? 'entity' : 'entities'} in this context
                   </div>
                   {rows.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">This context is empty.</div>
+                    <div className="text-sm text-muted-foreground"><Trans>This context is empty.</Trans></div>
                   ) : (
                     <div className="divide-y rounded-md border">
                       {rows.map(({ tid, slot }) => (
@@ -353,11 +355,11 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
         onOpenChange={(open) => !open && setPendingDelete(null)}
         title={
           pendingDelete && pendingDelete.length > 1
-            ? `Delete ${pendingDelete.length} contexts?`
-            : 'Delete context?'
+            ? t`Delete ${pendingDelete.length} contexts?`
+            : t`Delete context?`
         }
-        description="This permanently removes the saved context snapshot. This cannot be undone."
-        confirmLabel="Delete"
+        description={t`This permanently removes the saved context snapshot. This cannot be undone.`}
+        confirmLabel={t`Delete`}
         variant="destructive"
         onConfirm={() => {
           if (pendingDelete) void runDelete(pendingDelete);

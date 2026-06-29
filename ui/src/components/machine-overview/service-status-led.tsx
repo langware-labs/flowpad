@@ -14,6 +14,7 @@ import {
 } from '@sdk';
 import { Hammer, Loader2, Play, Square } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 type ActionState = 'idle' | 'starting' | 'stopping' | 'error';
 
@@ -27,6 +28,7 @@ interface ServiceStatusLedProps {
 export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = '', onShowShell, onRefreshWebapp, onStatusChange }) => {
   const { flow, computeNode } = useAgentContext();
   const { data: artifacts = [] } = useCurrentArtifacts();
+  const { t } = useLingui();
   const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [actionState, setActionState] = useState<ActionState>('idle');
@@ -148,7 +150,7 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
       debouncedRefresh();
     } catch (err) {
       console.error('[ServiceStatusLed] handleStopServices error:', err);
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to stop services');
+      setErrorMessage(err instanceof Error ? err.message : t`Failed to stop services`);
     } finally {
       // Always reset action state to allow user to retry
       setActionState('idle');
@@ -207,7 +209,7 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
       debouncedRefresh();
     } catch (err) {
       console.error('[ServiceStatusLed] Error starting services:', err);
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to start services');
+      setErrorMessage(err instanceof Error ? err.message : t`Failed to start services`);
     } finally {
       // Always reset action state to allow user to retry
       setActionState('idle');
@@ -258,7 +260,7 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
       debouncedRefresh();
     } catch (err) {
       console.error('[ServiceStatusLed] Error restarting services:', err);
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to restart services');
+      setErrorMessage(err instanceof Error ? err.message : t`Failed to restart services`);
     } finally {
       // Always reset action state to allow user to retry
       setActionState('idle');
@@ -266,15 +268,15 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
   }, [computeNode, serviceArtifacts, debouncedRefresh, onShowShell]);
 
   const tooltipTitle = useMemo(() => {
-    if (isLoading) return 'Checking service status...';
-    if (actionState === 'error') return 'Service error';
+    if (isLoading) return t`Checking service status...`;
+    if (actionState === 'error') return t`Service error`;
     if (!servicesStatus) {
       // No machine status but we have service artifacts - show unknown status
-      return serviceArtifacts.length > 0 ? 'Service status unknown' : 'No services to monitor';
+      return serviceArtifacts.length > 0 ? t`Service status unknown` : t`No services to monitor`;
     }
-    if (servicesStatus.services.length === 0) return 'No services with ports found';
-    if (servicesStatus.allRunning) return 'All services running';
-    return 'Some services stopped';
+    if (servicesStatus.services.length === 0) return t`No services with ports found`;
+    if (servicesStatus.allRunning) return t`All services running`;
+    return t`Some services stopped`;
   }, [isLoading, servicesStatus, actionState, serviceArtifacts.length]);
 
   const ledColor = useMemo(() => {
@@ -330,7 +332,7 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
                       <span className={`h-1.5 w-1.5 rounded-full ${isRunning ? 'bg-green-500' : 'bg-red-500'}`} />
                       <span className="flex-1">{s.artifact.name || `Port ${s.port}`}</span>
                       <span className={`${isRunning ? 'text-green-600' : 'text-red-500'}`}>
-                        {isRunning ? 'running' : 'stopped'}
+                        {isRunning ? <Trans>running</Trans> : <Trans>stopped</Trans>}
                       </span>
                     </div>
                   );
@@ -359,8 +361,8 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-xs bg-destructive text-destructive-foreground">
-              <p className="text-xs font-medium">Error: {errorMessage}</p>
-              <p className="text-xs opacity-90">Click to retry</p>
+              <p className="text-xs font-medium"><Trans>Error: {errorMessage}</Trans></p>
+              <p className="text-xs opacity-90"><Trans>Click to retry</Trans></p>
             </TooltipContent>
           </Tooltip>
         )}
@@ -384,7 +386,7 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
-              <p className="text-xs">{actionState === 'stopping' ? 'Stopping...' : 'Stop services'}</p>
+              <p className="text-xs">{actionState === 'stopping' ? <Trans>Stopping...</Trans> : <Trans>Stop services</Trans>}</p>
             </TooltipContent>
           </Tooltip>
         )}
@@ -408,7 +410,7 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
-              <p className="text-xs">{actionState === 'starting' ? 'Starting...' : 'Start services'}</p>
+              <p className="text-xs">{actionState === 'starting' ? <Trans>Starting...</Trans> : <Trans>Start services</Trans>}</p>
             </TooltipContent>
           </Tooltip>
         )}

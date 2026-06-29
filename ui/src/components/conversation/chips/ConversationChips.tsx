@@ -4,6 +4,7 @@ import { AgenticProcess, dataManager, TypeId } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { localAttachmentUrl } from '../attachment-url';
 import {
   findConversationTranscript,
@@ -23,6 +24,7 @@ interface ConversationChipsProps {
  * TaskChips row above is suppressed via ``ChipsExcludeContext``.
  */
 export function ConversationChips({ conversationId, task }: ConversationChipsProps) {
+  const { t } = useLingui();
   const exclude = useChipsExclude();
   const { navigation } = useDockNavigation();
   const [transcript, setTranscript] = useState<ConversationTranscriptInfo | null>(null);
@@ -69,11 +71,11 @@ export function ConversationChips({ conversationId, task }: ConversationChipsPro
           target="_blank"
           rel="noreferrer"
           download
-          title="Download sender's Claude Code transcript"
+          title={t`Download sender's Claude Code transcript`}
           className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <FileText className="h-3 w-3" />
-          Transcript File
+          <Trans>Transcript File</Trans>
         </a>
       )}
 
@@ -81,11 +83,11 @@ export function ConversationChips({ conversationId, task }: ConversationChipsPro
         <button
           type="button"
           onClick={() => void handleOpenShared()}
-          title="Open the shared terminal where approved prompts run"
+          title={t`Open the shared terminal where approved prompts run`}
           className="inline-flex h-6 items-center gap-1 rounded-full border border-orange-500/40 bg-orange-500/10 px-2 text-[11px] font-medium text-orange-700 transition-colors hover:bg-orange-500/20 dark:text-orange-300"
         >
           <ClaudeIcon className="h-3 w-3" />
-          Open Shared Terminal
+          <Trans>Open Shared Terminal</Trans>
         </button>
       )}
     </>

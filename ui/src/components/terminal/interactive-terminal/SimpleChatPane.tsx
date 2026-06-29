@@ -4,6 +4,7 @@ import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroup
 import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { cn } from '@src/lib/utils';
+import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { PlanInteractionBar } from './PlanInteractionBar';
@@ -53,8 +54,8 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
               <MessageSquare className="h-6 w-6" />
             </div>
             <div>
-              <p className="text-[15px] font-medium text-foreground">Start a conversation</p>
-              <p className="mt-1 text-sm">Send a message below and the agent will get to work.</p>
+              <p className="text-[15px] font-medium text-foreground"><Trans>Start a conversation</Trans></p>
+              <p className="mt-1 text-sm"><Trans>Send a message below and the agent will get to work.</Trans></p>
             </div>
           </div>
         ) : (

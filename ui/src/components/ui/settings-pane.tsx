@@ -2,6 +2,7 @@ import * as React from 'react';
 import { cn } from '../../lib/utils';
 import { X } from 'lucide-react';
 import { Button } from './button';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface SettingsPaneProps extends React.HTMLAttributes<HTMLDivElement> {
   isOpen: boolean;
@@ -12,6 +13,7 @@ interface SettingsPaneProps extends React.HTMLAttributes<HTMLDivElement> {
 
 const SettingsPane = React.forwardRef<HTMLDivElement, SettingsPaneProps>(
   ({ className, isOpen, onClose, onSave, initialRules = '', ...props }, ref) => {
+    const { t } = useLingui();
     const [rules, setRules] = React.useState(initialRules);
 
     // Update local state when initialRules changes
@@ -36,7 +38,7 @@ const SettingsPane = React.forwardRef<HTMLDivElement, SettingsPaneProps>(
       >
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between p-4 border-b">
-            <h2 className="text-lg font-semibold">Chat Settings</h2>
+            <h2 className="text-lg font-semibold"><Trans>Chat Settings</Trans></h2>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
@@ -45,13 +47,13 @@ const SettingsPane = React.forwardRef<HTMLDivElement, SettingsPaneProps>(
             <div className="space-y-4">
               <div>
                 <label htmlFor="rules" className="block text-sm font-medium mb-2">
-                  Rules
+                  <Trans>Rules</Trans>
                 </label>
                 <textarea
                   id="rules"
                   value={rules}
                   onChange={(e) => setRules(e.target.value)}
-                  placeholder="Enter chat rules..."
+                  placeholder={t`Enter chat rules...`}
                   className="w-full h-32 p-2 border rounded-md resize-none"
                 />
               </div>
@@ -59,7 +61,7 @@ const SettingsPane = React.forwardRef<HTMLDivElement, SettingsPaneProps>(
           </div>
           <div className="p-4 border-t">
             <Button onClick={handleSave} className="w-full">
-              Save Changes
+              <Trans>Save Changes</Trans>
             </Button>
           </div>
         </div>
