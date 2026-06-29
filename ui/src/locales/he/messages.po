@@ -30,7 +30,7 @@ msgstr "— לפני"
 msgid "— current"
 msgstr "— נוכחי"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:488
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:489
 msgid "— open, peek, or get highlighted here"
 msgstr "— פתח, הציץ, או קבל הדגשה כאן"
 
@@ -379,7 +379,7 @@ msgstr "← חזרה"
 msgid "→ {0} (drifted)"
 msgstr "→ {0} (סטה)"
 
-#: src/components/conversation/MembersAvatarStack.tsx:288
+#: src/components/conversation/MembersAvatarStack.tsx:306
 msgid "+ Add"
 msgstr "+ הוסף"
 
@@ -560,12 +560,12 @@ msgstr "סוג פעולה"
 msgid "Action:"
 msgstr "פעולה:"
 
-#: src/components/account/system-diagnoses.tsx:251
+#: src/components/account/system-diagnoses.tsx:265
 #: src/components/api-keys-view/api-keys-view.tsx:266
 #: src/components/connections-manager.tsx:192
 #: src/components/hooks-view/HooksTable.tsx:74
 #: src/components/lens-viewer/LlmIndexersViewer.tsx:218
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1064
+#: src/components/simple-file-manager/SimpleFileManager.tsx:894
 #: src/pages/live-status/LiveStatus.tsx:895
 msgid "Actions"
 msgstr "פעולות"
@@ -619,7 +619,7 @@ msgstr "הוספה"
 #: src/components/entity-context/EntityContextPanel.tsx:254
 #: src/components/entity-context/EntityContextPanel.tsx:278
 #: src/components/project-activity-strip/BookmarkColumn.tsx:286
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:223
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:226
 msgid "Add"
 msgstr "הוסף"
 
@@ -672,9 +672,9 @@ msgid "Add Bookmark"
 msgstr "הוסף סימנייה"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx:243
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:165
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:166
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:197
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:168
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:169
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:200
 msgid "Add comment"
 msgstr "הוסף תגובה"
 
@@ -686,7 +686,7 @@ msgstr "הוסף תגובה"
 msgid "Add comment at line {activeLine}"
 msgstr "הוסף תגובה בשורה {activeLine}"
 
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:203
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:206
 msgid "Add comment..."
 msgstr "הוסף תגובה..."
 
@@ -883,7 +883,7 @@ msgstr "כל הסוגים"
 msgid "Allow AI to search the web"
 msgstr "אפשר ל-AI לחפש ברשת"
 
-#: src/components/conversation/MembersAvatarStack.tsx:106
+#: src/components/conversation/MembersAvatarStack.tsx:122
 msgid "Already a member — change their role in the list above"
 msgstr "כבר חבר — שנה את התפקיד שלהם ברשימה למעלה"
 
@@ -1156,7 +1156,7 @@ msgstr "בקש מ-Flowpad לפתור..."
 msgid "Ask the Flowpad Assistant anything."
 msgstr "שאל את עוזר Flowpad כל דבר."
 
-#: src/components/assets/AssetsPage.tsx:505
+#: src/components/assets/AssetsPage.tsx:509
 msgid "Asset has no file on disk"
 msgstr "אין קובץ בדיסק לנכס זה"
 
@@ -1174,7 +1174,7 @@ msgstr "נכס…"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx:320
 #: src/components/assets/AssetsNavigator.tsx:29
-#: src/components/assets/AssetsPage.tsx:535
+#: src/components/assets/AssetsPage.tsx:539
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx:88
 msgid "Assets"
 msgstr "נכסים"
@@ -1262,7 +1262,7 @@ msgstr "הפעל הצעות מ{who} באופן אוטומטי (כל הפרויק
 msgid "Auto-run prompts from {who} for this project"
 msgstr "הפעל הצעות מ{who} באופן אוטומטי עבור פרויקט זה"
 
-#: src/components/version-popover/version-popover.tsx:659
+#: src/components/version-popover/version-popover.tsx:658
 msgid "Auto-updates check hourly."
 msgstr "בדיקת עדכונים אוטומטית כל שעה."
 
@@ -1509,10 +1509,10 @@ msgstr "קריאות"
 #: src/components/prompt-library/PromptEditDialog.tsx:122
 #: src/components/quick-create/QuickCreateDialog.tsx:257
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx:424
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1202
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1239
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1266
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1284
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1032
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1069
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1096
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1114
 #: src/components/spec-editor/SpecEditor.tsx:326
 #: src/components/spec-editor/SpecEditor.tsx:489
 #: src/components/task-receive/IncomingTaskDialog.tsx:208
@@ -1521,8 +1521,8 @@ msgstr "קריאות"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx:628
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx:555
 #: src/components/triggers-view/TriggerEditor.tsx:160
-#: src/components/version-popover/version-popover.tsx:587
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:218
+#: src/components/version-popover/version-popover.tsx:586
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:221
 msgid "Cancel"
 msgstr "ביטול"
 
@@ -1566,7 +1566,7 @@ msgstr "לא ניתן להריץ בנייה מחדש"
 msgid "Capabilities"
 msgstr "יכולות"
 
-#: src/components/version-popover/version-popover.tsx:491
+#: src/components/version-popover/version-popover.tsx:490
 msgid "Change"
 msgstr "שנה"
 
@@ -1575,7 +1575,7 @@ msgstr "שנה"
 msgid "Change language"
 msgstr "שינוי שפה"
 
-#: src/components/version-popover/version-popover.tsx:488
+#: src/components/version-popover/version-popover.tsx:487
 msgid "Change the installed flow SDK version"
 msgstr "שנה את גרסת SDK של flow המותקנת"
 
@@ -1596,7 +1596,7 @@ msgstr "שינויים"
 msgid "Changes ({0})"
 msgstr "שינויים ({0})"
 
-#: src/components/assets/AssetsPage.tsx:600
+#: src/components/assets/AssetsPage.tsx:604
 msgid "Changes pending next index"
 msgstr "שינויים בהמתנה להנדקסה הבאה"
 
@@ -1621,8 +1621,8 @@ msgstr "הגדרות צ'אט"
 msgid "Chats"
 msgstr "שיחות"
 
+#: src/components/version-popover/version-popover.tsx:449
 #: src/components/version-popover/version-popover.tsx:450
-#: src/components/version-popover/version-popover.tsx:451
 msgid "Check again"
 msgstr "בדוק שוב"
 
@@ -1688,8 +1688,8 @@ msgid "Claude"
 msgstr "Claude"
 
 #: src/components/hooks-manager/HookForm.tsx:120
+#: src/components/project-brief/ProjectBrief.tsx:49
 #: src/components/quick-create/QuickCreateModal.tsx:222
-#: src/components/terminal/TabbedTerminal.tsx:158
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -1790,8 +1790,8 @@ msgstr "נקה מסנן"
 msgid "Clear filters"
 msgstr "נקה סינונים"
 
-#: src/components/assets/AssetsPage.tsx:209
 #: src/components/assets/AssetsPage.tsx:210
+#: src/components/assets/AssetsPage.tsx:211
 msgid "Clear folder filter"
 msgstr "נקה סנן תיקייה"
 
@@ -1932,8 +1932,8 @@ msgstr "משבוט…"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx:140
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx:213
 #: src/components/terminal/interactive-terminal/PaneBar.tsx:23
-#: src/components/version-popover/diagnose-modal.tsx:329
-#: src/components/version-popover/diagnosis-report-modal.tsx:87
+#: src/components/version-popover/diagnose-modal.tsx:324
+#: src/components/version-popover/diagnosis-report-modal.tsx:83
 #: src/components/workflow-runner/detail/StepDetailPane.tsx:92
 msgid "Close"
 msgstr "סגור"
@@ -1983,7 +1983,7 @@ msgstr "סגור"
 msgid "Cloud disconnected"
 msgstr "הענן מנותק"
 
-#: src/components/version-popover/version-popover.tsx:677
+#: src/components/version-popover/version-popover.tsx:676
 msgid "Cloud hub"
 msgstr "Hub בענן"
 
@@ -2033,7 +2033,7 @@ msgstr "הפעלת Codex"
 
 #: src/components/browseable-tree/BrowseableTree.tsx:312
 #: src/components/browseable-tree/BrowseableTree.tsx:313
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:276
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:278
 msgid "Collapse"
 msgstr "כיווץ"
 
@@ -2249,11 +2249,11 @@ msgstr "מתחברת..."
 msgid "Connection failed - server unreachable or not running"
 msgstr "החיבור נכשל - השרת אינו נגיש או אינו פועל"
 
-#: src/components/version-popover/version-popover.tsx:689
+#: src/components/version-popover/version-popover.tsx:688
 msgid "Connection ID"
 msgstr "מזהה חיבור"
 
-#: src/components/version-popover/version-popover.tsx:687
+#: src/components/version-popover/version-popover.tsx:686
 msgid "Connection Info"
 msgstr "מידע חיבור"
 
@@ -2349,12 +2349,12 @@ msgstr "הפעלת Copilot"
 #: src/components/api-keys-view/api-keys-view.tsx:247
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx:695
 #: src/components/code-editor/EditorPane.tsx:505
-#: src/components/diagnose/diagnosis-details.tsx:154
+#: src/components/diagnose/diagnosis-details.tsx:155
 #: src/components/hooks/sniffer_view_mock.tsx:148
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx:477
 #: src/components/markdown-view.tsx:60
-#: src/components/simple-file-manager/SimpleFileManager.tsx:881
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1132
+#: src/components/simple-file-manager/SimpleFileManager.tsx:758
+#: src/components/simple-file-manager/SimpleFileManager.tsx:962
 #: src/components/triggers-view/FsopTriggerDetail.tsx:105
 msgid "Copy"
 msgstr "העתק"
@@ -2367,8 +2367,8 @@ msgstr "העתק ${label}"
 msgid "Copy a link or download this {entityType} as a portable bundle."
 msgstr "העתק קישור או הורד את {entityType} כחבילה ניידת."
 
-#: src/components/account/system-diagnoses.tsx:166
-#: src/components/account/system-diagnoses.tsx:167
+#: src/components/account/system-diagnoses.tsx:170
+#: src/components/account/system-diagnoses.tsx:171
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx:533
 msgid "Copy all"
 msgstr "העתק הכל"
@@ -2394,8 +2394,8 @@ msgstr "העתק מזהה צומת חישוב"
 msgid "Copy content to clipboard"
 msgstr "העתק תוכן ללוח"
 
-#: src/components/diagnose/diagnosis-details.tsx:150
 #: src/components/diagnose/diagnosis-details.tsx:151
+#: src/components/diagnose/diagnosis-details.tsx:152
 msgid "Copy diagnosis to clipboard"
 msgstr "העתק אבחנה ללוח"
 
@@ -2490,7 +2490,7 @@ msgstr "לא ניתן להפעיל סודות"
 msgid "Could not end room"
 msgstr "לא הצלחנו להסתיים את החדר"
 
-#: src/components/account/system-diagnoses.tsx:133
+#: src/components/account/system-diagnoses.tsx:137
 msgid "Could not forward diagnosis"
 msgstr "לא היה ניתן להעביר את הדיאגנוזה"
 
@@ -2510,7 +2510,7 @@ msgstr "לא הצליח לפתוח כישור"
 msgid "Could not rename context"
 msgstr "לא ניתן היה לשנות את שם ההקשר"
 
-#: src/components/account/system-diagnoses.tsx:117
+#: src/components/account/system-diagnoses.tsx:122
 msgid "Could not report diagnosis"
 msgstr "לא היה ניתן לדווח על הדיאגנוזה"
 
@@ -2547,7 +2547,7 @@ msgstr "לא ניתן לעצור"
 msgid "Could not update"
 msgstr "לא היה ניתן לעדכן"
 
-#: src/components/version-popover/version-popover.tsx:459
+#: src/components/version-popover/version-popover.tsx:458
 msgid "Couldn't check for updates: {error}"
 msgstr "לא ניתן לבדוק עדכונים: {error}"
 
@@ -2586,15 +2586,15 @@ msgstr "מעבד:"
 
 #: src/components/assets/AssetsNavigator.tsx:53
 #: src/components/assets/AssetsNavigator.tsx:62
-#: src/components/assets/AssetsPage.tsx:697
+#: src/components/assets/AssetsPage.tsx:703
 #: src/components/collaboration/sidebar/NewDocButton.tsx:84
 #: src/components/cron-view/CronForm.tsx:243
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx:247
 #: src/components/project-selector/NewProjectDialog.tsx:112
 #: src/components/prompt-library/PromptEditDialog.tsx:125
 #: src/components/quick-create/QuickCreateDialog.tsx:261
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1205
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1242
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1035
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1072
 #: src/components/tasks-viewer/TasksViewer.tsx:267
 #: src/components/workflows-view/WorkflowsNavigator.tsx:156
 #: src/components/workflows-view/WorkflowStrip.tsx:145
@@ -2713,7 +2713,7 @@ msgstr "יוצר..."
 msgid "Cross-link"
 msgstr "קישור חוצה"
 
-#: src/components/version-popover/version-popover.tsx:565
+#: src/components/version-popover/version-popover.tsx:564
 msgid "current"
 msgstr "נוכחי"
 
@@ -2749,8 +2749,8 @@ msgstr "סמן"
 msgid "Custom agents"
 msgstr "סוכנים מותאמים"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:897
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1133
+#: src/components/simple-file-manager/SimpleFileManager.tsx:774
+#: src/components/simple-file-manager/SimpleFileManager.tsx:963
 msgid "Cut"
 msgstr "גזור"
 
@@ -2860,8 +2860,8 @@ msgid "Define the conditions that must match for this trigger to fire"
 msgstr "הגדר את התנאים שחייבים להתאים כדי שטריגר זה יופעל"
 
 #: src/components/account/secrets-section.tsx:242
-#: src/components/account/system-diagnoses.tsx:177
-#: src/components/account/system-diagnoses.tsx:299
+#: src/components/account/system-diagnoses.tsx:181
+#: src/components/account/system-diagnoses.tsx:314
 #: src/components/anchored-markdown/CommentPin.tsx:78
 #: src/components/assets/delete-asset-modal.tsx:120
 #: src/components/assets/editor/AssetEditorHeader.tsx:100
@@ -2876,9 +2876,9 @@ msgstr "הגדר את התנאים שחייבים להתאים כדי שטריג
 #: src/components/inbox-view/InboxView.tsx:1345
 #: src/components/project-activity-strip/BookmarkColumn.tsx:353
 #: src/components/project-sidebar/ProjectSidebar.tsx:189
-#: src/components/simple-file-manager/SimpleFileManager.tsx:963
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1144
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1287
+#: src/components/simple-file-manager/SimpleFileManager.tsx:840
+#: src/components/simple-file-manager/SimpleFileManager.tsx:974
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1117
 #: src/components/skills-viewer/amd-editor/components/BlockWrapper.tsx:186
 #: src/components/task-bar/TaskBar.tsx:411
 #: src/components/task-bar/TaskBar.tsx:547
@@ -2919,7 +2919,7 @@ msgstr "מחק את {0}?"
 msgid "Delete {selectedCount} conversations"
 msgstr "מחק {selectedCount} שיחות"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1280
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1110
 msgid "Delete {selectedCount} item(s)?"
 msgstr "מחק {selectedCount} פריטים?"
 
@@ -2971,8 +2971,8 @@ msgstr "מחק הקשר"
 msgid "Delete context?"
 msgstr "מחק הקשר?"
 
-#: src/components/account/system-diagnoses.tsx:176
-#: src/components/account/system-diagnoses.tsx:297
+#: src/components/account/system-diagnoses.tsx:180
+#: src/components/account/system-diagnoses.tsx:312
 msgid "Delete diagnosis"
 msgstr "מחק דיאגנוזה"
 
@@ -3006,7 +3006,7 @@ msgstr "מחק פריט"
 msgid "Delete message"
 msgstr "מחק הודעה"
 
-#: src/components/assets/AssetsPage.tsx:617
+#: src/components/assets/AssetsPage.tsx:621
 msgid "Delete project"
 msgstr "מחוק פרויקט"
 
@@ -3035,7 +3035,7 @@ msgstr "למחוק שיחה זו?"
 msgid "Delete this conversation"
 msgstr "מחק שיחה זו"
 
-#: src/components/account/system-diagnoses.tsx:298
+#: src/components/account/system-diagnoses.tsx:313
 msgid "Delete this diagnosis? This cannot be undone."
 msgstr "מחק אבחנה זו? לא ניתן לבטל זאת."
 
@@ -3076,7 +3076,7 @@ msgstr "מוחק..."
 msgid "Delivered"
 msgstr "סופק"
 
-#: src/components/version-popover/version-popover.tsx:679
+#: src/components/version-popover/version-popover.tsx:678
 msgid "Deployed"
 msgstr "פורסם"
 
@@ -3092,7 +3092,7 @@ msgstr "בעיבוד משימה…"
 msgid "Deriving with Claude…"
 msgstr "בעיבוד עם Claude…"
 
-#: src/components/version-popover/diagnose-modal.tsx:200
+#: src/components/version-popover/diagnose-modal.tsx:191
 msgid "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
 msgstr "תאר את הבעיה או הדבק את השגיאה, ואז הפעל אבחון. השאר ריק לסריקה אבחון מלאה. העוזר בודק את Flowpad, מתקן מה שבטוח, ותיעד את התוצאה."
 
@@ -3127,7 +3127,7 @@ msgstr "תיאור, למשל: הכנת התקציר היומי שלי"
 msgid "Description:"
 msgstr "תיאור:"
 
-#: src/components/version-popover/version-popover.tsx:626
+#: src/components/version-popover/version-popover.tsx:625
 msgid "Desktop version"
 msgstr "גרסת שולחן עבודה"
 
@@ -3157,16 +3157,16 @@ msgstr "מצב פיתוח פעיל — לחץ כדי להשבית"
 msgid "Developer Tools"
 msgstr "כלים למפתחים"
 
-#: src/components/version-popover/diagnose-modal.tsx:279
-#: src/components/version-popover/version-popover.tsx:705
+#: src/components/version-popover/diagnose-modal.tsx:275
+#: src/components/version-popover/version-popover.tsx:704
 msgid "Diagnose"
 msgstr "אבחון"
 
-#: src/components/version-popover/version-popover.tsx:702
+#: src/components/version-popover/version-popover.tsx:701
 msgid "Diagnose a Flowpad issue"
 msgstr "אבחן בעיה ב-Flowpad"
 
-#: src/components/version-popover/diagnose-modal.tsx:194
+#: src/components/version-popover/diagnose-modal.tsx:185
 msgid "Diagnose Flowpad"
 msgstr "אבחון Flowpad"
 
@@ -3174,36 +3174,36 @@ msgstr "אבחון Flowpad"
 msgid "Diagnose this error"
 msgstr "אבחן את השגיאה הזו"
 
-#: src/components/version-popover/diagnosis-report-modal.tsx:55
+#: src/components/version-popover/diagnosis-report-modal.tsx:52
 msgid "Diagnosis"
 msgstr "אבחון"
 
-#: src/components/account/system-diagnoses.tsx:143
-#: src/components/diagnose/diagnosis-details.tsx:92
+#: src/components/account/system-diagnoses.tsx:147
+#: src/components/diagnose/diagnosis-details.tsx:93
 msgid "Diagnosis copied to clipboard"
 msgstr "דיאגנוזה הועתקה ללוח"
 
-#: src/components/account/system-diagnoses.tsx:130
+#: src/components/account/system-diagnoses.tsx:133
 msgid "Diagnosis forwarded"
 msgstr "דיאגנוזה הועברה בהצלחה"
 
-#: src/components/diagnose/diagnosis-details.tsx:140
+#: src/components/diagnose/diagnosis-details.tsx:141
 msgid "Diagnosis not found."
 msgstr "לא נמצאה אבחנה."
 
-#: src/components/version-popover/diagnose-modal.tsx:250
+#: src/components/version-popover/diagnose-modal.tsx:241
 msgid "Diagnosis recorded."
 msgstr "אבחון נשמר."
 
-#: src/components/account/system-diagnoses.tsx:114
+#: src/components/account/system-diagnoses.tsx:119
 msgid "Diagnosis reported to the Flowpad team"
 msgstr "דיאגנוזה דווחה לצוות Flowpad"
 
-#: src/components/version-popover/diagnose-modal.tsx:252
+#: src/components/version-popover/diagnose-modal.tsx:243
 msgid "Diagnosis was not recorded — try again."
 msgstr "אבחון לא נשמר — נסה שוב."
 
-#: src/components/version-popover/diagnose-modal.tsx:251
+#: src/components/version-popover/diagnose-modal.tsx:242
 msgid "Diagnostic complete — no issue found."
 msgstr "אבחון הושלם — לא נמצאה בעיה."
 
@@ -3299,9 +3299,9 @@ msgstr "מגלה {typeLabel}…"
 msgid "Discovering…"
 msgstr "גילוי..."
 
-#: src/components/diagnose/diagnosis-action-buttons.tsx:61
-#: src/components/diagnose/diagnosis-action-buttons.tsx:62
-#: src/components/simple-file-manager/SimpleFileManager.tsx:995
+#: src/components/diagnose/diagnosis-action-buttons.tsx:69
+#: src/components/diagnose/diagnosis-action-buttons.tsx:70
+#: src/components/simple-file-manager/SimpleFileManager.tsx:872
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx:269
 #: src/components/workflow-runner/header/AttentionBanner.tsx:114
 msgid "Dismiss"
@@ -3368,8 +3368,8 @@ msgstr "בוצע!"
 #: src/components/conversation/AttachmentChip.tsx:254
 #: src/components/conversation/AttachmentChip.tsx:344
 #: src/components/conversation/ConversationContextPanel.tsx:667
-#: src/components/simple-file-manager/SimpleFileManager.tsx:947
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1136
+#: src/components/simple-file-manager/SimpleFileManager.tsx:824
+#: src/components/simple-file-manager/SimpleFileManager.tsx:966
 msgid "Download"
 msgstr "הורד"
 
@@ -3382,7 +3382,7 @@ msgstr "הורד .flowmsg"
 msgid "Download {count} {0}"
 msgstr "הורד {count} {0}"
 
-#: src/components/conversation/FlowMessageBubble.tsx:532
+#: src/components/conversation/FlowMessageBubble.tsx:538
 msgid "Download all attachments"
 msgstr "הורד את כל הקבצים המצורפים"
 
@@ -3578,7 +3578,7 @@ msgstr "ריק"
 msgid "Empty"
 msgstr "ריק"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1078
+#: src/components/simple-file-manager/SimpleFileManager.tsx:908
 msgid "Empty folder"
 msgstr "תיקייה ריקה"
 
@@ -3654,8 +3654,8 @@ msgid "Enter a name for the new workflow."
 msgstr "הזן שם לזרימת העבודה החדשה."
 
 #: src/components/conversation/MembersAvatarStack.tsx:93
-msgid "Enter a valid email"
-msgstr "הזן דוא״ל תקין"
+#~ msgid "Enter a valid email"
+#~ msgstr "הזן דוא״ל תקין"
 
 #: src/components/ui/settings-pane.tsx:56
 msgid "Enter chat rules..."
@@ -3706,7 +3706,10 @@ msgid ""
 "Enter your instructions here...\n"
 "\n"
 "One instruction per line."
-msgstr "הזן את ההנחיות שלך כאן...\n\nהנחיה אחת בשורה"
+msgstr ""
+"הזן את ההנחיות שלך כאן...\n"
+"\n"
+"הנחיה אחת בשורה"
 
 #: src/components/account/db-stats.tsx:66
 msgid "Entities"
@@ -3906,7 +3909,7 @@ msgstr "יציאה ממצב הבחירה"
 #: src/components/browseable-tree/BrowseableTree.tsx:313
 #: src/components/claude-terminal/claude-terminal.tsx:49
 #: src/components/conversation/AttachmentChip.tsx:425
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:300
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:302
 msgid "Expand"
 msgstr "הרחבה"
 
@@ -3980,7 +3983,7 @@ msgstr "שורות נוספות שהובאו (limit + overfetch)"
 msgid "Failed"
 msgstr "נכשל"
 
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:126
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:129
 msgid "Failed to add comment"
 msgstr "הוספת תגובה נכשלה"
 
@@ -4011,7 +4014,7 @@ msgstr "נכשל בהעתקת מאגר ה-git. בבקשה בדוק את כתוב
 msgid "Failed to copy path to clipboard"
 msgstr "העתקת הנתיב ללוח נכשלה"
 
-#: src/components/assets/AssetsPage.tsx:490
+#: src/components/assets/AssetsPage.tsx:494
 #: src/components/quick-create/QuickCreateDialog.tsx:193
 msgid "Failed to create"
 msgstr "יצירה נכשלה"
@@ -4249,10 +4252,10 @@ msgstr "נכשל לשלוח טיוטה"
 msgid "Failed to send reply."
 msgstr "נכשל לשלוח תשובה."
 
-#: src/components/diagnose/diagnosis-details.tsx:104
-#: src/components/diagnose/diagnosis-details.tsx:122
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:76
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:99
+#: src/components/diagnose/diagnosis-details.tsx:105
+#: src/components/diagnose/diagnosis-details.tsx:123
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:79
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:102
 msgid "Failed to send report"
 msgstr "שליחת הדוח נכשלה"
 
@@ -4328,11 +4331,11 @@ msgstr "מועדף {createdAgo}"
 msgid "Favorited: {displayName}"
 msgstr "מועדף: {displayName}"
 
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:153
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:156
 msgid "Feed"
 msgstr "הזנה"
 
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:202
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:205
 msgid "Feed comment"
 msgstr "הערה בהזנה"
 
@@ -4361,7 +4364,7 @@ msgstr "שינוי קובץ"
 msgid "File mtime is newer than DB updated_date"
 msgstr "זמן שינוי קובץ חדש יותר מ-DB updated_date"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1220
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1050
 msgid "File name"
 msgstr "שם הקובץ"
 
@@ -4540,7 +4543,7 @@ msgstr "זרימה או צומת חישוב לא זמינים"
 msgid "flow-sdk-mcp enabled ({scope} scope). Starting workflow…"
 msgstr "flow-sdk-mcp מופעל (${scope} scope). הפעלת זרימת עבודה…"
 
-#: src/components/version-popover/version-popover.tsx:435
+#: src/components/version-popover/version-popover.tsx:434
 #: src/pages/discover-page/discover-page.tsx:504
 msgid "Flowpad"
 msgstr "Flowpad"
@@ -4597,8 +4600,8 @@ msgstr "מסמכי Flowpad"
 msgid "FlowPad Server Status"
 msgstr "מצב שרת FlowPad"
 
+#: src/components/version-popover/version-popover.tsx:419
 #: src/components/version-popover/version-popover.tsx:420
-#: src/components/version-popover/version-popover.tsx:421
 msgid "Flowpad version"
 msgstr "גרסת Flowpad"
 
@@ -4636,7 +4639,7 @@ msgid "Folder"
 msgstr "תיקייה"
 
 #: src/components/assets/AssetsNavigator.tsx:61
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1183
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1013
 msgid "Folder name"
 msgstr "שם התיקייה"
 
@@ -4664,8 +4667,8 @@ msgstr "יצור ענף של סדרה — כרטיסייה חדשה, אותו ה
 msgid "Forking…"
 msgstr "יצירת ענף בתהליך..."
 
-#: src/components/account/system-diagnoses.tsx:161
-#: src/components/diagnose/diagnosis-action-buttons.tsx:90
+#: src/components/account/system-diagnoses.tsx:165
+#: src/components/diagnose/diagnosis-action-buttons.tsx:98
 msgid "Forward"
 msgstr "העבר"
 
@@ -4750,7 +4753,7 @@ msgstr "צור מפתח API לאימות בקשות API ל-FlowPad"
 msgid "Generate FlowPad API Key"
 msgstr "צור מפתח API של FlowPad"
 
-#: src/components/version-popover/version-popover.tsx:680
+#: src/components/version-popover/version-popover.tsx:679
 msgid "Generated"
 msgstr "נוצר"
 
@@ -4796,7 +4799,7 @@ msgstr "GitHub מחובר — אתה יכול לשבוט מאגרים פרטיי
 msgid "GitHub Copilot (restored session)"
 msgstr "GitHub Copilot (סשן מחודש)"
 
-#: src/components/version-popover/version-popover.tsx:629
+#: src/components/version-popover/version-popover.tsx:628
 msgid "GitHub unavailable"
 msgstr "GitHub לא זמין"
 
@@ -4851,7 +4854,7 @@ msgstr "עבור לעמוד הקודם"
 msgid "Go to session"
 msgstr "עבור לישיבה"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:798
+#: src/components/simple-file-manager/SimpleFileManager.tsx:675
 msgid "Go up"
 msgstr "עלה כיוון למעלה"
 
@@ -4982,8 +4985,8 @@ msgid "Hide panel"
 msgstr "הסתר לוח"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx:780
-msgid "Hide tree"
-msgstr "הסתר עץ"
+#~ msgid "Hide tree"
+#~ msgstr "הסתר עץ"
 
 #: src/components/tasks-viewer/TasksViewer.tsx:198
 msgid "High"
@@ -5010,7 +5013,7 @@ msgid "History"
 msgstr "היסטוריה"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx:83
-#: src/components/simple-file-manager/SimpleFileManager.tsx:704
+#: src/components/simple-file-manager/SimpleFileManager.tsx:638
 msgid "Home"
 msgstr "בית"
 
@@ -5123,7 +5126,7 @@ msgstr "תצוגה מקדימה של HTML"
 msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
-#: src/components/version-popover/version-popover.tsx:678
+#: src/components/version-popover/version-popover.tsx:677
 msgid "Hub"
 msgstr "Hub"
 
@@ -5350,7 +5353,7 @@ msgstr "הוסף טבלה"
 msgid "Install"
 msgstr "התקן"
 
-#: src/components/version-popover/version-popover.tsx:596
+#: src/components/version-popover/version-popover.tsx:595
 msgid "Install & restart"
 msgstr "התקן והפעל מחדש"
 
@@ -5358,17 +5361,17 @@ msgstr "התקן והפעל מחדש"
 msgid "install any asset"
 msgstr "התקן כל נכס"
 
-#: src/components/version-popover/version-popover.tsx:602
+#: src/components/version-popover/version-popover.tsx:601
 msgid "Install failed."
 msgstr "ההתקנה נכשלה."
 
 #. placeholder {0}: r.version
-#: src/components/version-popover/version-popover.tsx:575
+#: src/components/version-popover/version-popover.tsx:574
 msgid "Install v{0} and restart Flowpad?"
 msgstr "התקן v{0} והפעל מחדש את Flowpad?"
 
-#: src/components/version-popover/version-popover.tsx:497
-#: src/components/version-popover/version-popover.tsx:634
+#: src/components/version-popover/version-popover.tsx:496
+#: src/components/version-popover/version-popover.tsx:633
 msgid "Installed"
 msgstr "מותקן"
 
@@ -5376,11 +5379,11 @@ msgstr "מותקן"
 msgid "Installed Plugins"
 msgstr "תוספים מותקנים"
 
-#: src/components/version-popover/version-popover.tsx:466
+#: src/components/version-popover/version-popover.tsx:465
 msgid "Installing and restarting Flowpad… this can take up to a minute."
 msgstr "מתקין והפעלת Flowpad מחדש... זה עשוי להימשך עד דקה אחת."
 
-#: src/components/version-popover/version-popover.tsx:596
+#: src/components/version-popover/version-popover.tsx:595
 msgid "Installing…"
 msgstr "מתקין…"
 
@@ -5460,9 +5463,12 @@ msgid "Invite"
 msgstr "הזמן"
 
 #: src/components/account/organization-panel.tsx:214
-#: src/components/conversation/MembersAvatarStack.tsx:277
 msgid "Invite by email…"
 msgstr "הזמן בדוא״ל…"
+
+#: src/components/conversation/MembersAvatarStack.tsx:286
+msgid "Invite by name or email…"
+msgstr ""
 
 #: src/components/account/organization-panel.tsx:196
 msgid "Invite failed"
@@ -5472,7 +5478,7 @@ msgstr "ההזמנה נכשלה"
 msgid "Invited {trimmed}."
 msgstr "{trimmed} הוזמן."
 
-#: src/components/conversation/MembersAvatarStack.tsx:288
+#: src/components/conversation/MembersAvatarStack.tsx:306
 msgid "Inviting…"
 msgstr "משלוח הזמנה…"
 
@@ -5484,7 +5490,7 @@ msgstr "הפעלות"
 msgid "Issue"
 msgstr "בעיה"
 
-#: src/components/account/system-diagnoses.tsx:235
+#: src/components/account/system-diagnoses.tsx:249
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "אבחנות בעיות שנרשמו על ידי העוזר. לחץ על שורה כדי לצפות באבחנה המלאה."
 
@@ -5607,7 +5613,7 @@ msgid "last {0}"
 msgstr "הפעלה אחרונה {0}"
 
 #. placeholder {0}: report.period_kind
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:533
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:534
 msgid "Last {0}"
 msgstr "{0} אחרון"
 
@@ -5648,11 +5654,11 @@ msgstr "last_seen_size"
 msgid "Last:"
 msgstr "אחרונה:"
 
-#: src/components/version-popover/version-popover.tsx:640
+#: src/components/version-popover/version-popover.tsx:639
 msgid "Latest on GitHub"
 msgstr "האחרון ב-GitHub"
 
-#: src/components/version-popover/version-popover.tsx:502
+#: src/components/version-popover/version-popover.tsx:501
 msgid "Latest on PyPI"
 msgstr "האחרון ב-PyPI"
 
@@ -5866,7 +5872,7 @@ msgstr "טוען גרף תלויויות…"
 msgid "Loading details…"
 msgstr "טוען פרטים…"
 
-#: src/components/diagnose/diagnosis-details.tsx:134
+#: src/components/diagnose/diagnosis-details.tsx:135
 msgid "Loading diagnosis…"
 msgstr "טוען אבחנה…"
 
@@ -6020,14 +6026,14 @@ msgstr "טוען את המאגרים שלך…"
 #: src/components/project-sidebar/ProjectSidebar.tsx:130
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx:164
 #: src/components/quick-access-view/QuickAccessView.tsx:103
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1072
+#: src/components/simple-file-manager/SimpleFileManager.tsx:902
 #: src/components/skills-sidebar/SkillsSidebar.tsx:177
 #: src/components/triggers-view/TriggerEditor.tsx:126
 msgid "Loading..."
 msgstr "טוען..."
 
 #: src/components/account/secrets-section.tsx:126
-#: src/components/account/system-diagnoses.tsx:240
+#: src/components/account/system-diagnoses.tsx:254
 #: src/components/asset-manager/AssetPickerPopover.tsx:239
 #: src/components/assets/AssetListView.tsx:81
 #: src/components/assets/MarkdownIndexPanel.tsx:112
@@ -6084,7 +6090,7 @@ msgstr "מצב רישום"
 
 #: src/components/InputSection.tsx:137
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx:955
-#: src/pages/flow-page/content-panel/content-panel.tsx:253
+#: src/pages/flow-page/content-panel/content-panel.tsx:247
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx:447
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx:467
 msgid "Login"
@@ -6102,7 +6108,7 @@ msgstr "נדרשת כניסה לחיפוש בבסיס נתונים של Flowpad"
 msgid "Login required"
 msgstr "נדרשת כניסה"
 
-#: src/pages/flow-page/content-panel/content-panel.tsx:249
+#: src/pages/flow-page/content-panel/content-panel.tsx:243
 msgid "Login Required"
 msgstr "נדרש כניסה"
 
@@ -6367,11 +6373,11 @@ msgid "Models Used"
 msgstr "מודלים בשימוש"
 
 #: src/components/hooks-view/HooksBrowser.tsx:628
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1062
+#: src/components/simple-file-manager/SimpleFileManager.tsx:892
 msgid "Modified"
 msgstr "שונה"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:321
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:323
 msgid "more"
 msgstr "עוד"
 
@@ -6440,12 +6446,12 @@ msgstr "לא זמין"
 #: src/components/api-keys-view/api-keys-view.tsx:262
 #: src/components/artifacts/artifact-form.tsx:150
 #: src/components/assets/AssetsNavigator.tsx:52
-#: src/components/assets/AssetsPage.tsx:696
+#: src/components/assets/AssetsPage.tsx:702
 #: src/components/hooks-view/HooksBrowser.tsx:600
 #: src/components/lens-viewer/LlmIndexersViewer.tsx:213
 #: src/components/machine-overview/machine-overview.tsx:940
 #: src/components/quick-create/QuickCreateDialog.tsx:227
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1056
+#: src/components/simple-file-manager/SimpleFileManager.tsx:886
 msgid "Name"
 msgstr "שם"
 
@@ -6541,11 +6547,11 @@ msgstr "פגישת Claude חדשה"
 msgid "New doc"
 msgstr "מסמך חדש"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:848
+#: src/components/simple-file-manager/SimpleFileManager.tsx:725
 msgid "New file"
 msgstr "קובץ חדש"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1216
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1046
 msgid "New File"
 msgstr "קובץ חדש"
 
@@ -6558,16 +6564,16 @@ msgstr "קבצים חדשים ({0})"
 msgid "New Flow"
 msgstr "זרימה חדשה"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:833
+#: src/components/simple-file-manager/SimpleFileManager.tsx:710
 msgid "New folder"
 msgstr "תיקייה חדשה"
 
 #: src/components/assets/AssetsNavigator.tsx:59
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1179
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1009
 msgid "New Folder"
 msgstr "תיקייה חדשה"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1257
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1087
 msgid "New name"
 msgstr "שם חדש"
 
@@ -6670,7 +6676,7 @@ msgstr "לא קיים מנהל הפעלה זמין"
 msgid "No active project"
 msgstr "אין פרויקט פעיל"
 
-#: src/pages/flow-page/content-panel/content-panel.tsx:231
+#: src/pages/flow-page/content-panel/content-panel.tsx:225
 msgid "No active survey"
 msgstr "אין סקר פעיל"
 
@@ -6761,7 +6767,7 @@ msgstr "אין שינויים להצגה."
 msgid "No chats yet"
 msgstr "אין צ'אטים עדיין"
 
-#: src/pages/flow-page/content-panel/content-panel.tsx:223
+#: src/pages/flow-page/content-panel/content-panel.tsx:217
 msgid "No checkpoint selected"
 msgstr "לא נבחר נקודת עצירה"
 
@@ -6826,8 +6832,8 @@ msgstr "אין שיחות"
 msgid "No conversations yet"
 msgstr "אין שיחות עדיין"
 
-#: src/components/account/system-diagnoses.tsx:86
-#: src/components/diagnose/diagnosis-action-buttons.tsx:98
+#: src/components/account/system-diagnoses.tsx:88
+#: src/components/diagnose/diagnosis-action-buttons.tsx:110
 msgid "No conversations yet."
 msgstr "אין שיחות עדיין."
 
@@ -6855,7 +6861,7 @@ msgstr "לא נמצא סוכן ברירת מחדל, מזהה סוג הסוכן �
 msgid "No description provided."
 msgstr "אין תיאור."
 
-#: src/components/account/system-diagnoses.tsx:242
+#: src/components/account/system-diagnoses.tsx:256
 msgid "No diagnoses recorded."
 msgstr "לא נרשמו אבחנות."
 
@@ -6907,7 +6913,7 @@ msgstr "אין אירועים עדיין"
 msgid "No execution log available"
 msgstr "אין יומן ביצוע זמין"
 
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx:174
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx:177
 msgid "No feed items"
 msgstr "אין פריטים בהזנה"
 
@@ -7063,7 +7069,7 @@ msgstr "אין פרויקטים תואמים"
 msgid "No matching sessions"
 msgstr "אין פגישות תואמות"
 
-#: src/components/conversation/MembersAvatarStack.tsx:164
+#: src/components/conversation/MembersAvatarStack.tsx:180
 msgid "No members yet — invite someone below."
 msgstr "עדיין אין חברים — הזמן מישהו למטה."
 
@@ -7119,7 +7125,7 @@ msgstr "אין תוכניות משותפות"
 msgid "No plugins installed"
 msgstr "אין תוספים מותקנים"
 
-#: src/pages/flow-page/content-panel/content-panel.tsx:329
+#: src/pages/flow-page/content-panel/content-panel.tsx:322
 msgid "No process ID specified"
 msgstr "לא צוין מזהה תהליך"
 
@@ -7132,7 +7138,7 @@ msgid "No project"
 msgstr "ללא פרויקט"
 
 #: src/components/code-editor/CodeEditor.tsx:583
-#: src/components/explorer-view/explorer-view.tsx:193
+#: src/components/explorer-view/explorer-view.tsx:128
 msgid "No project context available"
 msgstr "אין הקשר פרויקט זמין"
 
@@ -7390,7 +7396,7 @@ msgstr "לא נמצאו משימות עבור הסעיף זה."
 msgid "No terminal process was found for session {0}."
 msgstr "לא נמצא תהליך סוף עבור הסשן {0}."
 
-#: src/components/terminal/TabbedTerminal.tsx:143
+#: src/components/project-brief/ProjectBrief.tsx:34
 msgid "No terminal sessions"
 msgstr "אין הפעלות טרמינל"
 
@@ -7637,10 +7643,10 @@ msgstr "פתוח"
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx:190
 #: src/components/milkdown-editor/MilkdownEditor.tsx:282
 #: src/components/project-activity-strip/BookmarkColumn.tsx:299
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1127
+#: src/components/simple-file-manager/SimpleFileManager.tsx:957
 #: src/components/tasks-viewer/TasksViewer.tsx:183
 #: src/components/workers/WorkerToolbar.tsx:92
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:430
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:431
 msgid "Open"
 msgstr "פתח"
 
@@ -7686,7 +7692,7 @@ msgstr "פתח ניתוח"
 msgid "Open analysis.md"
 msgstr "פתח analysis.md"
 
-#: src/components/version-popover/diagnosis-report-modal.tsx:60
+#: src/components/version-popover/diagnosis-report-modal.tsx:57
 msgid "Open as a tab"
 msgstr "פתח כטאב"
 
@@ -7713,7 +7719,7 @@ msgstr "פתח הקשר"
 msgid "Open DB Folder"
 msgstr "פתח תיקיית בסיס נתונים"
 
-#: src/components/version-popover/diagnosis-report-modal.tsx:61
+#: src/components/version-popover/diagnosis-report-modal.tsx:58
 msgid "Open diagnosis as a tab"
 msgstr "פתח אבחון כטאב"
 
@@ -7735,7 +7741,9 @@ msgstr "פתח חיצונית"
 msgid ""
 "Open externally\n"
 "{childPath}"
-msgstr "פתח חיצונית\n{childPath}"
+msgstr ""
+"פתח חיצונית\n"
+"{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx:406
 msgid "Open externally: {childPath}"
@@ -7755,9 +7763,9 @@ msgstr "פתח תיקייה"
 msgid "Open Folder"
 msgstr "פתח תיקייה"
 
+#: src/components/project-brief/ProjectBrief.tsx:74
 #: src/components/terminal/ProjectsCounterChip.tsx:371
 #: src/components/terminal/ProjectsCounterChip.tsx:372
-#: src/components/terminal/TabbedTerminal.tsx:183
 #: src/tabs/useTerminalStripController.tsx:345
 msgid "Open from history"
 msgstr "פתח מהיסטוריה"
@@ -7780,7 +7788,7 @@ msgstr "פתח תצוגה מלאה"
 msgid "Open in editor"
 msgstr "פתח בעורך"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1116
+#: src/components/simple-file-manager/SimpleFileManager.tsx:946
 msgid "Open in Editor"
 msgstr "פתח בעורך"
 
@@ -8128,7 +8136,7 @@ msgstr "ניסיונות קודמים"
 msgid "Past chats"
 msgstr "צ'אטים קודמים"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:913
+#: src/components/simple-file-manager/SimpleFileManager.tsx:790
 msgid "Paste"
 msgstr "הדבק"
 
@@ -8209,6 +8217,10 @@ msgstr "הרשאות"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx:419
 msgid "Personal note, actionable item"
 msgstr "הערה אישית, פריט שניתן לביצוע"
+
+#: src/components/conversation/MembersAvatarStack.tsx:109
+msgid "Pick a contact or enter an email"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx:367
 msgid "Pick a contact to see your conversations with them."
@@ -8317,7 +8329,7 @@ msgstr "אנא מלא את שני השדות"
 msgid "Please fix the issue in your repository and try again."
 msgstr "אנא תקן את הבעיה במאגר שלך ונסה שוב."
 
-#: src/pages/flow-page/content-panel/content-panel.tsx:250
+#: src/pages/flow-page/content-panel/content-panel.tsx:244
 msgid "Please log in to view and manage environment variables."
 msgstr "בואו להתחבר כדי להציג ולנהל משתנים סביבה."
 
@@ -8501,7 +8513,7 @@ msgid "Project Artifacts"
 msgstr "ארטיפקטים של הפרויקט"
 
 #: src/components/assets/AssetsNavigator.tsx:29
-#: src/components/assets/AssetsPage.tsx:535
+#: src/components/assets/AssetsPage.tsx:539
 msgid "Project assets"
 msgstr "נכסי פרויקט"
 
@@ -8708,11 +8720,11 @@ msgstr "דחף"
 msgid "Pushed"
 msgstr "דחוף"
 
-#: src/components/version-popover/version-popover.tsx:477
+#: src/components/version-popover/version-popover.tsx:476
 msgid "PyPI unavailable"
 msgstr "PyPI לא זמין"
 
-#: src/components/version-popover/version-popover.tsx:473
+#: src/components/version-popover/version-popover.tsx:472
 msgid "Python (flow SDK)"
 msgstr "Python (flow SDK)"
 
@@ -8741,8 +8753,8 @@ msgstr "בדוק שוב את {title}"
 msgid "Re-create it"
 msgstr "צור אותו מחדש"
 
-#: src/components/assets/AssetsPage.tsx:585
-#: src/components/assets/AssetsPage.tsx:603
+#: src/components/assets/AssetsPage.tsx:589
+#: src/components/assets/AssetsPage.tsx:607
 msgid "Re-index project"
 msgstr "אנדקס מחדש של הפרויקט"
 
@@ -8856,7 +8868,7 @@ msgstr "התחבר מחדש לענן כדי למחוק את השיחה הזו."
 msgid "Reconnected"
 msgstr "התחברת מחדש"
 
-#: src/components/account/system-diagnoses.tsx:249
+#: src/components/account/system-diagnoses.tsx:263
 msgid "Recorded"
 msgstr "נרשם"
 
@@ -8909,7 +8921,7 @@ msgstr "מרובט אך לא בטבלת הישויות"
 #: src/components/markdown-viewer.tsx:82
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx:113
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx:236
-#: src/components/simple-file-manager/SimpleFileManager.tsx:814
+#: src/components/simple-file-manager/SimpleFileManager.tsx:691
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx:128
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx:133
 #: src/components/webapp-viewer.tsx:189
@@ -8966,8 +8978,8 @@ msgstr "רענן את אינדקס הפרויקט"
 msgid "refresh recommended"
 msgstr "עדכון מומלץ"
 
-#: src/components/assets/AssetsPage.tsx:585
-#: src/components/assets/AssetsPage.tsx:604
+#: src/components/assets/AssetsPage.tsx:589
+#: src/components/assets/AssetsPage.tsx:608
 #: src/pages/search-view/SearchView.tsx:278
 msgid "Refresh search data"
 msgstr "עדכן נתוני חיפוש"
@@ -9054,10 +9066,10 @@ msgstr "הסר אותו בכל מקום"
 #: src/components/favorites/FavoriteStar.tsx:179
 #: src/components/favorites/FavoriteStar.tsx:207
 #: src/components/favorites/FavoriteTile.tsx:226
-#: src/components/simple-file-manager/SimpleFileManager.tsx:931
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1131
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1253
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1269
+#: src/components/simple-file-manager/SimpleFileManager.tsx:808
+#: src/components/simple-file-manager/SimpleFileManager.tsx:961
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1083
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1099
 #: src/components/tabs/TabStrip.tsx:498
 msgid "Rename"
 msgstr "שינוי שם"
@@ -9109,13 +9121,13 @@ msgstr "מאגר:"
 msgid "Report"
 msgstr "דוח"
 
-#: src/components/account/system-diagnoses.tsx:118
+#: src/components/account/system-diagnoses.tsx:123
 msgid "Report failed."
 msgstr "הדוח נכשל."
 
-#: src/components/account/system-diagnoses.tsx:155
-#: src/components/account/system-diagnoses.tsx:156
-#: src/components/diagnose/diagnosis-action-buttons.tsx:77
+#: src/components/account/system-diagnoses.tsx:159
+#: src/components/account/system-diagnoses.tsx:160
+#: src/components/diagnose/diagnosis-action-buttons.tsx:85
 msgid "Report issue"
 msgstr "דווח בעיה"
 
@@ -9253,7 +9265,9 @@ msgstr "הראה ב-Finder/Explorer"
 msgid ""
 "Reveal in Finder/Explorer\n"
 "{childPath}"
-msgstr "הצג ב-Finder/Explorer\n{childPath}"
+msgstr ""
+"הצג ב-Finder/Explorer\n"
+"{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx:397
 msgid "Reveal in Finder/Explorer: {childPath}"
@@ -9404,11 +9418,11 @@ msgstr "הרץ הערכות"
 msgid "Run failed"
 msgstr "הפעלה נכשלה"
 
-#: src/components/version-popover/version-popover.tsx:605
+#: src/components/version-popover/version-popover.tsx:604
 msgid "Run from your terminal, then restart Flowpad:"
 msgstr "הפעל מהטרמינל שלך, ואז הפעל את Flowpad מחדש:"
 
-#: src/components/version-popover/version-popover.tsx:529
+#: src/components/version-popover/version-popover.tsx:528
 msgid "Run from your terminal:"
 msgstr "הפעל מהטרמינל שלך:"
 
@@ -9826,7 +9840,7 @@ msgstr "חיפוש במסמכים…"
 msgid "Search transcript…"
 msgstr "חפש טרנסקריפט…"
 
-#: src/components/assets/AssetsPage.tsx:546
+#: src/components/assets/AssetsPage.tsx:550
 #: src/components/project-resource-list/ProjectResourceList.tsx:224
 #: src/pages/home-landing/HomeLanding.tsx:196
 msgid "Search..."
@@ -9926,11 +9940,11 @@ msgstr "בחר טריגר לצפייה"
 msgid "Select a trigger to view invocations"
 msgstr "בחר טריגר כדי להציג הפעלות"
 
-#: src/components/assets/AssetsPage.tsx:685
+#: src/components/assets/AssetsPage.tsx:691
 msgid "Select a type to browse"
 msgstr "בחר סוג לעיון"
 
-#: src/components/version-popover/version-popover.tsx:546
+#: src/components/version-popover/version-popover.tsx:545
 msgid "Select a version to install:"
 msgstr "בחר גרסה להתקנה:"
 
@@ -10041,7 +10055,7 @@ msgstr "סיכום עצמי"
 #: src/components/conversation/MessageComposer.tsx:459
 #: src/components/conversation/PromptComposerDialog.tsx:86
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx:155
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:420
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:421
 msgid "Send"
 msgstr "שלח"
 
@@ -10065,7 +10079,7 @@ msgstr "שלח הנחיה לנמען לסיכום מצב המשימה"
 msgid "Send a simple prompt to verify the LM proxy is working"
 msgstr "שלח הנמקה פשוטה כדי לאמת שה-LM Proxy פועל"
 
-#: src/components/account/system-diagnoses.tsx:134
+#: src/components/account/system-diagnoses.tsx:138
 msgid "Send failed."
 msgstr "השליחה נכשלה."
 
@@ -10085,7 +10099,7 @@ msgstr "משלח…"
 msgid "Sent"
 msgstr "נשלח"
 
-#: src/components/version-popover/version-popover.tsx:356
+#: src/components/version-popover/version-popover.tsx:355
 msgid "Server did not come back. Restart Flowpad manually."
 msgstr "השרת לא חזר. הפעל את Flowpad מחדש באופן ידני."
 
@@ -10256,13 +10270,15 @@ msgstr "שתף לשיחה"
 msgid ""
 "Share to a conversation\n"
 "{childPath}"
-msgstr "שתף עם שיחה\n{childPath}"
+msgstr ""
+"שתף עם שיחה\n"
+"{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx:386
 msgid "Share to a conversation: {childPath}"
 msgstr "שתף עם שיחה: {childPath}"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1138
+#: src/components/simple-file-manager/SimpleFileManager.tsx:968
 msgid "Share to conversation"
 msgstr "שתף לשיחה"
 
@@ -10401,8 +10417,8 @@ msgid "Show system skills"
 msgstr "הצג כישורי מערכת"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx:780
-msgid "Show tree"
-msgstr "הצג עץ"
+#~ msgid "Show tree"
+#~ msgstr "הצג עץ"
 
 #. placeholder {0}: entries.length
 #: src/pages/live-status/LiveStatus.tsx:676
@@ -10438,7 +10454,7 @@ msgid "Simple actions — click to show all git operations"
 msgstr "פעולות פשוטות — לחץ להצגת כל פעולות ה-git"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx:1095
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1059
+#: src/components/simple-file-manager/SimpleFileManager.tsx:889
 msgid "Size"
 msgstr "גודל"
 
@@ -10461,11 +10477,11 @@ msgstr "כישור"
 msgid "Skill"
 msgstr "כישורון"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:512
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:513
 msgid "Skill analysis"
 msgstr "ניתוח כישורים"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:514
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:515
 msgid "Skill analysis ready for review and improvements"
 msgstr "ניתוח כישורים מוכן לביקורת ושיפורים"
 
@@ -10830,7 +10846,7 @@ msgstr "הצע prompt למשתמש השני לאישור"
 msgid "Suggest prompt"
 msgstr "הצע prompt"
 
-#: src/components/account/system-diagnoses.tsx:250
+#: src/components/account/system-diagnoses.tsx:264
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx:122
 #: src/pages/live-status/LiveStatus.tsx:204
 msgid "Summary"
@@ -10922,8 +10938,8 @@ msgstr "הסנתז אירוע"
 msgid "system"
 msgstr "מערכת"
 
-#: src/components/account/system-diagnoses.tsx:227
-#: src/components/account/system-diagnoses.tsx:233
+#: src/components/account/system-diagnoses.tsx:241
+#: src/components/account/system-diagnoses.tsx:247
 msgid "System Diagnoses"
 msgstr "אבחנות מערכת"
 
@@ -10943,7 +10959,7 @@ msgstr "Triggers של מערכת מנהלים את הפונקציונליות ה
 msgid "System-installed triggers are seeded at boot via <0>set_service_triggers()</0>. User-driven creation is API-only for now (UI builder coming soon)."
 msgstr "עירובים המותקנים במערכת מזורעים בהפעלה דרך <0>set_service_triggers()</0>. יצירה מונעת על ידי המשתמש היא API בלבד לעת עתה (בוגר ממשק משתמש בקרוב)."
 
-#: src/pages/flow-page/content-panel/content-panel.tsx:203
+#: src/pages/flow-page/content-panel/content-panel.tsx:197
 msgid "Tab failed to open"
 msgstr "לא הצליח לפתוח את הכרטיסייה"
 
@@ -11005,7 +11021,7 @@ msgid "Template:"
 msgstr "תבנית:"
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx:110
-#: src/components/terminal/TabbedTerminal.tsx:172
+#: src/components/project-brief/ProjectBrief.tsx:63
 msgid "Terminal"
 msgstr "טרמינל"
 
@@ -11119,7 +11135,7 @@ msgstr "לישות שנבחרה אין שם עדיין. בחר אחד — הוא
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
 msgstr "לסשן יש פעילות חדשה מאז הניתוח האחרון — הרץ ניתוח חדש (הניתוחים הקודמים נשמרים)"
 
-#: src/pages/flow-page/content-panel/content-panel.tsx:205
+#: src/pages/flow-page/content-panel/content-panel.tsx:199
 msgid "The tab content could not be prepared."
 msgstr "לא ניתן היה להכין את תוכן הכרטיסייה."
 
@@ -11152,7 +11168,7 @@ msgstr "חשיבה"
 msgid "Thinking:"
 msgstr "חשיבה:"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:1281
+#: src/components/simple-file-manager/SimpleFileManager.tsx:1111
 msgid "This action cannot be undone."
 msgstr "לא ניתן לבטל פעולה זו."
 
@@ -11205,8 +11221,12 @@ msgid "This permanently removes the saved context snapshot. This cannot be undon
 msgstr "זה יסיר באופן קבוע את תמונת הקשר השמורה. לא ניתן לבטל זאת."
 
 #: src/components/version-popover/diagnose-modal.tsx:263
-msgid "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
-msgstr "זה פועל ברקע — אתה מוזמן לסגור את זה ולהמשיך לעבוד. כשזה יסתיים, התוצאה (וכל פעולה) תחכה לך בעמוד הבית שלך."
+#~ msgid "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
+#~ msgstr "זה פועל ברקע — אתה מוזמן לסגור את זה ולהמשיך לעבוד. כשזה יסתיים, התוצאה (וכל פעולה) תחכה לך בעמוד הבית שלך."
+
+#: src/components/version-popover/diagnose-modal.tsx:258
+msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
+msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx:1205
 #: src/components/inbox-view/InboxView.tsx:1242
@@ -11276,7 +11296,7 @@ msgstr "עצה: חבר GitHub כדי לשבוט מאגרים פרטיים."
 msgid "Tip: Press Ctrl+Enter to save"
 msgstr "טיפ: לחץ על Ctrl+Enter כדי לשמור"
 
-#: src/components/account/system-diagnoses.tsx:248
+#: src/components/account/system-diagnoses.tsx:262
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx:154
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx:318
 #: src/components/task-bar/SharedTaskView.tsx:128
@@ -11550,7 +11570,7 @@ msgstr "לא ניתן לאחזר ענפים. אנא בדקו את הרשאות �
 msgid "Unavailable"
 msgstr "לא זמין"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:564
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:565
 msgid "Unavailable feed item"
 msgstr "פריט הזנה לא זמין"
 
@@ -11654,9 +11674,9 @@ msgstr "משימה ללא כותרת"
 msgid "Update"
 msgstr "עדכן"
 
-#: src/components/version-popover/version-popover.tsx:426
-#: src/components/version-popover/version-popover.tsx:505
-#: src/components/version-popover/version-popover.tsx:643
+#: src/components/version-popover/version-popover.tsx:425
+#: src/components/version-popover/version-popover.tsx:504
+#: src/components/version-popover/version-popover.tsx:642
 msgid "Update available"
 msgstr "עדכון זמין"
 
@@ -11674,15 +11694,15 @@ msgid "Updated: {0}"
 msgstr "עודכן: {0}"
 
 #. placeholder {0}: pypi.latest
-#: src/components/version-popover/version-popover.tsx:525
+#: src/components/version-popover/version-popover.tsx:524
 msgid "Upgrade to v{0}"
 msgstr "שדרג ל-v{0}"
 
-#: src/components/version-popover/version-popover.tsx:525
+#: src/components/version-popover/version-popover.tsx:524
 msgid "Upgrading…"
 msgstr "משדרג…"
 
-#: src/components/simple-file-manager/SimpleFileManager.tsx:863
+#: src/components/simple-file-manager/SimpleFileManager.tsx:740
 msgid "Upload files"
 msgstr "העלה קבצים"
 
@@ -11707,7 +11727,7 @@ msgid "Uploading…"
 msgstr "העלאה..."
 
 #: src/components/artifacts/artifact-form.tsx:190
-#: src/components/version-popover/version-popover.tsx:688
+#: src/components/version-popover/version-popover.tsx:687
 msgid "URL"
 msgstr "URL"
 
@@ -11831,7 +11851,7 @@ msgstr "Version-bump + commit את הנכס"
 msgid "Version:"
 msgstr "גרסה:"
 
-#: src/components/account/system-diagnoses.tsx:148
+#: src/components/account/system-diagnoses.tsx:152
 #: src/components/conversation/ConversationContextPanel.tsx:507
 #: src/components/conversation/ConversationContextPanel.tsx:595
 #: src/components/conversation/ConversationContextPanel.tsx:1065
@@ -11858,8 +11878,8 @@ msgstr "צפה בהגדרות Claude Code בין ההיקפים של משתמש,
 msgid "View Context Details"
 msgstr "צפה בפרטי ההקשר"
 
-#: src/components/account/system-diagnoses.tsx:148
-#: src/components/version-popover/diagnose-modal.tsx:321
+#: src/components/account/system-diagnoses.tsx:152
+#: src/components/version-popover/diagnose-modal.tsx:316
 msgid "View diagnosis"
 msgstr "צפה בדיאגנוזה"
 
@@ -11878,11 +11898,11 @@ msgstr "הצג הוק"
 msgid "View hook config"
 msgstr "הצג הגדרות קישור"
 
-#: src/components/version-popover/version-popover.tsx:668
+#: src/components/version-popover/version-popover.tsx:667
 msgid "View on GitHub"
 msgstr "צפה ב-GitHub"
 
-#: src/components/version-popover/version-popover.tsx:541
+#: src/components/version-popover/version-popover.tsx:540
 msgid "View on PyPI"
 msgstr "צפה ב-PyPI"
 
@@ -12016,7 +12036,7 @@ msgstr "מה צריך העובד לעשות עם הודעה זו?"
 msgid "What to look at"
 msgstr "מה לבדוק"
 
-#: src/components/version-popover/diagnose-modal.tsx:211
+#: src/components/version-popover/diagnose-modal.tsx:202
 msgid "What went wrong? (leave empty for a full sweep)"
 msgstr "מה השתבש? (השאר ריק לסריקה מלאה)"
 
@@ -12091,7 +12111,7 @@ msgstr "עץ עבודה"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx:257
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx:76
-#: src/components/version-popover/diagnose-modal.tsx:237
+#: src/components/version-popover/diagnose-modal.tsx:228
 msgid "Working…"
 msgstr "בתהליך…"
 
@@ -12110,11 +12130,11 @@ msgstr "XKCD-J3F2"
 msgid "xterm memory: <0>{0}</0> chunks ({1})"
 msgstr "זיכרון xterm: <0>{0}</0> נתחים ({1})"
 
-#: src/components/version-popover/version-popover.tsx:568
+#: src/components/version-popover/version-popover.tsx:567
 msgid "yanked"
 msgstr "הסור"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:533
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:534
 msgid "Yesterday"
 msgstr "אתמול"
 
@@ -12125,6 +12145,10 @@ msgstr "אתה"
 #: src/components/collaboration/StartRoomDialog.tsx:136
 msgid "You become the host — you decide what gets shared into the room."
 msgstr "אתה הופך למנחה - אתה מחליט מה משותף לחדר."
+
+#: src/components/version-popover/diagnose-modal.tsx:255
+msgid "You can close this window."
+msgstr ""
 
 #: src/components/account/organization-panel.tsx:38
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
