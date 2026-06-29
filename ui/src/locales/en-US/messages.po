@@ -1959,7 +1959,7 @@ msgstr "Cloning…"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx:213
 #: src/components/terminal/interactive-terminal/PaneBar.tsx:23
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx:153
-#: src/components/version-popover/diagnose-modal.tsx:324
+#: src/components/version-popover/diagnose-modal.tsx:290
 #: src/components/version-popover/diagnosis-report-modal.tsx:83
 #: src/components/workflow-runner/detail/StepDetailPane.tsx:92
 msgid "Close"
@@ -3126,7 +3126,7 @@ msgstr "Deriving task…"
 msgid "Deriving with Claude…"
 msgstr "Deriving with Claude…"
 
-#: src/components/version-popover/diagnose-modal.tsx:191
+#: src/components/version-popover/diagnose-modal.tsx:165
 msgid "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
 msgstr "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
 
@@ -3191,7 +3191,7 @@ msgstr "Dev mode ON — click to disable"
 msgid "Developer Tools"
 msgstr "Developer Tools"
 
-#: src/components/version-popover/diagnose-modal.tsx:275
+#: src/components/version-popover/diagnose-modal.tsx:249
 #: src/components/version-popover/version-popover.tsx:704
 msgid "Diagnose"
 msgstr "Diagnose"
@@ -3200,7 +3200,7 @@ msgstr "Diagnose"
 msgid "Diagnose a Flowpad issue"
 msgstr "Diagnose a Flowpad issue"
 
-#: src/components/version-popover/diagnose-modal.tsx:185
+#: src/components/version-popover/diagnose-modal.tsx:159
 msgid "Diagnose Flowpad"
 msgstr "Diagnose Flowpad"
 
@@ -3225,7 +3225,7 @@ msgstr "Diagnosis forwarded"
 msgid "Diagnosis not found."
 msgstr "Diagnosis not found."
 
-#: src/components/version-popover/diagnose-modal.tsx:241
+#: src/components/version-popover/diagnose-modal.tsx:215
 msgid "Diagnosis recorded."
 msgstr "Diagnosis recorded."
 
@@ -3233,11 +3233,11 @@ msgstr "Diagnosis recorded."
 msgid "Diagnosis reported to the Flowpad team"
 msgstr "Diagnosis reported to the Flowpad team"
 
-#: src/components/version-popover/diagnose-modal.tsx:243
+#: src/components/version-popover/diagnose-modal.tsx:217
 msgid "Diagnosis was not recorded — try again."
 msgstr "Diagnosis was not recorded — try again."
 
-#: src/components/version-popover/diagnose-modal.tsx:242
+#: src/components/version-popover/diagnose-modal.tsx:216
 msgid "Diagnostic complete — no issue found."
 msgstr "Diagnostic complete — no issue found."
 
@@ -11284,7 +11284,7 @@ msgstr "This permanently removes the saved context snapshot. This cannot be undo
 #~ msgid "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 #~ msgstr "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 
-#: src/components/version-popover/diagnose-modal.tsx:258
+#: src/components/version-popover/diagnose-modal.tsx:232
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 msgstr "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 
@@ -11947,7 +11947,7 @@ msgid "View Context Details"
 msgstr "View Context Details"
 
 #: src/components/account/system-diagnoses.tsx:152
-#: src/components/version-popover/diagnose-modal.tsx:316
+#: src/components/version-popover/diagnose-modal.tsx:282
 msgid "View diagnosis"
 msgstr "View diagnosis"
 
@@ -12104,7 +12104,7 @@ msgstr "What should the worker do with this message?"
 msgid "What to look at"
 msgstr "What to look at"
 
-#: src/components/version-popover/diagnose-modal.tsx:202
+#: src/components/version-popover/diagnose-modal.tsx:176
 msgid "What went wrong? (leave empty for a full sweep)"
 msgstr "What went wrong? (leave empty for a full sweep)"
 
@@ -12179,7 +12179,7 @@ msgstr "Working Tree"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx:257
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx:76
-#: src/components/version-popover/diagnose-modal.tsx:228
+#: src/components/version-popover/diagnose-modal.tsx:202
 msgid "Working…"
 msgstr "Working…"
 
@@ -12214,7 +12214,7 @@ msgstr "You"
 msgid "You become the host — you decide what gets shared into the room."
 msgstr "You become the host — you decide what gets shared into the room."
 
-#: src/components/version-popover/diagnose-modal.tsx:255
+#: src/components/version-popover/diagnose-modal.tsx:229
 msgid "You can close this window."
 msgstr "You can close this window."
 
