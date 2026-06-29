@@ -207,6 +207,15 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel }: Im
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx || !file) return;
+    // Nothing was drawn: attach the original image untouched. Re-encoding a
+    // clean photo through the canvas would needlessly bloat it (PNG) and drop
+    // its original format. No clipboard write here — that's the annotation
+    // feature (copy the marked-up PNG); there's nothing new to copy, and the
+    // original's MIME (e.g. image/jpeg) wouldn't match the PNG clipboard item.
+    if (!isDirty) {
+      onSave(file);
+      return;
+    }
     redraw(); // base image + strokes
     bakeTextBoxes(ctx, text.textBoxes); // flatten text overlays into the canvas
     // One blob, two consumers: the clipboard write must be kicked off
@@ -221,7 +230,7 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel }: Im
       .catch(() => {
         /* toBlob failure is rare; nothing to attach */
       });
-  }, [file, onClipboard, onSave, redraw, text.textBoxes]);
+  }, [file, isDirty, onClipboard, onSave, redraw, text.textBoxes]);
 
   const requestClose = useCallback(() => {
     if (isDirty) {
@@ -231,21 +240,22 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel }: Im
     onCancel();
   }, [isDirty, onCancel]);
 
-  // Enter saves (Esc cancels). Document-level so it works regardless of which
-  // control is focused; skipped while editing a text box (there Enter commits
-  // the text, Shift+Enter adds a line). stopPropagation so a focused button
-  // doesn't also activate.
+  // Enter confirms — attaching either the markup or, if nothing was drawn, the
+  // original image (Esc cancels). Document-level so it works regardless of
+  // which control is focused; skipped while editing a text box (there Enter
+  // commits the text, Shift+Enter adds a line). stopPropagation so a focused
+  // button doesn't also activate.
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.shiftKey || text.editingId != null || !isDirty) return;
+      if (e.key !== 'Enter' || e.shiftKey || text.editingId != null) return;
       e.preventDefault();
       e.stopPropagation();
       handleSave();
     };
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, [open, text.editingId, isDirty, handleSave]);
+  }, [open, text.editingId, handleSave]);
 
   return (
     <>

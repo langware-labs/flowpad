@@ -63,7 +63,7 @@ msgid "· pick a branch"
 msgstr ""
 
 #. placeholder {0}: tooBig[0]
-#: src/components/conversation/MessageComposer.tsx:220
+#: src/components/conversation/MessageComposer.tsx:221
 msgid "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 msgstr ""
 
@@ -173,7 +173,7 @@ msgstr ""
 
 #. placeholder {0}: tooBig.length
 #. placeholder {1}: tooBig.join(', ')
-#: src/components/conversation/MessageComposer.tsx:221
+#: src/components/conversation/MessageComposer.tsx:222
 msgid "{0} files over {MAX_FILE_SIZE_LABEL} were not attached: {1}."
 msgstr ""
 
@@ -400,7 +400,7 @@ msgid "+ show raw"
 msgstr ""
 
 #. placeholder {0}: sessions.length - 5
-#: src/pages/live-status/LiveStatus.tsx:1340
+#: src/pages/live-status/LiveStatus.tsx:1342
 msgid "+{0} more"
 msgstr ""
 
@@ -566,7 +566,7 @@ msgstr ""
 #: src/components/hooks-view/HooksTable.tsx:74
 #: src/components/lens-viewer/LlmIndexersViewer.tsx:218
 #: src/components/simple-file-manager/SimpleFileManager.tsx:894
-#: src/pages/live-status/LiveStatus.tsx:895
+#: src/pages/live-status/LiveStatus.tsx:897
 msgid "Actions"
 msgstr ""
 
@@ -589,7 +589,7 @@ msgstr ""
 
 #: src/components/api-keys-view/api-keys-view.tsx:279
 #: src/components/footer/LanguageSelector.tsx:97
-#: src/pages/live-status/LiveStatus.tsx:1542
+#: src/pages/live-status/LiveStatus.tsx:1544
 msgid "Active"
 msgstr ""
 
@@ -959,6 +959,10 @@ msgstr ""
 msgid "Analyze this session: goals, issues, divergences and skill performance on a timeline"
 msgstr ""
 
+#: src/pages/live-status/LiveStatus.tsx:539
+msgid "analyzed"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx:92
 msgid "Analyzing…"
 msgstr ""
@@ -972,7 +976,7 @@ msgstr ""
 msgid "Anchor time range"
 msgstr ""
 
-#: src/components/image-annotator/ImageAnnotator.tsx:260
+#: src/components/image-annotator/ImageAnnotator.tsx:270
 msgid "Annotate image"
 msgstr ""
 
@@ -1057,6 +1061,7 @@ msgstr ""
 #: src/components/account/system-log.tsx:150
 #: src/components/inbox-view/InboxView.tsx:982
 #: src/components/project-activity-strip/LearningCard.tsx:66
+#: src/components/task-bar/TaskCard.tsx:156
 #: src/components/tasks-viewer/TasksViewer.tsx:250
 #: src/components/tasks-viewer/TasksViewer.tsx:257
 msgid "Archive"
@@ -1126,7 +1131,7 @@ msgstr ""
 msgid "Artifacts created during flow execution will appear here"
 msgstr ""
 
-#: src/components/task-bar/TaskCard.tsx:118
+#: src/components/task-bar/TaskCard.tsx:119
 msgid "Artifacts:"
 msgstr ""
 
@@ -1196,12 +1201,16 @@ msgstr ""
 msgid "async"
 msgstr ""
 
+#: src/components/image-annotator/AnnotatorToolbar.tsx:102
+msgid "Attach"
+msgstr ""
+
 #: src/components/entity-context/EntityContextPanel.tsx:272
 #: src/components/entity-context/EntityContextPanel.tsx:273
 msgid "Attach a plan or skill"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:406
+#: src/components/conversation/MessageComposer.tsx:407
 msgid "Attach an asset (skill, agent, doc, spec)"
 msgstr ""
 
@@ -1210,7 +1219,7 @@ msgid "Attach asset"
 msgstr ""
 
 #: src/components/chat-input.tsx:1035
-#: src/components/conversation/MessageComposer.tsx:395
+#: src/components/conversation/MessageComposer.tsx:396
 msgid "Attach files"
 msgstr ""
 
@@ -1447,13 +1456,25 @@ msgstr ""
 msgid "cache read"
 msgstr ""
 
+#: src/pages/live-status/LiveStatus.tsx:574
+msgid "Cache Read"
+msgstr ""
+
 #. placeholder {0}: formatNumber(entry.usage.cacheRead)
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx:199
 msgid "Cache read: {0}"
 msgstr ""
 
+#: src/pages/live-status/LiveStatus.tsx:558
+msgid "Cache Tokens"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx:144
 msgid "cache write"
+msgstr ""
+
+#: src/pages/live-status/LiveStatus.tsx:575
+msgid "Cache Write"
 msgstr ""
 
 #. placeholder {0}: formatNumber(entry.usage.cacheCreation)
@@ -1523,6 +1544,7 @@ msgstr ""
 #: src/components/triggers-view/TriggerEditor.tsx:160
 #: src/components/version-popover/version-popover.tsx:586
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx:221
+#: src/pages/live-status/LiveStatus.tsx:985
 msgid "Cancel"
 msgstr ""
 
@@ -1685,6 +1707,10 @@ msgstr ""
 #: src/components/conversation/MessageBubble.tsx:230
 #: src/components/terminal/interactive-terminal/PaneSelectorBar.tsx:21
 msgid "Claude"
+msgstr ""
+
+#: src/components/icons/ClaudeRestoreIcon.tsx:17
+msgid "Claude (restored session)"
 msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx:120
@@ -1885,7 +1911,7 @@ msgstr ""
 msgid "Click to retry"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:629
+#: src/pages/live-status/LiveStatus.tsx:630
 msgid "Click to view"
 msgstr ""
 
@@ -1932,6 +1958,7 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx:140
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx:213
 #: src/components/terminal/interactive-terminal/PaneBar.tsx:23
+#: src/components/terminal/interactive-terminal/TraceGutter.tsx:153
 #: src/components/version-popover/diagnose-modal.tsx:324
 #: src/components/version-popover/diagnosis-report-modal.tsx:83
 #: src/components/workflow-runner/detail/StepDetailPane.tsx:92
@@ -2073,7 +2100,7 @@ msgstr ""
 #: src/components/hooks-manager/HookForm.tsx:157
 #: src/components/hooks-view/HooksBrowser.tsx:606
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx:765
-#: src/pages/live-status/LiveStatus.tsx:893
+#: src/pages/live-status/LiveStatus.tsx:895
 msgid "Command"
 msgstr ""
 
@@ -2148,7 +2175,7 @@ msgstr ""
 msgid "compact boundary"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1474
+#: src/pages/live-status/LiveStatus.tsx:1476
 msgid "completed"
 msgstr ""
 
@@ -2882,10 +2909,12 @@ msgstr ""
 #: src/components/skills-viewer/amd-editor/components/BlockWrapper.tsx:186
 #: src/components/task-bar/TaskBar.tsx:411
 #: src/components/task-bar/TaskBar.tsx:547
+#: src/components/task-bar/TaskCard.tsx:156
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx:633
 #: src/components/workflows-view/WorkflowsNavigator.tsx:166
 #: src/components/workflows-view/WorkflowStrip.tsx:128
 #: src/components/workflows-view/WorkflowStrip.tsx:153
+#: src/pages/live-status/LiveStatus.tsx:984
 msgid "Delete"
 msgstr ""
 
@@ -2994,7 +3023,12 @@ msgid "Delete for everyone — permanent"
 msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx:492
+#: src/pages/live-status/LiveStatus.tsx:950
 msgid "Delete hook"
+msgstr ""
+
+#: src/pages/live-status/LiveStatus.tsx:978
+msgid "Delete Hook"
 msgstr ""
 
 #: src/components/directory-tree/DirectoryTree.tsx:488
@@ -3242,7 +3276,7 @@ msgstr ""
 msgid "Disabled"
 msgstr ""
 
-#: src/components/image-annotator/ImageAnnotator.tsx:314
+#: src/components/image-annotator/ImageAnnotator.tsx:324
 msgid "Discard"
 msgstr ""
 
@@ -3250,15 +3284,15 @@ msgstr ""
 msgid "Discard changes and go back"
 msgstr ""
 
-#: src/components/image-annotator/ImageAnnotator.tsx:312
+#: src/components/image-annotator/ImageAnnotator.tsx:322
 msgid "Discard changes?"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:568
+#: src/components/conversation/MessageComposer.tsx:569
 msgid "Discard draft"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:311
+#: src/components/conversation/MessageComposer.tsx:312
 msgid "Discard this draft?"
 msgstr ""
 
@@ -3412,7 +3446,7 @@ msgstr ""
 msgid "Downloading…"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:536
+#: src/components/conversation/MessageComposer.tsx:537
 msgid "Draft"
 msgstr ""
 
@@ -3420,7 +3454,7 @@ msgstr ""
 msgid "Drag to pan · scroll to zoom · click a node to read"
 msgstr ""
 
-#: src/components/image-annotator/ImageAnnotator.tsx:262
+#: src/components/image-annotator/ImageAnnotator.tsx:272
 msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
 msgstr ""
 
@@ -3428,8 +3462,8 @@ msgstr ""
 msgid "Drill by"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:555
-#: src/components/conversation/MessageComposer.tsx:608
+#: src/components/conversation/MessageComposer.tsx:556
+#: src/components/conversation/MessageComposer.tsx:609
 #: src/components/drag-drop-overlay.tsx:98
 msgid "Drop files here"
 msgstr ""
@@ -3441,7 +3475,7 @@ msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx:112
 #: src/components/workflow-runner/detail/StepDetailPane.tsx:112
-#: src/pages/live-status/LiveStatus.tsx:637
+#: src/pages/live-status/LiveStatus.tsx:638
 msgid "Duration"
 msgstr ""
 
@@ -3497,7 +3531,7 @@ msgstr ""
 msgid "Edit anyway"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:441
+#: src/components/conversation/MessageComposer.tsx:442
 msgid "Edit attached prompt"
 msgstr ""
 
@@ -3522,7 +3556,7 @@ msgstr ""
 msgid "Edit name"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:450
+#: src/components/conversation/MessageComposer.tsx:451
 #: src/components/prompt-library/PromptEditDialog.tsx:94
 #: src/components/prompt-library/PromptLibraryMenu.tsx:88
 msgid "Edit prompt"
@@ -3552,7 +3586,7 @@ msgstr ""
 msgid "Edit trigger.py"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:555
+#: src/components/conversation/MessageComposer.tsx:556
 msgid "Edit your draft…"
 msgstr ""
 
@@ -3620,6 +3654,10 @@ msgstr ""
 
 #: src/components/hooks/sniffer_view_mock.tsx:88
 msgid "Enable the sniffer to start capturing hook traffic"
+msgstr ""
+
+#: src/pages/live-status/LiveStatus.tsx:944
+msgid "Enable/Disable hook"
 msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx:185
@@ -3823,7 +3861,7 @@ msgstr ""
 
 #: src/components/hooks-view/HooksTable.tsx:69
 #: src/components/hooks/sniffer_view_mock.tsx:78
-#: src/pages/live-status/LiveStatus.tsx:890
+#: src/pages/live-status/LiveStatus.tsx:892
 msgid "Event"
 msgstr ""
 
@@ -4072,7 +4110,7 @@ msgstr ""
 msgid "Failed to delete workflow"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:318
+#: src/components/conversation/MessageComposer.tsx:319
 msgid "Failed to discard draft"
 msgstr ""
 
@@ -4241,11 +4279,11 @@ msgstr ""
 msgid "Failed to save the context snapshot."
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:301
+#: src/components/conversation/MessageComposer.tsx:302
 msgid "Failed to send draft"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:300
+#: src/components/conversation/MessageComposer.tsx:301
 msgid "Failed to send reply."
 msgstr ""
 
@@ -4816,11 +4854,11 @@ msgstr ""
 msgid "Global"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1634
+#: src/pages/live-status/LiveStatus.tsx:1636
 msgid "Global Agents (~/.claude/agents/)"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1589
+#: src/pages/live-status/LiveStatus.tsx:1591
 msgid "Global Commands (~/.claude/commands/)"
 msgstr ""
 
@@ -4955,7 +4993,7 @@ msgstr ""
 msgid "Hide all types"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1440
+#: src/pages/live-status/LiveStatus.tsx:1442
 msgid "Hide empty"
 msgstr ""
 
@@ -5085,8 +5123,8 @@ msgstr ""
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx:101
 #: src/components/hooks-view/hooks-view.tsx:294
 #: src/pages/live-status/LiveStatus.tsx:212
-#: src/pages/live-status/LiveStatus.tsx:1307
-#: src/pages/live-status/LiveStatus.tsx:1363
+#: src/pages/live-status/LiveStatus.tsx:1309
+#: src/pages/live-status/LiveStatus.tsx:1365
 msgid "Hooks"
 msgstr ""
 
@@ -5168,7 +5206,7 @@ msgstr ""
 msgid "IDE"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1543
+#: src/pages/live-status/LiveStatus.tsx:1545
 msgid "IDE Connections (VS Code, Cursor, etc.)"
 msgstr ""
 
@@ -5246,7 +5284,7 @@ msgstr ""
 msgid "In Index"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1478
+#: src/pages/live-status/LiveStatus.tsx:1480
 msgid "in progress"
 msgstr ""
 
@@ -5328,6 +5366,10 @@ msgstr ""
 msgid "input"
 msgstr ""
 
+#: src/pages/live-status/LiveStatus.tsx:572
+msgid "Input"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx:95
 msgid "Input Files"
 msgstr ""
@@ -5337,7 +5379,7 @@ msgstr ""
 msgid "Input: {0}"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:425
+#: src/components/conversation/MessageComposer.tsx:426
 msgid "Insert emoji"
 msgstr ""
 
@@ -5372,7 +5414,7 @@ msgstr ""
 msgid "Installed"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:775
+#: src/pages/live-status/LiveStatus.tsx:776
 msgid "Installed Plugins"
 msgstr ""
 
@@ -5558,7 +5600,7 @@ msgstr ""
 msgid "Justify"
 msgstr ""
 
-#: src/components/image-annotator/ImageAnnotator.tsx:315
+#: src/components/image-annotator/ImageAnnotator.tsx:325
 msgid "Keep editing"
 msgstr ""
 
@@ -5934,7 +5976,7 @@ msgstr ""
 msgid "Loading metrics..."
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1267
+#: src/pages/live-status/LiveStatus.tsx:1269
 msgid "Loading project resources..."
 msgstr ""
 
@@ -5965,7 +6007,7 @@ msgstr ""
 msgid "Loading server..."
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1075
+#: src/pages/live-status/LiveStatus.tsx:1077
 msgid "Loading sessions..."
 msgstr ""
 
@@ -5995,7 +6037,7 @@ msgstr ""
 msgid "Loading tasks..."
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:512
+#: src/pages/live-status/LiveStatus.tsx:513
 msgid "Loading transcript data..."
 msgstr ""
 
@@ -6073,7 +6115,7 @@ msgstr ""
 msgid "Local Variables"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:894
+#: src/pages/live-status/LiveStatus.tsx:896
 msgid "Location"
 msgstr ""
 
@@ -6195,7 +6237,7 @@ msgstr ""
 msgid "MarkdownIndex has no vault_root — set the source path first."
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:794
+#: src/pages/live-status/LiveStatus.tsx:795
 msgid "Marketplaces"
 msgstr ""
 
@@ -6213,7 +6255,7 @@ msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx:604
 #: src/components/hooks-view/HooksTable.tsx:70
-#: src/pages/live-status/LiveStatus.tsx:892
+#: src/pages/live-status/LiveStatus.tsx:894
 msgid "Matcher"
 msgstr ""
 
@@ -6233,8 +6275,8 @@ msgstr ""
 msgid "Maximum execution time (default: 60s, max: 600s)"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1314
-#: src/pages/live-status/LiveStatus.tsx:1349
+#: src/pages/live-status/LiveStatus.tsx:1316
+#: src/pages/live-status/LiveStatus.tsx:1351
 msgid "MCP Servers"
 msgstr ""
 
@@ -6313,7 +6355,7 @@ msgstr ""
 msgid "Message this space…"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:635
+#: src/pages/live-status/LiveStatus.tsx:636
 msgid "Messages"
 msgstr ""
 
@@ -6365,7 +6407,7 @@ msgstr ""
 msgid "Models"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:583
+#: src/pages/live-status/LiveStatus.tsx:584
 msgid "Models Used"
 msgstr ""
 
@@ -6414,7 +6456,7 @@ msgstr ""
 msgid "Move up"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1113
+#: src/pages/live-status/LiveStatus.tsx:1115
 msgid "msgs"
 msgstr ""
 
@@ -6946,7 +6988,7 @@ msgstr ""
 msgid "No FSOp triggers visible. Toggle <0>Include system</0> above to see system-installed watchers."
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1023
+#: src/pages/live-status/LiveStatus.tsx:1025
 msgid "No GitHub repos linked"
 msgstr ""
 
@@ -6959,7 +7001,7 @@ msgid "No hook triggers yet. Drop a rule file under <0>~/.flow/skill_rules/</0> 
 msgstr ""
 
 #: src/components/hooks-view/HooksTable.tsx:44
-#: src/pages/live-status/LiveStatus.tsx:818
+#: src/pages/live-status/LiveStatus.tsx:820
 msgid "No hooks configured"
 msgstr ""
 
@@ -7023,7 +7065,7 @@ msgstr ""
 msgid "No MarkdownIndex entities yet."
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:803
+#: src/pages/live-status/LiveStatus.tsx:804
 msgid "No marketplaces configured"
 msgstr ""
 
@@ -7118,7 +7160,7 @@ msgstr ""
 msgid "No plans shared"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:791
+#: src/pages/live-status/LiveStatus.tsx:792
 msgid "No plugins installed"
 msgstr ""
 
@@ -7170,7 +7212,7 @@ msgstr ""
 #: src/components/assets/ProjectPickerModal.tsx:216
 #: src/components/open-project-component/open-project-component.tsx:215
 #: src/components/open-project-component/open-project-component.tsx:485
-#: src/pages/live-status/LiveStatus.tsx:1201
+#: src/pages/live-status/LiveStatus.tsx:1203
 msgid "No projects found"
 msgstr ""
 
@@ -7213,7 +7255,7 @@ msgstr ""
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx:507
 #: src/components/terminal/HistoryModal.tsx:425
-#: src/pages/live-status/LiveStatus.tsx:1081
+#: src/pages/live-status/LiveStatus.tsx:1083
 msgid "No recent sessions"
 msgstr ""
 
@@ -7291,7 +7333,7 @@ msgstr ""
 msgid "No saved contexts yet."
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1386
+#: src/pages/live-status/LiveStatus.tsx:1388
 msgid "No saved plans"
 msgstr ""
 
@@ -7339,7 +7381,7 @@ msgstr ""
 msgid "No skill-attributed findings to improve."
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1570
+#: src/pages/live-status/LiveStatus.tsx:1572
 msgid "No skills installed"
 msgstr ""
 
@@ -7401,7 +7443,7 @@ msgstr ""
 msgid "No timeline data in this trace."
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1412
+#: src/pages/live-status/LiveStatus.tsx:1414
 msgid "No todo files found (~/.claude/todos/)"
 msgstr ""
 
@@ -7409,7 +7451,7 @@ msgstr ""
 msgid "No tool calls before cursor in this segment"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/TraceGutter.tsx:197
+#: src/components/terminal/interactive-terminal/TraceGutter.tsx:198
 msgid "No trace events captured yet"
 msgstr ""
 
@@ -7417,7 +7459,7 @@ msgstr ""
 msgid "No transcript data"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:521
+#: src/pages/live-status/LiveStatus.tsx:522
 msgid "No transcript data available"
 msgstr ""
 
@@ -7484,10 +7526,10 @@ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx:118
 #: src/components/graph-view/ui/FilterChips.tsx:58
-#: src/pages/live-status/LiveStatus.tsx:1599
-#: src/pages/live-status/LiveStatus.tsx:1615
-#: src/pages/live-status/LiveStatus.tsx:1645
-#: src/pages/live-status/LiveStatus.tsx:1662
+#: src/pages/live-status/LiveStatus.tsx:1601
+#: src/pages/live-status/LiveStatus.tsx:1617
+#: src/pages/live-status/LiveStatus.tsx:1647
+#: src/pages/live-status/LiveStatus.tsx:1664
 msgid "None"
 msgstr ""
 
@@ -7812,6 +7854,7 @@ msgstr ""
 
 #: src/components/project-activity-strip/LearningCard.tsx:139
 #: src/components/project-activity-strip/LearningCard.tsx:163
+#: src/components/task-bar/TaskCard.tsx:133
 msgid "Open in Skills tab"
 msgstr ""
 
@@ -8066,6 +8109,10 @@ msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx:142
 msgid "output"
+msgstr ""
+
+#: src/pages/live-status/LiveStatus.tsx:573
+msgid "Output"
 msgstr ""
 
 #. placeholder {0}: formatNumber(entry.usage.output ?? 0)
@@ -8421,7 +8468,7 @@ msgstr ""
 msgid "Previous slide"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:594
+#: src/pages/live-status/LiveStatus.tsx:595
 msgid "primary"
 msgstr ""
 
@@ -8499,7 +8546,7 @@ msgstr ""
 msgid "Project actions"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1651
+#: src/pages/live-status/LiveStatus.tsx:1653
 msgid "Project Agents (.claude/agents/)"
 msgstr ""
 
@@ -8516,7 +8563,7 @@ msgstr ""
 msgid "Project code"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1605
+#: src/pages/live-status/LiveStatus.tsx:1607
 msgid "Project Commands (.claude/commands/)"
 msgstr ""
 
@@ -8842,11 +8889,11 @@ msgid "Recent conversations"
 msgstr ""
 
 #: src/components/terminal/HistoryModal.tsx:295
-#: src/pages/live-status/LiveStatus.tsx:1329
+#: src/pages/live-status/LiveStatus.tsx:1331
 msgid "Recent Sessions"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:628
+#: src/pages/live-status/LiveStatus.tsx:629
 msgid "Recent Transcripts"
 msgstr ""
 
@@ -9009,6 +9056,10 @@ msgstr ""
 msgid "Remind in {count} {0}"
 msgstr ""
 
+#: src/components/conversation/MessageComposer.tsx:104
+msgid "Remove attachment"
+msgstr ""
+
 #: src/components/spec-editor/SpecEditor.tsx:335
 msgid "Remove bookmark"
 msgstr ""
@@ -9032,7 +9083,7 @@ msgstr ""
 msgid "Remove link"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:501
+#: src/components/conversation/MessageComposer.tsx:502
 msgid "Remove queued prompt"
 msgstr ""
 
@@ -9100,7 +9151,7 @@ msgstr ""
 msgid "replay"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:608
+#: src/components/conversation/MessageComposer.tsx:609
 msgid "Reply to sender…"
 msgstr ""
 
@@ -9181,6 +9232,14 @@ msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx:137
 msgid "respected"
+msgstr ""
+
+#: src/pages/live-status/LiveStatus.tsx:593
+msgid "response"
+msgstr ""
+
+#: src/pages/live-status/LiveStatus.tsx:593
+msgid "responses"
 msgstr ""
 
 #. placeholder {0}: changedCount === 1 ? 'field' : 'fields'
@@ -9399,7 +9458,7 @@ msgstr ""
 msgid "Run automation"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1202
+#: src/pages/live-status/LiveStatus.tsx:1204
 msgid "Run Claude Code in a project directory to see it here."
 msgstr ""
 
@@ -9510,7 +9569,7 @@ msgstr ""
 #: src/components/hooks-manager/HookForm.tsx:194
 #: src/components/hooks-manager/TriggerForm.tsx:154
 #: src/components/hooks-view/HookEditor.tsx:84
-#: src/components/image-annotator/AnnotatorToolbar.tsx:103
+#: src/components/image-annotator/AnnotatorToolbar.tsx:102
 #: src/components/prompt-library/PromptEditDialog.tsx:125
 #: src/components/spec-editor/SpecEditor.tsx:469
 #: src/components/tasks-viewer/TasksViewer.tsx:267
@@ -9605,7 +9664,7 @@ msgid "Scanned <0>{totalScanned}</0> open issue{0} against the known-issues data
 msgstr ""
 
 #. placeholder {0}: resources.scanned_at
-#: src/pages/live-status/LiveStatus.tsx:1376
+#: src/pages/live-status/LiveStatus.tsx:1378
 msgid "Scanned: {0}"
 msgstr ""
 
@@ -9657,7 +9716,7 @@ msgstr ""
 #: src/components/hooks/EventListPanel.tsx:71
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx:352
 #: src/components/quick-create/QuickCreateDialog.tsx:241
-#: src/pages/live-status/LiveStatus.tsx:891
+#: src/pages/live-status/LiveStatus.tsx:893
 msgid "Scope"
 msgstr ""
 
@@ -9720,7 +9779,7 @@ msgstr ""
 msgid "Search assets, teams…"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:416
+#: src/components/conversation/MessageComposer.tsx:417
 msgid "Search assets…"
 msgstr ""
 
@@ -9913,7 +9972,7 @@ msgid "Select a project or open a new folder."
 msgstr ""
 
 #: src/components/project-resource-list/ProjectResourceList.tsx:269
-#: src/pages/live-status/LiveStatus.tsx:1277
+#: src/pages/live-status/LiveStatus.tsx:1279
 msgid "Select a project to view resources"
 msgstr ""
 
@@ -10045,7 +10104,7 @@ msgstr ""
 
 #: src/components/assistance-viewer/TaskDetail.tsx:144
 #: src/components/collaboration/chat/MessageInput.tsx:37
-#: src/components/conversation/MessageComposer.tsx:459
+#: src/components/conversation/MessageComposer.tsx:460
 #: src/components/conversation/PromptComposerDialog.tsx:86
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx:155
 #: src/pages/home-landing/feed/FeedEntryCard.tsx:421
@@ -10122,7 +10181,7 @@ msgid "session"
 msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx:1095
-#: src/pages/live-status/LiveStatus.tsx:634
+#: src/pages/live-status/LiveStatus.tsx:635
 msgid "Session"
 msgstr ""
 
@@ -10144,7 +10203,7 @@ msgstr ""
 msgid "Session call stack"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:522
+#: src/pages/live-status/LiveStatus.tsx:523
 msgid "Session data will appear after using Claude Code"
 msgstr ""
 
@@ -10181,7 +10240,8 @@ msgstr ""
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx:476
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx:490
 #: src/pages/live-status/LiveStatus.tsx:207
-#: src/pages/live-status/LiveStatus.tsx:1299
+#: src/pages/live-status/LiveStatus.tsx:537
+#: src/pages/live-status/LiveStatus.tsx:1301
 msgid "Sessions"
 msgstr ""
 
@@ -10334,7 +10394,7 @@ msgstr ""
 msgid "Show {type}"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1450
+#: src/pages/live-status/LiveStatus.tsx:1452
 msgid "Show all"
 msgstr ""
 
@@ -10412,7 +10472,7 @@ msgstr ""
 #~ msgstr ""
 
 #. placeholder {0}: entries.length
-#: src/pages/live-status/LiveStatus.tsx:676
+#: src/pages/live-status/LiveStatus.tsx:677
 msgid "Showing 20 of {0} entries"
 msgstr ""
 
@@ -10509,11 +10569,11 @@ msgstr ""
 #: src/components/skills-sidebar/SkillsSidebar.tsx:142
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx:127
 #: src/pages/live-status/LiveStatus.tsx:208
-#: src/pages/live-status/LiveStatus.tsx:1321
+#: src/pages/live-status/LiveStatus.tsx:1323
 msgid "Skills"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1557
+#: src/pages/live-status/LiveStatus.tsx:1559
 msgid "Skills (~/.claude/skills/)"
 msgstr ""
 
@@ -10816,7 +10876,7 @@ msgstr ""
 msgid "Structure"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1462
+#: src/pages/live-status/LiveStatus.tsx:1464
 msgid "sub-agent"
 msgstr ""
 
@@ -10829,11 +10889,11 @@ msgstr ""
 msgid "Subfolders"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:441
+#: src/components/conversation/MessageComposer.tsx:442
 msgid "Suggest a prompt for the other user to approve"
 msgstr ""
 
-#: src/components/conversation/MessageComposer.tsx:450
+#: src/components/conversation/MessageComposer.tsx:451
 msgid "Suggest prompt"
 msgstr ""
 
@@ -11317,7 +11377,7 @@ msgstr ""
 msgid "Today's cost"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1432
+#: src/pages/live-status/LiveStatus.tsx:1434
 msgid "Todo Files (~/.claude/todos/)"
 msgstr ""
 
@@ -11356,7 +11416,7 @@ msgstr ""
 msgid "Toggle view"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:568
+#: src/pages/live-status/LiveStatus.tsx:569
 msgid "Token Usage Breakdown"
 msgstr ""
 
@@ -11367,7 +11427,7 @@ msgid "tokens"
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx:138
-#: src/pages/live-status/LiveStatus.tsx:636
+#: src/pages/live-status/LiveStatus.tsx:637
 msgid "Tokens"
 msgstr ""
 
@@ -11401,7 +11461,7 @@ msgstr ""
 msgid "tool result"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:1116
+#: src/pages/live-status/LiveStatus.tsx:1118
 msgid "tools"
 msgstr ""
 
@@ -11412,7 +11472,7 @@ msgstr ""
 msgid "Tools"
 msgstr ""
 
-#: src/pages/live-status/LiveStatus.tsx:608
+#: src/pages/live-status/LiveStatus.tsx:609
 msgid "Tools Used"
 msgstr ""
 
@@ -11445,8 +11505,16 @@ msgstr ""
 msgid "Total cost"
 msgstr ""
 
+#: src/pages/live-status/LiveStatus.tsx:551
+msgid "Total Time"
+msgstr ""
+
+#: src/pages/live-status/LiveStatus.tsx:544
+msgid "Total Tokens"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx:235
-#: src/components/terminal/interactive-terminal/TraceGutter.tsx:147
+#: src/components/terminal/interactive-terminal/TraceGutter.tsx:148
 msgid "Trace events"
 msgstr ""
 
@@ -11781,7 +11849,7 @@ msgid "User Prompt Submit"
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx:150
-#: src/pages/live-status/LiveStatus.tsx:1564
+#: src/pages/live-status/LiveStatus.tsx:1566
 msgid "uses"
 msgstr ""
 
@@ -11921,7 +11989,7 @@ msgstr ""
 
 #: src/components/hooks/EventListPanel.tsx:154
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx:569
-#: src/components/terminal/interactive-terminal/TraceGutter.tsx:360
+#: src/components/terminal/interactive-terminal/TraceGutter.tsx:361
 msgid "View transcript"
 msgstr ""
 
@@ -12193,7 +12261,7 @@ msgstr ""
 msgid "Your display name"
 msgstr ""
 
-#: src/components/image-annotator/ImageAnnotator.tsx:313
+#: src/components/image-annotator/ImageAnnotator.tsx:323
 msgid "Your markup on this image will be lost."
 msgstr ""
 

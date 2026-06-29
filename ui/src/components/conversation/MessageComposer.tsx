@@ -57,6 +57,7 @@ function PendingFileChip({
   disabled?: boolean;
   onRemove: () => void;
 }) {
+  const { t } = useLingui();
   const image = isImageFile(file);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
