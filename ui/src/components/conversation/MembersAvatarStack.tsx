@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Users, X } from 'lucide-react';
-import { type TypeId } from '@sdk';
+import { type ConversationParticipant, type TypeId } from '@sdk';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useMembers } from '@src/hooks/use-members';
+import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
+import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForParticipant } from './avatar-color';
 import { ContactPermissionsDialog } from './ContactPermissionsDialog';
@@ -21,7 +23,6 @@ import {
 } from './participant-display';
 
 const MAX_INLINE_AVATARS = 4;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface MembersAvatarStackProps {
   typeId: TypeId;
@@ -39,10 +40,10 @@ interface MembersAvatarStackProps {
  */
 export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
   const { t } = useLingui();
-  const { members, addMember, removeMember, setRole } = useMembers(typeId);
+  const { members, addMembers, removeMember, setRole } = useMembers(typeId);
   const { localUser } = useLocalUser();
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState('');
+  const [selected, setSelected] = useState<ConversationParticipant[]>([]);
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -87,17 +88,32 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
     }
   };
 
+  // Existing members keyed by email so a staged contact who's already on the
+  // roster is dropped before invite (the hub would 400 "use change_role" on a
+  // re-invite, which would fail the whole batch share).
+  const existingEmails = useMemo(
+    () => new Set(members.map((m) => (m.email ?? '').trim().toLowerCase()).filter(Boolean)),
+    [members],
+  );
+
+  const handleSelectionChange = (next: ConversationParticipant[]) => {
+    setSelected(next);
+    if (inviteError) setInviteError(null);
+  };
+
   const handleInvite = async () => {
-    const candidate = email.trim();
-    if (!EMAIL_RE.test(candidate)) {
-      setInviteError(t`Enter a valid email`);
+    const emails = selected
+      .map((p) => (p.email ?? '').trim().toLowerCase())
+      .filter((e) => !!e && !existingEmails.has(e));
+    if (!emails.length) {
+      setInviteError(t`Pick a contact or enter an email`);
       return;
     }
     setInviting(true);
     setInviteError(null);
     try {
-      await addMember(candidate);
-      setEmail('');
+      await addMembers(emails);
+      setSelected([]);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Invite failed';
       // Re-inviting an accepted member is hub-rejected (400 "use change_role")
@@ -117,8 +133,8 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
     setOpen(next);
     if (!next) {
       // Reset transient state so reopening the popover doesn't show a stale
-      // error from a previous attempt.
-      setEmail('');
+      // selection or error from a previous attempt.
+      setSelected([]);
       setInviteError(null);
       setInviting(false);
     }
@@ -158,7 +174,7 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-2" align="start">
+      <PopoverContent className="w-72 p-2" align="start">
         {members.length === 0 && (
           <div className="px-1 py-1 text-[11px] text-muted-foreground">
             <Trans>No members yet — invite someone below.</Trans>
@@ -260,34 +276,36 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
             mutating ``members`` action; a plain member's POST would 403). */}
         {mayInvite && (
         <div className="mt-2 border-t border-border pt-2">
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void handleInvite();
-            }}
-          >
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                if (inviteError) setInviteError(null);
-              }}
-              placeholder={t`Invite by email…`}
-              className="flex-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs outline-none focus:border-primary"
+          <div className="flex items-start gap-1.5">
+            <div className="min-w-0 flex-1">
+              <ContactPicker
+                value={selected}
+                onChange={handleSelectionChange}
+                excludeUserId={localUser?.id}
+                disabled={inviting}
+                placeholder={t`Invite by name or email…`}
+                testId="members-invite-input"
+              />
+            </div>
+            <AddressBookButton
+              value={selected}
+              onChange={handleSelectionChange}
+              excludeUserId={localUser?.id}
               disabled={inviting}
-              data-testid="members-invite-input"
+              testId="members-address-book"
             />
+          </div>
+          <div className="mt-1.5 flex justify-end">
             <button
-              type="submit"
-              disabled={inviting || !email.trim()}
+              type="button"
+              onClick={() => void handleInvite()}
+              disabled={inviting || selected.length === 0}
               className="rounded border border-border bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground hover:bg-accent disabled:opacity-50"
               data-testid="members-invite-submit"
             >
               {inviting ? t`Inviting…` : t`+ Add`}
             </button>
-          </form>
+          </div>
           {inviteError && (
             <div className="mt-1 text-[10px] text-destructive" role="alert">
               {inviteError}

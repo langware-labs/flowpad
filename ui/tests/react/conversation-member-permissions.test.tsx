@@ -17,7 +17,7 @@ vi.mock('@src/hooks/use-members', () => ({
       { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: 'owner' },
       { user_id: 'alice-id', email: 'alice@example.com', name: 'Alice', role: 'member' },
     ],
-    addMember: vi.fn(),
+    addMembers: vi.fn(),
     removeMember: vi.fn(),
     setRole: vi.fn(),
   }),
