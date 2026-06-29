@@ -642,6 +642,15 @@ export class NavigationActions {
     this.openDock(pointer);
   }
 
+  /**
+   * Open the user Preferences screen
+   * @param category - Optional category whose tab should be active
+   */
+  openPreferences(category?: string): void {
+    const pointer = DockPointer.forPreferences(category);
+    this.openDock(pointer);
+  }
+
   // ========== Entity Navigation ==========
 
   openEntity(entity: unknown): void {

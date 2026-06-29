@@ -1387,23 +1387,35 @@ def setup_desktop_filesystem() -> None:
             logging.warning(f"Failed to create logs subdirectory {subdir}: {e}")
     logging.info(f"Logs folder ensured at: {logs_base}")
 
-    # Per-instance UI preferences. Defaults must stay in sync with
-    # DEFAULT_PREFERENCES in ts_sdk/src/services/InstancePreferences.ts.
+    # Per-instance UI preferences. Defaults must stay in sync with the
+    # PREF_REGISTRY in ts_sdk/src/preferences/prefRegistry.ts. Keys are the dotted
+    # topic ids `preferences.<category>.<name>`; the frontend store migrates any
+    # legacy flat-keyed preferences.json on load.
     # Legacy location: <workspace>/.flow/settings.json — migrated below.
     prefs_path = get_instance_settings().instance_dir / "preferences.json"
     legacy_settings_path = workspace_path / ".flow" / "settings.json"
 
-    # Single source of truth for the default-stub shape. The set of known keys
-    # also bounds what we migrate from a legacy settings.json — anything else
-    # is silently dropped instead of riding along forever as dead weight.
+    # Single source of truth for the default-stub shape, keyed by dotted PrefKey.
     default_prefs = {
-        "show_system_skills": True,
-        "default_terminal": "builtin_xterm",
-        "buffer_sync_updates": False,
-        "notification_sound_enabled": False,
-        "notification_sound_key": "supershort-ping",
+        "preferences.general.show_system_skills": True,
+        "preferences.general.default_terminal": "builtin_xterm",
+        "preferences.terminal.buffer_sync_updates": False,
+        "preferences.notifications.sound_enabled": False,
+        "preferences.notifications.sound_key": "supershort-ping",
+        "preferences.advanced.scrollback_lines": 1000,
+        "preferences.advanced.experimental_flags": {},
     }
     known_pref_keys = set(default_prefs.keys())
+
+    # Old flat field name → dotted PrefKey. Bounds what we migrate from a legacy
+    # settings.json (anything else is dropped) and re-keys it to the new shape.
+    legacy_key_map = {
+        "show_system_skills": "preferences.general.show_system_skills",
+        "default_terminal": "preferences.general.default_terminal",
+        "buffer_sync_updates": "preferences.terminal.buffer_sync_updates",
+        "notification_sound_enabled": "preferences.notifications.sound_enabled",
+        "notification_sound_key": "preferences.notifications.sound_key",
+    }
 
     def _read_existing_prefs(path: Path) -> Optional[dict]:
         """Return the parsed dict, or None if file is missing/malformed/non-object."""
@@ -1430,7 +1442,11 @@ def setup_desktop_filesystem() -> None:
                 f"or not a dict; falling back to defaults"
             )
             return None
-        return {**default_prefs, **{k: v for k, v in legacy.items() if k in known_pref_keys}}
+        # Legacy settings.json uses old flat field names — re-key to dotted PrefKeys.
+        migrated_pairs = {
+            legacy_key_map[k]: v for k, v in legacy.items() if k in legacy_key_map
+        }
+        return {**default_prefs, **migrated_pairs}
 
     try:
         prefs_path.parent.mkdir(parents=True, exist_ok=True)

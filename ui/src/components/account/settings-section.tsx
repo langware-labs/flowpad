@@ -1,10 +1,7 @@
-import { useInstancePreferences } from '@sdk/react/hooks/use-instance-preferences';
-import { ActionInfo, dataContext, dataManager, TerminalType } from '@sdk';
+import { ActionInfo, dataContext, dataManager } from '@sdk';
 import apiClient from '@sdk/client';
 import { Button } from '@src/components/ui/button';
-import { Checkbox } from '@src/components/ui/checkbox';
 import { Label } from '@src/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Switch } from '@src/components/ui/switch';
 import { setDev, useIsDev } from '@src/components/view-mode';
@@ -13,8 +10,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
+// Per-user UI preferences (show system skills, terminal, sound, …) now live in
+// the dedicated Preferences screen (ViewType.PREFERENCES, registry-driven). This
+// section keeps only the non-preference account/instance controls.
 export function SettingsSection() {
-  const { preferences } = useInstancePreferences();
   const [cliLogLevel, setCliLogLevel] = useState('info');
   const isDev = useIsDev();
   const { t } = useLingui();
@@ -98,58 +97,6 @@ export function SettingsSection() {
         >
           {resettingOnboarding ? <Trans>Resetting…</Trans> : <Trans>Reset</Trans>}
         </Button>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id="show-system-skills"
-          checked={preferences.showSystemSkills}
-          onCheckedChange={(checked) => {
-            preferences.showSystemSkills = checked === true;
-          }}
-        />
-        <Label htmlFor="show-system-skills" className="cursor-pointer text-sm">
-          <Trans>Show system skills</Trans>
-        </Label>
-      </div>
-
-      <div>
-        <Label className="mb-2 block text-sm font-medium"><Trans>External Terminal</Trans></Label>
-        <p className="mb-2 text-xs text-muted-foreground">
-          <Trans>The in-app terminal is always the primary shell. This setting controls whether a sidecar OS Terminal window is also opened.</Trans>
-        </p>
-        <RadioGroup
-          value={preferences.defaultTerminal}
-          onValueChange={(value) => {
-            preferences.defaultTerminal = value as TerminalType;
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <RadioGroupItem value={TerminalType.BUILTIN_XTERM} id="terminal-builtin" />
-            <Label htmlFor="terminal-builtin" className="cursor-pointer text-sm">
-              <Trans>In-app only</Trans>
-            </Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <RadioGroupItem value={TerminalType.EXTERNAL_TERMINAL} id="terminal-external" />
-            <Label htmlFor="terminal-external" className="cursor-pointer text-sm">
-              <Trans>Also open sidecar OS Terminal</Trans>
-            </Label>
-          </div>
-        </RadioGroup>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id="buffer-sync-updates"
-          checked={preferences.bufferSyncUpdates}
-          onCheckedChange={(checked) => {
-            preferences.bufferSyncUpdates = checked === true;
-          }}
-        />
-        <Label htmlFor="buffer-sync-updates" className="cursor-pointer text-sm">
-          <Trans>Buffer terminal sync updates (prevents scroll jumps)</Trans>
-        </Label>
       </div>
 
       <div>

@@ -16,6 +16,7 @@ import { MachineOverview } from '@src/components/machine-overview/machine-overvi
 import { MarkdownViewer } from '@src/components/markdown-viewer';
 import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
+import { PreferencesView } from '@src/components/preferences-view/PreferencesView';
 import { ShowView } from '@src/components/show-view/ShowView';
 import { AppHost } from '@src/components/app-host/AppHost';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
@@ -311,6 +312,8 @@ export function ContentPanel() {
         return <TasksViewer />;
       case ViewType.SETTINGS:
         return <SettingsView />;
+      case ViewType.PREFERENCES:
+        return <PreferencesView />;
       case ViewType.SEARCH:
         return <SearchView />;
       case ViewType.WORKFLOWS:
