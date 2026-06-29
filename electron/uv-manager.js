@@ -1207,6 +1207,10 @@ const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
 
 module.exports = UvManager;
 module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;
+// PyPI package + pinned interpreter, exported so main.js can surface the exact
+// `uv tool install` command to the user in the startup-timeout dialog.
+module.exports.PYPI_PACKAGE = PYPI_PACKAGE;
+module.exports.PYTHON_VERSION = PYTHON_VERSION;
 // Pure helpers exported for unit testing (electron/uv-manager.test.js).
 module.exports.needsShellOnWin = needsShellOnWin;
 module.exports.quoteWinCmd = quoteWinCmd;

@@ -195,6 +195,7 @@ node_modules/
 
 # Build and dist directories (frontend/UI build outputs)
 dist/
+dist-*/
 build/
 minihub/static/
 

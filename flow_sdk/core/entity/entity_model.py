@@ -286,7 +286,7 @@ class Entity(DBEntity):
     # VFS path relative to a root entity (e.g., compute node)
     root_vfs_path: str | None = APIField(default=None, description="VFS path relative to a root entity")
 
-    scope: str | None = APIField(default=None, description="Discovery scope: 'user' | 'project' | 'system'. Stamped at index time from the FSRef walk.")
+    scope: str | None = APIField(default=None, description="Discovery scope: 'user' | 'project' | 'system'. Stamped from the asset path at the save chokepoints (from_record / _prepare_for_storage) and by the FSRef walk at index time.")
     project_id: str | None = APIField(default=None, description="Owning project id, when applicable. Stamped at index time from the FSRef walk.")
 
     def __init__(self, **kwargs):
@@ -571,9 +571,19 @@ class Entity(DBEntity):
         rec_scope = getattr(record, "scope", None)
         rec_scope = rec_scope.value if hasattr(rec_scope, "value") else rec_scope
         rec_pid = getattr(record, "project_id", None)
+        # Source path the extractor set (asset_ref / source_file / path) — drives
+        # both the scope fallback here and the mtime derivation further down.
+        src_path = data.get("asset_ref") or data.get("source_file") or data.get("path")
         stamp: dict = {}
         if rec_scope not in (None, ""):
             stamp["scope"] = str(rec_scope)
+        else:
+            # Record-first saves that didn't come from an FSRef walk (e.g. an
+            # HTTP create) carry no scope — derive it from the on-disk path so
+            # the row is labeled here, not via a per-edge post-create patch.
+            inferred = cls._scope_from_path(src_path)
+            if inferred:
+                stamp["scope"] = inferred
         if rec_pid not in (None, ""):
             stamp["project_id"] = str(rec_pid)
 
@@ -585,13 +595,11 @@ class Entity(DBEntity):
         # every file-backed indexed type (sessions, markdown, plans, tasks, …) —
         # no per-extractor stamping.
         _asset_mtime = None
-        if data.get("updated_date") is None:
-            src = data.get("asset_ref") or data.get("source_file") or data.get("path")
-            if src:
-                try:
-                    _asset_mtime = datetime.fromtimestamp(os.path.getmtime(src), tz=timezone.utc)
-                except OSError:
-                    pass
+        if data.get("updated_date") is None and src_path:
+            try:
+                _asset_mtime = datetime.fromtimestamp(os.path.getmtime(src_path), tz=timezone.utc)
+            except OSError:
+                pass
 
         if entity is None:
             create_kwargs = {"id": entity_uuid, "type": record_type}
@@ -1741,7 +1749,11 @@ class Entity(DBEntity):
             if scope_proj is not None:
                 self.project_id = scope_proj.id
         if getattr(self, "asset_ref", None):
-            return  # Already set (entity update or explicit caller-set path).
+            # Already set (entity update or explicit caller-set path), but the
+            # scope tag may still be unstamped — derive it from the path so
+            # every save labels its bucket, not just HTTP-create/indexer paths.
+            self._stamp_scope_from_asset_ref()
+            return
         type_name = self.get_type()
         info = SchemaRegistry.get(type_name)
         if info is None or info.main_subdir is None:
@@ -1763,6 +1775,36 @@ class Entity(DBEntity):
         # entity-query result without waiting for the indexer.
         if hasattr(self, "parent_path"):
             self.parent_path = str(ar._path.parent)
+        # Stamp the scope tag from the resolved path. This is the chokepoint
+        # that makes EVERY writer (HTTP create, server-side .save(), triggers)
+        # label its bucket — previously scope was only filled at index time
+        # plus per-edge band-aids, so any other writer birthed a scope-less row
+        # that leaked into every project scope (e.g. usage_report).
+        self._stamp_scope_from_asset_ref()
+
+    @staticmethod
+    def _scope_from_path(path) -> str | None:
+        """Classify a filesystem path into a scope tag ('user'|'project'|'system').
+
+        The one place the save chokepoints turn a path into a scope; ``None`` when
+        the path is empty or unclassifiable.
+        """
+        if not path:
+            return None
+        from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
+        return classify_path(path)
+
+    def _stamp_scope_from_asset_ref(self) -> None:
+        """Derive ``scope`` ('user'|'project'|'system') from ``asset_ref``.
+
+        No-op when the entity has no scope field, the field is already set, or
+        the path can't be classified — so it never clobbers an explicit scope.
+        """
+        if not hasattr(self, "scope") or getattr(self, "scope", None) not in (None, ""):
+            return
+        inferred = self._scope_from_path(getattr(self, "asset_ref", None))
+        if inferred:
+            self.scope = inferred
 
     async def delete(self):
         """Override delete to invalidate cache when entity is deleted."""
@@ -2037,6 +2079,30 @@ class Entity(DBEntity):
         if project_id:
             return [TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)]
         return []
+
+    @staticmethod
+    async def project_id_of(entity_type: str, entity_id: str) -> "str | None":
+        """The owning ``project_id`` of any entity, resolved SERVER-SIDE.
+
+        Looks the type up in the registry and goes through its ``get_by_id``
+        (which for some types includes on-disk recovery for unindexed rows),
+        returning the target's ``project_id``. Best-effort: ``None`` when the
+        type/target is unknown or the target is genuinely project-less. This is
+        the single, entity-agnostic "what project owns this thing" primitive —
+        used by tab project derivation and ``Conversation.resolve_project_id``.
+        """
+        try:
+            model = SchemaRegistry.get_entity_cls(entity_type)
+            if model is None:
+                return None
+            target = await model.get_by_id(str(entity_id))
+            return getattr(target, "project_id", None) if target is not None else None
+        except Exception:
+            import logging  # noqa: PLC0415
+            logging.getLogger(__name__).debug(
+                "project_id_of: failed for %s/%s", entity_type, entity_id, exc_info=True
+            )
+            return None
 
     @computed_field
     @property

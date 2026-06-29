@@ -8,6 +8,7 @@ import {
   dataContext,
   FlowDataSource,
   fsStore,
+  isAwaitingUserInput,
   ProcessStatus,
   Shell,
   WorkerMode,
@@ -71,7 +72,8 @@ import { getAnchors, useAnnotationGutter } from './use-annotation-gutter';
 import { useTimeGutter } from './use-time-gutter';
 import { useTraceGutter } from './use-trace-gutter';
 import { EntityContextPanel } from '@src/components/entity-context';
-import { imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
+import { clipboardDataHasImage, imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 export interface TraceFilters {
   events: boolean;
@@ -107,6 +109,11 @@ export interface ColVisibility {
 const EMPTY_DOCS: MarkdownDoc[] = [];
 const DEFAULT_COL_VIS: ColVisibility = { trace: true, time: true, annotations: true };
 const COL_VIS_LS_KEY = 'colVisibility';
+
+// An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
+// signal an image paste delivers to the PTY, which the CLI reads the system
+// clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
+const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
 
 function loadColVis(): ColVisibility {
   try {
@@ -246,6 +253,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // not reactive, so subscribe via useEntity and surface the banner here.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const liveStartFailure = liveProcess?.start_failure ?? null;
+  // The chat⇄terminal toggle is only enabled while the agent is awaiting the
+  // user's input (IDLE/COMPLETE/INTERRUPTED/PENDING_USER). A mode switch
+  // mid-turn is 409'd by the backend, so gating on the (reactive) worker status
+  // keeps the toggle in lock-step with the AP and never lands on a 409 hole.
+  // `liveProcess` is the reactive entity; the loader `process` is the fallback
+  // for the first render before the subscription resolves.
+  const awaitingUserInput = isAwaitingUserInput(
+    liveProcess?.workerStatus ?? process?.workerStatus,
+  );
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({
@@ -408,7 +424,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (!inputDirInfo) return;
       try {
         const items = await navigator.clipboard.read();
-        const [file] = await imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' });
+        const [captured] = await imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' });
+        if (!captured) return;
+        // Offer markup before the screenshot is attached. Cancel aborts.
+        const [file] = await annotateImageFiles([captured]);
         if (!file) return;
 
         const uploads = await fsStore
@@ -417,6 +436,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         await Promise.all(
           uploads.map((upload: { waitForCompletion: () => Promise<unknown> }) => upload.waitForCompletion()),
         );
+        // By now the annotated PNG is on the system clipboard (written inside the
+        // Save gesture; the upload above outlasts that write). Re-emit the empty
+        // bracketed paste so the CLI re-reads the clipboard and inlines the
+        // ANNOTATED image. The original paste-time signal was suppressed (the
+        // capture-phase paste listener), so the CLI never saw the original.
+        await shellRef.current?.sendInput(EMPTY_BRACKETED_PASTE);
+        // Full-resolution fallback: the inline copy the CLI keeps may be downsized,
+        // so also reference the file by path.
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
         await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
         openSideTab(SideTabId.Files);
@@ -754,6 +781,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       return;
     }
 
+    // Suppress IMAGE pastes from reaching xterm/the PTY. The Cmd+V keydown handler
+    // already routes image pastes through `handlePasteRef` (annotate → upload →
+    // re-emit the paste). Letting the browser's native `paste` event also flow into
+    // xterm would forward a bracketed paste to the PTY at paste-time, making the CLI
+    // read the system clipboard before annotation — i.e. the pre-annotation original.
+    // Eating image pastes here keeps the annotated image the single source of truth.
+    // Text pastes pass through.
+    const onDomPaste = (e: ClipboardEvent) => {
+      if (clipboardDataHasImage(e.clipboardData)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    };
+
     let disposed = false;
     let fitTimeoutId: ReturnType<typeof setTimeout> | null = null;
     let dimensionCheckTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -820,6 +861,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         term.open(container);
         terminalRef.current = term;
         fitAddonRef.current = fit;
+        container.addEventListener('paste', onDomPaste, true);
         if (active) {
           const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
           if (t0 !== undefined)
@@ -890,6 +932,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
     return () => {
       disposed = true;
+
+      container.removeEventListener('paste', onDomPaste, true);
 
       if (dimensionCheckTimeout) {
         clearTimeout(dimensionCheckTimeout);
@@ -1432,8 +1476,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // the PTY paste/drop handlers, but returns the reference line(s) so the chat
   // composer can splice them into the next prompt (instead of sending to a PTY).
   const handleChatPasteImages = useCallback(
-    async (files: File[]): Promise<string[]> => {
-      if (!inputDirInfo || !files.length) return [];
+    async (incoming: File[]): Promise<string[]> => {
+      if (!inputDirInfo || !incoming.length) return [];
+      // Offer markup before the pasted image(s) are attached. Cancel aborts.
+      const files = await annotateImageFiles(incoming);
+      if (!files.length) return [];
       const uploads = await fsStore
         .getState()
         .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
@@ -1454,7 +1501,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // mid-turn switch; `switching` guards against double-trigger + drives the spinner.
   const [switching, setSwitching] = useState(false);
   const handleToggleView = useCallback(async () => {
-    if (!process || switching) return;
+    // Mirror the ribbon's disabled gate: never attempt a switch mid-turn (the
+    // backend 409s it). The button is disabled in that state; this is the
+    // belt-and-suspenders guard for any non-click caller.
+    if (!process || switching || !awaitingUserInput) return;
     const toChat = !showSimpleChat; // currently terminal → go chat
     setSwitching(true);
     try {
@@ -1481,7 +1531,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     } finally {
       setSwitching(false);
     }
-  }, [process, switching, showSimpleChat]);
+  }, [process, switching, showSimpleChat, awaitingUserInput]);
 
   // Compute synthetic shell-pane active state for the ribbon
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
@@ -1778,6 +1828,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           }
           chatActive={showSimpleChat}
           switching={switching}
+          toggleEnabled={awaitingUserInput}
           onToggleView={canToggleView ? () => void handleToggleView() : undefined}
         />
       )}

@@ -191,6 +191,7 @@ async def _visible_tabs_sorted() -> list[Tab]:
     the deterministic tiebreak so legacy ``tab_order==0`` rows never reshuffle)."""
     tabs = await Tab.get_all({"visible": True})
     tabs = await _delete_tabs_for_missing_projects(tabs)
+    tabs = await _delete_tabs_for_missing_targets(tabs)
     tabs.sort(key=lambda t: (getattr(t, "tab_order", 0) or 0, t.id))
     return tabs
 
@@ -263,6 +264,46 @@ async def _delete_tabs_for_missing_projects(tabs: list[Tab]) -> list[Tab]:
     return [t for t in tabs if t.id not in deleted_ids]
 
 
+async def _delete_tabs_for_missing_targets(tabs: list[Tab]) -> list[Tab]:
+    """Hard-delete dangling agentic_process tabs whose target row no longer exists
+    — a bare FS stub that never synced, or a process removed out from under the
+    tab. The delete→orphan-Tab cleanup in ``Entity.delete`` never fired (there was
+    no delete) and the missing-PROJECT reaper skips it (its project still exists),
+    so the chip lingers, titled with its raw pointer, and 404s on click. Like that
+    reaper this removes only the stale row (``Tab.delete`` — never ``Tab.close``,
+    so no teardown of a target that isn't there).
+
+    Restricted to ``agentic_process``: those rows are always DB-backed, so absence
+    == orphan, whereas a missing ``markdown``/asset target is a valid
+    unindexed-but-on-disk row (see ``_backfill_tab_projects``) that must NOT be
+    reaped.
+    """
+    ap_type = EntityType.AGENTIC_PROCESS.value
+    candidates = [t for t in tabs if t.target_type == ap_type and t.target_id]
+    if not candidates:
+        return tabs
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+    deleted_ids: set[str] = set()
+    for tab in candidates:
+        try:
+            if await AgenticProcess.get_one({"id": str(tab.target_id)}) is not None:
+                continue
+        except Exception:
+            # Fail open: a transient lookup problem must not hard-delete tabs.
+            continue
+        try:
+            await tab.delete()
+        except Exception:
+            continue
+        deleted_ids.add(tab.id)
+    if deleted_ids:
+        # Background reap (no user navigation) — ping clients so the dangling chip
+        # drops live instead of waiting for the next list fetch.
+        await broadcast_tabs_changed()
+    return [t for t in tabs if t.id not in deleted_ids]
+
+
 async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> bool:
     """Assign ``tab_order = contiguous index`` over ``new_order``; save only rows
     whose index changed (no-op order ⇒ no write). Returns whether anything wrote."""
@@ -278,23 +319,10 @@ async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> 
 
 async def _project_of_target(target_type: str, target_id: str) -> str | None:
     """The owning ``project_id`` of a tab's target, resolved SERVER-SIDE so the
-    chip never depends on a client cache read that can miss. Goes through the
-    entity's ``get_by_id`` — which for a claude session includes the on-disk
-    recovery for unindexed sessions — and returns its ``project_id``. Best-effort:
-    ``None`` when the type/target is unknown or the target is genuinely projectless."""
-    try:
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-        model = SchemaRegistry.get_entity_cls(target_type)
-        if model is None:
-            return None
-        target = await model.get_by_id(str(target_id))
-        return getattr(target, "project_id", None) if target is not None else None
-    except Exception:
-        logging.getLogger(__name__).debug(
-            "ensure_tab: project-of-target failed for %s/%s", target_type, target_id, exc_info=True
-        )
-        return None
+    chip never depends on a client cache read that can miss. Thin alias over the
+    entity-agnostic ``Entity.project_id_of`` primitive (shared with
+    ``Conversation.resolve_project_id``)."""
+    return await Entity.project_id_of(target_type, target_id)
 
 
 async def ensure_tab(

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -8,7 +8,9 @@ import { type ITrigger } from '@sdk';
 import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import { useTriggers } from '@src/hooks/useTriggers';
 import { useProject } from '@src/hooks/useProject';
+import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { TriggersList } from './TriggersList';
+import { TriggersFilterBar } from './TriggersFilterBar';
 
 /**
  * Triggers left-menu — the navigator (Zone B). The rich list (per-type
@@ -21,6 +23,15 @@ export function TriggersNavigator() {
   const { triggers } = useTriggers();
   const { project } = useProject();
   const { navigation, currentDock } = useDockNavigation();
+
+  // System triggers ride a separate visibility toggle (the unified ScopeFilter
+  // shape is `{user, projects}` and can't carry `system`). Kept here so the header
+  // filter bar and the list body share one source of truth.
+  const [includeSystem, setIncludeSystem] = useState(false);
+
+  const hiddenSystemCount = includeSystem
+    ? 0
+    : triggers.filter((t) => (t.scope || 'user') === 'system').length;
 
   const urlScope = useMemo<ScopeFilter>(
     () => currentDock?.scopeFilter ?? defaultScopeFilter(project?.id ?? null),
@@ -63,7 +74,25 @@ export function TriggersNavigator() {
   const descriptor: NavigatorDescriptor = useMemo(
     () => ({
       id: 'triggers',
-      header: { title: 'Triggers', countBadge: triggers.length },
+      header: {
+        title: 'Triggers',
+        countBadge: triggers.length,
+        headerRight: (
+          <ScopeFilterIconBar
+            scope={urlScope}
+            currentProjectId={project?.id ?? null}
+            currentProjectName={project?.getDisplayName() ?? project?.name ?? null}
+            onScopeChange={handleScopeChange}
+          />
+        ),
+        filterBar: (
+          <TriggersFilterBar
+            includeSystem={includeSystem}
+            onIncludeSystemChange={setIncludeSystem}
+            hiddenSystemCount={hiddenSystemCount}
+          />
+        ),
+      },
       customBody: (
         <TriggersList
           triggers={triggers}
@@ -72,10 +101,8 @@ export function TriggersNavigator() {
           onOpenLog={handleOpenLog}
           onNewSchedule={handleNewSchedule}
           isCreatingSchedule={isCreatingSchedule}
-          currentProjectId={project?.id ?? null}
-          currentProjectName={project?.getDisplayName() ?? project?.name ?? null}
           scope={urlScope}
-          onScopeChange={handleScopeChange}
+          includeSystem={includeSystem}
         />
       ),
     }),
@@ -89,6 +116,8 @@ export function TriggersNavigator() {
       handleScopeChange,
       project,
       urlScope,
+      includeSystem,
+      hiddenSystemCount,
     ],
   );
 

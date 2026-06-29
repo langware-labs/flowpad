@@ -9,6 +9,7 @@
  */
 // AssetEditor + the editor↔type mapping live in the SDK (single source of truth,
 // reused by the SDK entity pointer getters); re-exported here for UI imports.
+import { TypeId } from '@sdk';
 export { AssetEditor, EDITOR_TYPES, TYPE_TO_EDITOR, editorForType, isAssetEditor } from '@sdk';
 
 /** How `<value>` identifies the asset — the `<method>` URL segment (editor mode only). */
@@ -35,6 +36,10 @@ export enum AssetMode {
 
 /** Default wiki space (the local compute node). */
 export const DEFAULT_WIKI_SPACE = '@local';
+
+/** The local compute node's TypeId — the always-available `@local` filesystem
+ *  root. Single source for `new TypeId('compute_node', '@local')`. */
+export const LOCAL_COMPUTE_NODE = new TypeId('compute_node', DEFAULT_WIKI_SPACE);
 
 export function isAssetRoutingMethod(v: string): v is AssetRoutingMethod {
   return (Object.values(AssetRoutingMethod) as string[]).includes(v);

@@ -6,7 +6,7 @@ import {
   ConversationParticipant,
   createProjectConversation,
 } from './conversation';
-import { FlowMessage } from './flow-message';
+import { FlowpadDiagnosis } from './flowpad-diagnosis';
 
 /**
  * Unified send payload. ``text`` may be empty when ``assetReferences`` or
@@ -45,53 +45,33 @@ export async function sendToExistingConversation(
   );
 }
 
-/** Source of a flow-diagnose report's body. */
-export interface DiagnosisReportSource {
-  /** The recorded support FlowMessage — its `text` is the full, already-formatted
-   *  diagnostic report (sections + newlines), the single source of truth. */
-  flowMessageId?: string | null;
-  /** Plain summary used only when there's no support FlowMessage to read. */
-  fallbackText?: string;
-}
-
 /**
- * Send a flow-diagnose report into a conversation and un-hide it. Shared by the
- * Home-Feed card's "Report issue" / "Forward" actions and the UI diagnose modal's
- * report buttons.
+ * Forward a diagnosis into a conversation by **attaching the FlowpadDiagnosis
+ * entity** (a TYPE_ID attachment) — not by pasting its full text. It renders as
+ * an entity chip; clicking the chip opens the diagnosis viewer (`buildDockPointer`
+ * → `DockPointer.forDiagnosis`). A short `Diagnosis: <title>` caption rides along
+ * so the message is never blank before the chip materializes (the chip needs the
+ * entity resolved locally; the caption is plain text and shows immediately).
  *
- * The body is the recorded support FlowMessage's `text` — the full, nicely
- * formatted diagnostic report with its section breaks and newlines — NOT the
- * one-line summary (which rendered as an unreadable wall of text). When the
- * target *is* the support conversation (the "Report issue" path), that report
- * message already lives there, so we don't re-send and duplicate it — we just
- * clear `dismissed_at` so the existing conversation surfaces in the Recent strip.
- * A "Forward" to a different conversation does send the formatted body across.
+ * No explicit un-hide: appending this message already auto-revives a dismissed
+ * conversation in the Recent strip (the strip hides a row only UNTIL a newer
+ * FlowMessage lands). A manual `conv.save()` would be a full conversation update,
+ * which the hub forbids for `member`-role participants — a needless 401.
  *
- * Callers do their own follow-up (the Feed dismisses its entry; the modal closes).
+ * Shared by every "Forward" surface — the Home-Feed card, the diagnosis viewer/
+ * popup, the live diagnose modal, and the System Diagnoses table. Callers do
+ * their own follow-up (e.g. the modal closes).
  */
-export async function sendDiagnosisReport(
+export async function forwardDiagnosis(
   conversationId: string,
-  source: DiagnosisReportSource,
+  diagnosisId: string,
 ): Promise<void> {
-  let text = source.fallbackText ?? '';
-  let sourceConversationId: string | null = null;
-  if (source.flowMessageId) {
-    const msg = await FlowMessage.getById<FlowMessage>(source.flowMessageId);
-    if (msg?.text) {
-      text = msg.text;
-      sourceConversationId = msg.conversation_id ?? null;
-    }
-  }
-  // Only post when forwarding to a *different* conversation — sending the report
-  // back into the conversation that already holds it would just duplicate it.
-  if (text && sourceConversationId !== conversationId) {
-    await sendToExistingConversation(conversationId, { text });
-  }
-  const conv = await Conversation.getById<Conversation>(conversationId);
-  if (!conv) return;
-  conv.dismissed_at = null;
-  conv.updated_date = new Date().toISOString();
-  await conv.save([]);
+  const diag = await FlowpadDiagnosis.getById<FlowpadDiagnosis>(diagnosisId);
+  const title = diag?.title || diag?.name || 'Diagnosis';
+  await sendToExistingConversation(conversationId, {
+    text: `Diagnosis: ${title}`,
+    assetReferences: [`${FlowpadDiagnosis.type}-${diagnosisId}`],
+  });
 }
 
 /**
@@ -184,6 +164,9 @@ export async function createConversationForShare(
       project_id: params.project_id,
       participants: params.participants,
       title: params.title,
+      // Let the backend derive the owning project from the shared entity
+      // (deterministic), with ``project_id`` as the ambient fallback.
+      shared_context_entities: params.shared_context_entities,
     });
     conversationId = r.conversation_id;
   }
