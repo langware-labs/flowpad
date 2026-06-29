@@ -1025,6 +1025,14 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for the user Preferences screen.
+   * @param category - Optional category whose tab should be active
+   */
+  static forPreferences(category?: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.PREFERENCES, category, {}, layout);
+  }
+
+  /**
    * Check equality with another dock pointer
    */
   equals(other: DockPointer): boolean {
@@ -1070,6 +1078,13 @@ export class DockPointer implements IDockPointer {
     if (this.viewType === ViewType.ASSETS) {
       return `${ViewType.ASSETS}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
     }
+    // Pointer-folding views (e.g. Preferences) collapse all their category/field
+    // sub-pointers into ONE tab: identity is the viewType, pointer dropped. The
+    // flag lives in VIEWER_REGISTRY so this stays declarative (cf. the fullbleed
+    // check above) instead of hardcoding viewTypes here.
+    if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
+      return `${this.viewType}|`;
+    }
     return `${this.viewType}|${this.pointer ?? ''}`;
   }
 
@@ -1090,6 +1105,12 @@ export class DockPointer implements IDockPointer {
         options: this.scopeFilter ? scopeFilterToDockOptions(this.scopeFilter) : undefined,
         tabHash: this.tabHash,
       });
+    }
+    // Pointer-folding views (Preferences, …) persist a constant identity: pointer
+    // normalized to '' so the backend mints ONE Tab row regardless of which
+    // category was last viewed (same intent as the ASSETS scope-folding above).
+    if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
+      return JSON.stringify({ viewType: this.viewType, pointer: '' });
     }
     return JSON.stringify({ viewType: this.viewType ?? '', pointer: this.pointer ?? '' });
   }

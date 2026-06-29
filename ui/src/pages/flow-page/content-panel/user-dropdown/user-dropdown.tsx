@@ -404,12 +404,12 @@ export function UserDropdown() {
                   </>
                 )}
                 <DropdownMenuItem
-                  onClick={() => navigation.openSettings()}
+                  onClick={() => navigation.openPreferences()}
                   className="cursor-pointer"
-                  data-testid="app-settings-button"
+                  data-testid="app-preferences-button"
                 >
                   <Settings className="mr-2 h-4 w-4" />
-                  <Trans>App Settings</Trans>
+                  <Trans>Preferences</Trans>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setIsAccountDialogOpen(true)}

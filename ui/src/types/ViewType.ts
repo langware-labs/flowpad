@@ -84,6 +84,14 @@ export interface ViewerMeta {
    * "is the strip shown?" bit, separate from `DockPointer.tabHash` ("is this a chip?").
    */
   chrome?: 'fullbleed' | 'workspace';
+  /**
+   * When true, every sub-pointer of this viewType folds into ONE tab — the
+   * pointer is dropped from tab identity (`DockPointer.tabHash`/`toJSON`). Use for
+   * views whose pointer is in-view sub-navigation (category/field) rather than a
+   * distinct entity, e.g. Preferences' category tabs. (ASSETS folds too, but by a
+   * *computed* scope key, so it keeps its own bespoke branch.)
+   */
+  foldsPointer?: boolean;
 }
 
 export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
@@ -273,6 +281,13 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Settings',
     tabLocation: 'dedicated',
     canAddAsTab: false,
+  },
+  [ViewType.PREFERENCES]: {
+    title: 'Preferences',
+    iconName: 'Settings',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
   },
   [ViewType.AGENTIC_PROCESS]: {
     title: 'Process',
