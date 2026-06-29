@@ -224,8 +224,15 @@ const PlanFileEditor: React.FC = () => {
   // page from the loader, a missing file is the `error` state below).
   if (!filePath) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
+      <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        {/* Always offer a way out: a plan pointer that never resolves to a file
+            path (stale bookmark / mis-minted vfs pointer with no sub-path) would
+            otherwise strand the user on an infinite spinner with no close. */}
+        <Button size="sm" variant="outline" onClick={handleCancel} title={t`Go back`}>
+          <X className="mr-2 h-4 w-4" />
+          <Trans>Go back</Trans>
+        </Button>
       </div>
     );
   }
