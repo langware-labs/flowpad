@@ -8,7 +8,7 @@
     "dev": "vite",
     "i18n:extract": "lingui extract",
     "i18n:compile": "lingui compile",
-    "build": "lingui compile && vite build",
+    "build": "lingui extract && lingui compile && vite build",
     "build:sdk": "vite build --config vite.iife.config.ts",
     "preview": "vite preview",
     "lint": "eslint .",
