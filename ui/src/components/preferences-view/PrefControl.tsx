@@ -7,7 +7,7 @@ import { Textarea } from '@src/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { NOTIFICATION_SOUNDS } from '@src/assets/sounds/notification/manifest';
 import { Play } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useState } from 'react';
 
 /**
  * Resolve a pref's selectable options. Static `options` win; `optionsSource`
@@ -22,6 +22,51 @@ function resolveOptions(info: PrefInfo): PrefOption[] {
   return [];
 }
 
+/** Label + description block — the "content" half of a settings row. */
+function RowHeader({ id, info }: { id: string; info: PrefInfo }) {
+  return (
+    <div className="min-w-0">
+      <Label htmlFor={id} className="cursor-pointer text-sm font-medium text-foreground">
+        {info.label}
+      </Label>
+      {info.description && (
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{info.description}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A settings row. By default the control sits in a tight right column beside its
+ * label (toggles, selects, numbers); `block` stacks a full-width control under the
+ * label (multi-line JSON). The whole row shares one hover surface so the control
+ * always reads as belonging to its label.
+ */
+function PrefRow({
+  block = false,
+  header,
+  control,
+}: {
+  block?: boolean;
+  header: ReactNode;
+  control: ReactNode;
+}) {
+  if (block) {
+    return (
+      <div className="flex flex-col gap-3 px-5 py-4 transition-colors hover:bg-muted/30">
+        {header}
+        {control}
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between gap-6 px-5 py-4 transition-colors hover:bg-muted/30">
+      {header}
+      <div className="flex shrink-0 items-center">{control}</div>
+    </div>
+  );
+}
+
 /**
  * A single registry-driven preference control. Renders the right input for the
  * pref's `dataType` and reads/writes the value via {@link usePreference}.
@@ -29,68 +74,60 @@ function resolveOptions(info: PrefInfo): PrefOption[] {
 export function PrefControl({ info }: { info: PrefInfo }) {
   const [value, setValue] = usePreference<unknown>(info.key);
   const id = `pref-${info.key}`;
-
-  const labelBlock = (
-    <Label htmlFor={id} className="cursor-pointer text-sm">
-      {info.label}
-      {info.description && (
-        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{info.description}</span>
-      )}
-    </Label>
-  );
+  const header = <RowHeader id={id} info={info} />;
 
   switch (info.dataType) {
     case PrefDataType.BOOL:
       return (
-        <div className="flex items-center justify-between gap-2">
-          {labelBlock}
-          <Switch
-            id={id}
-            checked={value === true}
-            onCheckedChange={(checked) => setValue(checked === true)}
-          />
-        </div>
+        <PrefRow
+          header={header}
+          control={
+            <Switch
+              id={id}
+              checked={value === true}
+              onCheckedChange={(checked) => setValue(checked === true)}
+            />
+          }
+        />
       );
 
     case PrefDataType.STRING: {
       // dataType STRING ⇒ the stored value is a string (coerced by the store).
       const strValue = (value ?? '') as string;
       const options = resolveOptions(info);
-      if (options.length > 0) {
-        return (
-          <div className="flex flex-col gap-2">
-            {labelBlock}
-            <SelectControl id={id} options={options} value={strValue} onChange={setValue} />
-          </div>
+      const control =
+        options.length > 0 ? (
+          <SelectControl id={id} options={options} value={strValue} onChange={setValue} />
+        ) : (
+          <Input
+            id={id}
+            value={strValue}
+            onChange={(e) => setValue(e.target.value)}
+            className="h-9 w-56"
+          />
         );
-      }
-      return (
-        <div className="flex flex-col gap-2">
-          {labelBlock}
-          <Input id={id} value={strValue} onChange={(e) => setValue(e.target.value)} />
-        </div>
-      );
+      return <PrefRow header={header} control={control} />;
     }
 
     case PrefDataType.NUMBER:
       return (
-        <div className="flex flex-col gap-2">
-          {labelBlock}
-          <Input
-            id={id}
-            type="number"
-            value={Number(value ?? 0)}
-            onChange={(e) => setValue(e.target.value === '' ? 0 : Number(e.target.value))}
-          />
-        </div>
+        <PrefRow
+          header={header}
+          control={
+            <Input
+              id={id}
+              type="number"
+              value={Number(value ?? 0)}
+              onChange={(e) => setValue(e.target.value === '' ? 0 : Number(e.target.value))}
+              className="h-9 w-28 text-right tabular-nums"
+            />
+          }
+        />
       );
 
     case PrefDataType.JSON:
       return (
-        <div className="flex flex-col gap-2">
-          {labelBlock}
-          <JsonControl id={id} value={value} onChange={setValue} />
-        </div>
+        <PrefRow block header={header} control={<JsonControl id={id} value={value} onChange={setValue} />} />
       );
 
     default:
@@ -98,7 +135,7 @@ export function PrefControl({ info }: { info: PrefInfo }) {
   }
 }
 
-/** Select with an optional per-option audio preview button. */
+/** Select with an optional per-option audio preview button. Sits in the right column. */
 function SelectControl({
   id,
   options,
@@ -112,9 +149,9 @@ function SelectControl({
 }) {
   const hasPreview = options.some((o) => o.previewUrl);
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={id} className="w-full">
+        <SelectTrigger id={id} className="h-9 w-56">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -132,7 +169,7 @@ function SelectControl({
             const url = options.find((o) => o.value === value)?.previewUrl;
             if (url) void soundService.play(url);
           }}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
           title="Preview"
           aria-label="Preview sound"
         >
@@ -167,12 +204,12 @@ function JsonControl({
   }, [serialized]);
 
   return (
-    <>
+    <div className="flex flex-col gap-1.5">
       <Textarea
         id={id}
         value={draft}
         rows={6}
-        className="font-mono text-xs"
+        className={`font-mono text-xs leading-relaxed ${error ? 'border-red-500/60 focus-visible:ring-red-500/40' : ''}`}
         onChange={(e) => {
           const text = e.target.value;
           setDraft(text);
@@ -185,7 +222,7 @@ function JsonControl({
           }
         }}
       />
-      {error && <span className="text-xs text-red-500">{error}</span>}
-    </>
+      {error && <span className="text-xs font-medium text-red-500">{error}</span>}
+    </div>
   );
 }
