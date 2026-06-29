@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Bell } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { useBadgeStore } from '../store';
 import { NotificationGlyph } from '../NotificationOutlet';
@@ -9,6 +10,7 @@ import { runAction } from '../commands';
 import type { NotificationData } from '../types';
 
 function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismiss: (id: string) => void }) {
+  const { t } = useLingui();
   const primary = data.actions?.[0];
   const activate = () => {
     if (!primary) return;
@@ -26,7 +28,7 @@ function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismi
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{data.title}</span>
-        <span className="text-xs text-muted-foreground">{formatTimeAgo(new Date(data.timestamp).toISOString()) ?? 'just now'}</span>
+        <span className="text-xs text-muted-foreground">{formatTimeAgo(new Date(data.timestamp).toISOString()) ?? t`just now`}</span>
         <NotificationProcessLine data={data} />
       </div>
       {primary && (
@@ -50,7 +52,7 @@ function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismi
           onDismiss(data.id);
         }}
         className="flex-shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-        aria-label="Dismiss notification"
+        aria-label={t`Dismiss notification`}
       >
         ✕
       </button>
@@ -76,12 +78,12 @@ export function NotificationFeed() {
       <div className="mb-2 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
           <Bell className="h-4 w-4" />
-          Notifications
+          <Trans>Notifications</Trans>
           <span className="rounded-full bg-primary/20 px-2 py-0.5 text-xs">{badges.length}</span>
         </h3>
         {badges.length > 1 && (
           <button onClick={clearAll} className="text-xs text-muted-foreground hover:text-foreground">
-            Clear all
+            <Trans>Clear all</Trans>
           </button>
         )}
       </div>
@@ -91,7 +93,7 @@ export function NotificationFeed() {
           <NotificationItem key={data.id} data={data} onDismiss={remove} />
         ))}
         {badges.length > 5 && (
-          <p className="text-center text-xs text-muted-foreground">+{badges.length - 5} more notifications</p>
+          <p className="text-center text-xs text-muted-foreground"><Trans>+{badges.length - 5} more notifications</Trans></p>
         )}
       </div>
     </div>

@@ -18,6 +18,7 @@ import {
   Star,
   TriangleAlert,
 } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 
@@ -241,7 +242,7 @@ function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) 
       }`}
     >
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      {copied ? 'Copied' : label}
+      {copied ? <Trans>Copied</Trans> : label}
     </button>
   );
 }
@@ -299,7 +300,7 @@ function AssetCard({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
         </span>
         <TrustBadge trust={asset.trust} />
         <Button size="sm" className="ml-auto h-7 gap-1 px-3 text-xs">
-          Install <ChevronRight className="h-3 w-3" />
+          <Trans>Install</Trans> <ChevronRight className="h-3 w-3" />
         </Button>
       </div>
     </article>
@@ -347,7 +348,7 @@ function DetailPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) 
           {/* INSTALL */}
           <section>
             <div className="mb-2 flex items-center justify-between">
-              <h3 className={SECTION_TITLE}>Install</h3>
+              <h3 className={SECTION_TITLE}><Trans>Install</Trans></h3>
               <div className="flex items-center gap-0.5 rounded-lg border bg-muted p-0.5">
                 {(['project', 'user'] as const).map((s) => (
                   <button
@@ -404,7 +405,7 @@ function DetailPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) 
 
           {/* CONTENTS */}
           <section>
-            <h3 className={`mb-2 ${SECTION_TITLE}`}>Contents</h3>
+            <h3 className={`mb-2 ${SECTION_TITLE}`}><Trans>Contents</Trans></h3>
             <div className="overflow-hidden rounded-xl border bg-card">
               {asset.contents.map((c, i) => {
                 const { Icon, label } = TYPE_META[c.kind];
@@ -421,7 +422,7 @@ function DetailPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) 
 
           {/* TRUST */}
           <section>
-            <h3 className={`mb-2 ${SECTION_TITLE}`}>Trust &amp; provenance</h3>
+            <h3 className={`mb-2 ${SECTION_TITLE}`}><Trans>Trust &amp; provenance</Trans></h3>
             <div className="space-y-2.5 rounded-xl border bg-card p-4 text-sm">
               <div className="flex items-center gap-2">
                 <ShieldCheck className={`h-4 w-4 ${asset.trust !== 'community' ? 'text-emerald-500' : 'text-muted-foreground'}`} />
@@ -453,7 +454,7 @@ function DetailPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) 
 
           {/* README */}
           <section>
-            <h3 className={`mb-2 ${SECTION_TITLE}`}>Readme</h3>
+            <h3 className={`mb-2 ${SECTION_TITLE}`}><Trans>Readme</Trans></h3>
             <div className="space-y-2 rounded-xl border bg-card p-4 text-sm leading-relaxed text-muted-foreground">
               <p className="font-medium text-foreground">## {asset.name}</p>
               <p>
@@ -473,6 +474,7 @@ function DetailPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) 
 /* ────────────────────────── page ────────────────────────── */
 
 export default function DiscoverPage() {
+  const { t } = useLingui();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [types, setTypes] = useState<Set<AssetKind>>(new Set());
@@ -498,8 +500,8 @@ export default function DiscoverPage() {
     <div className="flex h-screen flex-col bg-background text-foreground">
       {/* ── app chrome header ── */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b bg-background/80 px-4 py-2 backdrop-blur-xl">
-        <button onClick={() => void navigate('/')} aria-label="Back to home" className="flex items-center">
-          <img src={flowpadLogo} alt="Flowpad" className="max-h-7 object-contain dark:brightness-0 dark:invert" />
+        <button onClick={() => void navigate('/')} aria-label={t`Back to home`} className="flex items-center">
+          <img src={flowpadLogo} alt={t`Flowpad`} className="max-h-7 object-contain dark:brightness-0 dark:invert" />
         </button>
         <div className="flex items-center gap-2">
           <ThemeToggle />
@@ -518,14 +520,14 @@ export default function DiscoverPage() {
             <div className="relative">
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs text-muted-foreground">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-                Portable core · Claude Code · Codex · Copilot
+                <Trans>Portable core · Claude Code · Codex · Copilot</Trans>
               </div>
               <h1 className="max-w-3xl text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl">
-                Discover agentic assets.
+                <Trans>Discover agentic assets.</Trans>
               </h1>
               <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-                Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot{' '}
-                <span className="font-medium text-foreground">in one line.</span>
+                <Trans>Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot{' '}
+                <span className="font-medium text-foreground">in one line.</span></Trans>
               </p>
 
               <div className="mt-7 max-w-2xl overflow-hidden rounded-xl border bg-card shadow-lg shadow-primary/5">
@@ -533,7 +535,7 @@ export default function DiscoverPage() {
                   <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
                   <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
                   <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-                  <span className="ml-2 font-mono text-xs text-muted-foreground">install any asset</span>
+                  <span className="ml-2 font-mono text-xs text-muted-foreground"><Trans>install any asset</Trans></span>
                 </div>
                 <div className="flex items-center gap-3 px-4 py-4">
                   <span className="select-none font-mono text-primary">$</span>
@@ -549,10 +551,10 @@ export default function DiscoverPage() {
           {/* ── featured teams ── */}
           <section className="pb-6">
             <div className="mb-3 flex items-center gap-2">
-              <h2 className={SECTION_TITLE}>Teams across the org</h2>
+              <h2 className={SECTION_TITLE}><Trans>Teams across the org</Trans></h2>
               {team && (
                 <button onClick={() => setTeam(null)} className="text-[11px] font-medium text-primary hover:underline">
-                  Clear
+                  <Trans>Clear</Trans>
                 </button>
               )}
             </div>
@@ -589,7 +591,7 @@ export default function DiscoverPage() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search assets, teams…"
+                  placeholder={t`Search assets, teams…`}
                   className="w-full rounded-lg border bg-background py-1.5 pl-8 pr-3 text-sm outline-none focus:border-primary"
                 />
               </div>
@@ -618,9 +620,9 @@ export default function DiscoverPage() {
                   onChange={(e) => setSort(e.target.value as typeof sort)}
                   className="rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:border-primary"
                 >
-                  <option value="trending">Trending</option>
-                  <option value="recent">Recent</option>
-                  <option value="stars">Most stars</option>
+                  <option value="trending">{t`Trending`}</option>
+                  <option value="recent">{t`Recent`}</option>
+                  <option value="stars">{t`Most stars`}</option>
                 </select>
               </div>
             </div>
@@ -637,15 +639,15 @@ export default function DiscoverPage() {
             ) : (
               <div className="py-20 text-center text-muted-foreground">
                 <Grid2x2 className="mx-auto mb-3 h-8 w-8 opacity-50" />
-                <p className="text-sm">No assets match those filters.</p>
+                <p className="text-sm"><Trans>No assets match those filters.</Trans></p>
               </div>
             )}
           </section>
 
           {/* ── footer note ── */}
           <footer className="flex flex-col items-center justify-between gap-3 border-t py-8 text-xs text-muted-foreground sm:flex-row">
-            <span>Skills + AGENTS.md + MCP are the portable core; plugins &amp; native agents are per-harness adapters.</span>
-            <span className="font-mono">discover · concept</span>
+            <span><Trans>Skills + AGENTS.md + MCP are the portable core; plugins &amp; native agents are per-harness adapters.</Trans></span>
+            <span className="font-mono"><Trans>discover · concept</Trans></span>
           </footer>
         </div>
       </main>

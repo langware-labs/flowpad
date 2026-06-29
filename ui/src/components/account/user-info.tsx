@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { notify } from '@src/notifications';
 import { Chip } from '../label-chip';
 import { OrganizationChip } from './organization-chip';
+import { useLingui, Trans } from '@lingui/react/macro';
 
 interface UserInfoProps {
   user: User;
@@ -67,6 +68,7 @@ function computeButton(
 }
 
 export function UserInfo({ user }: UserInfoProps) {
+  const { t } = useLingui();
   const [copied, setCopied] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -86,27 +88,27 @@ export function UserInfo({ user }: UserInfoProps) {
     try {
       if (action === 'sign_in') {
         await cloudManager.login();
-        notify.success({ title: 'Signed in', id: 'cloud-conn-action' });
+        notify.success({ title: t`Signed in`, id: 'cloud-conn-action' });
       } else if (action === 'reconnect') {
         const result = await cloudManager.connectHubWs();
         if (result.hub_ws_verified) {
-          notify.success({ title: 'Reconnected', message: 'Hub WebSocket profile verified.', id: 'cloud-conn-action' });
+          notify.success({ title: t`Reconnected`, message: t`Hub WebSocket profile verified.`, id: 'cloud-conn-action' });
         } else {
-          notify.success({ title: 'Connected', message: 'Hub WebSocket connected.', id: 'cloud-conn-action' });
+          notify.success({ title: t`Connected`, message: t`Hub WebSocket connected.`, id: 'cloud-conn-action' });
         }
       } else if (action === 'verify') {
         const result = await cloudManager.verifyHubWs();
         if (result.hub_ws_verified) {
-          notify.success({ title: 'Verified', message: 'Hub WebSocket profile matches.', id: 'cloud-conn-action' });
+          notify.success({ title: t`Verified`, message: t`Hub WebSocket profile matches.`, id: 'cloud-conn-action' });
         }
       } else if (action === 'disconnect') {
         await cloudManager.disconnectHubWs();
-        notify.success({ title: 'Disconnected', message: 'Hub WebSocket listener stopped.', id: 'cloud-conn-action' });
+        notify.success({ title: t`Disconnected`, message: t`Hub WebSocket listener stopped.`, id: 'cloud-conn-action' });
       }
     } catch (err) {
       notify.error({
         title: button.label + ' failed',
-        message: err instanceof Error ? err.message : 'Unknown error.',
+        message: err instanceof Error ? err.message : t`Unknown error.`,
         id: 'cloud-conn-action',
       });
     } finally {
@@ -138,14 +140,14 @@ export function UserInfo({ user }: UserInfoProps) {
   return (
     <div className="flex flex-col gap-4 p-4">
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-semibold text-muted-foreground">Name:</label>
+        <label className="text-sm font-semibold text-muted-foreground"><Trans>Name:</Trans></label>
         <div className="text-base">{user.displayName}</div>
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-semibold text-muted-foreground">Email:</label>
+        <label className="text-sm font-semibold text-muted-foreground"><Trans>Email:</Trans></label>
         <div className="flex items-center gap-2">
-          <div className="min-w-0 break-all text-base">{user.email || 'N/A'}</div>
+          <div className="min-w-0 break-all text-base">{user.email || t`N/A`}</div>
           {user.email && (
             <Button
               variant="ghost"
@@ -162,7 +164,7 @@ export function UserInfo({ user }: UserInfoProps) {
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-semibold text-muted-foreground">User ID:</label>
+        <label className="text-sm font-semibold text-muted-foreground"><Trans>User ID:</Trans></label>
         <div className="flex items-center gap-2">
           <div className="font-mono text-sm text-muted-foreground">{user.id}</div>
           <Button
@@ -181,19 +183,19 @@ export function UserInfo({ user }: UserInfoProps) {
       <div className="flex flex-col gap-3 rounded-md border p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <label className="text-sm font-semibold text-muted-foreground">Flowpad Cloud:</label>
+            <label className="text-sm font-semibold text-muted-foreground"><Trans>Flowpad Cloud:</Trans></label>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <Badge variant={loginVisual.variant} className="gap-1">
                 <LoginIcon className={`h-3 w-3 ${loginVisual.iconClassName ?? ''}`.trim()} />
-                {loginVisual.text}
+                <Trans>{loginVisual.text}</Trans>
               </Badge>
               <Badge variant={connectionVisual.variant} className="gap-1">
                 <ConnectionIcon className={`h-3 w-3 ${connectionVisual.iconClassName ?? ''}`.trim()} />
-                {connectionVisual.text}
+                <Trans>{connectionVisual.text}</Trans>
               </Badge>
             </div>
             {cloudUrl && (
-              <div className="mt-1 text-xs text-muted-foreground break-all">Hub: {cloudUrl}</div>
+              <div className="mt-1 text-xs text-muted-foreground break-all"><Trans>Hub: {cloudUrl}</Trans></div>
             )}
           </div>
           <Button
@@ -205,26 +207,26 @@ export function UserInfo({ user }: UserInfoProps) {
             }}
           >
             {buttonBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-            {button.label}
+            <Trans>{button.label}</Trans>
           </Button>
         </div>
 
         {connection.status === 'auth_rejected' && (
           <div className="text-xs text-destructive">
-            {connection.error ?? 'The hub refused this client.'}
+            {connection.error ?? t`The hub refused this client.`}
           </div>
         )}
         {connection.status === 'error' && connection.error && (
           <div className="text-xs text-destructive">{connection.error}</div>
         )}
         {login.status === 'login_failed' && login.reason && (
-          <div className="text-xs text-destructive">Login: {login.reason}</div>
+          <div className="text-xs text-destructive"><Trans>Login: {login.reason}</Trans></div>
         )}
       </div>
 
       {user.organization_id && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground">Organization:</label>
+          <label className="text-sm font-semibold text-muted-foreground"><Trans>Organization:</Trans></label>
           <div className="flex flex-wrap gap-2">
             <OrganizationChip orgId={user.organization_id} role={user.organization_role} />
           </div>
@@ -233,28 +235,28 @@ export function UserInfo({ user }: UserInfoProps) {
 
       {user.picture && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground">Profile Picture:</label>
-          <img src={user.picture} alt="Profile" className="h-16 w-16 rounded-full border-2 object-cover" />
+          <label className="text-sm font-semibold text-muted-foreground"><Trans>Profile Picture:</Trans></label>
+          <img src={user.picture} alt={t`Profile`} className="h-16 w-16 rounded-full border-2 object-cover" />
         </div>
       )}
 
       {user.last_login && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground">Last Login:</label>
+          <label className="text-sm font-semibold text-muted-foreground"><Trans>Last Login:</Trans></label>
           <div className="text-base">{new Date(user.last_login).toLocaleString()}</div>
         </div>
       )}
 
       {version && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground">Version:</label>
+          <label className="text-sm font-semibold text-muted-foreground"><Trans>Version:</Trans></label>
           <div className="font-mono text-sm text-muted-foreground">v{version}</div>
         </div>
       )}
 
       {user.labels && user.labels.length > 0 && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-muted-foreground">Labels:</label>
+          <label className="text-sm font-semibold text-muted-foreground"><Trans>Labels:</Trans></label>
           <div className="flex flex-wrap gap-2">
             {user.labels.map((label) => (
               <Chip key={label} label={label} selected={false} onClick={() => {}} />

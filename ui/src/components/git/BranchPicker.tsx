@@ -4,6 +4,7 @@ import { Input } from '@src/components/ui/input';
 import { useGitBranches } from '@src/hooks/use-git-providers';
 import { ArrowLeft, GitBranch, Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface BranchPickerProps {
   repo: { provider: GitProvider; owner: string; name: string; default_branch: string; full_name: string };
@@ -24,6 +25,7 @@ function pinDefault(branches: BranchSummary[], defaultName: string): BranchSumma
 export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
   const { data: branches, isLoading, isError, error } = useGitBranches(repo);
   const [query, setQuery] = useState('');
+  const { t } = useLingui();
 
   const list = useMemo(() => {
     const base = branches ?? [];
@@ -39,7 +41,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
         <span className="font-medium">{repo.full_name}</span>
-        <span className="text-muted-foreground">· pick a branch</span>
+        <span className="text-muted-foreground"><Trans>· pick a branch</Trans></span>
       </div>
 
       <div className="relative">
@@ -47,7 +49,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter branches…"
+          placeholder={t`Filter branches…`}
           className="pl-7 text-sm"
           autoFocus
         />
@@ -56,7 +58,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
       <div className="max-h-[240px] overflow-y-auto rounded-md border border-border">
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading branches…
+            <Loader2 className="h-4 w-4 animate-spin" /> <Trans>Loading branches…</Trans>
           </div>
         ) : isError ? (
           <div className="px-3 py-4 text-xs text-destructive">
@@ -77,10 +79,10 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
                 <GitBranch className="h-3 w-3 text-muted-foreground" />
                 <span className="flex-1 font-mono">{branch.name}</span>
                 {branch.name === repo.default_branch && (
-                  <span className="rounded bg-muted px-1.5 py-px text-[10px] uppercase text-muted-foreground">default</span>
+                  <span className="rounded bg-muted px-1.5 py-px text-[10px] uppercase text-muted-foreground"><Trans>default</Trans></span>
                 )}
                 {branch.protected && (
-                  <span className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] uppercase text-amber-700 dark:text-amber-300">protected</span>
+                  <span className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] uppercase text-amber-700 dark:text-amber-300"><Trans>protected</Trans></span>
                 )}
               </li>
             ))}

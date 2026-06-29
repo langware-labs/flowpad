@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { ICronEvent } from '@sdk';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -99,16 +100,17 @@ function TimeRow({ preset, time, onTimeChange, weekDay, onWeekDayChange, monthDa
   }
 
   if (preset === 'custom') {
+    const { t } = useLingui();
     return (
       <div className="flex flex-col gap-0.5">
         <input
           value={customExpr}
           onChange={(e) => onCustomExprChange(e.target.value)}
-          placeholder="* * * * *"
+          placeholder={t`* * * * *`}
           required
           className="w-full rounded border bg-background px-2 py-1 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         />
-        <p className="text-[10px] text-muted-foreground">min hr dom mon dow — or "30s" / "5m" for interval</p>
+        <p className="text-[10px] text-muted-foreground"><Trans>min hr dom mon dow — or "30s" / "5m" for interval</Trans></p>
       </div>
     );
   }
@@ -144,7 +146,7 @@ function TimeRow({ preset, time, onTimeChange, weekDay, onWeekDayChange, monthDa
           className="rounded border bg-background px-1.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         >
           {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-            <option key={d} value={String(d)}>Day {d}</option>
+            <option key={d} value={String(d)}><Trans>Day {d}</Trans></option>
           ))}
         </select>
       )}
@@ -171,6 +173,7 @@ interface CronFormProps {
 }
 
 export function CronForm({ initial = {}, defaultName = 'Today', onSubmit, onCancel, submitting }: CronFormProps) {
+  const { t } = useLingui();
   const parsed = parseCron(initial.trigger_type, initial.expr);
 
   const [name, setName]             = useState(initial.name ?? defaultName);
@@ -203,14 +206,14 @@ export function CronForm({ initial = {}, defaultName = 'Today', onSubmit, onCanc
       <Input
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="Today"
+        placeholder={t`Today`}
         required
         className="h-7 text-xs"
       />
       <Input
         value={description}
         onChange={(e) => setDesc(e.target.value)}
-        placeholder="Description like prepare my daily brief"
+        placeholder={t`Description like prepare my daily brief`}
         className="h-7 text-xs"
       />
 
@@ -234,10 +237,10 @@ export function CronForm({ initial = {}, defaultName = 'Today', onSubmit, onCanc
       {/* Actions */}
       <div className="flex gap-2 justify-end pt-0.5">
         <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={submitting} className="h-6 text-xs">
-          Cancel
+          <Trans>Cancel</Trans>
         </Button>
         <Button type="submit" size="sm" disabled={!name || submitting} className="h-6 text-xs">
-          {submitting ? 'Saving…' : initial.name ? 'Save' : 'Create'}
+          {submitting ? t`Saving…` : initial.name ? t`Save` : t`Create`}
         </Button>
       </div>
     </form>

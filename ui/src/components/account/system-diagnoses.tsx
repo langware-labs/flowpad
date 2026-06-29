@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState, type ComponentType } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -63,6 +64,7 @@ function ConvPickerButton({
   onPick: (conversationId: string) => void;
   disabled?: boolean;
 }) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const conversations = useRecentConversations(open);
 
@@ -83,7 +85,7 @@ function ConvPickerButton({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
         {conversations.length === 0 ? (
-          <DropdownMenuItem disabled>No conversations yet.</DropdownMenuItem>
+          <DropdownMenuItem disabled><Trans>No conversations yet.</Trans></DropdownMenuItem>
         ) : (
           conversations.map((conv) => (
             <DropdownMenuItem key={conv.id} onSelect={() => onPick(conv.id)}>
@@ -109,63 +111,64 @@ function DiagnosisRowActions({
   /** Called after a successful forward — the parent opens the conversation. */
   onForwarded: (conversationId: string) => void;
 }) {
+  const { t } = useLingui();
   // "Report issue" — email the diagnosis to the Flowpad team (no conversation).
   const handleReport = useCallback(async () => {
     try {
       await sendDiagnosisEmailReport(diag.id);
-      notify.success({ title: 'Diagnosis reported to the Flowpad team' });
+      notify.success({ title: t`Diagnosis reported to the Flowpad team` });
     } catch (e) {
       notify.error({
-        title: 'Could not report diagnosis',
-        message: e instanceof Error ? e.message : 'Report failed.',
+        title: t`Could not report diagnosis`,
+        message: e instanceof Error ? e.message : t`Report failed.`,
       });
     }
-  }, [diag]);
+  }, [diag, t]);
 
   // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
     async (conversationId: string) => {
       try {
         await forwardDiagnosis(conversationId, diag.id);
-        notify.success({ title: 'Diagnosis forwarded' });
+        notify.success({ title: t`Diagnosis forwarded` });
         onForwarded(conversationId);
       } catch (e) {
         notify.error({
-          title: 'Could not forward diagnosis',
-          message: e instanceof Error ? e.message : 'Send failed.',
+          title: t`Could not forward diagnosis`,
+          message: e instanceof Error ? e.message : t`Send failed.`,
         });
       }
     },
-    [diag, onForwarded],
+    [diag, onForwarded, t],
   );
 
   const handleCopy = useCallback(async () => {
     await copyToClipboard(diagnosisToText(diag));
-    notify.success({ title: 'Diagnosis copied to clipboard' });
-  }, [diag]);
+    notify.success({ title: t`Diagnosis copied to clipboard` });
+  }, [diag, t]);
 
   return (
     <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
-      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label="View diagnosis" title="View" onClick={onView}>
+      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label={t`View diagnosis`} title={t`View`} onClick={onView}>
         <Eye className="h-4 w-4" />
       </Button>
       <Button
         size="sm"
         variant="ghost"
         className="h-7 w-7 p-0"
-        aria-label="Report issue"
-        title="Report issue"
+        aria-label={t`Report issue`}
+        title={t`Report issue`}
         onClick={() => void handleReport()}
       >
         <Flag className="h-4 w-4" />
       </Button>
-      <ConvPickerButton icon={Forward} label="Forward" onPick={(id) => void handleForward(id)} />
+      <ConvPickerButton icon={Forward} label={t`Forward`} onPick={(id) => void handleForward(id)} />
       <Button
         size="sm"
         variant="ghost"
         className="h-7 w-7 p-0"
-        aria-label="Copy all"
-        title="Copy all"
+        aria-label={t`Copy all`}
+        title={t`Copy all`}
         onClick={() => void handleCopy()}
       >
         <Copy className="h-4 w-4" />
@@ -174,8 +177,8 @@ function DiagnosisRowActions({
         size="sm"
         variant="ghost"
         className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-        aria-label="Delete diagnosis"
-        title="Delete"
+        aria-label={t`Delete diagnosis`}
+        title={t`Delete`}
         onClick={onDelete}
       >
         <Trash2 className="h-4 w-4" />
@@ -192,6 +195,7 @@ function DiagnosisRowActions({
  * recorded diagnoses reflect automatically.
  */
 export function SystemDiagnoses() {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [viewId, setViewId] = useState<string | null>(null);
@@ -234,31 +238,31 @@ export function SystemDiagnoses() {
     <>
       <Button variant="outline" className="w-full" onClick={() => setOpen(true)}>
         <Stethoscope className="mr-2 h-4 w-4" />
-        System Diagnoses
+        <Trans>System Diagnoses</Trans>
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>System Diagnoses</DialogTitle>
+            <DialogTitle><Trans>System Diagnoses</Trans></DialogTitle>
             <DialogDescription>
-              Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis.
+              <Trans>Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis.</Trans>
             </DialogDescription>
           </DialogHeader>
 
           {loading ? (
-            <p className="p-4 text-sm text-muted-foreground">Loading…</p>
+            <p className="p-4 text-sm text-muted-foreground"><Trans>Loading…</Trans></p>
           ) : rows.length === 0 ? (
-            <p className="p-4 text-sm text-muted-foreground">No diagnoses recorded.</p>
+            <p className="p-4 text-sm text-muted-foreground"><Trans>No diagnoses recorded.</Trans></p>
           ) : (
             <div className="max-h-[60vh] overflow-y-auto rounded-lg border">
               <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[28%]">Title</TableHead>
-                    <TableHead className="w-[22%]">Recorded</TableHead>
-                    <TableHead className="w-[28%]">Summary</TableHead>
-                    <TableHead className="w-[22%] text-right">Actions</TableHead>
+                    <TableHead className="w-[28%]"><Trans>Title</Trans></TableHead>
+                    <TableHead className="w-[22%]"><Trans>Recorded</Trans></TableHead>
+                    <TableHead className="w-[28%]"><Trans>Summary</Trans></TableHead>
+                    <TableHead className="w-[22%] text-right"><Trans>Actions</Trans></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -305,9 +309,9 @@ export function SystemDiagnoses() {
         onOpenChange={(next) => {
           if (!next) setConfirmId(null);
         }}
-        title="Delete diagnosis"
-        description="Delete this diagnosis? This cannot be undone."
-        confirmLabel="Delete"
+        title={t`Delete diagnosis`}
+        description={t`Delete this diagnosis? This cannot be undone.`}
+        confirmLabel={t`Delete`}
         variant="destructive"
         onConfirm={() => {
           const target = confirmId;

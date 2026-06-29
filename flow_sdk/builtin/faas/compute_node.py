@@ -18,7 +18,7 @@ from flow_sdk.api.messages import ResponseMessage
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.compute.providers import ComputeProvider, get_compute_provider
 from flow_sdk.compute.providers.compute_provider import ListDirItem
-from flow_sdk.config import ComputeProviderType, StorageProvider
+from flow_sdk.config import ComputeProviderType, StorageProvider, get_os_root_path
 from flow_sdk.config import ComputeProviderType as ComputeProviderEnum
 from flow_sdk.core import action
 from flow_sdk.core.entity import Entity
@@ -41,6 +41,11 @@ from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 # Module-level activity registry: key = "{entity_typeid}:{job_name}"
 # Prevents duplicate concurrent scan/index jobs on the same compute node.
 _COMPUTE_ACTIVITIES: dict[str, "Any"] = {}
+
+# The uname of the singleton "this machine" compute node. INTERNAL to
+# ComputeNode.get_local / create_local — no other module should reference the
+# literal "local" / "compute_node-@local"; go through get_local() instead.
+_LOCAL_UNAME = "local"
 
 # The two terminal tab kinds: close is a full teardown (``_terminal_close``),
 # not clear-membership, and target parsing for the legacy terminals/* shim is
@@ -97,6 +102,141 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
                 from pathlib import Path as _Path  # noqa: PLC0415
 
                 self.home_dir = str(_Path.home())
+
+    # ──────────────────────────────────────────────────────────────────────
+    # The singleton @local compute node
+    #
+    # `@local` is the one compute node that represents "this machine". The
+    # entire local stack (PTY/shell, agentic processes, the file explorer, the
+    # app host) addresses it by uname, never by a cached id — so if the row goes
+    # missing (e.g. a project-delete cascade or a compute-node sweep deletes it
+    # out from under a running session) every one of those callers breaks.
+    #
+    # get_local() / create_local() are the SINGLE source of truth for resolving
+    # and minting it. Resolution is hardened (stable id → cache-invalidate retry
+    # → legacy uname → self-heal create) so callers can stop hand-rolling their
+    # own fallbacks and can drop their None-handling. The uname literal is an
+    # implementation detail of these two methods.
+    # ──────────────────────────────────────────────────────────────────────
+
+    @classmethod
+    def _local_id(cls) -> str:
+        """Deterministic per-machine id for the @local compute node. Single
+        source of truth (shared with bootstrap's @local user/project/workspace):
+        ``flow_sdk.utils.machine_id.local_entity_id``."""
+        from flow_sdk.utils.machine_id import local_entity_id  # noqa: PLC0415
+
+        return local_entity_id("compute_node")
+
+    @classmethod
+    async def _get_local_legacy(cls) -> "ComputeNode | None":
+        """Resolve a pre-stable-id @local row by ``uname='local'``, tolerating
+        duplicate rows (returns the first) the way bootstrap's
+        ``get_local_entity`` does."""
+        try:
+            return await cls.get_by_uname(_LOCAL_UNAME)
+        except Exception as exc:  # noqa: BLE001
+            if "Multiple rows were found" in str(exc):
+                try:
+                    rows = await cls.get_all({"match": {"uname": _LOCAL_UNAME}})
+                    if rows:
+                        logging.warning(
+                            "[compute-node] %d @local rows found; using first %s",
+                            len(rows), rows[0].id,
+                        )
+                        return rows[0]
+                except Exception as list_exc:  # noqa: BLE001
+                    logging.error("[compute-node] duplicate @local resolve failed: %s", list_exc)
+            else:
+                logging.error("[compute-node] legacy @local lookup failed: %s", exc)
+        return None
+
+    @classmethod
+    async def get_local(cls, *, create: bool = True) -> "ComputeNode | None":
+        """Return the singleton @local compute node — the one robust way to get it.
+
+        Resolution order, hardened against every way the row can go missing:
+          1. deterministic stable id (the common, cheap path)
+          2. cache-invalidating retry by id (a transient contention/cache miss
+             under heavy parallel writes can hide a row that is actually there)
+          3. legacy ``uname='local'`` row (databases written before stable-id),
+             with duplicate-row dedup
+          4. self-heal: ``create_local()`` when ``create`` is True
+
+        With ``create=True`` (the default) this NEVER returns ``None`` — callers
+        can drop their None-handling and stop hand-rolling fallbacks. Pass
+        ``create=False`` for read-only callers that must not mint a node as a
+        side effect (e.g. detaching it during project deletion).
+        """
+        local_id = cls._local_id()
+        node = await cls.get_by_id(local_id)
+        if node is None:
+            try:
+                from flow_sdk.core.cache.entity_cache import uname_cache  # noqa: PLC0415
+
+                uname_cache.invalidate("compute_node", _LOCAL_UNAME)
+            except Exception:  # noqa: BLE001
+                pass
+            node = await cls.get_by_id(local_id)
+        if node is None:
+            node = await cls._get_local_legacy()
+        if node is None and create:
+            node = await cls.create_local()
+        return node
+
+    @classmethod
+    async def create_local(cls, *, owner: "Any | None" = None) -> "ComputeNode":
+        """Mint (or, under a race, adopt) the singleton @local compute node.
+
+        Deterministic id + ``uname='local'``; SANDBOX storage mounted at the OS
+        root so the whole local filesystem is browsable; owner defaults to the
+        @local desktop user when one is resolvable.
+
+        Deliberately does NOT attach the node to any project. It is a shared,
+        machine-level singleton, not a project-owned child — attaching it as a
+        child created an ``is_child`` edge that project deletion cascaded
+        through, deleting the node out from under every live session.
+        """
+        os_root = get_os_root_path()
+        local_id = cls._local_id()
+
+        if owner is None:
+            try:
+                from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+                owner = await User.get_by_uname(_LOCAL_UNAME)
+            except Exception:  # noqa: BLE001
+                owner = None
+
+        node = cls(
+            id=local_id,
+            type="compute_node",
+            uname=_LOCAL_UNAME,
+            name="@local",
+            runtime=RuntimeEnvironment(name="local_desktop_runtime"),
+            node_provider_type=ComputeProviderType.LOCAL_MACHINE,
+            fs_storage_provider=StorageProvider.SANDBOX,
+            fs_storage_mount_path=os_root,
+            visitor_role="owner",
+            # Stable per-process provider id, needed for PTY ops. Set up-front so
+            # the create is a single atomic write (no follow-up save).
+            node_provider_id=f"name_{uuid.uuid4()}",
+        )
+        try:
+            await node.save(owner=owner)
+        except Exception as save_error:  # noqa: BLE001
+            # Concurrent creator minted the same deterministic id — adopt it.
+            if "already exist" in str(save_error).lower():
+                existing = await cls.get_by_id(local_id) or await cls.get_by_prop(
+                    "uname", _LOCAL_UNAME, "compute_node"
+                )
+                if existing:
+                    logging.info("[compute-node] @local create raced; adopting %s", existing.id)
+                    return existing
+            raise
+        await node.set_visitor_role("owner")
+        logging.info("[compute-node] created @local singleton %s mount=%s", node.id, os_root)
+        return node
 
     @property
     def compute_provider(self) -> "ComputeProvider":

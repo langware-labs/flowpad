@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { GitPanel } from '@src/components/terminal/interactive-terminal/side-windows';
 import React from 'react';
+import { Trans } from '@lingui/react/macro';
 
 interface GitStatusModalProps {
   open: boolean;
@@ -30,7 +31,7 @@ export const GitStatusModal: React.FC<GitStatusModalProps> = ({
         style={{ width: '90vw', maxWidth: '1000px', height: '85vh' }}
       >
         <DialogHeader className="shrink-0 border-b px-4 py-3">
-          <DialogTitle className="text-sm font-medium">Git changes</DialogTitle>
+          <DialogTitle className="text-sm font-medium"><Trans>Git changes</Trans></DialogTitle>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-hidden">
           <GitPanel computeNodeId={computeNodeId} workdir={workdir} onPushed={onPushed} />

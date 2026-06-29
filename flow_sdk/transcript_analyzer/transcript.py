@@ -439,7 +439,7 @@ class AgentTranscriptFile:
         """Usage entries across the whole assembled tree (incl. sub-agents).
 
         Each sub-agent file's usage was de-duplicated by its own parser
-        (``_usage_seen_msg_ids`` is per-file); we never re-dedup across files,
+        (keep-last by message.id, per-file); we never re-dedup across files,
         so concatenating is correct and never double-counts.
         """
         return [e for e in self.walk() if isinstance(e, UsageEntry)]

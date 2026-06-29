@@ -27,6 +27,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { Bookmark as BookmarkIcon, Copy, FolderOpen, Save, Send, ShieldOff, StickyNote, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import './milkdown.css';
 import { planNotePlugins } from './plan-note-plugin';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
@@ -51,6 +52,7 @@ export const SpecEditor: React.FC = () => {
 };
 
 const PlanFileEditor: React.FC = () => {
+  const { t } = useLingui();
   const { agenticProcess } = useContext() as { agenticProcess: AgenticProcess | null };
   const { navigation, currentDock } = useDockNavigation();
 
@@ -112,12 +114,12 @@ const PlanFileEditor: React.FC = () => {
   const updateDisabled = isExecuting || !canRunPlan;
   const executeTitle = (clearContext: boolean) =>
     !canRunPlan
-      ? 'Open this plan from its session to run it'
+      ? t`Open this plan from its session to run it`
       : isExecuted
-        ? 'Plan already executed'
+        ? t`Plan already executed`
         : clearContext
-          ? 'Execute the plan, clearing context first. Full trust mode ON.'
-          : 'Execute the plan. Full trust mode ON.';
+          ? t`Execute the plan, clearing context first. Full trust mode ON.`
+          : t`Execute the plan. Full trust mode ON.`;
   const [showShareDialog, setShowShareDialog] = useState(false);
   // Share the plan like any other entity: the .md file rides as a FILE
   // attachment. No Spec/Task is minted. Stable while the dialog is open.
@@ -237,7 +239,7 @@ const PlanFileEditor: React.FC = () => {
         </span>
         <button
           type="button"
-          title="Copy path"
+          title={t`Copy path`}
           className="shrink-0 rounded p-0.5 hover:bg-muted hover:text-foreground"
           onClick={() => void navigator.clipboard.writeText(filePath)}
         >
@@ -245,7 +247,7 @@ const PlanFileEditor: React.FC = () => {
         </button>
         <button
           type="button"
-          title="Show in folder (selects file for drag-and-drop)"
+          title={t`Show in folder (selects file for drag-and-drop)`}
           className="shrink-0 rounded p-0.5 hover:bg-muted hover:text-foreground disabled:opacity-40"
           disabled={!computeNodeTypeId}
           onClick={() => {
@@ -271,7 +273,7 @@ const PlanFileEditor: React.FC = () => {
             className={cn(executeDisabled && 'opacity-50')}
           >
             <ShieldOff className="mr-2 h-4 w-4 text-amber-500" />
-            Execute Plan (clear context)
+            <Trans>Execute Plan (clear context)</Trans>
           </Button>
 
           {/* Execute Plan [bypass ON] */}
@@ -284,7 +286,7 @@ const PlanFileEditor: React.FC = () => {
             className={cn(executeDisabled && 'opacity-50')}
           >
             <ShieldOff className="mr-2 h-4 w-4 text-amber-500" />
-            Execute Plan
+            <Trans>Execute Plan</Trans>
           </Button>
 
           {/* Update Plan */}
@@ -293,11 +295,11 @@ const PlanFileEditor: React.FC = () => {
             variant="outline"
             disabled={updateDisabled}
             onClick={() => saveAndRun(() => agenticProcess!.updatePlan(filePath))}
-            title={!canRunPlan ? 'Open this plan from its session to update it' : 'Update plan based on <plan-note> sections'}
+            title={!canRunPlan ? t`Open this plan from its session to update it` : t`Update plan based on <plan-note> sections`}
             className={cn(updateDisabled && 'opacity-50')}
           >
             <StickyNote className="mr-2 h-4 w-4" />
-            Update Plan
+            <Trans>Update Plan</Trans>
           </Button>
 
           {/* Share — the plan file rides as a plain file attachment */}
@@ -306,10 +308,10 @@ const PlanFileEditor: React.FC = () => {
             variant="outline"
             disabled={isExecuting || !computeNodeTypeId || !filePath}
             onClick={() => setShowShareDialog(true)}
-            title="Share this plan with someone"
+            title={t`Share this plan with someone`}
           >
             <Send className="mr-2 h-4 w-4" />
-            Share
+            <Trans>Share</Trans>
           </Button>
 
           {/* Cancel */}
@@ -318,10 +320,10 @@ const PlanFileEditor: React.FC = () => {
             variant="ghost"
             disabled={isExecuting}
             onClick={handleCancel}
-            title="Discard changes and go back"
+            title={t`Discard changes and go back`}
           >
             <X className="mr-2 h-4 w-4" />
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
 
           {/* Bookmark toggle — icon-only, pushed to the right */}
@@ -330,7 +332,7 @@ const PlanFileEditor: React.FC = () => {
             variant="ghost"
             className="ml-auto h-8 w-8 p-0"
             onClick={() => void handleBookmarkToggle()}
-            title={planBookmark ? 'Remove bookmark' : 'Bookmark this plan'}
+            title={planBookmark ? t`Remove bookmark` : t`Bookmark this plan`}
           >
             <BookmarkIcon className={cn('h-4 w-4', planBookmark && 'fill-current text-primary')} />
           </Button>
@@ -359,7 +361,7 @@ const PlanFileEditor: React.FC = () => {
             // The file couldn't be read (deleted on disk, unreadable). Clear
             // message instead of an infinite spinner.
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
-              <div className="text-base font-semibold text-foreground">Plan file not found</div>
+              <div className="text-base font-semibold text-foreground"><Trans>Plan file not found</Trans></div>
               <div className="font-mono text-xs">{filePath}</div>
             </div>
           ) : (
@@ -384,6 +386,7 @@ const PlanFileEditor: React.FC = () => {
  * of overlapping PUTs and a stuck ref status.
  */
 const SpecEntityEditor: React.FC = () => {
+  const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const specId = useMemo(() => {
     const head = currentDock?.pointer?.split('/')[0];
@@ -434,14 +437,14 @@ const SpecEntityEditor: React.FC = () => {
   if (!specId) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        No spec specified.
+        <Trans>No spec specified.</Trans>
       </div>
     );
   }
   if (!spec) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading spec…
+        <Trans>Loading spec…</Trans>
       </div>
     );
   }
@@ -460,30 +463,30 @@ const SpecEntityEditor: React.FC = () => {
             variant="default"
             onClick={handleSave}
             disabled={!isDirty || isSaving}
-            title={isDirty ? 'Save changes' : 'No unsaved changes'}
+            title={isDirty ? t`Save changes` : t`No unsaved changes`}
           >
             <Save className="mr-2 h-4 w-4" />
-            {isSaving ? 'Saving…' : 'Save'}
+            {isSaving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
           </Button>
 
           <Button
             size="sm"
             variant="outline"
             onClick={() => setShowShareDialog(true)}
-            title="Share this plan with someone"
+            title={t`Share this plan with someone`}
           >
             <Send className="mr-2 h-4 w-4" />
-            Share
+            <Trans>Share</Trans>
           </Button>
 
           <Button
             size="sm"
             variant="ghost"
             onClick={() => navigation.openDock(DockPointer.forInbox())}
-            title={isDirty ? 'Discard unsaved changes and go back to inbox' : 'Go back to inbox'}
+            title={isDirty ? t`Discard unsaved changes and go back to inbox` : t`Go back to inbox`}
           >
             <X className="mr-2 h-4 w-4" />
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
         </div>
       </div>

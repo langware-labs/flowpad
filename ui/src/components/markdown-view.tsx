@@ -1,6 +1,7 @@
 import { copyToClipboard } from '@sdk';
 import { Check, Copy } from 'lucide-react';
 import React, { useRef, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
@@ -26,6 +27,7 @@ function extractLanguage(children: React.ReactNode): string {
 function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeChrome: boolean }) {
   const preRef = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
+  const { t } = useLingui();
 
   if (!codeChrome) {
     return (
@@ -46,16 +48,16 @@ function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeCh
     <div className="group my-3 overflow-hidden rounded-lg border bg-muted/60">
       <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
         <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
-          {language || 'code'}
+          {language || t`code`}
         </span>
         <button
           type="button"
           onClick={() => void copy()}
-          aria-label="Copy code"
+          aria-label={t`Copy code`}
           className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? t`Copied` : t`Copy`}
         </button>
       </div>
       <pre

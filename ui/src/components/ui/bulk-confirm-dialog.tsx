@@ -8,6 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
+import { Trans } from '@lingui/react/macro';
 
 export interface BulkBucket {
   label: string;
@@ -73,7 +74,7 @@ export function BulkConfirmDialog({
         </AlertDialogHeader>
         <ul className="my-2 space-y-1 rounded-md border bg-muted/30 p-3 text-sm">
           {visible.length === 0 && (
-            <li className="text-muted-foreground">Nothing to do.</li>
+            <li className="text-muted-foreground"><Trans>Nothing to do.</Trans></li>
           )}
           {visible.map((b) => (
             <li
@@ -95,7 +96,7 @@ export function BulkConfirmDialog({
           ))}
           {visible.length > 1 && (
             <li className="mt-2 flex items-baseline justify-between gap-3 border-t pt-2 text-sm font-semibold">
-              <span>Total</span>
+              <span><Trans>Total</Trans></span>
               <span className="font-mono tabular-nums">{total}</span>
             </li>
           )}

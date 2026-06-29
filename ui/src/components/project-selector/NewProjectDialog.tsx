@@ -10,6 +10,7 @@ import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
 import { FolderOpen, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface NewProjectDialogProps {
   open: boolean;
@@ -29,6 +30,7 @@ export function NewProjectDialog({
   onPickFolder,
   onCreate,
 }: NewProjectDialogProps) {
+  const { t } = useLingui();
   const [name, setName] = useState('');
   const [parent, setParent] = useState(defaultParentFolder);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,7 +53,7 @@ export function NewProjectDialog({
       onOpenChange(false);
     } catch (err) {
       notify.error({
-        title: err instanceof Error ? err.message : 'Failed to create project',
+        title: err instanceof Error ? err.message : t`Failed to create project`,
       });
     } finally {
       setIsSubmitting(false);
@@ -68,11 +70,11 @@ export function NewProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New project</DialogTitle>
+          <DialogTitle><Trans>New project</Trans></DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <Input
-            placeholder="Project name"
+            placeholder={t`Project name`}
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
@@ -82,7 +84,7 @@ export function NewProjectDialog({
           />
           <div className="flex gap-2">
             <Input
-              placeholder="Parent folder"
+              placeholder={t`Parent folder`}
               value={parent}
               onChange={(e) => setParent(e.target.value)}
               className="flex-1 font-mono text-xs"
@@ -93,7 +95,7 @@ export function NewProjectDialog({
                 variant="outline"
                 size="icon"
                 onClick={() => void handleBrowse()}
-                title="Browse…"
+                title={t`Browse…`}
                 type="button"
               >
                 <FolderOpen className="h-4 w-4" />
@@ -103,11 +105,11 @@ export function NewProjectDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => void handleCreate()} disabled={!canCreate}>
             {isSubmitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-            Create
+            <Trans>Create</Trans>
           </Button>
         </DialogFooter>
       </DialogContent>

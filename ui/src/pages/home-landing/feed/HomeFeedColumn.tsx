@@ -13,6 +13,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { MessageSquarePlus, Rss, Send } from 'lucide-react';
 import { useCallback, useMemo, useState, type FormEvent } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { FeedEntryCard } from './FeedEntryCard';
 import { Button } from '@src/components/ui/button';
 import {
@@ -26,6 +27,7 @@ import {
 import { Textarea } from '@src/components/ui/textarea';
 
 export function HomeFeedColumn() {
+  const { t } = useLingui();
   const request = useMemo(() => new QueryRequest({ type: FeedEntry.type }), []);
   const { data: entries = [], refetch } = useEntitiesQuery<FeedEntry>(request);
   const newEntries = useMemo(
@@ -74,7 +76,7 @@ export function HomeFeedColumn() {
       } catch (err: unknown) {
         setSendError({
           entryId: entry.id ?? '',
-          message: err instanceof Error ? err.message : 'Failed to send report',
+          message: err instanceof Error ? err.message : t`Failed to send report`,
         });
       } finally {
         setBusyId(null);
@@ -97,7 +99,7 @@ export function HomeFeedColumn() {
       } catch (err: unknown) {
         setSendError({
           entryId: entry.id ?? '',
-          message: err instanceof Error ? err.message : 'Failed to send report',
+          message: err instanceof Error ? err.message : t`Failed to send report`,
         });
       } finally {
         setBusyId(null);
@@ -124,7 +126,7 @@ export function HomeFeedColumn() {
         setCommentOpen(false);
         await refetchVoid();
       } catch (err: unknown) {
-        setCreateError(err instanceof Error ? err.message : 'Failed to add comment');
+        setCreateError(err instanceof Error ? err.message : t`Failed to add comment`);
       } finally {
         setCreatingNote(false);
       }
@@ -151,7 +153,7 @@ export function HomeFeedColumn() {
         <div className="flex items-center justify-between border-b border-border p-3">
           <div className="flex items-center gap-2">
             <Rss className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">Feed</h3>
+            <h3 className="text-sm font-semibold"><Trans>Feed</Trans></h3>
             {newEntries.length > 0 && (
               <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                 {newEntries.length}
@@ -163,8 +165,8 @@ export function HomeFeedColumn() {
             size="icon"
             variant="ghost"
             className="h-7 w-7 shrink-0"
-            title="Add comment"
-            aria-label="Add comment"
+            title={t`Add comment`}
+            aria-label={t`Add comment`}
             onClick={() => setCommentOpen(true)}
           >
             <MessageSquarePlus className="h-3.5 w-3.5" />
@@ -172,7 +174,7 @@ export function HomeFeedColumn() {
         </div>
 
         {newEntries.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground">No feed items</div>
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground"><Trans>No feed items</Trans></div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-2">
             {newEntries.map((entry) => (
@@ -195,13 +197,13 @@ export function HomeFeedColumn() {
       <Dialog open={commentOpen} onOpenChange={handleCommentOpenChange}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Add comment</DialogTitle>
+            <DialogTitle><Trans>Add comment</Trans></DialogTitle>
           </DialogHeader>
 
           <form className="flex flex-col gap-3" onSubmit={(event) => void handleCreateNote(event)}>
             <Textarea
-              aria-label="Feed comment"
-              placeholder="Add comment..."
+              aria-label={t`Feed comment`}
+              placeholder={t`Add comment...`}
               value={noteDraft}
               disabled={creatingNote}
               onChange={(event) => setNoteDraft(event.target.value)}
@@ -216,12 +218,12 @@ export function HomeFeedColumn() {
             <DialogFooter>
               <DialogClose asChild>
                 <Button type="button" variant="outline" disabled={creatingNote}>
-                  Cancel
+                  <Trans>Cancel</Trans>
                 </Button>
               </DialogClose>
               <Button type="submit" disabled={!canCreateNote}>
                 <Send className="mr-2 h-3.5 w-3.5" />
-                Add
+                <Trans>Add</Trans>
               </Button>
             </DialogFooter>
           </form>

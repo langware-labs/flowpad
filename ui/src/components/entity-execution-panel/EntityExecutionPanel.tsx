@@ -16,6 +16,7 @@ import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-
 import ExecutionMessage from './execution-message/execution-message';
 import { useProject } from '@src/hooks/useProject';
 import { cn } from '@src/lib/utils';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -161,6 +162,7 @@ export function EntityExecutionPanel({
   transport = 'print',
   autoPrompt,
 }: EntityExecutionPanelProps) {
+  const { t } = useLingui();
   const targetStr = target ?? '';
 
   // 1. Pull all processes attached to this target; sort newest-first for picker + auto-select.
@@ -357,7 +359,7 @@ export function EntityExecutionPanel({
       await proc.prompt(text);
     } catch (err) {
       console.error('[EntityExecutionPanel] prompt failed', err);
-      notify.error({ title: 'Message not sent', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setSending(false);
     }
@@ -369,7 +371,7 @@ export function EntityExecutionPanel({
       await activeProcess.interruptTurn();
     } catch (err) {
       console.error('[EntityExecutionPanel] interrupt failed', err);
-      notify.error({ title: 'Could not stop', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Could not stop`, message: err instanceof Error ? err.message : String(err) });
     }
   }, [activeProcess]);
 
@@ -557,8 +559,8 @@ export function EntityExecutionPanel({
         variant="destructive"
         title={
           pendingDelete?.kind === 'all'
-            ? `Clear all past chats?`
-            : `Delete this chat?`
+            ? t`Clear all past chats?`
+            : t`Delete this chat?`
         }
         description={
           pendingDelete?.kind === 'all'
@@ -567,7 +569,7 @@ export function EntityExecutionPanel({
               ? `This will permanently delete "${pendingDelete.title}". The conversation transcript saved on disk is kept; only the process record is removed. This cannot be undone.`
               : ''
         }
-        confirmLabel={pendingDelete?.kind === 'all' ? 'Delete all' : 'Delete'}
+        confirmLabel={pendingDelete?.kind === 'all' ? t`Delete all` : t`Delete`}
         onConfirm={() => { void performDelete(); }}
       />
     </div>
@@ -606,6 +608,7 @@ function ExecutionHistoryHeader({
   pastSessionsLabel: string;
   noPastSessionsLabel: string;
 }) {
+  const { t } = useLingui();
   const iconBtn =
     'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
   return (
@@ -618,7 +621,7 @@ function ExecutionHistoryHeader({
           className="text-[11px] tabular-nums text-muted-foreground"
           data-testid="entity-execution-line-badge"
         >
-          line {cursorLine}
+          <Trans>line {cursorLine}</Trans>
         </span>
       )}
       <div className="flex-1" />
@@ -660,11 +663,11 @@ function ExecutionHistoryHeader({
                   onClearAll();
                 }}
                 className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                title="Clear all past chats"
+                title={t`Clear all past chats`}
                 data-testid="entity-execution-history-clear-all"
               >
                 <Trash2 className="h-3 w-3" />
-                Clear all
+                <Trans>Clear all</Trans>
               </button>
             )}
           </div>
@@ -718,7 +721,7 @@ function ExecutionHistoryHeader({
                           onDeleteSession(p.id!, title);
                         }}
                         className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60"
-                        title="Delete this chat"
+                        title={t`Delete this chat`}
                         data-testid={`entity-execution-history-delete-${p.id}`}
                       >
                         <X className="h-3 w-3" />

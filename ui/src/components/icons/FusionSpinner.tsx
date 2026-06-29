@@ -1,3 +1,5 @@
+import { useLingui } from '@lingui/react/macro';
+
 interface FusionSpinnerProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | number;
   className?: string;
@@ -32,8 +34,9 @@ export function FusionSpinner({ size = 'sm', className }: FusionSpinnerProps) {
 
 // xs variant (16x16)
 function FusionSpinnerXs({ dimension, className }: { dimension: number; className?: string }) {
+  const { t } = useLingui();
   return (
-    <svg width={dimension} height={dimension} viewBox="0 0 16 16" className={className} aria-label="Loading">
+    <svg width={dimension} height={dimension} viewBox="0 0 16 16" className={className} aria-label={t`Loading`}>
       <circle cx="8" cy="8" r="1" fill="#d4a574" />
       <line x1="8" y1="8" stroke="#d4a574" strokeWidth="1" strokeLinecap="round">
         <animate attributeName="x2" values="7.8;7.5;7.8" dur="0.85s" begin="0.15s" repeatCount="indefinite" />
@@ -121,8 +124,9 @@ function FusionSpinnerXs({ dimension, className }: { dimension: number; classNam
 
 // sm variant (24x24)
 function FusionSpinnerSm({ dimension, className }: { dimension: number; className?: string }) {
+  const { t } = useLingui();
   return (
-    <svg width={dimension} height={dimension} viewBox="0 0 24 24" className={className} aria-label="Loading">
+    <svg width={dimension} height={dimension} viewBox="0 0 24 24" className={className} aria-label={t`Loading`}>
       <circle cx="12" cy="12" r="1" fill="#d4a574" />
       <line x1="12" y1="12" stroke="#d4a574" strokeWidth="1" strokeLinecap="round">
         <animate attributeName="x2" values="11.7;11.4;11.7" dur="0.85s" begin="0.15s" repeatCount="indefinite" />
@@ -210,8 +214,9 @@ function FusionSpinnerSm({ dimension, className }: { dimension: number; classNam
 
 // md variant (40x40)
 function FusionSpinnerMd({ dimension, className }: { dimension: number; className?: string }) {
+  const { t } = useLingui();
   return (
-    <svg width={dimension} height={dimension} viewBox="0 0 40 40" className={className} aria-label="Loading">
+    <svg width={dimension} height={dimension} viewBox="0 0 40 40" className={className} aria-label={t`Loading`}>
       <circle cx="20" cy="20" r="1.5" fill="#d4a574" />
       <line x1="20" y1="20" stroke="#d4a574" strokeWidth="1.5" strokeLinecap="round">
         <animate attributeName="x2" values="19.5;19;19.5" dur="0.85s" begin="0.15s" repeatCount="indefinite" />
@@ -299,8 +304,9 @@ function FusionSpinnerMd({ dimension, className }: { dimension: number; classNam
 
 // lg variant (80x80)
 function FusionSpinnerLg({ dimension, className }: { dimension: number; className?: string }) {
+  const { t } = useLingui();
   return (
-    <svg width={dimension} height={dimension} viewBox="0 0 80 80" className={className} aria-label="Loading">
+    <svg width={dimension} height={dimension} viewBox="0 0 80 80" className={className} aria-label={t`Loading`}>
       <circle cx="40" cy="40" r="2" fill="#d4a574" />
       <line x1="40" y1="40" stroke="#d4a574" strokeWidth="2" strokeLinecap="round">
         <animate attributeName="x2" values="39;38;39" dur="0.85s" begin="0.15s" repeatCount="indefinite" />

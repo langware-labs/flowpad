@@ -1,5 +1,6 @@
 /** The top toolbar: tool toggle, color swatches, undo/clear, cancel/save. */
 import { ArrowUpRight, Check, Eraser, Pen, Type, Undo2, X } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { cn } from '@src/lib/utils';
 import { COLORS, type Tool } from './types';
 
@@ -37,6 +38,8 @@ export function AnnotatorToolbar({
   onCancel,
   onSave,
 }: AnnotatorToolbarProps) {
+  const { t } = useLingui();
+
   return (
     <div className="flex items-center gap-2">
       <div className="flex items-center gap-0.5">
@@ -74,10 +77,10 @@ export function AnnotatorToolbar({
         ))}
       </div>
       <div className="mx-1 h-6 w-px bg-border" />
-      <button type="button" title="Undo" onClick={onUndo} disabled={!canUndo} className={ICON_BTN}>
+      <button type="button" title={t`Undo`} onClick={onUndo} disabled={!canUndo} className={ICON_BTN}>
         <Undo2 className="h-4 w-4" />
       </button>
-      <button type="button" title="Clear" onClick={onClear} disabled={!isDirty} className={ICON_BTN}>
+      <button type="button" title={t`Clear`} onClick={onClear} disabled={!isDirty} className={ICON_BTN}>
         <Eraser className="h-4 w-4" />
       </button>
 
@@ -88,7 +91,7 @@ export function AnnotatorToolbar({
           className="flex h-8 items-center gap-1 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <X className="h-4 w-4" />
-          Cancel
+          <Trans>Cancel</Trans>
         </button>
         <button
           type="button"
@@ -97,7 +100,7 @@ export function AnnotatorToolbar({
           className="flex h-8 items-center gap-1 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
         >
           <Check className="h-4 w-4" />
-          Save
+          <Trans>Save</Trans>
         </button>
       </div>
     </div>

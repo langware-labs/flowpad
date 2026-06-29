@@ -1,6 +1,7 @@
 import { ActionInfo, dataManager } from '@sdk';
 import { DiffContent } from '@src/components/code-editor/DiffContent';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { Trans, useLingui } from '@lingui/react/macro';
 import React, { useEffect, useState } from 'react';
 
 interface GitFileDiffModalProps {
@@ -24,6 +25,7 @@ export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
   open,
   onClose,
 }) => {
+  const { t } = useLingui();
   const [diffData, setDiffData] = useState<GitFileDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,9 +40,9 @@ export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
     action.queryParameters = { workdir, file: filepath, status };
     dataManager.callAction<null, GitFileDiff>(action)
       .then((result) => { setDiffData(result ?? null); })
-      .catch(() => { setError('Failed to fetch diff'); })
+      .catch(() => { setError(t`Failed to fetch diff`); })
       .finally(() => { setLoading(false); });
-  }, [open, computeNodeId, workdir, filepath, status]);
+  }, [open, computeNodeId, workdir, filepath, status, t]);
 
   const filename = filepath.split('/').pop() ?? filepath;
 
@@ -58,7 +60,7 @@ export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
             <div className="flex h-full items-center justify-center text-muted-foreground">
               <div className="flex flex-col items-center gap-2">
                 <div className="h-6 w-6 animate-spin rounded-full border-4 border-muted-foreground border-t-transparent" />
-                <span className="text-sm">Loading diff…</span>
+                <span className="text-sm"><Trans>Loading diff…</Trans></span>
               </div>
             </div>
           ) : error ? (
@@ -67,7 +69,7 @@ export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
             </div>
           ) : diffData?.diff === '' ? (
             <div className="flex h-full items-center justify-center p-4 text-muted-foreground text-sm">
-              No changes to show.
+              <Trans>No changes to show.</Trans>
             </div>
           ) : diffData?.diff ? (
             <DiffContent diffString={diffData.diff} />

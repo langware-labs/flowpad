@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { CronEvent, type ICronEvent } from '@sdk';
+import { Trans } from '@lingui/react/macro';
 import { CronEventCard } from './CronEventCard';
 import { CronForm } from './CronForm';
 
@@ -74,7 +75,7 @@ export function CronView() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading…
+        <Trans>Loading…</Trans>
       </div>
     );
   }
@@ -83,7 +84,7 @@ export function CronView() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-4 py-2">
-        <span className="text-sm font-medium">Scheduled Jobs</span>
+        <span className="text-sm font-medium"><Trans>Scheduled Jobs</Trans></span>
         {events.length > 0 && (
           <Badge variant="secondary" className="text-[10px]">{events.length}</Badge>
         )}
@@ -93,7 +94,7 @@ export function CronView() {
           className="ml-auto"
           onClick={() => setFormMode({ kind: 'create' })}
         >
-          + New
+          <Trans>+ New</Trans>
         </Button>
       </div>
 
@@ -114,9 +115,9 @@ export function CronView() {
       <div className="flex-1 overflow-auto p-4">
         {events.length === 0 && formMode === null ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-            <p>No scheduled jobs yet.</p>
+            <p><Trans>No scheduled jobs yet.</Trans></p>
             <Button size="sm" variant="outline" onClick={() => setFormMode({ kind: 'create' })}>
-              + New Job
+              <Trans>+ New Job</Trans>
             </Button>
           </div>
         ) : (

@@ -47,6 +47,18 @@ def get_machine_id(flow_home: Optional[Path] = None) -> str:
     return derived
 
 
+def local_entity_id(entity_type: str, flow_home: Optional[Path] = None) -> str:
+    """Deterministic per-machine id for the singleton ``@local`` entities:
+    ``uuid5(NAMESPACE_DNS, "<type>:local:<machine_id>")``.
+
+    Stable across DB recreations + clear-index so cached UI/WS typeids keep
+    resolving to the same row. The single source of truth shared by bootstrap
+    (user/project/workspace) and ``ComputeNode.get_local``/``create_local`` —
+    mint every @local id here so the two can never skew.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{entity_type}:local:{get_machine_id(flow_home)}"))
+
+
 # ----------------------------------------------------------------------
 # OS-specific derivation — public so the FaaS remote-execution path can
 # embed the same logic into the script it runs on the compute node.

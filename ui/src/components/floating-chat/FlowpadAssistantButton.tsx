@@ -3,6 +3,7 @@ import { cn } from '@src/lib/utils';
 import { useRef } from 'react';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { useFloatingChat } from './FloatingChatContext';
+import { useLingui } from '@lingui/react/macro';
 
 /**
  * Round flowpad-logo button that toggles the global floating Flowpad Assistant chat.
@@ -18,6 +19,7 @@ import { useFloatingChat } from './FloatingChatContext';
  * to the Flowpad brand here regardless of the active agent.
  */
 export function FlowpadAssistantButton() {
+  const { t } = useLingui();
   const { open, toggle } = useFloatingChat();
   const ref = useRef<HTMLButtonElement | null>(null);
 
@@ -32,7 +34,7 @@ export function FlowpadAssistantButton() {
         toggle(r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null);
       }}
       aria-pressed={open}
-      title="Flowpad Assistant"
+      title={t`Flowpad Assistant`}
       data-testid="flowpad-assistant-button"
       className={cn(
         'h-8 w-8 overflow-hidden rounded-full p-0',
@@ -41,7 +43,7 @@ export function FlowpadAssistantButton() {
     >
       <img
         src={flowpadIcon}
-        alt="Flowpad Assistant"
+        alt={t`Flowpad Assistant`}
         className="h-full w-full object-contain"
       />
     </Button>

@@ -2,6 +2,7 @@ import React from 'react';
 import { Download, ExternalLink, FolderOpen, Trash2 } from 'lucide-react';
 import { ProjectNameChip } from '@src/components/assets/ProjectNameChip';
 import { useIsAdvanced } from '@src/components/view-mode';
+import { useLingui } from '@lingui/react/macro';
 
 export interface AssetEditorHeaderProps {
   /** Filename or folder name shown on the top line. */
@@ -49,6 +50,7 @@ export function AssetEditorHeader({
   onDelete,
   actions,
 }: AssetEditorHeaderProps) {
+  const { t } = useLingui();
   const advanced = useIsAdvanced();
   const resolvedPath = sourcePath ?? (dirPath ? `${dirPath}/${fileName}` : fileName);
   return (
@@ -65,7 +67,7 @@ export function AssetEditorHeader({
           )}
           {advanced && onOpenExternal && (
             <button
-              title="Open externally"
+              title={t`Open externally`}
               onClick={onOpenExternal}
               data-testid="asset-editor-open-external"
               className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -75,7 +77,7 @@ export function AssetEditorHeader({
           )}
           {advanced && onRevealInFinder && (
             <button
-              title="Reveal in Finder"
+              title={t`Reveal in Finder`}
               onClick={onRevealInFinder}
               data-testid="asset-editor-reveal"
               className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -85,7 +87,7 @@ export function AssetEditorHeader({
           )}
           {advanced && onDownload && (
             <button
-              title="Download file"
+              title={t`Download file`}
               onClick={onDownload}
               data-testid="asset-editor-download"
               className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -95,7 +97,7 @@ export function AssetEditorHeader({
           )}
           {onDelete && (
             <button
-              title="Delete"
+              title={t`Delete`}
               onClick={onDelete}
               data-testid="asset-editor-delete"
               className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"

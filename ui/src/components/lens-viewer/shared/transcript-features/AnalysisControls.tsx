@@ -6,6 +6,7 @@ import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { SideDrawer } from '@src/components/ui/side-drawer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { deriveAnalysisAction } from './analysis-state';
 import { useSessionAnalyses } from './useSessionAnalyses';
 
@@ -74,11 +75,11 @@ export function AnalysisToolbarButtons({
             <TooltipTrigger asChild>
               <button type="button" className={btn} onClick={startAnalysis} data-testid="analysis-run">
                 <Activity className="h-3 w-3" />
-                Run analysis
+                <Trans>Run analysis</Trans>
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              Analyze this session: goals, issues, divergences and skill performance on a timeline
+              <Trans>Analyze this session: goals, issues, divergences and skill performance on a timeline</Trans>
             </TooltipContent>
           </Tooltip>
         )}
@@ -88,11 +89,11 @@ export function AnalysisToolbarButtons({
             <TooltipTrigger asChild>
               <button type="button" className={btn} onClick={() => setPanelOpen(true)} data-testid="analysis-running">
                 <Loader2 className="h-3 w-3 animate-spin" />
-                Analyzing…
+                <Trans>Analyzing…</Trans>
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              Analysis is running — click to watch it in the side panel
+              <Trans>Analysis is running — click to watch it in the side panel</Trans>
             </TooltipContent>
           </Tooltip>
         )}
@@ -104,11 +105,11 @@ export function AnalysisToolbarButtons({
                 <TooltipTrigger asChild>
                   <button type="button" className={btn} onClick={startAnalysis} data-testid="analysis-refresh">
                     <RefreshCw className="h-3 w-3" />
-                    Refresh analysis
+                    <Trans>Refresh analysis</Trans>
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="text-xs">
-                  The session has new activity since the last analysis — run a fresh one (previous runs are kept)
+                  <Trans>The session has new activity since the last analysis — run a fresh one (previous runs are kept)</Trans>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -116,7 +117,7 @@ export function AnalysisToolbarButtons({
               <TooltipTrigger asChild>
                 <button type="button" className={btn} onClick={openNewest} data-testid="analysis-open">
                   <ExternalLink className="h-3 w-3" />
-                  Open analysis
+                  <Trans>Open analysis</Trans>
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
@@ -128,11 +129,11 @@ export function AnalysisToolbarButtons({
                 <TooltipTrigger asChild>
                   <button type="button" className={btn} onClick={startAnalysis} data-testid="analysis-rerun">
                     <RotateCcw className="h-3 w-3" />
-                    Rerun
+                    <Trans>Rerun</Trans>
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="text-xs">
-                  Run a new analysis of this session — adds another entry, previous analyses are kept
+                  <Trans>Run a new analysis of this session — adds another entry, previous analyses are kept</Trans>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -149,6 +150,7 @@ export function AnalysisSidePanel({
 }: {
   controls: AnalysisControls;
 }) {
+  const { t } = useLingui();
   const { panelOpen, setPanelOpen, analysisTarget, autoPrompt } = controls;
 
   // Resolve the agent-trace skill so freshly-created analysis processes get it
@@ -172,7 +174,7 @@ export function AnalysisSidePanel({
     <SideDrawer
       open={panelOpen}
       onOpenChange={setPanelOpen}
-      title="Session analysis"
+      title={t`Session analysis`}
       width="w-[380px]"
       data-testid="analysis-side-panel"
     >
@@ -183,12 +185,12 @@ export function AnalysisSidePanel({
         autoPrompt={autoPrompt}
         dense
         headerLabel={undefined}
-        placeholder="Ask about this analysis…"
-        emptyStateText="Run analysis to investigate this session."
-        pastSessionsLabel="Past analyses"
-        noPastSessionsLabel="No analyses yet"
-        newSessionLabel="New analysis"
-        historyLabel="Analysis history"
+        placeholder={t`Ask about this analysis…`}
+        emptyStateText={t`Run analysis to investigate this session.`}
+        pastSessionsLabel={t`Past analyses`}
+        noPastSessionsLabel={t`No analyses yet`}
+        newSessionLabel={t`New analysis`}
+        historyLabel={t`Analysis history`}
         onProcessCreated={async (p: AgenticProcess) => {
           if (skillPath) {
             try {

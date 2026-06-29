@@ -2,6 +2,7 @@ import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/Asse
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
+import { ProjectBrief } from '@src/components/project-brief/ProjectBrief';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
@@ -21,6 +22,7 @@ import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { EDITOR_TYPES } from '@src/navigation/asset-doc-types';
 import apiClient from '@sdk/client';
 import { AlertCircle, BookOpen, ChevronRight, PackageSearch, Trash2, X } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -167,6 +169,7 @@ function FolderBreadcrumb({
   onNavigate: (p: DockPointer) => void;
   onClear: () => void;
 }) {
+  const { t } = useLingui();
   if (crumbs.length === 0) return null;
   return (
     <div
@@ -204,8 +207,8 @@ function FolderBreadcrumb({
       <button
         type="button"
         onClick={onClear}
-        title="Clear folder filter"
-        aria-label="Clear folder filter"
+        title={t`Clear folder filter`}
+        aria-label={t`Clear folder filter`}
         data-testid="asset-list-breadcrumb-clear"
         className="ml-auto flex h-5 w-5 items-center justify-center rounded hover:bg-muted"
       >
@@ -216,6 +219,7 @@ function FolderBreadcrumb({
 }
 
 export function AssetsPage() {
+  const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
   const { types: allTypes } = useAssetTypes();
   const { busy, resetAndRescan } = useSystemTools();
@@ -245,11 +249,14 @@ export function AssetsPage() {
     const proj = projectEntity;
     if (!proj) return;
     const name = proj.displayName ?? 'this project';
+    const path = proj.fs_storage_mount_path;
     showDeleteAssetModal({
       name,
       description:
         'This permanently deletes the project and everything in it — all indexed ' +
-        'records and their children, and the project folder on disk. This cannot be undone.',
+        'records and their children, and the project folder on disk' +
+        (path ? ` (${path})` : '') +
+        '. This cannot be undone.',
       onConfirm: async () => {
         await proj.deleteWithChildren();
       },
@@ -484,7 +491,7 @@ export function AssetsPage() {
       setRefreshKey((k) => k + 1);
     } catch (err) {
       console.error('[AssetsPage] Failed to create:', err);
-      notify.error({ title: 'Failed to create' });
+      notify.error({ title: t`Failed to create` });
     }
     setNewTypeTarget(null);
   }, [newTypeTarget, navigateAsset]);
@@ -499,7 +506,7 @@ export function AssetsPage() {
     const path = result.asset_ref;
     if (!path || !path.startsWith('/')) {
       notify.error({
-        title: 'Asset has no file on disk',
+        title: t`Asset has no file on disk`,
         message: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
       });
       return;
@@ -529,7 +536,7 @@ export function AssetsPage() {
       {/* Header */}
       <div className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3">
         <BookOpen className="h-4 w-4 text-muted-foreground" />
-        <span className="ml-1 text-sm font-medium">{isProjectView ? 'Project assets' : 'Assets'}</span>
+        <span className="ml-1 text-sm font-medium">{isProjectView ? <Trans>Project assets</Trans> : <Trans>Assets</Trans>}</span>
         <ProjectChip projectId={chipProjectId} className="ml-1.5" />
         <div className="ml-auto flex items-center gap-2">
           <div className="relative w-96 shrink-0">
@@ -540,7 +547,7 @@ export function AssetsPage() {
               onFiltersChange={setSearchFilters}
               onSubmit={handleSearchSubmit}
               onKeyDown={handleSearchKeyDown}
-              placeholder="Search..."
+              placeholder={t`Search...`}
             />
             {searchQuery.trim().length >= 2 && (
               <div className="absolute right-0 top-full z-50 w-[600px] pt-1">
@@ -579,7 +586,7 @@ export function AssetsPage() {
                   className="relative h-9 w-9 shrink-0"
                   onClick={() => void handleRebuildIndex()}
                   disabled={busy}
-                  aria-label={isProjectView ? 'Re-index project' : 'Refresh search data'}
+                  aria-label={isProjectView ? t`Re-index project` : t`Refresh search data`}
                   data-testid="rebuild-index"
                 >
                   <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
@@ -594,11 +601,11 @@ export function AssetsPage() {
               <TooltipContent>
                 {isProjectView
                   ? changesPending
-                    ? 'Changes pending next index'
+                    ? <Trans>Changes pending next index</Trans>
                     : lastIndexedAt
                       ? `Last indexed ${formatTimeAgo(lastIndexedAt)}`
-                      : 'Re-index project'
-                  : 'Refresh search data'}
+                      : <Trans>Re-index project</Trans>
+                  : <Trans>Refresh search data</Trans>}
               </TooltipContent>
             </Tooltip>
           )}
@@ -611,7 +618,7 @@ export function AssetsPage() {
               data-testid="project-delete"
             >
               <Trash2 className="h-4 w-4" />
-              Delete project
+              <Trans>Delete project</Trans>
             </Button>
           )}
         </div>
@@ -677,9 +684,11 @@ export function AssetsPage() {
                 </Button>
               </div>
             </div>
+          ) : isProjectView ? (
+            <ProjectBrief spawnProjectId={scopeProjectId} />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              Select a type to browse
+              <Trans>Select a type to browse</Trans>
             </div>
           )}
         </div>
@@ -690,8 +699,8 @@ export function AssetsPage() {
         onOpenChange={setNewTypeDialogOpen}
         title={`New ${newTypeTarget ?? ''}`}
         description={`Enter a name for the new ${newTypeTarget ?? 'item'}.`}
-        placeholder="Name"
-        confirmLabel="Create"
+        placeholder={t`Name`}
+        confirmLabel={t`Create`}
         onConfirm={(name) => void handleNewConfirm(name)}
       />
     </div>

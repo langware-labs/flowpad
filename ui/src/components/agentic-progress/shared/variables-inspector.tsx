@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { cn } from '@src/lib/utils';
 import { ChevronRight, Braces } from 'lucide-react';
@@ -15,10 +17,12 @@ interface VariablesInspectorProps {
  */
 export function VariablesInspector({
   variables,
-  title = 'Variables',
+  title,
   defaultOpen = false,
   className,
 }: VariablesInspectorProps) {
+  const { t } = useLingui();
+  const finalTitle = title ?? t`Variables`;
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const entries = Object.entries(variables);
   const count = entries.length;
@@ -32,7 +36,7 @@ export function VariablesInspector({
       <CollapsibleTrigger className="flex w-full items-center gap-1 rounded px-2 py-1 text-sm hover:bg-muted/50">
         <ChevronRight className={cn('h-4 w-4 text-muted-foreground transition-transform', isOpen && 'rotate-90')} />
         <Braces className="h-4 w-4 text-muted-foreground" />
-        <span className="font-medium">{title}</span>
+        <span className="font-medium">{finalTitle}</span>
         <span className="text-xs text-muted-foreground">({count})</span>
       </CollapsibleTrigger>
       <CollapsibleContent className="pl-6">
@@ -85,7 +89,7 @@ function VariableNode({ name, value, depth = 0 }: VariableNodeProps) {
       </CollapsibleTrigger>
       <CollapsibleContent className="pl-4">
         {depth < 5 && entries.map(([k, v]) => <VariableNode key={k} name={k} value={v} depth={depth + 1} />)}
-        {depth >= 5 && <span className="text-xs italic text-muted-foreground">Max depth reached</span>}
+        {depth >= 5 && <span className="text-xs italic text-muted-foreground"><Trans>Max depth reached</Trans></span>}
       </CollapsibleContent>
     </Collapsible>
   );

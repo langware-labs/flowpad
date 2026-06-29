@@ -6,6 +6,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
+import { Trans } from '@lingui/react/macro';
 import type { RoomTab } from '../RoomTabs';
 
 // Module constant so the useEntityOps subscription array has a stable identity
@@ -69,15 +70,15 @@ export function SkillsCategory({ projectId, onOpenTab }: Props) {
   }, [data, mount]);
 
   if (!projectId) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No project linked</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No project linked</Trans></div>;
   }
 
   if (isLoading && items.length === 0) {
-    return <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>;
+    return <div className="px-2 py-1.5 text-xs text-muted-foreground"><Trans>Loading…</Trans></div>;
   }
 
   if (items.length === 0) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No skills yet</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No skills yet</Trans></div>;
   }
 
   return (

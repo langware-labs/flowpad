@@ -1,16 +1,9 @@
 import React from 'react';
 import { X, type LucideIcon } from 'lucide-react';
+import { useLingui } from '@lingui/react/macro';
 import { cn } from '@src/lib/utils';
 
 export type EntityTypeFilter = 'all' | 'agent' | 'skill' | 'markdown' | 'spec' | 'whiteboard';
-
-const LABELS: Record<string, string> = {
-  agent: 'Agent',
-  skill: 'Skill',
-  markdown: 'Document',
-  spec: 'Spec',
-  whiteboard: 'Whiteboard',
-};
 
 interface EntityTypeBarProps {
   /** The shown set of types. Empty = all types shown (every toggle lit). */
@@ -49,6 +42,16 @@ export function EntityTypeBar({
   labelForType,
   testIdPrefix = 'asset-picker-type',
 }: EntityTypeBarProps): React.ReactElement {
+  const { t } = useLingui();
+
+  const LABELS: Record<string, string> = {
+    agent: t`Agent`,
+    skill: t`Skill`,
+    markdown: t`Document`,
+    spec: t`Spec`,
+    whiteboard: t`Whiteboard`,
+  };
+
   const allShown = selected.length === 0;
   const isActive = (t: string) => allShown || selected.includes(t);
 
@@ -101,8 +104,8 @@ export function EntityTypeBar({
         <button
           type="button"
           onClick={() => onChange([])}
-          title="Show all types"
-          aria-label="Show all types"
+          title={t`Show all types`}
+          aria-label={t`Show all types`}
           className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
           data-testid={`${testIdPrefix}-clear`}
         >

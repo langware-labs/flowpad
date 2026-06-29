@@ -1,5 +1,6 @@
 import { Stethoscope } from 'lucide-react';
 import type { NotificationData } from '../types';
+import { useLingui } from '@lingui/react/macro';
 import { useDiagnoseErrorStore } from './diagnose-error-store';
 
 /** The error detail handed to the diagnosis: full message if present, else the title. */
@@ -14,7 +15,10 @@ function errorDetail(data: NotificationData): string {
  */
 export function DiagnoseIconButton({ data, className }: { data: NotificationData; className?: string }) {
   const open = useDiagnoseErrorStore((s) => s.open);
+  const { t } = useLingui();
   if (data.level !== 'error') return null;
+
+  const diagnoseLabel = t`Diagnose this error`;
 
   return (
     <button
@@ -23,8 +27,8 @@ export function DiagnoseIconButton({ data, className }: { data: NotificationData
         e.stopPropagation();
         open(errorDetail(data));
       }}
-      title="Diagnose this error"
-      aria-label="Diagnose this error"
+      title={diagnoseLabel}
+      aria-label={diagnoseLabel}
       className={
         className ??
         'flex-shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground'

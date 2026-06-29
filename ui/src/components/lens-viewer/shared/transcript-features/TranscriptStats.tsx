@@ -1,5 +1,6 @@
 import { Bot, CheckSquare, Clock, Code, FileText, User, Wrench } from 'lucide-react';
 import type { TranscriptHeader } from '@sdk';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 import { computeStats } from './transcript-stats';
 import { formatDuration, formatNumber } from './transcript-utils';
@@ -65,6 +66,7 @@ export function TranscriptStats({
   onDisableAll: () => void;
   onOpenTasks?: () => void;
 }) {
+  const { t } = useLingui();
   const stats = computeStats(entries);
   const toolEntries = Object.entries(toolFilters);
 
@@ -73,7 +75,7 @@ export function TranscriptStats({
       {/* Metadata row */}
       <div className="mb-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         {sessionId && (
-          <span className="font-mono" title="Session ID">
+          <span className="font-mono" title={t`Session ID`}>
             {sessionId.slice(0, 8)}...
           </span>
         )}
@@ -81,10 +83,10 @@ export function TranscriptStats({
           <button
             onClick={onOpenTasks}
             className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-primary hover:bg-primary/20"
-            title="View session tasks"
+            title={t`View session tasks`}
           >
             <CheckSquare className="h-3 w-3" />
-            Tasks
+            <Trans>Tasks</Trans>
           </button>
         )}
         {header.cli_version && <span>v{header.cli_version}</span>}
@@ -96,37 +98,37 @@ export function TranscriptStats({
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-        <FilterBadge icon={User} label="User" value={stats.userMessages} checked={showUser} onToggle={onToggleUser} />
+        <FilterBadge icon={User} label={t`User`} value={stats.userMessages} checked={showUser} onToggle={onToggleUser} />
         <FilterBadge
           icon={Bot}
-          label="Assistant"
+          label={t`Assistant`}
           value={stats.assistantMessages}
           checked={showAssistant}
           onToggle={onToggleAssistant}
         />
-        <StatBadge icon={Wrench} label="Tool Calls" value={stats.toolCalls} />
-        <StatBadge icon={FileText} label="Entries" value={stats.totalEntries} />
-        <StatBadge icon={Code} label="Tools" value={stats.uniqueTools} />
-        {stats.duration && <StatBadge icon={Clock} label="Duration" value={formatDuration(stats.duration)} />}
+        <StatBadge icon={Wrench} label={t`Tool Calls`} value={stats.toolCalls} />
+        <StatBadge icon={FileText} label={t`Entries`} value={stats.totalEntries} />
+        <StatBadge icon={Code} label={t`Tools`} value={stats.uniqueTools} />
+        {stats.duration && <StatBadge icon={Clock} label={t`Duration`} value={formatDuration(stats.duration)} />}
       </div>
 
       {/* Tool call filters */}
       {toolEntries.length > 0 && (
         <div className="mt-3">
           <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>Tool calls by type</span>
+            <span><Trans>Tool calls by type</Trans></span>
             <div className="flex items-center gap-2">
               <button
                 onClick={onDisableAll}
                 className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
               >
-                Disable all
+                <Trans>Disable all</Trans>
               </button>
               <button
                 onClick={onClearFilters}
                 className="rounded px-1.5 py-0.5 text-[10px] text-primary hover:bg-muted"
               >
-                Enable all
+                <Trans>Enable all</Trans>
               </button>
             </div>
           </div>

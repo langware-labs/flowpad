@@ -6,6 +6,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { LogIn } from 'lucide-react';
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface JoinConversationDialogProps {
   open: boolean;
@@ -23,6 +24,7 @@ export function JoinConversationDialog({ open, onClose, defaultName }: JoinConve
   const [displayName, setDisplayName] = useState(defaultName ?? '');
   const [busy, setBusy] = useState(false);
   const { navigation } = useDockNavigation();
+  const { t } = useLingui();
 
   const normalizedCode = code.trim().toUpperCase();
   const canJoin = !!normalizedCode && !!displayName.trim() && !busy;
@@ -34,8 +36,8 @@ export function JoinConversationDialog({ open, onClose, defaultName }: JoinConve
       const resolved = await Project.resolveByCode(normalizedCode);
       if (!resolved) {
         notify.info({
-          title: 'Project not found',
-          message: `No project matches code "${normalizedCode}".`,
+          title: t`Project not found`,
+          message: t`No project matches code "${normalizedCode}".`,
         });
         return;
       }
@@ -61,15 +63,15 @@ export function JoinConversationDialog({ open, onClose, defaultName }: JoinConve
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <LogIn className="h-5 w-5 text-green-600" />
-            Join a conversation
+            <Trans>Join a conversation</Trans>
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-2">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Project code</label>
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground"><Trans>Project code</Trans></label>
             <Input
-              placeholder="XKCD-J3F2"
+              placeholder={t`XKCD-J3F2`}
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               onKeyDown={(e) => {
@@ -80,9 +82,9 @@ export function JoinConversationDialog({ open, onClose, defaultName }: JoinConve
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Your display name</label>
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground"><Trans>Your display name</Trans></label>
             <Input
-              placeholder="e.g. Alex"
+              placeholder={t`e.g. Alex`}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               onKeyDown={(e) => {
@@ -95,7 +97,7 @@ export function JoinConversationDialog({ open, onClose, defaultName }: JoinConve
             onClick={() => void handleJoin()}
             disabled={!canJoin}
           >
-            {busy ? 'Joining…' : 'Join conversation'}
+            {busy ? <Trans>Joining…</Trans> : <Trans>Join conversation</Trans>}
           </Button>
         </div>
       </DialogContent>

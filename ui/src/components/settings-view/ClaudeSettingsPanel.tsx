@@ -1,4 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 import { Search } from 'lucide-react';
 import { Input } from '@src/components/ui/input';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -30,6 +32,7 @@ export function ClaudeSettingsPanel({
   initialFilter = '',
   initialFieldName = '',
 }: ClaudeSettingsPanelProps) {
+  const { t } = useLingui();
   const [searchQuery, setSearchQuery] = useState(initialFilter || initialFieldName);
   const [showOverrides, setShowOverrides] = useState(false);
   const highlightedFieldRef = useRef<HTMLDivElement>(null);
@@ -61,7 +64,7 @@ export function ClaudeSettingsPanel({
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search settings..."
+            placeholder={t`Search settings...`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -74,7 +77,7 @@ export function ClaudeSettingsPanel({
             onCheckedChange={(checked) => setShowOverrides(checked === true)}
           />
           <Label htmlFor="show-overrides" className="text-sm whitespace-nowrap cursor-pointer">
-            Show scope overrides
+            <Trans>Show scope overrides</Trans>
           </Label>
         </div>
       </div>
@@ -83,7 +86,7 @@ export function ClaudeSettingsPanel({
       {filteredFields.length === 0 ? (
         <div className="rounded-lg border p-8 text-center">
           <p className="text-sm text-muted-foreground">
-            {isSearching ? 'No settings match your search.' : 'No settings loaded.'}
+            {isSearching ? <Trans>No settings match your search.</Trans> : <Trans>No settings loaded.</Trans>}
           </p>
         </div>
       ) : isSearching ? (

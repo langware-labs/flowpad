@@ -9,12 +9,14 @@ import { ToggleGroup, ToggleGroupItem } from '@src/components/ui/toggle-group';
 import { Slider } from '@src/components/ui/slider';
 import { Bell } from 'lucide-react';
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface BulkReminderButtonProps {
   onSetReminder: (date: Date) => void;
 }
 
 export function BulkReminderButton({ onSetReminder }: BulkReminderButtonProps) {
+  const { t } = useLingui();
   const [count, setCount] = useState(1);
   const [unit, setUnit] = useState<'days' | 'weeks'>('days');
   const [open, setOpen] = useState(false);
@@ -39,7 +41,7 @@ export function BulkReminderButton({ onSetReminder }: BulkReminderButtonProps) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="task-card-action" title="Set reminder for selected">
+        <button className="task-card-action" title={t`Set reminder for selected`}>
           <Bell className="h-3.5 w-3.5" />
         </button>
       </PopoverTrigger>
@@ -50,13 +52,13 @@ export function BulkReminderButton({ onSetReminder }: BulkReminderButtonProps) {
             onClick={() => handleQuickPick(1, 'days')}
             className="rounded-md bg-muted px-2 py-1 text-xs hover:bg-accent"
           >
-            Tomorrow
+            <Trans>Tomorrow</Trans>
           </button>
           <button
             onClick={() => handleQuickPick(1, 'weeks')}
             className="rounded-md bg-muted px-2 py-1 text-xs hover:bg-accent"
           >
-            Next week
+            <Trans>Next week</Trans>
           </button>
         </div>
         <Separator />

@@ -1,6 +1,7 @@
 import { AgenticProcess } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { Star, Trash2 } from 'lucide-react';
+import { useLingui } from '@lingui/react/macro';
 import {
   WorkerIcon,
   buildHistorySubline,
@@ -25,6 +26,7 @@ interface ChatHistoryRowProps {
 }
 
 export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, onDelete }: ChatHistoryRowProps) {
+  const { t } = useLingui();
   const process = entry.agentic_process_id
     ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null
     : null;
@@ -64,8 +66,8 @@ export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, on
               e.stopPropagation();
               onToggleFavorite();
             }}
-            title={fav ? 'Unstar' : 'Star'}
-            aria-label={fav ? 'Unstar chat' : 'Star chat'}
+            title={fav ? t`Unstar` : t`Star`}
+            aria-label={fav ? t`Unstar chat` : t`Star chat`}
             className="text-muted-foreground hover:text-amber-500"
           >
             <Star className={cn('h-3 w-3', fav && 'fill-amber-400 text-amber-400')} />
@@ -76,8 +78,8 @@ export function ChatHistoryRow({ entry, selected, onSelect, onToggleFavorite, on
               e.stopPropagation();
               onDelete();
             }}
-            title="Delete chat"
-            aria-label="Delete chat"
+            title={t`Delete chat`}
+            aria-label={t`Delete chat`}
             className="text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" />

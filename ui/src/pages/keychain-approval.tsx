@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { secretApprovalGate } from '@sdk';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
  * Bridge page for the deep-link auth flow when keychain access has not yet
@@ -12,6 +13,7 @@ import { secretApprovalGate } from '@sdk';
  */
 const KeychainApproval = () => {
   const [params] = useSearchParams();
+  const { t } = useLingui();
   const apiKey = params.get('flowpad-api-key') ?? '';
   const next = params.get('next') ?? '';
   const [state, setState] = useState<'requesting' | 'canceled'>('requesting');
@@ -47,22 +49,22 @@ const KeychainApproval = () => {
         {state === 'requesting' ? (
           <>
             <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-ring" />
-            <p className="text-gray-700">Waiting for keychain approval…</p>
+            <p className="text-gray-700"><Trans>Waiting for keychain approval…</Trans></p>
           </>
         ) : (
           <>
-            <h1 className="mb-3 text-2xl font-semibold">Login canceled</h1>
+            <h1 className="mb-3 text-2xl font-semibold"><Trans>Login canceled</Trans></h1>
             <p className="mb-6 text-gray-600">
               {apiKey
-                ? 'Keychain access is required to finish signing in to Flowpad.'
-                : 'Missing API key — please retry the deep link from the source page.'}
+                ? t`Keychain access is required to finish signing in to Flowpad.`
+                : t`Missing API key — please retry the deep link from the source page.`}
             </p>
             {apiKey && (
               <button
                 onClick={requestApproval}
                 className="rounded-md bg-primary px-4 py-2 text-primary-foreground hover:opacity-90"
               >
-                Try again
+                <Trans>Try again</Trans>
               </button>
             )}
           </>

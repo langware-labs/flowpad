@@ -5,9 +5,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { History } from 'lucide-react';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useAgentContext } from './agent-layout/agent-layout';
 
 export function HistoryDropdown() {
+  const { t } = useLingui();
   const navigate = useNavigate();
   const { agent, flow, project } = useAgentContext();
   const projectTypeId = project?.typeId;
@@ -23,16 +25,16 @@ export function HistoryDropdown() {
   return (
     <DropdownMenu data-testid="history-dropdown">
       <DropdownMenuTrigger asChild>
-        <Button title="Flow History" variant="ghost" size="icon" className="h-8 w-8">
+        <Button title={t`Flow History`} variant="ghost" size="icon" className="h-8 w-8">
           <History className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
-        <div className="px-2 py-1.5 text-sm font-medium">Flow History</div>
+        <div className="px-2 py-1.5 text-sm font-medium"><Trans>Flow History</Trans></div>
         <DropdownMenuSeparator />
         <div className="max-h-80 overflow-y-auto">
           {sortedFlows?.length === 0 ? (
-            <div className="p-2 text-xs text-muted-foreground">Nothing yet!</div>
+            <div className="p-2 text-xs text-muted-foreground"><Trans>Nothing yet!</Trans></div>
           ) : (
             sortedFlows?.map((flow) => (
               <DropdownMenuItem
@@ -43,7 +45,7 @@ export function HistoryDropdown() {
                   void navigate(urlPath);
                 }}
               >
-                <div className="text-xs font-medium">{flow.title || 'New Flow'}</div>
+                <div className="text-xs font-medium">{flow.title || t`New Flow`}</div>
 
                 {flow?.created_date ? (
                   <div className="text-xs text-muted-foreground">{timeAgo(flow?.created_date)}</div>

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { AgentTrace } from '@sdk';
 
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
@@ -101,6 +102,8 @@ export function SimpleSessionReport({ trace, doc }: SimpleSessionReportProps) {
   const skills = useMemo(() => skillsInvolved(doc), [doc]);
   const hasVerdict = !!verdict && verdict !== 'unrated';
 
+  const { t } = useLingui();
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" data-testid="simple-session-report">
       <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-4">
@@ -115,22 +118,22 @@ export function SimpleSessionReport({ trace, doc }: SimpleSessionReportProps) {
 
         {!hasVerdict && (
           <p className="text-sm text-muted-foreground">
-            This session hasn't been reviewed yet, so there's nothing to report.
+            <Trans>This session hasn't been reviewed yet, so there's nothing to report.</Trans>
           </p>
         )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <StatTile label="Time spent" value={durationMs != null ? formatDuration(durationMs) : '—'} />
-          <StatTile label="Cost" value={costUsd != null ? `$${costUsd.toFixed(2)}` : '—'} />
-          <StatTile label="Steps taken" value={stepCount != null ? String(stepCount) : '—'} />
-          <StatTile label="Problems found" value={String(problemCount)} />
+          <StatTile label={t`Time spent`} value={durationMs != null ? formatDuration(durationMs) : '—'} />
+          <StatTile label={t`Cost`} value={costUsd != null ? `$${costUsd.toFixed(2)}` : '—'} />
+          <StatTile label={t`Steps taken`} value={stepCount != null ? String(stepCount) : '—'} />
+          <StatTile label={t`Problems found`} value={String(problemCount)} />
         </div>
 
         {/* What it worked on */}
         {goals.length > 0 && (
           <div>
-            <SectionHeading>What it worked on</SectionHeading>
+            <SectionHeading><Trans>What it worked on</Trans></SectionHeading>
             <ul className="list-disc space-y-0.5 pl-5 text-sm text-foreground">
               {goals.map((g, i) => (
                 <li key={i}>{g.label}</li>
@@ -141,12 +144,12 @@ export function SimpleSessionReport({ trace, doc }: SimpleSessionReportProps) {
 
         {/* What to look at */}
         <div>
-          <SectionHeading>What to look at</SectionHeading>
+          <SectionHeading><Trans>What to look at</Trans></SectionHeading>
           {!doc ? (
-            <p className="text-sm text-muted-foreground">Loading details…</p>
+            <p className="text-sm text-muted-foreground"><Trans>Loading details…</Trans></p>
           ) : issues.length === 0 ? (
             <p className="rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
-              🎉 No problems found — nothing needs your attention.
+              <Trans>🎉 No problems found — nothing needs your attention.</Trans>
             </p>
           ) : (
             <div className="flex flex-col gap-2">
@@ -160,7 +163,7 @@ export function SimpleSessionReport({ trace, doc }: SimpleSessionReportProps) {
         {/* Helpers used */}
         {skills.length > 0 && (
           <div>
-            <SectionHeading>Helpers used</SectionHeading>
+            <SectionHeading><Trans>Helpers used</Trans></SectionHeading>
             <ul className="flex flex-col gap-1 text-sm">
               {skills.map((s) => (
                 <li
@@ -171,7 +174,7 @@ export function SimpleSessionReport({ trace, doc }: SimpleSessionReportProps) {
                     {s.name}
                   </span>
                   <span className="ml-2 shrink-0 text-xs text-muted-foreground">
-                    {s.issueCount === 0 ? 'all good' : pluralize(s.issueCount, 'problem')}
+                    {s.issueCount === 0 ? t`all good` : pluralize(s.issueCount, t`problem`)}
                   </span>
                 </li>
               ))}

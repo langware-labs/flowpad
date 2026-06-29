@@ -12,6 +12,7 @@ import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
 import { ColorPicker } from '@src/components/ui/color-picker';
 import { IconPicker } from '@src/components/ui/icon-picker';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
  * PromptEditDialog — add/edit a library prompt (docs/prompt-library.md).
@@ -45,6 +46,7 @@ export const PromptEditDialog: React.FC<PromptEditDialogProps> = ({
   const [icon, setIcon] = useState<string | null>(null);
   const [color, setColor] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { t } = useLingui();
 
   useEffect(() => {
     if (open) {
@@ -89,38 +91,38 @@ export const PromptEditDialog: React.FC<PromptEditDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{prompt ? 'Edit prompt' : 'New prompt'}</DialogTitle>
+          <DialogTitle>{prompt ? t`Edit prompt` : t`New prompt`}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Prompt name"
-            aria-label="Prompt name"
+            placeholder={t`Prompt name`}
+            aria-label={t`Prompt name`}
             autoFocus
           />
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="The prompt text…"
-            aria-label="Prompt text"
+            placeholder={t`The prompt text…`}
+            aria-label={t`Prompt text`}
             className="min-h-28"
           />
           <div className="space-y-1.5">
-            <span className="text-xs text-muted-foreground">Icon</span>
+            <span className="text-xs text-muted-foreground"><Trans>Icon</Trans></span>
             <IconPicker value={icon} onChange={setIcon} />
           </div>
           <div className="space-y-1.5">
-            <span className="text-xs text-muted-foreground">Color</span>
+            <span className="text-xs text-muted-foreground"><Trans>Color</Trans></span>
             <ColorPicker value={color} onChange={setColor} />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           <Button onClick={handleSave} disabled={!canSave}>
-            {prompt ? 'Save' : 'Create'}
+            {prompt ? <Trans>Save</Trans> : <Trans>Create</Trans>}
           </Button>
         </DialogFooter>
       </DialogContent>

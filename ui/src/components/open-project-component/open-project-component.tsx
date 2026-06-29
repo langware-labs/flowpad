@@ -23,6 +23,7 @@ import { Label } from '@src/components/ui/label';
 import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Loader2, Lock, Search, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const SHOW_SYSTEM_PROJECTS_KEY = 'project-list-show-system';
 
@@ -134,6 +135,7 @@ function ProjectSelectList({
   onShowSystemChange,
   devMode,
 }: ProjectSelectListProps) {
+  const { t } = useLingui();
   const [search, setSearch] = useState('');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(loadTimeFilter);
 
@@ -165,7 +167,7 @@ function ProjectSelectList({
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
-            placeholder="Search projects…"
+            placeholder={t`Search projects…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="h-8 pl-8 text-sm"
@@ -191,7 +193,7 @@ function ProjectSelectList({
         </div>
         <label
           className="ml-1 flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          title="Show SDK-shipped system projects (Flowpad Assistant)"
+          title={t`Show SDK-shipped system projects (Flowpad Assistant)`}
         >
           <input
             type="checkbox"
@@ -199,18 +201,18 @@ function ProjectSelectList({
             checked={showSystem}
             onChange={(e) => onShowSystemChange(e.target.checked)}
           />
-          Show system
+          <Trans>Show system</Trans>
         </label>
       </div>
     <div className="max-h-56 overflow-y-auto rounded-lg border border-border bg-card">
       {isLoading ? (
         <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Loading projects...
+          <Trans>Loading projects...</Trans>
         </div>
       ) : filtered.length === 0 ? (
         <div className="py-8 text-center text-sm text-muted-foreground">
-          {projects.length === 0 ? 'No projects found' : 'No matches'}
+          {projects.length === 0 ? <Trans>No projects found</Trans> : <Trans>No matches</Trans>}
         </div>
       ) : (
         <div className="divide-y divide-border">
@@ -245,19 +247,19 @@ function ProjectSelectList({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     {project.claude && (
-                      <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" aria-label="Claude project" />
+                      <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" aria-label={t`Claude project`} />
                     )}
                     {project.codex && (
-                      <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-label="Codex project" />
+                      <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-label={t`Codex project`} />
                     )}
                     {project.copilot && (
-                      <CopilotIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="Copilot project" />
+                      <CopilotIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label={t`Copilot project`} />
                     )}
                     <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
                     {isSystem && (
                       <span className="flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] uppercase tracking-wide text-muted-foreground">
                         <Sparkles className="h-2.5 w-2.5" />
-                        system
+                        <Trans>system</Trans>
                       </span>
                     )}
                   </div>
@@ -272,7 +274,7 @@ function ProjectSelectList({
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground/70">
-                    {relativeTime(project.modified_at) ?? 'today'}
+                    {relativeTime(project.modified_at) ?? t`today`}
                   </span>
                 </div>
               </button>
@@ -330,20 +332,21 @@ function ProjectSelectDialog({
   trigger = 'switch',
   remoteProjectName,
 }: ProjectSelectDialogProps) {
+  const { t } = useLingui();
   const title =
     trigger === 'map'
-      ? 'Map remote project'
+      ? t`Map remote project`
       : trigger === 'gate'
-      ? 'Pick a project'
-      : 'Projects';
+      ? t`Pick a project`
+      : t`Projects`;
   const description =
     trigger === 'map'
       ? remoteProjectName
-        ? `This conversation came from a project called "${remoteProjectName}" on another machine. Pick the local project folder it should map to.`
-        : 'This conversation came from a project on another machine. Pick the local project folder it should map to.'
+        ? t`This conversation came from a project called "${remoteProjectName}" on another machine. Pick the local project folder it should map to.`
+        : t`This conversation came from a project on another machine. Pick the local project folder it should map to.`
       : trigger === 'gate'
-      ? "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
-      : 'Select a project or open a new folder.';
+      ? t`Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions.`
+      : t`Select a project or open a new folder.`;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-lg">
@@ -373,7 +376,7 @@ function ProjectSelectDialog({
               disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
             >
               <FolderOpen className="h-4 w-4" />
-              Open Folder
+              <Trans>Open Folder</Trans>
             </Button>
             <Button
               variant="outline"
@@ -382,7 +385,7 @@ function ProjectSelectDialog({
               disabled={isSubmitting || !!openingProjectId}
             >
               <FolderPlus className="h-4 w-4" />
-              Create New
+              <Trans>Create New</Trans>
             </Button>
           </div>
 
@@ -435,6 +438,7 @@ function CompactProjectSelectDialog({
   onOpenFolder,
   onCreateNew,
 }: CompactProjectSelectDialogProps) {
+  const { t } = useLingui();
   const [search, setSearch] = useState('');
   const q = search.trim().toLowerCase();
 
@@ -454,7 +458,7 @@ function CompactProjectSelectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle className="text-base">Switch Project</DialogTitle>
+          <DialogTitle className="text-base"><Trans>Switch Project</Trans></DialogTitle>
         </DialogHeader>
 
         <div className="space-y-2">
@@ -462,7 +466,7 @@ function CompactProjectSelectDialog({
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input
-                placeholder="Search projects…"
+                placeholder={t`Search projects…`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 pl-8 text-sm"
@@ -474,11 +478,11 @@ function CompactProjectSelectDialog({
             {isLoadingProjects ? (
               <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading…
+                <Trans>Loading…</Trans>
               </div>
             ) : filtered.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                {projects.length === 0 ? 'No projects found' : 'No matches'}
+                {projects.length === 0 ? <Trans>No projects found</Trans> : <Trans>No matches</Trans>}
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -512,7 +516,7 @@ function CompactProjectSelectDialog({
 
           {hiddenCount > 0 && (
             <p className="px-1 text-[11px] text-muted-foreground">
-              +{hiddenCount} more — search to find them
+              <Trans>+{hiddenCount} more — search to find them</Trans>
             </p>
           )}
 
@@ -525,7 +529,7 @@ function CompactProjectSelectDialog({
               disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
             >
               <FolderOpen className="h-3.5 w-3.5" />
-              Open Folder
+              <Trans>Open Folder</Trans>
             </Button>
             <Button
               variant="outline"
@@ -535,7 +539,7 @@ function CompactProjectSelectDialog({
               disabled={isSubmitting || !!openingProjectId}
             >
               <FolderPlus className="h-3.5 w-3.5" />
-              Create New
+              <Trans>Create New</Trans>
             </Button>
           </div>
 
@@ -567,6 +571,7 @@ function NewProjectDialog({
   pickFolder,
   onCreate,
 }: NewProjectDialogProps) {
+  const { t } = useLingui();
   const [projectName, setProjectName] = useState('');
   const [parentFolder, setParentFolder] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -582,7 +587,7 @@ function NewProjectDialog({
 
   const handleCreate = useCallback(async () => {
     if (!projectName.trim() || !parentFolder.trim()) {
-      setError('Please fill in both fields');
+      setError(t`Please fill in both fields`);
       return;
     }
     setIsSubmitting(true);
@@ -600,16 +605,16 @@ function NewProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create New Project</DialogTitle>
-          <DialogDescription>Enter a name and choose a parent folder for the new project.</DialogDescription>
+          <DialogTitle><Trans>Create New Project</Trans></DialogTitle>
+          <DialogDescription><Trans>Enter a name and choose a parent folder for the new project.</Trans></DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-2">
-            <Label htmlFor="new-project-name">Project name</Label>
+            <Label htmlFor="new-project-name"><Trans>Project name</Trans></Label>
             <Input
               id="new-project-name"
-              placeholder="my-awesome-project"
+              placeholder={t`my-awesome-project`}
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               autoFocus
@@ -618,18 +623,18 @@ function NewProjectDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="new-parent-folder">Parent folder</Label>
+            <Label htmlFor="new-parent-folder"><Trans>Parent folder</Trans></Label>
             <div className="flex gap-2">
               <Input
                 id="new-parent-folder"
                 value={parentFolder}
                 onChange={(e) => setParentFolder(e.target.value)}
-                placeholder={defaultWorkspacePath || 'Select parent folder'}
+                placeholder={defaultWorkspacePath || t`Select parent folder`}
                 className="flex-1 font-mono text-sm"
                 dir="ltr"
               />
               {computeNodeAvailable && (
-                <Button variant="outline" onClick={() => void pickFolder(parentFolder || defaultWorkspacePath || undefined).then((p) => { if (p) setParentFolder(p); })} type="button" title="Browse">
+                <Button variant="outline" onClick={() => void pickFolder(parentFolder || defaultWorkspacePath || undefined).then((p) => { if (p) setParentFolder(p); })} type="button" title={t`Browse`}>
                   <FolderOpen className="h-4 w-4" />
                 </Button>
               )}
@@ -646,10 +651,10 @@ function NewProjectDialog({
             {isSubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating...
+                <Trans>Creating...</Trans>
               </>
             ) : (
-              'Create Project'
+              <Trans>Create Project</Trans>
             )}
           </Button>
         </div>
@@ -700,6 +705,7 @@ export function OpenProjectComponent({
   onPicked,
   contextOnly,
 }: OpenProjectComponentProps) {
+  const { t } = useLingui();
   const { project: currentProject } = useProject();
   const { computeNode } = useAgentContext();
   const { navigation } = useDockNavigation();
@@ -780,10 +786,10 @@ export function OpenProjectComponent({
 
   const ensureProjectAndSetContext = useCallback(
     async (path: string) => {
-      if (!dataContext.someone) throw new Error('You must be logged in');
+      if (!dataContext.someone) throw new Error(t`You must be logged in`);
 
       const normalizedPath = normalizePath(path);
-      if (!normalizedPath) throw new Error('Please provide a valid project path');
+      if (!normalizedPath) throw new Error(t`Please provide a valid project path`);
 
       const pathKey = canonicalPathKey(normalizedPath);
       const freshProjects = await Project.query(
@@ -801,7 +807,7 @@ export function OpenProjectComponent({
       await setCurrentProjectContext(targetProject);
       return { project: targetProject, openedExisting };
     },
-    [setCurrentProjectContext],
+    [setCurrentProjectContext, t],
   );
 
   const handleProjectClick = useCallback(
@@ -815,26 +821,26 @@ export function OpenProjectComponent({
         await ensureProjectAndSetContext(path);
         onOpenChange(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to open project');
+        setError(err instanceof Error ? err.message : t`Failed to open project`);
       } finally {
         setOpeningProjectId(null);
       }
     },
-    [ensureProjectAndSetContext, onOpenChange],
+    [ensureProjectAndSetContext, onOpenChange, t],
   );
 
   const pickFolder = useCallback(async (initialDir?: string): Promise<string | null> => {
     if (!computeNode) {
-      setError('No compute node available');
+      setError(t`No compute node available`);
       return null;
     }
     try {
       return await computeNode.openPathDialog(initialDir);
     } catch {
-      setError('Failed to open folder picker');
+      setError(t`Failed to open folder picker`);
       return null;
     }
-  }, [computeNode]);
+  }, [computeNode, t]);
 
   const handleOpenFolder = useCallback(async () => {
     const selected = await pickFolder(defaultWorkspacePath || undefined);
@@ -845,15 +851,15 @@ export function OpenProjectComponent({
     try {
       const result = await ensureProjectAndSetContext(selected);
       if (result.openedExisting) {
-        notify.success({ title: 'Opened existing project', message: result.project.displayName });
+        notify.success({ title: t`Opened existing project`, message: result.project.displayName });
       }
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to open project');
+      setError(err instanceof Error ? err.message : t`Failed to open project`);
     } finally {
       setIsSubmitting(false);
     }
-  }, [pickFolder, ensureProjectAndSetContext, onOpenChange]);
+  }, [pickFolder, ensureProjectAndSetContext, onOpenChange, t]);
 
   // NewProjectDialog calls this after validation
   const handleCreate = useCallback(

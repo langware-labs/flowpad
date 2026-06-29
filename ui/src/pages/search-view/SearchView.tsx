@@ -18,6 +18,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AlertCircle, FileSearch, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 
 const LS_KEY = 'flowpad-search-filters';
 const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
@@ -198,7 +199,7 @@ export function SearchView() {
     <div className="flex h-full flex-col gap-4 overflow-hidden p-6" data-testid="search-view">
       {/* Header */}
       <div className="flex shrink-0 items-center gap-3">
-        <h1 className="text-lg font-semibold">Search</h1>
+        <h1 className="text-lg font-semibold"><Trans>Search</Trans></h1>
         {results.length > 0 && !isLoading && (
           <Badge variant="secondary" className="text-xs">
             {results.length} result{results.length !== 1 ? 's' : ''}
@@ -209,12 +210,12 @@ export function SearchView() {
         )}
         {scanInfo?.total_indexed != null && (
           <span className="text-xs text-muted-foreground">
-            {scanInfo.total_indexed.toLocaleString()} indexed
+            {scanInfo.total_indexed.toLocaleString()} <Trans>indexed</Trans>
           </span>
         )}
         {indexState === 'stale' && (
           <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">
-            refresh recommended
+            <Trans>refresh recommended</Trans>
           </Badge>
         )}
         <div className="ml-auto">
@@ -226,11 +227,11 @@ export function SearchView() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => navigation.openDock(DockPointer.forFsRecordsScanner())}>
-                Records Scan
+                <Trans>Records Scan</Trans>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleCalibrationChange({ ...calibration, visible: !calibration.visible })}>
                 <SlidersHorizontal className="mr-2 h-4 w-4" />
-                Search Calibration
+                <Trans>Search Calibration</Trans>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -274,7 +275,7 @@ export function SearchView() {
               <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Refresh search data</TooltipContent>
+          <TooltipContent><Trans>Refresh search data</Trans></TooltipContent>
         </Tooltip>
       </div>
 
@@ -304,7 +305,7 @@ export function SearchView() {
         {!indexerReady && (
           <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>Search index is warming up. Results will appear once indexing is complete.</span>
+            <span><Trans>Search index is warming up. Results will appear once indexing is complete.</Trans></span>
           </div>
         )}
 
@@ -327,11 +328,11 @@ export function SearchView() {
           <div className="flex flex-col items-center gap-3 py-12 text-center text-muted-foreground">
             <FileSearch className="h-10 w-10 opacity-40" />
             <div>
-              <p className="font-medium">No records found</p>
+              <p className="font-medium"><Trans>No records found</Trans></p>
               {query.trim() ? (
-                <p className="text-sm">No records found for &ldquo;{query}&rdquo;</p>
+                <p className="text-sm"><Trans>No records found for &ldquo;{query}&rdquo;</Trans></p>
               ) : (
-                <p className="text-sm">No records of this type</p>
+                <p className="text-sm"><Trans>No records of this type</Trans></p>
               )}
             </div>
           </div>

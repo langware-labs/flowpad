@@ -1,6 +1,7 @@
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Plus } from 'lucide-react';
+import { useLingui } from '@lingui/react/macro';
 import { ProjectSelector, type ProjectSelectorItem } from './ProjectSelector';
 
 export interface ProjectSelectorModalProps {
@@ -29,23 +30,25 @@ export function ProjectSelectorModal({
   selectedId,
   onSelect,
   isLoading,
-  title = 'Select project',
+  title,
   onCreateNew,
   excludeIds,
 }: ProjectSelectorModalProps) {
+  const { t } = useLingui();
+  const displayTitle = title ?? t`Select project`;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center justify-between gap-2 pr-8">
-            <DialogTitle>{title}</DialogTitle>
+            <DialogTitle>{displayTitle}</DialogTitle>
             {onCreateNew && (
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
                 onClick={onCreateNew}
-                title="New project"
+                title={t`New project`}
                 type="button"
               >
                 <Plus className="h-4 w-4" />

@@ -5,6 +5,7 @@ import { useEntity } from '@src/hooks/entity-hooks';
 import { useQuery } from '@tanstack/react-query';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { RoomTab } from '../RoomTabs';
 
 interface Props {
@@ -135,6 +136,7 @@ function FolderRow({
  * the project's `fs_storage_mount_path`.
  */
 export function DocsCategory({ projectId, onOpenTab }: Props) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
   const projectTypeId = useMemo(
@@ -192,7 +194,7 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
   };
 
   if (!projectId) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No project linked</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No project linked</Trans></div>;
   }
 
   const showToggleRow = !isSystemProject;
@@ -203,7 +205,7 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
       {showToggleRow && (
         <label
           className="flex cursor-pointer items-center gap-1 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground"
-          title="Show docs from SDK-shipped system projects"
+          title={t`Show docs from SDK-shipped system projects`}
         >
           <input
             type="checkbox"
@@ -211,14 +213,14 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
             checked={includeSystem}
             onChange={(e) => setIncludeSystem(e.target.checked)}
           />
-          Show system
+          <Trans>Show system</Trans>
         </label>
       )}
 
       {isLoading && isEmpty ? (
-        <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>
+        <div className="px-2 py-1.5 text-xs text-muted-foreground"><Trans>Loading…</Trans></div>
       ) : isEmpty ? (
-        <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No docs yet</div>
+        <div className="px-2 py-1.5 text-xs italic text-muted-foreground"><Trans>No docs yet</Trans></div>
       ) : (
         <FolderRow node={tree} depth={0} onOpen={openDoc} />
       )}

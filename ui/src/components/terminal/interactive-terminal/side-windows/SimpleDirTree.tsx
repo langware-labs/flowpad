@@ -18,6 +18,7 @@ import {
   Share2,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { fileShareSource } from '@src/hooks/share-sources';
@@ -131,6 +132,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   initialPath,
   onSelectFile,
 }) => {
+  const { t } = useLingui();
   const fs = useFS(computeNodeTypeId);
   const { navigation } = useDockNavigation();
   const fsRef = React.useRef(fs);
@@ -318,9 +320,9 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
           type="text"
           value={filterQuery}
           onChange={(e) => setFilterQuery(e.target.value)}
-          placeholder="Filter…"
+          placeholder={t`Filter…`}
           className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
-          aria-label="Filter files"
+          aria-label={t`Filter files`}
           data-testid="dir-tree-filter"
         />
       </div>
@@ -331,7 +333,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
             type="button"
             onClick={handleRefresh}
             className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted"
-            title="Current directory (click to refresh)"
+            title={t`Current directory (click to refresh)`}
           >
             <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="font-mono">.</span>
@@ -342,7 +344,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
               type="button"
               onClick={handleUp}
               className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted"
-              title="Parent directory"
+              title={t`Parent directory`}
             >
               <CornerLeftUp className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="font-mono">..</span>
@@ -381,8 +383,8 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
                     type="button"
                     onClick={() => setSharePath(childPath)}
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-                    aria-label={`Share to a conversation: ${childPath}`}
-                    title={`Share to a conversation\n${childPath}`}
+                    aria-label={t`Share to a conversation: ${childPath}`}
+                    title={t`Share to a conversation\n${childPath}`}
                     data-testid={`dir-tree-share-${item.name}`}
                   >
                     <Share2 className="h-3.5 w-3.5" />
@@ -392,8 +394,8 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
                   type="button"
                   onClick={() => void handleRevealInFinder(childPath)}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-                  aria-label={`Reveal in Finder/Explorer: ${childPath}`}
-                  title={`Reveal in Finder/Explorer\n${childPath}`}
+                  aria-label={t`Reveal in Finder/Explorer: ${childPath}`}
+                  title={t`Reveal in Finder/Explorer\n${childPath}`}
                 >
                   <FolderSearch className="h-3.5 w-3.5" />
                 </button>
@@ -401,8 +403,8 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
                   type="button"
                   onClick={() => void handleOpenExternal(childPath)}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-                  aria-label={`Open externally: ${childPath}`}
-                  title={`Open externally\n${childPath}`}
+                  aria-label={t`Open externally: ${childPath}`}
+                  title={t`Open externally\n${childPath}`}
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </button>
@@ -412,7 +414,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
 
           {sortedItems.length === 0 && browseResult && (
             <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
-              {filterQuery.trim() ? 'no matches' : 'empty'}
+              {filterQuery.trim() ? <Trans>no matches</Trans> : <Trans>empty</Trans>}
             </p>
           )}
         </div>

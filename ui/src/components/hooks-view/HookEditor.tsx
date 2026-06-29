@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@src/components/ui/separator';
 import { Textarea } from '@src/components/ui/textarea';
 import { Save, X } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const HOOK_EVENTS = {
   PreToolUse: { title: 'Pre Tool Use', supportsMatchers: true, icon: '⚡' },
@@ -64,6 +65,7 @@ export function HookEditor({
   onSave,
   onCancel,
 }: HookEditorProps) {
+  const { t } = useLingui();
   const supportsMatchers = HOOK_EVENTS[eventName as keyof typeof HOOK_EVENTS]?.supportsMatchers ?? false;
   const isSaveDisabled = !eventName || !hookName.trim() || (hookType === 'command' ? !command.trim() : !prompt.trim());
 
@@ -71,15 +73,15 @@ export function HookEditor({
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>{isEditing ? 'Edit Hook' : 'Add New Hook'}</CardTitle>
+          <CardTitle>{isEditing ? <Trans>Edit Hook</Trans> : <Trans>Add New Hook</Trans>}</CardTitle>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onCancel}>
               <X className="mr-2 h-4 w-4" />
-              Cancel
+              <Trans>Cancel</Trans>
             </Button>
             <Button size="sm" onClick={onSave} disabled={isSaveDisabled}>
               <Save className="mr-2 h-4 w-4" />
-              {isEditing ? 'Update' : 'Save'}
+              {isEditing ? <Trans>Update</Trans> : <Trans>Save</Trans>}
             </Button>
           </div>
         </div>
@@ -87,21 +89,21 @@ export function HookEditor({
       <CardContent className="space-y-6">
         {/* Hook Name */}
         <div className="space-y-2">
-          <Label htmlFor="hook-name">Hook Name *</Label>
+          <Label htmlFor="hook-name"><Trans>Hook Name *</Trans></Label>
           <Input
             id="hook-name"
             value={hookName}
             onChange={(e) => onHookNameChange(e.target.value)}
-            placeholder='e.g., "my-pre-tool-guard", "lint-on-save"'
+            placeholder={t`e.g., "my-pre-tool-guard", "lint-on-save"`}
           />
-          <p className="text-xs text-muted-foreground">Unique identifier for this hook within the settings file.</p>
+          <p className="text-xs text-muted-foreground"><Trans>Unique identifier for this hook within the settings file.</Trans></p>
         </div>
 
         <Separator />
 
         {/* Event Name */}
         <div className="space-y-2">
-          <Label htmlFor="event-name">Hook Event *</Label>
+          <Label htmlFor="event-name"><Trans>Hook Event *</Trans></Label>
           <Select value={eventName} onValueChange={onEventNameChange}>
             <SelectTrigger id="event-name">
               <SelectValue />
@@ -114,7 +116,7 @@ export function HookEditor({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">Select when this hook should run</p>
+          <p className="text-xs text-muted-foreground"><Trans>Select when this hook should run</Trans></p>
         </div>
 
         <Separator />
@@ -122,15 +124,15 @@ export function HookEditor({
         {/* Matcher (conditional) */}
         {supportsMatchers && (
           <div className="space-y-2">
-            <Label htmlFor="matcher">Matcher Pattern (optional)</Label>
+            <Label htmlFor="matcher"><Trans>Matcher Pattern (optional)</Trans></Label>
             <Input
               id="matcher"
               value={matcher}
               onChange={(e) => onMatcherChange(e.target.value)}
-              placeholder='e.g., "Read", "Edit|Write", "*" (leave empty for all tools)'
+              placeholder={t`e.g., "Read", "Edit|Write", "*" (leave empty for all tools)`}
             />
             <p className="text-xs text-muted-foreground">
-              Tool pattern to match: exact name, regex pattern, or "*" for all. Case-sensitive.
+              <Trans>Tool pattern to match: exact name, regex pattern, or "*" for all. Case-sensitive.</Trans>
             </p>
           </div>
         )}
@@ -139,14 +141,14 @@ export function HookEditor({
 
         {/* Hook Type */}
         <div className="space-y-2">
-          <Label htmlFor="hook-type">Hook Type *</Label>
+          <Label htmlFor="hook-type"><Trans>Hook Type *</Trans></Label>
           <Select value={hookType} onValueChange={(v) => onHookTypeChange(v as 'command' | 'prompt')}>
             <SelectTrigger id="hook-type">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="command">🔧 Command - Execute bash script</SelectItem>
-              <SelectItem value="prompt">🤖 Prompt - Query AI (Claude Haiku)</SelectItem>
+              <SelectItem value="command"><Trans>🔧 Command - Execute bash script</Trans></SelectItem>
+              <SelectItem value="prompt"><Trans>🤖 Prompt - Query AI (Claude Haiku)</Trans></SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -154,49 +156,49 @@ export function HookEditor({
         {/* Command/Prompt Content */}
         {hookType === 'command' ? (
           <div className="space-y-2">
-            <Label htmlFor="command">Bash Command *</Label>
+            <Label htmlFor="command"><Trans>Bash Command *</Trans></Label>
             <Textarea
               id="command"
               value={command}
               onChange={(e) => onCommandChange(e.target.value)}
-              placeholder={`e.g., /path/to/script.sh or if [[ "$tool_input" == *.md ]]; then echo '{"permissionDecision": "allow"}'; fi`}
+              placeholder={t`e.g., /path/to/script.sh or if [[ "$tool_input" == *.md ]]; then echo '{"permissionDecision": "allow"}'; fi`}
               className="min-h-[120px] font-mono text-sm"
               rows={6}
             />
             <p className="text-xs text-muted-foreground">
-              Shell command to execute. Use $CLAUDE_PROJECT_DIR, $tool_name, $tool_input variables.
+              <Trans>Shell command to execute. Use $CLAUDE_PROJECT_DIR, $tool_name, $tool_input variables.</Trans>
             </p>
           </div>
         ) : (
           <div className="space-y-2">
-            <Label htmlFor="prompt">AI Prompt *</Label>
+            <Label htmlFor="prompt"><Trans>AI Prompt *</Trans></Label>
             <Textarea
               id="prompt"
               value={prompt}
               onChange={(e) => onPromptChange(e.target.value)}
-              placeholder="Should I allow this tool? Respond with JSON: {permissionDecision: allow or deny}"
+              placeholder={t`Should I allow this tool? Respond with JSON: {permissionDecision: allow or deny}`}
               className="min-h-[120px] font-mono text-sm"
               rows={6}
             />
             <p className="text-xs text-muted-foreground">
-              Prompt sent to Claude Haiku for decision-making. Use ${'{variable}'} for interpolation.
+              <Trans>Prompt sent to Claude Haiku for decision-making. Use ${'{variable}'} for interpolation.</Trans>
             </p>
           </div>
         )}
 
         {/* Timeout */}
         <div className="space-y-2">
-          <Label htmlFor="timeout">Timeout (seconds)</Label>
+          <Label htmlFor="timeout"><Trans>Timeout (seconds)</Trans></Label>
           <Input
             id="timeout"
             type="number"
             value={timeout}
             onChange={(e) => onTimeoutChange(e.target.value)}
-            placeholder="60"
+            placeholder={t`60`}
             min="1"
             max="600"
           />
-          <p className="text-xs text-muted-foreground">Maximum execution time (default: 60s, max: 600s)</p>
+          <p className="text-xs text-muted-foreground"><Trans>Maximum execution time (default: 60s, max: 600s)</Trans></p>
         </div>
       </CardContent>
     </Card>

@@ -10,6 +10,7 @@ import {
 } from '@src/components/ui/dialog';
 import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
  * Harness capability picker.
@@ -43,6 +44,7 @@ function CapabilityHarnessRow({
   const { capability, available, result, isLoading, check } = useCapability(kind);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const { t } = useLingui();
 
   const title = capability?.name ?? kind;
   const description = capability?.description ?? '';
@@ -72,7 +74,7 @@ function CapabilityHarnessRow({
           {selected && (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
               <CheckCircle2 className="h-3 w-3" />
-              Default
+              <Trans>Default</Trans>
             </span>
           )}
         </div>
@@ -91,7 +93,7 @@ function CapabilityHarnessRow({
           className="h-8 w-8"
           disabled={isLoading}
           onClick={() => void check()}
-          aria-label={`Re-check ${title}`}
+          aria-label={t`Re-check ${title}`}
           data-testid={`install-one-of-check-${kind}`}
         >
           {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -102,7 +104,7 @@ function CapabilityHarnessRow({
             variant="outline"
             className="h-8 w-8"
             asChild
-            aria-label={`Open ${title} install page`}
+            aria-label={t`Open ${title} install page`}
             data-testid={`install-one-of-link-${kind}`}
           >
             <a href={homepage} target="_blank" rel="noreferrer">
@@ -119,7 +121,7 @@ function CapabilityHarnessRow({
           data-testid={`install-one-of-button-${kind}`}
         >
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-          {selected ? 'Using' : 'Use'}
+          {selected ? <Trans>Using</Trans> : <Trans>Use</Trans>}
         </Button>
       </div>
     </div>
@@ -134,9 +136,9 @@ export function AskInstallOneOfDialog({ kinds, onClose }: Props) {
     <Dialog open={!!kinds?.length} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md" data-testid="install-one-of-dialog">
         <DialogHeader>
-          <DialogTitle>Harness is required</DialogTitle>
+          <DialogTitle><Trans>Harness is required</Trans></DialogTitle>
           <DialogDescription>
-            Select an available harness, or install one from its homepage and re-check it.
+            <Trans>Select an available harness, or install one from its homepage and re-check it.</Trans>
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2">

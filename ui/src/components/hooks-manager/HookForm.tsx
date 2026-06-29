@@ -6,6 +6,7 @@ import { Label } from '@src/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ErrorMessage } from './constants';
 import { useState, useEffect } from 'react';
 
@@ -17,6 +18,7 @@ interface HookFormProps {
 }
 
 export function HookForm({ hook, onSave, onCancel }: HookFormProps) {
+  const { t } = useLingui();
   const [formData, setFormData] = useState<Partial<AgentHook>>({
     name: '',
     description: '',
@@ -82,87 +84,87 @@ export function HookForm({ hook, onSave, onCancel }: HookFormProps) {
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>{hook ? 'Edit Agent Hook' : 'Create Agent Hook'}</DialogTitle>
+          <DialogTitle>{hook ? t`Edit Agent Hook` : t`Create Agent Hook`}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Name *</Label>
+            <Label htmlFor="name"><Trans>Name *</Trans></Label>
             <Input
               id="name"
               value={formData.name}
               onChange={(e) => handleChange('name', e.target.value)}
-              placeholder="Enter hook name"
+              placeholder={t`Enter hook name`}
               required
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="description"><Trans>Description</Trans></Label>
             <Textarea
               id="description"
               value={formData.description || ''}
               onChange={(e) => handleChange('description', e.target.value)}
-              placeholder="Enter hook description"
+              placeholder={t`Enter hook description`}
               rows={3}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="provider">Provider</Label>
+            <Label htmlFor="provider"><Trans>Provider</Trans></Label>
             <Select value={formData.provider} onValueChange={(value) => handleChange('provider', value)}>
               <SelectTrigger id="provider">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={AgentProvider.CLAUDE_CODE}>Claude Code</SelectItem>
+                <SelectItem value={AgentProvider.CLAUDE_CODE}><Trans>Claude Code</Trans></SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="scope">Scope *</Label>
+            <Label htmlFor="scope"><Trans>Scope *</Trans></Label>
             <Select value={formData.hook_scope} onValueChange={(value) => handleChange('hook_scope', value)}>
               <SelectTrigger id="scope">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={HookScope.USER}>User</SelectItem>
-                <SelectItem value={HookScope.PROJECT}>Project</SelectItem>
-                <SelectItem value={HookScope.LOCAL}>Local</SelectItem>
+                <SelectItem value={HookScope.USER}><Trans>User</Trans></SelectItem>
+                <SelectItem value={HookScope.PROJECT}><Trans>Project</Trans></SelectItem>
+                <SelectItem value={HookScope.LOCAL}><Trans>Local</Trans></SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="event">Event *</Label>
+            <Label htmlFor="event"><Trans>Event *</Trans></Label>
             <Select value={formData.event} onValueChange={(value) => handleChange('event', value)}>
               <SelectTrigger id="event">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={HookEventType.USER_PROMPT_SUBMIT}>User Prompt Submit</SelectItem>
-                <SelectItem value={HookEventType.PRE_TOOL_USE}>Pre Tool Use</SelectItem>
-                <SelectItem value={HookEventType.POST_TOOL_USE}>Post Tool Use</SelectItem>
-                <SelectItem value={HookEventType.SESSION_START}>Session Start</SelectItem>
-                <SelectItem value={HookEventType.STOP}>Stop</SelectItem>
-                <SelectItem value={HookEventType.NOTIFICATION}>Notification</SelectItem>
+                <SelectItem value={HookEventType.USER_PROMPT_SUBMIT}><Trans>User Prompt Submit</Trans></SelectItem>
+                <SelectItem value={HookEventType.PRE_TOOL_USE}><Trans>Pre Tool Use</Trans></SelectItem>
+                <SelectItem value={HookEventType.POST_TOOL_USE}><Trans>Post Tool Use</Trans></SelectItem>
+                <SelectItem value={HookEventType.SESSION_START}><Trans>Session Start</Trans></SelectItem>
+                <SelectItem value={HookEventType.STOP}><Trans>Stop</Trans></SelectItem>
+                <SelectItem value={HookEventType.NOTIFICATION}><Trans>Notification</Trans></SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="command">Command</Label>
+            <Label htmlFor="command"><Trans>Command</Trans></Label>
             <Input
               id="command"
               value={formData.command || ''}
               onChange={(e) => handleChange('command', e.target.value)}
-              placeholder="Command to execute (optional for trace-only hooks)"
+              placeholder={t`Command to execute (optional for trace-only hooks)`}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="matcher">Matcher (JSON)</Label>
+            <Label htmlFor="matcher"><Trans>Matcher (JSON)</Trans></Label>
             <Textarea
               id="matcher"
               value={matcherJson}
@@ -180,16 +182,16 @@ export function HookForm({ hook, onSave, onCancel }: HookFormProps) {
               checked={formData.enabled}
               onCheckedChange={(checked) => handleChange('enabled', checked)}
             />
-            <Label htmlFor="enabled">Enabled</Label>
+            <Label htmlFor="enabled"><Trans>Enabled</Trans></Label>
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           <Button onClick={handleSave} disabled={!!matcherError}>
-            Save
+            <Trans>Save</Trans>
           </Button>
         </DialogFooter>
       </DialogContent>

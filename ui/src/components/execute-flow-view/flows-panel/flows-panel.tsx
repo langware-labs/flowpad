@@ -6,6 +6,7 @@ import { useDockNavigation } from '@src/navigation';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { GitBranch, Play, RefreshCw, Square, Terminal } from 'lucide-react';
 import { forwardRef, useCallback, useImperativeHandle, useMemo } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface FlowsPanelProps {
   sourceFile?: FSItem | null;
@@ -60,6 +61,7 @@ interface FlowItemProps {
 }
 
 function FlowItem({ flow, onTerminalClick }: FlowItemProps) {
+  const { t } = useLingui();
   const statusDisplay = getStatusDisplay(flow.sendStatus);
   const StatusIcon = statusDisplay.icon;
   const isRunning = flow.sendStatus === SendStatus.Running;
@@ -102,10 +104,10 @@ function FlowItem({ flow, onTerminalClick }: FlowItemProps) {
               ? 'bg-green-500/20 text-green-500 hover:bg-green-500/30'
               : 'bg-primary/10 text-primary hover:bg-primary/20',
           )}
-          title={isRunning ? 'Open live terminal session' : 'Open terminal session'}
+          title={isRunning ? t`Open live terminal session` : t`Open terminal session`}
         >
           <Terminal className="h-3 w-3" />
-          <span>{isRunning ? 'Live' : 'Terminal'}</span>
+          <span>{isRunning ? t`Live` : t`Terminal`}</span>
         </button>
       )}
     </div>
@@ -113,6 +115,7 @@ function FlowItem({ flow, onTerminalClick }: FlowItemProps) {
 }
 
 export const FlowsPanel = forwardRef<FlowsPanelRef, FlowsPanelProps>(function FlowsPanel({ sourceFile }, ref) {
+  const { t } = useLingui();
   const { project } = useAgentContext();
   const { navigation } = useDockNavigation();
 
@@ -192,7 +195,7 @@ export const FlowsPanel = forwardRef<FlowsPanelRef, FlowsPanelProps>(function Fl
   if (!sourceFile) {
     return (
       <div className="flex h-full items-center justify-center p-4">
-        <p className="text-xs text-muted-foreground">Select a file to see connected flows</p>
+        <p className="text-xs text-muted-foreground"><Trans>Select a file to see connected flows</Trans></p>
       </div>
     );
   }
@@ -205,7 +208,7 @@ export const FlowsPanel = forwardRef<FlowsPanelRef, FlowsPanelProps>(function Fl
           onClick={handleRefresh}
           disabled={isLoading}
           className="rounded p-1 hover:bg-accent disabled:opacity-50"
-          title="Refresh flows"
+          title={t`Refresh flows`}
         >
           <RefreshCw className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
         </button>
@@ -214,7 +217,7 @@ export const FlowsPanel = forwardRef<FlowsPanelRef, FlowsPanelProps>(function Fl
       <div className="flex-1 overflow-y-auto">
         {error && (
           <div className="px-4 py-2 text-xs text-destructive">
-            <p>Error loading flows: {error.message}</p>
+            <p><Trans>Error loading flows: {error.message}</Trans></p>
           </div>
         )}
 
@@ -222,7 +225,7 @@ export const FlowsPanel = forwardRef<FlowsPanelRef, FlowsPanelProps>(function Fl
           <div className="flex h-full items-center justify-center px-4 py-8 text-center">
             <div>
               <GitBranch className="mx-auto h-8 w-8 text-muted-foreground/50" />
-              <p className="mt-2 text-xs text-muted-foreground">No flows connected to this file</p>
+              <p className="mt-2 text-xs text-muted-foreground"><Trans>No flows connected to this file</Trans></p>
             </div>
           </div>
         )}

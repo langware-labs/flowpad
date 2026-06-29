@@ -3,6 +3,7 @@ import React from 'react';
 import { resolveViewer } from '@sdk/react/hooks/flow-hooks/viewer-utils';
 import { ViewContext } from '../../types/ViewContext';
 import { UnsupportedContentViewer } from './UnsupportedContentViewer';
+import { Trans } from '@lingui/react/macro';
 
 export interface DynamicViewerProps {
   context?: ViewContext;
@@ -23,7 +24,7 @@ export function DynamicViewer({ context, fallbackData: _fallbackData, children }
     if (children) {
       return <>{children}</>;
     }
-    return <div className="p-4 text-muted-foreground">No content to display</div>;
+    return <div className="p-4 text-muted-foreground"><Trans>No content to display</Trans></div>;
   }
 
   const viewType = resolveViewer(context);

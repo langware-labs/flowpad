@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@src/components/ui/tabs';
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
@@ -38,6 +39,7 @@ export interface VerdictBannerData {
 }
 
 export function VerdictBanner({ data }: { data: VerdictBannerData }) {
+  const { t } = useLingui();
   // A verdict only exists once the session has been analyzed — the raw
   // (skeleton) call stack has none, so we show no rating chip rather than an
   // "unrated" label that reads like a bad grade.
@@ -47,16 +49,16 @@ export function VerdictBanner({ data }: { data: VerdictBannerData }) {
       className={cn('flex flex-shrink-0 items-baseline gap-2 px-3 py-2', verdictStyle(data.verdict))}
       data-testid="agent-trace-verdict-banner"
     >
-      <span className="text-sm font-semibold tabular-nums" title="Total cost">
+      <span className="text-sm font-semibold tabular-nums" title={t`Total cost`}>
         {data.cost_usd != null ? `$${data.cost_usd.toFixed(2)}` : '—'}
       </span>
-      <span className="text-[11px] uppercase tracking-wide opacity-70">total</span>
+      <span className="text-[11px] uppercase tracking-wide opacity-70"><Trans>total</Trans></span>
       {data.maxCostPerHour != null && data.maxCostPerHour > 0 && (
         <>
-          <span className="ml-2 text-sm font-semibold tabular-nums" title="Peak spend rate">
+          <span className="ml-2 text-sm font-semibold tabular-nums" title={t`Peak spend rate`}>
             ${data.maxCostPerHour.toFixed(2)}/h
           </span>
-          <span className="text-[11px] uppercase tracking-wide opacity-70">peak</span>
+          <span className="text-[11px] uppercase tracking-wide opacity-70"><Trans>peak</Trans></span>
         </>
       )}
       {hasVerdict && (
@@ -68,8 +70,7 @@ export function VerdictBanner({ data }: { data: VerdictBannerData }) {
         <span className="min-w-0 flex-1 truncate text-sm">{data.verdict_reason}</span>
       )}
       <span className="ml-auto flex-shrink-0 text-xs opacity-80">
-        {data.issue_count} issues · {data.divergence_count} divergences · {data.lane_count} lanes ·{' '}
-        {data.duration_ms ? formatDuration(data.duration_ms) : '—'}
+        <Trans>{data.issue_count} issues · {data.divergence_count} divergences · {data.lane_count} lanes · {data.duration_ms ? formatDuration(data.duration_ms) : '—'}</Trans>
       </span>
     </div>
   );
@@ -129,7 +130,7 @@ export function AgentTraceView({ doc, banner, onEvaluateSkill }: AgentTraceViewP
 
       {effectiveCursor === null ? (
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-          No timeline data in this trace.
+          <Trans>No timeline data in this trace.</Trans>
         </div>
       ) : (
         <>
@@ -140,10 +141,10 @@ export function AgentTraceView({ doc, banner, onEvaluateSkill }: AgentTraceViewP
           >
             <TabsList className="mx-3 mt-2 h-8 self-start">
               <TabsTrigger value="stack" className="py-0.5 text-xs">
-                Call tree
+                <Trans>Call tree</Trans>
               </TabsTrigger>
               <TabsTrigger value="details" className="py-0.5 text-xs">
-                Details
+                <Trans>Details</Trans>
               </TabsTrigger>
             </TabsList>
             <TabsContent

@@ -17,6 +17,7 @@ import {
 import type { EntityMember } from '@sdk';
 import { notify } from '@src/notifications';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface OrganizationPanelProps {
   user: User;
@@ -34,8 +35,7 @@ export function OrganizationPanel({ user }: OrganizationPanelProps) {
   if (!orgId) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once
-        you’re added, your organization and its members appear here.
+        <Trans>You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here.</Trans>
       </div>
     );
   }
@@ -43,6 +43,7 @@ export function OrganizationPanel({ user }: OrganizationPanelProps) {
 }
 
 function OrganizationBody({ user, orgId }: { user: User; orgId: string }) {
+  const { t } = useLingui();
   const orgTypeId = useMemo(() => new TypeId('organization', orgId), [orgId]);
   const { data: org } = useEntity<APIEntity<any>>(orgTypeId);
   const { members, ready, refresh } = useMembers(orgTypeId);
@@ -60,11 +61,11 @@ function OrganizationBody({ user, orgId }: { user: User; orgId: string }) {
     <div className="flex flex-col gap-4 p-4">
       <div className="flex items-center gap-2">
         <OrgIcon className="h-5 w-5" />
-        <div className="text-base font-semibold">{(org as any)?.name || 'Organization'}</div>
+        <div className="text-base font-semibold">{(org as any)?.name || t`Organization`}</div>
       </div>
 
       <MemberSection
-        title="Members"
+        title={t`Members`}
         members={members}
         ready={ready}
         selfId={user.id}
@@ -90,7 +91,7 @@ function TeamsSection({ user }: { user: User }) {
   if (list.length === 0) return null;
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-sm font-semibold text-muted-foreground">Teams</div>
+      <div className="text-sm font-semibold text-muted-foreground"><Trans>Teams</Trans></div>
       {list.map((team) => (
         <TeamRow key={team.id} team={team} selfId={user.id} />
       ))}
@@ -99,6 +100,7 @@ function TeamsSection({ user }: { user: User }) {
 }
 
 function TeamRow({ team, selfId }: { team: APIEntity<any>; selfId: string }) {
+  const { t } = useLingui();
   const teamTypeId = useMemo(() => new TypeId('team', team.id), [team.id]);
   const { members, ready } = useMembers(teamTypeId);
   const TeamIcon = iconForType('team');
@@ -106,7 +108,7 @@ function TeamRow({ team, selfId }: { team: APIEntity<any>; selfId: string }) {
     <div className="rounded-md border p-3">
       <div className="mb-2 flex items-center gap-2">
         <TeamIcon className="h-4 w-4" />
-        <div className="text-sm font-medium">{(team as any).name || 'Team'}</div>
+        <div className="text-sm font-medium">{(team as any).name || t`Team`}</div>
       </div>
       <MemberSection members={members} ready={ready} selfId={selfId} compact />
     </div>
@@ -132,9 +134,9 @@ function MemberSection({
     <div className="flex flex-col gap-2">
       {title && <div className="text-sm font-semibold text-muted-foreground">{title}</div>}
       {!ready && members.length === 0 ? (
-        <div className="text-sm text-muted-foreground">Loading members…</div>
+        <div className="text-sm text-muted-foreground"><Trans>Loading members…</Trans></div>
       ) : members.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No members yet.</div>
+        <div className="text-sm text-muted-foreground"><Trans>No members yet.</Trans></div>
       ) : (
         <ul className="flex flex-col gap-1.5">
           {members.map((m, i) => (
@@ -162,15 +164,16 @@ function MemberRow({ member, isSelf }: { member: EntityMember; isSelf: boolean }
       </span>
       <span className="min-w-0 flex-1 truncate text-sm">
         {label}
-        {isSelf && <span className="text-muted-foreground"> (you)</span>}
+        {isSelf && <span className="text-muted-foreground"><Trans> (you)</Trans></span>}
       </span>
       {role && <span className="text-xs text-muted-foreground">{role}</span>}
-      {pending && <span className="text-xs italic text-muted-foreground">pending</span>}
+      {pending && <span className="text-xs italic text-muted-foreground"><Trans>pending</Trans></span>}
     </li>
   );
 }
 
 function InviteBox({ entityTypeId, onInvited }: { entityTypeId: TypeId; onInvited: () => void }) {
+  const { t } = useLingui();
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -186,18 +189,18 @@ function InviteBox({ entityTypeId, onInvited }: { entityTypeId: TypeId; onInvite
       }
       await entity.inviteMember(trimmed, 'member');
       setEmail('');
-      notify.success({ title: 'Invitation sent', message: `Invited ${trimmed}.`, id: 'org-invite' });
+      notify.success({ title: t`Invitation sent`, message: t`Invited ${trimmed}.`, id: 'org-invite' });
       onInvited();
     } catch (err) {
       notify.error({
-        title: 'Invite failed',
-        message: err instanceof Error ? err.message : 'Unknown error.',
+        title: t`Invite failed`,
+        message: err instanceof Error ? err.message : t`Unknown error.`,
         id: 'org-invite',
       });
     } finally {
       setBusy(false);
     }
-  }, [email, entityTypeId, onInvited]);
+  }, [email, entityTypeId, onInvited, t]);
 
   return (
     <div className="mt-1 flex items-center gap-2">
@@ -208,12 +211,12 @@ function InviteBox({ entityTypeId, onInvited }: { entityTypeId: TypeId; onInvite
         onKeyDown={(e) => {
           if (e.key === 'Enter') void submit();
         }}
-        placeholder="Invite by email…"
+        placeholder={t`Invite by email…`}
         className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1 text-sm"
       />
       <Button size="sm" disabled={busy || !email.trim()} onClick={() => void submit()}>
         {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-        Invite
+        <Trans>Invite</Trans>
       </Button>
     </div>
   );

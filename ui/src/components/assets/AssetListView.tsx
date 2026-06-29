@@ -1,5 +1,6 @@
 import React from 'react';
 import { FilePlus, Search } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useAssetSearch } from '@src/hooks/use-asset-search';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 import { AssetDataTable } from './AssetDataTable';
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export function AssetListView({ recordType, onNew, refreshKey, onRowClick, filter, onFilterChange, onProjectFilter }: Props) {
+  const { t } = useLingui();
   const { results, total, isLoading, page, pageSize, setPage } = useAssetSearch({
     recordType,
     filter,
@@ -52,7 +54,7 @@ export function AssetListView({ recordType, onNew, refreshKey, onRowClick, filte
             <input
               value={filter.query}
               onChange={(e) => handleQueryChange(e.target.value)}
-              placeholder="Search…"
+              placeholder={t`Search…`}
               className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
             />
           </div>
@@ -60,7 +62,7 @@ export function AssetListView({ recordType, onNew, refreshKey, onRowClick, filte
             <button
               onClick={() => onNew()}
               className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border bg-background text-muted-foreground hover:text-foreground"
-              title="New"
+              title={t`New`}
             >
               <FilePlus className="h-4 w-4" />
             </button>
@@ -76,7 +78,7 @@ export function AssetListView({ recordType, onNew, refreshKey, onRowClick, filte
       <div className="flex-1 overflow-auto p-3">
         {isLoading ? (
           <div className="flex h-20 items-center justify-center text-sm text-muted-foreground">
-            Loading…
+            <Trans>Loading…</Trans>
           </div>
         ) : (
           <AssetDataTable

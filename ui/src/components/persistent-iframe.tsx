@@ -1,5 +1,6 @@
 import { Button } from '@src/components/ui/button';
 import { Card, CardContent, CardHeader } from '@src/components/ui/card';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery } from '@tanstack/react-query';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
@@ -241,6 +242,7 @@ const registry = IframeRegistry.getInstance();
 
 const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProps>(
   ({ src, cacheKey, onLoad, onError, onErrorRetry }, ref) => {
+    const { t } = useLingui();
     const containerRef = useRef<HTMLDivElement>(null);
     const [, forceUpdate] = useState({});
 
@@ -265,7 +267,7 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
           return false; // Available
         } catch {
           // Network error (connection refused, etc.)
-          onError?.(new Error('Unable to connect to webapp'));
+          onError?.(new Error(t`Unable to connect to webapp`));
           return true; // Not available
         }
       },
@@ -365,11 +367,11 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
             <div className="flex flex-col items-center space-y-4">
               <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-foreground" />
               <div className="text-center">
-                <p className="text-sm font-medium text-foreground">Loading server...</p>
+                <p className="text-sm font-medium text-foreground"><Trans>Loading server...</Trans></p>
                 <div className="mt-2 w-64 rounded-full bg-muted">
                   <div className="h-2 animate-pulse rounded-full bg-primary" style={{ width: '100%' }} />
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">This may take up to 20 seconds</p>
+                <p className="mt-2 text-xs text-muted-foreground"><Trans>This may take up to 20 seconds</Trans></p>
               </div>
             </div>
           </div>
@@ -398,14 +400,14 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
                     <path d="m6 6 12 12" />
                   </svg>
                 </div>
-                <p className="text-lg font-semibold text-foreground">Webapp Not Available</p>
+                <p className="text-lg font-semibold text-foreground"><Trans>Webapp Not Available</Trans></p>
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  The webapp server is not running. Start the services to view the app.
+                  <Trans>The webapp server is not running. Start the services to view the app.</Trans>
                 </p>
                 <Button variant="outline" size="sm" onClick={retryOnError}>
-                  Retry Connection
+                  <Trans>Retry Connection</Trans>
                 </Button>
               </CardContent>
             </Card>

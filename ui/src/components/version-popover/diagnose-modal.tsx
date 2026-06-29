@@ -7,6 +7,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CheckCircle2, Info, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface DiagnoseModalProps {
   open: boolean;
@@ -28,6 +29,7 @@ interface DoneState {
 }
 
 export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalProps) {
+  const { t } = useLingui();
   const [message, setMessage] = useState('');
   const [started, setStarted] = useState(false);
   const [running, setRunning] = useState(false);
@@ -180,22 +182,24 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Stethoscope className="h-4 w-4" />
-            Diagnose Flowpad
+            <Trans>Diagnose Flowpad</Trans>
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full
-            diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the
-            result.
+            <Trans>
+              Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full
+              diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the
+              result.
+            </Trans>
           </p>
 
           <Textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             disabled={started}
-            placeholder="What went wrong? (leave empty for a full sweep)"
+            placeholder={t`What went wrong? (leave empty for a full sweep)`}
             className="min-h-[80px] text-xs"
           />
 
@@ -221,7 +225,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
               {running && (
                 <div className="mt-1 flex items-center gap-1.5 text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  <span>Working…</span>
+                  <span><Trans>Working…</Trans></span>
                 </div>
               )}
               {done && (
@@ -234,9 +238,9 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
                   <span>
                     {done.ok
                       ? done.conversationId
-                        ? 'Diagnosis recorded.'
-                        : 'Diagnostic complete — no issue found.'
-                      : 'Diagnosis was not recorded — try again.'}
+                        ? t`Diagnosis recorded.`
+                        : t`Diagnostic complete — no issue found.`
+                      : t`Diagnosis was not recorded — try again.`}
                   </span>
                 </div>
               )}
@@ -246,10 +250,17 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
           {running && (
             <div className="flex items-start gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-2 text-[11px] font-medium text-blue-700 dark:border-blue-400/40 dark:text-blue-300">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>
-                This runs in the background — feel free to close this and keep working. When it's
-                done, the result (and any actions) will be waiting on your Home feed.
-              </span>
+              <div className="space-y-0.5">
+                <div className="font-semibold">
+                  <Trans>You can close this window.</Trans>
+                </div>
+                <div className="font-normal">
+                  <Trans>
+                    This runs in the background — feel free to keep working. When it's done, the
+                    result (and any actions) will be waiting on your Home feed.
+                  </Trans>
+                </div>
+              </div>
             </div>
           )}
 
@@ -261,7 +272,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
                 className="flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
               >
                 <Stethoscope className="h-3.5 w-3.5" />
-                Diagnose
+                <Trans>Diagnose</Trans>
               </button>
             </div>
           )}
@@ -302,7 +313,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
                   className="flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"
                 >
                   <Stethoscope className="h-3.5 w-3.5" />
-                  View diagnosis
+                  <Trans>View diagnosis</Trans>
                 </button>
               )}
               <button
@@ -310,7 +321,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
                 onClick={handleClose}
                 className="flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
               >
-                Close
+                <Trans>Close</Trans>
               </button>
             </div>
           )}

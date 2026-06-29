@@ -1,5 +1,6 @@
 import { Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface ProjectSelectorItem {
   /** Stable identifier the consumer cares about (encoded_name, project id, etc). */
@@ -59,6 +60,7 @@ export function ProjectSelector({
   emptyMessage,
   excludeIds,
 }: ProjectSelectorProps) {
+  const { t } = useLingui();
   const [filter, setFilter] = useState('');
 
   const filtered = useMemo(() => {
@@ -85,7 +87,7 @@ export function ProjectSelector({
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter projects…"
+          placeholder={t`Filter projects…`}
           className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         />
       </div>
@@ -94,11 +96,11 @@ export function ProjectSelector({
         {isLoading && projects.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-6">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Loading…</span>
+            <span className="text-xs text-muted-foreground"><Trans>Loading…</Trans></span>
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-6 text-center text-xs text-muted-foreground">
-            {filter ? 'No matches' : (emptyMessage ?? 'No projects')}
+            {filter ? t`No matches` : (emptyMessage ?? t`No projects`)}
           </div>
         ) : (
           <div className="space-y-0.5">

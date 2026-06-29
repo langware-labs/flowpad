@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { isReadOnlySource, type AssetDescriptor } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
@@ -76,6 +77,7 @@ export function AssetPickerPopover({
   side = 'bottom',
   centered = false,
 }: AssetPickerPopoverProps) {
+  const { t } = useLingui();
   const isControlled = controlledOpen !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isControlled ? controlledOpen : uncontrolledOpen;
@@ -191,7 +193,7 @@ export function AssetPickerPopover({
     <>
       <div className="flex items-center gap-1.5 border-b px-3 py-2">
         <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium">Select Asset</span>
+        <span className="text-xs font-medium"><Trans>Select Asset</Trans></span>
         <div className="ml-auto flex items-center" data-testid="asset-picker-scope-bar">
           <ScopeFilterIconBar
             scope={scope}
@@ -234,7 +236,7 @@ export function AssetPickerPopover({
       >
         {rows.length === 0 ? (
           <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-            {isLoading ? 'Loading…' : 'No assets to run.'}
+            {isLoading ? t`Loading…` : t`No assets to run.`}
           </div>
         ) : (
           rows.map((d, idx) => (
@@ -257,7 +259,7 @@ export function AssetPickerPopover({
           className="flex max-h-[min(85vh,40rem)] w-96 max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0"
           data-testid="asset-picker-popover"
         >
-          <DialogTitle className="sr-only">Attach asset</DialogTitle>
+          <DialogTitle className="sr-only"><Trans>Attach asset</Trans></DialogTitle>
           {body}
         </DialogContent>
       </Dialog>
@@ -290,6 +292,7 @@ function PickRow({
   iconForType: (type: string) => LucideIcon;
   onPick: (d: AssetDescriptor) => void;
 }) {
+  const { t } = useLingui();
   const { type } = parseTypeid(descriptor.typeid);
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
@@ -315,7 +318,7 @@ function PickRow({
             role="button"
             tabIndex={0}
             className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Reveal in Finder/Explorer"
+            aria-label={t`Reveal in Finder/Explorer`}
             title={`Reveal in Finder/Explorer\n${descriptor.posix_path}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -334,7 +337,7 @@ function PickRow({
         ) : (
           <Lock
             className="h-3 w-3 flex-shrink-0 text-muted-foreground"
-            aria-label="Read-only source"
+            aria-label={t`Read-only source`}
           />
         ))}
       <span

@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ConversationParticipant, hasRemoteParticipant } from '@sdk';
 import type { AssetDescriptor, ConversationSendPayload } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
@@ -30,6 +31,7 @@ interface NewConversationDialogProps {
 }
 
 export function NewConversationDialog({ open, onClose }: NewConversationDialogProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const ctx = useDataContext();
   const { projects = [] } = useProjects();
@@ -109,7 +111,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         <div className="flex flex-col gap-4 text-sm">
           {isRemote && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="font-medium">From:</span>
+              <span className="font-medium"><Trans>From:</Trans></span>
               {editingName ? (
                 <input
                   className="border-b border-input bg-transparent text-xs text-foreground focus:outline-none"
@@ -134,7 +136,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
                     type="button"
                     onClick={() => setEditingName(true)}
                     className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                    title="Edit sender name"
+                    title={t`Edit sender name`}
                     disabled={busy}
                   >
                     <Pencil className="h-3 w-3" />
@@ -149,7 +151,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               dialog reopens. */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Title
+              <Trans>Title</Trans>
             </label>
             <AutofillInput
               autofill={autofillTitle}
@@ -168,7 +170,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
             </label>
             <Select value={projectId} onValueChange={setProjectId}>
               <SelectTrigger>
-                <SelectValue placeholder={isRemote ? 'No project' : 'Select a project'} />
+                <SelectValue placeholder={isRemote ? t`No project` : t`Select a project`} />
               </SelectTrigger>
               <SelectContent>
                 {projects.map((p) => (
@@ -183,7 +185,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
           {/* Participants */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Participants
+              <Trans>Participants</Trans>
             </label>
             <ContactPicker
               value={participants}
@@ -197,13 +199,13 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
           {/* Initial message — required: a conversation always starts with one. */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Initial message
+              <Trans>Initial message</Trans>
             </label>
             <textarea
               className="min-h-[80px] rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={initialMessage}
               onChange={(e) => setInitialMessage(e.target.value)}
-              placeholder={isRemote ? 'Say hi…' : 'Type your first message…'}
+              placeholder={isRemote ? t`Say hi…` : t`Type your first message…`}
               data-testid="initial-message-input"
             />
           </div>
@@ -212,7 +214,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
               <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                Attachments
+                <Trans>Attachments</Trans>
               </label>
               <AttachMenu
                 assetRefs={assetRefs}
@@ -239,10 +241,10 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => void handleCreate()} disabled={!canCreate}>
-            {busy ? 'Creating…' : 'Create'}
+            {busy ? t`Creating…` : t`Create`}
           </Button>
         </div>
       </DialogContent>

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { GenericEntry } from '@sdk';
 
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -63,24 +64,24 @@ function firstLine(text: string): string {
   return text.split('\n').find((l) => l.trim())?.trim() ?? '';
 }
 
-function kindMeta(op: GenericEntry): KindMeta | null {
+function kindMeta(op: GenericEntry, t: any): KindMeta | null {
   switch (op.kind) {
     case 'file_write': {
       const chips: string[] = [];
       if (op.line_count != null) chips.push(`+${op.line_count} lines`);
-      if (op.is_new) chips.push('new');
-      return { Icon: FileText, iconClassName: 'text-emerald-500', label: 'Write', primary: basename(op.path), chips };
+      if (op.is_new) chips.push(t`new`);
+      return { Icon: FileText, iconClassName: 'text-emerald-500', label: t`Write`, primary: basename(op.path), chips };
     }
     case 'file_edit': {
       const chips: string[] = [];
       if (op.hunks?.length) chips.push(`${op.hunks.length} hunk${op.hunks.length === 1 ? '' : 's'}`);
-      return { Icon: Pencil, iconClassName: 'text-amber-500', label: 'Edit', primary: basename(op.path), chips };
+      return { Icon: Pencil, iconClassName: 'text-amber-500', label: t`Edit`, primary: basename(op.path), chips };
     }
     case 'file_read': {
       const chips: string[] = [];
       if (op.start_line != null && op.end_line != null) chips.push(`${op.start_line}-${op.end_line}`);
       if (op.bytes_count != null) chips.push(`${op.bytes_count}B`);
-      return { Icon: FileText, iconClassName: 'text-sky-500', label: 'Read', primary: basename(op.path), chips };
+      return { Icon: FileText, iconClassName: 'text-sky-500', label: t`Read`, primary: basename(op.path), chips };
     }
     case 'shell_command': {
       const failed = op.exit_code != null && op.exit_code !== 0;
@@ -90,7 +91,7 @@ function kindMeta(op: GenericEntry): KindMeta | null {
       return {
         Icon: Terminal,
         iconClassName: failed ? 'text-red-500' : 'text-orange-500',
-        label: 'Shell',
+        label: t`Shell`,
         primary: firstLine(op.command),
         chips,
       };
@@ -99,7 +100,7 @@ function kindMeta(op: GenericEntry): KindMeta | null {
       const chips: string[] = [];
       if (op.match_count != null) chips.push(`${op.match_count} matches`);
       if (op.path) chips.push(basename(op.path));
-      return { Icon: Search, iconClassName: 'text-purple-500', label: op.search_kind || 'Search', primary: op.query, chips };
+      return { Icon: Search, iconClassName: 'text-purple-500', label: op.search_kind || t`Search`, primary: op.query, chips };
     }
     case 'web_fetch': {
       let host = '';
@@ -109,7 +110,7 @@ function kindMeta(op: GenericEntry): KindMeta | null {
       return {
         Icon: Globe,
         iconClassName: 'text-blue-500',
-        label: 'Web',
+        label: t`Web`,
         primary: host || (op.query ?? ''),
         chips: op.status_code != null ? [`status ${op.status_code}`] : [],
       };
@@ -118,7 +119,7 @@ function kindMeta(op: GenericEntry): KindMeta | null {
       return {
         Icon: ListChecks,
         iconClassName: 'text-cyan-500',
-        label: 'Todos',
+        label: t`Todos`,
         primary: `${op.items.length} item${op.items.length === 1 ? '' : 's'}`,
         chips: [],
       };
@@ -126,12 +127,12 @@ function kindMeta(op: GenericEntry): KindMeta | null {
       return {
         Icon: Bot,
         iconClassName: 'text-fuchsia-500',
-        label: op.agent_type || 'Agent',
+        label: op.agent_type || t`Agent`,
         primary: op.description || firstLine(op.prompt ?? ''),
         chips: [],
       };
     case 'tool_use':
-      return { Icon: Terminal, iconClassName: 'text-orange-400', label: op.tool_name || 'tool', primary: '', chips: [] };
+      return { Icon: Terminal, iconClassName: 'text-orange-400', label: op.tool_name || t`tool`, primary: '', chips: [] };
     default:
       return null;
   }
@@ -140,7 +141,8 @@ function kindMeta(op: GenericEntry): KindMeta | null {
 /** Inline one-liner: `<icon> <label> · <primary>` + chips. */
 export function OperationOneLiner({ operation, usage }: OperationOneLinerProps) {
   const { navigation } = useDockNavigation();
-  const meta = kindMeta(operation);
+  const { t } = useLingui();
+  const meta = kindMeta(operation, t);
   if (!meta) return null;
   const { Icon, iconClassName, label, primary, chips } = meta;
   const costLabel = formatCost(usage?.costUsd);
@@ -181,11 +183,11 @@ export function OperationOneLiner({ operation, usage }: OperationOneLinerProps) 
             navigation.openDockPointer(DockPointer.forLensTranscript('claude', encodeURIComponent(childPath)));
           }}
           className="ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
-          title="Open this agent's transcript"
+          title={t`Open this agent's transcript`}
           data-testid="open-subagent-transcript"
         >
           <ArrowUpRight className="h-3 w-3" />
-          Open
+          <Trans>Open</Trans>
         </button>
       )}
     </div>

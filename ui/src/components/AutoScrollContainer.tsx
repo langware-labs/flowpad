@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { ArrowDown } from 'lucide-react';
+import { useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { useAutoScroll } from '@src/hooks/use-auto-scroll';
 
@@ -13,6 +14,7 @@ export interface AutoScrollContainerHandle {
 
 const AutoScrollContainer = React.forwardRef<AutoScrollContainerHandle, AutoScrollContainerProps>(
   ({ className, children, smooth = false, ...props }, ref) => {
+    const { t } = useLingui();
     const { scrollRef, isAtBottom, scrollToBottom, disableAutoScroll } = useAutoScroll({
       smooth,
       content: children,
@@ -40,7 +42,7 @@ const AutoScrollContainer = React.forwardRef<AutoScrollContainerHandle, AutoScro
               size="icon"
               variant="outline"
               className="rounded-full shadow-md"
-              aria-label="Scroll to bottom"
+              aria-label={t`Scroll to bottom`}
               onClick={() => scrollToBottom()}
             >
               <ArrowDown className="size-4" />

@@ -1,4 +1,6 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ViewToggle } from '@src/components/view-toggle/view-toggle';
+import { LanguageSelector } from '@src/components/footer/LanguageSelector';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
 import { PoweredBy } from '@src/components/powered-by';
@@ -34,6 +36,7 @@ interface ArtifactWithMetadata {
 
 export function Footer({ className = '' }: FooterProps) {
   const { version } = useContext();
+  const { t } = useLingui();
   const { agentId } = useParams();
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId);
@@ -93,7 +96,7 @@ export function Footer({ className = '' }: FooterProps) {
             <FusionSpinner size="xs" />
           ) : repoInfo?.noRepo ? (
             <div className="font-mono text-[10px] text-muted-foreground">
-              (no git repo)
+              <Trans>(no git repo)</Trans>
             </div>
           ) : repoInfo ? (
             <div className="font-mono text-[10px] text-muted-foreground">
@@ -112,11 +115,11 @@ export function Footer({ className = '' }: FooterProps) {
             type="button"
             onClick={() => navigation.openDock(DockPointer.forProject(`@${FLOWPAD_ASSISTANT_PROJECT_UNAME}`))}
             className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            title="Open Flowpad docs"
-            aria-label="Flowpad docs"
+            title={t`Open Flowpad docs`}
+            aria-label={t`Flowpad docs`}
           >
             <BookOpen className="h-3.5 w-3.5" />
-            <span>Flowpad docs</span>
+            <span><Trans>Flowpad docs</Trans></span>
           </button>
           {version && (
             <AdvancedOnly reserve={false}>
@@ -124,6 +127,7 @@ export function Footer({ className = '' }: FooterProps) {
             </AdvancedOnly>
           )}
           <PoweredBy />
+          <LanguageSelector />
         </div>
       </div>
     </footer>

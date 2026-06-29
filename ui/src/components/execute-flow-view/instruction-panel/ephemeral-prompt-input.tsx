@@ -3,6 +3,7 @@ import Editor from '@monaco-editor/react';
 import { Loader2, MessageSquarePlus, Save } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useCallback, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface EphemeralPromptInputProps {
   onSave: (content: string) => void;
@@ -13,6 +14,7 @@ export function EphemeralPromptInput({ onSave, disabled }: EphemeralPromptInputP
   const [content, setContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const { resolvedTheme } = useTheme();
+  const { t } = useLingui();
 
   const handleSave = useCallback(() => {
     if (content.trim()) {
@@ -46,8 +48,8 @@ export function EphemeralPromptInput({ onSave, disabled }: EphemeralPromptInputP
       <div className="flex items-center gap-3">
         <MessageSquarePlus className="h-6 w-6 text-muted-foreground" />
         <div>
-          <h3 className="text-sm font-medium">New Prompt</h3>
-          <p className="text-xs text-muted-foreground">Enter instructions or select a file from the left panel</p>
+          <h3 className="text-sm font-medium"><Trans>New Prompt</Trans></h3>
+          <p className="text-xs text-muted-foreground"><Trans>Enter instructions or select a file from the left panel</Trans></p>
         </div>
       </div>
 
@@ -70,16 +72,16 @@ export function EphemeralPromptInput({ onSave, disabled }: EphemeralPromptInputP
             lineNumbers: 'on',
             folding: true,
             readOnly: disabled || isSaving,
-            placeholder: 'Enter your instructions here...\n\nOne instruction per line.',
+            placeholder: t`Enter your instructions here...\n\nOne instruction per line.`,
           }}
         />
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">Tip: Press Ctrl+Enter to save</span>
+        <span className="text-xs text-muted-foreground"><Trans>Tip: Press Ctrl+Enter to save</Trans></span>
         <Button onClick={handleSave} disabled={disabled || isSaving || !content.trim()} className="gap-2">
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {isSaving ? 'Saving...' : 'Save'}
+          {isSaving ? t`Saving...` : t`Save`}
         </Button>
       </div>
     </div>

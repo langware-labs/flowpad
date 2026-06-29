@@ -8,6 +8,7 @@ import { notify } from '@src/notifications';
 import { useArtifactActions } from '@src/hooks/flow-hooks';
 import { Loader2 } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ArtifactMetadataEditor } from './artifact-metadata-editor';
 import { getArtifactTypeConfig, getArtifactTypeOptions } from './artifact-type-config';
 
@@ -36,6 +37,7 @@ const initialFormState: FormState = {
 };
 
 export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, onSuccess }) => {
+  const { t } = useLingui();
   const { addArtifact, isAdding } = useArtifactActions();
   const [formState, setFormState] = useState<FormState>(initialFormState);
 
@@ -67,8 +69,8 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
 
       if (!formState.name.trim()) {
         notify.error({
-          title: 'Validation error',
-          message: 'Name is required',
+          title: t`Validation error`,
+          message: t`Name is required`,
         });
         return;
       }
@@ -112,16 +114,16 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
       try {
         await addArtifact(artifactData);
         notify.success({
-          title: 'Artifact created',
-          message: `${formState.name} has been added successfully.`,
+          title: t`Artifact created`,
+          message: t`${formState.name} has been added successfully.`,
         });
         setFormState(initialFormState);
         onOpenChange(false);
         onSuccess?.();
       } catch (error) {
         notify.error({
-          title: 'Failed to create artifact',
-          message: error instanceof Error ? error.message : 'An error occurred',
+          title: t`Failed to create artifact`,
+          message: error instanceof Error ? error.message : t`An error occurred`,
         });
       }
     },
@@ -137,19 +139,19 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Add Artifact</DialogTitle>
-          <DialogDescription>Create a new artifact in this project.</DialogDescription>
+          <DialogTitle><Trans>Add Artifact</Trans></DialogTitle>
+          <DialogDescription><Trans>Create a new artifact in this project.</Trans></DialogDescription>
         </DialogHeader>
 
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
           {/* Name */}
           <div className="space-y-2">
             <Label htmlFor="name">
-              Name <span className="text-destructive">*</span>
+              <Trans>Name</Trans> <span className="text-destructive">*</span>
             </Label>
             <Input
               id="name"
-              placeholder="My Artifact"
+              placeholder={t`My Artifact`}
               value={formState.name}
               onChange={(e) => setFormState((prev) => ({ ...prev, name: e.target.value }))}
             />
@@ -157,10 +159,10 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
 
           {/* Artifact Type */}
           <div className="space-y-2">
-            <Label htmlFor="artifact-type">Type</Label>
+            <Label htmlFor="artifact-type"><Trans>Type</Trans></Label>
             <Select value={formState.artifactType || ''} onValueChange={handleTypeChange}>
               <SelectTrigger>
-                <SelectValue placeholder="Select artifact type" />
+                <SelectValue placeholder={t`Select artifact type`} />
               </SelectTrigger>
               <SelectContent>
                 {artifactTypeOptions.map((option) => (
@@ -174,7 +176,7 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
 
           {/* Reference Type */}
           <div className="space-y-2">
-            <Label htmlFor="ref-type">Reference Type</Label>
+            <Label htmlFor="ref-type"><Trans>Reference Type</Trans></Label>
             <Select
               value={formState.refType}
               onValueChange={(value) => setFormState((prev) => ({ ...prev, refType: value as CodebaseReferenceType }))}
@@ -183,21 +185,21 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={CodebaseReferenceType.FILE}>File</SelectItem>
-                <SelectItem value={CodebaseReferenceType.FOLDER}>Folder</SelectItem>
-                <SelectItem value={CodebaseReferenceType.URL}>URL</SelectItem>
-                <SelectItem value={CodebaseReferenceType.REFERENCE}>Reference</SelectItem>
-                <SelectItem value={CodebaseReferenceType.GLOB}>Glob Pattern</SelectItem>
+                <SelectItem value={CodebaseReferenceType.FILE}><Trans>File</Trans></SelectItem>
+                <SelectItem value={CodebaseReferenceType.FOLDER}><Trans>Folder</Trans></SelectItem>
+                <SelectItem value={CodebaseReferenceType.URL}><Trans>URL</Trans></SelectItem>
+                <SelectItem value={CodebaseReferenceType.REFERENCE}><Trans>Reference</Trans></SelectItem>
+                <SelectItem value={CodebaseReferenceType.GLOB}><Trans>Glob Pattern</Trans></SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {/* Path */}
           <div className="space-y-2">
-            <Label htmlFor="path">Path</Label>
+            <Label htmlFor="path"><Trans>Path</Trans></Label>
             <Input
               id="path"
-              placeholder="./src/app or https://... (optional)"
+              placeholder={t`./src/app or https://... (optional)`}
               value={formState.path}
               onChange={(e) => setFormState((prev) => ({ ...prev, path: e.target.value }))}
             />
@@ -205,10 +207,10 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
 
           {/* Description */}
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="description"><Trans>Description</Trans></Label>
             <Input
               id="description"
-              placeholder="Optional description"
+              placeholder={t`Optional description`}
               value={formState.description}
               onChange={(e) => setFormState((prev) => ({ ...prev, description: e.target.value }))}
             />
@@ -216,7 +218,7 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
 
           {/* Type-specific metadata */}
           <div className="space-y-2">
-            <Label>Metadata</Label>
+            <Label><Trans>Metadata</Trans></Label>
             <div className="rounded-md border p-3">
               <ArtifactMetadataEditor
                 artifactType={formState.artifactType}
@@ -228,11 +230,11 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={handleCancel} disabled={isAdding}>
-              Cancel
+              <Trans>Cancel</Trans>
             </Button>
             <Button type="submit" disabled={isAdding}>
               {isAdding && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Add Artifact
+              <Trans>Add Artifact</Trans>
             </Button>
           </DialogFooter>
         </form>

@@ -15,6 +15,7 @@ import Editor from '@monaco-editor/react';
 import { Pencil } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { scopeColor } from './scope-colors';
 
 interface Props {
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function TriggerEditor({ trigger }: Props) {
+  const { t } = useLingui();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -49,12 +51,12 @@ export function TriggerEditor({ trigger }: Props) {
         if (data && typeof (data as { content: string }).content === 'string') {
           setContent((data as { content: string }).content);
         } else {
-          setError('Failed to load trigger.py');
+          setError(t`Failed to load trigger.py`);
         }
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [trigger.id]);
+  }, [trigger.id, t]);
 
   const handleSave = async () => {
     if (isReadOnly || !trigger.id) return;
@@ -66,7 +68,7 @@ export function TriggerEditor({ trigger }: Props) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed');
+      setError(e instanceof Error ? e.message : t`Save failed`);
     } finally {
       setSaving(false);
     }
@@ -99,20 +101,20 @@ export function TriggerEditor({ trigger }: Props) {
               size="sm"
               className="h-7 gap-1.5 text-xs text-muted-foreground"
               onClick={() => setConfirmOpen(true)}
-              title="Edit system trigger"
+              title={t`Edit system trigger`}
             >
               <Pencil className="h-3 w-3" />
-              Edit
+              <Trans>Edit</Trans>
             </Button>
           )}
           {isSystem && unlocked && (
-            <span className="text-[10px] text-amber-500">Editing system trigger</span>
+            <span className="text-[10px] text-amber-500"><Trans>Editing system trigger</Trans></span>
           )}
           {error && <span className="text-[10px] text-destructive">{error}</span>}
-          {saved && <span className="text-[10px] text-green-500">Saved</span>}
+          {saved && <span className="text-[10px] text-green-500"><Trans>Saved</Trans></span>}
           {!isReadOnly && (
             <Button size="sm" onClick={() => void handleSave()} disabled={saving || loading}>
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? t`Saving...` : t`Save`}
             </Button>
           )}
         </div>
@@ -121,7 +123,7 @@ export function TriggerEditor({ trigger }: Props) {
       {/* Editor */}
       <div className="flex-1 overflow-hidden">
         {loading ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading...</div>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground"><Trans>Loading...</Trans></div>
         ) : (
           <Editor
             height="100%"
@@ -149,17 +151,15 @@ export function TriggerEditor({ trigger }: Props) {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Edit a system trigger?</AlertDialogTitle>
+            <AlertDialogTitle><Trans>Edit a system trigger?</Trans></AlertDialogTitle>
             <AlertDialogDescription>
-              System triggers power core Flowpad functionality. Editing them can cause parts
-              of the app to behave unexpectedly. Proceed only if you understand what this
-              trigger does.
+              <Trans>System triggers power core Flowpad functionality. Editing them can cause parts of the app to behave unexpectedly. Proceed only if you understand what this trigger does.</Trans>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
             <AlertDialogAction onClick={() => setUnlocked(true)}>
-              Edit anyway
+              <Trans>Edit anyway</Trans>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { enableMcp, isMcpAvailable } from '@src/components/assets/utils';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
@@ -80,6 +81,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   // shareable + back-button-restorable, matching ?editorMode handling in
   // MarkdownEditor. Param name is `runId` to mirror /dev/trace/:runId.
   const { navigation, currentDock } = useDockNavigation();
+  const { t } = useLingui();
   const selectedRunId = currentDock?.options?.[RUN_ID_PARAM] ?? null;
   const setSelectedRunId = useCallback(
     (runId: string | null) => {
@@ -154,7 +156,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
       await doRun();
     } catch (err) {
       console.error('[WorkflowAssetEditor] Run failed:', err);
-      notify.error({ title: 'Failed to start workflow' });
+      notify.error({ title: t`Failed to start workflow` });
     } finally {
       setIsStarting(false);
     }
@@ -166,11 +168,11 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
       try {
         await enableMcp('flow-sdk-mcp', scope);
         setShowMcpModal(false);
-        notify.success({ title: `flow-sdk-mcp enabled (${scope} scope). Starting workflow…` });
+        notify.success({ title: t`flow-sdk-mcp enabled (${scope} scope). Starting workflow…` });
         await doRun();
       } catch (err) {
         console.error('[WorkflowAssetEditor] Enable MCP failed:', err);
-        notify.error({ title: 'Failed to enable MCP' });
+        notify.error({ title: t`Failed to enable MCP` });
       } finally {
         setMcpEnabling(false);
       }
@@ -194,19 +196,19 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
       disabled={!resolvedWorkflow.asset_ref}
       title={
         !resolvedWorkflow.asset_ref
-          ? 'No file linked'
+          ? t`No file linked`
           : isRunning
-            ? 'Workflow running…'
-            : 'Run workflow'
+            ? t`Workflow running…`
+            : t`Run workflow`
       }
     />
   );
 
   const runsTab: ExtraSideTab = {
     id: 'runs',
-    label: runHistory.length > 0 ? `Runs ${runHistory.length}` : 'Runs',
+    label: runHistory.length > 0 ? t`Runs ${runHistory.length}` : t`Runs`,
     icon: History,
-    description: 'Workflow runs',
+    description: t`Workflow runs`,
     panel: (
       <WorkflowRunsPanel
         entries={runHistory}
@@ -259,19 +261,18 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
       <AlertDialog open={showMcpModal} onOpenChange={setShowMcpModal}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Flow MCP not enabled</AlertDialogTitle>
+            <AlertDialogTitle><Trans>Flow MCP not enabled</Trans></AlertDialogTitle>
             <AlertDialogDescription>
-              The <code>flow-sdk-mcp</code> server is required to run workflows with progress
-              tracing. Enable it to continue.
+              <Trans>The <code>flow-sdk-mcp</code> server is required to run workflows with progress tracing. Enable it to continue.</Trans>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
             <Button disabled={mcpEnabling} onClick={() => void handleEnableMcp('project')}>
-              Enable for project
+              <Trans>Enable for project</Trans>
             </Button>
             <Button disabled={mcpEnabling} onClick={() => void handleEnableMcp('user')}>
-              Enable for user
+              <Trans>Enable for user</Trans>
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

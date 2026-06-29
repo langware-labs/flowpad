@@ -7,6 +7,7 @@ import { dataManager, Trigger, type ITrigger } from '@sdk';
 import { ActionInfo } from '@sdk';
 import { Play } from 'lucide-react';
 import { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { scopeColor } from './scope-colors';
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
+  const { t } = useLingui();
   const { project } = useProject();
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
@@ -61,7 +63,7 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
         onSaved(created as unknown as ITrigger);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed');
+      setError(e instanceof Error ? e.message : t`Save failed`);
     } finally {
       setSaving(false);
     }
@@ -74,7 +76,7 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
     try {
       await new Trigger(trigger).runNow();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Run failed');
+      setError(e instanceof Error ? e.message : t`Run failed`);
     } finally {
       setRunning(false);
     }
@@ -90,10 +92,10 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
               {trigger.scope || 'user'}
             </span>
             <span className="font-mono text-sm font-medium">{trigger.displayName}</span>
-            <Badge variant="outline" className="h-4 px-1 text-[9px]">schedule</Badge>
+            <Badge variant="outline" className="h-4 px-1 text-[9px]"><Trans>schedule</Trans></Badge>
             {trigger.next_run && (
               <span className="text-[10px] text-muted-foreground">
-                next: {new Date(trigger.next_run).toLocaleString()}
+                <Trans>next: {new Date(trigger.next_run).toLocaleString()}</Trans>
               </span>
             )}
             <div className="ml-auto flex items-center gap-2">
@@ -104,16 +106,16 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
                 className="h-7 gap-1.5 text-xs"
                 onClick={() => { void handleRunNow(); }}
                 disabled={running || saving || !trigger.id}
-                title="Fire this trigger immediately"
+                title={t`Fire this trigger immediately`}
               >
                 <Play className="h-3 w-3" />
-                {running ? 'Running…' : 'Run now'}
+                {running ? t`Running…` : t`Run now`}
               </Button>
             </div>
           </>
         ) : (
           <>
-            <span className="text-sm font-medium">New Schedule Trigger</span>
+            <span className="text-sm font-medium"><Trans>New Schedule Trigger</Trans></span>
             {error && <span className="ml-auto text-[10px] text-destructive">{error}</span>}
           </>
         )}
@@ -123,19 +125,19 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
       <div className="flex-1 overflow-auto">
         {/* Instruction + workdir */}
         <div className="flex flex-col gap-2 border-b px-4 py-3">
-          <label className="text-[11px] font-medium text-muted-foreground">Instruction</label>
+          <label className="text-[11px] font-medium text-muted-foreground"><Trans>Instruction</Trans></label>
           <textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
-            placeholder="Prompt sent to the agentic process when this trigger fires…"
+            placeholder={t`Prompt sent to the agentic process when this trigger fires…`}
             rows={4}
             className="w-full resize-y rounded border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
-          <label className="text-[11px] font-medium text-muted-foreground">Working directory</label>
+          <label className="text-[11px] font-medium text-muted-foreground"><Trans>Working directory</Trans></label>
           <Input
             value={workdir}
             onChange={(e) => setWorkdir(e.target.value)}
-            placeholder={project?.fs_storage_mount_path ?? 'Optional — leave blank for home'}
+            placeholder={project?.fs_storage_mount_path ?? t`Optional — leave blank for home`}
             className="h-7 font-mono text-xs"
           />
         </div>
@@ -148,7 +150,7 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
             expr: trigger.expr ?? '',
             trigger_type: trigger.sched_trigger_type ?? 'cron',
           } : {}}
-          defaultName="My Schedule"
+          defaultName={t`My Schedule`}
           onSubmit={handleSubmit}
           onCancel={onCancel ?? (() => {})}
           submitting={saving}

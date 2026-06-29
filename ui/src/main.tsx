@@ -1,3 +1,4 @@
+import '@src/i18n-init';
 import { initSentry } from '@sdk';
 import { sdkConfig } from '@sdk/config/index';
 import { initDesktopBackend } from '@sdk/config/desktop';
@@ -8,6 +9,8 @@ import ReactDOM from 'react-dom/client';
 import { RouterProvider } from 'react-router';
 import '@src/contexts/dev-mode-context';
 import '@src/contexts/view-mode-context';
+import { initLocale } from '@src/contexts/locale-context';
+import { LocaleProviders } from '@src/contexts/LocaleProviders';
 import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
 import './styles/highlightjs.css';
@@ -46,16 +49,21 @@ async function init() {
   defineGlobals();
   bindMouseNavButtons();
   await initDesktopBackend(sdkConfig);
+  // Resolve + activate the locale and set `<html lang/dir>` BEFORE first paint
+  // so there's no flash of wrong-language / wrong-direction content.
+  await initLocale();
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
-        <RouterProvider
-          router={router}
-          unstable_onError={(error) => {
-            console.error('Error loading session:', error);
-          }}
-        />
+        <LocaleProviders>
+          <RouterProvider
+            router={router}
+            unstable_onError={(error) => {
+              console.error('Error loading session:', error);
+            }}
+          />
+        </LocaleProviders>
       </ThemeProvider>
     </React.StrictMode>,
   );

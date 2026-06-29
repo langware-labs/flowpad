@@ -4,6 +4,7 @@ import { FlowpadDiagnosis, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Maximize2, Stethoscope } from 'lucide-react';
 import { useMemo } from 'react';
 
@@ -28,6 +29,7 @@ export function DiagnosisReportModal({
   conversationId,
   onClose,
 }: DiagnosisReportModalProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const typeId = useMemo(
     () => (diagnosisId ? new TypeId(FlowpadDiagnosis.type, diagnosisId) : null),
@@ -47,13 +49,13 @@ export function DiagnosisReportModal({
         <DialogHeader className="min-w-0">
           <DialogTitle className="flex items-center gap-2 pr-6">
             <Stethoscope className="h-4 w-4 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{diag?.title || 'Diagnosis'}</span>
+            <span className="min-w-0 flex-1 truncate">{diag?.title || t`Diagnosis`}</span>
             <button
               type="button"
               onClick={handleExpand}
               disabled={!diagnosisId}
-              title="Open as a tab"
-              aria-label="Open diagnosis as a tab"
+              title={t`Open as a tab`}
+              aria-label={t`Open diagnosis as a tab`}
               className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
             >
               <Maximize2 className="h-4 w-4" />
@@ -78,7 +80,7 @@ export function DiagnosisReportModal({
               onClick={onClose}
               className="flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
-              Close
+              <Trans>Close</Trans>
             </button>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { APIEntity, FSRef } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { FileQuestion, RefreshCw } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 interface MissingAssetCardProps<T extends APIEntity<T>> {
   typeLabel: string;
@@ -44,10 +45,10 @@ export function MissingAssetCard<T extends APIEntity<T>>({
       <div className="flex max-w-md flex-col items-center gap-3 rounded-lg border bg-muted/30 p-6 text-sm">
         <FileQuestion className="h-6 w-6 text-muted-foreground" />
         <div className="text-center">
-          <div className="font-medium">Missing asset</div>
+          <div className="font-medium"><Trans>Missing asset</Trans></div>
           <div className="mt-1 break-all text-xs text-muted-foreground">{fsRef.path}</div>
           <div className="mt-2 text-xs text-muted-foreground">
-            The file may have been deleted, moved, or doesn't match the {typeLabel} format.
+            <Trans>The file may have been deleted, moved, or doesn't match the {typeLabel} format.</Trans>
           </div>
           {entity && (
             <div className="mt-2 break-all text-xs text-muted-foreground">
@@ -58,7 +59,7 @@ export function MissingAssetCard<T extends APIEntity<T>>({
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={onRetry} data-testid="missing-asset-retry">
-            <RefreshCw className="mr-1 h-3 w-3" /> Retry
+            <RefreshCw className="mr-1 h-3 w-3" /> <Trans>Retry</Trans>
           </Button>
         </div>
       </div>

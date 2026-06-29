@@ -5,6 +5,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SANDBOX_URL } from '@src/lib/mcp-sandbox';
 import { isInternalDockUrl, parseDockUrlToPointer } from '@src/components/app-host/dock-url-helpers';
+import { Trans } from '@lingui/react/macro';
 import '@src/lib/mcp-host.css';
 
 const DEFAULT_PAGE = 'index';
@@ -126,12 +127,12 @@ export function ShowView() {
   if (!params) {
     return (
       <div className="h-full w-full p-8 font-mono">
-        <h2 className="mb-4 text-xl font-bold">Invalid Show Path</h2>
-        <p>Expected format: /dock/show/&lt;entity-vfs&gt;?page=&lt;page&gt;&amp;component=&lt;component&gt;</p>
+        <h2 className="mb-4 text-xl font-bold"><Trans>Invalid Show Path</Trans></h2>
+        <p><Trans>Expected format: /dock/show/&lt;entity-vfs&gt;?page=&lt;page&gt;&amp;component=&lt;component&gt;</Trans></p>
         <p className="mt-2 text-sm text-gray-600">
-          Defaults: page=&quot;{DEFAULT_PAGE}&quot;, component=&quot;{DEFAULT_COMPONENT}&quot;
+          <Trans>Defaults: page=&quot;{DEFAULT_PAGE}&quot;, component=&quot;{DEFAULT_COMPONENT}&quot;</Trans>
         </p>
-        <p className="mt-2">Received pointer: {currentDock?.pointer || 'none'}</p>
+        <p className="mt-2"><Trans>Received pointer: {currentDock?.pointer || 'none'}</Trans></p>
       </div>
     );
   }
@@ -139,7 +140,7 @@ export function ShowView() {
   if (error) {
     return (
       <div className="h-full w-full p-8 font-mono text-red-600">
-        <h2 className="mb-4 text-xl font-bold">Error Loading Component</h2>
+        <h2 className="mb-4 text-xl font-bold"><Trans>Error Loading Component</Trans></h2>
         <p>{error}</p>
       </div>
     );
@@ -148,7 +149,7 @@ export function ShowView() {
   if (html === null) {
     return (
       <div className="flex h-full w-full items-center justify-center">
-        <p className="text-gray-500">Loading MCP UI component...</p>
+        <p className="text-gray-500"><Trans>Loading MCP UI component...</Trans></p>
       </div>
     );
   }

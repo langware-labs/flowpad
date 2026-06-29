@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Play } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { PermissionAction } from '@sdk';
 import {
   Dialog,
@@ -39,6 +40,7 @@ export function ExecutePromptDialog({
   projectId,
   onExecute,
 }: ExecutePromptDialogProps) {
+  const { t } = useLingui();
   const who = contact.name?.trim() || contact.email?.trim() || 'this contact';
   const hasProject = !!projectId;
 
@@ -78,19 +80,18 @@ export function ExecutePromptDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Play className="h-4 w-4 text-primary" />
-            Execute prompt from {who}
+            <Trans>Execute prompt from {who}</Trans>
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 text-sm">
           <p className="text-muted-foreground">
-            Run this prompt in the shared session now. Optionally let future
-            prompts from {who} run automatically.
+            <Trans>Run this prompt in the shared session now. Optionally let future prompts from {who} run automatically.</Trans>
           </p>
 
           <fieldset className="flex flex-col gap-2">
             <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Auto-run future prompts
+              <Trans>Auto-run future prompts</Trans>
             </legend>
             <label className="flex items-center gap-2">
               <Checkbox
@@ -100,7 +101,7 @@ export function ExecutePromptDialog({
                 data-testid="perm-autorun-project"
               />
               <span className={hasProject ? '' : 'text-muted-foreground'}>
-                Auto-run prompts from {who} for this project
+                <Trans>Auto-run prompts from {who} for this project</Trans>
               </span>
             </label>
             <label className="flex items-center gap-2">
@@ -109,13 +110,13 @@ export function ExecutePromptDialog({
                 onCheckedChange={(v) => setAutorunGlobal(!!v)}
                 data-testid="perm-autorun-global"
               />
-              <span>Auto-run prompts from {who} (all projects)</span>
+              <span><Trans>Auto-run prompts from {who} (all projects)</Trans></span>
             </label>
           </fieldset>
 
           <fieldset className="flex flex-col gap-2">
             <legend className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Auto-reply
+              <Trans>Auto-reply</Trans>
             </legend>
             <label className="flex items-center gap-2">
               <Checkbox
@@ -123,7 +124,7 @@ export function ExecutePromptDialog({
                 onCheckedChange={(v) => setReplyOnce(!!v)}
                 data-testid="perm-reply-once"
               />
-              <span>Send the reply for just this message</span>
+              <span><Trans>Send the reply for just this message</Trans></span>
             </label>
             <label className="flex items-center gap-2">
               <Checkbox
@@ -133,7 +134,7 @@ export function ExecutePromptDialog({
                 data-testid="perm-reply-project"
               />
               <span className={hasProject ? '' : 'text-muted-foreground'}>
-                Always auto-reply to {who} for this project
+                <Trans>Always auto-reply to {who} for this project</Trans>
               </span>
             </label>
             <label className="flex items-center gap-2">
@@ -142,18 +143,18 @@ export function ExecutePromptDialog({
                 onCheckedChange={(v) => setReplyGlobal(!!v)}
                 data-testid="perm-reply-global"
               />
-              <span>Always auto-reply to {who} (all projects)</span>
+              <span><Trans>Always auto-reply to {who} (all projects)</Trans></span>
             </label>
           </fieldset>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
+            {t`Cancel`}
           </Button>
           <Button onClick={() => void confirm()} disabled={busy} data-testid="execute-prompt-confirm" className="gap-1.5">
             <Play className="h-4 w-4" />
-            {busy ? 'Running…' : 'Execute'}
+            {busy ? t`Running…` : t`Execute`}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -12,6 +12,7 @@ import {
 import { ViewType } from '@sdk';
 import { Loader2, Pin, PinOff, Plus } from 'lucide-react';
 import { useCallback } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { OpenerDescriptor, OpenerId } from './tab_opener_types';
 import { usePinnedOpeners } from './usePinnedOpeners';
@@ -50,6 +51,7 @@ export function getInlineOpeners(
 }
 
 export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) {
+  const { t } = useLingui();
   const { pinned, lastOpened, isPinned, togglePin, rememberOpened } = usePinnedOpeners();
   const { navigation } = useDockNavigation();
 
@@ -97,8 +99,8 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
               size="icon"
               className="h-7 w-7 rounded"
               disabled={disabled}
-              aria-label="Open docker terminal"
-              title="Open docker terminal"
+              aria-label={t`Open docker terminal`}
+              title={t`Open docker terminal`}
               data-testid="open-docker-tab-button"
             >
               {iconNode}
@@ -169,8 +171,8 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
           togglePin(opener.id);
         }}
         className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-        aria-label={pinned ? `Unpin ${opener.label}` : `Pin ${opener.label}`}
-        title={pinned ? 'Unpin' : 'Pin'}
+        aria-label={pinned ? t`Unpin ${opener.label}` : t`Pin ${opener.label}`}
+        title={pinned ? t`Unpin` : t`Pin`}
         data-testid={`opener-pin-toggle-${opener.id}`}
         data-state={pinned ? 'pinned' : 'unpinned'}
       >
@@ -237,8 +239,8 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
             variant="ghost"
             size="icon"
             className="h-7 w-7 rounded"
-            aria-label="Open new tab menu"
-            title="New tab"
+            aria-label={t`Open new tab menu`}
+            title={t`New tab`}
             data-testid="opener-plus-button"
           >
             <Plus className="h-4 w-4" />

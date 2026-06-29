@@ -68,6 +68,7 @@ const DocsGraphView = lazy(() =>
 );
 import { UserDropdown } from './user-dropdown/user-dropdown';
 import { UnifiedTabStrip } from './unified-tab-strip';
+import { Trans } from '@lingui/react/macro';
 
 export function ContentPanel() {
   // Get navigation instance for URL-first architecture
@@ -193,9 +194,9 @@ export function ContentPanel() {
         >
           <AlertTriangle className="h-9 w-9 text-destructive" />
           <div>
-            <h2 className="text-base font-semibold text-foreground">Tab failed to open</h2>
+            <h2 className="text-base font-semibold text-foreground"><Trans>Tab failed to open</Trans></h2>
             <p className="mt-1 max-w-md text-sm">
-              {activeLifecycle?.error || 'The tab content could not be prepared.'}
+              {activeLifecycle?.error || <Trans>The tab content could not be prepared.</Trans>}
             </p>
           </div>
         </div>
@@ -213,7 +214,7 @@ export function ContentPanel() {
         return checkpointHash ? (
           <DiffViewer checkpoint_hash={checkpointHash} />
         ) : (
-          <div className="p-4 text-gray-500">No checkpoint selected</div>
+          <div className="p-4 text-gray-500"><Trans>No checkpoint selected</Trans></div>
         );
       case ViewType.MARKDOWN:
         return <MarkdownViewer />;
@@ -221,7 +222,7 @@ export function ContentPanel() {
         return activeSurveyData && onSurveyComplete ? (
           <SurveyView surveyData={activeSurveyData} onComplete={onSurveyComplete} />
         ) : (
-          <div className="p-6 text-muted-foreground">No active survey</div>
+          <div className="p-6 text-muted-foreground"><Trans>No active survey</Trans></div>
         );
       case ViewType.SYSTEM_PROFILE:
         return <LiveStatus />;
@@ -239,11 +240,11 @@ export function ContentPanel() {
           <div className="flex h-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-gray-200 p-6 text-center">
             <LogIn className="h-10 w-10 text-gray-400" />
             <div>
-              <h2 className="text-lg font-semibold">Login Required</h2>
-              <p className="mt-1 text-sm text-gray-500">Please log in to view and manage environment variables.</p>
+              <h2 className="text-lg font-semibold"><Trans>Login Required</Trans></h2>
+              <p className="mt-1 text-sm text-gray-500"><Trans>Please log in to view and manage environment variables.</Trans></p>
             </div>
             <Button onClick={() => void navigator.navigateToLogin()} className="px-6">
-              Login
+              <Trans>Login</Trans>
             </Button>
           </div>
         );
@@ -318,7 +319,7 @@ export function ContentPanel() {
         return currentDock?.pointer ? (
           <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground">No process ID specified</div>
+          <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No process ID specified</Trans></div>
         );
       case ViewType.ASSETS:
       case ViewType.PROJECT:

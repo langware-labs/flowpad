@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronRight, Play } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 import { useIsDev } from '@src/components/view-mode';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   workerIcon,
   workerLabel,
@@ -66,6 +67,7 @@ export function WorkerToolbar({
   variant = 'icon-row',
   testIdPrefix = 'worker',
 }: WorkerToolbarProps) {
+  const { t } = useLingui();
   const isDev = useIsDev();
   const { lastWorker, rememberWorker } = useLastWorkerType();
   const [expanded, setExpanded] = useState(false);
@@ -84,10 +86,10 @@ export function WorkerToolbar({
         onClick={onOpen}
         data-testid={`${testIdPrefix}-open-session`}
         className="inline-flex h-7 items-center gap-1.5 rounded border border-border px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-        title={openTitle}
+        title={openTitle ?? t`Open the session`}
       >
         <Play className="h-3.5 w-3.5 text-orange-500" />
-        <span>Open</span>
+        <span><Trans>Open</Trans></span>
       </button>
     );
   }
@@ -115,7 +117,7 @@ export function WorkerToolbar({
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
             >
               <Icon className="h-3 w-3" />
-              Session — {workerLabel(worker)}
+              <Trans>Session — {workerLabel(worker)}</Trans>
             </button>
           );
         })}
@@ -124,11 +126,11 @@ export function WorkerToolbar({
             type="button"
             onClick={() => setExpanded(true)}
             data-testid={`${testIdPrefix}-launch-more`}
-            title="Show other workers"
+            title={t`Show other workers`}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground transition-colors hover:bg-muted"
           >
             <ChevronRight className="h-3 w-3" />
-            More…
+            <Trans>More…</Trans>
           </button>
         )}
       </div>
@@ -146,7 +148,7 @@ export function WorkerToolbar({
             onClick={() => launch(worker)}
             disabled={starting}
             data-testid={`${testIdPrefix}-launch-${worker}`}
-            title={`Start ${workerLabel(worker)}`}
+            title={t`Start ${workerLabel(worker)}`}
             className={WORKER_ICON_BUTTON_CLASS}
           >
             <Icon className="h-3.5 w-3.5" />
@@ -158,7 +160,7 @@ export function WorkerToolbar({
           type="button"
           onClick={() => setExpanded(true)}
           data-testid={`${testIdPrefix}-launch-more`}
-          title="Show other workers"
+          title={t`Show other workers`}
           className={cn(WORKER_ICON_BUTTON_CLASS, 'text-muted-foreground')}
         >
           <ChevronRight className="h-3.5 w-3.5" />

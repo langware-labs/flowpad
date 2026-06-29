@@ -4,11 +4,13 @@ import { useAuth } from '@sdk/react/hooks';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import ServiceUnavailableScreen from '@src/components/agent-layout/service-unavailable-screen/service-unavailable-screen';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 const AgentRedirect = () => {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const { error: bootstrapError } = useAuth();
+  const { t } = useLingui();
 
   useEffect(() => {
     let isMounted = true;
@@ -21,7 +23,7 @@ const AgentRedirect = () => {
 
     const defaultAgentTypeId = dataContext.agentTypeId;
     if (!defaultAgentTypeId) {
-      setError('No default agent found, missing agent type ID in context.');
+      setError(t`No default agent found, missing agent type ID in context.`);
       return;
     }
 
@@ -47,10 +49,10 @@ const AgentRedirect = () => {
         </div>
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
-            <h2 className="mb-4 text-2xl font-semibold">Something went wrong</h2>
+            <h2 className="mb-4 text-2xl font-semibold"><Trans>Something went wrong</Trans></h2>
             <p className="text-gray-600">{error}</p>
             <p className="text-gray-600">
-              Please contact support at
+              <Trans>Please contact support at
               <a
                 href={
                   'mailto:support@flowpad.ai?subject=Flowpad App not loading - ' +
@@ -59,10 +61,10 @@ const AgentRedirect = () => {
                 className="pl-1 underline"
               >
                 support@flowpad.ai
-              </a>
+              </a></Trans>
             </p>
             <Button className="mt-16" variant="outline" onClick={() => window.location.reload()}>
-              Retry
+              <Trans>Retry</Trans>
             </Button>
           </div>
         </div>

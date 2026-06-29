@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ListTree, Play, FileText, Loader2, RefreshCw } from 'lucide-react';
 import {
   AgenticProcess,
@@ -44,14 +45,6 @@ function isInsidePath(child: string, parent: string): boolean {
   return c === p || c.startsWith(p + '/');
 }
 
-function statusLabel(latestProcessId: string | undefined): { label: string; tone: 'idle' | 'running' | 'done' | 'error' } {
-  if (!latestProcessId) return { label: 'never run', tone: 'idle' };
-  // The viewer doesn't subscribe to live process status here; the AgenticProcess
-  // pointer is enough for "View transcript" navigation. A future iteration can
-  // wire useAgenticProcessStatus(latestProcessId) if/when that hook exists.
-  return { label: 'has runs', tone: 'done' };
-}
-
 const toneClasses: Record<'idle' | 'running' | 'done' | 'error', string> = {
   idle:    'bg-muted text-muted-foreground',
   running: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
@@ -61,7 +54,16 @@ const toneClasses: Record<'idle' | 'running' | 'done' | 'error', string> = {
 
 export function LlmIndexersViewer() {
   const { navigation } = useDockNavigation();
+  const { t } = useLingui();
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  const statusLabel = (latestProcessId: string | undefined): { label: string; tone: 'idle' | 'running' | 'done' | 'error' } => {
+    if (!latestProcessId) return { label: t`never run`, tone: 'idle' };
+    // The viewer doesn't subscribe to live process status here; the AgenticProcess
+    // pointer is enough for "View transcript" navigation. A future iteration can
+    // wire useAgenticProcessStatus(latestProcessId) if/when that hook exists.
+    return { label: t`has runs`, tone: 'done' };
+  };
 
   const request = useMemo(() => new QueryRequest({ type: MarkdownIndex.type }), []);
   const { data: allIndexes = [], isLoading, refetch } = useEntitiesQuery<MarkdownIndex>(request);
@@ -87,8 +89,8 @@ export function LlmIndexersViewer() {
   const runRebuild = useCallback(async (index: MarkdownIndex) => {
     if (!index.vault_root) {
       notify.info({
-        title: 'Cannot run rebuild',
-        message: 'MarkdownIndex has no vault_root — set the source path first.',
+        title: t`Cannot run rebuild`,
+        message: t`MarkdownIndex has no vault_root — set the source path first.`,
       });
       return;
     }
@@ -128,13 +130,13 @@ export function LlmIndexersViewer() {
       }).save([index.typeId]);
       void process.prompt(instruction);
       notify.success({
-        title: 'Rebuild started',
-        message: `MarkdownIndex ${index.name ?? index.id} is rebuilding.`,
+        title: t`Rebuild started`,
+        message: t`MarkdownIndex ${index.name ?? index.id} is rebuilding.`,
       });
       await refetch();
     } catch (err) {
       notify.info({
-        title: 'Rebuild failed to start',
+        title: t`Rebuild failed to start`,
         message: err instanceof Error ? err.message : String(err),
       });
     } finally {
@@ -145,8 +147,8 @@ export function LlmIndexersViewer() {
   const viewIndex = useCallback((index: MarkdownIndex) => {
     if (!index.asset_ref) {
       notify.info({
-        title: 'No index.md to view',
-        message: 'asset_ref is unset — has this MarkdownIndex ever been built?',
+        title: t`No index.md to view`,
+        message: t`asset_ref is unset — has this MarkdownIndex ever been built?`,
       });
       return;
     }
@@ -158,7 +160,7 @@ export function LlmIndexersViewer() {
       <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
         <div className="flex items-center gap-2">
           <ListTree className="h-4 w-4 text-muted-foreground" />
-          <h1 className="text-sm font-semibold">LLM Indexers</h1>
+          <h1 className="text-sm font-semibold"><Trans>LLM Indexers</Trans></h1>
           {indexes.length > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
               {indexes.length}
@@ -180,10 +182,10 @@ export function LlmIndexersViewer() {
                 onClick={() => void refetch()}
               >
                 <RefreshCw className="h-3.5 w-3.5" />
-                Refresh
+                <Trans>Refresh</Trans>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Reload the MarkdownIndex list.</TooltipContent>
+            <TooltipContent><Trans>Reload the MarkdownIndex list.</Trans></TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -195,23 +197,25 @@ export function LlmIndexersViewer() {
           </div>
         ) : indexes.length === 0 ? (
           <div className="flex h-32 flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground">
-            <p>No MarkdownIndex entities yet.</p>
+            <p><Trans>No MarkdownIndex entities yet.</Trans></p>
             <p className="text-xs">
-              Create one by dropping an <code>index.md</code> with{' '}
-              <code>type: markdown_index</code> frontmatter into a docs folder and
-              running <code>flow record index &lt;path&gt;</code>.
+              <Trans>
+                Create one by dropping an <code>index.md</code> with{' '}
+                <code>type: markdown_index</code> frontmatter into a docs folder and
+                running <code>flow record index &lt;path&gt;</code>.
+              </Trans>
             </p>
           </div>
         ) : (
           <table className="w-full text-sm" data-testid="llm-indexers-table">
             <thead className="sticky top-0 bg-background text-xs text-muted-foreground">
               <tr className="border-b">
-                <th className="px-4 py-2 text-left font-medium">Name</th>
-                <th className="px-4 py-2 text-left font-medium">Vault root</th>
-                <th className="px-4 py-2 text-right font-medium">Files</th>
-                <th className="px-4 py-2 text-right font-medium">Subfolders</th>
-                <th className="px-4 py-2 text-left font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium">Actions</th>
+                <th className="px-4 py-2 text-left font-medium"><Trans>Name</Trans></th>
+                <th className="px-4 py-2 text-left font-medium"><Trans>Vault root</Trans></th>
+                <th className="px-4 py-2 text-right font-medium"><Trans>Files</Trans></th>
+                <th className="px-4 py-2 text-right font-medium"><Trans>Subfolders</Trans></th>
+                <th className="px-4 py-2 text-left font-medium"><Trans>Status</Trans></th>
+                <th className="px-4 py-2 text-right font-medium"><Trans>Actions</Trans></th>
               </tr>
             </thead>
             <tbody>
@@ -254,11 +258,11 @@ export function LlmIndexersViewer() {
                               ) : (
                                 <Play className="h-3.5 w-3.5" />
                               )}
-                              {isBusy ? 'Starting…' : 'Run'}
+                              {isBusy ? <Trans>Starting…</Trans> : <Trans>Run</Trans>}
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            Spawn an AgenticProcess to (re)build this index.
+                            <Trans>Spawn an AgenticProcess to (re)build this index.</Trans>
                           </TooltipContent>
                         </Tooltip>
                         <Tooltip>
@@ -271,10 +275,10 @@ export function LlmIndexersViewer() {
                               data-testid={`llm-indexer-view-${idx.id}`}
                             >
                               <FileText className="h-3.5 w-3.5" />
-                              View
+                              <Trans>View</Trans>
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Open the rendered index.md.</TooltipContent>
+                          <TooltipContent><Trans>Open the rendered index.md.</Trans></TooltipContent>
                         </Tooltip>
                       </div>
                     </td>

@@ -6,6 +6,7 @@ import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Plus, Webhook, Trash2, Edit, Zap, ChevronDown, ChevronRight, Power } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { HookForm } from './HookForm';
 import { HooksBrowser } from '../hooks-view/HooksBrowser';
 import { TriggerForm } from './TriggerForm';
@@ -24,6 +25,7 @@ interface TriggerInlineProps {
 }
 
 function TriggerInline({ trigger, onEdit, onDelete, onRefresh }: TriggerInlineProps) {
+  const { t } = useLingui();
   // Use useEntity for automatic updates when trigger changes (e.g., counter increment)
   const { data: watchedTrigger } = useEntity<Trigger>(trigger.typeId, { watch: true });
   const activeTrigger = watchedTrigger ?? trigger;
@@ -38,12 +40,12 @@ function TriggerInline({ trigger, onEdit, onDelete, onRefresh }: TriggerInlinePr
         onRefresh();
       } catch (error: unknown) {
         notify.error({
-          title: 'Failed to update trigger',
-          message: error instanceof Error ? error.message : 'Unknown error',
+          title: t`Failed to update trigger`,
+          message: error instanceof Error ? error.message : t`Unknown error`,
         });
       }
     },
-    [trigger, onRefresh],
+    [trigger, onRefresh, t],
   );
 
   return (
@@ -53,7 +55,7 @@ function TriggerInline({ trigger, onEdit, onDelete, onRefresh }: TriggerInlinePr
           <Zap className={`h-4 w-4 ${trigger.enabled ? 'text-yellow-500' : 'text-muted-foreground'}`} />
           <span className="font-medium">{activeTrigger.displayName}</span>
           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
-            Count: {counter}
+            <Trans>Count: {counter}</Trans>
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -68,15 +70,15 @@ function TriggerInline({ trigger, onEdit, onDelete, onRefresh }: TriggerInlinePr
       </div>
       <div className="mt-2 space-y-1 pl-7 text-xs text-muted-foreground">
         <div>
-          <span className="font-semibold">Mask:</span>{' '}
+          <span className="font-semibold"><Trans>Mask:</Trans></span>{' '}
           <code className="rounded bg-muted px-1">{JSON.stringify(trigger.mask)}</code>
         </div>
         <div>
-          <span className="font-semibold">Action:</span> {trigger.action.action_type}
+          <span className="font-semibold"><Trans>Action:</Trans></span> {trigger.action.action_type}
         </div>
         {lastTriggered && (
           <div>
-            <span className="font-semibold">Last:</span> {lastTriggered.toLocaleString()}
+            <span className="font-semibold"><Trans>Last:</Trans></span> {lastTriggered.toLocaleString()}
           </div>
         )}
       </div>
@@ -85,6 +87,7 @@ function TriggerInline({ trigger, onEdit, onDelete, onRefresh }: TriggerInlinePr
 }
 
 export function HooksManager({ entityTypeId }: HooksManagerProps) {
+  const { t } = useLingui();
   const [hooks, setHooks] = useState<AgentHook[]>([]);
   const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [hookTriggers, setHookTriggers] = useState<Map<string, Trigger[]>>(new Map());
@@ -274,7 +277,7 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
           <div className="mb-3 h-12 w-12 animate-spin rounded-full border-4 border-muted border-t-primary" />
-          <p className="text-sm text-muted-foreground">Loading hooks...</p>
+          <p className="text-sm text-muted-foreground"><Trans>Loading hooks...</Trans></p>
         </div>
       </div>
     );
@@ -289,10 +292,10 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
             <div>
               <div className="flex items-center gap-2">
                 <Webhook className="h-6 w-6" />
-                <h2 className="text-2xl font-bold">Hooks Manager</h2>
+                <h2 className="text-2xl font-bold"><Trans>Hooks Manager</Trans></h2>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                Configure Claude Code hooks and triggers to automate workflows
+                <Trans>Configure Claude Code hooks and triggers to automate workflows</Trans>
               </p>
             </div>
             <Button
@@ -301,7 +304,7 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
               className={snifferEnabled ? 'text-green-500' : ''}
               onClick={() => void (snifferEnabled ? snifferDisable() : snifferEnable())}
               disabled={snifferLoading || snifferToggling}
-              title={snifferEnabled ? 'Disable sniffer' : 'Enable sniffer'}
+              title={snifferEnabled ? t`Disable sniffer` : t`Enable sniffer`}
             >
               <Power className="h-4 w-4" />
             </Button>
@@ -310,9 +313,9 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
           {/* Hooks Browser */}
           <div className="rounded-lg border bg-card p-4">
             <div className="mb-3">
-              <h3 className="text-sm font-semibold text-foreground">Hooks Browser</h3>
+              <h3 className="text-sm font-semibold text-foreground"><Trans>Hooks Browser</Trans></h3>
               <p className="text-xs text-muted-foreground">
-                Scans all hook resources from the system profile and lists every hook with full details.
+                <Trans>Scans all hook resources from the system profile and lists every hook with full details.</Trans>
               </p>
             </div>
             <HooksBrowser
@@ -325,8 +328,8 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
           {hooks.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
               <Webhook className="mb-3 h-12 w-12 text-muted-foreground opacity-50" />
-              <p className="font-medium">No agent hooks configured</p>
-              <p className="mt-1 text-sm text-muted-foreground">Create your first hook to get started</p>
+              <p className="font-medium"><Trans>No agent hooks configured</Trans></p>
+              <p className="mt-1 text-sm text-muted-foreground"><Trans>Create your first hook to get started</Trans></p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -409,10 +412,10 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
                         {/* Triggers Section */}
                         <div className="border-t p-4">
                           <div className="mb-3 flex items-center justify-between">
-                            <h4 className="text-sm font-semibold text-muted-foreground">Triggers</h4>
+                            <h4 className="text-sm font-semibold text-muted-foreground"><Trans>Triggers</Trans></h4>
                             <Button variant="outline" size="sm" onClick={() => handleAddTriggerToHook(hook.id)}>
                               <Plus className="mr-1 h-3 w-3" />
-                              Add Trigger
+                              <Trans>Add Trigger</Trans>
                             </Button>
                           </div>
                           {triggers.length > 0 ? (
@@ -429,7 +432,7 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
                             </div>
                           ) : (
                             <p className="text-sm italic text-muted-foreground">
-                              No triggers configured for this hook
+                              <Trans>No triggers configured for this hook</Trans>
                             </p>
                           )}
                         </div>

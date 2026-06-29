@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { formatTimeAgo } from './project-activity-utils';
 import { SessionEventsDialog } from './SessionEventsDialog';
 import { SessionStatusDot } from '@src/components/ui/session-status-dot';
@@ -134,6 +135,7 @@ function SessionRow({
   onActAccordingToClassification,
   onOpenEventDialog,
 }: SessionRowProps) {
+  const { t } = useLingui();
   const { isRunning: isActionRunning, isComplete: isActionComplete } = useAnalysisTaskProgress(actionTask);
   const classificationInfo = useClassificationResult(classificationTask);
   const { navigation } = useDockNavigation();
@@ -185,7 +187,7 @@ function SessionRow({
             return (
               <span className="activity-name-subtitle flex items-center gap-1 opacity-60" data-testid="action-running">
                 <Loader2 className="inline h-3 w-3 animate-spin" />
-                Creating {classificationInfo.category}...
+                <Trans>Creating {classificationInfo.category}...</Trans>
               </span>
             );
           }
@@ -221,7 +223,7 @@ function SessionRow({
         <span className="activity-card-time">
           {item.status && <SessionStatusDot status={item.status} />}
           {timeAgo}
-          {!!item.messageCount && <span className="activity-card-msgs">{item.messageCount} msgs</span>}
+          {!!item.messageCount && <span className="activity-card-msgs"><Trans>{item.messageCount} msgs</Trans></span>}
         </span>
         {onSessionResume && (
           <div className="activity-cell-actions">
@@ -229,7 +231,7 @@ function SessionRow({
               <button
                 type="button"
                 className="activity-resume-button"
-                title="View session tasks"
+                title={t`View session tasks`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onSessionTasks(item);
@@ -241,7 +243,7 @@ function SessionRow({
             <button
               type="button"
               className="activity-resume-button"
-              title="Resume session in terminal"
+              title={t`Resume session in terminal`}
               onClick={(e) => {
                 e.stopPropagation();
                 onSessionResume(item);
@@ -303,6 +305,7 @@ export function ProjectActivityStrip({
   learningTasks = [],
   actingSessionId,
 }: ProjectActivityStripProps) {
+  const { t } = useLingui();
   const [search, setSearch] = useState('');
   const [dialogSessionId, setDialogSessionId] = useState<string | null>(null);
   const [dialogSessionName, setDialogSessionName] = useState('');
@@ -416,7 +419,7 @@ export function ProjectActivityStrip({
       type="button"
       className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       onClick={onRefresh}
-      title="Refresh activity"
+      title={t`Refresh activity`}
     >
       <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
     </button>
@@ -437,12 +440,12 @@ export function ProjectActivityStrip({
         className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <Upload className="h-3.5 w-3.5" />
-        Upload Message
+        <Trans>Upload Message</Trans>
       </button>
       {uploadError && <p className="mt-1 text-xs text-destructive">{uploadError}</p>}
       {uploadConflicts && (
         <div className="mt-1 space-y-1 rounded-md border border-border bg-muted/40 p-2 text-xs">
-          <p className="font-medium text-foreground">Entities already exist:</p>
+          <p className="font-medium text-foreground"><Trans>Entities already exist:</Trans></p>
           <p className="text-muted-foreground">{uploadConflicts.map((c) => `${c.type}:${c.id}`).join(', ')}</p>
           <div className="flex gap-1.5 pt-0.5">
             <button
@@ -450,14 +453,14 @@ export function ProjectActivityStrip({
               onClick={() => void handleOverwrite()}
               className="rounded bg-destructive px-2 py-1 text-xs font-medium text-destructive-foreground hover:bg-destructive/90"
             >
-              Overwrite
+              <Trans>Overwrite</Trans>
             </button>
             <button
               type="button"
               onClick={() => { setPendingFile(null); setUploadConflicts(null); }}
               className="rounded border border-border px-2 py-1 text-xs font-medium hover:bg-muted"
             >
-              Cancel
+              <Trans>Cancel</Trans>
             </button>
           </div>
         </div>
@@ -470,11 +473,11 @@ export function ProjectActivityStrip({
       <div className="activity-table" data-testid="project-activity-strip">
         {uploadSection}
         <div className="activity-table-header">
-          <span className="activity-table-title">Sessions</span>
+          <span className="activity-table-title"><Trans>Sessions</Trans></span>
           {refreshButton}
         </div>
         <div className="flex flex-1 flex-col items-center justify-center py-12">
-          <span className="text-sm text-muted-foreground">No recent activity</span>
+          <span className="text-sm text-muted-foreground"><Trans>No recent activity</Trans></span>
         </div>
       </div>
     );
@@ -484,14 +487,14 @@ export function ProjectActivityStrip({
     <div className="activity-table" data-testid="project-activity-strip">
       {uploadSection}
       <div className="activity-table-header">
-        <span className="activity-table-title">Sessions</span>
+        <span className="activity-table-title"><Trans>Sessions</Trans></span>
         {refreshButton}
         <div className="activity-table-search">
           <Search className="activity-table-search-icon" />
           <input
             className="activity-table-search-input"
             type="text"
-            placeholder="Filter..."
+            placeholder={t`Filter...`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -501,7 +504,7 @@ export function ProjectActivityStrip({
       <div className="activity-table-scroll">
         {filtered.length === 0 ? (
           <div className="activity-cell-empty">
-            {search.trim() ? 'No matching sessions' : 'No recent sessions'}
+            {search.trim() ? t`No matching sessions` : t`No recent sessions`}
           </div>
         ) : (
           filtered.map((item) => (

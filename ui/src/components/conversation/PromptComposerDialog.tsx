@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ interface PromptComposerDialogProps {
 }
 
 export function PromptComposerDialog({ open, onClose, initial, onQueue, onQueueAndSend }: PromptComposerDialogProps) {
+  const { t } = useLingui();
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
 
@@ -57,9 +59,9 @@ export function PromptComposerDialog({ open, onClose, initial, onQueue, onQueueA
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add a prompt to your reply</DialogTitle>
+          <DialogTitle><Trans>Add a prompt to your reply</Trans></DialogTitle>
           <DialogDescription>
-            The prompt will be attached to your next message. The other user will see an "Approve &amp; Execute" chip; once approved, the prompt runs in their forked Claude Code session.
+            <Trans>The prompt will be attached to your next message. The other user will see an "Approve &amp; Execute" chip; once approved, the prompt runs in their forked Claude Code session.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -67,7 +69,7 @@ export function PromptComposerDialog({ open, onClose, initial, onQueue, onQueueA
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Describe what you'd like Claude to do…"
+            placeholder={t`Describe what you'd like Claude to do…`}
             rows={6}
             className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
           />
@@ -75,13 +77,13 @@ export function PromptComposerDialog({ open, onClose, initial, onQueue, onQueueA
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}><Trans>Cancel</Trans></Button>
           <Button onClick={handleQueue} disabled={!canQueue} variant="secondary">
-            Attach to reply
+            <Trans>Attach to reply</Trans>
           </Button>
           {onQueueAndSend && (
             <Button onClick={handleQueueAndSend} disabled={!canQueue}>
-              Send
+              <Trans>Send</Trans>
             </Button>
           )}
         </DialogFooter>

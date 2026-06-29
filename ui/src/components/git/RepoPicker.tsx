@@ -9,6 +9,7 @@ import {
   TableRow,
 } from '@src/components/ui/table';
 import { useGitRepos } from '@src/hooks/use-git-providers';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { GitFork, Loader2, Lock, RefreshCw, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -48,6 +49,7 @@ function roleBadgeClass(role: RepoSummary['role']): string {
  * the full fetched list (5-min query cache via useGitRepos).
  */
 export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerProps) {
+  const { t } = useLingui();
   const { data: repos, isLoading, isError, error, refetch, isFetching } = useGitRepos(provider, enabled);
   const [query, setQuery] = useState('');
 
@@ -74,7 +76,7 @@ export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerPro
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter repos by owner or name…"
+            placeholder={t`Filter repos by owner or name…`}
             className="pl-7 text-sm"
           />
         </div>
@@ -83,7 +85,7 @@ export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerPro
           onClick={() => void refetch()}
           disabled={isFetching}
           className="rounded-md border border-border bg-background p-1.5 hover:bg-accent disabled:opacity-50"
-          title="Refresh"
+          title={t`Refresh`}
         >
           <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
         </button>
@@ -92,7 +94,7 @@ export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerPro
       <div className="max-h-[280px] overflow-y-auto rounded-md border border-border">
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading your repos…
+            <Loader2 className="h-4 w-4 animate-spin" /> <Trans>Loading your repos…</Trans>
           </div>
         ) : isError ? (
           <div className="px-3 py-4 text-xs text-destructive">
@@ -100,17 +102,17 @@ export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerPro
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-            {query ? `No repos match "${query}"` : 'No repos accessible with this token'}
+            {query ? `No repos match "${query}"` : <Trans>No repos accessible with this token</Trans>}
           </div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-7"></TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead>Repo</TableHead>
-                <TableHead className="w-20">Role</TableHead>
-                <TableHead className="w-20">Pushed</TableHead>
+                <TableHead><Trans>Owner</Trans></TableHead>
+                <TableHead><Trans>Repo</Trans></TableHead>
+                <TableHead className="w-20"><Trans>Role</Trans></TableHead>
+                <TableHead className="w-20"><Trans>Pushed</Trans></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

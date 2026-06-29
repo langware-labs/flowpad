@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Input } from '@src/components/ui/input';
 
@@ -97,6 +98,7 @@ export interface EmojiPickerProps {
 }
 
 export function EmojiPicker({ onPick, trigger, side = 'top' }: EmojiPickerProps) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -140,18 +142,18 @@ export function EmojiPicker({ onPick, trigger, side = 'top' }: EmojiPickerProps)
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search emoji…"
+          placeholder={t`Search emoji…`}
           className="mb-2 h-7 text-xs"
-          aria-label="Search emoji"
+          aria-label={t`Search emoji`}
         />
         <div className="max-h-48 overflow-y-auto">
           {filtered ? (
             filtered.length > 0 ? (
-              <div role="listbox" aria-label="Emoji" className="grid grid-cols-7 gap-0.5">
+              <div role="listbox" aria-label={t`Emoji`} className="grid grid-cols-7 gap-0.5">
                 {filtered.map(renderEmoji)}
               </div>
             ) : (
-              <p className="px-1 py-4 text-center text-xs text-muted-foreground">No emoji found</p>
+              <p className="px-1 py-4 text-center text-xs text-muted-foreground"><Trans>No emoji found</Trans></p>
             )
           ) : (
             EMOJI_GROUPS.map((group) => (

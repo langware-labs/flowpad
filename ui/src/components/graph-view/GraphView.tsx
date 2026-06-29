@@ -1,6 +1,7 @@
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type Graph from 'graphology';
+import { Trans } from '@lingui/react/macro';
 import { GraphEngine, type NodeData } from './graph/graphEngine';
 import { loadDepGraph } from './graph/loadDepGraph';
 import type { Theme } from './graph/themeColors';
@@ -261,13 +262,13 @@ export function GraphView() {
             {loading && (
               <div className="overlay">
                 <div className="spinner" />
-                <p>Loading dep graph…</p>
+                <p><Trans>Loading dep graph…</Trans></p>
                 <p className="sub">via /api/v1/dep_graph</p>
               </div>
             )}
             {error && !loading && (
               <div className="overlay error">
-                <p>Failed to load graph</p>
+                <p><Trans>Failed to load graph</Trans></p>
                 <p className="sub">{error}</p>
               </div>
             )}
