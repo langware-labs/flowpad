@@ -181,7 +181,7 @@ function FeedEntryFrame({
       ref={ref}
       data-highlighted={highlight || undefined}
       className={cn(
-        'relative flex max-h-64 flex-col rounded border border-border bg-muted/40 px-2.5 py-2 text-left transition-all duration-500',
+        'relative flex max-h-96 flex-col rounded border border-border bg-muted/40 px-2.5 py-2 text-left transition-all duration-500',
         highlight && 'border-primary bg-primary/5 ring-2 ring-primary ring-offset-1 ring-offset-background',
         pulsing && 'animate-pulse',
       )}
@@ -211,7 +211,7 @@ function FeedEntryFrame({
           </button>
         </div>
       </div>
-      <div className="mt-2 min-h-0">{children}</div>
+      <div className="mt-2 flex min-h-0 flex-1 flex-col">{children}</div>
     </div>
   );
 }
@@ -261,11 +261,13 @@ function MessageSuggestFeedEntryCard({
 
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
-      {title && <p className="min-w-0 text-xs font-medium leading-snug text-foreground">{title}</p>}
+      {title && (
+        <p className="min-w-0 shrink-0 text-xs font-medium leading-snug text-foreground">{title}</p>
+      )}
 
       {body &&
         (expanded ? (
-          <div className="mt-1 flex gap-1">
+          <div className="mt-1 flex min-h-0 flex-1 gap-1">
             {expandable && (
               <button
                 type="button"
@@ -276,10 +278,10 @@ function MessageSuggestFeedEntryCard({
                 <ChevronDown className="h-3.5 w-3.5" />
               </button>
             )}
-            {/* Bounded scroll so the FULL text is reachable and never spills out
-                of the card (a flex-1 height needs a flex parent, which the frame
-                doesn't give here — mirror UserNote's max-h scroll instead). */}
-            <div className="max-h-40 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+            {/* The frame's children wrapper is a flex column, so the body fills the
+                remaining height and scrolls — the action row below stays pinned
+                inside the card boundary instead of overflowing it. */}
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
               <p
                 className="cursor-pointer whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground"
                 onClick={() => expandable && setExpanded(false)}
@@ -289,7 +291,7 @@ function MessageSuggestFeedEntryCard({
             </div>
           </div>
         ) : (
-          <div className="mt-1 flex items-start gap-1">
+          <div className="mt-1 flex shrink-0 items-start gap-1">
             {expandable && (
               <button
                 type="button"
@@ -344,14 +346,13 @@ function MessageSuggestFeedEntryCard({
               trailing={viewButton}
             />
           ) : (
-            viewButton && <div className="mt-2 flex justify-end">{viewButton}</div>
+            viewButton && <div className="mt-2 flex shrink-0 justify-end">{viewButton}</div>
           )}
           {isDiagnosis && suggest.diagnosis_id && (
             <DiagnosisReportModal
               open={viewOpen}
               diagnosisId={suggest.diagnosis_id}
               conversationId={suggest.conversation_id ?? undefined}
-              flowMessageId={suggest.flow_message_id ?? undefined}
               onClose={() => setViewOpen(false)}
             />
           )}
