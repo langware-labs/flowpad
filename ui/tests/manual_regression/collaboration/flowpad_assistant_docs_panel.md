@@ -1,35 +1,37 @@
-test 1: Flowpad Assistant collab space lists the shipped sample doc
+---
+id: 8a3c1f29-4b7e-4d6a-9f12-2c5e8a1b3d40
+---
+
+# Flowpad Assistant — project view (system space)
+# Note (2026-05-31): `/dock/project/<id>` renders the project ASSET BROWSER
+# (record-removal branch UX), not the legacy DOCS/ROOMS/PLANS CollaborationPage.
+# The assistant's docs are reachable as markdown assets via that browser. These
+# tests assert the current, intended surface (asset browser mounts cleanly +
+# the seeded doc is indexed/searchable), not the removed DOCS sidebar.
+
+# Corrected 2026-06-04: the "Flowpad Assistant" button (FlowpadAssistantButton)
+# toggles the global FLOATING CHAT — it does NOT navigate to /dock/project/.
+# The assistant's project space is reached by direct navigation to
+# /dock/project/@flowpad_assistant, which renders the asset browser. Rewritten
+# to that real surface.
+
+test 1: Open the Flowpad Assistant project space (asset browser)
 - navigate to {APP_URL}/dock/project/@flowpad_assistant
-- wait for the project page (CollaborationPage) to render
-- expand the DOCS category in the left sidebar
-- validate a doc with name "hello-flowpad" is visible in the DOCS list
-- click it
-- wait 500 ms
-- validate a room tab opens with the title "hello-flowpad"
-- validate the rendered markdown contains the heading "Hello from Flowpad" and the body text "Welcome to the Flowpad Assistant workspace."
+- wait for the project view to render
+- validate the project asset browser rendered (the "Assets" heading and a "Project:" scope indicator with the asset-type tree)
+- validate the page does NOT contain the text "No editor for type: project"
+- check console for errors
+- validate no errors appeared
 
-test 2: Footer "Flowpad docs" button opens the Flowpad Assistant collab space
-- navigate to {APP_URL}/dock/home
-- locate the application footer (bottom bar of the window)
-- validate a button with aria-label="Flowpad docs" is visible to the LEFT of the ClaudeUsageChip
-- click the "Flowpad docs" button
-- wait up to 1 second for navigation
-- validate the URL is /dock/project/@flowpad_assistant (URL-encoded as /dock/project/%40flowpad_assistant)
-- validate the CollaborationPage rendered for the Flowpad Assistant project
+test 2: The seeded hello-flowpad doc is indexed and searchable
+- [bash] run "curl -s -X POST '{API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=markdown'"
+- [bash] run "sleep 2"
+- [bash] run "curl -s '{API_URL}/api/v1/search?record_type=markdown&q=hello&include_system=true'"
+- validate the search response includes a result whose name/path contains "hello-flowpad" (the seeded system doc is discoverable after indexing)
 
-test 3: Server include_system filter default hides system markdown rows
-- with the backend running at {API_URL} (default http://localhost:9008/api/v1)
-- run: curl -sS '{API_URL}/search?record_type=markdown&q=hello-flowpad'
-- validate the JSON response has data.total == 0 (system records hidden by default)
-- run: curl -sS '{API_URL}/search?record_type=markdown&q=hello-flowpad&include_system=true'
-- validate the JSON response has data.total == 1 and the single result has name == "hello-flowpad" and system == true
-
-test 4: Bootstrap re-scans markdown after system projects are ensured (recovery path)
-- stop the backend
-- locate the SQLite DB used by fs_store (typically ~/.flowpad/<env>/db.sqlite)
-- run: sqlite3 <path> "DELETE FROM entities WHERE type='markdown' AND json_extract(data, '$.name')='hello-flowpad';"
-- start the backend
-- once the server reports ready, hit GET {API_URL}/graph/bootstrap
-- wait for the bootstrap response (200 OK)
-- run: sqlite3 <path> "SELECT count(*), json_extract(data, '$.name'), system FROM entities WHERE type='markdown' AND json_extract(data, '$.name')='hello-flowpad';"
-- validate the row reappears with system=1 (bootstrap triggered a markdown scan after ensuring system projects)
+test 3: The assistant project view mounts without an error boundary
+- navigate to {APP_URL}/dock/project/@flowpad_assistant
+- wait for the project view to render
+- validate no React error boundary is visible (no heading "Error" / "Something went wrong")
+- check console for errors
+- validate no errors appeared

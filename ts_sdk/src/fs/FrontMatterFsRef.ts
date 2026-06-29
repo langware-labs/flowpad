@@ -17,7 +17,7 @@ import { FSRef } from './FSRef';
 
 // ── Parse/serialize helpers ────────────────────────────────────────────────
 
-function parseFrontmatter(raw: string): Record<string, string> {
+export function parseFrontmatter(raw: string): Record<string, string> {
   const match = raw.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) return {};
   const result: Record<string, string> = {};
@@ -31,12 +31,12 @@ function parseFrontmatter(raw: string): Record<string, string> {
   return result;
 }
 
-function extractBody(raw: string): string {
+export function extractBody(raw: string): string {
   const match = raw.match(/^---\s*\n[\s\S]*?\n---\s*\n([\s\S]*)$/);
   return match ? match[1] : raw;
 }
 
-function serializeDoc(fm: Record<string, string>, body: string): string {
+export function serializeDoc(fm: Record<string, string>, body: string): string {
   const lines = ['---'];
   for (const [k, v] of Object.entries(fm)) {
     // Quote values that contain special characters

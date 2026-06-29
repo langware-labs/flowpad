@@ -31,7 +31,18 @@ function parseApiConnectionPrimitives(apiUrl?: string): { api_protocol: string; 
 }
 
 export function load_config(): SDKConfig {
-  const apiUrl = typeof __API_URL__ !== 'undefined' ? __API_URL__ : undefined;
+  // Runtime backend override: a freshly re-evaluated SDK module graph (a "realm",
+  // e.g. one per instance in the two-client hub test, or the Electron desktop
+  // backend) can point itself at a backend by setting `globalThis.__FLOWPAD_API_URL__`
+  // BEFORE the graph is imported — its `apiClient` baseURL is then fixed against it.
+  // The default app path leaves this unset and flows through the compile-time define.
+  const runtimeApiUrl = (globalThis as any).__FLOWPAD_API_URL__;
+  const apiUrl =
+    typeof runtimeApiUrl === 'string'
+      ? runtimeApiUrl
+      : typeof __API_URL__ !== 'undefined'
+        ? __API_URL__
+        : undefined;
   const authProvider = typeof __AUTH_PROVIDER__ !== 'undefined' ? __AUTH_PROVIDER__ : 'custom';
   const deployEnv = typeof __DEPLOY_ENV__ !== 'undefined' ? __DEPLOY_ENV__ : 'local';
   const flowpadAppHost = typeof __FLOWPAD_APP_HOST__ !== 'undefined' ? __FLOWPAD_APP_HOST__ : 'flowpad.app';

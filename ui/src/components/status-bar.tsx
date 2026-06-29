@@ -1,5 +1,8 @@
+import { Trans, useLingui } from '@lingui/react/macro';
+import { GitStatusProvider } from '@src/components/status-bar/GitStatusContext';
+import { GitPushButton } from '@src/components/status-bar/GitPushButton';
+import { GitStatusPill } from '@src/components/status-bar/GitStatusPill';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { IndexingIndicator } from '@src/components/search-index/IndexingIndicator';
 import { useProjects } from '@src/hooks/use-projects';
 import { useContext } from '@src/hooks/useContext';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -28,6 +31,7 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ className = '' }: StatusBarProps) {
+  const { t } = useLingui();
   const { project, computeNode, bootstrapInfo, workdir } = useContext();
   const workspacePath = bootstrapInfo?.desktop_info?.paths?.workspace;
   const { refetch: refetchProjects } = useProjects();
@@ -77,23 +81,23 @@ export function StatusBar({ className = '' }: StatusBarProps) {
             type="button"
             onClick={openProjectModal}
             className="inline-flex h-6 items-center gap-1 rounded-full border border-red-500/50 bg-red-500/10 px-2.5 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-500/20 dark:text-red-300"
-            title="No project selected — pick one to enable project-scoped actions"
+            title={t`No project selected — pick one to enable project-scoped actions`}
           >
             <ArrowLeftRight className="h-3 w-3 shrink-0" />
-            Select Project
+            <Trans>Select Project</Trans>
           </button>
-          <IndexingIndicator />
         </div>
         <OpenProjectComponent
           open={isProjectModalOpen}
           onOpenChange={setIsProjectModalOpen}
           onProjectChanged={() => void refetchProjects()}
+          contextOnly
         />
       </>
     );
   }
 
-  const rootTooltip = 'Current project is on root folder, this is not recommended';
+  const rootTooltip = t`Current project is on root folder, this is not recommended`;
   const glowStyle: React.CSSProperties = isRoot
     ? { animation: 'root-glow 2s ease-in-out infinite' }
     : {};
@@ -106,16 +110,16 @@ export function StatusBar({ className = '' }: StatusBarProps) {
           onClick={openProjectModal}
           className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] transition-colors hover:bg-accent hover:text-foreground"
           style={isRoot ? { ...glowStyle, color: undefined } : { color: 'var(--muted-foreground)' }}
-          title={isRoot ? rootTooltip : 'Switch project'}
+          title={isRoot ? rootTooltip : t`Switch project`}
         >
           <ArrowLeftRight className="h-3 w-3 shrink-0" />
-          <span style={glowStyle}>Switch Project</span>
+          <span style={glowStyle}><Trans>Switch Project</Trans></span>
         </button>
         <button
           onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
           className="text-xs font-medium transition-colors hover:underline"
           style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
-          title={isRoot ? rootTooltip : 'Open project view'}
+          title={isRoot ? rootTooltip : t`Open project view`}
         >
           {project.displayName}
         </button>
@@ -123,18 +127,22 @@ export function StatusBar({ className = '' }: StatusBarProps) {
           <button
             onClick={() => void handleOpenFolder()}
             className="flex items-center gap-1 text-[10px] text-muted-foreground/70 transition-colors hover:text-primary"
-            title="Open folder"
+            title={t`Open folder`}
           >
             <span className="max-w-[400px] truncate">{projectPath}</span>
             <ExternalLink className="h-3 w-3 shrink-0" />
           </button>
         )}
-        <IndexingIndicator />
+        <GitStatusProvider computeNodeId={computeNode?.id ?? null} workdir={projectPath}>
+          <GitStatusPill />
+          <GitPushButton />
+        </GitStatusProvider>
       </div>
       <OpenProjectComponent
         open={isProjectModalOpen}
         onOpenChange={setIsProjectModalOpen}
         onProjectChanged={() => void refetchProjects()}
+        contextOnly
       />
     </>
   );

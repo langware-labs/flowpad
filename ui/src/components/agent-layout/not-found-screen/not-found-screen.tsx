@@ -1,5 +1,6 @@
 import { Button } from '@src/components/ui/button';
 import { Home } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 // Not Found component for private agents
 const NotFoundScreen = () => {
@@ -21,13 +22,13 @@ const NotFoundScreen = () => {
               />
             </svg>
           </div>
-          <h1 className="mb-2 text-2xl font-bold text-foreground">404 - Not Found</h1>
-          <p className="text-muted-foreground">The agent you're looking for doesn't exist or is not available.</p>
+          <h1 className="mb-2 text-2xl font-bold text-foreground"><Trans>404 - Not Found</Trans></h1>
+          <p className="text-muted-foreground"><Trans>The agent you're looking for doesn't exist or is not available.</Trans></p>
         </div>
 
         <Button onClick={handleGoHome} className="flex w-full items-center justify-center">
           <Home className="mr-2 h-4 w-4" />
-          Go to Homepage
+          <Trans>Go to Homepage</Trans>
         </Button>
       </div>
     </div>

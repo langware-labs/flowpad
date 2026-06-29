@@ -1,3 +1,30 @@
+---
+id: 29430b8b-4024-5ed6-b018-2b2ea34b70d1
+---
+
+> TEST-ISSUE (2026-06-04): This scenario describes a `ConversationView.tsx`
+> implementation that no longer exists. It references a 4-way spawn branch at
+> ConversationView.tsx:136/142/156/169, a `taskSessionCache`, and Task metadata
+> keys `agentic_session_id` / `agentic_process_id` / `agentic_workdir`. None of
+> these are in the current code: `taskSessionCache` does not exist anywhere;
+> ConversationView no longer branches on those metadata keys; spawn now lives in
+> `useApproveAndExecute.ts` (reuse-most-recent-AP-else-spawn; fork from
+> `task.my_process_id`'s session for context) and `useMyProcess.ts`
+> (`openOrStart`: existing→start, else `AgenticProcess.spawn({workdir, projectId},
+> {instruction, visible})` + set `task.my_process_id`). Tasks now carry
+> `my_process_id`, not the trio above. The scenario's assertions are also
+> white-box (spawn called with exact args, internal cache contents) and not
+> observable through E2E without instrumentation, and the branches require
+> pre-seeded Tasks in specific live/dead process states.
+>
+> A faithful current-behavior rewrite would test, via the UI:
+>  - first run on a task-bound conversation spawns a VISIBLE process + stamps
+>    `task.my_process_id` + opens its terminal dockPointer;
+>  - a follow-up while that process is RUNNING reuses it (start + open), no dup;
+>  - Approve & Execute spawns a headless run forked from `my_process_id`'s session.
+> That rewrite needs conversation/task seeding that is out of this scenario's
+> scope; flagged as test-issue rather than fabricating a green test.
+
 test 1: ConversationView "first run" branch — brand-new session spawn (ConversationView.tsx:169)
 - prerequisite: a Task record with NO `agentic_session_id`, `agentic_process_id`, or `agentic_workdir` in metadata
 - navigate to the conversation surface for that task (open from a session-card or /dock/conversation/<id>)

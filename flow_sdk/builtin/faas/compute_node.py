@@ -6,6 +6,7 @@ import platform
 import sys
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any, AsyncIterator, Literal, overload
@@ -17,16 +18,16 @@ from flow_sdk.api.messages import ResponseMessage
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.compute.providers import ComputeProvider, get_compute_provider
 from flow_sdk.compute.providers.compute_provider import ListDirItem
-from flow_sdk.config import ComputeProviderType, StorageProvider
+from flow_sdk.config import ComputeProviderType, StorageProvider, get_os_root_path
 from flow_sdk.config import ComputeProviderType as ComputeProviderEnum
 from flow_sdk.core import action
 from flow_sdk.core.entity import Entity
-from flow_sdk.core.resource_management.scan.system_profile.types import SystemProfile
+from flow_sdk.builtin.faas.system_profile_types import SystemProfile
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.compute_types import CLICommand, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import MACHINE_STATUS_SCRIPT, MachineStatus, NetworkConnection, ProcessInfo
 from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize, ExecutionEnvironmentStatus, RuntimeEnvironment
-from flow_sdk.fs_records.claude.claude_debug_log import clear_debug_errors
+from flow_sdk.fs_store.operations.claude_debug_log import clear_debug_errors
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -35,13 +36,24 @@ from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
 from flow_sdk.builtin.faas.ops_actions import OpsActionsMixin
 from flow_sdk.builtin.faas.pty_actions import PtyActionsMixin
 from flow_sdk.builtin.faas.scan_actions import ScanActionsMixin
+from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 
 # Module-level activity registry: key = "{entity_typeid}:{job_name}"
 # Prevents duplicate concurrent scan/index jobs on the same compute node.
 _COMPUTE_ACTIVITIES: dict[str, "Any"] = {}
 
+# The uname of the singleton "this machine" compute node. INTERNAL to
+# ComputeNode.get_local / create_local — no other module should reference the
+# literal "local" / "compute_node-@local"; go through get_local() instead.
+_LOCAL_UNAME = "local"
 
-class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanActionsMixin, DesktopActionsMixin, Entity):
+# The two terminal tab kinds: close is a full teardown (``_terminal_close``),
+# not clear-membership, and target parsing for the legacy terminals/* shim is
+# restricted to these.
+TERMINAL_TAB_TYPES = frozenset({"shell", "agentic_process"})
+
+
+class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanActionsMixin, AnalyticsActionsMixin, DesktopActionsMixin, Entity):
     _api_visible = True
     type: str = APIField(default=BuiltinEntityType.COMPUTE_NODE.value)
     name: str = APIField(default="")
@@ -90,6 +102,141 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
                 from pathlib import Path as _Path  # noqa: PLC0415
 
                 self.home_dir = str(_Path.home())
+
+    # ──────────────────────────────────────────────────────────────────────
+    # The singleton @local compute node
+    #
+    # `@local` is the one compute node that represents "this machine". The
+    # entire local stack (PTY/shell, agentic processes, the file explorer, the
+    # app host) addresses it by uname, never by a cached id — so if the row goes
+    # missing (e.g. a project-delete cascade or a compute-node sweep deletes it
+    # out from under a running session) every one of those callers breaks.
+    #
+    # get_local() / create_local() are the SINGLE source of truth for resolving
+    # and minting it. Resolution is hardened (stable id → cache-invalidate retry
+    # → legacy uname → self-heal create) so callers can stop hand-rolling their
+    # own fallbacks and can drop their None-handling. The uname literal is an
+    # implementation detail of these two methods.
+    # ──────────────────────────────────────────────────────────────────────
+
+    @classmethod
+    def _local_id(cls) -> str:
+        """Deterministic per-machine id for the @local compute node. Single
+        source of truth (shared with bootstrap's @local user/project/workspace):
+        ``flow_sdk.utils.machine_id.local_entity_id``."""
+        from flow_sdk.utils.machine_id import local_entity_id  # noqa: PLC0415
+
+        return local_entity_id("compute_node")
+
+    @classmethod
+    async def _get_local_legacy(cls) -> "ComputeNode | None":
+        """Resolve a pre-stable-id @local row by ``uname='local'``, tolerating
+        duplicate rows (returns the first) the way bootstrap's
+        ``get_local_entity`` does."""
+        try:
+            return await cls.get_by_uname(_LOCAL_UNAME)
+        except Exception as exc:  # noqa: BLE001
+            if "Multiple rows were found" in str(exc):
+                try:
+                    rows = await cls.get_all({"match": {"uname": _LOCAL_UNAME}})
+                    if rows:
+                        logging.warning(
+                            "[compute-node] %d @local rows found; using first %s",
+                            len(rows), rows[0].id,
+                        )
+                        return rows[0]
+                except Exception as list_exc:  # noqa: BLE001
+                    logging.error("[compute-node] duplicate @local resolve failed: %s", list_exc)
+            else:
+                logging.error("[compute-node] legacy @local lookup failed: %s", exc)
+        return None
+
+    @classmethod
+    async def get_local(cls, *, create: bool = True) -> "ComputeNode | None":
+        """Return the singleton @local compute node — the one robust way to get it.
+
+        Resolution order, hardened against every way the row can go missing:
+          1. deterministic stable id (the common, cheap path)
+          2. cache-invalidating retry by id (a transient contention/cache miss
+             under heavy parallel writes can hide a row that is actually there)
+          3. legacy ``uname='local'`` row (databases written before stable-id),
+             with duplicate-row dedup
+          4. self-heal: ``create_local()`` when ``create`` is True
+
+        With ``create=True`` (the default) this NEVER returns ``None`` — callers
+        can drop their None-handling and stop hand-rolling fallbacks. Pass
+        ``create=False`` for read-only callers that must not mint a node as a
+        side effect (e.g. detaching it during project deletion).
+        """
+        local_id = cls._local_id()
+        node = await cls.get_by_id(local_id)
+        if node is None:
+            try:
+                from flow_sdk.core.cache.entity_cache import uname_cache  # noqa: PLC0415
+
+                uname_cache.invalidate("compute_node", _LOCAL_UNAME)
+            except Exception:  # noqa: BLE001
+                pass
+            node = await cls.get_by_id(local_id)
+        if node is None:
+            node = await cls._get_local_legacy()
+        if node is None and create:
+            node = await cls.create_local()
+        return node
+
+    @classmethod
+    async def create_local(cls, *, owner: "Any | None" = None) -> "ComputeNode":
+        """Mint (or, under a race, adopt) the singleton @local compute node.
+
+        Deterministic id + ``uname='local'``; SANDBOX storage mounted at the OS
+        root so the whole local filesystem is browsable; owner defaults to the
+        @local desktop user when one is resolvable.
+
+        Deliberately does NOT attach the node to any project. It is a shared,
+        machine-level singleton, not a project-owned child — attaching it as a
+        child created an ``is_child`` edge that project deletion cascaded
+        through, deleting the node out from under every live session.
+        """
+        os_root = get_os_root_path()
+        local_id = cls._local_id()
+
+        if owner is None:
+            try:
+                from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+                owner = await User.get_by_uname(_LOCAL_UNAME)
+            except Exception:  # noqa: BLE001
+                owner = None
+
+        node = cls(
+            id=local_id,
+            type="compute_node",
+            uname=_LOCAL_UNAME,
+            name="@local",
+            runtime=RuntimeEnvironment(name="local_desktop_runtime"),
+            node_provider_type=ComputeProviderType.LOCAL_MACHINE,
+            fs_storage_provider=StorageProvider.SANDBOX,
+            fs_storage_mount_path=os_root,
+            visitor_role="owner",
+            # Stable per-process provider id, needed for PTY ops. Set up-front so
+            # the create is a single atomic write (no follow-up save).
+            node_provider_id=f"name_{uuid.uuid4()}",
+        )
+        try:
+            await node.save(owner=owner)
+        except Exception as save_error:  # noqa: BLE001
+            # Concurrent creator minted the same deterministic id — adopt it.
+            if "already exist" in str(save_error).lower():
+                existing = await cls.get_by_id(local_id) or await cls.get_by_prop(
+                    "uname", _LOCAL_UNAME, "compute_node"
+                )
+                if existing:
+                    logging.info("[compute-node] @local create raced; adopting %s", existing.id)
+                    return existing
+            raise
+        await node.set_visitor_role("owner")
+        logging.info("[compute-node] created @local singleton %s mount=%s", node.id, os_root)
+        return node
 
     @property
     def compute_provider(self) -> "ComputeProvider":
@@ -254,20 +401,41 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
     async def get_machine_id(self) -> str:
         """Get the unique machine ID of the compute node.
 
-        Returns a SHA256 hash based on platform, architecture, MAC address, and OS-specific UUID.
+        Returns a SHA256 hash of ``platform.system | platform.machine |
+        OS-specific stable UUID``. **No MAC address** (it changes under
+        MAC randomization, Docker veth, VPN, dock/undock) — the OS UUID
+        is the stable component.
+
+        Mirrors the OS-UUID derivation in ``flow_sdk/utils/machine_id.py``
+        (Linux /etc/machine-id, macOS IOPlatformUUID, Windows MachineGuid).
+        This runs a small script on the **remote** compute node, so it
+        can't share code with the local helper — keep the two derivation
+        sources in sync if either changes.
 
         Returns:
             64-character hex string representing the machine ID
         """
         machine_id_script = """
-import platform, uuid, hashlib, subprocess
-parts = [platform.system(), platform.machine(), hex(uuid.getnode())]
+import platform, hashlib, subprocess
+parts = [platform.system(), platform.machine()]
 try:
     system = platform.system()
     if system == "Linux":
-        parts.append(open("/etc/machine-id").read().strip())
+        for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+            try:
+                with open(path) as f:
+                    v = f.read().strip()
+                if v:
+                    parts.append(v); break
+            except OSError:
+                continue
     elif system == "Darwin":
-        parts.append(subprocess.check_output(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"]).decode().split("IOPlatformUUID")[1].split('"')[1])
+        out = subprocess.check_output(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"]).decode()
+        for line in out.splitlines():
+            if "IOPlatformUUID" in line:
+                pieces = line.split('"')
+                if len(pieces) >= 4:
+                    parts.append(pieces[3]); break
     elif system == "Windows":
         parts.append(subprocess.check_output(["wmic", "csproduct", "get", "uuid"], shell=True).decode().splitlines()[1].strip())
 except Exception:
@@ -444,126 +612,58 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="list-shells")
     async def _list_shells(self): return await self._pty_list_shells()
 
-    @action.all(action_name="terminals", methods=["get", "post"])
-    async def _terminals(self, background_tasks: BackgroundTasks) -> ApiResponse:
+    @action.get(action_name="terminals")
+    async def _terminals(self) -> ApiResponse:
+        """``terminals/get_by_worker_id/<id>`` — resolve an AgenticProcess by its
+        worker id (``AgenticProcess.getByWorkerId``). The legacy
+        ``terminals/list``/``close`` shim was deleted at the Tab cutover; the
+        strip lists from the ``Tab`` entity and closes via ``tabs/close``."""
         request_info = get_current_request_info()
         sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
-        if sub_path == "list":
-            if request_info and not request_info.is_get:
-                return ApiFailResponse(message="terminals/list requires GET", status_code=405)
-            return await self._terminal_list()
-        if sub_path == "close":
-            if request_info and not request_info.is_post:
-                return ApiFailResponse(message="terminals/close requires POST", status_code=405)
-            body = await request_info.get_post_data() if request_info else {}
-            return await self._terminal_close(body, background_tasks)
         if sub_path.startswith("get_by_worker_id/"):
-            if request_info and not request_info.is_get:
-                return ApiFailResponse(message="terminals/get_by_worker_id requires GET", status_code=405)
             worker_id = sub_path[len("get_by_worker_id/"):]
             if not worker_id:
                 return ApiFailResponse(message="worker id required", status_code=400)
             return await self._scan_get_by_worker_id(worker_id)
         return ApiFailResponse(message=f"unknown terminals sub-path: {sub_path!r}", status_code=400)
 
-    async def _terminal_list(self) -> ApiResponse:
-        """Single source of truth for the tab strip.
+    @action.post(action_name="tabs")
+    async def _tabs(self, background_tasks: BackgroundTasks) -> ApiResponse:
+        """Compatibility router for ``/compute_node/<id>/tabs/close``.
 
-        Returns two flat, non-overlapping lists. The frontend renders both,
-        with no join: each "AI worker" tab comes from ``visible_processes``
-        and each "plain terminal" tab comes from ``pure_shells``.
-
-        Wire shape: ``{pure_shells, visible_processes, checked_at}``.
-          - ``pure_shells``: Shell entity dicts that are NOT background plumbing
-            for any AgenticProcess. A shell is "pure" iff no AgenticProcess
-            (visible or not) owns it via ``shell_id``. This deliberately drops
-            both visible-process-owned shells (they show up via the process row)
-            and invisible-process-owned orphans.
-          - ``visible_processes``: AgenticProcess entity dicts with
-            ``visible == true``. After ``createProcess`` becomes atomic, every
-            visible process has a populated ``shell_id``.
+        The frontend closes concrete chips by ``Tab.close`` now, but older
+        callers and backend tests still use the batch target-close endpoint.
+        Keep it as a thin wrapper over the same terminal teardown helper so
+        shell/process cleanup semantics remain centralized.
         """
-        from flow_sdk.builtin.shell import Shell as ShellEntity
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-
-        # 1. Fetch
-        all_shells = await ShellEntity.get_all()
-        # Reap pass also covers invisible STOPPING rows so they can recover
-        # and re-appear when the user opens them. The visible filter is
-        # applied below for what we *return*, not for what we *reap*.
-        all_processes = await AgenticProcess.get_all()
-
-        # 2. Reap stuck STOPPING — fan out, processes are independent (each owns
-        # its own shell + save lock), so concurrent reap is safe.
-        reap_results = await asyncio.gather(
-            *(proc.reap_if_orphaned() for proc in all_processes),
-            return_exceptions=True,
-        )
-        reaped_any = any(r is True for r in reap_results)
-
-        # 3. Refetch if we reaped, then narrow to visible.
-        if reaped_any:
-            all_processes = await AgenticProcess.get_all()
-        visible_processes = [p for p in all_processes if getattr(p, "visible", False)]
-
-        # 4. Drop background shells: any shell owned by an AgenticProcess
-        # (regardless of visibility) is plumbing for that process and is
-        # represented by the process row instead. Sidecars are already a
-        # subset of "owned by a process" but we keep the explicit set for
-        # readability and to honor the unconditional sidecar exclusion.
-        owned_shell_ids = {p.shell_id for p in all_processes if getattr(p, "shell_id", None)}
-        sidecar_ids = {p.sidecar_shell_id for p in all_processes if getattr(p, "sidecar_shell_id", None)}
-        excluded_shell_ids = owned_shell_ids | sidecar_ids
-
-        from flow_sdk.fs_records.shell_record import ShellStatus
-        terminal_shell_states = {
-            ShellStatus.CLOSING.value,
-            ShellStatus.CLOSED.value,
-            ShellStatus.ERROR.value,
-        }
-        pure_shells = [
-            s for s in all_shells
-            if s.status not in terminal_shell_states
-            and s.id not in excluded_shell_ids
-        ]
-
-        # 5. Build response with full entity dicts for cache write-through.
-        pure_shell_dicts = [s.model_dump(mode="json") for s in pure_shells]
-        process_dicts = [p.model_dump(mode="json") for p in visible_processes]
-
-        from datetime import datetime as _dt, timezone as _tz
-        return ApiSuccessResponse(data={
-            "pure_shells": pure_shell_dicts,
-            "visible_processes": process_dicts,
-            "checked_at": _dt.now(tz=_tz.utc).isoformat(),
-        })
+        request_info = get_current_request_info()
+        sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
+        if sub_path != "close":
+            return ApiFailResponse(message=f"unknown tabs sub-path: {sub_path!r}", status_code=400)
+        body = await request_info.get_post_data() if request_info else {}
+        return await self._terminal_close(body or {}, background_tasks)
 
     def _parse_terminal_target(self, raw: Any) -> tuple[str, str] | None:
-        if not isinstance(raw, str):
+        """Parse a tab target (``type-id`` or ``type:id``) restricted to the
+        terminal tab kinds (shell / agentic_process)."""
+        if not isinstance(raw, str) or not raw.strip():
             return None
         target = raw.strip()
-        if not target:
-            return None
-        if ":" in target:
-            entity_type, entity_id = target.split(":", 1)
-            if entity_type not in {"shell", "agentic_process"} or not entity_id:
-                return None
-            try:
-                TypeId(type=entity_type, id=entity_id)
-            except Exception:
-                return None
-            return entity_type, entity_id
         try:
-            typeid = TypeId(target)
+            if ":" in target:
+                entity_type, entity_id = target.split(":", 1)
+                typeid = TypeId(type=entity_type, id=entity_id) if entity_type and entity_id else None
+            else:
+                typeid = TypeId(target)
         except Exception:
             return None
-        if typeid.type not in {"shell", "agentic_process"} or not typeid.id:
+        if typeid is None or not typeid.type or not typeid.id or typeid.type not in TERMINAL_TAB_TYPES:
             return None
         return typeid.type, typeid.id
 
     async def _mark_shell_closing(self, shell_id: str) -> bool:
         from flow_sdk.builtin.shell import Shell as ShellEntity
-        from flow_sdk.fs_records.shell_record import ShellStatus
+        from flow_sdk.builtin.shell import ShellStatus
 
         shell = await ShellEntity.get_by_id(shell_id)
         if not shell:
@@ -582,7 +682,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def _terminal_close(self, body: dict, background_tasks: BackgroundTasks) -> ApiResponse:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.shell import Shell as ShellEntity
-        from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+        from flow_sdk.builtin.process_lifecycle import ProcessStatus
 
         targets = body.get("targets") if isinstance(body, dict) else None
         if not isinstance(targets, list):
@@ -614,6 +714,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 proc.status = ProcessStatus.STOPPING.value
                 proc.visible = False
                 await proc.save()
+                # Strip membership is the Tab entity (visible=true), not
+                # AgenticProcess.visible. The stopped AP row persists, so the
+                # delete→orphan-Tab cleanup never fires; hide the backing Tab
+                # now (synchronously) or the chip lingers if the background
+                # teardown is slow or fails.
+                from flow_sdk.builtin.tab import hide_tabs_for_target
+                await hide_tabs_for_target("agentic_process", entity_id)
                 if shell_id:
                     await self._mark_shell_closing(shell_id)
                 accepted.append(canonical)
@@ -664,8 +771,173 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             except Exception:
                 logging.exception(f"[terminals/close] Failed to persist shell close error for {shell_id}")
 
+    @action.post(action_name="recover-orphaned-project")
+    async def _recover_orphaned_project(self) -> ApiResponse:
+        """Resurrect a deleted Project from a dependent's ``workdir`` and rebind
+        every dependent's ``project_id`` to the recovered Project.
+
+        Body: ``{ "dangling_id": "<uuid>" }``
+        """
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.project import Project
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        dangling_id = (body or {}).get("dangling_id")
+        if not isinstance(dangling_id, str) or not dangling_id:
+            return ApiFailResponse(message="dangling_id (str) is required", status_code=400)
+
+        existing = await Project.get_by_id(dangling_id)
+        if existing is not None:
+            return ApiSuccessResponse(data={
+                "project": existing.model_dump(mode="json"),
+                "rebound": 0,
+            })
+
+        all_shells, all_processes = await asyncio.gather(
+            ShellEntity.get_all(),
+            AgenticProcess.get_all(),
+        )
+        dep_shells = [s for s in all_shells if getattr(s, "project_id", None) == dangling_id]
+        dep_procs = [p for p in all_processes if getattr(p, "project_id", None) == dangling_id]
+        if not dep_shells and not dep_procs:
+            return ApiFailResponse(
+                message=f"No dependents reference project {dangling_id}",
+                status_code=404,
+            )
+
+        workdir = next(
+            (getattr(d, "workdir", None) for d in (*dep_shells, *dep_procs) if getattr(d, "workdir", None)),
+            None,
+        )
+        if not workdir:
+            return ApiFailResponse(
+                message="No dependent has a workdir; cannot recover project",
+                status_code=422,
+            )
+
+        recovered = await Project.recover_by_path(workdir)
+        if recovered is None:
+            return ApiFailResponse(
+                message=f"Could not recover a project for {workdir}",
+                status_code=500,
+            )
+
+        rebound = 0
+        if recovered.id != dangling_id:
+            for s in dep_shells:
+                s.project_id = recovered.id
+            for p in dep_procs:
+                # Force-rebind: every dep_proc here has the dangling FK and may
+                # be session-bound — the polite `_bind_project_id` would be
+                # silently refused by the freeze for those.
+                p._force_rebind_project_id(recovered.id)
+            await asyncio.gather(
+                *(s.save() for s in dep_shells),
+                *(p.save() for p in dep_procs),
+            )
+            rebound = len(dep_shells) + len(dep_procs)
+
+        return ApiSuccessResponse(data={
+            "project": recovered.model_dump(mode="json"),
+            "rebound": rebound,
+        })
+
+    @action.post(action_name="create-project-from-git")
+    async def _create_project_from_git(self) -> ApiResponse:
+        """Clone a git URL into the desktop workspace and materialize a Project.
+
+        Body:
+            { "project_url": "<url>",
+              "target_name": "<optional override>",
+              "branch":      "<optional ref to check out at clone time>" }
+
+        Collision policy: if the derived (or supplied) folder name already
+        exists under AGENT_MOUNT_FOLDER, refuse and return the next-free
+        suggestion in ``data.suggested_name``. The caller re-submits with
+        ``target_name`` set to accept the suggestion.
+        """
+        from flow_sdk.builtin.project import Project
+        from flow_sdk.config import AGENT_MOUNT_FOLDER
+        from flow_sdk.utils.git import derive_repo_leaf_from_url, git_clone
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        project_url = (body or {}).get("project_url")
+        target_name = (body or {}).get("target_name")
+        branch = (body or {}).get("branch") or None
+        if not isinstance(project_url, str) or not project_url.strip():
+            return ApiFailResponse(message="project_url (str) is required", status_code=400)
+        # A branch ref is passed straight into git's argv as the value of `--branch`.
+        # The subprocess call is argv-style (no shell), so this is structurally
+        # safe against command injection — but a malformed ref still produces a
+        # confusing error, and rejecting it here keeps the failure mode clean.
+        if branch is not None:
+            import re as _re
+            _GIT_REF_RE = _re.compile(r"^(?!-)[A-Za-z0-9._/-]+$")
+            if not isinstance(branch, str) or not _GIT_REF_RE.match(branch) or ".." in branch or "@{" in branch:
+                return ApiFailResponse(
+                    message=f"Invalid branch name: {branch!r}",
+                    status_code=400,
+                )
+
+        leaf = (target_name or derive_repo_leaf_from_url(project_url)).strip()
+        if not leaf:
+            return ApiFailResponse(
+                message=f"Could not derive a folder name from URL: {project_url}",
+                status_code=400,
+            )
+
+        target_dir = os.path.join(AGENT_MOUNT_FOLDER, leaf)
+        if os.path.exists(target_dir):
+            # If caller explicitly chose this name, refuse — they need to pick another.
+            # Otherwise propose the next-free `<leaf>-N` so the dialog can offer it.
+            suggested = leaf
+            n = 2
+            while os.path.exists(os.path.join(AGENT_MOUNT_FOLDER, f"{leaf}-{n}")):
+                n += 1
+            suggested = f"{leaf}-{n}"
+            return ApiFailResponse(
+                message=f"'{leaf}' already exists in workspace",
+                data={"suggested_name": suggested, "attempted_name": leaf},
+                status_code=409,
+            )
+
+        ok, msg = await git_clone(project_url, target_dir, branch=branch)
+        if not ok:
+            return ApiFailResponse(message=msg, status_code=400)
+
+        project = Project(name=target_dir)
+        await project.save()
+        await project.setup_for_desktop()
+
+        return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
+
+    @action.post(action_name="find-local-repo")
+    async def _find_local_repo(self) -> ApiResponse:
+        """Locate a local clone whose ``origin`` matches a git URL.
+
+        Body: ``{ "project_url": "<url>" }``. Returns
+        ``{ found: bool, local_path: str | null }``. The url-only counterpart of
+        the task-scoped ``find-project`` endpoint — lets the receiver of a shared
+        repo attach to a clone they already have instead of re-cloning it.
+        """
+        from flow_sdk.utils.git import find_local_repo_for_url
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        project_url = (body or {}).get("project_url")
+        if not isinstance(project_url, str) or not project_url.strip():
+            return ApiFailResponse(message="project_url (str) is required", status_code=400)
+        local_path = find_local_repo_for_url(project_url.strip())
+        return ApiSuccessResponse(data={"found": bool(local_path), "local_path": local_path})
+
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
+
+    @action.get(action_name="session-transcript-raw")
+    async def _session_transcript_raw(self): return await self._pty_session_transcript_raw()
 
     @action.get(action_name="discovery")
     async def _discovery_action(self): return await self._pty_discovery_action()
@@ -717,6 +989,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.all(action_name="scan-item")
     async def scan_item_action(self): return await self._scan_item()
 
+    @action.all(action_name="get-cost-overview")
+    async def get_cost_overview_action(self): return await self._analytics_cost_overview()
+
+    @action.all(action_name="get-claude-context")
+    async def get_claude_context_action(self): return await self._analytics_claude_context()
+
     @action.all(action_name="clear-skill-usage")
     async def clear_skill_usage_action(self): return await self._scan_clear_skill_usage()
 
@@ -738,10 +1016,87 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="findSession")
     async def find_session(self): return await self._scan_find_session()
 
+    @action.post(action_name="os-status-batch")
+    async def _os_status_batch(self) -> ApiResponse:
+        """Batched os-status snapshot for many AgenticProcesses.
+
+        Collapses what would otherwise be N parallel GETs (the SDK's
+        per-process auto-recovery sweep) into a single round-trip. Each
+        per-process payload is identical to what the per-AP ``os-status``
+        action returns; the SDK fans the results back out to each
+        ``AgenticProcess`` instance to drive ``reconnect()`` decisions.
+
+        Body: ``{ "process_ids": ["<id>", ...] }``
+        Response: ``{ "statuses": { "<id>": <payload>, ... }, "missing": [...] }``
+        """
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        raw_ids = body.get("process_ids") if isinstance(body, dict) else None
+        if not isinstance(raw_ids, list):
+            return ApiFailResponse(
+                message="os-status-batch requires body: { process_ids: string[] }",
+                status_code=400,
+            )
+
+        # De-dup + drop empties without changing input order.
+        seen: set[str] = set()
+        ids: list[str] = []
+        for raw in raw_ids:
+            if not isinstance(raw, str) or not raw:
+                continue
+            if raw in seen:
+                continue
+            seen.add(raw)
+            ids.append(raw)
+
+        if not ids:
+            return ApiSuccessResponse(data={"statuses": {}, "missing": []})
+
+        fetched = await asyncio.gather(
+            *(AgenticProcess.get_by_id(i) for i in ids),
+            return_exceptions=True,
+        )
+
+        missing: list[str] = []
+        resolved: list[tuple[str, AgenticProcess]] = []
+        for pid, proc in zip(ids, fetched):
+            if isinstance(proc, Exception) or proc is None:
+                missing.append(pid)
+            else:
+                resolved.append((pid, proc))
+
+        payloads = await asyncio.gather(
+            *(proc._collect_os_status_payload() for _, proc in resolved),
+            return_exceptions=True,
+        )
+
+        statuses: dict[str, dict] = {}
+        for (pid, _), payload in zip(resolved, payloads):
+            if isinstance(payload, Exception):
+                missing.append(pid)
+                continue
+            statuses[pid] = payload
+
+        return ApiSuccessResponse(data={"statuses": statuses, "missing": missing})
+
     # -- fs-records action (implementation in FsRecordsActionsMixin) -------------
 
     @action.all(action_name="fs-records", methods=["get", "post", "put", "delete"])
     async def fs_records_action(self): return await self._fs_records_action()
+
+    @action.get(action_name="asset-usage")
+    async def asset_usage_action(self) -> ApiResponse:
+        """GET /asset-usage?skill=<name> — sessions in which this asset was used
+        (FSIndexer scan of transcripts + analyzer). Powers the asset IDE usage tab."""
+        return await self._handle_asset_usage(get_current_request_info())
+
+    @action.post(action_name="commit-asset")
+    async def commit_asset_action(self) -> ApiResponse:
+        """POST /commit-asset {workdir, file} — version-bump + commit an asset
+        edited on disk (the cycle's commit step). Returns {committed, hash?, version?}."""
+        return await self._handle_commit_asset(get_current_request_info())
 
     # -- shell record actions ----------------------------------------------------
 
@@ -784,9 +1139,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     async def _apply_cloud_results(self, results: list) -> None:
         """Apply cloud search results to local records (mark ignored / save fix suggestions)."""
-        from datetime import datetime, timezone
-
-        from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord, ErrorStatus, Fix
+        from flow_sdk.fs_store.operations.claude_error import ErrorStatus, Fix, get_by_fingerprint
 
         if not results:
             return
@@ -797,7 +1150,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             fp = r.get("fingerprint", "")
             if not fp:
                 continue
-            rec = ClaudeErrorRecord.get_by_fingerprint(fp)
+            rec = get_by_fingerprint(fp)
             if rec is None:
                 continue
             if r.get("action") == "ignore":
@@ -817,7 +1170,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         """Spawn an AgenticProcess for each error with a saved cloud fix instruction."""
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
-        from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord, Fix
+        from flow_sdk.fs_store.operations.claude_error import Fix, get_by_fingerprint
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data()
@@ -827,7 +1180,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         spawned = []
         for fp in fingerprints:
-            rec = ClaudeErrorRecord.get_by_fingerprint(fp)
+            rec = get_by_fingerprint(fp)
             fix = getattr(rec, "fix", None)
             fix_instruction = fix.instruction if isinstance(fix, Fix) else ""
             if rec is None or not fix_instruction:
@@ -862,7 +1215,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="worker-history")
     async def worker_history_action(self) -> ApiResponse:
         """Unified Recent Sessions list across every worker (claude, codex, …)."""
-        from flow_sdk.fs_records.worker_history import get_worker_history
+        from flow_sdk.builtin.worker_history import get_worker_history
 
         request_info = get_current_request_info()
         limit_raw = request_info.get_param("limit") if request_info else None
@@ -870,7 +1223,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             limit = int(limit_raw) if limit_raw else 10
         except (TypeError, ValueError):
             limit = 10
-        entries = await asyncio.to_thread(get_worker_history, limit)
+        # Optional active scope — a comma-separated list of project_ids. When
+        # present the limit is applied per-project, so a scoped client sees that
+        # project's sessions instead of whatever survived a global top-N cut.
+        project_ids_raw = request_info.get_param("project_ids") if request_info else None
+        project_ids = (
+            {p for p in project_ids_raw.split(",") if p.strip()} if project_ids_raw else None
+        )
+        entries = await get_worker_history(limit, project_ids)
         return ApiSuccessResponse(data=[e.model_dump(mode="json") for e in entries])
 
     @action.get(action_name="git-ops")
@@ -883,15 +1243,46 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             GET /git-ops/is-init             ?workdir=...  → is git repo
             GET /git-ops/is-linked-worktree  ?workdir=...  → is linked worktree
         """
+        return await self._git_ops_dispatch(method="GET")
+
+    @action.post(action_name="git-ops")
+    async def git_ops_post_action(self) -> ApiResponse:
+        """Mutating git operations (e.g. ``push``). Delegates to GitRepo.dispatch().
+
+        Routing (via sub_path):
+            POST /git-ops/push          body { workdir } → commit-all + pull --rebase + push
+            POST /git-ops/restore-file  { workdir, file, hash } → checkout file at revision
+            POST /git-ops/discard-file  { workdir, file, status } → undo a file's pending change
+            POST /git-ops/stage-file    { workdir, file } → stage just this file
+            POST /git-ops/unstage-file  { workdir, file } → unstage just this file
+        """
+        return await self._git_ops_dispatch(method="POST")
+
+    async def _git_ops_dispatch(self, method: str) -> ApiResponse:
+        """Shared git-ops gateway. Reads params from BOTH the query string and the
+        request body, because the action registry routes every git-ops request
+        (GET and POST) through a single handler — params like ``file``/``hash``
+        arrive on the query string for reads and in the body for mutations, and
+        either must reach ``GitRepo.dispatch``. The real HTTP method (not the
+        decorator's) gates mutating sub-paths.
+        """
         request_info = get_current_request_info()
         segments = [s for s in (request_info.sub_path or "").strip("/").split("/") if s]
-        workdir = request_info.get_param("workdir") if request_info else None
+        body = {}
+        if request_info:
+            try:
+                body = (await request_info.get_post_data()) or {}
+            except Exception:  # noqa: BLE001 — GET requests have no JSON body
+                body = {}
+        # query ∪ body (body wins on conflict); covers reads and mutations alike.
+        params = {**(request_info.request_parameters or {}), **(body or {})} if request_info else {}
+        workdir = params.get("workdir")
         if not workdir:
             return ApiFailResponse(message="workdir parameter is required")
-
-        query_params = {k: v for k, v in (request_info.request_parameters or {}).items() if k != "workdir"}
+        real_method = (request_info.request.method if request_info and request_info.request else method)
+        query_params = {k: v for k, v in params.items() if k != "workdir"}
         from flow_sdk.builtin.faas.git_repo import GitRepo
-        return await GitRepo(workdir, self).dispatch(segments[0] if segments else "", query_params)
+        return await GitRepo(workdir, self).dispatch(segments[0] if segments else "", query_params, method=real_method)
 
     @asynccontextmanager
     async def ready_session(self):

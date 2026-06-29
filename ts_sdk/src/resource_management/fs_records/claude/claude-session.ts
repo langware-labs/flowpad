@@ -39,7 +39,6 @@ export interface ClaudeSessionRecordData {
   start_time?: string;
 
   // Fields from enriched scan (from_jsonl)
-  project_encoded_name?: string | null;
   last_user_message?: string | null;
   task_path?: string | null;
   modified_at?: string | null;
@@ -111,6 +110,35 @@ export class ClaudeSessionRecord extends FsRecord {
       return result ?? [];
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * Fetch the raw JSONL bytes of a Claude session as a UTF-8 string. The
+   * browser can't read ~/.claude/projects/.../<sid>.jsonl directly (no static
+   * mount), so this routes through the backend which has filesystem access.
+   *
+   * @param sessionId - Claude session UUID
+   * @param options.project - Optional project path for O(1) backend lookup
+   * @returns UTF-8 text content of the JSONL, or null when the session has
+   *   no jsonl on disk (or the request failed).
+   */
+  static async fetchTranscriptRaw(
+    sessionId: string,
+    options?: { project?: string },
+  ): Promise<string | null> {
+    const action = new ActionInfo('session-transcript-raw', 'compute_node', '@local', 'GET');
+    action.queryParameters = {
+      session_id: sessionId,
+      ...(options?.project ? { project: options.project } : {}),
+    };
+    try {
+      const result = await dataManager.callAction<void, { content?: string; jsonl_path?: string | null }>(action);
+      const content = result?.content;
+      if (!content) return null;
+      return content;
+    } catch {
+      return null;
     }
   }
 

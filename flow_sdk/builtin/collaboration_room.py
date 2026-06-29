@@ -11,14 +11,20 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, ClassVar
 
+from pydantic import computed_field
+
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity, action
 from flow_sdk.db.drivers.db_base_record import TypeId
-from flow_sdk.fs_records.collaboration_room_record import CollaborationRoomStatus
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
+
+
+class CollaborationRoomStatus:
+    ACTIVE = "active"
+    ENDED = "ended"
 
 
 def _now_iso() -> str:
@@ -29,7 +35,6 @@ class CollaborationRoom(Entity):
     """Entity representing a collaboration room on a project."""
 
     type: str = APIField(default="collaboration_room")
-    project_id: str | None = APIField(default=None, description="Owning project id")
     host_name: str | None = APIField(default=None, description="Display name of the host")
     host_member_id: str | None = APIField(default=None, description="Stable member_id of the host")
     name: str | None = APIField(default=None, description="Optional human title for this room")
@@ -37,16 +42,10 @@ class CollaborationRoom(Entity):
         default_factory=list,
         description="Participants: [{member_id, name, joined_at, last_seen_at}]",
     )
-    # NOTE: agentic_process_ids moved into the unified ``context_entities``
-    # list. Use ``room.context_of_type('agentic_process')`` to read them and
-    # ``room.add_context_entity(TypeId(type='agentic_process', id=...))`` to
-    # append. The ``add_process`` action below routes through that.
     status: str = APIField(default=CollaborationRoomStatus.ACTIVE)
     started_at: str | None = APIField(default=None)
     updated_at: str | None = APIField(default=None)
     ended_at: str | None = APIField(default=None)
-
-    _api_visible: ClassVar[bool] = True
 
     # ── Construction ──────────────────────────────────────────────────────────
 
@@ -107,19 +106,25 @@ class CollaborationRoom(Entity):
 
     async def add_process(self, process_id: str) -> bool:
         process_typeid = TypeId(type="agentic_process", id=process_id)
-        if any(t == process_typeid for t in self.context_entities):
+        added = self.add_shared_context_entities(process_typeid)
+        if not added:
             return False
-        self.add_context_entity(process_typeid)
         self._touch()
         await self.save()
         return True
 
+    @computed_field
     @property
     def agentic_process_ids(self) -> list[str]:
-        """Convenience: list of agentic_process ids in this room's context.
-        Read-only — append via ``add_process`` or ``add_context_entity``.
+        """Convenience: list of agentic_process ids in this room's shared
+        context. Read-only — append via ``add_process`` /
+        ``add_shared_context_entities``.
+
+        Exposed as a ``computed_field`` so it rides on ``model_dump`` — API
+        consumers (and the add_process regression) read the linked processes
+        off the serialized room, not just off ``shared_context_entities``.
         """
-        return [t.id for t in self.context_of_type("agentic_process")]
+        return [t.id for t in self.context_of_type("agentic_process", bucket="shared")]
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 
@@ -172,7 +177,7 @@ class CollaborationRoom(Entity):
         return ApiSuccessResponse(
             data={
                 "ok": added,
-                "context_entities": [str(t) for t in self.context_entities],
+                "shared_context_entities": [str(t) for t in self.shared_context_entities],
             }
         )
 

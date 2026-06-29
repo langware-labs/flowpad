@@ -1,3 +1,7 @@
+---
+id: 24f24fb0-9255-56f5-88e6-0f4b77033acc
+---
+
 # ComputeNode `fs-records` Action
 
 This document describes the `fs-records` action registered on the `ComputeNode` entity. It is a unified CRUD gateway for filesystem-backed typed records, providing both type-based routing (by registered record type name) and path-based routing (by source file path on disk).
@@ -23,7 +27,7 @@ These are two complementary systems, not alternatives:
 
 ```
 POST /fs-records/{type}
-  → record_list.create(body)     # write Record to disk
+  → record_list.create(body)     # write FSRecord to disk
   → rec.sync_to_db()             # update Entity + FTS cache from the real saved record
   → _broadcast_fs_record_op()    # WebSocket notification to frontend
 ```
@@ -32,23 +36,23 @@ POST /fs-records/{type}
 
 **Source files:**
 
-- `flow_sdk/builtin/faas/compute_node.py` — action handler, `_parse_record_query`, `_embed_includes`, `_handle_path_based_source_file`, `_broadcast_fs_record_op`
+- `flow_sdk/builtin/faas/compute_node.py` — the `@action.all` stub `fs_records_action`, which delegates to `_fs_records_action()` in the mixin
+- `flow_sdk/builtin/faas/fs_records_actions.py` — `FsRecordsActionsMixin`: the action handler `_fs_records_action`, plus `_parse_record_query`, `_embed_includes`, `_handle_path_based_source_file`, `_broadcast_fs_record_op`, and the scan/index/search handlers
 - `flow_sdk/fs_store/record_query.py` — `RecordQuery` dataclass
-- `flow_sdk/fs_store/source_file_registry.py` — `register_file_pattern`, `resolve_list_class`, `is_allowed_source_path`
-- `flow_sdk/fs_store/record_list.py` — `RecordList` storage-agnostic collection
-- `flow_sdk/fs_store/source_file_record_list.py` — `SourceFileRecordList` for embedded JSON files
-- `flow_sdk/fs_store/factory/type_registry.py` — backward-compat shim (delegates to `SchemaRegistry`)
+- `flow_sdk/fs_store/source_file_records.py` — pure-function extractors (`extract_records`, `extract_from_data`, `is_allowed_source_path`, `known_filename`, `load_raw`, `write_raw`) for embedded JSON config files
+- `flow_sdk/fs_store/record_list.py` — `RecordList` storage-agnostic collection over `FSRecord`
+- `flow_sdk/fs_store/fs_record.py` — `FSRecord`, the single concrete record class (discover / load / save / `sync_to_db`)
+- `flow_sdk/fs_store/schema_registry.py` — `SchemaRegistry`, the single type registry (`get`, `get_all_record_types`)
 
 ---
 
 ## Action Registration
 
-The action is registered using the `@action.all` decorator on the `ComputeNode` class method:
+The action is registered using the `@action.all` decorator on a thin `ComputeNode` stub that delegates to the implementation living in `FsRecordsActionsMixin._fs_records_action()`:
 
 ```python
 @action.all(action_name="fs-records", methods=["get", "post", "put", "delete"])
-async def fs_records_action(self) -> ApiResponse:
-    ...
+async def fs_records_action(self): return await self._fs_records_action()
 ```
 
 The decorator registers `fs-records` as a named action callable on any `ComputeNode` entity instance. The `methods` argument restricts it to GET, POST, PUT, and DELETE HTTP verbs. The handler is located at:
@@ -90,7 +94,20 @@ For path-based source file operations, the literal segment `file` replaces `{typ
 | `PUT` | `/fs-records/file?path=...&json_path=...` | Update a record in a source file |
 | `DELETE` | `/fs-records/file?path=...&json_path=...` | Delete a record from a source file |
 
-The `file` segment is matched first, before type lookup. If the first path segment equals `"file"`, the request is dispatched to `_handle_path_based_source_file` unconditionally.
+Several reserved first segments are dispatched to dedicated handlers ahead of the generic type lookup:
+
+| HTTP Method | URL Pattern | Handler |
+|-------------|-------------|---------|
+| `GET` | `/fs-records/history_entry?limit=N` | `_handle_fs_records_history` — unified worker history (computed view) |
+| `GET` | `/fs-records/search?q=...` | `_handle_fs_records_search` — FTS5 / filter browse |
+| `GET` | `/fs-records/scan[?type=X]` | `_handle_fs_records_scan` |
+| `POST` | `/fs-records/index[?type=X&rebuild=…&user=…&projects=…]` | `_handle_fs_records_index` |
+| `DELETE` | `/fs-records/index[?type=X]` | `_handle_fs_records_index_clear` |
+| `GET` | `/fs-records/index-status` | `_handle_fs_records_index_status` |
+| `GET` | `/fs-records/activity-status` | `_handle_fs_records_activity_status` |
+| `POST` | `/fs-records/{type}/discover?path=...` | `_handle_fs_records_discover_by_path` — find-or-recover by path |
+
+The `file` segment is matched first, before any other dispatch. If the first path segment equals `"file"`, the request is dispatched to `_handle_path_based_source_file` unconditionally. The reserved segments above (`history_entry`, `search`, `scan`, `index`, `index-status`, `activity-status`) are matched next, then the `{type}/discover` POST, and finally the generic type-based CRUD path.
 
 ---
 
@@ -98,21 +115,24 @@ The `file` segment is matched first, before type lookup. If the first path segme
 
 ### On Entry: Type Registry Lookup
 
-Every request that is not routed to the file-based handler first extracts the record type from the URL:
+Every request that reaches the generic CRUD path first extracts the record type from the URL and validates it against `SchemaRegistry`:
 
 ```python
 record_type = segments[0]
-record_cls = fs_type_registry.get(record_type)
-if record_cls is None:
+uid = segments[1] if len(segments) > 1 else None
+
+if SchemaRegistry.get(record_type) is None:
     return ApiFailResponse(
-        message=f"Unknown record type '{record_type}'. Available types: ...",
+        message=f"Unknown record type '{record_type}'. Available types: {SchemaRegistry.get_all_record_types()}",
         status_code=400,
     )
+
+record_list = RecordList(type_name=record_type)
 ```
 
-`SchemaRegistry` maps type name strings (e.g. `"claude_session"`, `"agentic_process"`) to their `Record` subclasses via `get_record_cls()`. Types self-register at import time via the `__init_subclass__` hook in `Record` — any subclass that sets a non-empty `_record_type` class variable is automatically registered with `SchemaRegistry`. The legacy `fs_type_registry` (`flow_sdk/fs_store/factory/type_registry.py`) is a thin shim whose `get()` method calls `SchemaRegistry.get_record_cls()` internally.
+`SchemaRegistry.get(type_name)` returns the registered `TypeInfo` for a type name (e.g. `"claude_session"`, `"agentic_process"`), or `None` for an unknown type. There is **no** per-type `Record` subclass and no `get_record_cls()` — every record type is served by the single concrete `FSRecord` class, with `RecordList(type_name=...)` driving discovery and persistence. Type metadata (record class is always `FSRecord`; per-type behavior lives in `TypeInfo`) is registered with `SchemaRegistry`, which is the single type registry for the whole system. `RecordType`/`SkillitRecordType` in `flow_sdk/fs_store/record_types.py` are backward-compat aliases of the canonical `EntityType` in `flow_sdk/schema/types.py`.
 
-At handler entry the import `import flow_sdk.fs_records` triggers auto-registration of all built-in record types.
+At handler entry the import `import flow_sdk.fs_store.indexer.registrations` triggers auto-registration of all built-in record types.
 
 ### GET — List Registered Types
 
@@ -120,7 +140,7 @@ When no sub-path is given and the method is GET, the handler returns all registe
 
 ```python
 if not segments and method == "get":
-    return ApiSuccessResponse(data={"types": fs_type_registry.get_all_types()})
+    return ApiSuccessResponse(data={"types": SchemaRegistry.get_all_record_types()})
 ```
 
 **Response:**
@@ -141,7 +161,7 @@ if not segments and method == "get":
 GET /api/v1/graph/compute_node/{node_id}/fs-records/{type}[?<query params>]
 ```
 
-If no uid is present in the URL, all records of the type are returned (with optional filtering via query parameters). A `RecordList` is constructed from the resolved `record_cls` and iterated. If query parameters are present, `_parse_record_query` builds a `RecordQuery` and applies it via `RecordList.query(query)`. If no query parameters apply, the full list is returned via iteration.
+If no uid is present in the URL, all records of the type are returned (with optional filtering via query parameters). A `RecordList(type_name=record_type)` is constructed and iterated (off-thread via `asyncio.to_thread`). If query parameters are present, `_parse_record_query` builds a `RecordQuery` and applies it via `RecordList.query(query)`. If no query parameters apply, the full list is returned via iteration. Each record is serialized with `meta_dict()` (the identity/metadata subset), not the full record payload.
 
 `include` parameters are applied after fetching (see [Embed Includes](#_embed_includes-include-parameter) below).
 
@@ -170,7 +190,7 @@ If no uid is present in the URL, all records of the type are returned (with opti
 GET /api/v1/graph/compute_node/{node_id}/fs-records/{type}/{uid}
 ```
 
-Delegates to `RecordList.get(uid)` which calls `record_cls.discover_one(uid)`. If not found, returns 404.
+Delegates to `RecordList.get(uid)` which calls `FSRecord.load_or_none(type_name, uid)`. If not found, returns 404. The found record is serialized with `meta_dict()`.
 
 **Response (found):**
 
@@ -204,11 +224,11 @@ POST /api/v1/graph/compute_node/{node_id}/fs-records/{type}
 Content-Type: application/json
 ```
 
-The request body must be a JSON object. It is passed to `RecordList.create(body)` which calls `record_cls.from_dict(body)`, checks for a duplicate uid, and calls `record.persist()`.
+The request body must be a JSON object. It is passed to `RecordList.create(body)` which calls `FSRecord.from_dict(payload)` (with `type` defaulted to the list's `type_name`), checks for a duplicate id via `get()`, and calls `record.save()`.
 
-If a record with the same uid already exists, a `ValueError` is raised and wrapped in a 409 response.
+If a record with the same id already exists, a `ValueError` (`"Record with id <id> already exists"`) is raised and wrapped in a 409 response.
 
-After a successful create, `rec.sync_to_db()` is called on the real saved record (not a reconstruction) to update the Entity + FTS cache. Then a `DataOp("create", ...)` notification is broadcast via `_broadcast_fs_record_op`.
+After a successful create, `rec.sync_to_db()` is called on the real saved record (not a reconstruction) to update the Entity + FTS cache. The handler then patches the freshly-created entity's `scope` in place (inferred from the resolved asset path via `classify_path`) when it was born scope-less, so HTTP-created records match indexer-discovered ones. Finally a `DataOp("create", ...)` notification is broadcast via `_broadcast_fs_record_op` with `rec.meta_dict()`.
 
 **Request body:**
 
@@ -240,7 +260,7 @@ After a successful create, `rec.sync_to_db()` is called on the real saved record
 ```json
 {
   "status": "FAIL",
-  "message": "Record with uid 'new-id-001' already exists",
+  "message": "Record with id 'new-id-001' already exists",
   "data": null
 }
 ```
@@ -252,9 +272,9 @@ PUT /api/v1/graph/compute_node/{node_id}/fs-records/{type}/{uid}
 Content-Type: application/json
 ```
 
-The uid must be present in the URL. The request body is a partial or full JSON object containing the fields to update. `RecordList.update(uid, body)` fetches the existing record, sets each provided key via `setattr`, and calls `record.persist()`. If the record does not exist a `KeyError` is raised and wrapped in a 404.
+The uid must be present in the URL. The request body is a partial or full JSON object containing the fields to update. `RecordList.update(uid, body)` fetches the existing record via `get()`, builds a patch that excludes the `type` and `id` keys, and applies it via `record.save_metadata(patch)`. If the record does not exist a `KeyError` (`"No record with id <id>"`) is raised and wrapped in a 404.
 
-After a successful update, `rec.sync_to_db()` is called on the real saved record to update the Entity + FTS cache. Then a `DataOp("update", ...)` broadcast is sent.
+After a successful update, `rec.sync_to_db()` is called on the real saved record to update the Entity + FTS cache. Then a `DataOp("update", ...)` broadcast is sent with `rec.meta_dict()`.
 
 **Request body:**
 
@@ -285,7 +305,7 @@ After a successful update, `rec.sync_to_db()` is called on the real saved record
 ```json
 {
   "status": "FAIL",
-  "message": "No record with uid 'abc123'",
+  "message": "No record with id 'abc123'",
   "data": null
 }
 ```
@@ -296,9 +316,9 @@ After a successful update, `rec.sync_to_db()` is called on the real saved record
 DELETE /api/v1/graph/compute_node/{node_id}/fs-records/{type}/{uid}
 ```
 
-The uid must be present. Before touching disk, `Entity.delete_by_record_ref(record_type/uid)` removes the Entity row and FTS entry from SQLite. Then `RecordList.delete(uid)` removes the record directory or file from disk. Returns 404 if the record did not exist.
+The uid must be present. Before touching disk, the handler fetches the Entity via `Entity.get_one(QueryFilter.parse({"id": uid}, record_type))`; if present, it removes the FTS entry (`driver.fts_delete(entity.id)`) and deletes the Entity row (`entity.delete()`). It then re-fetches the record from disk via `RecordList.get(uid)` (returning 404 if it no longer exists), removes the record's live `asset_ref` source (the file/folder under `~/.claude/...`, via `rmtree`/`unlink`) so re-discovery doesn't resurface it, and finally calls `RecordList.delete(uid)` which `rmtree`s the record's `shadow_dir`.
 
-After a successful delete, a `DataOp("delete", ...)` broadcast is sent.
+After a successful delete, a `DataOp("delete", ...)` broadcast is sent (with no data payload).
 
 **Response (success):**
 
@@ -324,26 +344,24 @@ After a successful delete, a `DataOp("delete", ...)` broadcast is sent.
 
 ---
 
-## Read-Only Record Check
+## Read-Only Records
 
-Before any write operation (POST, PUT, DELETE) the handler checks the `_read_only` class variable on the resolved record class:
+The per-record `_read_only` class-variable check was removed. A `RecordList` over `FSRecord` is always mutable, so the generic CRUD path no longer pre-checks read-only-ness before a write. Write protection is now enforced at the `FSRef` level inside `sync_to_db`/persistence (`_is_read_only()` checking the `asset_ref`/`self_ref` `read_only` flag), not by the action handler.
+
+The handler still imports `ReadOnlyRecordError` and catches it, returning a 403 if it is ever raised during a write:
 
 ```python
-if getattr(record_cls, "_read_only", False):
-    raise ReadOnlyRecordError(f"{record_cls.__name__} is read-only")
+except ReadOnlyRecordError as e:
+    return ApiFailResponse(message=f"Record is read-only: {e}", status_code=403)
 ```
-
-Any `ReadOnlyRecordError` is caught and returned as a 403:
 
 ```json
 {
   "status": "FAIL",
-  "message": "Record is read-only: ClaudeSessionFsRecord is read-only",
+  "message": "Record is read-only: <detail>",
   "data": null
 }
 ```
-
-This check applies to both the type-based and path-based handlers.
 
 ---
 
@@ -351,7 +369,7 @@ This check applies to both the type-based and path-based handlers.
 
 The static method `_parse_record_query(qp)` parses URL query parameters into a `RecordQuery` instance. It is only called for GET list requests (no uid in the path).
 
-If none of the filter-triggering parameters are present (`ids`, `modified_after`, `parent_id`, `status`, `limit`, `sort_by`), the method returns `None` and the handler iterates all records without filtering. Note: `offset` alone does **not** trigger query construction — passing only `?offset=N` without any other filter or sort parameter has no effect and returns all records from index 0.
+If none of the filter-triggering parameters are present (`ids`, `modified_after`, `parent_id`, `status`, `limit`, `offset`, `sort_by`), the method returns `None` and the handler iterates all records without filtering. Note: `offset` **is** in the trigger list — passing `?offset=N` alone constructs a `RecordQuery` and applies the offset slice (defaulting to descending sort with no `sort_by`).
 
 ### Supported Query Parameters
 
@@ -366,7 +384,7 @@ If none of the filter-triggering parameters are present (`ids`, `modified_after`
 | `sort_by` | string | Attribute name to sort by. Supported values: `"created_at"`, `"modified_at"`, `"name"`. Records with a `None` value for the sort key are placed at the end. |
 | `sort_desc` | `"true"` / `"false"` | Sort direction. Defaults to descending (`true`). Set to `"false"`, `"0"`, or `"no"` to sort ascending. |
 
-> **Note:** The `RecordQuery` dataclass has additional fields (`types`, `created_after`, `created_before`, `modified_before`, `child_filter`, `predicate`) that work programmatically via `RecordQuery.apply()` but are **not** exposed through the HTTP URL parameters. They can only be used by Python callers constructing `RecordQuery` objects directly.
+> **Note:** The `RecordQuery` dataclass has additional fields (`types`, `created_after`, `created_before`, `modified_before`, `child_filter`, `predicate`, `field_predicates`, `scope`) that work programmatically via `RecordQuery.apply()` but are **not** exposed through the HTTP URL parameters. They can only be used by Python callers constructing `RecordQuery` objects directly.
 
 ### RecordQuery Filter Logic
 
@@ -393,21 +411,21 @@ GET /api/v1/graph/compute_node/local/fs-records/agentic_process
 
 ## `_embed_includes` — `?include=` Parameter
 
-The static method `_embed_includes(item, rec, include_set, cache=None)` optionally joins related records into the serialized response. It is called on each record dict after `to_dict()` when the request contains an `include` query parameter. The `cache` parameter is optional: it is passed for list responses (shared across records to avoid duplicate lookups) and omitted for single-record GET responses.
+The static method `_embed_includes(item, rec, include_set, cache=None)` optionally joins related records into the serialized response. It is called on each record dict after `meta_dict()` when the request contains an `include` query parameter. The `cache` parameter is optional: it is passed for list responses (shared across records to avoid duplicate lookups) and omitted for single-record GET responses.
 
-### `?include=session`
+### `?include=claude_session`
 
-The only currently supported include value is `session`. When `include=session` is present and the record has a `session_ref` attribute with a non-empty `.id`:
+The only currently supported include value is `claude_session`. When `include=claude_session` is present and the record has a `session_ref` attribute with a non-empty `.id`:
 
-1. `ClaudeSessionFsRecord.discover_one(session_ref.id, project=rec.data.get("project", ""))` is called.
-2. If found, the session record's `to_dict()` is embedded under the key `"_session"` in the response item.
+1. `get_claude_session(session_ref.id, project=rec.data.get("project", ""))` (from `flow_sdk.fs_store.indexer.functions.claude_sessions`) is called.
+2. If found, `claude_session_meta_dict(session)` is embedded under the key `"_session"` in the response item.
 
-For list responses, a `cache: dict` is shared across all records to avoid redundant `discover_one` calls for records that share the same session ref id.
+For list responses, a `cache: dict` is shared across all records to avoid redundant session lookups for records that share the same session ref id. (Note: the `history_entry` handler also honors `?include=claude_session`, embedding a `_session` shape built directly from the worker-history aggregation.)
 
 **Example (GET list with include):**
 
 ```
-GET /fs-records/agentic_process?include=session
+GET /fs-records/agentic_process?include=claude_session
 ```
 
 **Response item:**
@@ -431,7 +449,7 @@ If the record has no `session_ref`, or the session cannot be found, the `"_sessi
 
 ## Path-Based Source File API
 
-The `file` sub-path variant operates on source files on disk — JSON configuration files that contain multiple embedded records at different JSON Pointer paths. This is used for files like `~/.claude/settings.json` or `.mcp.json` that are owned externally by the Claude CLI.
+The `file` sub-path variant operates on source files on disk — JSON configuration files that contain multiple embedded records at different JSON Pointer paths. This is used for files like `~/.claude/settings.json` or `.mcp.json` that are owned externally by the Claude CLI. The implementation lives in `flow_sdk/fs_store/source_file_records.py` as a set of pure functions (`extract_records`, `extract_from_data`, `is_allowed_source_path`, `known_filename`, `load_raw`, `write_raw`, plus the RFC-6901 helpers `_set_pointer`/`_delete_pointer`) — there is no `SourceFileRecordList` Record-subclass hierarchy on the Python side anymore (that lives only in the TS SDK).
 
 ### URL Pattern
 
@@ -450,37 +468,38 @@ DELETE /api/v1/graph/compute_node/{node_id}/fs-records/file?path={source_path}&j
 
 ### Security Check: `is_allowed_source_path`
 
-Before any file operation the path is validated against a whitelist defined in `flow_sdk/fs_store/source_file_registry.py`. Two conditions must both pass:
+Before any file operation the path is validated against a whitelist defined in `flow_sdk/fs_store/source_file_records.py`. Two conditions must both pass:
 
-1. The filename (basename) must be in `_ALLOWED_FILENAMES`:
+1. The filename (basename) must be in `_ALLOWED_FILENAMES`, which is **derived from the `_EXTRACTORS` registry** so the allow-list can't drift from what can actually be extracted:
 
    ```python
-   _ALLOWED_FILENAMES = frozenset({
-       "settings.json",
-       "settings.local.json",
-       "mcp.json",
-       ".mcp.json",
-       "managed-settings.json",
-       ".claude.json",
-   })
+   _EXTRACTORS = {
+       "settings.json":         _extract_settings_json,
+       "settings.local.json":   _extract_settings_json,
+       "managed-settings.json": _extract_managed_settings,
+       "mcp.json":              _extract_mcp_json,
+       ".mcp.json":             _extract_mcp_json,
+   }
+   _ALLOWED_FILENAMES = frozenset(_EXTRACTORS.keys())
    ```
 
-2. The expanded path must match the pattern `_ALLOWED_PATH_RE`, which requires either a `/.claude/` directory component or the path ends in `.mcp.json` or `.claude.json`:
+   (Note: `.claude.json` is **not** in this set — there is no extractor for it.)
+
+2. The expanded path must contain one of the substring fragments in `_ALLOWED_PATH_FRAGMENTS` (a plain `in` substring check, **not** a regex):
 
    ```python
-   _ALLOWED_PATH_RE = re.compile(
-       r"(?:^|/)"
-       r"(?:"
-       r"\.claude/"
-       r"|\.mcp\.json$"
-       r"|\.claude\.json$"
-       r")"
-   )
+   _ALLOWED_PATH_FRAGMENTS = (".claude/", "/.mcp.json")
+
+   def is_allowed_source_path(path: str) -> bool:
+       expanded = str(Path(path).expanduser())
+       if Path(expanded).name not in _ALLOWED_FILENAMES:
+           return False
+       return any(frag in expanded for frag in _ALLOWED_PATH_FRAGMENTS)
    ```
 
 If the check fails, a 403 is returned immediately.
 
-> **Implementation note:** `"mcp.json"` (without a leading dot) is in `_ALLOWED_FILENAMES` but `_ALLOWED_PATH_RE` only matches `\.mcp\.json$` (with dot). A file named `mcp.json` outside a `/.claude/` directory will pass the filename check and fail the regex, returning 403. In practice, `mcp.json` (undotted) is only usable when located inside a `.claude/` directory.
+> **Implementation note:** `"mcp.json"` (without a leading dot) is in `_ALLOWED_FILENAMES`, but the path fragments only match a `.claude/` directory component or a `/.mcp.json` (dotted) suffix. A file named `mcp.json` outside a `.claude/` directory passes the filename check and fails the fragment check, returning 403. In practice, undotted `mcp.json` is only usable when located inside a `.claude/` directory.
 
 ```json
 {
@@ -490,22 +509,15 @@ If the check fails, a 403 is returned immediately.
 }
 ```
 
-### SourceFileRecordList Lookup
+### Extractor Lookup
 
-After the security check, `resolve_list_class(expanded_path)` looks up which `SourceFileRecordList` subclass to use for this file. Subclasses are registered at import time via `register_file_pattern(filename, list_class)`, keyed by filename (not full path):
+After the security check, the handler expands the path and verifies a known extractor exists for the filename via `known_filename(expanded_path)`, which checks `Path(path).name in _EXTRACTORS`. If no extractor is registered for the filename, a 400 (`"Unknown source file type: ..."`) is returned.
 
-```python
-def resolve_list_class(source_path: str | Path) -> type[SourceFileRecordList] | None:
-    return _FILE_PATTERNS.get(Path(source_path).name)
-```
-
-If no list class is registered for the filename, a 400 is returned.
-
-The list class is instantiated with the expanded path: `list_class(source_file=expanded_path)`.
+Records are then produced by `extract_records(expanded_path)`, which reads + parses the JSON and dispatches to the per-file extractor (`_extract_settings_json`, `_extract_managed_settings`, or `_extract_mcp_json`). Each extracted record is a plain dict already carrying `type`, `json_path`, and `source_file` — there is no class instantiation step.
 
 ### GET — List Records from File
 
-When `json_path` is absent, the handler iterates all records returned by the `SourceFileRecordList` and adds `source_file` and `json_path` fields to each serialized dict:
+When `json_path` is absent, the handler returns the list of records produced by `extract_records(expanded_path)`. Each dict already carries `source_file` and `json_path`:
 
 ```json
 {
@@ -524,14 +536,16 @@ When `json_path` is absent, the handler iterates all records returned by the `So
 
 ### GET — Get Single Record by JSON Pointer
 
-When `json_path` is provided, `_find_record_by_json_path` scans the list for a record whose `json_path` attribute equals the requested pointer. Both `""` and `"/"` match the root record:
+When `json_path` is provided, the handler scans the extracted records for the first whose `json_path` field string-equals the requested pointer:
 
 ```python
-if json_path in ("", "/") and rec_jp in ("", "/"):
-    return rec
+match = next(
+    (r for r in records if str(r.get("json_path", "")) == json_path),
+    None,
+)
 ```
 
-The response includes `source_file` and `json_path` in the returned dict:
+> Note: this is an exact string match — unlike the root-record handling in `_set_pointer`/PUT, the GET lookup does **not** treat `""` and `"/"` as equivalent. The root record is emitted with `json_path == ""`, so it is fetched with `&json_path=` (empty), not `&json_path=/`. If not found, a 404 is returned. The matched dict already carries `source_file` and `json_path`:
 
 ```json
 {
@@ -549,11 +563,15 @@ The response includes `source_file` and `json_path` in the returned dict:
 ### PUT — Update a Record in a Source File
 
 `json_path` is required. The handler:
-1. Finds the record via `_find_record_by_json_path`.
-2. Calls `record_list.update(rec.type, rec.uid, body)` which applies the field updates and writes back to the source file (via `SourceFileRecordList._write_record_to_source`).
-3. Calls `updated.sync_to_db()` on the real updated record to keep the Entity + FTS cache current.
-4. Broadcasts a `DataOp("update", ...)` with `_source_file` embedded in the broadcast data.
-5. Returns the updated record dict with `source_file` and `json_path`.
+1. Reads the raw JSON via `load_raw(expanded_path)`.
+2. Strips framework-only keys (`type`, `json_path`, `source_file`) from the request body to form the payload.
+3. Applies the payload: for a root pointer (`""` or `"/"`) it merges the payload keys into the top-level dict; otherwise it writes via `_set_pointer(data, json_path, payload)`.
+4. Writes the file back via `write_raw(expanded_path, data)`.
+5. Re-derives records from the in-hand dict via `extract_from_data(data, expanded_path)` (avoiding a redundant re-read) and locates the updated record by `json_path`. If it cannot be re-resolved, a 500 is returned.
+6. Broadcasts a `DataOp("update", ...)` with `_source_file` embedded in the broadcast data.
+7. Returns the updated record dict with `source_file` and `json_path`.
+
+> Note: the source-file PUT/DELETE path does **not** call `sync_to_db()` — source-file records are not synced into the Entity/FTS layer. Only the type-based CRUD path syncs.
 
 **Request body:**
 
@@ -582,12 +600,13 @@ The response includes `source_file` and `json_path` in the returned dict:
 ### DELETE — Remove a Record from a Source File
 
 `json_path` is required. The handler:
-1. Finds the record via `_find_record_by_json_path`.
-2. Calls `record_list.delete_record(rec.type, rec.uid)` which uses RFC 6901 pointer deletion to remove the key from the JSON file and writes it back.
-3. Broadcasts a `DataOp("delete", ...)`.
-4. Returns `{"deleted": json_path}`.
+1. Reads the raw JSON via `load_raw(expanded_path)`.
+2. Calls `_delete_pointer(data, json_path)`, which uses RFC 6901 pointer deletion to remove the key. If nothing was removed (pointer missing, or a root/empty pointer), it returns `False` and the handler responds 404.
+3. Writes the file back via `write_raw(expanded_path, data)`.
+4. Broadcasts a `DataOp("delete", ...)` with empty `type`/`uid` and `_source_file` embedded.
+5. Returns `{"deleted": json_path}`.
 
-Root records (empty `json_path`) cannot be deleted via `SourceFileRecordList.delete_record` — it raises `ValueError("Cannot delete the root record of a source file")`.
+Root records cannot be deleted: `_delete_pointer` returns `False` for an empty or `"/"` pointer, so a delete with `&json_path=` returns 404 (`"No record at json_path ''"`).
 
 **Response:**
 
@@ -609,23 +628,29 @@ Every successful write follows this sequence:
 
 ```
 write (create/update)
-  → rec.sync_to_db()             # Entity row + FTS upsert from the real saved record
+  → rec.sync_to_db()             # Entity row + FTS upsert + wiki + post_sync_fn
   → _broadcast_fs_record_op()    # WebSocket DataOp notification only
 
 delete
-  → Entity.delete_by_record_ref()  # Entity row + FTS entry removed from SQLite
-  → RecordList.delete()            # record directory/file removed from disk
+  → Entity.get_one(...) → driver.fts_delete(id) + entity.delete()  # DB + FTS removal
+  → RecordList.get(uid)            # re-fetch (404 if gone)
+  → remove live asset_ref source   # rmtree/unlink the ~/.claude/... file/folder
+  → RecordList.delete()            # rmtree the record's shadow_dir
   → _broadcast_fs_record_op()      # WebSocket DataOp notification only
 ```
 
 ### `rec.sync_to_db()` — Entity/FTS cache update
 
-Called on the **real saved record** (has `path`, `source_file`, domain data set). Internally:
-1. `Entity.from_record(self)` — upserts the Entity row with fields from `meta_dict()`
-2. `driver.fts_upsert(...)` — updates the FTS5 entry if `self.content` is not None
-3. `self.write_hash_file(...)` — records the content hash for staleness detection
+Called on the **real saved record** (returned by `record_list.create()` / `record_list.update()`). It runs the whole pipeline inside a single shared DB session:
+1. `Entity.from_record(self)` — upserts the Entity row.
+2. `self.sync_from_entity(entity)` — mirrors canonical DB state (id, scope, project_id, asset_ref, updated_date) back into `metadata.json`, and writes the `.hash` index sentinel.
+3. FTS upsert — builds an `FtsEntry` (from `self.search_title` / `search_description` / `search_content`) and either appends it to a supplied `fts_batch` or calls `driver.fts_upsert(...)` immediately.
+4. `wiki.index(self.type, self.id, self.wiki_body())` — re-extracts wiki edges (failures logged, not raised).
+5. The type-specific `TypeInfo.post_sync_fn`, when registered (failures logged, not raised).
 
-**Important:** `sync_to_db()` is never called on a dict-reconstructed throwaway record — only on the real object returned by `record_list.create()` / `record_list.update()`.
+On failure the pipeline records a `RecordError` and re-raises; the action handler catches and logs it at debug level so a sync failure does not fail the HTTP write.
+
+**Important:** `sync_to_db()` is never called on a dict-reconstructed throwaway record — only on the real object returned by `record_list.create()` / `record_list.update()`. The source-file (path-based) PUT/DELETE path does not call `sync_to_db()` at all.
 
 ### `_broadcast_fs_record_op()` — WebSocket notification only
 
@@ -690,9 +715,11 @@ shape, normally with a single relevant row for `X`.
 
 ### Conflict detection (409)
 
-Starting an aggregate scan/index while one is already running (not timed out, not complete) returns **409 Conflict**. The backend uses `InProcessActivity` objects stored in `_COMPUTE_ACTIVITIES` (module-level, keyed by `"{typeid}:{job_name}"`). Each activity auto-expires after `timeout_seconds` (600s for aggregate, 60s for per-type).
+Starting a scan/index/clear while one of the **same job name** is already running (not timed out, not complete) returns **409 Conflict**. The backend uses `InProcessActivity` objects stored in `_COMPUTE_ACTIVITIES` (module-level dict in `compute_node.py`, keyed by `"{typeid}:{job_name}"` where `job_name` is `"scan"`, `"index"`, or `"clear"`). Because the key does **not** include the type filter, a per-type `scan?type=X` and an aggregate scan share the same `"scan"` activity and therefore conflict with each other. Each activity auto-expires after `timeout_seconds`: scan = 600s, index = 600s, clear = 120s (the default in `_start_activity` is 600s).
 
-**Source:** `flow_sdk/builtin/faas/in_process_activity.py`
+`GET /fs-records/activity-status` reads `_COMPUTE_ACTIVITIES` to re-seed in-flight progress after a page refresh, returning the latest `IndexProgressTable` plus `started_at`, or `null` when nothing is running.
+
+**Source:** `flow_sdk/builtin/faas/in_process_activity.py` (the `InProcessActivity` dataclass) and `flow_sdk/builtin/faas/compute_node.py` (`_COMPUTE_ACTIVITIES`, `_start_activity`, `_complete_activity`).
 
 ---
 

@@ -5,6 +5,7 @@ from .graph import graph_router
 from .health import health_router
 from .auth import router as auth_router
 from .cloud import router as cloud_router
+from .privacy import router as privacy_router
 from .hooks import router as hooks_router
 from .chat import router as chat_router
 from .directory import router as directory_router
@@ -23,6 +24,16 @@ from .debug import router as debug_router
 from .navigate import router as navigate_router
 from .agent_records import router as agent_records_router
 from .transcripts import router as transcripts_router
+from .wiki import router as wiki_router
+from .dep_graph import router as dep_graph_router
+from .version import router as version_router
+from .favorites import router as favorites_router
+from .markdown_index import router as markdown_index_router
+from .docs_graph import router as docs_graph_router
+from .semantic_checker import router as semantic_checker_router
+from .pty_stream import router as pty_stream_router
+from .capabilities import router as capabilities_router
+from .toplog import router as toplog_router
 
 __all__ = [
     "bootstrap_router",
@@ -30,6 +41,7 @@ __all__ = [
     "health_router",
     "auth_router",
     "cloud_router",
+    "privacy_router",
     "hooks_router",
     "chat_router",
     "directory_router",
@@ -48,4 +60,14 @@ __all__ = [
     "navigate_router",
     "agent_records_router",
     "transcripts_router",
+    "wiki_router",
+    "dep_graph_router",
+    "version_router",
+    "favorites_router",
+    "markdown_index_router",
+    "docs_graph_router",
+    "semantic_checker_router",
+    "pty_stream_router",
+    "capabilities_router",
+    "toplog_router",
 ]

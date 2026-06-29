@@ -25,7 +25,7 @@ export function useForkInTerminal() {
             { ...(workdir ? { workdir } : {}) },
             { visible: true, watchProcess: false },
           );
-          navigation.openDockPointer(agenticProcess.dockPointer);
+          navigation.openDockPointer(agenticProcess.terminalDockPointer);
         } catch (error) {
           console.error('[useForkInTerminal] Failed to fork session:', error);
         } finally {

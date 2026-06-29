@@ -35,22 +35,25 @@ class ToolUseEntry(TranscriptEntry):
             flow_value={
                 "tool_name": self.tool_name,
                 "tool_use_id": self.tool_use_id,
+                "tool_call_id": self.tool_use_id,
                 "input": self.tool_input,
+                "args": self.tool_input,
             },
             created_time=self.timestamp,
             attributes={
                 "element-type": FlowElementType.TOOL_CALL,
                 "data-type": FlowDataType.OBJECT,
                 "tool-name": self.tool_name,
+                "tool-use-id": self.tool_use_id,
             },
         )]
 
     def to_dict(self) -> dict:
         return {
             **super().to_dict(),
-            "tool_name": self.tool_name,
-            "tool_use_id": self.tool_use_id,
-            "tool_input": self.tool_input,
+            "tool_name": getattr(self, "tool_name", ""),
+            "tool_use_id": getattr(self, "tool_use_id", ""),
+            "tool_input": getattr(self, "tool_input", {}),
         }
 
     def _body_lines(self) -> list[str]:

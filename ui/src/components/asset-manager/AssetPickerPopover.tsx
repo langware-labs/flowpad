@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { isReadOnlySource, type AssetDescriptor } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProcessAssets } from './useProcessAssets';
 import {
@@ -8,7 +10,18 @@ import {
   makeIconForType,
   parseTypeid,
 } from './asset-row-helpers';
+import { EntityTypeBar, type EntityTypeFilter } from './EntityTypeBar';
+import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
+import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
+import {
+  ALL_SCOPE_FILTER,
+  isAllScope,
+  scopeIncludesUser,
+  scopeProjectIds as scopeProjectIdList,
+} from '@src/lib/scope-filter';
+import { useAllProjects } from '@src/hooks/use-all-projects';
 import { Boxes, Lock, Search, type LucideIcon } from 'lucide-react';
+import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 
 interface AssetPickerPopoverProps {
   /** Popover trigger (typically a Run button); passed to PopoverTrigger asChild. */
@@ -23,6 +36,23 @@ interface AssetPickerPopoverProps {
   filter?: (descriptor: AssetDescriptor) => boolean;
   /** Optional override for the placeholder text in the search input. */
   searchPlaceholder?: string;
+  /** Optional controlled open state. When provided, the parent drives the
+   *  popover (e.g. opening it programmatically from a dropdown menu item).
+   *  When omitted the component manages its own open state. */
+  open?: boolean;
+  /** Required when `open` is provided. Called when the popover should close
+   *  or open (e.g. user clicks outside, or after `onPick`). */
+  onOpenChange?: (open: boolean) => void;
+  /** Preferred side to open on. Defaults to `'bottom'`. Pass `'top'` when the
+   *  trigger sits near the bottom of the viewport (e.g. a message composer)
+   *  so the picker opens upward and its contents stay visible. Collision
+   *  detection still flips it back if there's no room on the preferred side. */
+  side?: 'top' | 'bottom';
+  /** When true, render the picker as a centered modal dialog instead of a
+   *  popover anchored to the trigger. Use when the trigger is incidental
+   *  (e.g. a fan-out attach menu) and the picker should sit in the middle of
+   *  the screen. `side`/`align` are ignored in this mode. */
+  centered?: boolean;
 }
 
 const DEFAULT_FILTER = (d: AssetDescriptor): boolean =>
@@ -42,9 +72,37 @@ export function AssetPickerPopover({
   onPick,
   filter = DEFAULT_FILTER,
   searchPlaceholder = 'Search agents and skills…',
+  open: controlledOpen,
+  onOpenChange,
+  side = 'bottom',
+  centered = false,
 }: AssetPickerPopoverProps) {
-  const [open, setOpen] = useState(false);
+  const { t } = useLingui();
+  const isControlled = controlledOpen !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (isControlled) onOpenChange?.(next);
+      else setUncontrolledOpen(next);
+    },
+    [isControlled, onOpenChange],
+  );
   const [query, setQuery] = useState('');
+  // The shown set of asset types. Empty = all types shown (every toggle lit) —
+  // EntityTypeBar owns the include/exclude logic. Toggling derives state from
+  // the lit set so the toggles always reflect what's actually visible.
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [scope, setScope, currentProjectId] = useDefaultScopeFilter();
+  const { projects: allProjects } = useAllProjects({ enabled: open });
+  const scopeProjectIds = useMemo(() => {
+    const selected = scopeProjectIdList(scope);
+    const ids = new Set(selected);
+    for (const p of allProjects) {
+      if (selected.includes(p.id) && p.record_project_id) ids.add(p.record_project_id);
+    }
+    return ids;
+  }, [allProjects, scope]);
 
   // process: null → useProcessAssets returns the synthetic Agent + Skill list
   // pulled from the global entity queries. No process needs to exist yet.
@@ -52,84 +110,174 @@ export function AssetPickerPopover({
   const { types: assetTypes } = useAssetTypes();
   const iconForType = useMemo(() => makeIconForType(assetTypes), [assetTypes]);
 
-  // Refresh when opening so the list reflects newly-added agents/skills.
+  // On open: refresh the list and start from "All" so every agent/skill is
+  // visible by default (the project-scoped default would hide user assets).
   useEffect(() => {
-    if (open) void refresh();
-  }, [open, refresh]);
+    if (open) {
+      void refresh();
+      setScope({ ...ALL_SCOPE_FILTER });
+    }
+  }, [open, refresh, setScope]);
 
   const handleOpenChange = useCallback((next: boolean) => {
     setOpen(next);
-    if (!next) setQuery('');
-  }, []);
+    if (!next) {
+      setQuery('');
+      setSelectedTypes([]);
+    }
+  }, [setOpen]);
+
+  // Type counts respect the host-level ``filter`` so the chips reflect what
+  // could actually appear in the list (e.g. when the host restricts to
+  // executable assets only).
+  const typeCounts = useMemo(() => {
+    const counts: Partial<Record<EntityTypeFilter, number>> = { all: 0 };
+    for (const d of descriptors) {
+      if (!filter(d)) continue;
+      counts.all = (counts.all ?? 0) + 1;
+      const { type } = parseTypeid(d.typeid);
+      if (type === 'agent' || type === 'skill' || type === 'markdown' || type === 'spec') {
+        counts[type] = (counts[type] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [descriptors, filter]);
+
+  // Only the asset types the host filter actually admits (those with candidates)
+  // become toggles — keeps the bar from overflowing with types that can't appear.
+  const allowedTypes = useMemo(
+    () =>
+      (['agent', 'skill', 'markdown', 'spec'] as const).filter((t) => (typeCounts[t] ?? 0) > 0),
+    [typeCounts],
+  );
 
   const rows = useMemo(() => {
-    const candidates = descriptors.filter(filter);
     const q = query.trim().toLowerCase();
-    if (!q) return candidates;
-    return candidates.filter((d) => {
-      const label = displayLabelForTypeid(d.typeid).toLowerCase();
-      return (
-        label.includes(q) ||
-        d.typeid.toLowerCase().includes(q) ||
-        (d.posix_path ?? '').toLowerCase().includes(q)
-      );
+    return descriptors.filter((d) => {
+      if (!filter(d)) return false;
+      if (selectedTypes.length > 0) {
+        const { type } = parseTypeid(d.typeid);
+        if (!selectedTypes.includes(type)) return false;
+      }
+      // Scope gate — skipped entirely when scope = "All" (show everything).
+      if (!isAllScope(scope)) {
+        if (d.project_id) {
+          if (!scopeProjectIds.has(d.project_id)) return false;
+        } else if (!scopeIncludesUser(scope)) {
+          return false;
+        }
+      }
+      if (q) {
+        const label = displayLabelForTypeid(d.typeid).toLowerCase();
+        return (
+          label.includes(q) ||
+          d.typeid.toLowerCase().includes(q) ||
+          (typeof d.posix_path === 'string' ? d.posix_path : '').toLowerCase().includes(q)
+        );
+      }
+      return true;
     });
-  }, [descriptors, filter, query]);
+  }, [descriptors, filter, query, selectedTypes, scope, scopeProjectIds]);
 
   const handlePick = useCallback(
     (d: AssetDescriptor) => {
       onPick(d);
       setOpen(false);
       setQuery('');
+      setSelectedTypes([]);
     },
-    [onPick],
+    [onPick, setOpen],
   );
+
+  const body = (
+    <>
+      <div className="flex items-center gap-1.5 border-b px-3 py-2">
+        <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-medium"><Trans>Select Asset</Trans></span>
+        <div className="ml-auto flex items-center" data-testid="asset-picker-scope-bar">
+          <ScopeFilterIconBar
+            scope={scope}
+            currentProjectId={currentProjectId}
+            onScopeChange={setScope}
+          />
+        </div>
+      </div>
+      {allowedTypes.length > 0 && (
+        <div
+          className="flex items-center border-b px-3 py-1.5"
+          data-testid="asset-picker-type-bar"
+        >
+          <EntityTypeBar
+            selected={selectedTypes}
+            onChange={setSelectedTypes}
+            counts={typeCounts}
+            allowed={allowedTypes}
+            iconForType={iconForType}
+          />
+        </div>
+      )}
+      <div className="border-b px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          <input
+            autoFocus
+            type="text"
+            placeholder={searchPlaceholder}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+            data-testid="asset-picker-search"
+          />
+        </div>
+      </div>
+      <div
+        className="min-h-0 flex-1 overflow-y-auto"
+        data-testid="asset-picker-list"
+      >
+        {rows.length === 0 ? (
+          <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
+            {isLoading ? t`Loading…` : t`No assets to run.`}
+          </div>
+        ) : (
+          rows.map((d, idx) => (
+            <PickRow
+              key={`${d.typeid}|${d.source}|${idx}`}
+              descriptor={d}
+              iconForType={iconForType}
+              onPick={handlePick}
+            />
+          ))
+        )}
+      </div>
+    </>
+  );
+
+  if (centered) {
+    return (
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent
+          className="flex max-h-[min(85vh,40rem)] w-96 max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0"
+          data-testid="asset-picker-popover"
+        >
+          <DialogTitle className="sr-only"><Trans>Attach asset</Trans></DialogTitle>
+          {body}
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align="end"
-        className="flex max-h-[calc(100vh-6rem)] w-96 flex-col p-0"
+        side={side}
+        sideOffset={4}
+        collisionPadding={8}
+        className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-96 flex-col p-0"
         data-testid="asset-picker-popover"
       >
-        <div className="flex items-center gap-1.5 border-b px-3 py-2">
-          <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium">Run with…</span>
-        </div>
-        <div className="border-b px-3 py-2">
-          <div className="flex items-center gap-1.5">
-            <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-            <input
-              autoFocus
-              type="text"
-              placeholder={searchPlaceholder}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-              data-testid="asset-picker-search"
-            />
-          </div>
-        </div>
-        <div
-          className="min-h-0 flex-1 overflow-y-auto"
-          data-testid="asset-picker-list"
-        >
-          {rows.length === 0 ? (
-            <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-              {isLoading ? 'Loading…' : 'No assets to run.'}
-            </div>
-          ) : (
-            rows.map((d, idx) => (
-              <PickRow
-                key={`${d.typeid}|${d.source}|${idx}`}
-                descriptor={d}
-                iconForType={iconForType}
-                onPick={handlePick}
-              />
-            ))
-          )}
-        </div>
+        {body}
       </PopoverContent>
     </Popover>
   );
@@ -144,10 +292,14 @@ function PickRow({
   iconForType: (type: string) => LucideIcon;
   onPick: (d: AssetDescriptor) => void;
 }) {
+  const { t } = useLingui();
   const { type } = parseTypeid(descriptor.typeid);
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
   const label = displayLabelForTypeid(descriptor.typeid);
+
+  const revealInFinder = () =>
+    void openExternalFromComputeNode('@local', descriptor.posix_path!, { select: true });
 
   return (
     <button
@@ -158,12 +310,36 @@ function PickRow({
     >
       <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {readOnly && (
-        <Lock
-          className="h-3 w-3 flex-shrink-0 text-muted-foreground"
-          aria-label="Read-only source"
-        />
-      )}
+      {readOnly &&
+        (descriptor.posix_path ? (
+          // Read-only assets live on local disk — clicking the lock reveals
+          // the backing file in Finder/Explorer rather than picking the row.
+          <span
+            role="button"
+            tabIndex={0}
+            className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label={t`Reveal in Finder/Explorer`}
+            title={`Reveal in Finder/Explorer\n${descriptor.posix_path}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              revealInFinder();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                revealInFinder();
+              }
+            }}
+          >
+            <Lock className="h-3 w-3" />
+          </span>
+        ) : (
+          <Lock
+            className="h-3 w-3 flex-shrink-0 text-muted-foreground"
+            aria-label={t`Read-only source`}
+          />
+        ))}
       <span
         className="flex-shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
         title={descriptor.source}

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { computed, makeObservable, observable, runInAction } from 'mobx';
+import { autorun, computed, makeObservable, observable, runInAction } from 'mobx';
 import { v4 as uuidv4 } from 'uuid';
 import apiClient from '../client';
 import {
@@ -27,6 +27,12 @@ import { TypeId } from '../models/TypeId';
 import { UserWarning } from '../models/UserWarning';
 import { defineGlobal } from '../utils/globals';
 import { SnifferHook } from '../services/sniffer-hook';
+import {
+  HubConnectionStatus,
+  HubLoginStatus,
+  LocalConnectionStatus,
+  LocalLoginStatus,
+} from '../services/cloud_status';
 import { sdkConfig } from '../config/index';
 import { ConnectionManager } from '../websocket';
 import { AuthError, AuthEventType, authManager } from './auth';
@@ -110,9 +116,39 @@ export interface CreateFlowOptions {
   chatOptions?: IChatOptionsValues;
 }
 
+/**
+ * Soft-runtime-failure descriptor for the currently-rendered terminal.
+ * Kept in sync with ``ProcessLoadErrorKind`` (ui/src/routes/loaders/
+ * load-process.ts). The duplication keeps the SDK from importing UI types.
+ */
+export type TerminalRuntimeErrorKind =
+  | 'runtime_terminated'
+  | 'shell_entity_missing'
+  | 'pty_attach_failed'
+  | 'project_missing'
+  | 'network_error'
+  | 'project_mismatch'
+  | 'failed_to_start';
+
+export interface TerminalRuntimeError {
+  kind: TerminalRuntimeErrorKind;
+  processId: string;
+  shellId: string | null;
+  actualProjectId?: string | null;
+  actualCwd?: string | null;
+}
+
 class DataContext extends EventEmitter {
   stateItem = 'flowpad-state';
   persistedState: { [key: string]: TypeId } = {};
+
+  /**
+   * Force an immediate re-report of ``browser_context`` (incl. the current
+   * URL). The reporter's mobx autorun only fires on context-slot changes, so a
+   * pure-URL navigation (e.g. → Home) wouldn't otherwise re-send the pathname.
+   * Wired by ``startBrowserContextReporter``; a no-op until then.
+   */
+  resendBrowserContext: () => void = () => {};
 
   /** Mirror of cloudManager.isLoggedIn — only cloudManager should call setCloudLoggedIn. */
   _cloudLoggedIn = false;
@@ -168,6 +204,37 @@ class DataContext extends EventEmitter {
     return this._cloudLoggedIn;
   }
 
+  // Reactive mirrors of the four orthogonal statuses. Managers push into
+  // these via setCloudLoginStatus / setCloudConnectionStatus /
+  // setLocalLoginStatus / setLocalConnectionStatus so mobx observers
+  // re-render. Reading is sync and circular-import-safe.
+  _cloudLoginStatus: HubLoginStatus = 'logged_out';
+  _cloudConnectionStatus: HubConnectionStatus = 'disconnected';
+  _localLoginStatus: LocalLoginStatus = 'logged_out';
+  _localConnectionStatus: LocalConnectionStatus = 'disconnected';
+
+  setCloudLoginStatus(v: HubLoginStatus) {
+    if (this._cloudLoginStatus === v) return;
+    runInAction(() => { this._cloudLoginStatus = v; });
+  }
+  setCloudConnectionStatus(v: HubConnectionStatus) {
+    if (this._cloudConnectionStatus === v) return;
+    runInAction(() => { this._cloudConnectionStatus = v; });
+  }
+  setLocalLoginStatus(v: LocalLoginStatus) {
+    if (this._localLoginStatus === v) return;
+    runInAction(() => { this._localLoginStatus = v; });
+  }
+  setLocalConnectionStatus(v: LocalConnectionStatus) {
+    if (this._localConnectionStatus === v) return;
+    runInAction(() => { this._localConnectionStatus = v; });
+  }
+
+  get cloudLoginStatus(): HubLoginStatus { return this._cloudLoginStatus; }
+  get cloudConnectionStatus(): HubConnectionStatus { return this._cloudConnectionStatus; }
+  get localLoginStatus(): LocalLoginStatus { return this._localLoginStatus; }
+  get localConnectionStatus(): LocalConnectionStatus { return this._localConnectionStatus; }
+
   /**
    * Get the desktop info from bootstrap
    */
@@ -195,6 +262,13 @@ class DataContext extends EventEmitter {
    */
   get version(): string | null {
     return this.bootstrapInfo?.env?.version ?? null;
+  }
+
+  /**
+   * Get the current instance name from bootstrap info (dev-mode only)
+   */
+  get instanceName(): string | null {
+    return this.bootstrapInfo?.env?.instance_name ?? null;
   }
 
   /**
@@ -300,6 +374,28 @@ class DataContext extends EventEmitter {
     runInAction(() => {
       this.workdir = path;
     });
+    defineGlobal('workdir', path);
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
+  /**
+   * Set the soft-runtime-failure descriptor for the currently-rendered
+   * terminal. Pass ``null`` on a successful load to clear any prior
+   * banner. No-ops when the value matches what's already stored
+   * (kind + processId equality is enough — same kind on same process
+   * means same banner).
+   */
+  setTerminalRuntimeError(err: TerminalRuntimeError | null): void {
+    const prev = this.terminalRuntimeError;
+    if (
+      (prev === null && err === null) ||
+      (prev !== null && err !== null && prev.kind === err.kind && prev.processId === err.processId)
+    ) {
+      return;
+    }
+    runInAction(() => {
+      this.terminalRuntimeError = err;
+    });
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
@@ -319,6 +415,19 @@ class DataContext extends EventEmitter {
 
   // Active working directory — shown in the footer
   workdir: string | null = null;
+
+  // Soft (non-redirecting) runtime failure for the currently-rendered
+  // AgenticProcess terminal. The shell-dock route writes here when it
+  // encounters a recoverable runtime problem (PTY couldn't attach, process
+  // terminated, shell entity missing, project dangling, …) instead of
+  // silently redirecting to a sibling. The terminal view subscribes to
+  // this and renders a banner with the matching recovery action.
+  // ``null`` = no runtime error; the live PTY (if any) is good.
+  //
+  // ``kind`` mirrors ``ProcessLoadErrorKind`` in
+  // ``ui/src/routes/loaders/load-process.ts`` but is duplicated as a string
+  // union here to avoid an SDK→UI import.
+  terminalRuntimeError: TerminalRuntimeError | null = null;
 
   get activeEntityTypeId(): TypeId | null {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentActiveEntityTypeId);
@@ -350,7 +459,16 @@ class DataContext extends EventEmitter {
     super();
     makeObservable(this, {
       _cloudLoggedIn: observable,
+      _cloudLoginStatus: observable,
+      _cloudConnectionStatus: observable,
+      _localLoginStatus: observable,
+      _localConnectionStatus: observable,
+      cloudApiUrl: computed,
       cloudLoginAvailable: computed,
+      cloudLoginStatus: computed,
+      cloudConnectionStatus: computed,
+      localLoginStatus: computed,
+      localConnectionStatus: computed,
       user: computed,
       workspace: computed,
       activeEntity: computed,
@@ -388,12 +506,12 @@ class DataContext extends EventEmitter {
       activeShellId: observable,
       activeTerminalTargetTypeId: observable,
       workdir: observable,
+      terminalRuntimeError: observable,
       envName: computed,
-      cloudApiUrl: computed,
-      cloudLoginAvailable: computed,
       desktopInfo: computed,
       isDesktop: computed,
       version: computed,
+      instanceName: computed,
       _warnings: observable,
       warnings: computed,
       snifferHook: observable,
@@ -401,6 +519,7 @@ class DataContext extends EventEmitter {
     });
     this.setupAuthListeners();
     this.setupConnectionListeners();
+    this.startBrowserContextReporter();
   }
 
   private setupAuthListeners() {
@@ -487,6 +606,83 @@ class DataContext extends EventEmitter {
     });
   }
 
+  /**
+   * Mirror this connection's data-context (every ``ContextEntitiesEnum`` slot,
+   * incl. the active entity) to the backend over the UI WS, so the backend can
+   * read it (``flow context list``) AND drive ``BrowserContextWatch`` (register
+   * a hub watch for any ``remote`` entity in context → cross-user live updates).
+   *
+   * This lives in the SDK — not a React hook — so context sync works for EVERY
+   * consumer (CLI, agent worker, headless test), making the SDK self-contained
+   * with the backend. One-way, fire-and-forget, debounced, re-sent on every
+   * (re)connect (presence stays a UI hook — it reads the DOM, this doesn't).
+   */
+  private startBrowserContextReporter(): void {
+    const cm = ConnectionManager.getInstance();
+    let lastSerialized: string | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const snapshot = (): Record<string, string | null> => {
+      const out: Record<string, string | null> = {};
+      for (const key of Object.values(ContextEntitiesEnum)) {
+        const typeId = this.getContextEntityTypeId(key);
+        out[key] = typeId ? typeId.toString() : null;
+      }
+      // The current route — the source of truth for "what the user is looking
+      // at". Entity-context slots above go stale on non-entity pages (Home,
+      // shells, lenses), so the backend matches against this pathname instead
+      // (e.g. to tell whether a conversation is the open page).
+      out.CurrentPathname = typeof window !== 'undefined' ? window.location.pathname : null;
+      return out;
+    };
+
+    const sendNow = (force: boolean) => {
+      if (!cm.connected) return;
+      const ctx = snapshot();
+      const serialized = JSON.stringify(ctx);
+      if (!force && serialized === lastSerialized) return;
+      try {
+        cm.send(
+          JSON.stringify({
+            message_type: 'browser_context',
+            message_id: uuidv4(),
+            context: ctx,
+          }),
+        );
+        lastSerialized = serialized;
+      } catch {
+        // Socket may have dropped; on_open re-sends forcibly.
+      }
+    };
+
+    const schedule = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        sendNow(false);
+      }, 100);
+    };
+
+    // mobx autorun fires once immediately, then on every observed change.
+    // Touching each observable getter inside the closure registers it.
+    autorun(() => {
+      for (const key of Object.values(ContextEntitiesEnum)) {
+        this.getContextEntityTypeId(key);
+      }
+      schedule();
+    });
+
+    const resend = () => {
+      lastSerialized = null;
+      sendNow(true);
+    };
+    this.resendBrowserContext = resend;
+    cm.on('on_open', resend);
+    cm.on('on_reconnected', resend);
+
+    if (cm.connected) sendNow(true);
+  }
+
   activeEntityTypeId2ContextEnum(typeId: TypeId): ContextEntitiesEnum | null {
     switch (typeId.type) {
       case User.type:
@@ -553,17 +749,37 @@ class DataContext extends EventEmitter {
     // No need to update observable or emit here to avoid double updates/emissions
   }
   async _onAddedToContext(_entityKey: ContextEntitiesEnum, typeId: TypeId): Promise<void> {
+    // Per-step perf prints tied to the shell-nav T0 marker set by tab clicks.
+    // Lets us see exactly which awaited step inside the context-set tail eats
+    // the milliseconds (load vs loadHistory vs loadContextEntity).
+    const w = (typeof window !== 'undefined' ? window : undefined) as
+      | { __shellNavT0?: number }
+      | undefined;
+    const t0 = w?.__shellNavT0;
+    const stamp = (label: string, start: number) => {
+      if (t0 === undefined) return;
+      const now = performance.now();
+      // eslint-disable-next-line no-console
+      console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
+    };
+
     let entity = dataManager.getByTypeIdFromCache(typeId);
     if (!entity) {
+      const s = performance.now();
       entity = await this.loadContextEntity(typeId);
+      stamp(`_onAddedToContext(${_entityKey}) loadContextEntity (cache miss)`, s);
     } else {
+      const s = performance.now();
       await entity.load(); // tests mock flows never being fetched
+      stamp(`_onAddedToContext(${_entityKey}) entity.load (cache hit)`, s);
       // Check if cached entity has required expansions
       const entityConstructor = EntityFactory.getEntityConstructor(typeId.type);
       const expansionRequest = (entityConstructor as typeof APIEntity).getLoadingExpansions();
       if (!entity.isExpanded(expansionRequest)) {
+        const s2 = performance.now();
         // Entity exists in cache but doesn't have required expansions, reload it
         await this.loadContextEntity(typeId);
+        stamp(`_onAddedToContext(${_entityKey}) loadContextEntity (re-expand)`, s2);
       }
     }
     if (_entityKey === ContextEntitiesEnum.CurrentFlowTypeId && entity) {
@@ -574,8 +790,21 @@ class DataContext extends EventEmitter {
     }
     // Load history for process entities when added to context
     if (_entityKey === ContextEntitiesEnum.CurrentProcessTypeId && entity instanceof AgenticProcess) {
-      defineGlobal('process', entity);
+      defineGlobal('activeProcess', entity);
+      // In jsdom/Electron, window.process is the host Node process. Keep the
+      // explicit app global and only preserve the legacy alias in plain browsers.
+      const hostProcess = typeof window !== 'undefined' ? (window as { process?: unknown }).process : undefined;
+      const hasNodeProcess =
+        hostProcess &&
+        typeof hostProcess === 'object' &&
+        typeof (hostProcess as { listeners?: unknown }).listeners === 'function' &&
+        typeof (hostProcess as { exit?: unknown }).exit === 'function';
+      if (!hasNodeProcess) {
+        defineGlobal('process', entity);
+      }
+      const s = performance.now();
       await entity.loadHistory();
+      stamp(`_onAddedToContext(${_entityKey}) entity.loadHistory`, s);
     }
   }
 

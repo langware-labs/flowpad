@@ -1,3 +1,7 @@
+---
+id: 8ec09b52-3a45-5030-adad-3b8643cf7d64
+---
+
 test 1: FsRecordsScannerViewer is reachable via /dock/lens/fs-records/scan/
 - [browser] navigate to {APP_URL}/dock/lens/fs-records/scan/
 - [browser] wait for the page to load (networkidle)

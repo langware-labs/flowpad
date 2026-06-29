@@ -13,6 +13,7 @@ import { Button } from '@src/components/ui/button';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 import { ProjectViewHeader } from './ProjectViewHeader';
 import { CollaborationSidebar } from './CollaborationSidebar';
 import { RoomTabs, type RoomTab } from './RoomTabs';
@@ -64,12 +65,12 @@ function EmptyState() {
     <div className="flex h-full flex-col items-center justify-center gap-4">
       <Users className="h-10 w-10 text-muted-foreground" />
       <div className="text-center">
-        <div className="text-lg font-semibold">No collaboration open</div>
+        <div className="text-lg font-semibold"><Trans>No collaboration open</Trans></div>
         <div className="text-sm text-muted-foreground">
-          Meet collaborators on a project to assist and get assisted.
+          <Trans>Meet collaborators on a project to assist and get assisted.</Trans>
         </div>
       </div>
-      <Button onClick={() => setDialogOpen(true)}>Start a collaboration</Button>
+      <Button onClick={() => setDialogOpen(true)}><Trans>Start a collaboration</Trans></Button>
       <StartRoomDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
     </div>
   );
@@ -79,22 +80,13 @@ export function CollaborationPage() {
   const { currentDock } = useDockNavigation();
 
   const isActiveView = currentDock?.viewType === ViewType.PROJECT;
-  const { projectId, roomId, conversationId: pointerConversationId } = useMemo(
+  const { projectTypeId, roomId, conversationId: pointerConversationId } = useMemo(
     () =>
       isActiveView
         ? DockPointer.parseProjectPointer(currentDock?.pointer)
-        : { projectId: null, roomId: null, conversationId: null },
+        : { projectTypeId: null, roomId: null, tabTypeId: null, conversationId: null },
     [isActiveView, currentDock?.pointer],
   );
-
-  const projectTypeId = useMemo(() => {
-    if (!projectId) return null;
-    try {
-      return new TypeId(Project.type, projectId);
-    } catch {
-      return null;
-    }
-  }, [projectId]);
 
   const roomTypeId = useMemo(() => {
     if (!roomId) return null;
@@ -137,8 +129,8 @@ export function CollaborationPage() {
   // per-project when no room is selected) to sessionStorage so refresh
   // restores the open set + active tab.
   const storageKey = useMemo(
-    () => persistenceKey(projectId, roomId),
-    [projectId, roomId],
+    () => persistenceKey(projectTypeId?.id ?? null, roomId),
+    [projectTypeId, roomId],
   );
   const [roomTabs, setRoomTabs] = useState<RoomTab[]>(() => readPersistedRoomTabs(storageKey).tabs);
   const [activeRoomTabKey, setActiveRoomTabKey] = useState<string | null>(
@@ -228,10 +220,10 @@ export function CollaborationPage() {
     });
   }, []);
 
-  if (!projectId) return <EmptyState />;
+  if (!projectTypeId) return <EmptyState />;
   if (!project) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground"><Trans>Loading…</Trans></div>
     );
   }
 

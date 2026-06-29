@@ -1,11 +1,14 @@
 ---
+id: 6b740bcf-6289-54a5-8c50-89f176a2c89d
 name: webapp
-description: Bootstrap and develop full-stack web applications with React/TypeScript/Tailwind/shadcn frontend and FastAPI backend. Use when creating web apps, setting up project structure, adding components, pages, or API endpoints.
+description: Bootstrap and develop full-stack web applications with React/TypeScript/Tailwind/shadcn
+  frontend and FastAPI backend. Use when creating web apps, setting up project structure,
+  adding components, pages, or API endpoints.
 tags:
-  - webapp
-  - react
-  - fastapi
-  - fullstack
+- webapp
+- react
+- fastapi
+- fullstack
 allowed-tools: Bash, Read, Write, Edit
 ---
 

@@ -1,3 +1,7 @@
+---
+id: 9de40550-dcef-5ee7-a307-3ea3ef5064f7
+---
+
 test 1: Navigate command history with up/down arrows
 - navigate to the Shell view via sidebar
 - validate terminal is visible and ready

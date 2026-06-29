@@ -10,7 +10,7 @@
  *   reset + re-attach), and rapid reconnects.
  */
 
-import { apiClient, ConnectionManager, dataManager, GRAPH_API_PREFIX, Shell, TypeId } from '@sdk';
+import { ActionInfo, apiClient, ConnectionManager, dataManager, GRAPH_API_PREFIX, Shell, TypeId } from '@sdk';
 import { v4 as uuidv4 } from 'uuid';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, get_local_compute_node, getTestSignupInfo } from '../utils/test-utils';
@@ -36,12 +36,10 @@ async function openShellRaw(computeNode: { id: string; typeId?: TypeId }, shellI
 
 /** Send a newline to ensure bash emits a prompt. */
 async function sendNewline(computeNodeId: string, shellId: string): Promise<void> {
-  await apiClient
-    .post(`${GRAPH_API_PREFIX}/compute_node/${computeNodeId}/terminal-command/input`, {
-      shell_id: shellId,
-      data: '\n',
-    })
-    .catch(() => {});
+  const action = new ActionInfo('terminal-command', 'compute_node', computeNodeId, 'POST');
+  action.subpath = 'input';
+  action.bodyParameters = { shell_id: shellId, data: '\n' };
+  await dataManager.callActionOverWS(action);
 }
 
 /** Close PTY via API. */
@@ -74,6 +72,18 @@ async function spawnShell(computeNode: { id: string }, connectionId: string, wai
   return shell;
 }
 
+
+/** Poll until the live chunk store has content — with no server replay, the
+ *  attach-time repaint (winsize jiggle) arrives asynchronously after attach. */
+async function waitForChunks(shell: Shell): Promise<void> {
+  await vi.waitFor(
+    () => {
+      if (shell.getPtyChunks().length === 0) throw new Error('no chunks yet');
+    },
+    { timeout: 5000, interval: 100 },
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Suite 1 — Unit tests (no backend, instant)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,25 +91,25 @@ async function spawnShell(computeNode: { id: string }, connectionId: string, wai
 describe('Shell SDK lifecycle — unit tests', () => {
   // ── restart() state machine ────────────────────────────────────────────────
 
-  it('connect({ force }) resets replayDone to false and fires status event', () => {
+  it('connect({ force }) resets attached to false and fires status event', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
-    (shell.ptyConnection as any)._replayDone = true;
+    (shell.ptyConnection as any)._attached = true;
     (shell as any).emit('status', 'connected');
 
     const events: string[] = [];
     shell.on('status', (s: string) => events.push(s));
 
-    // _doReset() is called by attach({ force: true }) — resets replayDone and emits disconnect
+    // _doReset() is called by attach({ force: true }) — resets attached and emits disconnect
     (shell.ptyConnection as any)._doReset();
 
-    expect(shell.replayDone).toBe(false);
+    expect(shell.attached).toBe(false);
     expect(events).toContain('disconnected');
   });
 
-  it('connect({ force }) resets seq to 0 (ensures full replay on next connect)', () => {
+  it('connect({ force }) resets seq to 0 (clean dedup state for next attach)', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
     shell.ptyConnection.lastSeq = 42;
-    (shell.ptyConnection as any)._replayDone = true;
+    (shell.ptyConnection as any)._attached = true;
 
     (shell.ptyConnection as any)._doReset();
 
@@ -115,7 +125,7 @@ describe('Shell SDK lifecycle — unit tests', () => {
     expect(shell.onOutput(() => {})).toBeUndefined();
 
     // Gate opens after connect
-    (shell.ptyConnection as any)._replayDone = true;
+    (shell.ptyConnection as any)._attached = true;
     (shell as any).emit('status', 'connected');
     const received: string[] = [];
     const unsub = shell.onOutput((d) => received.push(d));
@@ -133,7 +143,7 @@ describe('Shell SDK lifecycle — unit tests', () => {
 
   it('onOutput gate works across a full restart cycle', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
-    (shell.ptyConnection as any)._replayDone = true;
+    (shell.ptyConnection as any)._attached = true;
     (shell as any).emit('status', 'connected');
 
     const unsub = shell.onOutput(() => {});
@@ -144,7 +154,7 @@ describe('Shell SDK lifecycle — unit tests', () => {
     expect(shell.onOutput(() => {})).toBeUndefined();
 
     // Re-open gate (simulates next attach() completing)
-    (shell.ptyConnection as any)._replayDone = true;
+    (shell.ptyConnection as any)._attached = true;
     (shell as any).emit('status', 'connected');
 
     const live: string[] = [];
@@ -240,7 +250,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
   // ── 1. Open + close many shells concurrently ───────────────────────────────
 
-  it('connect() 5 shells concurrently — all reach replayDone, no corruption', async () => {
+  it('connect() 5 shells concurrently — all reach attached, no corruption', async () => {
     const computeNode = await get_local_compute_node(`stress-conc-${Date.now()}`);
     await computeNode.setup();
 
@@ -257,10 +267,11 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     // Connect all 5 concurrently — this is the actual stress target
     await Promise.all(shells.map((s) => s.attachPty({ cols: 80, rows: 24 })));
 
-    // All should have replayDone=true and at least 1 replay chunk
+    // All should have attached=true and accumulate at least 1 live chunk
+    // (attach-time repaint or orphan-flushed pre-attach output).
     for (const shell of shells) {
-      expect(shell.replayDone).toBe(true);
-      expect(shell.getPtyChunks().length).toBeGreaterThan(0);
+      expect(shell.attached).toBe(true);
+      await waitForChunks(shell);
     }
 
     // Close all concurrently
@@ -278,8 +289,8 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
       await shell.attachPty({ cols: 80, rows: 24 });
 
-      expect(shell.replayDone).toBe(true);
-      expect(shell.getPtyChunks().length).toBeGreaterThan(0);
+      expect(shell.attached).toBe(true);
+      await waitForChunks(shell);
 
       // No live-output bleed: gate is open, subscribe, then close
       const liveData: string[] = [];
@@ -293,7 +304,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
   // ── 3. Session restart: seq reset + full re-attach ────────────────────────
 
-  it('restart() + reconnect delivers fresh replay — replayDone flips false then true', async () => {
+  it('restart() + reconnect repaints — attached flips false then true', async () => {
     const computeNode = await get_local_compute_node(`stress-restart-${Date.now()}`);
     await computeNode.setup();
 
@@ -301,15 +312,15 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
     // Initial connect
     await shell.attachPty({ cols: 80, rows: 24 });
-    expect(shell.replayDone).toBe(true);
-    expect(shell.getPtyChunks().length).toBeGreaterThan(0);
+    expect(shell.attached).toBe(true);
+    await waitForChunks(shell);
 
-    // Restart — replayDone goes false, seq resets
+    // Restart — attached goes false, seq resets
     (shell.ptyConnection as any)._doReset();
-    expect(shell.replayDone).toBe(false);
+    expect(shell.attached).toBe(false);
     expect(shell.ptyConnection.lastSeq).toBe(0);
 
-    // More output so there's something new to replay
+    // More output so there's something new to receive after re-attach
     await sendNewline(computeNode.id, shell.id);
     await new Promise((r) => setTimeout(r, 500));
 
@@ -317,8 +328,8 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     shell.ptyConnection.started = false;
     await shell.attachPty({ cols: 80, rows: 24 });
 
-    expect(shell.replayDone).toBe(true);
-    expect(shell.getPtyChunks().length).toBeGreaterThan(0);
+    expect(shell.attached).toBe(true);
+    await waitForChunks(shell);
 
     await closePtyRaw(computeNode.id, shell.id);
   }, 25000);
@@ -332,29 +343,32 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     // Shell 1: open, connect, close PTY
     const shell1 = await spawnShell(computeNode, manager.id, 500);
     await shell1.attachPty({ cols: 80, rows: 24 });
-    expect(shell1.replayDone).toBe(true);
+    expect(shell1.attached).toBe(true);
     await closePtyRaw(computeNode.id, shell1.id);
 
     // Shell 2: fresh shell, no state from shell1
     const shell2 = await spawnShell(computeNode, manager.id, 600);
     await shell2.attachPty({ cols: 80, rows: 24 });
 
-    expect(shell2.replayDone).toBe(true);
-    expect(shell2.getPtyChunks().length).toBeGreaterThan(0);
+    expect(shell2.attached).toBe(true);
 
-    // Subscribe after connect — live listener receives NO replay bytes
+    // Subscribe after attach; the repaint (winsize jiggle) arrives as live
+    // output. No double-write: every byte the listener sees is stored in the
+    // chunk store exactly once — liveText is the tail of the chunk text.
     const liveData: string[] = [];
     const unsub = shell2.onOutput((d) => liveData.push(d));
     expect(unsub).not.toBeUndefined();
 
+    await waitForChunks(shell2);
+
     const decoder = new TextDecoder();
-    const replayText = shell2
+    const chunkText = shell2
       .getPtyChunks()
       .map((c) => decoder.decode(c.data))
       .join('');
-    expect(replayText.length).toBeGreaterThan(0);
-    // liveData only receives post-connect output, not replay bytes
-    expect(liveData.join('')).toBe('');
+    expect(chunkText.length).toBeGreaterThan(0);
+    const liveText = liveData.join('');
+    expect(chunkText.endsWith(liveText)).toBe(true);
 
     await closePtyRaw(computeNode.id, shell2.id);
     unsub?.();
@@ -368,7 +382,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
     const shell = await spawnShell(computeNode, manager.id, 500);
     await shell.attachPty({ cols: 80, rows: 24 });
-    expect(shell.replayDone).toBe(true);
+    expect(shell.attached).toBe(true);
 
     // Fire several resizes rapidly while bash is live
     await Promise.all([shell.resize(120, 30), shell.resize(100, 25), shell.resize(80, 24)]);
@@ -422,7 +436,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     registerShell(shell);
 
     await shell.attachPty({ cols: 80, rows: 24 });
-    expect(shell.replayDone).toBe(true);
+    expect(shell.attached).toBe(true);
 
     const seqs = shell.getPtyChunks().map((c) => c.seq);
     expect(seqs.length).toBeGreaterThan(0);

@@ -148,6 +148,17 @@ class DBEntity(DBBaseRecord):
 
     @classmethod
     def api_visible(cls):
+        # SchemaRegistry is the single source of truth; fall back to the
+        # class-level default for unregistered/abstract classes.
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        try:
+            type_name = cls.get_type()
+        except Exception:
+            type_name = None
+        if type_name:
+            info = SchemaRegistry.get(type_name)
+            if info is not None:
+                return info.api_visible
         return cls._api_visible
 
     def __setattr__(self, key, value):
@@ -307,8 +318,8 @@ class DBEntity(DBBaseRecord):
         else:
             entity = await cls._db.get_by_id(eid, e_type)
             if entity is None:
-                _logging.warning(
-                    f"[B1-probe] DBEntity.get_by_id miss: cls={cls.__name__} e_type={e_type!r} "
+                _logging.getLogger(__name__).debug(
+                    f"DBEntity.get_by_id miss: cls={cls.__name__} e_type={e_type!r} "
                     f"eid={eid!r} _db_id={id(cls._db):#x} _db_cls={type(cls._db).__name__}"
                 )
         return entity
@@ -376,9 +387,15 @@ class DBEntity(DBBaseRecord):
             owner = owner.typeid
         return await self._db.create(self, owner)
 
-    async def save(self: DBEntityType, owner: Union[DBEntity, TypeId, None] = None, notify: bool = True) -> DBEntityType:
+    async def save(self: DBEntityType, owner: Union[DBEntity, TypeId, str, None] = None, notify: bool = True) -> DBEntityType:
         if isinstance(owner, DBEntity):
             owner = owner.typeid
+        elif isinstance(owner, str) and owner:
+            # Callers (e.g. handle_conversation_list → _upsert_hub_conversation_metadata)
+            # pass an owner as a ``type-<id>`` string. The driver's owner-relationship
+            # path needs a TypeId (it reads ``owner.type``/``owner.id``), so normalize
+            # here — mirrors the DBEntity→typeid coercion above.
+            owner = TypeId(owner)
 
         notify_created = not self.exist_in_db
         if not self.dirty:
@@ -770,17 +787,12 @@ class DBEntity(DBBaseRecord):
                 raise ValueError(f"Invalid expansions: {list(set(entities_filter.expand) - set(available_expansions))}")
         _all: list[DBEntityType] = await cls._db.get_all(entities_filter, source_entity)
 
-        expansion_tasks = []
-        if entities_filter.expand_permissions:
-            expansion_tasks.extend([entity.expand_permissions() for entity in _all])
+        # Role/permission expansions (expand_permissions / expand_auth_scopes /
+        # expand_is_private) are NOT computed locally — local SQLite holds no
+        # authorization; that info comes from the hub. Only expand_blobs (reads
+        # embedded blob data, unrelated to authz) is applied here.
         if entities_filter.expand_blobs:
-            expansion_tasks.extend([entity.expand_blobs() for entity in _all])  # type: ignore
-        if entities_filter.expand_auth_scopes:
-            expansion_tasks.extend([entity.expand_auth_scopes() for entity in _all])
-        if expansion_tasks:
-            await asyncio.gather(*expansion_tasks)
-        if entities_filter.expand_is_private:
-            [entity.mark_expansion(ExpansionType.IsPrivate) for entity in _all]
+            await asyncio.gather(*[entity.expand_blobs() for entity in _all])  # type: ignore
 
         return _all
 

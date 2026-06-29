@@ -8,8 +8,9 @@ import {
 } from '@src/components/ui/alert-dialog';
 import { Button } from '@src/components/ui/button';
 import { useSystemTools } from '@src/hooks/use-system-tools';
-import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { ActivityIndicator } from './ActivityIndicator';
+import { INDEX_BUILD_LABEL, INDEX_PROMPT_DESCRIPTION, INDEX_PROMPT_TITLE } from './index-copy';
 
 export interface IndexNowModalProps {
   open: boolean;
@@ -19,11 +20,8 @@ export interface IndexNowModalProps {
 }
 
 export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModalProps) {
-  const { indexTypes, currentActivity, progressTable } = useSystemTools();
+  const { indexTypes } = useSystemTools();
   const [phase, setPhase] = useState<'confirm' | 'indexing'>('confirm');
-
-  const indexing = phase === 'indexing' && currentActivity === 'index';
-  const table = indexing ? progressTable : null;
 
   async function startIndexing() {
     setPhase('indexing');
@@ -41,48 +39,18 @@ export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModal
     <AlertDialog open={open}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Make your records searchable</AlertDialogTitle>
-          <AlertDialogDescription>
-            Your records haven't been indexed yet. Building the index takes less than a minute and
-            lets you find anything across all your notes, tasks, and sessions.
-          </AlertDialogDescription>
+          <AlertDialogTitle>{INDEX_PROMPT_TITLE}</AlertDialogTitle>
+          <AlertDialogDescription>{INDEX_PROMPT_DESCRIPTION}</AlertDialogDescription>
         </AlertDialogHeader>
 
-        {phase === 'indexing' && table && (
-          <div className="flex flex-col gap-1 py-2">
-            {types.map((t) => {
-              const row = table.rows.find((r) => r.type_name === t);
-              const isDone = row != null && row.total > 0 && row.done >= row.total;
-              const isCurrent = table.current === t;
-              return (
-                <div key={t} className="flex items-center gap-2 text-sm">
-                  {isDone ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  ) : isCurrent ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : (
-                    <Circle className="h-4 w-4 text-muted-foreground/40" />
-                  )}
-                  <span className={isDone ? 'text-muted-foreground line-through' : isCurrent ? '' : 'text-muted-foreground/60'}>
-                    {t}
-                  </span>
-                  {row && row.total > 0 && (
-                    <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                      {row.done}/{row.total}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {phase === 'indexing' && <ActivityIndicator variant="list" types={types} />}
 
         {phase === 'confirm' && (
           <AlertDialogFooter>
             <Button variant="outline" onClick={handleDeny}>
               Not Now
             </Button>
-            <Button onClick={() => void startIndexing()}>Build Index</Button>
+            <Button onClick={() => void startIndexing()}>{INDEX_BUILD_LABEL}</Button>
           </AlertDialogFooter>
         )}
       </AlertDialogContent>

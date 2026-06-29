@@ -5,6 +5,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { Clock, FileText, GitBranch, Play, StickyNote, X } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 function formatTimeAgo(value?: string | null): string {
   if (!value) return '';
@@ -40,6 +41,7 @@ export function BookmarkCard({
 }) {
   const { navigation } = useDockNavigation();
   const { setPendingTask } = useIncomingTaskStore();
+  const { t } = useLingui();
   const isTerminalAnnotation = bookmark.bookmark_type === BookmarkType.TERMINAL_ANNOTATION && !!bookmark.session_id;
   const navPath = bookmark.data?.navigation_path as string | undefined;
   const isClosed = bookmark.status === 'closed';
@@ -89,7 +91,7 @@ export function BookmarkCard({
             <button
               type="button"
               className="bookmark-card-action-btn"
-              title="Snooze"
+              title={t`Snooze`}
               onClick={(e) => {
                 e.stopPropagation();
                 onRemind(bookmark);
@@ -102,7 +104,7 @@ export function BookmarkCard({
             <button
               type="button"
               className="bookmark-card-action-btn bookmark-card-action-btn--close"
-              title="Delete bookmark"
+              title={t`Delete bookmark`}
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(bookmark);
@@ -115,7 +117,7 @@ export function BookmarkCard({
             <button
               type="button"
               className="bookmark-card-action-btn bookmark-card-action-btn--close"
-              title="Close bookmark"
+              title={t`Close bookmark`}
               onClick={(e) => {
                 e.stopPropagation();
                 onClose(bookmark);
@@ -137,7 +139,7 @@ export function BookmarkCard({
               onClick={(e) => { e.stopPropagation(); onOpenSession(bookmark); }}
             >
               <Play className="h-3 w-3" />
-              Open Session
+              <Trans>Open Session</Trans>
             </button>
           )}
           {onForkSession && (
@@ -147,7 +149,7 @@ export function BookmarkCard({
               onClick={(e) => { e.stopPropagation(); onForkSession(bookmark); }}
             >
               <GitBranch className="h-3 w-3" />
-              Fork Session
+              <Trans>Fork Session</Trans>
             </button>
           )}
         </div>

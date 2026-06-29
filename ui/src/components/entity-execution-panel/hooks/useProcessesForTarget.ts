@@ -1,11 +1,11 @@
-import { AgenticProcess, ProcessType, QueryFilter, QueryRequest } from '@sdk';
+import { AgenticProcess, ProcessKind, QueryFilter, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 
 /**
  * Subscribe to all AgenticProcesses keyed to a given VFS path.
  *
- * The attachment is stored on `AgenticProcess.target_vfs_path`. For
+ * The attachment is stored on `AgenticProcess.target_typeid_str`. For
  * entity-scoped processes this is just `TypeId#toString()` (e.g. `agent-<id>`);
  * for surface-scoped processes it's a `<typeid>/<sub_path>` form (e.g.
  * `compute_node-<id>/Users/.../foo.md` for a per-doc process).
@@ -17,13 +17,13 @@ import { useMemo } from 'react';
  */
 export function useProcessesForTarget(
   targetVfsPath: string | null | undefined,
-  options?: { enabled?: boolean; processType?: ProcessType },
+  options?: { enabled?: boolean; processType?: ProcessKind },
 ) {
   const key = targetVfsPath || '';
   const processType = options?.processType;
   const query = useMemo(
     () => {
-      const match: Record<string, unknown> = { target_vfs_path: key };
+      const match: Record<string, unknown> = { target_typeid_str: key };
       if (processType) match.process_type = processType;
       return new QueryRequest({
         type: AgenticProcess.type,

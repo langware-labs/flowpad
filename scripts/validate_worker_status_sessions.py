@@ -37,7 +37,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail_status
-from flow_sdk.fs_records.agent_status import WorkerStatus, _tail_status
+from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.instance_settings import get_instance_settings
 
 

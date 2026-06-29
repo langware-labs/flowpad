@@ -5,6 +5,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { TraceGutterEntry } from './use-trace-gutter';
 import React, { useEffect, useRef, useState } from 'react';
 import { FileText, X } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 function formatTimeAgo(timestamp: string): string {
   const then = new Date(timestamp).getTime();
@@ -26,7 +27,6 @@ interface TraceGutterProps {
   viewportY: number;
   rows: number;
   cellHeight: number;
-  projectEncodedName?: string;
   expanded: boolean;
   onOpen: () => void;
   onClose: () => void;
@@ -55,12 +55,12 @@ export const TraceGutter = React.memo(function TraceGutter({
   totalTraceEvents,
   historicalCount,
   liveCount,
-  projectEncodedName,
   expanded,
   onOpen,
   onClose,
   hideCounter = false,
 }: TraceGutterProps) {
+  const { t } = useLingui();
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const gutterRef = useRef<HTMLDivElement | null>(null);
@@ -145,19 +145,19 @@ export const TraceGutter = React.memo(function TraceGutter({
             {/* Panel header with X button */}
             <div className="flex shrink-0 items-center justify-between border-b border-border px-2 py-1">
               <span className="text-xs font-medium text-muted-foreground">
-                {selectedEntries ? `${selectedEntries.length} event${selectedEntries.length === 1 ? '' : 's'}` : 'Trace events'}
+                {selectedEntries ? `${selectedEntries.length} event${selectedEntries.length === 1 ? '' : 's'}` : <Trans>Trace events</Trans>}
               </span>
               <button
                 className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={onClose}
-                aria-label="Close"
+                aria-label={t`Close`}
               >
                 <X className="h-3 w-3" />
               </button>
             </div>
             <div className="overflow-y-auto">
               {(selectedEntries ?? entries).map((entry) => (
-                <ExpandedEventLine key={entry.event.id} entry={entry} projectEncodedName={projectEncodedName} />
+                <ExpandedEventLine key={entry.event.id} entry={entry} />
               ))}
             </div>
           </div>
@@ -173,6 +173,7 @@ function EventCountBadge({ total, historicalCount, liveCount, onOpen }: {
   liveCount: number;
   onOpen: () => void;
 }) {
+  const { t } = useLingui();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -194,7 +195,7 @@ function EventCountBadge({ total, historicalCount, liveCount, onOpen }: {
       </TooltipTrigger>
       <TooltipContent side="right" sideOffset={4} className="text-xs">
         {total === 0
-          ? 'No trace events captured yet'
+          ? <Trans>No trace events captured yet</Trans>
           : `${total} trace event${total === 1 ? '' : 's'} captured`}
       </TooltipContent>
     </Tooltip>
@@ -282,12 +283,11 @@ function GutterDot({
 
 function ExpandedEventLine({
   entry,
-  projectEncodedName,
 }: {
   entry: TraceGutterEntry;
-  projectEncodedName?: string;
 }) {
   const { navigation } = useDockNavigation();
+  const { t } = useLingui();
   const Icon = getEventIcon(entry.event.event_type, entry.event);
   const colorClass = getEventColor(entry.event);
   const oneLiner = getOneLiner(entry.event);
@@ -300,7 +300,7 @@ function ExpandedEventLine({
       ? entry.event.event_type.slice(0, 15) + '\u2026'
       : entry.event.event_type;
 
-  const lensPointer = getTranscriptLensPointer(entry.event, projectEncodedName);
+  const lensPointer = getTranscriptLensPointer(entry.event);
 
   const handleOpenLens = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -358,7 +358,7 @@ function ExpandedEventLine({
                 <FileText className="h-3 w-3" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">View transcript</TooltipContent>
+            <TooltipContent side="bottom"><Trans>View transcript</Trans></TooltipContent>
           </Tooltip>
         </div>
       </TooltipTrigger>

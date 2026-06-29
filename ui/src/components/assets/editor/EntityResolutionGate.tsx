@@ -4,6 +4,7 @@ import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { MissingAssetCard } from './MissingAssetCard';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface EntityResolutionGateProps<T extends APIEntity<T>> {
   /** Entity type, e.g. `Workflow.type`. */
@@ -36,12 +37,13 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
   typeLabel,
   render,
 }: EntityResolutionGateProps<T>) {
+  const { t } = useLingui();
   const { entity, state, error, retry } = useEntityByPath<T>(type, fsRef);
 
   if (state === 'resolved' && entity) return <>{render(entity)}</>;
 
   if (state === 'querying' || state === 'discovering') {
-    const label = state === 'discovering' ? `Discovering ${typeLabel}…` : `Loading ${typeLabel}…`;
+    const label = state === 'discovering' ? t`Discovering ${typeLabel}…` : t`Loading ${typeLabel}…`;
     return (
       <div
         className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"
@@ -66,11 +68,11 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
       <div className="flex max-w-md flex-col items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-sm">
         <AlertCircle className="h-6 w-6 text-destructive" />
         <div className="text-center">
-          <div className="font-medium">Failed to load {typeLabel}</div>
-          <div className="mt-1 text-xs text-muted-foreground">{error?.message ?? 'Unknown error'}</div>
+          <div className="font-medium"><Trans>Failed to load {typeLabel}</Trans></div>
+          <div className="mt-1 text-xs text-muted-foreground">{error?.message ?? t`Unknown error`}</div>
         </div>
         <Button size="sm" variant="outline" onClick={retry} data-testid="entity-resolution-retry">
-          Retry
+          <Trans>Retry</Trans>
         </Button>
       </div>
     </div>

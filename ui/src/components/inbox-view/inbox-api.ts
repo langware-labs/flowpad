@@ -7,8 +7,10 @@ export interface InboxMessage {
   id: string;
   text: string;
   instruction?: string | null;
-  /** TypeId strings e.g. "task-abc123". Renamed from ``context`` to match the unified ``context_entities`` on the entity. */
-  context_entities: string[];
+  /** TypeId strings e.g. "task-abc123". Mirrors the wire-bound
+   *  ``shared_context_entities`` bucket on the entity — published context
+   *  that travels with the FlowMessage. */
+  shared_context_entities: string[];
   attachment: InboxAttachment[];
   sender_id?: string | null;
   sender_name?: string | null;
@@ -42,14 +44,6 @@ export async function listInboxMessages(): Promise<InboxMessage[]> {
   return result ?? [];
 }
 
-/** Pull new messages from hub since last check */
-export async function fetchInboxFromHub(): Promise<FetchResult> {
-  const action = new ActionInfo('inbox-fetch', null, null, 'POST');
-  action.bodyParameters = {};
-  const result = await dataManager.callAction<Record<string, unknown>, FetchResult>(action);
-  return result ?? { created: 0, ids: [] };
-}
-
 /** Mark a single message read/unread or archived/unarchived */
 export async function updateMessage(
   messageId: string,
@@ -69,6 +63,19 @@ export interface OpenResult {
 export async function openInboxMessage(messageId: string): Promise<OpenResult | null> {
   const action = new ActionInfo('inbox-open', 'flow_message', messageId, 'GET');
   return dataManager.callAction<null, OpenResult>(action);
+}
+
+/**
+ * Pull new/changed hub messages for ONE conversation into the local store.
+ * The backend (`conversation-message-sync`) lists the conversation's child
+ * FlowMessages in a single request and refreshes only the stale ones (LWW by
+ * updated_date), so the local live query reflects the hub on resolve. Replaces
+ * the old per-message backfill loop (one `openInboxMessage` per pointer).
+ */
+export async function syncConversationMessages(conversationId: string): Promise<void> {
+  const action = new ActionInfo('conversation-message-sync', null, null, 'POST');
+  action.bodyParameters = { conversation_id: conversationId };
+  await dataManager.callAction(action);
 }
 
 /** Bulk mark all read / unread / archive all */

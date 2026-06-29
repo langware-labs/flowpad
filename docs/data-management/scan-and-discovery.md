@@ -1,552 +1,201 @@
+---
+id: 56fb0e59-2f93-57c1-bec9-49a18b3151c5
+---
+
 # Scan and Discovery
 
-This document describes the discovery mechanisms used throughout `flow_sdk` to locate, load, and filter records from disk. It covers the standard directory-scan (`Record.discover`), the O(1) single-record lookup (`Record.discover_one`), the two Claude session discovery modes, `SourceFileRecordList` extraction from config files, and `RecordQuery` filtering.
+This document describes the discovery mechanisms used throughout `flow_sdk` to locate, load, and index records from disk. The current model is a single **DFS walker** — `FSIndexer` (`flow_sdk/fs_store/indexer/index_function.py`) — that starts from a small set of roots, fans out through transient *waypoint* types, and dispatches per-type parser slots (`from_disk_fn` / `gen_uuid_fn` / `asset_hash_fn`) declared in `flow_sdk/schema/type_info/<type>_info.py`. It also covers Claude/Codex session lookup helpers, `RecordQuery` filtering, the scan/index HTTP actions, and error-record handling.
+
+> **Disk is the source of truth.** Records are scanned from disk; the Entity/DB layer is a queryable index that can be deleted and rebuilt from disk without data loss. See `docs/CLAUDE.md`.
+
+> **Indexing is explicit-action only.** A scan or index pass runs only when something explicitly requests it: a user clicking "reindex" in the UI (`POST /fs-records/index`), a scan/resource action, or a narrow self-heal that fires *only* when the caller passes an explicit `?hint_path=` (`_try_self_heal_missing_entity`, `flow_sdk/server/routes/graph.py`). It is **never** triggered automatically from mount, navigation, focus, bootstrap, or an interval (see the no-auto-walk rule, `feedback_no_auto_indexing.md`). Read-only `index-status` is the only thing the bootstrap path touches.
 
 ---
 
-## Standard Discovery: `Record.discover()`
+## The Walk: `FSIndexer`
 
-**Source:** `flow_sdk/fs_store/record.py`
+**Source:** `flow_sdk/fs_store/indexer/index_function.py`
 
-### Storage Layout
-
-All owned records are stored under a single root directory:
-
-```
-~/.flow/records/<type>/<type>-@<uid>/
-```
-
-The default root (`_DEFAULT_RECORDS_ROOT`) is `Path.home() / ".flow" / "records"`. It can be overridden at runtime via `set_default_records_root(path)`, which is used in tests to redirect writes to a temporary location.
-
-### Directory Structure and Naming Convention
-
-Each record occupies a folder whose name follows the stem pattern `<type>-@<uid>`. The separator is `-@`. For example, a session record with uid `abc123` of type `claude_session` lives at:
-
-```
-~/.flow/records/claude_session/claude_session-@abc123/
-```
-
-The folder contains the record metadata file at one of two locations:
-
-| Convention | Path within folder | When used |
-|---|---|---|
-| New (preferred) | `.flow_record/record.json` | All records created after the convention change |
-| Legacy | `record.json` | Records created before the `.flow_record/` subdirectory was introduced |
-
-### `resolve_record_json(folder)`
-
-This function resolves which path within a folder holds the record JSON. It is called by both `discover` and `discover_one` before loading:
+`FSIndexer` is a depth-first walker over `FSRef` nodes. Each `FSRef` carries a `record_type` discriminator (a `RecordType` / `EntityType` value). The walker maintains a stack of nodes; for each node it looks up the **walker functions** registered against that node's type and runs them, each of which returns a list of child `FSRef`s that are pushed back onto the stack.
 
 ```python
-def resolve_record_json(folder: Path) -> Path:
-    new = folder / ".flow_record" / "record.json"
-    if new.exists():
-        return new
-    old = folder / "record.json"
-    if old.exists():
-        return old
-    return new  # default to new convention for creation
+class FSIndexer:
+    def __init__(self, roots: list[FSRef] | None = None) -> None:
+        self._roots = list(roots) if roots is not None else []
+        self._functions: dict[RecordType, list[tuple[IndexerFunc, RecordType | None]]] = {}
+
+    def add_function(self, record_type, fn, output_type=None) -> None: ...
+    def add_root(self, node) -> None: ...
+
+    async def scan(self, opts=None) -> list[FSRef]: ...   # discover refs only
+    async def index(self, opts=None) -> IndexResult: ...  # discover + parse + persist
 ```
 
-The lookup order is:
+Two public coroutines:
 
-1. Check `folder/.flow_record/record.json` — if present, use it.
-2. Fall back to `folder/record.json` — if present, use it (legacy).
-3. If neither exists, return the new-convention path so callers writing new records always create at the canonical location.
+| Method | Purpose |
+|---|---|
+| `scan(opts)` | DFS over the roots; returns the flat list of visited `FSRef`s. No parse, no DB. |
+| `index(opts)` | Runs `scan()`, then for each visited ref whose type declares a `from_disk_fn`, parses it into `FSRecord`s and persists them (`rec.sync_to_db(...)`) plus an FTS upsert. Returns an `IndexResult`. |
 
-### `discover()` — O(N) Directory Scan
+`IndexerOptions` (frozen dataclass) controls a run: `limit`, `limit_per_type`, `include_temp`, `types` (index filter), `roots` (per-call root override), `force` (bypass skip-fresh), `gitignore`, `project_id`, `orphan_action`, `scope_filter`, and `on_progress`.
 
-```python
-@classmethod
-def discover(cls: type[T], scope: Scope | None = None, **kwargs: Any) -> list[T]:
-    record_type = getattr(cls, "_record_type", "") or cls().type
-    if not record_type:
-        return []
+### Roots
 
-    records_root = get_default_records_root()
-    type_dir = records_root / record_type
-    if not type_dir.is_dir():
-        return []
+**Source:** `flow_sdk/fs_store/indexer/roots.py`
 
-    results: list[T] = []
-    for entry in sorted(type_dir.iterdir()):
-        if not entry.is_dir() or _NAME_SEP not in entry.name:
-            continue
-        rj = resolve_record_json(entry)
-        if not rj.exists():
-            continue
-        try:
-            rec = cls.init_record(rj)
-            rec.path = str(entry)
-            results.append(rec)
-        except (json.JSONDecodeError, OSError):
-            continue
-    return results
-```
+`default_roots()` returns up to three canonical roots plus any env-supplied extras:
 
-The algorithm:
-
-1. Determine `record_type` from the class's `_record_type` ClassVar.
-2. Compute `type_dir = records_root / record_type`. Return `[]` if it does not exist.
-3. Iterate all entries in `type_dir` in sorted order (alphabetical by stem).
-4. Skip entries that are not directories or that do not contain the `-@` separator in their name.
-5. Call `resolve_record_json(entry)` to find the metadata file (new or legacy convention).
-6. Skip entries where that file does not exist.
-7. Call `cls.init_record(rj)` to load and deserialize the record. Set `rec.path = str(entry)`.
-8. Skip entries that raise `json.JSONDecodeError` or `OSError` (silently continues). **Note:** `ValueError` (raised by `read_record()` when a record file is empty) is not caught and will abort the entire scan. Empty `record.json` files are a known risk after crash-interrupted writes.
-
-The `scope` parameter is accepted but not used by the default implementation. Subclasses may use it to filter records by scope after loading.
-
-**Performance:** O(N) in the number of subdirectories under the type directory. Each iteration does one `stat` call (for `is_dir()`), one `resolve_record_json` call (one or two `exists()` checks), and one file read for the JSON. For large collections this adds up linearly.
-
----
-
-## O(1) Single-Record Lookup: `Record.discover_one()`
-
-```python
-@classmethod
-def discover_one(cls: type[T], uid: str, scope: Scope | None = None, **kwargs: Any) -> T | None:
-    record_type = getattr(cls, "_record_type", "") or cls().type
-    if not record_type:
-        return None
-
-    records_root = get_default_records_root()
-    stem = record_stem(record_type, uid)
-    folder = records_root / record_type / stem
-    if not folder.is_dir():
-        return None
-
-    rj = resolve_record_json(folder)
-    if not rj.exists():
-        return None
-
-    try:
-        rec = cls.init_record(rj)
-        rec.path = str(folder)
-        return rec
-    except (json.JSONDecodeError, OSError):
-        return None
-```
-
-The algorithm:
-
-1. Construct the canonical stem: `<type>-@<uid>`.
-2. Build the expected folder path: `records_root / record_type / stem`.
-3. If the folder does not exist, return `None` immediately (no scan required).
-4. Call `resolve_record_json(folder)` and check existence.
-5. Load and return the record.
-
-**Performance:** O(1). No directory iteration. The total number of records in the type directory does not affect the lookup time. Cost is two filesystem `stat` or `exists` calls plus one file read.
-
----
-
-## Subclass Discovery Overrides
-
-Source-file-backed records store their data in files not owned by the `~/.flow/records/` layout. These subclasses override `discover` and/or `discover_one` to read from their actual sources.
-
-### `ClaudeSessionFsRecord.discover()`
-
-**Source:** `flow_sdk/fs_records/claude/claude_session.py`
-
-Overrides the standard scan to read from Claude Code's transcript directory:
-
-```python
-@classmethod
-def discover(cls, scope=None, **kwargs) -> list[ClaudeSessionFsRecord]:
-    projects_dir = Path.home() / ".claude" / "projects"
-    if not projects_dir.is_dir():
-        return []
-    results: list[ClaudeSessionFsRecord] = []
-    for project_dir in sorted(projects_dir.iterdir()):
-        if not project_dir.is_dir():
-            continue
-        for jsonl_file in sorted(project_dir.glob("*.jsonl")):
-            try:
-                rec = cls.from_jsonl(jsonl_file)
-                results.append(rec)
-            except (json.JSONDecodeError, OSError):
-                continue
-    return results
-```
-
-This iterates every project subdirectory under `~/.claude/projects/` and loads every `.jsonl` file it finds. Unlike the standard scan, it calls `from_jsonl()` instead of `init_record()`, reading and parsing the full JSONL transcript to produce aggregated statistics.
-
-### `ClaudeSessionFsRecord.discover_one()`
-
-The session subclass provides two resolution strategies:
-
-```python
-@classmethod
-def discover_one(cls, uid: str, scope=None, **kwargs) -> ClaudeSessionFsRecord | None:
-    projects_dir = Path.home() / ".claude" / "projects"
-    if not projects_dir.is_dir():
-        return None
-    fname = f"{uid}.jsonl"
-
-    # Fast path: caller knows the project directory
-    project_path = kwargs.get("project")
-    if project_path:
-        encoded = str(project_path).replace("/", "-")
-        candidate = projects_dir / encoded / fname
-        if candidate.exists():
-            try:
-                return cls.from_jsonl(candidate)
-            except (json.JSONDecodeError, OSError):
-                return None
-
-    # Slow path: scan all project directories
-    for project_dir in projects_dir.iterdir():
-        if not project_dir.is_dir():
-            continue
-        candidate = project_dir / fname
-        if candidate.exists():
-            try:
-                return cls.from_jsonl(candidate)
-            except (json.JSONDecodeError, OSError):
-                return None
-    return None
-```
-
-| Mode | Trigger | Path constructed | Performance |
+| Root | `record_type` | Path | Scope |
 |---|---|---|---|
-| Fast path | `discover_one(uid, project="/abs/path")` | `projects/<encoded>/<uid>.jsonl` | O(1) |
-| Slow path | No `project` kwarg | Iterates project dirs until first filename match | O(P) where P is number of projects |
+| User home | `USER_HOME_FOLDER` | `InstanceSettings.user_home` (`~`; sandboxed in test mode) | `user` |
+| Project cwd | `CWD_ROOT` | `Path.cwd()` — **only** when cwd is not the user's home dir | `project` |
+| System root | `SYSTEM_ROOT` | `flowpad_assistant_project_root()` (if it exists) | `system` |
 
-**Slow-path caveat:** The slow path returns `None` immediately upon the first `json.JSONDecodeError` or `OSError` encountered on a candidate file — it does not continue to the next project directory. If the same session filename exists in multiple project directories and the first match is corrupt, the method returns `None` even though a valid copy exists elsewhere.
+`CWD_ROOT` is deliberately skipped when `cwd == user_home` (the desktop app can launch the backend with `cwd=$HOME`): treating `$HOME` as a project root would make `project_folder_walker_fn` recurse the entire home tree and trip macOS TCC prompts. Env vars `FLOWPAD_DOC_DIRS` / `FLOWPAD_PLAN_DIRS` / `FLOWPAD_SKILL_DIRS` / `FLOWPAD_AGENT_DIRS` / `FLOWPAD_WORKFLOW_DIRS` add extra roots, tagged `CWD_ROOT` with `scope="user"`.
 
-The encoding used in the fast path replaces `/` with `-` to match how Claude Code names project directories.
+`classify_path(path)` is the inverse: it classifies a path back into `"system"` / `"user"` / `"project"` / `None`, used by HTTP create handlers to stamp scope at create time so POST-created records match indexer-discovered ones.
+
+### Transient waypoint types
+
+**Source:** `flow_sdk/schema/types.py` (lines ~104–109)
+
+These types are **fan-out scaffolding** — they are never persisted as records. They exist only so the walker can reach indexable children:
+
+```python
+USER_HOME_FOLDER = "user_home_folder"
+REAL_PROJECT_CWD = "real_project_cwd"
+SYSTEM_ROOT = "system_root"
+CWD_ROOT = "cwd_root"
+FOLDER = "folder"
+```
+
+`PROJECT` (`~/.claude/projects/<encoded>` dirs) and `REAL_PROJECT_CWD` (the decoded real cwd) are *also* expansion nodes — they materialize as records (PROJECT) and/or fan out to children. In `index_function.py`, the set `_PROGRESS_HIDDEN_TYPES = {USER_HOME_FOLDER, SYSTEM_ROOT, REAL_PROJECT_CWD, CWD_ROOT, PROJECT, FOLDER}` filters these out of the progress table so the user sees only types they recognize (presentation-only; per-type accumulators still include them).
+
+### Walker registration graph
+
+**Source:** `flow_sdk/fs_store/indexer/builtin.py` (`build_default_indexer()`)
+
+Walker functions live in `flow_sdk/fs_store/indexer/functions/*.py` and are wired to input types in `build_default_indexer()`. Each `add_function(input_type, fn, output_type)` registers an edge `input_type → output_type`. Examples (abridged):
+
+```python
+# USER_HOME_FOLDER expanders
+idx.add_function(RecordType.USER_HOME_FOLDER, claude_projects_fn, RecordType.PROJECT)
+idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn,           RecordType.SKILL)
+idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
+...
+# PROJECT (encoded ~/.claude/projects/<dir>) expanders
+idx.add_function(RecordType.PROJECT, claude_sessions_fn, RecordType.CLAUDE_SESSION)
+idx.add_function(RecordType.PROJECT, claude_memory_fn,   RecordType.CLAUDE_MEMORY)
+# REAL_PROJECT_CWD expanders
+idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
+idx.add_function(RecordType.REAL_PROJECT_CWD, spec_project_fn,          RecordType.SPEC)
+...
+# FOLDER (transient scaffold) expanders
+idx.add_function(RecordType.FOLDER, markdown_in_folder_fn,    RecordType.MARKDOWN)
+idx.add_function(RecordType.FOLDER, workflow_frontmatter_fn,  RecordType.WORKFLOW)
+# Stage-2 into-file walks
+idx.add_function(RecordType.CLAUDE_HOOK_SOURCE, hooks_in_settings_fn,  RecordType.CLAUDE_HOOK)
+idx.add_function(RecordType.MCP_SERVER_SOURCE,  mcp_servers_in_file_fn, RecordType.MCP_SERVER)
+```
+
+Notable structural facts:
+
+- **Two-stage into-file walks.** Hooks and MCP servers are discovered in two steps: `<root> → *_SOURCE` (one FSRef per `settings.json` / `.mcp.json`-like file), then `*_SOURCE → leaf` (one FSRef per entry, each carrying a distinct RFC-6901 `json_path` so fragment records sharing one file are not collapsed by the DFS dedup key `(path, record_type, json_path)`).
+- **`real_project_cwd_fn` is intentionally NOT registered** on `USER_HOME_FOLDER`. Project-cwd fan-out used to be implicit (any user-home scan silently walked every project tree). Project-cwd roots are now contributed explicitly by the scope filter via `_resolve_scoped_roots` — callers wanting all projects pass a `ScopeFilter` from `get_all_scope_filter()`.
+- **Codex projects** are consolidated into `RecordType.PROJECT` (`codex_projects_fn` is annotated `PROJECT`); `CODEX_PROJECT` is a deprecated alias.
+
+### Type-gating the dispatch
+
+When `opts.types` is set, `scan()` computes the reverse-reachability closure (`_compute_needed_output_types`, BFS over reversed edges) of output types whose walk transitively produces a requested type. A walker function whose `output_type` isn't in that closure is skipped — e.g. a `?type=skill` scan skips `project_folder_walker_fn` (FOLDER) since no chain leads from FOLDER to SKILL. Functions registered with `output_type=None` disable the skip (legacy safe default).
+
+### Chunked / threaded DFS
+
+Walkers are typically synchronous file I/O. `scan()` runs them in chunks of `_SCAN_CHUNK_NODES = 256` node-visits per `asyncio.to_thread` round-trip, yielding the event loop between chunks so progress emits and concurrent requests stay responsive. Async walkers (rare) are detected via `_is_async_walker` and awaited on the main loop.
 
 ---
 
-## Active Session Discovery
+## Per-type Dispatch Slots: `from_disk_fn` / `gen_uuid_fn` / `asset_hash_fn`
 
-The active session subsystem uses mtime-based staleness checks to determine whether a Claude Code process is currently running, without touching the process table.
+**Source:** `flow_sdk/schema/type_info/__init__.py` (`TypeMetadata`), registered into `SchemaRegistry` (`flow_sdk/fs_store/schema_registry.py`, `TypeInfo`).
 
-### `ClaudeActiveSessionFsRecord.from_jsonl()`
+Per-type metadata is authored as a `TypeMetadata` instance in `flow_sdk/schema/type_info/<type>_info.py`. `register_all()` imports every sibling module and registers each into `SchemaRegistry`. (Per `project_typeinfo_registration_chokepoint.md`, `build_default_indexer()` is the chokepoint that guarantees the registry is fully populated — it imports `indexer.registrations`, which calls `register_all()`.)
 
-**Source:** `flow_sdk/fs_records/claude/claude_active_session.py`
+The dispatch callables:
 
-This class method is the entry point for building a single active session record from a JSONL file. It is called per-file during the full scan in `ClaudeActiveSessionsFsRecord.entries`.
-
-```python
-_HEAD_LINES = 20
-
-@classmethod
-def from_jsonl(cls, jsonl_path: Path, max_active_seconds: int) -> Self | None:
-    try:
-        mtime = jsonl_path.stat().st_mtime
-    except OSError:
-        return None
-
-    if time.time() - mtime > max_active_seconds:
-        return None
-    ...
-```
-
-#### Staleness Check Algorithm
-
-The check is performed before any file content is read:
-
-```
-elapsed = time.time() - mtime
-if elapsed > max_active_seconds:
-    return None
-```
-
-- `time.time()` returns the current Unix timestamp as a float.
-- `mtime` is the file's last modification time from `stat().st_mtime`.
-- If the difference exceeds `max_active_seconds`, the file is considered stale and `None` is returned immediately. No further I/O is performed.
-
-#### Head Read for Metadata
-
-If the file passes the staleness check, the method reads at most `_HEAD_LINES = 20` lines from the start of the file to extract envelope fields:
-
-```python
-with open(jsonl_path, encoding="utf-8") as fh:
-    for idx, line in enumerate(fh):
-        if idx >= _HEAD_LINES:
-            break
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            raw = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not slug:
-            slug = raw.get("slug", "")
-        if not git_branch:
-            git_branch = raw.get("gitBranch", "")
-        if not cwd:
-            cwd = raw.get("cwd", "")
-        if not version:
-            version = raw.get("version", "")
-        if not started_at:
-            ts = raw.get("timestamp")
-            if ts:
-                started_at = ts
-        if slug and git_branch and cwd and version and started_at:
-            break
-```
-
-All five envelope fields are collected using a first-found strategy: each field is recorded only when it has not yet been populated. The inner loop terminates early once all five fields are populated, potentially reading fewer than 20 lines.
-
-Fields extracted from the head:
-
-| Field | JSON key | Description |
+| Slot | Signature | Role |
 |---|---|---|
-| `slug` | `slug` | Human-readable session label |
-| `git_branch` | `gitBranch` | Git branch active when session started |
-| `cwd` | `cwd` | Working directory |
-| `version` | `version` | Claude Code version string |
-| `started_at` | `timestamp` | ISO timestamp from the first entry |
+| `from_disk_fn` | `(FSRef) -> list[FSRecord]` (sync or async) | Parse one discovered ref into one or more records. `index()` only parses refs whose type declares this (`_has_dispatch`). |
+| `gen_uuid_fn` | `(FSRef) -> str` | Mint-on-first-encounter id: idempotent if the file already carries an id (e.g. frontmatter), else writes the derived id back so future scans are rename-stable. Falls back to a `mint_uuid(path)` uuid5 when absent. |
+| `asset_hash_fn` | `(...) -> str` | Content hash for the type's primary asset (used by skip-fresh / sentinel logic). |
+| `post_sync_fn` | hook | Post-sync side effects. |
+| `default_body_fn` | hook | Default-body writer for `FSRecord.upsert_main_ref` on create. |
 
-#### Byte-Level Message Count
-
-After the head read, a full byte scan of the file is performed to count messages without JSON parsing every line:
+Example (`flow_sdk/schema/type_info/skill_type_info.py`):
 
 ```python
-def _fast_message_count(path: Path) -> int:
-    try:
-        raw = path.read_bytes()
-    except OSError:
-        return 0
-    return (
-        raw.count(b'"type":"user"')
-        + raw.count(b'"type": "user"')
-        + raw.count(b'"type":"assistant"')
-        + raw.count(b'"type": "assistant"')
-    )
-```
-
-This reads the file in its entirety as bytes and counts four byte patterns:
-
-| Pattern | Accounts for |
-|---|---|
-| `b'"type":"user"'` | Compact JSON format |
-| `b'"type": "user"'` | Spaced JSON format |
-| `b'"type":"assistant"'` | Compact JSON format |
-| `b'"type": "assistant"'` | Spaced JSON format |
-
-The result is the sum of all four counts. This is an approximation: it counts occurrences of those byte patterns anywhere in the file (including inside string values), not just at the top-level `type` key. In practice JSONL transcripts do not repeat these patterns in nested content, so the count is accurate for normal sessions.
-
-#### Fields Set on the Returned Record
-
-When `from_jsonl` succeeds, it constructs a `ClaudeActiveSessionFsRecord` with the following fields:
-
-| Field | Source |
-|---|---|
-| `session_id` | `jsonl_path.stem` (filename without extension) |
-| `project` | `jsonl_path.parent.name` (the project directory name) |
-| `cwd` | Extracted from head read |
-| `version` | Extracted from head read |
-| `git_branch` | Extracted from head read |
-| `started_at` | Extracted from head read |
-| `last_active` | `datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()` |
-| `jsonl_path` | `str(jsonl_path)` |
-| `slug` | Extracted from head read |
-| `message_count` | Result of `_fast_message_count()` |
-| `uptime` | Formatted duration from `started_at` to now |
-
----
-
-### `ClaudeActiveSessionsFsRecord` — Full Scan
-
-**Source:** `flow_sdk/fs_records/claude/claude_active_sessions.py`
-
-This record is a container that triggers a full scan of all project directories. It does not store sessions persistently — it recomputes them on every access to `entries`.
-
-```python
-_DEFAULT_MAX_ACTIVE_SECONDS = 300  # 5 minutes
-```
-
-The default threshold is **300 seconds (5 minutes)**.
-
-#### Construction
-
-The record defaults to scanning `~/.claude/projects` as determined by `get_user_home_path() / ".claude" / "projects"`. Both the directory and the threshold are overridable via constructor kwargs:
-
-```python
-ClaudeActiveSessionsFsRecord(
-    projects_dir="/custom/path",
-    max_active_seconds=600,
+SKILL = TypeMetadata(
+    type=EntityType.SKILL,
+    icon="Sparkles", browseable=True, creatable=True,
+    indexed_by_default=True, api_visible=True,
+    index_fields=["description"],
+    main_subdir=".claude/skills", main_layout="folder",
+    from_disk_fn=extract_skill,
+    gen_uuid_fn=skill_gen_id,
+    asset_hash_fn=skill_asset_hash,
 )
 ```
 
-#### `entries` Property — The Scan
+### `index()` per-record loop
 
-```python
-@property
-def entries(self) -> list[ClaudeActiveSessionFsRecord]:
-    t0 = time.perf_counter()
-    pdir = Path(self.projects_dir)
-    if not pdir.is_dir():
-        self.scan_time_ms = (time.perf_counter() - t0) * 1000
-        return []
+For each visited ref of a type that has a `from_disk_fn`:
 
-    results: list[ClaudeActiveSessionFsRecord] = []
-    for jsonl in pdir.glob("*/*.jsonl"):
-        entry = ClaudeActiveSessionFsRecord.from_jsonl(
-            jsonl, self.max_active_seconds,
-        )
-        if entry is not None:
-            results.append(entry)
+1. **Mint id** via `gen_uuid_fn` (or default `mint_uuid(path)`), record it in `seen_ids` *before* any skip/index decision (so a fresh-skip isn't later misclassified as an orphan).
+2. **Skip-fresh** (unless `opts.force`): a probe `FSRecord` reads its own on-disk `.hash` sentinel; if `not index_required`, increment `skipped` and continue. This is pure on-disk equality — no parse, no DB read.
+3. **Parse + persist**: call `from_disk_fn(ref)` (awaited or via `to_thread`), stamp walk-time `scope`/`project_id` from the FSRef parent-chain onto each record, `await rec.sync_to_db(fts_batch=..., notify=False)`, then `probe.write_hash()` on success (a failed parse stays `index_required` for retry).
 
-    results.sort(key=lambda e: e.last_active, reverse=True)
-    self.scan_time_ms = (time.perf_counter() - t0) * 1000
-    return results
+The whole loop runs inside **one DB session** but commits in **bounded batches** (`_INDEX_COMMIT_BATCH = 50`). The engine issues `BEGIN IMMEDIATE` per transaction; a single session spanning the whole scan would hold the SQLite writer lock for seconds/minutes and starve concurrent requests (`database is locked`). Per-batch commits release the lock between batches. This is a contention fix, not a `busy_timeout`/retry change. (See `project_indexer_db_lock_contention.md`.)
+
+### Orphan handling
+
+After the index loop, orphans are detected **entirely on-disk** (zero DB reads):
+
+```
+orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
 ```
 
-Scan steps:
+A record is an orphan iff its Layer-1 source is gone. `OrphanAction` controls the response:
 
-1. Record start time using `time.perf_counter()` for sub-millisecond accuracy.
-2. Use `pdir.glob("*/*.jsonl")` to enumerate all JSONL files in any immediate subdirectory of the projects directory.
-3. For each file, call `ClaudeActiveSessionFsRecord.from_jsonl(jsonl, max_active_seconds)`. Files that fail the staleness check return `None` and are excluded.
-4. Sort surviving results in descending order by `last_active` (most recently modified file first).
-5. Record `scan_time_ms` as elapsed milliseconds.
-
-The scan touches the filesystem for every `.jsonl` file found: one `stat` call for the mtime check, and — if the file is active — one partial read (up to 20 lines) plus one full byte read. Stale files incur only the `stat` cost.
-
-#### Convenience Class Methods
-
-| Method | Description |
+| Action | Effect |
 |---|---|
-| `ClaudeActiveSessionsFsRecord.default(max_active_seconds)` | Create an instance without triggering the scan |
-| `ClaudeActiveSessionsFsRecord.scan(max_active_seconds)` | Create and immediately trigger the scan, return self |
+| `INDEX` (default) | Count only; remove nothing (historical no-op). |
+| `IGNORE` | Remove the DB row + FTS entry; keep the on-disk record dir (tombstone). |
+| `DELETE` | Remove DB row + FTS entry **and** `rmtree` the record dir. |
+
+Orphan detection is constrained to `INDEXABLE_TYPES` (`_resolve_orphan_filter_types`) so runtime-only types with DB rows but no walker (e.g. `conversation`, `flow_message`, `annotation`, `compute_node`, `invitation`) are never flagged as orphan en masse. A destructive action on a *narrowed* walk (`opts.roots` set) without a `scope_filter` is refused and falls back to `INDEX` — cross-scope references would otherwise be misclassified.
 
 ---
 
-### `ClaudeSessionFsRecord.is_active()`
+## Claude / Codex Session Lookup
 
-**Source:** `flow_sdk/fs_records/claude/claude_session.py`
+**Source:** `flow_sdk/fs_store/indexer/functions/claude_sessions.py` (+ `codex_sessions.py`, `_claude_session_stats.py`)
 
-`ClaudeSessionFsRecord` (the full transcript record, not the active-session record) also provides an `is_active` check:
+Claude sessions live at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` (the encoded dir name is the absolute cwd with `/` replaced by `-`). During a full walk they are reached via `claude_sessions_fn` registered on `PROJECT`.
 
-```python
-def is_active(self, max_seconds: int = 300) -> bool:
-    path = self.data.get("jsonl_path") or self.data.get("source_file")
-    if not path:
-        return False
-    try:
-        mtime = Path(path).stat().st_mtime
-    except OSError:
-        return False
-    return (time.time() - mtime) <= max_seconds
-```
+Direct lookup helpers (used by scan actions and session resolution):
 
-The condition here uses `<=` (inclusive boundary) versus `ClaudeActiveSessionFsRecord.from_jsonl()` which uses `>` (exclusive: returns `None` when `elapsed > threshold`). They are semantically equivalent at the threshold boundary but differ by one comparison direction. The default threshold is also 300 seconds here, matching the container default.
-
----
-
-## `SourceFileRecordList` — Config File Extraction
-
-**Source:** `flow_sdk/fs_store/source_file_record_list.py`
-
-`SourceFileRecordList` is used when multiple records are embedded within a single JSON config file, such as a settings file or project configuration. Unlike the standard `~/.flow/records/` layout, there is no folder per record; instead records are identified by their position within the JSON document using RFC 6901 JSON Pointers.
-
-### Class Structure
-
-```python
-@dataclass
-class SourceFileRecordList:
-    source_file: Path | str = ""
-    root_type: str = ""
-    _cache: list[Record] | None = field(default=None, repr=False, init=False)
-```
-
-The `_cache` field is populated lazily on first access and is invalidated by `reload()`.
-
-### The `_extract()` Override Pattern
-
-Subclasses must override `_extract(data)` to define how records are produced from the parsed JSON:
-
-```python
-def _extract(self, data: dict) -> list[Record]:
-    raise NotImplementedError
-```
-
-The method receives the full deserialized JSON document as a dict and must return a list of `Record` instances. Each record should have these fields set:
-
-| Field | Purpose |
+| Helper | Behavior |
 |---|---|
-| `json_path` | RFC 6901 pointer to the record's position in the source file (e.g. `"/mcpServers/my-server"`) |
-| `source_file` | Path to the source JSON file |
-| `parent_ref` | Reference to the parent record if the record is nested |
+| `get_claude_session(uid, project=None)` | O(1) fast path when `project` is given (`projects/<encoded>/<uid>.jsonl`); else scans project dirs until first match. Returns an `FSRecord` or `None`. |
+| `discover_claude_session_paths_iter(limit=None)` | Yields session JSONL paths under `~/.claude/projects/<encoded>/*.jsonl`. |
+| `extract_claude_session(ref)` / `extract_claude_session_from_path(path)` | The `from_disk_fn` parser — builds the session `FSRecord`. |
+| `claude_session_is_active(rec)` / `claude_session_status(rec)` | mtime-based activeness / `WorkerStatus` derivation. |
 
-Example of what a minimal subclass extraction looks like:
+`get_codex_session(uid)` is the Codex counterpart. `scan_actions.py`'s `_resolve_session_record(session_id, hint)` tries Claude first then Codex (or the hinted backend) via these helpers.
 
-```python
-def _extract(self, data: dict) -> list[Record]:
-    results = []
-    for key, value in data.get("mcpServers", {}).items():
-        rec = MyServerRecord.from_dict(value)
-        rec.json_path = f"/mcpServers/{_escape_json_pointer(key)}"
-        rec.source_file = str(self.source_file)
-        results.append(rec)
-    return results
-```
+Per-session stats (`_claude_session_stats.py::_parse_jsonl_stats`) parse the JSONL to count user/assistant messages, estimate cost, and read mtime for `modified_at`.
 
-### Cache and Lazy Loading
-
-```python
-def _ensure_cache(self) -> list[Record]:
-    if self._cache is None:
-        data = self._load_data()
-        self._cache = self._extract(data) if data else []
-    return self._cache
-```
-
-The first call to `records`, `__iter__`, `__len__`, `get()`, or `by_type()` triggers `_load_data()` (one file read and JSON parse) followed by `_extract()`. Subsequent accesses return the cached list. Call `reload()` to force a re-read.
-
-### Write-Back via `json_path`
-
-When `_extract` sets `json_path` on each record, the list can write individual records back to the source file using JSON Pointer navigation:
-
-```python
-def _write_record_to_source(self, record: Record) -> None:
-    fragment = self._record_to_json(record)
-    file_data = self._load_data() or {}
-
-    if not record.json_path or record.json_path == "/":
-        file_data.update(fragment)
-    else:
-        _set_pointer(file_data, record.json_path, fragment)
-
-    self._save_data(file_data)
-    self.reload()
-```
-
-For root records (`json_path` is empty or `"/"`), the entire file content is updated in-place. For nested records, `_set_pointer` navigates to the correct position and replaces that subtree.
-
-### Public CRUD API
-
-The list exposes public methods for reading and writing records:
-
-| Method | Signature | Description |
-|---|---|---|
-| `get` | `(record_type, uid) -> Record \| None` | Linear search; returns first record matching type and uid |
-| `by_type` | `(record_type) -> list[Record]` | Filter all cached records by type |
-| `update` | `(record_type, uid, data) -> Record` | Apply field updates and write back; raises `KeyError` if not found, `ReadOnlyRecordError` if read-only; calls `reload()` after write |
-| `delete_record` | `(record_type, uid) -> bool` | Delete JSON fragment via `json_path`; raises `ValueError` for root records (`not record.json_path`), `ReadOnlyRecordError` if read-only; calls `reload()` after write |
-
-`update()` uses dataclass-aware branching: for dataclass `Record` subclasses, known fields are set via `setattr`, unknown fields go to `record.raw_json[key]`; for non-dataclass `Record` subclasses, all fields go via `setattr` (which routes to `_data`).
-
-### Infrastructure Field Exclusion
-
-When converting a record back to JSON via `_record_to_json`, fields belonging to the Record infrastructure are excluded. The exclusion set used in `source_file_record_list.py` is:
-
-```python
-_INFRA_FIELDS = frozenset({
-    "id", "type", "name", "status", "created_at", "modified_at",
-    "created_by", "updated_by", "scope", "source_file", "path",
-    "entity_id", "raw_json", "children_refs", "parent_ref",
-    "origin_ref", "json_path", "fs_sync", "storage_layout",
-})
-```
-
-Non-dataclass `Record` subclasses are additionally checked against `record._INFRA_FIELDS` from `record.py`, which adds `data_ref` and the legacy alias keys.
-
-Domain fields are converted from `snake_case` to `camelCase` for JSON output using `_snake_to_camel`.
+> **Schema drift caveat:** Claude transcript event schemas change between CLI versions. When sessions render as raw UUIDs instead of titles, check for new event types in the session parsers (see `project_claude_transcript_format_drift.md`).
 
 ---
 
@@ -554,121 +203,46 @@ Domain fields are converted from `snake_case` to `camelCase` for JSON output usi
 
 **Source:** `flow_sdk/fs_store/record_query.py`
 
-`RecordQuery` is a dataclass that encapsulates filter criteria, sort order, and pagination parameters. It operates on any iterable of `Record` objects returned by `discover()` or `SourceFileRecordList.records`.
+`RecordQuery` is a dataclass encapsulating filter criteria, sort order, and pagination. It operates on any iterable of `Record`/`FSRecord` objects.
 
-### Filter Fields
+### Fields
 
-All filter fields are `None` by default, meaning no constraint. Active constraints are AND-ed together.
+All filter fields default to `None` ("no constraint"); active constraints are AND-ed.
 
 | Field | Type | Description |
 |---|---|---|
-| `ids` | `list[str] \| None` | Include only records whose `uid` is in this list |
+| `ids` | `list[str] \| None` | Include only records whose `id` is in this list |
 | `types` | `list[str] \| None` | Include only records whose `type` is in this list |
-| `status` | `str \| list[str] \| None` | Match record status; single string for exact match, list for any-of |
-| `created_after` | `datetime \| None` | Exclude records with `created_at` before this datetime |
-| `created_before` | `datetime \| None` | Exclude records with `created_at` after this datetime |
-| `modified_after` | `datetime \| None` | Exclude records with `modified_at` before this datetime |
-| `modified_before` | `datetime \| None` | Exclude records with `modified_at` after this datetime |
-| `parent_id` | `str \| None` | Include only records whose `parent_ref.id` equals this value |
-| `child_filter` | `RecordQuery \| None` | Declared field for recursive composition (not evaluated by `matches` directly) |
-| `predicate` | `Callable[[Record], bool] \| None` | Arbitrary caller-supplied function for custom logic |
+| `status` | `str \| list[str] \| None` | Match record status; string = exact, list = any-of |
+| `created_after` / `created_before` | `datetime \| None` | `created_at` range bounds |
+| `modified_after` / `modified_before` | `datetime \| None` | `modified_at` range bounds |
+| `parent_id` | `str \| None` | Match `parent_ref.id` |
+| `child_filter` | `RecordQuery \| None` | Declared for recursive composition (not evaluated by `matches` directly) |
+| `predicate` | `Callable[[Record], bool] \| None` | Arbitrary caller-supplied logic |
+| `field_predicates` | `dict[str, Any] \| None` | Match arbitrary record attrs by exact equality |
+| `scope` | `Scope \| None` | Match `record.scope` (value-coerced) |
+| `sort_by` | `str \| None` | Attribute to sort by (`"created_at"`, `"modified_at"`, `"name"`, …) |
+| `sort_desc` | `bool` (default `True`) | Descending when `True` |
+| `offset` | `int` (default `0`) | Records to skip after filter+sort |
+| `limit` | `int \| None` | Max records returned |
 
-### Sorting Fields
+### `matches()` and `apply()`
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `sort_by` | `str \| None` | `None` | Attribute name to sort by: `"created_at"`, `"modified_at"`, `"name"`, or any record attribute |
-| `sort_desc` | `bool` | `True` | Sort descending when `True`, ascending when `False` |
+`matches(record)` runs each active constraint:
 
-### Pagination Fields
+- `ids` compares against `record.id`.
+- `status` coerces `record.status` to a string (`""` if unset, so `status=""` matches statusless records).
+- Date constraints fail for `created_at`/`modified_at = None` (treated as non-matching, not "unknown").
+- `parent_id` requires a non-`None` `parent_ref` whose `.id` matches.
+- `scope` is value-coerced on both sides; `field_predicates` checks attr equality.
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `offset` | `int` | `0` | Number of records to skip after filtering and sorting |
-| `limit` | `int \| None` | `None` | Maximum number of records to return; `None` means no limit |
-
-### `matches()` Method
-
-```python
-def matches(self, record: Record) -> bool:
-    if self.ids is not None and record.uid not in self.ids:
-        return False
-    if self.types is not None and record.type not in self.types:
-        return False
-    if self.worker_status is not None:
-        rec_status = str(record.worker_status) if record.worker_status else ""
-        if isinstance(self.worker_status, list):
-            if rec_status not in self.worker_status:
-                return False
-        elif rec_status != self.worker_status:
-            return False
-    if self.created_after is not None:
-        ca = record.created_at
-        if ca is None or ca < self.created_after:
-            return False
-    if self.created_before is not None:
-        ca = record.created_at
-        if ca is None or ca > self.created_before:
-            return False
-    if self.modified_after is not None:
-        ma = record.modified_at
-        if ma is None or ma < self.modified_after:
-            return False
-    if self.modified_before is not None:
-        ma = record.modified_at
-        if ma is None or ma > self.modified_before:
-            return False
-    if self.parent_id is not None:
-        pr = record.parent_ref
-        parent_ok = pr is not None and pr.id == self.parent_id
-        if not parent_ok:
-            return False
-    if self.predicate is not None and not self.predicate(record):
-        return False
-    return True
-```
-
-Key behaviors:
-
-- Records with `created_at = None` or `modified_at = None` fail any date range constraint that involves those fields. `None` dates are not treated as "unknown" — they are treated as non-matching.
-- `status` comparison converts `record.status` to a string via `str()` before comparing. If the record has no status, the empty string `""` is used. This means a query with `status=""` matches records with no status set.
-- `parent_id` is compared against `parent_ref.id`. If the record has no `parent_ref`, it does not match.
-
-### `apply()` Method
-
-```python
-def apply(self, records: Iterable[Record]) -> list[Record]:
-    result = [r for r in records if self.matches(r)]
-
-    if self.sort_by:
-        key_attr = self.sort_by
-        def _sort_key(r: Record) -> Any:
-            val = getattr(r, key_attr, None)
-            if val is None:
-                return (1, "")
-            return (0, val)
-        result.sort(key=_sort_key, reverse=self.sort_desc)
-
-    if self.offset:
-        result = result[self.offset:]
-    if self.limit is not None:
-        result = result[:self.limit]
-
-    return result
-```
-
-Steps:
-
-1. Filter — builds a new list containing only records that pass `matches()`.
-2. Sort — if `sort_by` is set, sorts using a two-element key tuple. Records where the sort attribute is `None` receive `(1, "")`, pushing them to the end of the result regardless of `sort_desc`.
-3. Paginate — applies `offset` (slice from that index) then `limit` (truncate at that length).
+`apply(records)` filters via `matches`, sorts (records whose sort attr is `None` get key `(1, "")`, pushing them to the end regardless of direction), then paginates `offset` → `limit`. `to_provider_params()` serializes the query into a pushdown-safe dict for external providers.
 
 ### Usage Example
 
 ```python
 from datetime import datetime, timezone
 from flow_sdk.fs_store.record_query import RecordQuery
-from flow_sdk.fs_records.claude.claude_session import ClaudeSessionFsRecord
 
 q = RecordQuery(
     types=["claude_session"],
@@ -677,128 +251,63 @@ q = RecordQuery(
     sort_desc=True,
     limit=20,
 )
-
-all_sessions = ClaudeSessionFsRecord.discover()
 recent = q.apply(all_sessions)
 ```
 
 ---
 
-## Performance Summary
-
-| Operation | Complexity | Notes |
-|---|---|---|
-| `Record.discover()` | O(N) | N = number of subdirectories in the type directory |
-| `Record.discover_one()` | O(1) | Constant — two filesystem checks plus one file read |
-| `ClaudeSessionFsRecord.discover()` | O(P * S * L) | P = projects, S = sessions per project, L = lines per JSONL |
-| `ClaudeSessionFsRecord.discover_one()` with `project` kwarg | O(L) | One JSONL file read, L = lines |
-| `ClaudeSessionFsRecord.discover_one()` without `project` kwarg | O(P * L) | Scans all projects until found |
-| `ClaudeActiveSessionsFsRecord.entries` | O(F * (1 + H + B)) | F = files found by glob; H = head read (up to 20 lines) per active file; B = byte scan per active file. Stale files cost only one `stat`. |
-| `SourceFileRecordList.records` (first access) | O(1 file read + extract) | Subsequent accesses return cached list |
-| `RecordQuery.apply()` | O(N log N) | N = input records; dominated by the sort step |
-| `SchemaRegistry.discover()` | O(T * N) | T = number of types, N = records per type |
-| `SchemaRegistry.incremental()` | O(T' * N) | T' = stale types only (skips recently indexed) |
-
----
-
-## SchemaRegistry Scan & Index Orchestration
+## `SchemaRegistry` — Type Registry + Scan/Index Logging
 
 **Source:** `flow_sdk/fs_store/schema_registry.py`
 
-The `SchemaRegistry` (aliased as `SchemaRecord` in `flow_sdk/fs_records/schema_record.py`) provides a higher-level orchestration layer on top of `Record.discover()`. While `Record.discover()` scans a single type's directory, `SchemaRegistry.discover()` iterates across multiple registered types, scanning and indexing each one, and logging operations to JSONL files under `~/.flow/schema/`.
+`SchemaRegistry` is the single source of truth for types: every type name registers there (via `TypeMetadata.register()` / `Entity.__init_subclass__`). It does **not** orchestrate the walk anymore — there is no `SchemaRegistry.discover()` / `incremental()` / `rebuild_index()`. The walk is `FSIndexer`. The registry's surviving roles:
 
-### Two Scan Layers
+- **Type metadata lookup:** `get(type)`, `get_icon`, `is_browseable`, `is_creatable`, `is_api_visible`, `is_indexed_by_default`, `get_entity_cls`, `get_subtypes`, etc.
+- **Default index types:** `get_default_index_types()` returns `_BUILTIN_DEFAULT_TYPES`:
 
-| Layer | Class | Purpose | Scope |
-|---|---|---|---|
-| **Filesystem scan** | `Record.discover()` | O(N) directory iteration for a single record type | One type at a time |
-| **Orchestration** | `SchemaRegistry.discover()` | Iterates registered types, calls `_scan_type()` + `index_type()` for each, logs results | All default types or a specified subset |
+  ```python
+  _BUILTIN_DEFAULT_TYPES = [
+      SKILL, AGENT, TASK, MARKDOWN, PLAN,
+      CLAUDE_MD, CLAUDE_MEMORY, CLAUDE_RULES, CLAUDE_HOOK, COMMAND,
+  ]
+  ```
 
-### Default Indexed Types
-
-The following types are indexed by default when no explicit type list is provided:
-
-```python
-_BUILTIN_DEFAULT_TYPES = ["skill", "memo", "agent", "task", "agentic_process"]
-```
-
-Additional types can register themselves as `indexed_by_default=True` via `SchemaRegistry.register(TypeInfo(...))`.
-
-> **Note:** `record_error` and `claude_error` are **not** in the default index types. They have their own parallel discovery path via `ClaudeErrorRecordList._do_sync()` (see [Error Record Handling](#error-record-handling) below).
-
-### Key Methods
-
-#### `SchemaRegistry.discover(types, trigger, limit_per_type, actions)`
-
-Full scan+index for given or default types.
-
-```python
-scan_results, index_results = await SchemaRegistry.discover(
-    types=["skill", "memo"],      # None = use default types
-    trigger="manual",              # logged in scan_log.jsonl
-    limit_per_type=100,            # cap records scanned/indexed per type
-    actions=["scan", "index"],     # can omit "index" for scan-only
-)
-```
-
-For each type:
-1. `_scan_type(record_cls, limit)` — iterates records via `RecordList`, collects count + total_bytes → `ScanResult`
-2. `index_type(record_cls, limit)` — calls `rec.sync_to_db()` on each record (persists to SQLite FTS5) → `IndexResult`
-3. Logs per-type and global results to `~/.flow/schema/scan_log.jsonl` and `~/.flow/schema/types/<type>/scan_log.jsonl`
-
-#### `SchemaRegistry.incremental(request: IndexRequest)`
-
-Scans+indexes only types not indexed since `request.start_time`. Skips types whose last index timestamp is newer than the cutoff.
-
-#### `SchemaRegistry.rebuild_index(types, trigger)`
-
-Clears the index for the given types (or all), then re-indexes from scratch. Calls `clear_index()` then `index_type()` for each type.
-
-#### `SchemaRegistry.clear_index(types)`
-
-Deletes FTS entries and entities from the database. Also clears `RecordError` records for the affected types. Removes per-type `index_log.jsonl` files.
-
-#### `SchemaRegistry.get_index_status(types)`
-
-Returns an `IndexStatus` dataclass with:
-- `never_indexed: bool` — whether any global index has ever run
-- `last_indexed_at: str | None` — ISO timestamp of last global index
-- `stale: bool` — `True` if last index was >24 hours ago
-- `per_type: list[TypeIndexStatus]` — per-type last scan/index timestamps and staleness
-
-### Scan Logging
-
-All scan and index operations are logged to JSONL files under `~/.flow/schema/`:
-
-```
-~/.flow/schema/
-  scan_log.jsonl                          — global scan log
-  index_log.jsonl                         — global index log
-  types/<sanitized_type>/
-    type_info.json                        — persisted TypeInfo
-    scan_log.jsonl                        — per-type scan log
-    index_log.jsonl                       — per-type index log
-```
-
-Each log file is capped at 100 entries (oldest trimmed on append). See [schema-registry.md](schema-registry.md) for full details on the schema registry.
+  This list must overlap with `INDEXABLE_TYPES` (`flow_sdk/fs_store/indexer/builtin.py`) — the indexer can't walk a type with no registered walker. Runtime-only types (`BOOKMARK`, `ANNOTATION`, `AGENTIC_PROCESS`, `RECORD_ERROR`, `CLAUDE_ERROR`) are intentionally excluded.
+- **Scan/index logging:** `append_scan(...)`, `append_index(...)`, `get_last_scan_at(type)`, `get_last_index_at(type)`.
+- **Index status:** `await get_index_status(...)` → `IndexStatus` (`never_indexed`, `last_indexed_at`, `stale`, `per_type` with entity counts).
+- **Index clearing:** `await clear_index(types)` deletes FTS entries + entities for the given types (or all).
 
 ---
 
-## Scan & Discovery API Endpoints
+## Scan & Index API Endpoints
 
-### Search / Reindex Endpoints
+### fs-records actions (ComputeNode)
+
+**Source:** `flow_sdk/builtin/faas/fs_records_actions.py` (`FsRecordsActionsMixin`)
+
+| Method | Endpoint | Handler | Description |
+|---|---|---|---|
+| `GET` | `/fs-records/scan[?type=X]` | `_handle_fs_records_scan` | `FSIndexer.scan()`; aggregate stats or per-type list |
+| `POST` | `/fs-records/index[?type=X&rebuild=&force=&user=&projects=&orphan_action=]` | `_handle_fs_records_index` | `FSIndexer.index()`; index all / one type / rebuild / scoped |
+| `GET` | `/fs-records/index-status[?user=&projects=]` | `_handle_fs_records_index_status` | Read-only status (no walk) |
+| `DELETE` | `/fs-records/index` | `_handle_fs_records_index_clear` | Clear the index |
+| `POST` | `/fs-records/{type}/discover?path=<P>` | `_handle_fs_records_discover_by_path` | Single-path index for one type |
+
+Both scan and index emit `progress_report` FlowData events via the shared indexer's `on_progress` callback. Scope is taken from the canonical wire format `?user=true&projects=A,B`; absent params resolve to an explicit "everything known" filter via `get_all_scope_filter()`. The legacy `?project_id=<id>` shim is ignored (logged as a warning).
+
+### Search
 
 **Source:** `flow_sdk/server/routes/search.py`
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/v1/search?q=...&limit=10&record_type=...&status=...` | FTS5 full-text search of indexed records |
-| `POST` | `/api/v1/search/reindex` | Re-index all default types via `SchemaRegistry.discover(trigger="reindex")` |
-| `POST` | `/api/v1/search/reindex/{record_type}` | Re-index a single type via `RecordList` + `rec.sync_to_db()` |
+| `GET` | `/api/v1/search?q=...&limit=...&record_type=...&status=...` | FTS5 full-text search; empty `q` browses all. Returns `indexer_ready` flag. |
 
-### Bootstrap scan_info
+> This module is **search-only**. The old `POST /api/v1/search/reindex[/{type}]` endpoints no longer exist — reindexing is `POST /fs-records/index`.
 
-The bootstrap endpoint (`GET /api/v1/graph/bootstrap`) includes a `scan_info` field in its response, computed by `get_scan_info()` in `flow_sdk/system_tools.py`:
+### Bootstrap `scan_info`
+
+`GET /api/v1/graph/bootstrap` includes a `scan_info` field from `get_scan_info()` (`flow_sdk/system_tools.py`), which reads `SchemaRegistry.get_index_status()` and sums `per_type.entity_count`:
 
 ```json
 {
@@ -809,79 +318,47 @@ The bootstrap endpoint (`GET /api/v1/graph/bootstrap`) includes a `scan_info` fi
 }
 ```
 
-This reads `SchemaRegistry.get_index_status()` — no DB query, just checks log file timestamps.
+### Scan resource actions
 
-### Discovery Action (ComputeNode)
+**Source:** `flow_sdk/builtin/faas/scan_actions.py` (`ScanActionsMixin`) + `scan_indexer.py`
 
-**Source:** `flow_sdk/builtin/faas/compute_node.py:1208`
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/v1/graph/compute_node/@local/discovery/<record_type>` | Discover records of a given type |
-
-Query params:
-- `uuid` (optional): Specific record UUID to discover (calls `discover_one()`)
-- `project` (optional): Project path for O(1) session lookup
-
-**Supported types:** Currently only `claude_session` and `session` are mapped to `ClaudeSessionRecord`. Other record types return an error despite the generic endpoint path.
-
-**Response behavior:**
-- With `uuid` found: `200 SUCCESS` with record dict (runs `discovery(force=True)` first)
-- With `uuid` not found: `200 SUCCESS` with `data: null` — **not** 4xx. This is intentional because session files may not exist yet during startup (race condition). A 4xx would cause browser console errors via Axios.
-- Without `uuid`: `200 SUCCESS` with list of all discovered record dicts
-- On exception: `200 SUCCESS` with `data: null` (catches all errors silently)
-
-### Removed Endpoints
-
-The `POST /fs-records/index` and `GET /fs-records/scan` endpoints referenced in some older documentation no longer exist. Scan and index operations are now accessed via the `/api/v1/search/reindex` endpoints and `SchemaRegistry` methods.
+`scan-resources`, `get-resource-summary`, `scan-item`, `scan-project`, and `list-projects` all route through `scan_indexer.*`, which drive the shared `FSIndexer` against scoped roots resolved by `_scan_scoped_roots()` (`get_all_scope_filter()` → `_resolve_scoped_roots`). Session-process actions (`scan-create-process`, `upsert-session-process`, `get-by-worker-id`, `find-session`) resolve sessions on disk via `_resolve_session_record` and create/heal `AgenticProcess` rows.
 
 ---
 
 ## Error Record Handling
 
-### RecordError (Base)
+### RecordError / ClaudeErrorRecord
 
-**Source:** `flow_sdk/fs_records/record_error.py`
+**Source:** `flow_sdk/fs_store/operations/claude_error.py`, `flow_sdk/fs_store/operations/claude_debug_log.py`
 
-`RecordError` (`_record_type = "record_error"`) is a structured error record created when indexing fails. Created via `RecordError.from_exception(record, exc, trigger)`.
+Error records (`record_error`, `claude_error`) are registered via `flow_sdk/fs_store/indexer/registrations.py` (operations modules) but have **no FSIndexer walker** — they are runtime-only and excluded from `_BUILTIN_DEFAULT_TYPES` / orphan detection. `claude_error` records carry fingerprint-based dedup (SHA256 of normalized error text) and triage statuses (`open`, `ignored`, `ignored_until`, `task_created`), parsing `~/.claude/debug/*.txt`. Their cleanup is wired into `SchemaRegistry.clear_index()`.
 
-- Stored in `~/.flow/records/record_error/` using standard FOLDER layout
-- `discover()` override: when called on the base class, also traverses registered subtypes via `SchemaRegistry.get_subtypes("record_error")`
-- `clear_for_type(type_name)` and `clear_all()` are called during `SchemaRegistry.clear_index()`
+---
 
-### ClaudeErrorRecord (Extended)
+## Performance Summary
 
-**Source:** `flow_sdk/fs_records/claude/claude_error.py`
-
-`ClaudeErrorRecord` (`_record_type = "claude_error"`) extends `RecordError` with fingerprint-based deduplication and triage capabilities.
-
-**Discovery path (parallel to SchemaRegistry):**
-
-Unlike standard record types, `claude_error` records are NOT discovered via `SchemaRegistry.discover()`. Instead, they have their own sync pipeline:
-
-1. **Startup sync:** `run_startup_sync()` runs in a background thread at server start (`flow_sdk/server/app.py`)
-   - Deletes debug logs older than 7 days from `~/.claude/debug/`
-   - Runs `discovery(force=False)` on each `ClaudeSessionDebugLogRecord`
-   - Creates a warning record if debug dir exceeds 400 MB
-2. **Per-request sync:** `ClaudeErrorRecordList._do_sync()` throttled to 30-second intervals
-   - Parses `~/.claude/debug/*.txt` files via `parse_debug_log()`
-   - Upserts errors by fingerprint (SHA256 of normalized error text, truncated to 12 chars)
-   - Two categories: `hook` errors and `log` errors
-   - Occurrence tracking: count, first/last seen, session IDs, capped at 50 per fingerprint
-
-**Triage statuses:** `open`, `ignored`, `ignored_until`, `task_created`
-
-- `ignored_until` auto-reopens when the snooze expires (checked during sync)
-- Records older than the time window (default 168 hours) are pruned during sync
+| Operation | Complexity | Notes |
+|---|---|---|
+| `FSIndexer.scan()` | O(V) | V = nodes visited across the DFS from the roots |
+| `FSIndexer.index(types=T)` | O(V + R) | Type-gating skips unreachable walkers; R = refs parsed (skip-fresh avoids re-parse of unchanged) |
+| `get_claude_session(uid, project=...)` | O(L) | One JSONL read, L = lines |
+| `get_claude_session(uid)` (no project) | O(P) until match | P = project dirs scanned |
+| `RecordQuery.apply()` | O(N log N) | Dominated by the sort |
+| `SchemaRegistry.get_index_status()` | O(T) | Reads per-type log timestamps; T = types |
 
 ---
 
 ## Known Issues
 
-### `ValueError` Not Caught in `Record.discover()`
+### Long index pass vs SQLite writer lock (mitigated)
 
-The `discover()` method catches `json.JSONDecodeError` and `OSError` but does **not** catch `ValueError`, which is raised by `read_record()` when a record file is empty. An empty `record.json` (e.g., from a crash-interrupted write) will abort the entire scan for that type. This is a latent bug.
+`index()` holds one DB session but commits in bounded batches of 50 (`_INDEX_COMMIT_BATCH`) precisely because the engine's per-transaction `BEGIN IMMEDIATE` would otherwise hold the writer lock for the whole scan and starve concurrent requests with `database is locked`. The write path is fixed; the read-path `BEGIN IMMEDIATE` contention noted in `project_indexer_db_lock_contention.md` (issue #2) is deferred — concurrent reads still funnel through `BEGIN IMMEDIATE` and can contend during a heavy index.
 
-### Discovery Action Limited to 2 Types
+### Destructive orphan action on a narrowed walk
 
-The `_discovery_action` on `ComputeNode` only maps `claude_session` and `session` to `ClaudeSessionRecord`. Despite the generic endpoint path (`/discovery/<record_type>`), no other record types are supported. Requests for unmapped types return `ApiFailResponse(message="Unknown record type: ...")`.
+A non-`INDEX` `orphan_action` combined with custom `roots` and no `scope_filter` would misclassify cross-scope-referenced records as orphans and wipe them. The code refuses this (falls back to `INDEX` + warning), but the safety relies on callers either widening the walk to global (`roots=None`) or supplying a `scope_filter`. A caller that bypasses the HTTP wrapper and constructs `IndexerOptions` directly must respect this contract.
+
+### Self-heal indexing depends on an explicit path hint
+
+`_try_self_heal_missing_entity` (graph route) only runs a single-file index when the caller passes `?hint_path=`. A 404 on an entity whose source exists on disk but was never indexed will not self-heal unless the caller supplies the path — consistent with the no-auto-walk rule, but a discoverability gap for callers unaware of the hint parameter.

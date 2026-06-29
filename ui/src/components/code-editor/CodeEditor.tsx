@@ -1,5 +1,5 @@
-import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, Shell, TypeId, VFSPath } from '@sdk';
-import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
+import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, isImagePath, Shell, TypeId, VFSPath } from '@sdk';
+import { TabbedTerminal } from '@src/components/terminal';
 import { Button } from '@src/components/ui/button';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
@@ -9,6 +9,7 @@ import { useFS } from '@src/hooks/useFS';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { TabInfo, useEditorStore } from '@src/store/use-editor-store';
 import { ChevronDown, ChevronUp, Download, Eye, EyeOff, Pin, TerminalIcon, X } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DirectoryTree, ItemHandler } from '../directory-tree';
 import DiffViewer from './DiffViewer';
@@ -28,6 +29,7 @@ interface CodeEditorProps {
 }
 
 const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
+  const { t } = useLingui();
   const project = dataContext.project;
   const projectTypeId = useMemo(() => {
     return project?.typeId;
@@ -69,11 +71,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
         is_dir: true,
         vfs_abs_path: `${projectTypeId.type}-${projectTypeId.id}/.`,
         size: 0,
-        display_name: project?.displayName || 'Project',
+        display_name: project?.displayName || t`Project`,
       }),
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectTypeId, project?.displayName, treeRefreshKey]);
+  }, [projectTypeId, project?.displayName, treeRefreshKey, t]);
 
   // ItemHandler for DirectoryTree with file/folder actions
   const itemHandler = useMemo(
@@ -153,11 +155,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     () => [
       {
         name: 'hidden' as const,
-        label: 'Hide hidden files',
+        label: t`Hide hidden files`,
         filterFn: (item: FSItem) => !item.name.startsWith('.'),
       },
     ],
-    [],
+    [t],
   );
 
   // Track enabled filters based on showHiddenItems toggle
@@ -186,8 +188,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   const [activeTab, setActiveTab] = useState<string>(editorActiveTab || '');
   const [pendingOpenFile, setPendingOpenFile] = useState<string | null>(null);
   const [diffTab, setDiffTab] = useState<{ checkpoint_hash: string } | null>(null);
-  const { onTabClick: onTerminalClick, onTabClose: onTerminalClose, onTabOpen: onTerminalOpen } =
-    useStandardTabNav();
 
   // Convert activeTab to vfs_abs_path format for DirectoryTree selection
   const selectedPath = useMemo(() => {
@@ -216,8 +216,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   }, [effectiveFilePath, fs]);
 
   // Add streaming content from FSStore to open files list (reacts to content changes)
+  // Images never have text content cached — EditorPane renders them straight from
+  // the download URL — so they get an open-file entry on activePath alone.
   useEffect(() => {
-    if (!activePath || !contentCache) return;
+    if (!activePath) return;
+    if (!contentCache && !isImagePath(activePath)) return;
 
     setOpenFiles((prevFiles) => {
       // Check if file already exists in open files
@@ -225,7 +228,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
       const fileItem: EditorFile = {
         path: activePath,
-        content: typeof contentCache.content === 'string' ? contentCache.content : undefined,
+        content: typeof contentCache?.content === 'string' ? contentCache.content : undefined,
         language: detectLanguage(activePath),
         type: 'file',
       };
@@ -335,8 +338,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
     setActiveTab(pendingOpenFile);
 
-    // Download content if not already cached
-    if (!existingFile?.content) {
+    // Download content if not already cached — but never pull image bytes as
+    // text; EditorPane streams those from the download URL into an <img>.
+    if (!existingFile?.content && !isImagePath(pendingOpenFile)) {
       void downloadFileContent(pendingOpenFile);
     }
   }, [pendingOpenFile, openFiles, createTabInfo, downloadFileContent]);
@@ -405,13 +409,13 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   const renderExplorerPanel = () => (
     <div className="h-full border-r bg-muted/20">
       <div className="flex items-center justify-between border-b bg-muted/50 p-1">
-        <h2 className="p-2 text-sm font-medium text-foreground">Explorer</h2>
+        <h2 className="p-2 text-sm font-medium text-foreground"><Trans>Explorer</Trans></h2>
         <div className="flex items-center">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setShowHiddenItems(!showHiddenItems)}
-            title={showHiddenItems ? 'Hide hidden files' : 'Show hidden files'}
+            title={showHiddenItems ? t`Hide hidden files` : t`Show hidden files`}
           >
             {showHiddenItems ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
@@ -420,7 +424,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
             size="icon"
             onClick={() => void downloadAllFiles()}
             className="ml-auto"
-            title="Download all files"
+            title={t`Download all files`}
           >
             <Download className="h-4 w-4" />
           </Button>
@@ -501,7 +505,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                     value="diff"
                     className="group relative flex items-center gap-1 rounded-none border-r px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-none"
                   >
-                    <span className="text-sm">Diff</span>
+                    <span className="text-sm"><Trans>Diff</Trans></span>
                     <div
                       className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-sm p-0 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
                       onClick={(e) => {
@@ -548,7 +552,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       ) : (
         <div className="flex flex-1 items-center justify-center text-muted-foreground">
           <div className="text-center">
-            <p className="text-lg">No files open</p>
+            <p className="text-lg"><Trans>No files open</Trans></p>
           </div>
         </div>
       )}
@@ -560,20 +564,15 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       <div className="flex items-center justify-between border-b bg-muted/50 p-2">
         <h3 className="flex text-sm font-medium text-foreground">
           <TerminalIcon className="mr-2 h-4 w-4" />
-          Shell
+          <Trans>Shell</Trans>
         </h3>
 
-        <Button variant="ghost" size="icon" onClick={toggleTerminal} className="h-6 w-6" title="Toggle terminal">
+        <Button variant="ghost" size="icon" onClick={toggleTerminal} className="h-6 w-6" title={t`Toggle terminal`}>
           {isTerminalExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
         </Button>
       </div>
       <div className="flex-1 overflow-hidden">
-        <TabbedTerminal
-          className="h-full"
-          onTabClick={onTerminalClick}
-          onTabClose={onTerminalClose}
-          onTabOpen={onTerminalOpen}
-        />
+        <TabbedTerminal className="h-full" />
       </div>
     </div>
   );
@@ -581,7 +580,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   if (!projectTypeId) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center text-muted-foreground">
-        <p className="text-sm">No project context available</p>
+        <p className="text-sm"><Trans>No project context available</Trans></p>
       </div>
     );
   }
@@ -612,8 +611,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
           setShowFileInput(open);
           if (!open) pendingActionRef.current = null;
         }}
-        title="Create File"
-        placeholder="Enter file name"
+        title={t`Create File`}
+        placeholder={t`Enter file name`}
         onConfirm={handleFileInputConfirm}
       />
 
@@ -624,8 +623,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
           setShowFolderInput(open);
           if (!open) pendingActionRef.current = null;
         }}
-        title="Create Folder"
-        placeholder="Enter folder name"
+        title={t`Create Folder`}
+        placeholder={t`Enter folder name`}
         onConfirm={handleFolderInputConfirm}
       />
     </>

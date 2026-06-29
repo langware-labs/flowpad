@@ -10,24 +10,24 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowElementType,
 )
 from flow_sdk.transcript_analyzer import (
-    AgentTranscript,
+    AgentTranscriptFile,
     AssistantMessageEntry,
     MetaEntry,
+    ShellCommandEntry,
     SummaryEntry,
     SystemEntry,
-    ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
     UserMessageEntry,
 )
 
 
-def _flatten(t: AgentTranscript) -> list[FlowData]:
+def _flatten(t: AgentTranscriptFile) -> list[FlowData]:
     return [fd for e in t.entries for fd in e.to_flow_data()]
 
 
 def test_user_message_emits_user_message_flow_data(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     user_entry = next(e for e in t.entries if isinstance(e, UserMessageEntry))
     fds = user_entry.to_flow_data()
     assert len(fds) == 1
@@ -39,7 +39,7 @@ def test_user_message_emits_user_message_flow_data(claude_jsonl):
 
 
 def test_assistant_message_emits_chat_flow_data(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     am = next(e for e in t.entries if isinstance(e, AssistantMessageEntry))
     fds = am.to_flow_data()
     # Sanitized fixture has thinking + text → two FlowData, REASONING then CHAT.
@@ -51,7 +51,7 @@ def test_assistant_message_emits_chat_flow_data(claude_jsonl):
 
 
 def test_tool_use_emits_tool_call_flow_data(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     bash = next(e for e in t.entries if isinstance(e, ToolUseEntry) and e.tool_name == "Bash")
     fds = bash.to_flow_data()
     assert len(fds) == 1
@@ -59,23 +59,24 @@ def test_tool_use_emits_tool_call_flow_data(claude_jsonl):
     assert fds[0].attributes["tool-name"] == "Bash"
 
 
-def test_tool_result_emits_tool_result_flow_data(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
-    r = next(e for e in t.entries if isinstance(e, ToolResultEntry))
+def test_folded_shell_command_emits_tool_call_flow_data(claude_jsonl):
+    t = AgentTranscriptFile("claude", claude_jsonl)
+    r = next(e for e in t.entries if isinstance(e, ShellCommandEntry))
     fds = r.to_flow_data()
     assert len(fds) == 1
-    assert fds[0].attributes["element-type"] == FlowElementType.TOOL_RESULT
-    assert "is_error" not in fds[0].attributes  # sanitized fixture has no error
+    assert fds[0].attributes["element-type"] == FlowElementType.TOOL_CALL
+    assert fds[0].attributes["tool-name"] == "Bash"
+    assert "ok" in (fds[0].flow_value.get("stdout") or "")
 
 
 def test_system_entry_emits_no_flow_data(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     sys_entry = next(e for e in t.entries if isinstance(e, SystemEntry))
     assert sys_entry.to_flow_data() == []
 
 
 def test_meta_entry_emits_no_flow_data(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     metas = [e for e in t.entries if isinstance(e, MetaEntry)]
     assert metas
     for m in metas:
@@ -85,7 +86,7 @@ def test_meta_entry_emits_no_flow_data(claude_jsonl):
 def test_unknown_entry_emits_no_flow_data(claude_jsonl):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        t = AgentTranscript("claude", claude_jsonl)
+        t = AgentTranscriptFile("claude", claude_jsonl)
     unknowns = [e for e in t.entries if isinstance(e, UnknownEntry)]
     assert unknowns
     for u in unknowns:
@@ -93,14 +94,14 @@ def test_unknown_entry_emits_no_flow_data(claude_jsonl):
 
 
 def test_transcript_to_flow_data_concatenates_per_entry(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     direct = _flatten(t)
     via_method = t.to_flow_data()
     assert len(direct) == len(via_method)
 
 
 def test_codex_command_execution_emits_paired_flow_data(codex_stream_jsonl):
-    t = AgentTranscript("codex", codex_stream_jsonl)
+    t = AgentTranscriptFile("codex", codex_stream_jsonl)
     fd = t.to_flow_data()
     # We expect at least one TOOL_CALL and one TOOL_RESULT for the
     # synthesized shell pair.
@@ -110,7 +111,7 @@ def test_codex_command_execution_emits_paired_flow_data(codex_stream_jsonl):
 
 
 def test_created_time_propagated_from_line_timestamp(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     for e in t.entries:
         for fd in e.to_flow_data():
             assert fd.created_time == e.timestamp

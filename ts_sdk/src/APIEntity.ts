@@ -1,17 +1,46 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ActionInfo, ActionType, EntityExpansion, ExpansionType, JSONSchemaParser, Workspace } from '.';
 import { Record, RecordRefs } from './fs/Record';
+import { FrontMatterFsRef } from './fs/FrontMatterFsRef';
+import { Frontmatter } from './fs/Frontmatter';
 import { EntityFactory } from './schema/factory';
 import { ExpansionRequest, QueryRequest } from './FlowSync/query';
 import { DataManager, Manageable } from './FlowSync/store';
 import { FlowData, FlowDataStream } from './flow_processing';
 import { defaultEntityType, IEntity } from './IEntity';
 import { DockPointerData } from './models/DockPointer';
+import { editorForType } from './models/asset-editor';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
 import { Callable } from './types';
+
+/**
+ * One row of an entity's member roster, as returned by the generic ``members``
+ * action (``APIEntity.fetchMembers``). The hub normalizes ``user_email`` →
+ * ``email`` etc. server-side (see ``_hub_reflect._normalize_hub_response``);
+ * extra hub keys (``status``, ``role``, ``invitation_id``, …) pass through, so
+ * this is intentionally open. ``Participant`` in ``entities/members.ts`` is the
+ * structurally-compatible alias kept for existing import sites. */
+export interface EntityMember {
+  user_id?: string | null;
+  email?: string | null;
+  name?: string | null;
+  role?: string | null;
+  status?: string | null;
+  [key: string]: unknown;
+}
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
+
+/**
+ * True when ``v`` is a string with at least one non-whitespace character.
+ * Wire payloads occasionally carry non-string values for nominally-string
+ * fields (legacy records, unmigrated data); the type guard keeps display-chain
+ * call-sites from blowing up on `.trim()`.
+ */
+export function isNonEmptyString(v: unknown): v is string {
+  return typeof v === 'string' && v.trim().length > 0;
+}
 
 export function getProxy<T extends Manageable & { [key: string | symbol]: any }>(target: T) {
   return new Proxy(target, {
@@ -87,12 +116,32 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   _dirty: boolean = true;
   _typeId: TypeId | null = null;
   /**
-   * Generic context-entity references. Private — use ``addContextEntity`` /
-   * ``removeContextEntity`` to mutate. The wire shape is ``string[]`` of
-   * TypeId-formatted entries; we deserialize to ``TypeId[]`` in the
-   * constructor and serialize back via ``toJSON``.
+   * Wire-bound context references. Populated from the incoming
+   * ``shared_context_entities`` wire field on deserialize; emitted back on
+   * serialize. The public read accessor is ``sharedContextEntities``.
+   *
+   * Frontend code does NOT mutate this directly — to publish a link, call
+   * the backend ``share-context`` action.
    */
-  private _context_entities: TypeId[] = [];
+  private _shared_context_entities_: TypeId[] = [];
+  /**
+   * Backend-computed private context. The Python side merges implicit
+   * projections (project_id) with explicit attachments and ships the
+   * deduped array over the wire — this slot just stores what arrived.
+   * The FE never reads or mutates raw explicit attachments independently.
+   * Read via ``privateContextEntities`` (identity getter).
+   */
+  private _private_context_entities_: TypeId[] = [];
+  /**
+   * Per-entry sidecar storage harvested by the backend at detection time.
+   * Keyed by ``str(typeid)`` (e.g. ``"plan-b034e56e-..."``). Mirrors the
+   * Python-side ``shared_context_entity_data`` / ``private_context_entity_data``
+   * fields. For file-backed types this typically holds ``{path}`` so a dock
+   * loader 404 can self-heal via ``?hint_path=...`` without a reverse-id
+   * lookup. Read via ``getContextEntryData(typeid)``.
+   */
+  private _shared_context_entity_data: Record<string, Record<string, unknown>> = {};
+  private _private_context_entity_data: Record<string, Record<string, unknown>> = {};
   _isLoaded: boolean = false;
   static nextInstanceIndex: number = 0;
   _instanceIndex: number = APIEntity.nextInstanceIndex++;
@@ -172,21 +221,20 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const type = (this.constructor as typeof APIEntity).type ?? 'entity';
 
     // 1. name
-    if (this.name && this.name.trim()) return this.name;
+    if (isNonEmptyString(this.name)) return this.name;
 
     // 2. uname
-    if (this.uname && this.uname.trim()) return this.uname;
+    if (isNonEmptyString(this.uname)) return this.uname;
 
     // 3. title prefix
-    const t = this.title?.trim();
-    if (t) {
-      const words = t.split(/\s+/);
+    if (isNonEmptyString(this.title)) {
+      const words = this.title.trim().split(/\s+/);
       const head = words.slice(0, 2).join(' ');
       return words.length > 2 ? `${head} …` : head;
     }
 
     // 4. <type>-<key>
-    if (this.key && this.key.trim()) return `${type}-${this.key}`;
+    if (isNonEmptyString(this.key)) return `${type}-${this.key}`;
 
     // 5. <type>-<id-tail>
     const id = this.id ?? '';
@@ -328,9 +376,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     }
     const workspaces: TypeId[] = [];
     this.expand?.auth_scopes.forEach((scope) => {
-      scope.forEach((typeId) => {
-        if (typeId.type === Workspace.type) {
-          workspaces.push(typeId);
+      scope.forEach((raw) => {
+        const tid = new TypeId(raw);
+        if (tid.type === Workspace.type) {
+          workspaces.push(tid);
         }
       });
     });
@@ -343,16 +392,52 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (entityJson.type && entityJson.type != this.getType()) {
       throw new Error(`Entity type mismatch: ${entityJson.type} != ${this.getType()}`);
     }
-    // Move the wire-shaped ``context_entities`` (string[] / TypeId[] after
-    // deepAssign) into the private storage and drop the public alias so
-    // toJSON's dynamic-property iterator doesn't double-emit it.
-    const fromWire = (this as any).context_entities as Array<unknown> | undefined;
-    if (Array.isArray(fromWire) && fromWire.length > 0) {
-      this._context_entities = fromWire.map((v) =>
+    // Move the wire-shaped ``shared_context_entities`` and the
+    // backend-computed ``private_context_entities`` into private storage,
+    // then drop the public aliases so toJSON's dynamic-property iterator
+    // doesn't double-emit them.
+    //
+    // IMPORTANT — ``private_context_entities`` arrives ALREADY merged from
+    // the backend: implicit projections (project_id) + explicit raw
+    // attachments + dedup. The FE just deserializes the final list and
+    // renders it. Computation lives server-side in
+    // ``Entity.get_implicit_private_context_entities`` /
+    // ``private_context_entities`` (Pydantic computed_field).
+    const fromWireShared = (this as any).shared_context_entities as Array<unknown> | undefined;
+    if (Array.isArray(fromWireShared) && fromWireShared.length > 0) {
+      this._shared_context_entities_ = fromWireShared.map((v) =>
         v instanceof TypeId ? v : new TypeId(String(v)),
       );
     }
-    delete (this as any).context_entities;
+    delete (this as any).shared_context_entities;
+
+    const fromWirePrivate = (this as any).private_context_entities as Array<unknown> | undefined;
+    if (Array.isArray(fromWirePrivate) && fromWirePrivate.length > 0) {
+      this._private_context_entities_ = fromWirePrivate.map((v) =>
+        v instanceof TypeId ? v : new TypeId(String(v)),
+      );
+    }
+    delete (this as any).private_context_entities;
+
+    // Per-entry sidecar data (shared + private buckets). Same lift-into-
+    // private-storage / drop-public-alias dance as the typeid arrays above
+    // so toJSON's dynamic iterator doesn't double-emit them.
+    const fromWireSharedData = (this as any).shared_context_entity_data as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (fromWireSharedData && typeof fromWireSharedData === 'object') {
+      this._shared_context_entity_data = { ...fromWireSharedData };
+    }
+    delete (this as any).shared_context_entity_data;
+
+    const fromWirePrivateData = (this as any).private_context_entity_data as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (fromWirePrivateData && typeof fromWirePrivateData === 'object') {
+      this._private_context_entity_data = { ...fromWirePrivateData };
+    }
+    delete (this as any).private_context_entity_data;
+
     const proxy = getProxy(this);
     dataManager.register_new_entity(this.typeId, proxy);
     return proxy;
@@ -375,8 +460,51 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return new DockPointerData(ViewType.HOME, this.typeId?.toString());
   }
 
+  /**
+   * Generic read/write access to this asset's YAML frontmatter, or null when the
+   * entity has no FrontMatterFsRef-backed `doc` (resolved from the subclass `doc`
+   * getter). Unlike `doc.save()` (name+description only), the accessor preserves
+   * the body and all keys — the home of frontmatter-persisted fields like
+   * `version`. Caller must `await frontmatter.load()` before get/set.
+   */
+  public get frontmatter(): Frontmatter | null {
+    const doc = (this as unknown as { doc?: unknown }).doc;
+    return doc instanceof FrontMatterFsRef ? new Frontmatter(doc) : null;
+  }
+
+  /**
+   * Asset-editor dock pointer for a file-backed asset entity, or null when it
+   * has no asset file yet. Asset subclasses return this from `dockPointer`
+   * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
+   * lives here once so it stays consistent across every asset type.
+   */
+  protected assetEditorPointer(typeSegment: string): DockPointerData | null {
+    const editor = editorForType(typeSegment);
+    if (!editor) return null;
+    // Stable typeid form: editor/<editor>/typeid/<type>-<id>. `this.typeId`
+    // throws if the entity has no id → fall back to null (callers use ?? super).
+    try {
+      return new DockPointerData(ViewType.ASSETS, `editor/${editor}/typeid/${this.typeId.toString()}`);
+    } catch {
+      return null;
+    }
+  }
+
   public get searchDockPointer(): DockPointerData {
     return this.dockPointer;
+  }
+
+  /**
+   * Navigate the dock to this entity. Delegates to the active
+   * NavigationActions instance registered as the ``navigation`` global by
+   * ``useDockNavigation`` in the UI. No-op when no navigation is available
+   * (non-UI contexts, before first render).
+   */
+  public openDock(extraOptions?: Record<string, string>): void {
+    const nav = (window as any).navigation as
+      | { openDock: (pointer: DockPointerData, extraOptions?: Record<string, string>) => void }
+      | undefined;
+    nav?.openDock(this.dockPointer, extraOptions);
   }
 
   public clone(): T {
@@ -406,10 +534,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       id: this.id,
       type: this.getType(),
       version: this.schema_version,
-      // Persist only the private array — direct fields are emitted as their
-      // own typed fields by the dynamic-property iterator below. The dynamic
-      // ``contextEntities`` getter merges them at read time.
-      context_entities: this._context_entities.map((t) => t.toString()),
+      // Wire-bound context only. Private context stays local — it's never
+      // published or sent to the backend, by design. Direct-field projections
+      // (project_id, assignee, ...) are emitted as their own typed fields by
+      // the dynamic-property iterator below; the ``privateContextEntities``
+      // getter folds them in at read time on this client only.
+      shared_context_entities: this._shared_context_entities_.map((t) => t.toString()),
+      // Per-entry sidecar — only the shared bucket survives toJSON, matching
+      // the backend's share() exclusion of the private one.
+      shared_context_entity_data: { ...this._shared_context_entity_data },
     };
 
     // Dynamically add all enumerable properties of the instance
@@ -578,6 +711,181 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return entity;
   }
 
+  /**
+   * Push this entity to the hub via the standard graph action
+   * ``POST /api/v1/graph/<type>/<id>/share``. The local backend's
+   * ``share`` action handler forwards the create to the hub using the
+   * stored cloud credentials. On success, ``remote`` is flipped.
+   *
+   * When ``recipients`` is provided (list of email strings) and the entity
+   * is a Conversation, each recipient is invited via the standard
+   * ``MembershipRequest`` pattern (one ``POST /graph/conversation/<id>/members``
+   * per recipient). See ``Conversation.share`` on the Python side.
+   */
+  public async share(recipients?: string[]): Promise<T> {
+    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { ...this.toJSON(), ...(recipients ? { recipients } : {}) };
+    await dataManager.callAction<unknown, unknown>(info);
+    (this as any).remote = true;
+    return this as unknown as T;
+  }
+
+  /**
+   * Per-instance cache for ``fetchMembers`` so repeat reads (e.g. multiple
+   * UI consumers mounting against the same entity) don't each round-trip.
+   * Undefined = never fetched; an array = the last fetched roster.
+   */
+  private _membersCache?: EntityMember[];
+
+  /**
+   * Generic roster fetch for any shareable entity — GET ``<type>/<id>/members``.
+   *
+   * The ``members`` action is ``reflect="hub"`` server-side: for a ``remote``
+   * entity the local server forwards to the hub and mirrors the roster back
+   * onto the local row; for a local-only entity it returns the cached
+   * participants. Either way this returns the normalized ``EntityMember[]``.
+   *
+   * ``cache`` (default ``true``): return the per-instance cached roster when
+   * present, so incidental reads are free. Pass ``cache: false`` to force a
+   * fresh round-trip — the path a deliberate "reload" (e.g. the conversation
+   * refresh button, or a post-invite/role-change refresh) must use so it
+   * reflects hub state rather than a stale snapshot.
+   */
+  public async fetchMembers(opts: { cache?: boolean } = {}): Promise<EntityMember[]> {
+    const useCache = opts.cache ?? true;
+    if (useCache && this._membersCache) return this._membersCache;
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'GET');
+    info.hubReflect = true; // roster is hub-owned — reflect this read to the hub
+    const res = await dataManager.callAction<undefined, EntityMember[]>(info);
+    // Defensive: the hub utils coerce empty lists to {} upstream
+    // (`resp.json().get('data') or {}`); treat any non-array as "no members".
+    this._membersCache = Array.isArray(res) ? res : [];
+    return this._membersCache;
+  }
+
+  /**
+   * Invite a member by email — POST ``<type>/<id>/members`` with a
+   * ``MembershipRequest`` (``{recipient_email, invitation_targets:[{typeid, role}]}``).
+   * Reflected to the hub (``info.hubReflect``): for a ``remote`` entity (e.g. an
+   * organization or team) the hub creates the Invitation + emails the recipient.
+   * Unlike ``share([email])`` (which is Conversation-shaped and also creates the
+   * remote row), this targets an already-remote entity and only invites — the
+   * right call for inviting into an organization/team from the members UI.
+   *
+   * ``role`` defaults to ``member``. The reflection layer returns the refreshed
+   * roster; seed the cache from it when it comes back as an array.
+   */
+  public async inviteMember(email: string, role: string = 'member'): Promise<void> {
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
+    info.hubReflect = true; // membership change is hub-owned — reflect to the hub
+    info.bodyParameters = {
+      recipient_email: email,
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+    };
+    const res = await dataManager.callAction<unknown, EntityMember[]>(info);
+    this._membersCache = Array.isArray(res) ? res : undefined;
+  }
+
+  /**
+   * Remove a member by user id — DELETE ``<type>/<id>/members``. OWNER ONLY:
+   * the hub enforces the owner gate (``delete_membership`` → 403 for non-owners
+   * / owner-self), so this surfaces that as a thrown error rather than
+   * silently no-op'ing. The DELETE body is a member selector — ``{user_id}``
+   * (the hub also accepts ``{user_email}`` / ``{invitation_id}`` for pending
+   * invitees that have no account yet, and still tolerates the legacy
+   * ``{member_through, value}`` envelope during the transition).
+   *
+   * The reflection layer re-fetches the canonical roster after the remove and
+   * returns it as the action response — seed the cache from it so the next
+   * ``fetchMembers`` is free (falls back to invalidation on any other shape).
+   */
+  public async removeMember(userId: string): Promise<void> {
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'DELETE');
+    info.hubReflect = true; // membership change is hub-owned — reflect to the hub
+    info.bodyParameters = { user_id: userId };
+    const res = await dataManager.callAction<unknown, EntityMember[]>(info);
+    this._membersCache = Array.isArray(res) ? res : undefined;
+  }
+
+  /**
+   * Change a member's role — PUT ``<type>/<id>/members`` with ``{user_id, role}``.
+   * The hub gates this via its role-grant chokepoint (``can_assign``): the
+   * caller may only assign a role strictly below their own, on a member ranked
+   * strictly below their own, never on themselves and never on the owner —
+   * denials surface here as thrown errors (403). ``role`` is a lowercase
+   * policy role (e.g. ``admin`` / ``editor`` / ``member`` / ``reader``).
+   *
+   * The reflection layer re-fetches the canonical roster after the change and
+   * returns it as the action response — seed the cache from it so the next
+   * ``fetchMembers`` is free (falls back to invalidation on any other shape).
+   */
+  public async setMemberRole(userId: string, role: string): Promise<void> {
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'PUT');
+    info.hubReflect = true; // role change is hub-owned — reflect to the hub
+    info.bodyParameters = { user_id: userId, role };
+    const res = await dataManager.callAction<unknown, EntityMember[]>(info);
+    this._membersCache = Array.isArray(res) ? res : undefined;
+  }
+
+  /**
+   * True when this entity has a hub-side counterpart at the same id. Mirrors
+   * the Python ``Entity.remote`` field; flipped to ``true`` by ``share()``.
+   */
+  remote?: boolean;
+
+  /**
+   * Canonical parent reference ("<type>-<id>"). Single source of truth for
+   * parentage; supersedes the legacy per-type ``data.parent_id``.
+   */
+  parent_type_id?: string | null;
+
+  /**
+   * Folder-like containment (docs/entities-groups.md): the Group this entity
+   * lives in; null = ungrouped. Reflected off the wire; mutate only via
+   * {@link setGroup} so backend validation (target exists, same project, no
+   * cycles) runs.
+   */
+  group_id?: string | null;
+
+  /**
+   * Move this entity into a Group (or ungroup with null) via the generic
+   * ``set-group`` action. The new membership reflects back through the
+   * ordinary entity-update path; no local write.
+   */
+  public async setGroup(groupId: string | null): Promise<void> {
+    const info = new ActionInfo('set-group', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { group_id: groupId };
+    await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /**
+   * Stamp this tab's ``last_active_at`` (server clock, epoch-ms) via the
+   * generic ``activate`` action — the tab resolver's recency seed
+   * (docs/tab-management.md Part 3 §4). Loaders call this FIRE-AND-FORGET on
+   * activation (alongside the synchronous in-cache ``bumpLastActive``); it
+   * never touches ``tabbed`` — membership promotion is ``tabs/open`` only.
+   */
+  public async activate(): Promise<void> {
+    const info = new ActionInfo('activate', this.typeId.type, this.typeId.id, 'POST');
+    await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /** POST /entity-event {event, payload}. Unknown events are a server-side no-op. */
+  public async entityEvent(event: string, payload: Record<string, unknown> = {}): Promise<unknown> {
+    return APIEntity.entityEvent(this.typeId, event, payload);
+  }
+
+  /** Static form for callsites that hold only a TypeId. */
+  public static async entityEvent(
+    typeId: TypeId,
+    event: string,
+    payload: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    const info = new ActionInfo('entity-event', typeId.type, typeId.id, 'POST');
+    info.bodyParameters = { event, payload };
+    return await dataManager.callActionPreferWS<unknown, unknown>(info);
+  }
+
   public async delete(): Promise<void> {
     console.log(
       `🗑️ [APIEntity.delete] Starting deletion of ${this.typeId.type}:${this.typeId.id} (${this.constructor.name})`,
@@ -649,20 +957,19 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (!this.expand?.auth_scopes) {
       return [];
     }
-    let selectedScope = this.expand?.auth_scopes.find((scope) => {
-      // Log to see the scope and typeId for debugging
-
-      return scope.some((typeId) => {
-        // Ensure workspaceTypeId is available and compare correctly
-        if (workspaceTypeId) {
-          return typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type;
-        }
-        return false;
-      });
-    });
-
-    if (!selectedScope && this.expand?.auth_scopes?.length > 0) {
-      selectedScope = this.expand?.auth_scopes[0];
+    const parsedScopes: TypeId[][] = this.expand.auth_scopes.map((scope) =>
+      scope.map((raw) => new TypeId(raw)),
+    );
+    let selectedScope = parsedScopes.find((scope) =>
+      workspaceTypeId
+        ? scope.some(
+            (typeId) =>
+              typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type,
+          )
+        : false,
+    );
+    if (!selectedScope && parsedScopes.length > 0) {
+      selectedScope = parsedScopes[0];
     }
     return selectedScope || [];
   }
@@ -735,61 +1042,154 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   // ── context_entities surface ──────────────────────────────────────────
   //
-  // Unified container for "what other entities is this one contextually
-  // related to." See ``IEntity.context_entities``. The persisted slot is the
-  // private ``_context_entities``; the public ``contextEntities`` getter
-  // merges in per-entity-projected direct fields (overridable via
-  // ``_directFieldsAsTypeIds``). Frontend writes go through
-  // ``addContextEntity`` / ``removeContextEntity`` only.
+  // Two buckets, split by the rule "if it came over the wire it is shared,
+  // otherwise private":
+  //   * ``sharedContextEntities`` — wire-bound; what every reader of this
+  //     entity sees. Mutated only by the backend (call a ``share-context``
+  //     action to publish).
+  //   * ``privateContextEntities`` — also wire-bound now: the **backend**
+  //     computes the merged list (implicit projections like ``project_id``
+  //     PLUS the user's explicit attachments) via
+  //     ``Entity.get_implicit_private_context_entities`` +
+  //     ``private_context_entities`` Pydantic computed_field. The FE just
+  //     renders the list. **The FE never combines implicit + explicit
+  //     locally.** This file used to host a ``_directFieldsAsTypeIds`` hook
+  //     for FE-side projection; it was removed when projection moved to
+  //     the backend.
 
-  /**
-   * Per-entity projection of direct fields into the chip-renderable context.
-   * Override in subclasses to surface fields like ``project_id`` or
-   * ``assignee`` as TypeIds. Default: nothing.
-   */
-  protected _directFieldsAsTypeIds(): TypeId[] {
-    return [];
+  /** Wire-bound context. Read-only on the frontend — publish via a backend
+   *  ``share-context`` action. */
+  public get sharedContextEntities(): TypeId[] {
+    return [...this._shared_context_entities_];
+  }
+
+  /** Computed-by-backend private context (implicit projections + explicit
+   *  attachments, deduped server-side). Returned as-is — no FE-side
+   *  projection. */
+  public get privateContextEntities(): TypeId[] {
+    return [...this._private_context_entities_];
   }
 
   /**
-   * Full chip-renderable context: direct-field projection + persisted
-   * ``_context_entities``. Read-only — mutate via the add/remove methods.
+   * Return the per-entry sidecar data harvested by the backend at detection
+   * time (e.g. ``{path: "/Users/.../foo.md"}`` for file-backed entries).
+   * Checks the private sidecar first (matches the backend precedence), then
+   * shared. Returns ``undefined`` when no data was harvested for the typeid.
+   *
+   * Use this when rendering a chip that may navigate to an entity that
+   * hasn't been indexed yet — pass ``data.path`` as ``?hint_path=...`` to
+   * the entity GET so the BE can self-heal the 404 by single-file-indexing.
    */
-  public get contextEntities(): TypeId[] {
-    return [...this._directFieldsAsTypeIds(), ...this._context_entities];
+  public getContextEntryData(typeid: TypeId | string): Record<string, unknown> | undefined {
+    const key = typeid instanceof TypeId ? typeid.toString() : typeid;
+    return this._private_context_entity_data[key] ?? this._shared_context_entity_data[key];
+  }
+
+  // NOTE: ``addContextEntities`` / ``removeContextEntities`` lived here as
+  // FE-side mutation primitives for the private bucket. They were removed when
+  // the FE became display-only for context: the FE renders whatever the backend
+  // ships in ``private_context_entities`` (a Pydantic computed_field that merges
+  // implicit projections + explicit attachments, server-side). To attach
+  // something to a private context, use a dedicated backend action and let
+  // the WS broadcast deliver the updated array. The FE never combines or
+  // mutates context on its own.
+
+  /**
+   * Coerce a single TypeId or a list into a de-duplicated TypeId[]. The only
+   * remaining consumer is the *shared*-bucket publish path
+   * (``shareContextEntities`` / ``unshareContextEntities``), which sends the
+   * targets to a backend action — it does NOT mutate local context. Kept here
+   * (rather than inlined) so both share/unshare normalise identically.
+   */
+  private _normalizeContextEntities(input: TypeId | TypeId[]): TypeId[] {
+    const list = Array.isArray(input) ? input : [input];
+    const seen = new Set<string>();
+    const out: TypeId[] = [];
+    for (const tid of list) {
+      if (!tid) continue;
+      const key = tid.toString();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(tid);
+    }
+    return out;
+  }
+
+  private _bucketView(bucket: 'private' | 'shared' | 'both'): TypeId[] {
+    if (bucket === 'shared') return this.sharedContextEntities;
+    if (bucket === 'private') return this.privateContextEntities;
+    return [...this.sharedContextEntities, ...this.privateContextEntities];
+  }
+
+  /** All context entries of the given type. Default 'both' returns shared first then private. */
+  public contextOfType(type: string, bucket: 'private' | 'shared' | 'both' = 'both'): TypeId[] {
+    return this._bucketView(bucket).filter((t) => t.type === type);
+  }
+
+  /** First context entry of the given type, or null. */
+  public firstContextOfType(type: string, bucket: 'private' | 'shared' | 'both' = 'both'): TypeId | null {
+    return this._bucketView(bucket).find((t) => t.type === type) ?? null;
   }
 
   /**
-   * Append a context entity (idempotent — no-op if the same TypeId is
-   * already present). Sets ``dirty`` and notifies dataManager so observers
-   * re-render.
+   * Publish one or many TypeIds to this entity's *shared* context via the
+   * backend ``share-context`` action. The frontend can't mutate
+   * ``_shared_context_entities_`` directly — sharing is a backend decision
+   * — so this is the canonical publish path.
+   *
+   * On success the backend returns the updated shared list; we apply it
+   * locally so the next render sees the change without waiting for the WS
+   * broadcast. Returns the post-update list as TypeIds.
    */
-  public addContextEntity(typeId: TypeId): void {
-    if (this._context_entities.some((t) => t.equals(typeId))) return;
-    this._context_entities = [...this._context_entities, typeId];
-    dataManager.notifyPropertyChanged(this.typeId, 'context_entities');
+  public async shareContextEntities(input: TypeId | TypeId[]): Promise<TypeId[]> {
+    const targets = this._normalizeContextEntities(input);
+    if (targets.length === 0) return [...this._shared_context_entities_];
+    const info = new ActionInfo('share-context', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters =
+      targets.length === 1
+        ? { typeid: targets[0].toString() }
+        : { typeids: targets.map((t) => t.toString()) };
+    const result = await dataManager.callAction<
+      { typeid?: string; typeids?: string[] },
+      { ok: boolean; id: string; type: string; shared_context_entities: string[] }
+    >(info);
+    return this._applySharedFromResponse(result?.shared_context_entities);
   }
 
   /**
-   * Remove a context entity. Returns ``true`` if a matching entry was
-   * removed, ``false`` if none was present.
+   * Remove one or many TypeIds from this entity's *shared* context via the
+   * backend ``unshare-context`` action. Mirror of ``shareContextEntities``.
    */
-  public removeContextEntity(typeId: TypeId): boolean {
-    const before = this._context_entities.length;
-    this._context_entities = this._context_entities.filter((t) => !t.equals(typeId));
-    if (this._context_entities.length === before) return false;
-    dataManager.notifyPropertyChanged(this.typeId, 'context_entities');
-    return true;
+  public async unshareContextEntities(input: TypeId | TypeId[]): Promise<TypeId[]> {
+    const targets = this._normalizeContextEntities(input);
+    if (targets.length === 0) return [...this._shared_context_entities_];
+    const info = new ActionInfo('unshare-context', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters =
+      targets.length === 1
+        ? { typeid: targets[0].toString() }
+        : { typeids: targets.map((t) => t.toString()) };
+    const result = await dataManager.callAction<
+      { typeid?: string; typeids?: string[] },
+      { ok: boolean; id: string; type: string; shared_context_entities: string[] }
+    >(info);
+    return this._applySharedFromResponse(result?.shared_context_entities);
   }
 
-  /** All context entries of the given type (e.g. ``'spec'``). */
-  public contextOfType(type: string): TypeId[] {
-    return this.contextEntities.filter((t) => t.type === type);
-  }
-
-  /** First context entry of the given type, or ``null``. */
-  public firstContextOfType(type: string): TypeId | null {
-    return this.contextEntities.find((t) => t.type === type) ?? null;
+  /** Rebuild ``_shared_context_entities_`` from the wire response of a
+   *  share/unshare-context call, notify subscribers, and return the new list. */
+  private _applySharedFromResponse(payload: string[] | undefined): TypeId[] {
+    if (!Array.isArray(payload)) return [...this._shared_context_entities_];
+    const parsed: TypeId[] = [];
+    for (const raw of payload) {
+      try {
+        parsed.push(new TypeId(raw));
+      } catch {
+        // Skip malformed entries from server.
+      }
+    }
+    this._shared_context_entities_ = parsed;
+    dataManager.notifyPropertyChanged(this.typeId, 'shared_context_entities');
+    return [...parsed];
   }
 
   /**
@@ -1032,10 +1432,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * @param eventType - Event type to emit
    * @param data - Optional data to pass to listeners
    */
-  emit(eventType: string, data?: any): void {
+  emit(eventType: string, ...args: any[]): void {
     const listeners = this._eventListeners.get(eventType);
     if (listeners) {
-      listeners.forEach((callback) => callback(data));
+      // Forward ALL args, not just the first. Several call sites emit multiple
+      // values — e.g. onEntityEvent → emit('entity_event', event, payload) and
+      // emit('status', newStatus, oldStatus). The previous single-`data` form
+      // silently dropped every argument after the first, so consumers
+      // subscribing via `on('entity_event', (event, payload) => ...)` received
+      // an undefined payload. Single-arg emits are unaffected (callback(arg)).
+      listeners.forEach((callback) => callback(...args));
     }
   }
 
@@ -1063,6 +1469,19 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   handleFlowData(flowData: FlowData): void {
     this.flowDataStream.ingest(flowData);
     this.emit('flow_data', flowData);
+  }
+
+  /**
+   * Mirror of Python `Entity.emit_entity_event` arriving over the WS transport.
+   * Dispatched by `DataManager.onFlowData` for envelopes with
+   * `element_type === 'entity_event'` — these never enter the flow-data stream
+   * or renderer. Default impl re-emits as the `'entity_event'` event so callers
+   * can subscribe via `entity.on('entity_event', (event, payload) => ...)`.
+   * Subclasses may override for entity-specific dispatch (e.g. a typed handler
+   * registry).
+   */
+  onEntityEvent(event: string, payload: Record<string, unknown>): void {
+    this.emit('entity_event', event, payload);
   }
 }
 

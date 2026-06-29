@@ -3,7 +3,8 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Switch } from '@src/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
+import { Trans } from '@lingui/react/macro';
 import {
   ERROR_TIME_SPANS,
   ErrorCategory,
@@ -75,21 +76,21 @@ function statusBadge(status: ErrorStatus) {
       return (
         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
           <EyeOff className="mr-0.5 inline h-2.5 w-2.5" />
-          Ignored
+          <Trans>Ignored</Trans>
         </span>
       );
     case ErrorStatus.IGNORED_UNTIL:
       return (
         <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600">
           <Clock className="mr-0.5 inline h-2.5 w-2.5" />
-          Snoozed
+          <Trans>Snoozed</Trans>
         </span>
       );
     case ErrorStatus.TASK_CREATED:
       return (
         <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600">
           <ListTodo className="mr-0.5 inline h-2.5 w-2.5" />
-          Tasked
+          <Trans>Tasked</Trans>
         </span>
       );
     default:
@@ -126,7 +127,7 @@ function SessionLink({
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom">
-        {hasTranscript ? 'View session transcript' : 'Transcript not found'}
+        {hasTranscript ? <Trans>View session transcript</Trans> : <Trans>Transcript not found</Trans>}
       </TooltipContent>
     </Tooltip>
   );
@@ -162,7 +163,7 @@ function ErrorActions({
                 <Clock className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Ignore till now</TooltipContent>
+            <TooltipContent side="bottom"><Trans>Ignore till now</Trans></TooltipContent>
           </Tooltip>
           <Popover>
             <Tooltip>
@@ -173,7 +174,7 @@ function ErrorActions({
                   </button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Snooze</TooltipContent>
+              <TooltipContent side="bottom"><Trans>Snooze</Trans></TooltipContent>
             </Tooltip>
             <PopoverContent side="bottom" align="end" className="w-28 p-1">
               {SNOOZE_OPTIONS.map((opt) => (
@@ -193,7 +194,7 @@ function ErrorActions({
                 <EyeOff className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Ignore permanently</TooltipContent>
+            <TooltipContent side="bottom"><Trans>Ignore permanently</Trans></TooltipContent>
           </Tooltip>
         </>
       )}
@@ -204,7 +205,7 @@ function ErrorActions({
               <RotateCcw className="h-3.5 w-3.5" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Reopen</TooltipContent>
+          <TooltipContent side="bottom"><Trans>Reopen</Trans></TooltipContent>
         </Tooltip>
       )}
     </>
@@ -339,7 +340,7 @@ function ErrorCard({
                       : [];
                 return display.length > 0 ? (
                   <div className="mt-1 flex flex-wrap items-center gap-1">
-                    <span className="text-[10px] text-muted-foreground">Hooks:</span>
+                    <span className="text-[10px] text-muted-foreground"><Trans>Hooks:</Trans></span>
                     {display.map((h) => (
                       <span key={h} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                         {h}
@@ -365,7 +366,7 @@ function ErrorCard({
               {error.traceback && error.traceback.length > 0 && (
                 <>
                   <p className="mt-1.5 text-[10px] text-muted-foreground">
-                    Traceback ({error.traceback.length} lines)
+                    <Trans>Traceback ({error.traceback.length} lines)</Trans>
                   </p>
                   <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-[10px] leading-relaxed text-muted-foreground">
                     {error.traceback.join('\n')}
@@ -398,7 +399,7 @@ function ErrorCard({
                     <Webhook className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">View hook config</TooltipContent>
+                <TooltipContent side="bottom"><Trans>View hook config</Trans></TooltipContent>
               </Tooltip>
             )}
             {error.error_status === ErrorStatus.TASK_CREATED && (
@@ -408,7 +409,7 @@ function ErrorCard({
                     <Terminal className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Go to session</TooltipContent>
+                <TooltipContent side="bottom"><Trans>Go to session</Trans></TooltipContent>
               </Tooltip>
             )}
             <ErrorActions
@@ -427,7 +428,7 @@ function ErrorCard({
               onClick={() => onCreateTask(error)}
             >
               <Wrench className="h-3.5 w-3.5" />
-              Fix It
+              <Trans>Fix It</Trans>
             </Button>
           )}
         </div>
@@ -541,7 +542,7 @@ function OccurrenceCard({
           {expanded && occurrence.traceback && occurrence.traceback.length > 0 && (
             <>
               <p className="mt-1.5 text-[10px] text-muted-foreground">
-                Traceback ({occurrence.traceback.length} lines)
+                <Trans>Traceback ({occurrence.traceback.length} lines)</Trans>
               </p>
               <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-[10px] leading-relaxed text-muted-foreground">
                 {occurrence.traceback.join('\n')}
@@ -565,7 +566,7 @@ function OccurrenceCard({
                     <Webhook className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">View hook config</TooltipContent>
+                <TooltipContent side="bottom"><Trans>View hook config</Trans></TooltipContent>
               </Tooltip>
             )}
             {parentError.error_status === ErrorStatus.TASK_CREATED && (
@@ -575,7 +576,7 @@ function OccurrenceCard({
                     <Terminal className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Go to session</TooltipContent>
+                <TooltipContent side="bottom"><Trans>Go to session</Trans></TooltipContent>
               </Tooltip>
             )}
             <ErrorActions
@@ -594,7 +595,7 @@ function OccurrenceCard({
               onClick={() => onCreateTask(parentError)}
             >
               <Wrench className="h-3.5 w-3.5" />
-              Fix It
+              <Trans>Fix It</Trans>
             </Button>
           )}
         </div>
@@ -676,7 +677,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
     try {
       const result = await clearAll();
       if (!result) {
-        toast({ title: 'Cleared' });
+        notify.success({ title: 'Cleared' });
         return;
       }
       const parts: string[] = [];
@@ -685,16 +686,16 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       if (result.deleted_error_records > 0) parts.push(`${result.deleted_error_records} error record${result.deleted_error_records !== 1 ? 's' : ''}`);
       const msg = parts.length > 0 ? `Cleared ${parts.join(' and ')}` : 'Nothing to clear';
       const skipped = result.skipped_debug_logs.length;
-      toast({
+      notify.success({
         title: msg,
-        description: result.truncated_debug_logs > 0
+        message: result.truncated_debug_logs > 0
           ? `${result.truncated_debug_logs} log${result.truncated_debug_logs !== 1 ? 's' : ''} from active sessions were emptied but not deleted. They will be removed after those sessions end.`
           : skipped > 0
             ? `${skipped} file${skipped !== 1 ? 's' : ''} could not be cleared. Retry after active sessions end.`
             : undefined,
       });
     } catch (e) {
-      toast({ title: 'Failed to clear errors', description: String(e), variant: 'destructive' });
+      notify.error({ title: 'Failed to clear errors', message: String(e) });
     } finally {
       setIsClearing(false);
     }
@@ -707,7 +708,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       if (!parsed) return;
       const options: Record<string, string> = {};
       if (timestamp) options.ts = timestamp;
-      navigation.openLens('claude', 'transcript', `${parsed.projectEncodedName}/${parsed.sessionId}`, options);
+      navigation.openLens('claude', 'transcript', parsed.sessionId, options);
     },
     [navigation],
   );
@@ -730,10 +731,10 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       void createTaskForError(error, instruction ? { instruction } : undefined).then(({ taskId, shellId }) => {
         if (taskId && shellId) {
           const description = instruction ? 'Claude is applying the fix.' : 'Claude is investigating the error.';
-          toast({ title: 'Session started', description });
+          notify.success({ title: 'Session started', message: description });
           void navigation.openSession(shellId, { skipPermissions: true });
         } else {
-          toast({ title: 'Failed to start session', variant: 'destructive' });
+          notify.error({ title: 'Failed to start session' });
         }
       });
     },
@@ -789,7 +790,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       const toAnalyse = results.filter((r) => r.action === 'analyse');
       setCloudResultsModal({ ignored: toIgnore.length, fixResults: toFix, remaining: toAnalyse.length });
     } catch (e) {
-      toast({ title: 'Cloud search failed', description: String(e), variant: 'destructive' });
+      notify.error({ title: 'Cloud search failed', message: String(e) });
     } finally {
       setIsSearchingCloud(false);
     }
@@ -813,7 +814,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-destructive" />
-            <h2 className="text-sm font-medium">Session Errors</h2>
+            <h2 className="text-sm font-medium"><Trans>Session Errors</Trans></h2>
             {openDisplayCount > 0 && (
               <>
                 <span className="rounded-full bg-destructive px-2 py-0.5 text-[10px] font-bold text-destructive-foreground">
@@ -860,12 +861,12 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                   ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   : <Search className="h-3.5 w-3.5" />
                 }
-                Search Flowpad
+                <Trans>Search Flowpad</Trans>
               </Button>
             )}
             <Button variant="ghost" size="sm" className="h-7 gap-1.5" onClick={handleRefresh} disabled={isRefreshing}>
               <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
-              Refresh
+              <Trans>Refresh</Trans>
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -875,15 +876,14 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Clear all debug data?</AlertDialogTitle>
+                  <AlertDialogTitle><Trans>Clear all debug data?</Trans></AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will delete all debug logs from <code className="rounded bg-muted px-1 text-xs">~/.claude/debug/</code> and
-                    all parsed error records.
+                    <Trans>This will delete all debug logs from <code className="rounded bg-muted px-1 text-xs">~/.claude/debug/</code> and all parsed error records.</Trans>
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => void handleClearAll()}>Clear All</AlertDialogAction>
+                  <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
+                  <AlertDialogAction onClick={() => void handleClearAll()}><Trans>Clear All</Trans></AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -927,7 +927,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
           </div>
           <label className="flex items-center gap-2">
             <Switch checked={deduplicate} onCheckedChange={setDeduplicate} />
-            <span className="text-xs font-medium text-muted-foreground">Group Events</span>
+            <span className="text-xs font-medium text-muted-foreground"><Trans>Group Events</Trans></span>
           </label>
         </div>
       </div>
@@ -936,13 +936,13 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       <AlertDialog open={showLoginModal} onOpenChange={setShowLoginModal}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Login required</AlertDialogTitle>
+            <AlertDialogTitle><Trans>Login required</Trans></AlertDialogTitle>
             <AlertDialogDescription>
-              Login is required to search Flowpad database
+              <Trans>Login is required to search Flowpad database</Trans>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel><Trans>Cancel</Trans></AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 setShowLoginModal(false);
@@ -952,7 +952,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                 })();
               }}
             >
-              Login
+              <Trans>Login</Trans>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -978,7 +978,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading && (
-          <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">Loading errors...</div>
+          <div className="flex items-center justify-center py-8 text-sm text-muted-foreground"><Trans>Loading errors...</Trans></div>
         )}
 
         {!isLoading &&
@@ -1006,7 +1006,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
             return (
               <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                 <CheckCircle2 className="mb-2 h-8 w-8 opacity-30" />
-                <p className="text-sm font-medium">No errors found</p>
+                <p className="text-sm font-medium"><Trans>No errors found</Trans></p>
                 <p className="mt-1 text-xs">
                   {statusFilter === ErrorStatus.OPEN && !widerSpan
                     ? 'All errors have been triaged.'

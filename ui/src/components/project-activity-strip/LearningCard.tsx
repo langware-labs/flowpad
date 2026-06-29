@@ -10,6 +10,7 @@ import type { Task } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Archive, Bug, Check, Loader2, Maximize2, Sparkles, X } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface LearningCardProps {
   task: Task;
@@ -26,6 +27,7 @@ export function LearningCard({
   sessionLatestEvent,
   onOpenEventDialog,
 }: LearningCardProps) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { isRunning, isComplete, isError, statusMessage, activityLabel, elapsedTime } =
     useAnalysisTaskProgress(task);
@@ -38,7 +40,7 @@ export function LearningCard({
   const eventCount = workerSessionId ? sessionEventCounts?.get(workerSessionId) ?? 0 : 0;
 
   const handleCardClick = () => {
-    navigation.openDock(DockPointer.forTasks(task.typeId?.toString()));
+    navigation.openDock(DockPointer.forTasks(task.id));
   };
 
   return (
@@ -61,7 +63,7 @@ export function LearningCard({
           <button
             type="button"
             className="learning-card-archive"
-            title="Archive"
+            title={t`Archive`}
             onClick={(e) => {
               e.stopPropagation();
               onArchive(task);
@@ -77,7 +79,7 @@ export function LearningCard({
         <div className="learning-card-status">
           {activityLabel && <span className="learning-card-label">{activityLabel}</span>}
           {statusMessage && <span className="learning-card-message">{statusMessage}</span>}
-          {!activityLabel && !statusMessage && <span className="learning-card-message">In progress...</span>}
+          {!activityLabel && !statusMessage && <span className="learning-card-message"><Trans>In progress...</Trans></span>}
           {elapsedTime && <span className="learning-card-elapsed">({elapsedTime})</span>}
         </div>
       )}
@@ -85,7 +87,7 @@ export function LearningCard({
       {/* Fallback for in-progress tasks without a process */}
       {!isRunning && !isComplete && !isError && task.status === TaskStatus.IN_PROGRESS && (
         <div className="learning-card-status">
-          <span className="learning-card-message">Creating skill...</span>
+          <span className="learning-card-message"><Trans>Creating skill...</Trans></span>
         </div>
       )}
 
@@ -134,7 +136,7 @@ export function LearningCard({
                   openArtifact(artifact.path, navigation);
                 }
               }}
-              title={artifact.skillDockPath ? 'Open in Skills tab' : artifact.path}
+              title={artifact.skillDockPath ? t`Open in Skills tab` : artifact.path}
             >
               {artifact.label}
             </button>
@@ -158,7 +160,7 @@ export function LearningCard({
                   openArtifact(artifact.path, navigation);
                 }
               }}
-              title={artifact.skillDockPath ? 'Open in Skills tab' : artifact.path}
+              title={artifact.skillDockPath ? t`Open in Skills tab` : artifact.path}
             >
               {artifact.label}
             </button>
@@ -167,7 +169,7 @@ export function LearningCard({
       )}
 
       {/* Error state */}
-      {isError && <div className="learning-card-status"><span className="learning-card-error">Failed</span></div>}
+      {isError && <div className="learning-card-status"><span className="learning-card-error"><Trans>Failed</Trans></span></div>}
     </div>
   );
 }

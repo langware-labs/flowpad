@@ -6,6 +6,7 @@ export * from './alert';
 export * from './APIEntity';
 export * from './ApiResponse';
 export * from './apiStats';
+export * from './capabilities';
 export * from './client';
 export * from './config';
 export * from './constants/system-projects';
@@ -29,3 +30,12 @@ export * from './types/index';
 export * from './schema/index';
 export { FSRef } from './fs/FSRef';
 export { FrontMatterFsRef } from './fs/FrontMatterFsRef';
+export { Frontmatter } from './fs/Frontmatter';
+export type {
+  PathContextData,
+  PlanContextData,
+  MarkdownContextData,
+  SkillContextData,
+  ClaudeMdContextData,
+  ClaudeCommandContextData,
+} from './context-data-schemas';

@@ -8,6 +8,7 @@ import {
 import type { CloudSearchResult, ClaudeErrorRecord } from '@src/hooks/useClaudeErrorRecords';
 import { CheckCircle2, Loader2, Search, Wrench, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
+import { Trans } from '@lingui/react/macro';
 
 export interface CloudSearchResultsModalProps {
   open: boolean;
@@ -56,13 +57,13 @@ export function CloudSearchResultsModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Search className="h-4 w-4 text-blue-400" />
-            Flowpad Cloud Results
+            <Trans>Flowpad Cloud Results</Trans>
           </DialogTitle>
         </DialogHeader>
 
         {!hasAnything && (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            No matches found in the Flowpad known-issues database.
+            <Trans>No matches found in the Flowpad known-issues database.</Trans>
           </p>
         )}
 
@@ -71,11 +72,11 @@ export function CloudSearchResultsModal({
             {/* Summary banner */}
             <div className="rounded-lg border border-border bg-gradient-to-r from-blue-500/5 via-transparent to-green-500/5 px-4 py-3">
               <p className="text-sm">
-                Scanned <span className="font-semibold text-foreground">{totalScanned}</span> open issue{totalScanned !== 1 ? 's' : ''} against the known-issues database.
+                <Trans>Scanned <span className="font-semibold text-foreground">{totalScanned}</span> open issue{totalScanned !== 1 ? 's' : ''} against the known-issues database.</Trans>
               </p>
               {totalResolved > 0 && (
                 <p className="mt-1 text-xs text-green-400">
-                  {totalResolved} issue{totalResolved !== 1 ? 's' : ''} matched — saving you the time to debug {totalResolved !== 1 ? 'them' : 'it'} manually.
+                  <Trans>{totalResolved} issue{totalResolved !== 1 ? 's' : ''} matched — saving you the time to debug {totalResolved !== 1 ? 'them' : 'it'} manually.</Trans>
                 </p>
               )}
             </div>
@@ -86,10 +87,10 @@ export function CloudSearchResultsModal({
                 <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
                 <div>
                   <p className="text-sm font-semibold text-green-400">
-                    {ignored} issue{ignored !== 1 ? 's' : ''} auto-resolved
+                    <Trans>{ignored} issue{ignored !== 1 ? 's' : ''} auto-resolved</Trans>
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Known false positives — marked as ignored.
+                    <Trans>Known false positives — marked as ignored.</Trans>
                   </p>
                 </div>
               </div>
@@ -102,7 +103,7 @@ export function CloudSearchResultsModal({
                   <div className="flex items-center gap-2">
                     <Wrench className="h-4 w-4 text-amber-400" />
                     <p className="text-sm font-semibold">
-                      {fixResults.length} fix{fixResults.length !== 1 ? 'es' : ''} available
+                      <Trans>{fixResults.length} fix{fixResults.length !== 1 ? 'es' : ''} available</Trans>
                     </p>
                   </div>
                   {fixableFingerprints.length > 0 && !fixedAll && (
@@ -116,7 +117,7 @@ export function CloudSearchResultsModal({
                         ? <Loader2 className="h-3 w-3 animate-spin" />
                         : <Wrench className="h-3 w-3" />
                       }
-                      Fix All
+                      <Trans>Fix All</Trans>
                     </Button>
                   )}
                 </div>
@@ -153,9 +154,9 @@ export function CloudSearchResultsModal({
                 <AlertCircle className="h-5 w-5 shrink-0 text-muted-foreground" />
                 <div>
                   <p className="text-sm text-foreground">
-                    {remaining} issue{remaining !== 1 ? 's' : ''} need investigation
+                    <Trans>{remaining} issue{remaining !== 1 ? 's' : ''} need investigation</Trans>
                   </p>
-                  <p className="text-xs text-muted-foreground">No known fix yet — use "Fix It" to start a session.</p>
+                  <p className="text-xs text-muted-foreground"><Trans>No known fix yet — use "Fix It" to start a session.</Trans></p>
                 </div>
               </div>
             )}
@@ -164,7 +165,7 @@ export function CloudSearchResultsModal({
 
         <div className="flex justify-end pt-2">
           <Button variant="outline" size="sm" onClick={onClose}>
-            Close
+            <Trans>Close</Trans>
           </Button>
         </div>
       </DialogContent>

@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tab
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Activity,
   ArrowDown,
@@ -88,6 +89,7 @@ type TestResult = 'idle' | 'loading' | 'success' | 'error';
 export const MachineOverview: React.FC = () => {
   const { flow, computeNode } = useAgentContext();
   const { navigation, currentDock } = useDockNavigation();
+  const { t } = useLingui();
   const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -390,7 +392,7 @@ export const MachineOverview: React.FC = () => {
 
   const testHealthEndpoint = useCallback(async () => {
     if (!computeNode || !configStatus.backendUrl) {
-      setHealthTestMessage('Backend URL not configured');
+      setHealthTestMessage(t`Backend URL not configured`);
       setHealthTestResult('error');
       return;
     }
@@ -416,18 +418,18 @@ export const MachineOverview: React.FC = () => {
 
       if (statusCode === '200') {
         setHealthTestResult('success');
-        setHealthTestMessage('Health check passed (200 OK)');
+        setHealthTestMessage(t`Health check passed (200 OK)`);
       } else if (statusCode === '000' && isLocalhostUrl(configStatus.backendUrl) && isRemoteNode()) {
         setHealthTestResult('error');
         setHealthTestMessage(
-          'Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend.',
+          t`Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend.`,
         );
       } else if (statusCode === '000') {
         setHealthTestResult('error');
-        setHealthTestMessage('Connection failed - server unreachable or not running');
+        setHealthTestMessage(t`Connection failed - server unreachable or not running`);
       } else {
         setHealthTestResult('error');
-        setHealthTestMessage(`Health check failed (HTTP ${statusCode})`);
+        setHealthTestMessage(t`Health check failed (HTTP ${statusCode})`);
       }
     } catch (err) {
       setHealthTestResult('error');
@@ -437,7 +439,7 @@ export const MachineOverview: React.FC = () => {
 
   const testApiAccess = useCallback(async () => {
     if (!computeNode || !configStatus.apiKey || !configStatus.backendUrl || !configStatus.machineId) {
-      setApiTestMessage('API Key, Backend URL, or Machine ID not configured');
+      setApiTestMessage(t`API Key, Backend URL, or Machine ID not configured`);
       setApiTestResult('error');
       return;
     }
@@ -465,27 +467,27 @@ export const MachineOverview: React.FC = () => {
 
       if (statusCode === '200') {
         setApiTestResult('success');
-        setApiTestMessage('API access test passed (200 OK)');
+        setApiTestMessage(t`API access test passed (200 OK)`);
       } else if (statusCode === '000' && isLocalhostUrl(configStatus.backendUrl) && isRemoteNode()) {
         setApiTestResult('error');
         setApiTestMessage(
-          'Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend.',
+          t`Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend.`,
         );
       } else if (statusCode === '000') {
         setApiTestResult('error');
-        setApiTestMessage('Connection failed - server unreachable or not running');
+        setApiTestMessage(t`Connection failed - server unreachable or not running`);
       } else if (statusCode === '401') {
         setApiTestResult('error');
-        setApiTestMessage('API access denied (401 Unauthorized) - check API key and Machine ID');
+        setApiTestMessage(t`API access denied (401 Unauthorized) - check API key and Machine ID`);
       } else if (statusCode === '403') {
         setApiTestResult('error');
-        setApiTestMessage('API access forbidden (403) - Machine ID may not be whitelisted for this API key');
+        setApiTestMessage(t`API access forbidden (403) - Machine ID may not be whitelisted for this API key`);
       } else if (statusCode === '422') {
         setApiTestResult('error');
-        setApiTestMessage('Validation error (422) - request format issue or entity not found');
+        setApiTestMessage(t`Validation error (422) - request format issue or entity not found`);
       } else {
         setApiTestResult('error');
-        setApiTestMessage(`API access test failed (HTTP ${statusCode})`);
+        setApiTestMessage(t`API access test failed (HTTP ${statusCode})`);
       }
     } catch (err) {
       setApiTestResult('error');
@@ -495,7 +497,7 @@ export const MachineOverview: React.FC = () => {
 
   const testLm = useCallback(async () => {
     if (!computeNode || !configStatus.apiKey || !configStatus.backendUrl || !configStatus.machineId) {
-      setLmTestMessage('API Key, Backend URL, or Machine ID not configured');
+      setLmTestMessage(t`API Key, Backend URL, or Machine ID not configured`);
       setLmTestResult('error');
       return;
     }
@@ -539,25 +541,25 @@ export const MachineOverview: React.FC = () => {
           );
         } catch {
           setLmTestResult('success');
-          setLmTestMessage('LM test passed (200 OK)');
+          setLmTestMessage(t`LM test passed (200 OK)`);
         }
       } else if (statusCode === '000' && isLocalhostUrl(configStatus.backendUrl) && isRemoteNode()) {
         setLmTestResult('error');
         setLmTestMessage(
-          'Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend.',
+          t`Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend.`,
         );
       } else if (statusCode === '000') {
         setLmTestResult('error');
-        setLmTestMessage('Connection failed - server unreachable or not running');
+        setLmTestMessage(t`Connection failed - server unreachable or not running`);
       } else if (statusCode === '401') {
         setLmTestResult('error');
-        setLmTestMessage('LM proxy denied (401 Unauthorized) - check API key');
+        setLmTestMessage(t`LM proxy denied (401 Unauthorized) - check API key`);
       } else if (statusCode === '500') {
         setLmTestResult('error');
-        setLmTestMessage('LM proxy error (500) - check server logs for API key configuration');
+        setLmTestMessage(t`LM proxy error (500) - check server logs for API key configuration`);
       } else {
         setLmTestResult('error');
-        setLmTestMessage(`LM test failed (HTTP ${statusCode})`);
+        setLmTestMessage(t`LM test failed (HTTP ${statusCode})`);
       }
     } catch (err) {
       setLmTestResult('error');
@@ -567,7 +569,7 @@ export const MachineOverview: React.FC = () => {
 
   const setupLmProxy = useCallback(async () => {
     if (!flow?.id || !computeNode) {
-      setSetupLmProxyMessage('Flow or compute node not available');
+      setSetupLmProxyMessage(t`Flow or compute node not available`);
       setSetupLmProxyResult('error');
       return;
     }
@@ -586,12 +588,12 @@ export const MachineOverview: React.FC = () => {
       const data = await response.json();
       if (response.ok && data.data) {
         setSetupLmProxyResult('success');
-        setSetupLmProxyMessage(data.data.message || 'LM proxy access configured');
+        setSetupLmProxyMessage(data.data.message || t`LM proxy access configured`);
         // Refresh config to show the new values
         await fetchConfigFromMachine();
       } else {
         setSetupLmProxyResult('error');
-        setSetupLmProxyMessage(data.message || 'Failed to setup LM proxy');
+        setSetupLmProxyMessage(data.message || t`Failed to setup LM proxy`);
       }
     } catch (err) {
       setSetupLmProxyResult('error');
@@ -652,7 +654,7 @@ export const MachineOverview: React.FC = () => {
                   <Select value="sandbox" disabled>
                     <SelectTrigger className="h-7 w-auto min-w-[120px] text-xs">
                       <SelectValue>
-                        Sandbox
+                        <Trans>Sandbox</Trans>
                         {machineStatus && (
                           <span
                             className={`ml-1 ${
@@ -670,7 +672,7 @@ export const MachineOverview: React.FC = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="sandbox" className="text-xs">
-                        Sandbox
+                        <Trans>Sandbox</Trans>
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -684,29 +686,29 @@ export const MachineOverview: React.FC = () => {
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-1">
-                    <span className="font-medium">Compute Node ID:</span>{' '}
+                    <span className="font-medium"><Trans>Compute Node ID:</Trans></span>{' '}
                     <span className="font-mono">{computeNode?.id || 'N/A'}</span>
                     {computeNode?.id && (
                       <button
                         onClick={handleCopyComputeNodeId}
                         className="ml-1 rounded p-0.5 hover:bg-muted"
-                        title="Copy Compute Node ID"
+                        title={t`Copy Compute Node ID`}
                       >
                         <Copy className="h-3 w-3" />
                       </button>
                     )}
                   </div>
                   <div>
-                    <span className="font-medium">Provider:</span> {computeNode?.node_provider_type || 'N/A'}
+                    <span className="font-medium"><Trans>Provider:</Trans></span> {computeNode?.node_provider_type || 'N/A'}
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className="font-medium">Provider ID:</span>{' '}
+                    <span className="font-medium"><Trans>Provider ID:</Trans></span>{' '}
                     <span className="font-mono">{computeNode?.node_provider_id || 'N/A'}</span>
                     {computeNode?.node_provider_id && (
                       <button
                         onClick={handleCopyProviderId}
                         className="ml-1 rounded p-0.5 hover:bg-muted"
-                        title="Copy Provider ID"
+                        title={t`Copy Provider ID`}
                       >
                         <Copy className="h-3 w-3" />
                       </button>
@@ -716,25 +718,25 @@ export const MachineOverview: React.FC = () => {
                     <>
                       {machineStatus.node_info && (
                         <div className="border-t pt-1">
-                          <span className="font-medium">Size:</span>{' '}
+                          <span className="font-medium"><Trans>Size:</Trans></span>{' '}
                           {machineStatus.node_info.size === 'sm'
-                            ? 'Small'
+                            ? <Trans>Small</Trans>
                             : machineStatus.node_info.size === 'md'
-                              ? 'Medium'
+                              ? <Trans>Medium</Trans>
                               : machineStatus.node_info.size === 'lg'
-                                ? 'Large'
+                                ? <Trans>Large</Trans>
                                 : machineStatus.node_info.size}{' '}
-                          ({machineStatus.node_info.cpu_count} CPU, {machineStatus.node_info.memory_gb}GB)
+                          ({machineStatus.node_info.cpu_count} <Trans>CPU</Trans>, {machineStatus.node_info.memory_gb}<Trans>GB</Trans>)
                           {machineStatus.node_info.template_version && (
                             <>
                               <br />
-                              <span className="font-medium">Template:</span> {machineStatus.node_info.template_version}
+                              <span className="font-medium"><Trans>Template:</Trans></span> {machineStatus.node_info.template_version}
                             </>
                           )}
                         </div>
                       )}
                       <div className={machineStatus.node_info ? '' : 'border-t pt-1'}>
-                        <span className="font-medium">Status:</span>{' '}
+                        <span className="font-medium"><Trans>Status:</Trans></span>{' '}
                         <span
                           className={
                             machineStatus.node_provider_status === ExecutionEnvironmentStatus.READY
@@ -749,7 +751,7 @@ export const MachineOverview: React.FC = () => {
                       </div>
                       {machineStatus.status_msg && (
                         <div className="text-yellow-500">
-                          <span className="font-medium">Status:</span> {machineStatus.status_msg}
+                          <span className="font-medium"><Trans>Status:</Trans></span> {machineStatus.status_msg}
                         </div>
                       )}
                     </>
@@ -768,39 +770,39 @@ export const MachineOverview: React.FC = () => {
                     <TooltipTrigger asChild>
                       <span className="cursor-help border-r border-border pr-3">
                         {machineStatus.node_info.size === 'sm'
-                          ? 'Small'
+                          ? <Trans>Small</Trans>
                           : machineStatus.node_info.size === 'md'
-                            ? 'Medium'
+                            ? <Trans>Medium</Trans>
                             : machineStatus.node_info.size === 'lg'
-                              ? 'Large'
+                              ? <Trans>Large</Trans>
                               : machineStatus.node_info.size}{' '}
-                        ({machineStatus.node_info.cpu_count} CPU, {machineStatus.node_info.memory_gb}GB)
+                        ({machineStatus.node_info.cpu_count} <Trans>CPU</Trans>, {machineStatus.node_info.memory_gb}<Trans>GB</Trans>)
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="text-xs">
                       <div className="space-y-1">
                         <div>
-                          <span className="font-medium">Size:</span>{' '}
+                          <span className="font-medium"><Trans>Size:</Trans></span>{' '}
                           {machineStatus.node_info.size === 'sm'
-                            ? 'Small'
+                            ? <Trans>Small</Trans>
                             : machineStatus.node_info.size === 'md'
-                              ? 'Medium'
+                              ? <Trans>Medium</Trans>
                               : machineStatus.node_info.size === 'lg'
-                                ? 'Large'
+                                ? <Trans>Large</Trans>
                                 : machineStatus.node_info.size}
                         </div>
                         <div>
-                          <span className="font-medium">CPU:</span> {machineStatus.node_info.cpu_count} cores
+                          <span className="font-medium"><Trans>CPU:</Trans></span> {machineStatus.node_info.cpu_count} cores
                         </div>
                         <div>
-                          <span className="font-medium">Memory:</span> {machineStatus.node_info.memory_gb} GB
+                          <span className="font-medium"><Trans>Memory:</Trans></span> {machineStatus.node_info.memory_gb} GB
                         </div>
                         <div>
-                          <span className="font-medium">OS:</span> {machineStatus.node_info.os_type}
+                          <span className="font-medium"><Trans>OS:</Trans></span> {machineStatus.node_info.os_type}
                         </div>
                         {machineStatus.node_info.template_version && (
                           <div>
-                            <span className="font-medium">Template:</span> {machineStatus.node_info.template_version}
+                            <span className="font-medium"><Trans>Template:</Trans></span> {machineStatus.node_info.template_version}
                           </div>
                         )}
                       </div>
@@ -808,8 +810,8 @@ export const MachineOverview: React.FC = () => {
                   </Tooltip>
                 </TooltipProvider>
               )}
-              <span>CPU: {machineStatus.cpu_percent.toFixed(1)}%</span>
-              <span>RAM: {machineStatus.memory_percent.toFixed(1)}%</span>
+              <span><Trans>CPU:</Trans> {machineStatus.cpu_percent.toFixed(1)}%</span>
+              <span><Trans>RAM:</Trans> {machineStatus.memory_percent.toFixed(1)}%</span>
             </div>
           )}
         </div>
@@ -838,7 +840,7 @@ export const MachineOverview: React.FC = () => {
                   </TooltipTrigger>
                   <TooltipContent side="bottom">
                     <p>
-                      {machineStatus.node_provider_status === ExecutionEnvironmentStatus.PAUSED ? 'Resume' : 'Pause'}
+                      {machineStatus.node_provider_status === ExecutionEnvironmentStatus.PAUSED ? <Trans>Resume</Trans> : <Trans>Pause</Trans>}
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -860,7 +862,7 @@ export const MachineOverview: React.FC = () => {
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                <p>Refresh</p>
+                <p><Trans>Refresh</Trans></p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -874,13 +876,13 @@ export const MachineOverview: React.FC = () => {
             <div className="text-center">
               <p className="text-red-500">{error}</p>
               <Button variant="outline" size="sm" className="mt-2" onClick={() => void handleRefresh()}>
-                Retry
+                <Trans>Retry</Trans>
               </Button>
             </div>
           </div>
         ) : !machineStatus ? (
           <div className="flex h-full items-center justify-center text-muted-foreground">
-            {isLoading ? 'Loading...' : 'No machine data available'}
+            {isLoading ? <Trans>Loading...</Trans> : <Trans>No machine data available</Trans>}
           </div>
         ) : (
           <Tabs value={activeTab} onValueChange={handleTabChange} className="h-full">
@@ -898,17 +900,17 @@ export const MachineOverview: React.FC = () => {
                 </TabsTrigger>
                 <TabsTrigger value={MachineSubview.GATEWAY} className="h-7 text-xs">
                   <Settings className="mr-1.5 h-3.5 w-3.5" />
-                  Gateway
+                  <Trans>Gateway</Trans>
                 </TabsTrigger>
                 {computeNode?.node_provider_type === ComputeProviderType.E2B && (
                   <>
                     <TabsTrigger value={MachineSubview.METRICS} className="h-7 text-xs">
                       <Activity className="mr-1.5 h-3.5 w-3.5" />
-                      Metrics
+                      <Trans>Metrics</Trans>
                     </TabsTrigger>
                     <TabsTrigger value={MachineSubview.LOGS} className="h-7 text-xs">
                       <FileText className="mr-1.5 h-3.5 w-3.5" />
-                      Logs
+                      <Trans>Logs</Trans>
                     </TabsTrigger>
                   </>
                 )}
@@ -918,7 +920,7 @@ export const MachineOverview: React.FC = () => {
             <TabsContent value={MachineSubview.PROCESSES} className="mt-0 h-[calc(100%-40px)] overflow-auto">
               <div className="sticky top-0 z-10 border-b bg-background px-2 py-1">
                 <Input
-                  placeholder="Filter processes..."
+                  placeholder={t`Filter processes...`}
                   value={processFilter}
                   onChange={(e) => setProcessFilter(e.target.value)}
                   className="h-7 text-xs"
@@ -928,41 +930,41 @@ export const MachineOverview: React.FC = () => {
                 <thead className="sticky top-9 z-10 bg-background shadow-sm">
                   <tr className="border-b">
                     <SortableHeader
-                      label="PID"
+                      label={t`PID`}
                       sortKey="pid"
                       currentSort={processSort}
                       onSort={handleProcessSort}
                       className="text-left"
                     />
                     <SortableHeader
-                      label="Name"
+                      label={t`Name`}
                       sortKey="name"
                       currentSort={processSort}
                       onSort={handleProcessSort}
                       className="text-left"
                     />
                     <SortableHeader
-                      label="CPU %"
+                      label={t`CPU %`}
                       sortKey="cpu_percent"
                       currentSort={processSort}
                       onSort={handleProcessSort}
                       className="text-right"
                     />
                     <SortableHeader
-                      label="RAM (MB)"
+                      label={t`RAM (MB)`}
                       sortKey="memory_mb"
                       currentSort={processSort}
                       onSort={handleProcessSort}
                       className="text-right"
                     />
                     <SortableHeader
-                      label="Status"
+                      label={t`Status`}
                       sortKey="status"
                       currentSort={processSort}
                       onSort={handleProcessSort}
                       className="text-left"
                     />
-                    <th className="px-2 py-1.5 text-left font-medium">Path</th>
+                    <th className="px-2 py-1.5 text-left font-medium"><Trans>Path</Trans></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1000,7 +1002,7 @@ export const MachineOverview: React.FC = () => {
             <TabsContent value={MachineSubview.NETWORK} className="mt-0 h-[calc(100%-40px)] overflow-auto">
               <div className="sticky top-0 z-10 border-b bg-background px-2 py-1">
                 <Input
-                  placeholder="Filter network..."
+                  placeholder={t`Filter network...`}
                   value={networkFilter}
                   onChange={(e) => setNetworkFilter(e.target.value)}
                   className="h-7 text-xs"
@@ -1010,41 +1012,41 @@ export const MachineOverview: React.FC = () => {
                 <thead className="sticky top-9 z-10 bg-background shadow-sm">
                   <tr className="border-b">
                     <SortableHeader
-                      label="Port"
+                      label={t`Port`}
                       sortKey="port"
                       currentSort={networkSort}
                       onSort={handleNetworkSort}
                       className="text-left"
                     />
                     <SortableHeader
-                      label="Type"
+                      label={t`Type`}
                       sortKey="type"
                       currentSort={networkSort}
                       onSort={handleNetworkSort}
                       className="text-left"
                     />
                     <SortableHeader
-                      label="PID"
+                      label={t`PID`}
                       sortKey="pid"
                       currentSort={networkSort}
                       onSort={handleNetworkSort}
                       className="text-left"
                     />
                     <SortableHeader
-                      label="Process"
+                      label={t`Process`}
                       sortKey="process_name"
                       currentSort={networkSort}
                       onSort={handleNetworkSort}
                       className="text-left"
                     />
                     <SortableHeader
-                      label="Status"
+                      label={t`Status`}
                       sortKey="status"
                       currentSort={networkSort}
                       onSort={handleNetworkSort}
                       className="text-left"
                     />
-                    <th className="px-2 py-1.5 text-left font-medium">Path</th>
+                    <th className="px-2 py-1.5 text-left font-medium"><Trans>Path</Trans></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1090,10 +1092,10 @@ export const MachineOverview: React.FC = () => {
                       <div>
                         <h3 className="flex items-center gap-2 text-sm font-semibold">
                           <Key className="h-4 w-4 text-yellow-600" />
-                          LM Proxy Access Not Configured
+                          <Trans>LM Proxy Access Not Configured</Trans>
                         </h3>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Setup machine-restricted API access for this compute node
+                          <Trans>Setup machine-restricted API access for this compute node</Trans>
                         </p>
                       </div>
                       <Button
@@ -1108,7 +1110,7 @@ export const MachineOverview: React.FC = () => {
                         ) : (
                           <Key className="mr-1.5 h-4 w-4" />
                         )}
-                        Setup LM Proxy Access
+                        <Trans>Setup LM Proxy Access</Trans>
                       </Button>
                     </div>
                     {setupLmProxyMessage && (
@@ -1131,16 +1133,16 @@ export const MachineOverview: React.FC = () => {
                 <div className="rounded-lg border bg-card p-4">
                   <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">
                     <Key className="h-4 w-4" />
-                    FlowPad Server Status
+                    <Trans>FlowPad Server Status</Trans>
                   </h3>
 
                   <div className="space-y-4">
                     {/* API Key */}
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">API Key</label>
+                      <label className="text-xs font-medium text-muted-foreground"><Trans>API Key</Trans></label>
                       <div className="flex items-center gap-2 rounded border bg-muted/30 px-3 py-2">
                         <span className="flex-1 truncate font-mono text-xs">
-                          {configStatus.apiKey ? `${configStatus.apiKey.slice(0, 20)}...` : 'Not configured'}
+                          {configStatus.apiKey ? `${configStatus.apiKey.slice(0, 20)}...` : <Trans>Not configured</Trans>}
                         </span>
                         {configStatus.apiKey ? (
                           <CheckCircle className="h-4 w-4 text-green-500" />
@@ -1152,10 +1154,10 @@ export const MachineOverview: React.FC = () => {
 
                     {/* Machine ID */}
                     <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">Machine ID</label>
+                      <label className="text-xs font-medium text-muted-foreground"><Trans>Machine ID</Trans></label>
                       <div className="flex items-center gap-2 rounded border bg-muted/30 px-3 py-2">
                         <span className="flex-1 truncate font-mono text-xs">
-                          {configStatus.machineId ? `${configStatus.machineId.slice(0, 20)}...` : 'Not configured'}
+                          {configStatus.machineId ? `${configStatus.machineId.slice(0, 20)}...` : <Trans>Not configured</Trans>}
                         </span>
                         {configStatus.machineId ? (
                           <CheckCircle className="h-4 w-4 text-green-500" />
@@ -1168,7 +1170,7 @@ export const MachineOverview: React.FC = () => {
                     {/* Backend URL */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-medium text-muted-foreground">FlowPad Backend URL</label>
+                        <label className="text-xs font-medium text-muted-foreground"><Trans>FlowPad Backend URL</Trans></label>
                         <Button
                           variant="outline"
                           size="sm"
@@ -1181,12 +1183,12 @@ export const MachineOverview: React.FC = () => {
                           ) : (
                             <Server className="mr-1 h-3 w-3" />
                           )}
-                          Test Service
+                          <Trans>Test Service</Trans>
                         </Button>
                       </div>
                       <div className="flex items-center gap-2 rounded border bg-muted/30 px-3 py-2">
                         <span className="flex-1 truncate font-mono text-xs">
-                          {configStatus.backendUrl || 'Not configured'}
+                          {configStatus.backendUrl || <Trans>Not configured</Trans>}
                         </span>
                         {configStatus.backendUrl ? (
                           <CheckCircle className="h-4 w-4 text-green-500" />
@@ -1214,9 +1216,9 @@ export const MachineOverview: React.FC = () => {
                     <div className="space-y-2 border-t pt-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <label className="text-xs font-medium">Test API Access</label>
+                          <label className="text-xs font-medium"><Trans>Test API Access</Trans></label>
                           <p className="text-xs text-muted-foreground">
-                            Verify the machine can authenticate with the FlowPad API
+                            <Trans>Verify the machine can authenticate with the FlowPad API</Trans>
                           </p>
                         </div>
                         <Button
@@ -1236,7 +1238,7 @@ export const MachineOverview: React.FC = () => {
                           ) : (
                             <Key className="mr-1 h-3 w-3" />
                           )}
-                          Test API Access
+                          <Trans>Test API Access</Trans>
                         </Button>
                       </div>
                       {apiTestMessage && (
@@ -1259,9 +1261,9 @@ export const MachineOverview: React.FC = () => {
                     <div className="space-y-2 border-t pt-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <label className="text-xs font-medium">Test LM Proxy</label>
+                          <label className="text-xs font-medium"><Trans>Test LM Proxy</Trans></label>
                           <p className="text-xs text-muted-foreground">
-                            Send a simple prompt to verify the LM proxy is working
+                            <Trans>Send a simple prompt to verify the LM proxy is working</Trans>
                           </p>
                         </div>
                         <Button
@@ -1281,7 +1283,7 @@ export const MachineOverview: React.FC = () => {
                           ) : (
                             <Zap className="mr-1 h-3 w-3" />
                           )}
-                          Test LM
+                          <Trans>Test LM</Trans>
                         </Button>
                       </div>
                       {lmTestMessage && (

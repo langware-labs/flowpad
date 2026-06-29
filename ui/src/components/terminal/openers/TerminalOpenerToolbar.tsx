@@ -9,9 +9,12 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
+import { ViewType } from '@sdk';
 import { Loader2, Pin, PinOff, Plus } from 'lucide-react';
 import { useCallback } from 'react';
-import type { OpenerDescriptor } from './tab_opener_types';
+import { useLingui } from '@lingui/react/macro';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import type { OpenerDescriptor, OpenerId } from './tab_opener_types';
 import { usePinnedOpeners } from './usePinnedOpeners';
 
 interface Props {
@@ -23,23 +26,55 @@ function dockerNodeName(node: ComputeNode): string {
   return (node as { uname?: string }).uname?.replace(/^docker-/, '') ?? node.id;
 }
 
-export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) {
-  const { pinned, isPinned, togglePin, shouldAutoPinNext } = usePinnedOpeners();
+/** Small "!" sub-icon overlaid on an opener whose capability check failed. */
+function OpenerWarningBadge({ openerId }: { openerId: OpenerId }) {
+  return (
+    <span
+      className="absolute -right-0.5 -top-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold leading-none text-black"
+      data-testid={`opener-warning-${openerId}`}
+      aria-hidden="true"
+    >
+      !
+    </span>
+  );
+}
 
+export function getInlineOpeners(
+  openers: OpenerDescriptor[],
+  pinned: OpenerId[],
+  lastOpened: OpenerId | null,
+): OpenerDescriptor[] {
   const byId = new Map(openers.map((o) => [o.id, o]));
-  const availableOpeners = openers.filter((o) => o.available);
   const pinnedInOrder = pinned.map((id) => byId.get(id)).filter((o): o is OpenerDescriptor => !!o && o.available);
+  const recentOpener = lastOpened && !pinned.includes(lastOpened) ? byId.get(lastOpened) : null;
+  return recentOpener?.available ? [...pinnedInOrder, recentOpener] : pinnedInOrder;
+}
+
+export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) {
+  const { t } = useLingui();
+  const { pinned, lastOpened, isPinned, togglePin, rememberOpened } = usePinnedOpeners();
+  const { navigation } = useDockNavigation();
+
+  const availableOpeners = openers.filter((o) => o.available);
+  const inlineOpeners = getInlineOpeners(openers, pinned, lastOpened);
 
   const activate = useCallback(
     (opener: OpenerDescriptor, dockerNode?: ComputeNode) => {
-      if (shouldAutoPinNext) togglePin(opener.id);
+      // A warned opener (capability check failed) can't launch — route to the
+      // Capabilities screen (check/install) instead of creating a doomed tab.
+      // Single enforcement point for inline buttons and menu rows alike.
+      if (opener.warning) {
+        navigation.openTab(ViewType.CAPABILITIES);
+        return;
+      }
+      rememberOpened(opener.id);
       if (opener.id === 'docker' && dockerNode && opener.onDockerNodeSelect) {
         opener.onDockerNodeSelect(dockerNode);
       } else {
         opener.onActivate();
       }
     },
-    [shouldAutoPinNext, togglePin],
+    [navigation, rememberOpened],
   );
 
   const renderInline = (opener: OpenerDescriptor) => {
@@ -49,7 +84,10 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
     const iconNode = showSpinner ? (
       <Loader2 className="h-4 w-4 animate-spin" />
     ) : (
-      <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
+      <>
+        <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
+        {opener.warning && <OpenerWarningBadge openerId={opener.id} />}
+      </>
     );
 
     if (opener.id === 'docker' && opener.dockerNodes && opener.dockerNodes.length > 1) {
@@ -61,8 +99,8 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
               size="icon"
               className="h-7 w-7 rounded"
               disabled={disabled}
-              aria-label="Open docker terminal"
-              title="Open docker terminal"
+              aria-label={t`Open docker terminal`}
+              title={t`Open docker terminal`}
               data-testid="open-docker-tab-button"
             >
               {iconNode}
@@ -100,16 +138,18 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
             ? 'open-terminal-tab-button'
             : `opener-inline-${opener.id}`;
 
+    const title = opener.warning ? `${opener.label} — ${opener.warning}` : opener.label;
+
     return (
       <Button
         key={opener.id}
         variant="secondary"
         size="icon"
-        className="h-7 w-7 rounded"
+        className="relative h-7 w-7 rounded"
         onClick={onClick}
         disabled={disabled}
-        aria-label={opener.label}
-        title={opener.label}
+        aria-label={title}
+        title={title}
         data-testid={testId}
       >
         {iconNode}
@@ -131,8 +171,8 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
           togglePin(opener.id);
         }}
         className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-        aria-label={pinned ? `Unpin ${opener.label}` : `Pin ${opener.label}`}
-        title={pinned ? 'Unpin' : 'Pin'}
+        aria-label={pinned ? t`Unpin ${opener.label}` : t`Pin ${opener.label}`}
+        title={pinned ? t`Unpin` : t`Pin`}
         data-testid={`opener-pin-toggle-${opener.id}`}
         data-state={pinned ? 'pinned' : 'unpinned'}
       >
@@ -178,8 +218,12 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
         disabled={opener.disabled}
         className="gap-2 pr-1"
         data-testid={`opener-menu-row-${opener.id}`}
+        title={opener.warning ?? undefined}
       >
-        <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
+        <span className="relative inline-flex">
+          <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
+          {opener.warning && <OpenerWarningBadge openerId={opener.id} />}
+        </span>
         <span>{opener.label}</span>
         {pinButton}
       </DropdownMenuItem>
@@ -188,15 +232,15 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
 
   return (
     <div className="flex shrink-0 items-center gap-1 border-l px-1" data-testid="terminal-tab-end-toolbar">
-      {pinnedInOrder.map(renderInline)}
+      {inlineOpeners.map(renderInline)}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
             className="h-7 w-7 rounded"
-            aria-label="Open new tab menu"
-            title="New tab"
+            aria-label={t`Open new tab menu`}
+            title={t`New tab`}
             data-testid="opener-plus-button"
           >
             <Plus className="h-4 w-4" />

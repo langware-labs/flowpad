@@ -115,9 +115,9 @@ class ActionManager:
             elif isinstance(types, list) and len(types) == 1:
                 # Top-level decorator scoped to a single entity type — prefix
                 # the storage key with that type so two actions sharing a name
-                # (e.g. ``run-headless`` on both ``task`` and ``conversation``)
-                # don't overwrite each other. ``get_by_name`` already tries
-                # ``<entity_type>.<name>`` before falling back to bare ``name``.
+                # on different entity types don't overwrite each other.
+                # ``get_by_name`` already tries ``<entity_type>.<name>`` before
+                # falling back to bare ``name``.
                 qualname = f"{types[0]}.{qualname}"
             if action_name:
                 # Use action_name at the end of the qualname

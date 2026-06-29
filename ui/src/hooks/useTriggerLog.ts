@@ -11,6 +11,18 @@ export interface TriggerLogEntry {
   rule_name: string;
   actions: string[];
   agentic_process_id?: string | null;
+  // Structured fields (nullable for back-compat with pre-Chunk-C entries).
+  // `event_kind` is the typed discriminator the UI switches on; legacy
+  // entries without it fall through to the hook-shape rendering.
+  event_kind?: 'hook' | 'schedule_fire' | 'file_change' | 'test' | null;
+  changed_path?: string | null;
+  change_type?: string | null;
+  // Batch fields — populated for file_change rows that coalesced N events
+  // into one fire. When undefined or changes_total <= 1 the UI falls back to
+  // single-event rendering against changed_path/change_type.
+  changes?: { path: string; change_type: string }[] | null;
+  changes_total?: number | null;
+  changes_truncated?: number | null;
 }
 
 const POLL_INTERVAL_MS = 5000;

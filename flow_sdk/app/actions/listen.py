@@ -47,11 +47,6 @@ from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
 
-# Track last Write / Edit file_path per session for plan file resolution.
-# When PreToolUse:ExitPlanMode arrives, the most recent PostToolUse:Write
-# for that session usually points to the plan .md file.
-_last_file_op_path_by_session: dict[str, str] = {}
-
 # Track execute-plan approval flag per agentic_process ID.
 # Flag is set by execute-plan, consumed (cleared) by PermissionRequest:ExitPlanMode
 # or UserPromptSubmit (new user input cancels auto-approve).
@@ -195,13 +190,10 @@ async def _create_prompt_annotation(content: str, session_id: str) -> None:
     try:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.annotation import Annotation
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        processes = await AgenticProcess.get_all(entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id)))
-        process_id = ""
-        if processes:
-            process_id = processes[0].id or ""
+        proc = await AgenticProcess.get_by_session_id(session_id)
+        process_id = (proc.id or "") if proc else ""
 
         annotation = Annotation(
             labels=["prompt:"],
@@ -215,15 +207,6 @@ async def _create_prompt_annotation(content: str, session_id: str) -> None:
         await annotation.save([])
     except Exception as exc:
         logger.debug("_create_prompt_annotation failed (non-critical): %s", exc)
-
-
-def _track_file_op_path(hook_data_dict: dict) -> None:
-    """On PostToolUse:Write or PostToolUse:Edit, cache tool_input.file_path keyed by session_id."""
-    session_id = hook_data_dict.get("session_id", "")
-    tool_input = hook_data_dict.get("tool_input", {})
-    file_path = tool_input.get("file_path", "")
-    if session_id and file_path:
-        _last_file_op_path_by_session[session_id] = file_path
 
 
 def _extract_agentic_process_id(execution_scope: list) -> str | None:
@@ -264,78 +247,6 @@ def set_plan_auto_approve(agentic_process_id: str | None) -> None:
         logger.info("[auto-approve] FLAG SET for agentic_process %s", agentic_process_id)
 
 
-async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
-    """On ``PreToolUse:ExitPlanMode``, persist ``plan_path`` on the linked
-    AgenticProcess and create a ``plan:`` Annotation for the gutter.
-
-    Path resolution prefers ``tool_input["planFilePath"]`` (emitted directly
-    by Claude Code on every ExitPlanMode call) and falls back to the older
-    Write/Edit cache for older Claude versions. The save on AgenticProcess
-    broadcasts an entity-update over WS, which is what flips the
-    "Open Plan" button on in the live UI without polling.
-    Non-critical: errors are logged and swallowed.
-    """
-    try:
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.annotation import Annotation
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
-
-        plan_text = tool_input.get("plan", "")
-
-        # Primary: planFilePath emitted directly by Claude Code (newer
-        # versions). Fallback: cached Write/Edit path under .claude/plans/.
-        plan_file_path = str(tool_input.get("planFilePath") or "")
-        if not plan_file_path:
-            last_file_op = _last_file_op_path_by_session.pop(session_id, None)
-            last_file_op_str = str(last_file_op) if last_file_op else ""
-            if last_file_op_str and ".claude/plans/" in last_file_op_str and last_file_op_str.endswith(".md"):
-                plan_file_path = last_file_op_str
-        else:
-            # Drain the cache to avoid cross-session drift.
-            _last_file_op_path_by_session.pop(session_id, None)
-
-        now_iso = datetime.now(timezone.utc).isoformat()
-        agentic_processes = await AgenticProcess.get_all(
-            entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
-        )
-        agentic_process = agentic_processes[0] if agentic_processes else None
-        agentic_process_id = agentic_process.id if agentic_process else ""
-
-        # Persist plan_path on the entity — this is the single field the UI
-        # button reads. The save() WS broadcast lights up the "Open Plan"
-        # button in real time. Gated on file existence so the invariant
-        # ``hasPlan = !!plan_path`` is upheld by every writer.
-        if (
-            agentic_process
-            and plan_file_path
-            and Path(plan_file_path).exists()
-            and agentic_process.plan_path != plan_file_path
-        ):
-            agentic_process.plan_path = plan_file_path
-            try:
-                await agentic_process.save()
-            except Exception:
-                logger.debug(
-                    "_create_plan_annotation: agentic_process.save() failed for %s",
-                    agentic_process.id, exc_info=True,
-                )
-
-        content = plan_text[:50] if plan_text else "Plan created"
-
-        annotation = Annotation(
-            labels=["plan:"],
-            target_type=AgenticProcess.get_type(),
-            target_id=agentic_process_id,
-            content=content,
-            session_id=session_id,
-            iso_timestamp=now_iso,
-            data={"file_path": plan_file_path},
-        )
-        await annotation.save([])
-    except Exception as exc:
-        logger.debug("_create_plan_annotation failed (non-critical): %s", exc)
-
-
 async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse | ApiFailResponse:
     """Handle agent_hook webhook - process triggers connected to the AgentHook."""
     agent_hook_id = webhook_data.agent_hook_id
@@ -357,10 +268,6 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
 
     if hook_event_name == HookEventType.CWD_CHANGED:
         logger.info(f"[cwd change] to '{cwd}' (session={hook_session_id})")
-
-    # Track last Write/Edit path per session; any other event resets it.
-    if hook_event_name == HookEventType.POST_TOOL_USE and hook_tool_name in ("Write", "Edit"):
-        _track_file_op_path({"session_id": hook_session_id, "tool_input": hook_tool_input})
 
     # Auto-close the worktree tab when ExitWorktree completes
     if hook_event_name == HookEventType.POST_TOOL_USE and hook_tool_name == "ExitWorktree" and agentic_process_id:
@@ -390,11 +297,6 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
         prompt = str(hook_data_dict.get("prompt") or raw.get("prompt", ""))
         if prompt and hook_session_id:
             await _create_prompt_annotation(prompt[:50], hook_session_id)
-
-    # Auto-create Annotation for PreToolUse:ExitPlanMode (consume cached Write path)
-    if hook_event_name == HookEventType.PRE_TOOL_USE and hook_tool_name == "ExitPlanMode":
-        if hook_session_id:
-            await _create_plan_annotation(hook_tool_input or {}, hook_session_id)
 
     from flow_sdk.builtin.agent_hook import AgentHook
 
@@ -438,17 +340,12 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
     # trace gutter can render it alongside live completion + history.
     try:
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 
         target_process = None
         if agentic_process_id:
             target_process = await AgenticProcess.get_by_id(agentic_process_id)
         if target_process is None and hook_session_id:
-            processes = await AgenticProcess.get_all(
-                entities_filter=QueryFilter(match=ExpressionNode(session_id=hook_session_id))
-            )
-            if processes:
-                target_process = processes[0]
+            target_process = await AgenticProcess.get_by_session_id(hook_session_id)
 
         if target_process is not None:
             for fd in converted_fds:

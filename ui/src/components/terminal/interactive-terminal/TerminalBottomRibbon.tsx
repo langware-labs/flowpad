@@ -1,52 +1,134 @@
 import React from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import type { AgenticProcess, MarkdownDoc } from '@sdk';
 import { Button } from '@src/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { FileText } from 'lucide-react';
-import type { QueueEntry, QueueState } from '@src/hooks/useAgenticQueue';
+import { BookMarked, ChevronDown, FileText, Loader2, MessageSquare, SquareTerminal } from 'lucide-react';
+import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
+import { useIsAdvanced } from '@src/components/view-mode';
+import { SideTabTooltipContent } from './LastPromptTooltip';
 import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
 
 interface TerminalBottomRibbonProps {
   fileCount: number;
   isActive: boolean;
   promptCount?: number;
-  queue?: QueueState;
-  onQueueAdd?: (entry: QueueEntry) => void;
-  onQueueRemove?: (index: number) => void;
+  /** Most recent prompt text — shown in the Prompts icon hover card. */
+  lastPromptText?: string | null;
   openTabs: SideTabIdType[];
   activeSideTab: SideTabIdType | null;
   onOpenSideTab: (tab: SideTabIdType) => void;
   hasLastPlan?: boolean;
   onOpenLastPlan?: () => void;
+  /** User-facing markdown docs this process authored, oldest-first (tail = latest). */
+  markdownDocs?: MarkdownDoc[];
+  /** Open a doc by path (docs viewer). */
+  onOpenMarkdown?: (path: string) => void;
+  /** Enables the Prompt Library button (prompt → queue needs a process). */
+  process?: AgenticProcess | null;
+  /** Chat composer rendered as the top tier of the ribbon (Standard/chat only). */
+  composer?: React.ReactNode;
+  /** True when the chat UI is currently shown (vs the xterm terminal). */
+  chatActive?: boolean;
+  /** Flip chat⇄terminal (saved override). When omitted, the status dot is shown instead. */
+  onToggleView?: () => void;
+  /** True while a chat⇄terminal switch is in flight — disables the toggle and
+   *  shows a connect spinner (PTY spawn/teardown is no longer instant). */
+  switching?: boolean;
+  /** False when the worker is mid-turn — the toggle is shown but disabled, since
+   *  a mode switch is only sensible (and only accepted by the backend) while the
+   *  agent is awaiting user input. Defaults to true for non-AP callers. */
+  toggleEnabled?: boolean;
 }
 
 const RIBBON_TABS: SideTabIdType[] = [
+  SideTabId.Context,
   SideTabId.Git,
   SideTabId.Prompts,
+  SideTabId.Analysis,
+  SideTabId.SkillsAgents,
   SideTabId.Files,
   SideTabId.Dir,
+  // The prompt QUEUE side-tab (previously URL-only) — paired with the
+  // Prompt Library button below so "add to queue" has a visible destination.
+  SideTabId.Queue,
 ];
 
 export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   fileCount,
   isActive,
   promptCount = 0,
-  queue,
-  onQueueAdd,
-  onQueueRemove,
+  lastPromptText = null,
   openTabs,
   activeSideTab,
   onOpenSideTab,
   hasLastPlan = false,
   onOpenLastPlan,
+  markdownDocs = [],
+  onOpenMarkdown,
+  process = null,
+  composer,
+  chatActive = false,
+  onToggleView,
+  switching = false,
+  toggleEnabled = true,
 }) => {
+  const { t } = useLingui();
+  const isAdvanced = useIsAdvanced();
+  // Skin layer: in Standard view, power-user tabs (flagged advancedOnly on
+  // their SIDE_TABS descriptor) and the Prompt Library button are hidden,
+  // leaving Prompts + Files. See docs/viewmodes.md.
+  const ribbonTabs = isAdvanced ? RIBBON_TABS : RIBBON_TABS.filter((id) => !SIDE_TABS[id].advancedOnly);
+  // Single source for the toggle's label — reused by both the aria-label and the
+  // tooltip (the latter overlays 'Switching…' while a switch is in flight).
+  const toggleLabel = !toggleEnabled
+    ? t`Available when the agent is waiting for your input`
+    : chatActive
+      ? t`Switch to terminal view`
+      : t`Switch to chat view`;
   return (
-    <div className="flex items-center border-t bg-muted/30 px-4 py-1.5">
-      {/* Left: process status LED + queue */}
+    <div className="flex flex-col border-t bg-muted/30">
+      {/* Top tier: chat composer (Standard/chat only) — one ribbon, not two rows. */}
+      {composer && <div className="px-4 pb-1 pt-2">{composer}</div>}
+      {/* Controls strip: status LED + plan/doc chips + side-tab launchers. */}
+      <div className="flex items-center px-4 py-1.5">
+      {/* Left: chat⇄terminal toggle (falls back to a status LED when no toggle). */}
       <div className="flex items-center gap-2">
-        <span
-          className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`}
-        />
+        {onToggleView ? (
+          <TooltipProvider delayDuration={400}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* span wrapper keeps the tooltip working while the button is
+                    disabled (a disabled <button> swallows pointer events). */}
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onToggleView}
+                    disabled={switching || !toggleEnabled}
+                    aria-label={toggleLabel}
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                  >
+                    {switching ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : chatActive ? (
+                      <SquareTerminal className="h-4 w-4" />
+                    ) : (
+                      <MessageSquare className="h-4 w-4" />
+                    )}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                {switching ? t`Switching…` : toggleLabel}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : (
+          <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
+        )}
         {hasLastPlan && onOpenLastPlan && (
           <TooltipProvider delayDuration={400}>
             <Tooltip>
@@ -58,30 +140,34 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                   className="h-6 gap-1.5 px-2 text-[11px] text-blue-400 border-blue-400/40 hover:border-blue-400 hover:text-blue-300"
                 >
                   <FileText className="h-3.5 w-3.5" />
-                  Open Plan
+                  <Trans>Open Plan</Trans>
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs">
-                Open the latest plan
+                <Trans>Open the latest plan</Trans>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+        )}
+        {markdownDocs.length > 0 && onOpenMarkdown && (
+          <MarkdownDocsChip docs={markdownDocs} onOpen={onOpenMarkdown} />
         )}
       </div>
 
       {/* Right: side tab toggle buttons */}
       <div className="ml-auto flex items-center gap-1">
         <TooltipProvider delayDuration={400}>
-          {RIBBON_TABS.map((tabId) => {
+          {ribbonTabs.map((tabId) => {
             const descriptor = SIDE_TABS[tabId];
             const Icon = descriptor.icon;
             const isOpen = openTabs.includes(tabId);
             const isActive = isOpen && activeSideTab === tabId;
+            const isPrompts = tabId === SideTabId.Prompts;
 
             // Badge for files and prompts
             let badge: number | null = null;
             if (tabId === SideTabId.Files) badge = fileCount;
-            if (tabId === SideTabId.Prompts) badge = promptCount;
+            if (isPrompts) badge = promptCount;
 
             return (
               <Tooltip key={tabId}>
@@ -110,14 +196,115 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                     )}
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {descriptor.description}
-                </TooltipContent>
+                <SideTabTooltipContent
+                  side="top"
+                  isPrompts={isPrompts}
+                  lastPromptText={lastPromptText}
+                  promptCount={promptCount}
+                  fallback={descriptor.description}
+                />
               </Tooltip>
             );
           })}
+          {/* Prompt Library — distinct from the transcript "Prompts" tab:
+              browse the foldered prompt library; click a prompt to enqueue
+              it (docs/prompt-library.md). Pure composition; all behavior
+              lives in PromptLibraryMenu / the generic groups layer. */}
+          {process && isAdvanced && (
+            <PromptLibraryMenu
+              process={process}
+              projectId={process.project_id ?? null}
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  aria-label={t`Prompt Library`}
+                  title={t`Prompt Library — click a prompt to add it to the queue`}
+                >
+                  <BookMarked className="h-4 w-4" />
+                </Button>
+              }
+            />
+          )}
         </TooltipProvider>
       </div>
+      </div>
     </div>
+  );
+};
+
+/**
+ * "Open Doc" chip — mirrors the Open-Plan chip. Shows the latest authored
+ * markdown doc (the list tail); when there is more than one, a subtle chevron
+ * opens a popover listing all docs newest-first so any can be opened.
+ */
+const DOC_CHIP_CLASSES =
+  'h-6 text-emerald-400 border-emerald-400/40 hover:border-emerald-400 hover:text-emerald-300';
+
+const MarkdownDocsChip: React.FC<{
+  docs: MarkdownDoc[];
+  onOpen: (path: string) => void;
+}> = ({ docs, onOpen }) => {
+  const { t } = useLingui();
+  const latest = docs[docs.length - 1];
+  const hasMore = docs.length > 1;
+  return (
+    <TooltipProvider delayDuration={400}>
+      <div className="flex items-center">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onOpen(latest.path)}
+              className={cn(
+                DOC_CHIP_CLASSES,
+                'gap-1.5 px-2 text-[11px]',
+                hasMore && 'rounded-r-none border-r-0',
+              )}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span className="max-w-[10rem] truncate">{latest.name}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            <Trans>Open the latest doc</Trans>
+          </TooltipContent>
+        </Tooltip>
+        {hasMore && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label={t`Choose a doc to open`}
+                className={cn(DOC_CHIP_CLASSES, 'rounded-l-none px-1')}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" side="top" className="w-64 p-1">
+              <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
+                {[...docs].reverse().map((doc) => (
+                  <button
+                    key={doc.path}
+                    type="button"
+                    onClick={() => onOpen(doc.path)}
+                    className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left hover:bg-accent"
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    <span className="min-w-0 flex-1 truncate text-xs text-foreground">{doc.name}</span>
+                    <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {doc.change === 'create' ? t`new` : t`edit`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+      </div>
+    </TooltipProvider>
   );
 };

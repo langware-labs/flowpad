@@ -1,4 +1,5 @@
 ---
+id: 7953ed01-9be0-5756-b063-39298f6c5186
 name: flowpad-assistance
 description: |
   Flowpad assistance — drives the Flowpad app on behalf of the user. Supported actions:
@@ -19,28 +20,50 @@ description: |
       assets via ``flow record search <query> <time> <limit>`` (SQLite FTS5).
       Use this whenever the user asks to find / look up / show / search for
       something without giving an explicit TypeId. See ``search.md``.
+    • process — restart the calling agentic-process session via ``flow process restart``
+      (kills + re-spawns the worker, resuming the session). Use after installing an
+      MCP server so the new config loads, or when the user says "restart this
+      session / process / agent". Defaults to the current process. See ``process.md``.
+    • message — send a message (optionally with file attachments) into a
+      conversation via the backend's ``add_message`` HTTP action (there is no
+      ``flow`` CLI command for this). Triggered by "send X to my conversation
+      with Y", "attach this doc to the Z conversation", "message Y the report".
+      See ``message.md``.
+  NOT handled here: building a website / web app / SaaS / dashboard — even when
+  phrased as "using flowpad assistant". That is the separate ``web-app-builder``
+  skill (copy-as-is template + setup); invoke it instead of the records action.
 tags:
-  - flowpad
-  - ui
-  - navigation
-  - context
-  - records
-  - search
+- flowpad
+- ui
+- navigation
+- context
+- records
+- search
+- message
 allowed-tools:
-  - Bash(flow context list:*)
-  - Bash(flow navigate entity:*)
-  - Bash(flow schema list:*)
-  - Bash(flow schema info:*)
-  - Bash(flow record index:*)
-  - Bash(flow record search:*)
-  - Read
-  - Write
-  - Edit
+- Bash(flow context list:*)
+- Bash(flow navigate entity:*)
+- Bash(flow schema list:*)
+- Bash(flow schema info:*)
+- Bash(flow record index:*)
+- Bash(flow record search:*)
+- Bash(flow process restart:*)
+- Bash(curl:*)
+- Read
+- Write
+- Edit
 ---
 
 # Flowpad assistance
 
 A multi-action skill for the Flowpad app. Identify the requested action from the user message, then follow the matching section/file below. Actions can be composed: a request like *"create a task and open it"* is `records` (creating) followed by `navigate` (opening).
+
+> **Building a website or web app is not an action of this skill.** If the
+> user asks to build/create a website, web app, SaaS, dashboard, or landing
+> page — even phrased as "build me a website using flowpad assistant" — stop
+> and invoke the `web-app-builder` skill, which bootstraps a tested full-stack
+> template into the session's working directory. Do not hand-write HTML/JS
+> files or route this through `records`.
 
 ## Action: context
 
@@ -105,5 +128,7 @@ For any action other than `context`, open the matching file in this skill direct
 | navigate | [`navigate.md`](navigate.md) |
 | records  | [`records.md`](records.md) |
 | search   | [`search.md`](search.md) |
+| process  | [`process.md`](process.md) |
+| message  | [`message.md`](message.md) |
 
 When composing actions (e.g. "navigate to the current X" or "create a task and open it"), read both files end-to-end before you start running commands.

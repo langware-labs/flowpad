@@ -1,5 +1,7 @@
 import { cn } from '@src/lib/utils';
 import { Clock, FileText, RefreshCw } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
+import { t } from '@lingui/macro';
 import { useWorkerSessions } from './hooks/use-sessions';
 
 export interface WorkerSessionsPanelProps {
@@ -16,10 +18,10 @@ const formatTimestamp = (timestamp: string) => {
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
 
-    if (days > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    if (minutes > 0) return `${minutes}m ago`;
-    return 'Just now';
+    if (days > 0) return t`${days}d ago`;
+    if (hours > 0) return t`${hours}h ago`;
+    if (minutes > 0) return t`${minutes}m ago`;
+    return t`Just now`;
   } catch {
     return timestamp;
   }
@@ -70,14 +72,14 @@ export function WorkerSessionsPanel({ currentSessionId, onSessionClick }: Worker
       <div className="flex items-center justify-between border-b px-3 py-2">
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Worker Sessions</span>
+          <span className="text-sm font-medium"><Trans>Worker Sessions</Trans></span>
           {loading && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />}
         </div>
         <button
           onClick={() => void refresh()}
           disabled={loading}
           className="rounded p-1 hover:bg-accent disabled:opacity-50"
-          title="Refresh sessions"
+          title={t`Refresh sessions`}
         >
           <RefreshCw className="h-3 w-3" />
         </button>
@@ -93,7 +95,7 @@ export function WorkerSessionsPanel({ currentSessionId, onSessionClick }: Worker
 
         {!error && sessions && sessions.length === 0 && !loading && (
           <div className="flex h-full items-center justify-center px-3 py-8 text-center">
-            <p className="text-xs text-muted-foreground">No sessions found for this directory</p>
+            <p className="text-xs text-muted-foreground"><Trans>No sessions found for this directory</Trans></p>
           </div>
         )}
 

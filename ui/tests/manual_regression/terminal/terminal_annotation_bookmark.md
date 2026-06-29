@@ -1,3 +1,7 @@
+---
+id: 1ada41a3-f670-5ec1-aeb9-f04e8b493d52
+---
+
 test 1: Annotation gutter is visible in a Claude process terminal
 - navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for the Claude CLI banner to appear in the terminal (up to 45 seconds)

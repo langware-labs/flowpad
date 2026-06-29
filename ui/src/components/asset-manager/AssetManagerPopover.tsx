@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
   ASSET_SOURCE_LABEL,
   dataManager,
+  FLOWPAD_ASSISTANT_PROJECT_NAME,
   isReadOnlySource,
   isTypeId,
   Project,
@@ -32,9 +34,10 @@ import {
   makeIconForType,
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, Lock, Plus, Search, X, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, Lock, Plus, Search, Sparkles, X, type LucideIcon } from 'lucide-react';
 
 const READONLY_TOOLTIP_BY_SOURCE: Partial<Record<AssetSource, string>> = {
   project_dir: 'Defined in the project — edits propagate to every process under this project. Attach to get a private editable copy.',
@@ -72,6 +75,7 @@ export function AssetManagerPopover({
   trigger,
   footer,
 }: AssetManagerPopoverProps) {
+  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'list' | 'add' | 'pick-project'>('list');
   const [query, setQuery] = useState('');
@@ -83,18 +87,36 @@ export function AssetManagerPopover({
 
   const dataCtx = useDataContext();
 
-  // Subscribe to entity-field changes (additional_dirs, restart_required, …) so
-  // the popover re-renders when the backend mutates them in place.
+  // Subscribe to entity-field changes (additional_dirs, restart_required,
+  // load_flowpad_assistant, …) so the popover re-renders when the backend
+  // mutates them in place. The snapshot folds in `load_flowpad_assistant` so
+  // the header toggle + location marker re-render even when the process isn't
+  // RUNNING (i.e. `restart_required` doesn't move).
   useSyncExternalStore(
     useCallback(
       (cb) => (process ? dataManager.subscribe(process.typeId, cb, false) : () => {}),
       [process],
     ),
-    () => (process ? process.restart_required : false),
-    () => (process ? process.restart_required : false),
+    () => (process ? `${process.restart_required}|${process.load_flowpad_assistant}` : ''),
+    () => (process ? `${process.restart_required}|${process.load_flowpad_assistant}` : ''),
   );
 
   const additionalDirs = process?.additional_dirs ?? [];
+
+  // Resolved Flowpad Assistant mount status for this process. `null`/`undefined`
+  // inherits the global default (currently ON), so only an explicit `false`
+  // reads as disabled. Toggling writes an explicit boolean.
+  const assistantEnabled = !!process && process.load_flowpad_assistant !== false;
+
+  const handleToggleAssistant = useCallback(async () => {
+    if (!process) return;
+    try {
+      await process.setAssistantEnabled(!assistantEnabled);
+      await refresh();
+    } catch (err) {
+      console.error('[AssetManagerPopover] toggle Flowpad Assistant failed', err);
+    }
+  }, [process, assistantEnabled, refresh]);
 
   // When restart_required transitions from true → false (a successful restart
   // just completed) re-fetch descriptors so the list reflects the new worker
@@ -189,8 +211,8 @@ export function AssetManagerPopover({
             label.includes(q) ||
             d.typeid.toLowerCase().includes(q) ||
             d.source.toLowerCase().includes(q) ||
-            (d.posix_path ?? '').toLowerCase().includes(q) ||
-            (d.source_dir ?? '').toLowerCase().includes(q)
+            (typeof d.posix_path === 'string' ? d.posix_path : '').toLowerCase().includes(q) ||
+            (typeof d.source_dir === 'string' ? d.source_dir : '').toLowerCase().includes(q)
           );
         })
       : descriptors;
@@ -271,7 +293,9 @@ export function AssetManagerPopover({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align="end"
-        className="flex max-h-[calc(100vh-6rem)] w-96 flex-col p-0"
+        sideOffset={4}
+        collisionPadding={8}
+        className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-96 flex-col p-0"
         data-testid="asset-manager-popover"
       >
         {/* Header */}
@@ -281,7 +305,7 @@ export function AssetManagerPopover({
               type="button"
               className="-ml-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
               onClick={() => setMode('list')}
-              title="Back"
+              title={t`Back`}
               data-testid="asset-manager-back"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
@@ -290,18 +314,42 @@ export function AssetManagerPopover({
           <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs font-medium">
             {mode === 'add'
-              ? 'Add asset'
+              ? <Trans>Add asset</Trans>
               : mode === 'pick-project'
-              ? 'Pick project folder'
-              : 'Assets'}
+              ? <Trans>Pick project folder</Trans>
+              : <Trans>Assets</Trans>}
           </span>
           {mode === 'list' && (
-            <div className="ml-auto flex items-center">
+            <div className="ml-auto flex items-center gap-1">
+              {process && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={assistantEnabled}
+                  onClick={() => void handleToggleAssistant()}
+                  title={
+                    assistantEnabled
+                      ? t`Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required.`
+                      : t`Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required.`
+                  }
+                  data-testid="asset-manager-assistant-toggle"
+                  data-enabled={assistantEnabled ? 'true' : 'false'}
+                  className={
+                    'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-colors ' +
+                    (assistantEnabled
+                      ? 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20'
+                      : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground')
+                  }
+                >
+                  <Sparkles className="h-3 w-3" />
+                  <Trans>Assistant</Trans>
+                </button>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    title="Add"
+                    title={t`Add`}
                     className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
                     data-testid="asset-manager-add-menu"
                   >
@@ -314,7 +362,7 @@ export function AssetManagerPopover({
                     data-testid="asset-manager-add-asset"
                   >
                     <Boxes className="mr-2 h-3.5 w-3.5" />
-                    Asset…
+                    <Trans>Asset…</Trans>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={!process || !dataCtx.computeNode}
@@ -322,7 +370,7 @@ export function AssetManagerPopover({
                     data-testid="asset-manager-add-folder"
                   >
                     <FolderOpen className="mr-2 h-3.5 w-3.5" />
-                    Folder…
+                    <Trans>Folder…</Trans>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={!process}
@@ -330,7 +378,7 @@ export function AssetManagerPopover({
                     data-testid="asset-manager-add-project-folder"
                   >
                     <FolderPlus className="mr-2 h-3.5 w-3.5" />
-                    Project folder…
+                    <Trans>Project folder…</Trans>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -344,7 +392,7 @@ export function AssetManagerPopover({
               <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Filter…"
+                placeholder={t`Filter…`}
                 value={listFilter}
                 onChange={(e) => setListFilter(e.target.value)}
                 className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
@@ -354,15 +402,34 @@ export function AssetManagerPopover({
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'source' | 'name')}
                 className="rounded border bg-background px-1 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-                title="Sort"
+                title={t`Sort`}
                 data-testid="asset-manager-list-sort"
               >
-                <option value="source">By source</option>
-                <option value="name">By name</option>
+                <option value="source"><Trans>By source</Trans></option>
+                <option value="name"><Trans>By name</Trans></option>
               </select>
               <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto" data-testid="asset-manager-list">
+              {/* Flowpad Assistant location marker — its assets live inside the
+                  installed package and are mounted via --add-dir, so they don't
+                  show as individual rows. A light-bordered location row marks
+                  where the flowpad assets come from when the toggle is on. */}
+              {assistantEnabled && !listFilter.trim() && (
+                <div
+                  className="m-1 flex items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5"
+                  data-testid="asset-manager-flowpad-location"
+                  title={t`Flowpad Assistant — its skills & agents are mounted into this process via --add-dir.`}
+                >
+                  <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+                    {FLOWPAD_ASSISTANT_PROJECT_NAME}
+                  </span>
+                  <span className="flex-shrink-0 rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-primary">
+                    <Trans>mounted</Trans>
+                  </span>
+                </div>
+              )}
               {filteredDirs.map((path) => (
                 <DirRow
                   key={`dir|${path}`}
@@ -372,7 +439,7 @@ export function AssetManagerPopover({
               ))}
               {rows.length === 0 && filteredDirs.length === 0 && (
                 <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-                  {listFilter.trim() ? 'No matches.' : 'No assets visible to this process.'}
+                  {listFilter.trim() ? <Trans>No matches.</Trans> : <Trans>No assets visible to this process.</Trans>}
                 </div>
               )}
               {rows.map((d, idx) => (
@@ -394,7 +461,7 @@ export function AssetManagerPopover({
               <input
                 autoFocus
                 type="text"
-                placeholder="Search agents and skills…"
+                placeholder={t`Search agents and skills…`}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="w-full rounded-md border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
@@ -404,7 +471,7 @@ export function AssetManagerPopover({
             <div className="min-h-0 flex-1 overflow-y-auto">
               {addModeRows.length === 0 && (
                 <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-                  No matches.
+                  <Trans>No matches.</Trans>
                 </div>
               )}
               {addModeRows.map((d, idx) => (
@@ -424,7 +491,7 @@ export function AssetManagerPopover({
               <input
                 autoFocus
                 type="text"
-                placeholder="Search projects…"
+                placeholder={t`Search projects…`}
                 value={projectQuery}
                 onChange={(e) => setProjectQuery(e.target.value)}
                 className="w-full rounded-md border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
@@ -434,7 +501,7 @@ export function AssetManagerPopover({
             <div className="min-h-0 flex-1 overflow-y-auto">
               {filteredProjects.length === 0 && (
                 <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-                  No projects.
+                  <Trans>No projects.</Trans>
                 </div>
               )}
               {filteredProjects.map((p) => {
@@ -465,6 +532,7 @@ function DirRow({
   path: string;
   onRemove: (path: string) => void | Promise<void>;
 }) {
+  const { t } = useLingui();
   return (
     <div
       className="flex items-center gap-2 border-b px-3 py-1.5 last:border-b-0"
@@ -487,7 +555,7 @@ function DirRow({
         type="button"
         className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
         onClick={() => void onRemove(path)}
-        title="Remove directory"
+        title={t`Remove directory`}
         data-testid={`asset-manager-dir-remove-${path}`}
       >
         <X className="h-3 w-3" />
@@ -535,6 +603,7 @@ function AssetRow({
   attached: boolean;
   onDetach: (ref: string) => void | Promise<void>;
 }) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { type, id } = _parseTypeid(descriptor.typeid);
   const Icon = iconForType(type);
@@ -544,18 +613,18 @@ function AssetRow({
   const onChipClick = useCallback(() => {
     if (!id) return;
     try {
-      // Read-only sources open in viewer mode (readOnly=1). The assets editor
-      // route honors this query param to disable save affordances. The query
-      // string is passed via the DockPointer ``options`` argument so it
-      // serializes as a real `?readOnly=1` query string — embedding it in
-      // the pointer (path) string would URL-encode the `?` to `%3F` and
-      // produce a malformed path the backend can't parse.
+      // Open by the asset's TypeId in the canonical grammar
+      // (editor/<editor>/typeid/<type>-<id>). Read-only sources open in viewer
+      // mode (readOnly=1), passed as a real `?readOnly=1` query string via the
+      // DockPointer options (not embedded in the path).
+      const editor = editorForType(type);
+      if (!editor) return;
       navigation.openDock(
-        new DockPointer(
-          'assets' as never,
-          `editor/${type}/${id}`,
+        AssetDocPointer.forTypeId(
+          editor,
+          new TypeId(type, id),
           readOnly ? { readOnly: '1' } : undefined,
-        ),
+        ).toDockPointer(),
       );
     } catch {
       // ignore navigation errors
@@ -568,9 +637,9 @@ function AssetRow({
   const sourceTooltip = [
     sourceLabel,
     descriptor.source_dir ? `from: ${descriptor.source_dir}` : null,
-    descriptor.posix_path ?? '(no file — inline persona)',
+    descriptor.posix_path ?? t`(no file — inline persona)`,
   ].filter(Boolean).join('\n');
-  const lockTooltip = READONLY_TOOLTIP_BY_SOURCE[descriptor.source] ?? 'Read-only from this process. Attach to get a private editable copy.';
+  const lockTooltip = READONLY_TOOLTIP_BY_SOURCE[descriptor.source] ?? t`Read-only from this process. Attach to get a private editable copy.`;
 
   return (
     <div
@@ -582,7 +651,7 @@ function AssetRow({
         type="button"
         onClick={onChipClick}
         className="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border bg-muted/30 px-1.5 py-0.5 text-xs text-foreground hover:bg-muted"
-        title={readOnly ? `View ${label} (read-only)` : `Open ${label}`}
+        title={readOnly ? t`View ${label} (read-only)` : t`Open ${label}`}
       >
         <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate">{label}</span>
@@ -590,7 +659,7 @@ function AssetRow({
       {readOnly && (
         <Lock
           className="h-3 w-3 flex-shrink-0 text-muted-foreground"
-          aria-label="Read-only"
+          aria-label={t`Read-only`}
           data-testid={`asset-manager-readonly-${descriptor.typeid}-${descriptor.source}`}
         >
           <title>{lockTooltip}</title>
@@ -608,7 +677,7 @@ function AssetRow({
           type="button"
           className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
           onClick={() => void onDetach(descriptor.typeid)}
-          title="Detach"
+          title={t`Detach`}
           data-testid={`asset-manager-detach-${descriptor.typeid}`}
         >
           <X className="h-3 w-3" />
@@ -627,10 +696,11 @@ function AddModeRow({
   checked: boolean;
   onToggle: (ref: string) => void;
 }) {
+  const { t } = useLingui();
   const { type } = _parseTypeid(descriptor.typeid);
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
-  const lockTooltip = READONLY_TOOLTIP_BY_SOURCE[descriptor.source] ?? 'Read-only source. Attach to get a private editable copy.';
+  const lockTooltip = READONLY_TOOLTIP_BY_SOURCE[descriptor.source] ?? t`Read-only source. Attach to get a private editable copy.`;
   const label = _displayLabelForTypeid(descriptor.typeid);
   return (
     <label
@@ -649,7 +719,7 @@ function AddModeRow({
       {readOnly && (
         <Lock
           className="h-3 w-3 flex-shrink-0 text-muted-foreground"
-          aria-label="Read-only source"
+          aria-label={t`Read-only source`}
           data-testid={`asset-manager-add-readonly-${descriptor.typeid}-${descriptor.source}`}
         >
           <title>{lockTooltip}</title>

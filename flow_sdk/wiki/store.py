@@ -87,7 +87,7 @@ class AsyncLinkStore:
 
     async def outgoing_from(self, src_type: str, src_id: str) -> list[WikiLink]:
         from flow_sdk.db import session as _session  # noqa: PLC0415
-        async with _session() as s:
+        async with _session(write=False) as s:
             result = await s.execute(
                 sa_select(LinksSchema)
                 .where(LinksSchema.src_type == src_type, LinksSchema.src_id == src_id)
@@ -97,7 +97,7 @@ class AsyncLinkStore:
 
     async def backlinks_of(self, target_type: str, target_id: str) -> list[WikiLink]:
         from flow_sdk.db import session as _session  # noqa: PLC0415
-        async with _session() as s:
+        async with _session(write=False) as s:
             result = await s.execute(
                 sa_select(LinksSchema)
                 .where(
@@ -115,7 +115,7 @@ class AsyncLinkStore:
 
     async def find_unresolved(self, target_raw: str) -> list[WikiLink]:
         from flow_sdk.db import session as _session  # noqa: PLC0415
-        async with _session() as s:
+        async with _session(write=False) as s:
             result = await s.execute(
                 sa_select(LinksSchema).where(
                     LinksSchema.target_resolved_id.is_(None),
@@ -137,7 +137,7 @@ class AsyncLinkStore:
         from flow_sdk.db.drivers.sqlite.connection import EntitySchema  # noqa: PLC0415
         from sqlalchemy import text  # noqa: PLC0415
 
-        async with _session() as s:
+        async with _session(write=False) as s:
             result = await s.execute(
                 sa_select(EntitySchema.type, EntitySchema.id).where(EntitySchema.uname == name)
             )

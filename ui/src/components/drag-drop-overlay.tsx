@@ -1,5 +1,6 @@
 import { FileArchive, Upload } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface DragDropOverlayProps {
   zipFileEnabled: boolean;
@@ -9,6 +10,7 @@ interface DragDropOverlayProps {
 export function DragDropOverlay({ zipFileEnabled, onFilesDrop }: DragDropOverlayProps) {
   const [, setDragCounter] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  const { t } = useLingui();
 
   const handleDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -93,16 +95,16 @@ export function DragDropOverlay({ zipFileEnabled, onFilesDrop }: DragDropOverlay
           )}
         </div>
 
-        <h3 className="mb-2 text-xl font-semibold">Drop files here</h3>
+        <h3 className="mb-2 text-xl font-semibold"><Trans>Drop files here</Trans></h3>
 
         <p className="mb-4 text-muted-foreground">
           {zipFileEnabled
-            ? 'Supported: ZIP, Text, PDF, Images (PNG, JPEG, GIF, WebP, HEIC)'
-            : 'Supported: Text, PDF, Images (PNG, JPEG, GIF, WebP, HEIC)'}
+            ? t`Supported: ZIP, Text, PDF, Images (PNG, JPEG, GIF, WebP, HEIC)`
+            : t`Supported: Text, PDF, Images (PNG, JPEG, GIF, WebP, HEIC)`}
         </p>
 
         {zipFileEnabled && (
-          <p className="text-sm text-muted-foreground">ZIP files will be added as codebase connections</p>
+          <p className="text-sm text-muted-foreground"><Trans>ZIP files will be added as codebase connections</Trans></p>
         )}
       </div>
     </div>

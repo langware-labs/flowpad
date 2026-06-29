@@ -146,6 +146,12 @@ export const workerStatusConfig: Record<WorkerStatus, StatusConfig> = {
     bgColor: 'bg-gray-100 dark:bg-gray-800',
     label: 'Inactive',
   },
+  [WorkerStatus.PENDING_USER]: {
+    icon: MessageCircle,
+    color: 'text-sky-500',
+    bgColor: 'bg-sky-100 dark:bg-sky-900/30',
+    label: 'Waiting for you',
+  },
   [WorkerStatus.ERROR]: {
     icon: AlertCircle,
     color: 'text-red-500',

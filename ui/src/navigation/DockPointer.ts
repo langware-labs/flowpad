@@ -1,8 +1,33 @@
-import { AgenticProcess, Layout, TypeId, type IDockPointer } from '@sdk';
-import { VIEW_SLOTS, ViewSlot, ViewType } from '../types/ViewType';
+import { AgenticProcess, ClaudeSession, Layout, Project, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
+import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
-import { parseQueryParams } from './url-builder';
+import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
 import { isValidView } from './validators';
+import { AssetDocPointer } from './AssetDocPointer';
+import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUTE_NODE } from './asset-doc-types';
+import {
+  ALL_SCOPE_FILTER,
+  dockOptionsToScopeFilter,
+  scopeFilterKey,
+  scopeFilterToDockOptions,
+  withScopeFilterOptions,
+  type ScopeFilter,
+} from '@src/lib/scope-filter';
+import {
+  dockOptionsToSideWindows,
+  withSideWindowsOptions,
+  type SideWindowsState,
+} from '@src/lib/side-windows';
+
+/**
+ * URL query-param key carrying the "highlight this thing" intent across the
+ * app — the single source of truth for the WikiTip highlight (see
+ * docs/wikitip.md). Mirrors the existing `selected` option: URL-carried so the
+ * highlight is shareable + back-button-safe. Pairs with `DockPointer.highlight`
+ * / `withHighlight()` (dock surfaces) and `useHighlight()` (the home root `/`,
+ * which is not a dock URL).
+ */
+export const HIGHLIGHT_PARAM = 'highlight';
 
 /**
  * Lens pointer structure for sub-routing within lens viewer
@@ -31,6 +56,23 @@ export class DockPointer implements IDockPointer {
     return pointer.slice(AgenticProcess.type.length + TypeId.DELIMITER.length);
   }
 
+  /**
+   * Canonical terminal tab identity (`TerminalTab.targetTypeId`) for a
+   * `/dock/shell` (or `/win/shell`) URL pointer — the single owner of the
+   * shell-pointer → tab-key grammar:
+   *   - `agentic_process-<id>` → TypeId(agentic_process, id)
+   *   - `shell-<id>`           → TypeId(shell, id)
+   *   - bare `<id>` (legacy)   → TypeId(shell, id)
+   */
+  static terminalTargetTypeIdForShellPointer(pointer: string): TypeId {
+    if (DockPointer.isAgenticProcessPointer(pointer)) {
+      return new TypeId(AgenticProcess.type, DockPointer.extractAgenticProcessId(pointer));
+    }
+    const shellPrefix = Shell.type + TypeId.DELIMITER;
+    const shellId = pointer.startsWith(shellPrefix) ? pointer.slice(shellPrefix.length) : pointer;
+    return new TypeId(Shell.type, shellId);
+  }
+
   public readonly viewType?: ViewType | undefined;
   public readonly pointer?: string | undefined;
   public readonly options?: Record<string, string> | undefined;
@@ -56,15 +98,109 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * The scope filter carried by this dock's options, or null when none is set
+   * (so callers apply their own default). This is the single generic accessor
+   * for scope-in-URL across every dock — the option-key grammar lives entirely
+   * in `lib/scope-filter.ts` (`dockOptionsToScopeFilter`); no dock reads the raw
+   * `scope`/`user`/`projects` keys itself.
+   */
+  get scopeFilter(): ScopeFilter | null {
+    return dockOptionsToScopeFilter(this.options);
+  }
+
+  /**
+   * Clone this pointer with `scope` serialized into its options — the single
+   * generic builder for scope-in-URL. Pairs with the `scopeFilter` getter.
+   */
+  withScopeFilter(scope: ScopeFilter): DockPointer {
+    return new DockPointer(
+      this.viewType,
+      this.pointer,
+      withScopeFilterOptions(this.options, scope),
+      this.layout,
+    );
+  }
+
+  /**
+   * The set of open side windows + the active one carried by this dock's
+   * options, or null when none is set. The single generic accessor for
+   * side-windows-in-URL across every dock — the option-key grammar lives
+   * entirely in `lib/side-windows.ts`; no surface reads the raw
+   * `sideWindows`/`activeSideWindow` keys itself. Consumed via `useSideWindows`.
+   */
+  get sideWindows(): SideWindowsState | null {
+    return dockOptionsToSideWindows(this.options);
+  }
+
+  /**
+   * Clone this pointer with the side-windows state serialized into its options —
+   * the single generic builder for side-windows-in-URL. Pairs with the
+   * `sideWindows` getter.
+   */
+  withSideWindows(state: SideWindowsState): DockPointer {
+    return new DockPointer(
+      this.viewType,
+      this.pointer,
+      withSideWindowsOptions(this.options, state),
+      this.layout,
+    );
+  }
+
+  /**
+   * The wiki word this dock asks to highlight, or null when none is set. The
+   * generic accessor for highlight-in-URL on dock surfaces; the home root `/`
+   * reads the same `HIGHLIGHT_PARAM` via `useHighlight()` instead (it is not a
+   * dock URL). See docs/wikitip.md.
+   */
+  get highlight(): string | null {
+    return this.options?.[HIGHLIGHT_PARAM] ?? null;
+  }
+
+  /**
+   * Clone this pointer with `highlight` serialized into its options — the
+   * writer that matches the `dockPointer.highlight = <wikiword>` mental model.
+   * Pairs with the `highlight` getter.
+   */
+  withHighlight(wikiword: string): DockPointer {
+    return new DockPointer(
+      this.viewType,
+      this.pointer,
+      { ...this.options, [HIGHLIGHT_PARAM]: wikiword },
+      this.layout,
+    );
+  }
+
+  /**
    * Parse dock pointer from URL segments
    * Returns null if invalid (URL validation)
    */
+  static fromUrl(url: string): DockPointer;
   static fromUrl(
     viewType: string,
     pointer?: string,
     searchParams?: URLSearchParams,
+    layout?: Layout,
+  ): DockPointer;
+  static fromUrl(
+    viewTypeOrUrl: string,
+    pointer?: string,
+    searchParams?: URLSearchParams,
     layout: Layout = Layout.DOCK, // Default to DOCK for backward compatibility
   ): DockPointer {
+    if (pointer === undefined && searchParams === undefined) {
+      try {
+        const url = new URL(viewTypeOrUrl, 'http://flowpad.local');
+        const parsedUrl = parseDockUrl(url.pathname);
+        if (parsedUrl?.viewType) {
+          return DockPointer.fromUrl(parsedUrl.viewType, parsedUrl.pointer, url.searchParams, parsedUrl.layout);
+        }
+      } catch {
+        // Not a URL-shaped value; continue with the historical viewType parser.
+      }
+    }
+
+    const viewType = viewTypeOrUrl;
+
     // Validate view type only
     if (!isValidView(viewType)) {
       throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, `Invalid view type: ${viewType}`);
@@ -85,6 +221,24 @@ export class DockPointer implements IDockPointer {
    */
   static forTab(viewType: ViewType, options?: Record<string, string>, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(viewType, undefined, options || {}, layout);
+  }
+
+  /**
+   * Triggers dock. The selected trigger id (and the transient "creating" mode)
+   * ride in OPTIONS, never `pointer`, so the Triggers tabHash stays `triggers|`
+   * — selection/creation are URL-addressable + reload-safe but stay in ONE tab
+   * (the same rule the scope filter already follows here). Pair with the
+   * `trigger` / `creating` option keys read by TriggersView/TriggersNavigator.
+   */
+  static forTriggers(
+    triggerId?: string,
+    opts?: { creating?: string },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const options: Record<string, string> = {};
+    if (triggerId) options.trigger = triggerId;
+    if (opts?.creating) options.creating = opts.creating;
+    return new DockPointer(ViewType.TRIGGERS, undefined, options, layout);
   }
 
   /**
@@ -125,29 +279,69 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for plan viewer
-   * @param agenticProcessTypeId - TypeId of the owning AgenticProcess
-   * @param filePath - Absolute file path to plan .md file
+   * Create dock pointer for the plan viewer, addressed by the **stable PLAN
+   * entity id** — the canonical, process-independent form (bookmarks).
+   * Reuses the asset ref grammar: `typeid/<plan-uuid>`.
+   * @param planTypeId - TypeId of the PLAN entity (`plan-<uuid>`)
    */
-  static forPlan(agenticProcessTypeId: TypeId, filePath: string, layout: Layout = Layout.DOCK): DockPointer {
-    const pointer = `${agenticProcessTypeId.toString()}/${filePath}`;
+  static forPlan(planTypeId: TypeId, layout: Layout = Layout.DOCK): DockPointer {
+    const pointer = `${AssetRoutingMethod.TYPEID}/${planTypeId.toString()}`;
     return new DockPointer(ViewType.PLAN, pointer, undefined, layout);
   }
 
   /**
-   * Parse a plan pointer into its agentic process TypeId and file path parts.
-   * Plan pointer format: "agentic_process-<uuid>/<absolute-file-path>"
-   * Returns null if the pointer doesn't start with a valid agentic_process TypeId.
+   * Create dock pointer for the plan viewer, addressed by **VFS path** — the
+   * race-free form for the live "open plan" button (no dependency on the
+   * fs-records scanner having minted the PLAN entity yet). The explicit `vfs`
+   * method segment means the path can never be mistaken for a TypeId, so there
+   * is no embedded-`//` hazard. `vfs/<compute_node-id>/<relPath>`.
+   * @param absPath - Absolute machine path to the plan .md file
+   * @param computeNode - Compute node the file lives on (default: local @local)
    */
-  static parsePlanPointer(pointer: string): { agenticProcessTypeId: TypeId; filePath: string } | null {
-    if (!DockPointer.isAgenticProcessPointer(pointer)) return null;
-    // Find the first "/" after the type-id prefix "agentic_process-<uuid>"
+  static forPlanByPath(
+    absPath: string,
+    computeNode: TypeId = LOCAL_COMPUTE_NODE,
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const absVfs = VFSPath.fromMachinePath(absPath, computeNode).absVfsPath;
+    const pointer = `${AssetRoutingMethod.VFS}/${absVfs}`;
+    return new DockPointer(ViewType.PLAN, pointer, undefined, layout);
+  }
+
+  /**
+   * Parse a plan pointer into its addressing method. Pure/sync — no network,
+   * no `new TypeId` on a vfs value. Three shapes:
+   *   - `typeid/<plan-uuid>`              → `{ kind: 'typeid', planTypeId }`
+   *   - `vfs/<compute_node-id>/<relPath>` → `{ kind: 'vfs', vfsValue }`
+   *   - `agentic_process-<id>/<path>`     → `{ kind: 'legacy', ... }` (old form;
+   *     the loader resolves + redirects it to the canonical `vfs` form)
+   * Returns null on anything else.
+   */
+  static parsePlanPointer(
+    pointer: string,
+  ):
+    | { kind: 'typeid'; planTypeId: TypeId }
+    | { kind: 'vfs'; vfsValue: string }
+    | { kind: 'legacy'; agenticProcessTypeId: TypeId; filePath: string }
+    | null {
+    if (!pointer) return null;
     const firstSlash = pointer.indexOf('/');
     if (firstSlash < 0) return null;
-    const rawTypeId = pointer.slice(0, firstSlash);
-    const filePath = pointer.slice(firstSlash + 1); // skip the delimiter "/"
-    if (!filePath) return null;
-    return { agenticProcessTypeId: new TypeId(rawTypeId), filePath };
+    const method = pointer.slice(0, firstSlash);
+    const value = pointer.slice(firstSlash + 1);
+    if (!value) return null;
+    // Legacy form: "agentic_process-<uuid>/<absolute-file-path-without-leading-slash>".
+    // Here `method` is the whole "agentic_process-<uuid>" typeid and `value` the rel path.
+    if (DockPointer.isAgenticProcessPointer(pointer)) {
+      return { kind: 'legacy', agenticProcessTypeId: new TypeId(method), filePath: `/${value}` };
+    }
+    if (method === AssetRoutingMethod.TYPEID) {
+      return { kind: 'typeid', planTypeId: new TypeId(value) };
+    }
+    if (method === AssetRoutingMethod.VFS) {
+      return { kind: 'vfs', vfsValue: value };
+    }
+    return null;
   }
 
   /**
@@ -184,9 +378,35 @@ export class DockPointer implements IDockPointer {
    * Pointer format: "editor/<assetType>/<vfsPath>"
    * @param assetType - The asset type (e.g., "skill", "markdown")
    * @param vfsPath - The VFS or filesystem path to the asset
+   * @param options - Query-string options (e.g. `{ editorMode: 'learning' }`)
    */
-  static forAssetEditor(assetType: string, vfsPath: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.ASSETS, `editor/${assetType}/${vfsPath.replace(/^\//, '')}`, undefined, layout);
+  static forAssetEditor(
+    assetType: string,
+    vfsPath: string,
+    layout: Layout = Layout.DOCK,
+    options?: Record<string, string>,
+  ): DockPointer {
+    // Delegates to the canonical AssetDocPointer grammar:
+    //   editor/<editor>/vfs/<computeNodeTypeId>/<relPath>
+    // The editor is derived from the record type (one editor serves many types).
+    const editor = editorForType(assetType) ?? AssetEditor.MARKDOWN;
+    return AssetDocPointer.forVfs(editor, vfsPath, undefined, options).toDockPointer(layout);
+  }
+
+  /**
+   * Create dock pointer for an entity-backed asset by its stable TypeId — the
+   * preferred, relocation-proof form. The loader resolves it by id (no path
+   * discovery), so navigation commits instantly.
+   * Pointer format: "editor/<editor>/typeid/<type>-<uuid>"
+   */
+  static forAssetEditorByTypeId(
+    assetType: string,
+    typeId: TypeId,
+    layout: Layout = Layout.DOCK,
+    options?: Record<string, string>,
+  ): DockPointer {
+    const editor = editorForType(assetType) ?? AssetEditor.MARKDOWN;
+    return AssetDocPointer.forTypeId(editor, typeId, options).toDockPointer(layout);
   }
 
   /**
@@ -195,8 +415,9 @@ export class DockPointer implements IDockPointer {
    * Pointer format: "wiki/<encoded name>"
    * URL: /dock/assets/wiki/<encoded name>
    */
-  static forWiki(name: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.ASSETS, `wiki/${encodeURIComponent(name)}`, undefined, layout);
+  static forWiki(name: string, layout: Layout = Layout.DOCK, space?: string): DockPointer {
+    // Canonical grammar: wiki/<space>/<name> (space default @local).
+    return AssetDocPointer.forWiki(name, space).toDockPointer(layout);
   }
 
   /**
@@ -206,15 +427,11 @@ export class DockPointer implements IDockPointer {
    */
   static forAssetList(
     typeName: string = 'all',
-    options?: { projectId?: string },
+    options?: { scope?: ScopeFilter },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
-    const opts: Record<string, string> = {};
-    if (options?.projectId) {
-      opts.scope = 'project';
-      opts.project_ids = options.projectId;
-    }
-    return new DockPointer(ViewType.ASSETS, `list/${typeName}`, Object.keys(opts).length ? opts : undefined, layout);
+    const base = new DockPointer(ViewType.ASSETS, `list/${typeName}`, undefined, layout);
+    return options?.scope ? base.withScopeFilter(options.scope) : base;
   }
 
   /**
@@ -315,10 +532,14 @@ export class DockPointer implements IDockPointer {
    */
   static parseProjectPointer(
     pointer: string | undefined | null,
-  ): { projectId: string | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
-    if (!pointer) return { projectId: null, roomId: null, tabTypeId: null, conversationId: null };
+  ): { projectTypeId: TypeId | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
+    if (!pointer) return { projectTypeId: null, roomId: null, tabTypeId: null, conversationId: null };
     const parts = pointer.split('/').filter(Boolean);
-    const projectId = parts[0] ?? null;
+    // parts[0] identifies the project. It may arrive bare (`<id>`) or as a
+    // serialized `<type>-<id>` typeid — route it through TypeId so the type
+    // token is parsed by the one object that owns that grammar, never
+    // string-matched / prefix-stripped here.
+    const projectTypeId = parts[0] ? DockPointer.projectSegmentToTypeId(parts[0]) : null;
     let roomId: string | null = null;
     let tabTypeId: TypeId | null = null;
     let conversationId: string | null = null;
@@ -334,7 +555,67 @@ export class DockPointer implements IDockPointer {
         }
       }
     }
-    return { projectId, roomId, tabTypeId, conversationId };
+    return { projectTypeId, roomId, tabTypeId, conversationId };
+  }
+
+  /**
+   * Construct a TypeId, or return null instead of throwing — the shared
+   * non-throwing coercion used by the pointer parsers (`targetTypeId`,
+   * `projectSegmentToTypeId`) that turn a `<type>-<id>`-or-bare-id segment into
+   * a TypeId.
+   */
+  private static tryTypeId(type: string, id?: string): TypeId | null {
+    try {
+      return id !== undefined ? new TypeId(type, id) : new TypeId(type);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Coerce a project-pointer segment into a `project` TypeId. The segment is a
+   * serialized `<type>-<id>` (e.g. `project-<uuid>`) or a bare id; TypeId parses
+   * the type token when present, and the project view supplies the type for a
+   * bare id. The grammar lives entirely in TypeId — no literal prefixing here.
+   */
+  private static projectSegmentToTypeId(segment: string): TypeId | null {
+    return DockPointer.tryTypeId(Project.type, DockPointer.tryTypeId(segment)?.id ?? segment);
+  }
+
+  /**
+   * Split a project pointer into `{ projectId, assetSubPointer }`.
+   *
+   * The sub-pointer is the same shape AssetsPage already accepts at
+   * `/dock/assets/<sub>` (e.g. `editor/<typeid>`, `list/<typeName>`,
+   * `folder/<typeid>/<relPath>`, `wiki/<name>`) — so the project view can
+   * reuse AssetsPage's existing selection parser without inventing new shapes.
+   */
+  static splitProjectPointer(
+    pointer: string | undefined | null,
+  ): { projectId: string | null; assetSubPointer: string } {
+    if (!pointer) return { projectId: null, assetSubPointer: '' };
+    const slash = pointer.indexOf('/');
+    if (slash < 0) return { projectId: pointer, assetSubPointer: '' };
+    return {
+      projectId: pointer.slice(0, slash),
+      assetSubPointer: pointer.slice(slash + 1),
+    };
+  }
+
+  /**
+   * Rebase a `ViewType.ASSETS` pointer onto `/dock/project/<projectId>` so
+   * navigation initiated by an assets-shaped builder (`forAssetEditor`,
+   * `forAssetFolder`, `forAssetList`, `forAssetWiki`) stays inside the project
+   * shell. Non-ASSETS pointers and falsy `projectId` pass through unchanged —
+   * call sites can use this unconditionally.
+   */
+  static rebaseAssetsOntoProject(
+    p: DockPointer,
+    projectId: string | null | undefined,
+  ): DockPointer {
+    if (!projectId || p.viewType !== ViewType.ASSETS) return p;
+    const sub = p.pointer ? `${projectId}/${p.pointer}` : projectId;
+    return new DockPointer(ViewType.PROJECT, sub, p.options, p.layout);
   }
 
   /**
@@ -460,16 +741,132 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create a DockPointer for a named app (skill UI). Mounts at /dock/apps/<uname>/<routerPath>.
+   * The pointer encodes "<uname>/<routerPath>"; the host splits at the first slash.
+   * `routerPath` is opaque to the host — interpreted by the app itself.
+   */
+  static forApp(
+    uname: string,
+    routerPath: string = '',
+    options?: Record<string, string>,
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = routerPath ? `${uname}/${routerPath}` : uname;
+    return new DockPointer(ViewType.APPS, pointer, options, layout);
+  }
+
+  /** Split an APPS pointer into its `{ uname, routerPath }` parts. */
+  static parseAppPointer(pointer: string | undefined): { uname: string; routerPath: string } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    if (idx < 0) return { uname: pointer, routerPath: '' };
+    return { uname: pointer.slice(0, idx), routerPath: pointer.slice(idx + 1) };
+  }
+
+  /**
+   * Create a DockPointer for the built-in dep-graph viewer at /dock/graph/<type>/<id>.
+   * Pointer encodes "<type>/<id>"; the viewer focuses on that entity (local-mode root).
+   * Omit the typeId to open the full graph with no focus.
+   * Options support `depth` (1-3) and `selected` (a node key to highlight).
+   */
+  static forGraph(
+    typeId?: TypeId | null,
+    options?: { depth?: number; selected?: string },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = typeId ? `${typeId.type}/${typeId.id}` : undefined;
+    const queryOptions: Record<string, string> = {};
+    if (options?.depth) queryOptions.depth = String(options.depth);
+    if (options?.selected) queryOptions.selected = options.selected;
+    return new DockPointer(ViewType.GRAPH, pointer, Object.keys(queryOptions).length ? queryOptions : undefined, layout);
+  }
+
+  /**
+   * Create a DockPointer for the frozen-context viewer at
+   * `/dock/graph_context/<id>`. `id` is the GraphContext entity's UUID.
+   */
+  static forGraphContext(id: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.GRAPH_CONTEXT, id, undefined, layout);
+  }
+
+  /**
+   * Create a DockPointer for the diagnosis viewer at `/dock/diagnosis/<id>`.
+   * `id` is the FlowpadDiagnosis entity's UUID.
+   */
+  static forDiagnosis(id: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.DIAGNOSIS, id, undefined, layout);
+  }
+
+  /** Split a GRAPH pointer into its `{ type, id }` parts. */
+  static parseGraphPointer(pointer: string | undefined): { type: string; id: string } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    if (idx < 0) return null;
+    return { type: pointer.slice(0, idx), id: pointer.slice(idx + 1) };
+  }
+
+  /**
+   * Create a DockPointer for the docs knowledge browser at
+   * `/dock/k-browser/<method>/<value>`. Mirrors the editor addressing grammar:
+   * the explicit `<method>` segment (`vfs` | `typeid`) keeps a filesystem path
+   * from ever being parsed as a TypeId. `value` is the docs-root vfs path (vfs)
+   * or a `<type>-<id>` TypeId (typeid).
+   */
+  static forKnowledgeBrowser(
+    value: string,
+    method: 'vfs' | 'typeid' = 'vfs',
+    options?: { selected?: string },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    // vfs paths are absolute — strip the leading "/" so the method<->path
+    // delimiter isn't an embedded "//" in the URL (react-router normalizes
+    // "//" to "/", silently demoting the path to a relative one). The parser
+    // re-adds it. Same hazard + fix as forPlan above.
+    const cleanValue =
+      method === 'vfs' && value.startsWith('/') ? value.slice(1) : value;
+    const pointer = `${method}/${cleanValue}`;
+    const queryOptions: Record<string, string> = {};
+    if (options?.selected) queryOptions.selected = options.selected;
+    return new DockPointer(
+      ViewType.K_BROWSER,
+      pointer,
+      Object.keys(queryOptions).length ? queryOptions : undefined,
+      layout,
+    );
+  }
+
+  /** Split a K_BROWSER pointer into `{ method, value }` (default method `vfs`).
+   *  vfs values get their leading "/" re-added (forKnowledgeBrowser strips it);
+   *  legacy double-slash URLs (`vfs//Users/…`) parse identically. */
+  static parseKnowledgeBrowserPointer(
+    pointer: string | undefined,
+  ): { method: 'vfs' | 'typeid'; value: string } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    if (idx < 0) return { method: 'vfs', value: pointer };
+    const method = pointer.slice(0, idx) === 'typeid' ? 'typeid' : 'vfs';
+    let value = pointer.slice(idx + 1);
+    if (method === 'vfs' && value && !value.startsWith('/') && !/^[A-Za-z]:[/\\]/.test(value)) {
+      value = `/${value}`;
+    }
+    return { method, value };
+  }
+
+  /**
    * Parse a lens pointer into its parts
    * @param pointer - The full pointer string (e.g., "claude/transcript/abc123")
    */
   static parseLensPointer(pointer: string): LensPointerParts | null {
     const parts = pointer.split('/');
-    if (parts.length < 3) return null;
+    // Two-segment lenses (category/type, no ref) are valid — e.g.
+    // `fs-records/scan`, `fs-records/llm-indexers`, `cli/log`, `claude/context`.
+    // Three-or-more-segment lenses additionally carry a ref (e.g.
+    // `claude/transcript/<sessionId>`).
+    if (parts.length < 2) return null;
     return {
       category: parts[0],
       type: parts[1],
-      ref: parts.slice(2).join('/'), // ref might contain slashes
+      ref: parts.slice(2).join('/'), // '' when absent; may contain slashes
     };
   }
 
@@ -515,9 +912,43 @@ export class DockPointer implements IDockPointer {
    * Create dock pointer for the dedicated conversation viewer at
    * `/dock/conversation/<conversationId>`. Same UI as the conversation
    * panel embedded in task views — the URL is just a different host for it.
+   *
+   * URL formats:
+   *   /dock/conversation/<conversationId>
+   *   /dock/conversation/<conversationId>/message/<messageId>
+   *
+   * The optional `message` segment deep-links to a specific FlowMessage —
+   * the conversation view derives its selected bubble from it (URL-first)
+   * and scrolls it into view.
    */
-  static forConversation(conversationId: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.CONVERSATION, conversationId, undefined, layout);
+  static forConversation(
+    conversationId: string,
+    sub?: { messageId?: string | null },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = sub?.messageId
+      ? `${conversationId}/message/${sub.messageId}`
+      : conversationId;
+    return new DockPointer(ViewType.CONVERSATION, pointer, undefined, layout);
+  }
+
+  /**
+   * Parse a conversation pointer string.
+   *
+   * Accepted shapes:
+   *   <conversationId>
+   *   <conversationId>/message/<messageId>
+   *
+   * Returns nulls for segments that aren't present or the input is malformed.
+   */
+  static parseConversationPointer(
+    pointer: string | undefined | null,
+  ): { conversationId: string | null; messageId: string | null } {
+    if (!pointer) return { conversationId: null, messageId: null };
+    const parts = pointer.split('/').filter(Boolean);
+    const conversationId = parts[0] ?? null;
+    const messageId = parts[1] === 'message' && parts[2] ? parts[2] : null;
+    return { conversationId, messageId };
   }
 
   /**
@@ -527,14 +958,6 @@ export class DockPointer implements IDockPointer {
    */
   static forSpec(specId: string, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(ViewType.SPEC, specId, undefined, layout);
-  }
-
-  /**
-   * Create dock pointer for live session view
-   * @param processId - Process ID for the session
-   */
-  static forSession(processId: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.SESSION, processId, undefined, layout);
   }
 
   /**
@@ -566,14 +989,22 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for the LLM Indexers lens — lists MarkdownIndex
+   * entities, lets the user run / view each indexer.
+   */
+  static forLlmIndexers(layout: Layout = Layout.DOCK): DockPointer {
+    return DockPointer.forLens('fs-records', 'llm-indexers', '', layout);
+  }
+
+  /**
    * Create a dock pointer for the transcript lens, dispatching by worker.
    *
    * - claude: ref is `<projectEncodedName>/<sessionId>` (legacy claude viewer).
-   * - codex (and other workers): ref is the URL-encoded absolute path to the
+   * - codex/copilot: ref is the URL-encoded absolute path to the
    *   rollout JSONL — the generic viewer fetches it via `useTranscript`.
    */
   static forLensTranscript(
-    workerType: 'claude' | 'codex',
+    workerType: 'claude' | 'codex' | 'copilot' | 'workflow',
     ref: string,
     layout: Layout = Layout.DOCK,
     options?: Record<string, string>,
@@ -607,6 +1038,187 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Canonical tab identity for this pointer, or **`null` when the surface is not
+   * a tab at all** — the single generic "no tab" signal every consumer honors
+   * (`ensureTabForCurrentDock` skips it; the strip's active-key resolves to no
+   * chip). Two surfaces have no chip: a **full-bleed** view (e.g. `home`, via the
+   * registry `chrome` flag) takes over the panel so there is no strip to sit in;
+   * and a **bare shell** (`/dock/shell` with no session — the terminal HOST whose
+   * sessions are the actual tabs at `/dock/shell/<session>`). Encoding "no tab"
+   * here (not as a special case in each consumer) keeps the whole tab-or-not
+   * decision in the one place that owns tab identity.
+   *
+   * Otherwise identity is ``viewType`` + ``pointer`` ONLY. ``layout`` is excluded
+   * on purpose: a ``/win/`` popout and the ``/dock/`` view of the same content are
+   * the same Tab (placement is per-client URL state, not tab identity). Transient
+   * ``options`` (slot, query params) are excluded too — by default a viewType's
+   * sub-state shares one tab (e.g. all settings sub-paths → one "Settings" tab).
+   * This string is the natural key the backend stores verbatim as ``Tab.pointer``;
+   * canonicalization lives here and NOWHERE else, so there is no cross-language
+   * canonicalizer to keep in agreement.
+   */
+  get tabHash(): string | null {
+    if (!this.viewType) return null;
+    // A full-bleed surface (Home) takes over the panel — no strip, hence no chip.
+    if (VIEWER_REGISTRY[this.viewType]?.chrome === 'fullbleed') return null;
+    // A bare shell is the terminal host; only a session-pointer shell is a tab.
+    if (this.viewType === ViewType.SHELL && !this.pointer) return null;
+    // Assets is a SINGLE tab per scope: every type/folder/editor sub-pointer of
+    // one scope folds into ONE tab. Identity = the scope filter (global when
+    // unset), NOT the sub-pointer. scopeFilterKey: 'all' | 'user' |
+    // 'project:<id>' | 'filter:<0|1>:p1,p2'.
+    if (this.viewType === ViewType.ASSETS) {
+      return `${ViewType.ASSETS}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
+    }
+    return `${this.viewType}|${this.pointer ?? ''}`;
+  }
+
+  /** Serialize this dock's tab-identity fields (viewType + pointer) as JSON.
+   *  This is what Tab.pointer stores in the DB. Returns null if tabHash is null. */
+  toJSON(): string | null {
+    if (!this.tabHash) return null;
+    // Assets identity is the SCOPE, not the sub-pointer. Normalize the pointer to
+    // '' and persist the scope (options) + the computed tabHash so: (a) the stored
+    // JSON is constant for a given scope regardless of which type was last viewed
+    // → the backend mints ONE Tab row per scope; (b) `Tab.dockPointer` rebuilds the
+    // same tabHash directly from the stored field; (c) clicking the chip reopens the
+    // scoped browser root.
+    if (this.viewType === ViewType.ASSETS) {
+      return JSON.stringify({
+        viewType: ViewType.ASSETS,
+        pointer: '',
+        options: this.scopeFilter ? scopeFilterToDockOptions(this.scopeFilter) : undefined,
+        tabHash: this.tabHash,
+      });
+    }
+    return JSON.stringify({ viewType: this.viewType ?? '', pointer: this.pointer ?? '' });
+  }
+
+  /** Deserialize a stored Tab.pointer JSON back to a navigable DockPointer.
+   *  Replaces fromTabHash — no opaque string parsing needed. Returns null on malformed input. */
+  static fromJSON(json: string): DockPointer | null {
+    try {
+      const parsed = JSON.parse(json) as {
+        viewType?: string;
+        pointer?: string;
+        options?: Record<string, string>;
+      };
+      const { viewType, pointer, options } = parsed;
+      if (!viewType) return null;
+      const dp = DockPointer.fromUrl(viewType, pointer || undefined);
+      // Restore scope options (assets identity) so the reconstructed dock's
+      // tabHash matches the live nav dock's.
+      return options ? new DockPointer(dp.viewType, dp.pointer, options, dp.layout) : dp;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The entity this dock targets, as a TypeId — for the tab's denormalized
+   * target + project resolution (`Tab.getFromDockPointer`). Pure string parse,
+   * no network. Two shapes carry an entity: the type lives IN the pointer
+   * (`<type>-<id>` / `…/typeid/<type>-<id>`), or — for a bare-id pointer — in the
+   * viewType segment (e.g. `/dock/project/<id>` → `project-<id>`,
+   * `/dock/conversation/<id>`). vfs/list/folder/target-less docks → null.
+   */
+  get targetTypeId(): TypeId | null {
+    const pointer = this.pointer;
+    if (!pointer) return null;
+    // A PLAN dock addresses its PLAN entity directly in the `typeid/<plan-id>`
+    // form; the `vfs/<path>` form is path-resolved and carries no typeid target.
+    if (this.viewType === ViewType.PLAN) {
+      const parsed = DockPointer.parsePlanPointer(pointer);
+      return parsed?.kind === 'typeid' ? parsed.planTypeId : null;
+    }
+    // A claude-transcript lens (`claude/transcript/<sessionId>`) targets its
+    // ClaudeSession entity (id = session id). Surfacing it here puts lens on the
+    // same entity rail as every other dock: the tab mint resolves the session's
+    // name and the loader its project — no lens-special naming/project logic.
+    if (this.viewType === ViewType.LENS) {
+      const lens = DockPointer.parseLensPointer(pointer);
+      if (lens?.category === 'claude' && lens.type === 'transcript' && lens.ref && !lens.ref.includes('/')) {
+        return DockPointer.tryTypeId(ClaudeSession.type, lens.ref);
+      }
+    }
+    // A PROJECT-rebased asset dock (`/dock/project/<id>/<assetSubPointer>`, the
+    // output of `rebaseAssetsOntoProject`) carries its target in the asset
+    // sub-pointer, addressed exactly as a plain ASSETS dock would. A
+    // typeid-addressed asset surfaces its entity here; a vfs/list/folder/wiki
+    // sub-pointer carries no typeid target (its entity is resolved by path via
+    // `vfsPath`) — and crucially we must NOT surface the `<id>` project segment
+    // as the target, so the path-resolved asset's OWN project wins on the tab.
+    const assetSub = this.assetSubPointer;
+    if (assetSub !== null) {
+      const typeid = this.assetEditorValue(assetSub, AssetRoutingMethod.TYPEID);
+      return typeid ? DockPointer.tryTypeId(typeid) : null;
+    }
+    const candidate = pointer.includes('/typeid/') ? pointer.split('/typeid/').pop() ?? '' : pointer;
+    return (
+      DockPointer.tryTypeId(candidate) ??
+      (this.viewType && !pointer.includes('/') ? DockPointer.tryTypeId(this.viewType, pointer) : null)
+    );
+  }
+
+  /**
+   * The inner asset sub-pointer of a PROJECT-rebased asset dock
+   * (`/dock/project/<id>/<assetSubPointer>`) — the same shape a plain
+   * `/dock/assets/<sub>` dock carries. Null when this isn't a project dock
+   * carrying a sub-pointer (a bare `/dock/project/<id>` has none). This is the
+   * un-rebase that lets the tab-mint getters treat a project-shell asset URL
+   * identically to a plain assets URL, so the asset's own project is resolved.
+   */
+  private get assetSubPointer(): string | null {
+    if (this.viewType !== ViewType.PROJECT || !this.pointer) return null;
+    const { assetSubPointer } = DockPointer.splitProjectPointer(this.pointer);
+    return assetSubPointer || null;
+  }
+
+  /**
+   * Parse an asset sub-pointer and return the `value` of an `editor/<...>/<method>`
+   * pointer when it matches `method` (`typeid` → a `<type>-<id>` string, `vfs` →
+   * a vfs path), else null. The shared parse-and-match both `targetTypeId` and
+   * `vfsPath` use to read their respective addressing form off the same pointer.
+   */
+  private assetEditorValue(pointer: string | null, method: AssetRoutingMethod): string | null {
+    if (!pointer) return null;
+    try {
+      const ap = AssetDocPointer.parse(pointer);
+      return ap.mode === AssetMode.EDITOR && ap.method === method ? ap.value : null;
+    } catch {
+      /* list/folder/wiki or malformed — not an editor pointer */
+      return null;
+    }
+  }
+
+  /**
+   * The VFS path an asset-editor dock addresses (`assets/editor/<editor>/vfs/<path>`),
+   * or null for any other shape. Pure parse via the canonical `AssetDocPointer`
+   * grammar — no network. Used by `Tab.getFromDockPointer` to resolve a
+   * path-addressed asset's project via `getEntityByPath`. Handles both the plain
+   * ASSETS dock and the PROJECT-rebased form (un-rebased via `assetSubPointer`).
+   */
+  get vfsPath(): VFSPath | null {
+    const assetsPointer = this.viewType === ViewType.ASSETS ? this.pointer ?? null : this.assetSubPointer;
+    const value = this.assetEditorValue(assetsPointer, AssetRoutingMethod.VFS);
+    return value ? VFSPath.parse(value) : null;
+  }
+
+  /** DEPRECATED: use fromJSON instead. Reconstruct the navigable DockPointer from a
+   *  legacy stored `Tab.pointer` (`viewType|sub` string format). Null when invalid.
+   *  This method remains for backward compatibility but new code should use fromJSON. */
+  static fromTabHash(hash: string): DockPointer | null {
+    const i = hash.indexOf('|');
+    const viewType = i >= 0 ? hash.slice(0, i) : hash;
+    const sub = i >= 0 ? hash.slice(i + 1) : '';
+    try {
+      return DockPointer.fromUrl(viewType, sub || undefined);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Convert to URL segments (for building URLs)
    */
   toUrlSegments(): { viewType: ViewType; pointer?: string; layout: Layout } {
@@ -615,6 +1227,16 @@ export class DockPointer implements IDockPointer {
       pointer: this.pointer,
       layout: this.layout,
     };
+  }
+
+  /**
+   * Serialize this DockPointer into the canonical layout URL.
+   */
+  toUrl(currentPath: string = ''): string {
+    if (!this.viewType) {
+      throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, 'Cannot serialize DockPointer without a view type');
+    }
+    return buildDockUrl(currentPath, this.viewType, this.pointer, this.options, this.layout);
   }
 
   /**

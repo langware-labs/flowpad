@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * Playwright config for manual regression general tests.
  *
- * These tests target the micro-apps graph UI (HomeLanding / SessionViewer).
+ * These tests target the micro-apps graph UI (HomeLanding / shell terminal).
  * They assume the backend + frontend are already running.
  *
  * Run:

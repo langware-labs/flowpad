@@ -1,3 +1,7 @@
+---
+id: 11d100c4-c6c0-5db5-afc7-ef50488054fb
+---
+
 test 1: AI configuration view is accessible and loads without errors (FLOWPAD-1604)
 - navigate to {APP_URL}/dock/ai-config
 - wait 3 seconds for the AI config view to load

@@ -3,6 +3,7 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import React, { useCallback } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { getArtifactTypeConfig, MetadataFieldDef } from './artifact-type-config';
 
 interface ArtifactMetadataEditorProps {
@@ -37,7 +38,7 @@ export const ArtifactMetadataEditor: React.FC<ArtifactMetadataEditorProps> = ({ 
   // No metadata fields for this type
   if (fields.length === 0) {
     return (
-      <div className="text-sm text-muted-foreground">No additional metadata fields for {config.label} artifacts.</div>
+      <div className="text-sm text-muted-foreground"><Trans>No additional metadata fields for {config.label} artifacts.</Trans></div>
     );
   }
 
@@ -62,6 +63,8 @@ interface MetadataFieldProps {
 }
 
 const MetadataField: React.FC<MetadataFieldProps> = ({ field, value, onChange }) => {
+  const { t } = useLingui();
+
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const newValue = field.type === 'number' ? Number(e.target.value) : e.target.value;
@@ -87,7 +90,7 @@ const MetadataField: React.FC<MetadataFieldProps> = ({ field, value, onChange })
       {field.type === 'select' && field.options ? (
         <Select value={String(value || '')} onValueChange={handleSelectChange}>
           <SelectTrigger>
-            <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
+            <SelectValue placeholder={t`Select ${field.label.toLowerCase()}`} />
           </SelectTrigger>
           <SelectContent>
             {field.options.map((option) => (
@@ -129,6 +132,7 @@ interface JsonMetadataEditorProps {
  * Simple JSON editor for metadata when no type is selected.
  */
 const JsonMetadataEditor: React.FC<JsonMetadataEditorProps> = ({ metadata, onChange }) => {
+  const { t } = useLingui();
   const [jsonError, setJsonError] = React.useState<string | null>(null);
   const [jsonText, setJsonText] = React.useState(() => {
     return Object.keys(metadata).length > 0 ? JSON.stringify(metadata, null, 2) : '';
@@ -148,13 +152,13 @@ const JsonMetadataEditor: React.FC<JsonMetadataEditorProps> = ({ metadata, onCha
       try {
         const parsed = JSON.parse(text);
         if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-          setJsonError('Metadata must be a JSON object');
+          setJsonError(t`Metadata must be a JSON object`);
           return;
         }
         setJsonError(null);
         onChange(parsed);
       } catch {
-        setJsonError('Invalid JSON');
+        setJsonError(t`Invalid JSON`);
       }
     },
     [onChange],
@@ -162,7 +166,7 @@ const JsonMetadataEditor: React.FC<JsonMetadataEditorProps> = ({ metadata, onCha
 
   return (
     <div className="space-y-2">
-      <Label htmlFor="metadata-json">Metadata (JSON)</Label>
+      <Label htmlFor="metadata-json"><Trans>Metadata (JSON)</Trans></Label>
       <textarea
         id="metadata-json"
         className={`flex min-h-[120px] w-full rounded-md border bg-background px-3 py-2 font-mono text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
@@ -174,7 +178,7 @@ const JsonMetadataEditor: React.FC<JsonMetadataEditorProps> = ({ metadata, onCha
       />
       {jsonError && <p className="text-xs text-destructive">{jsonError}</p>}
       <p className="text-xs text-muted-foreground">
-        Select an artifact type above to get type-specific metadata fields.
+        <Trans>Select an artifact type above to get type-specific metadata fields.</Trans>
       </p>
     </div>
   );

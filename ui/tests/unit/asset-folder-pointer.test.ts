@@ -5,6 +5,7 @@ import {
   DEFAULT_ASSET_FILTER,
   applyFilterToParams,
 } from '@src/components/assets/assetFilter';
+import { userScope } from '@src/lib/scope-filter';
 
 describe('DockPointer.forAssetFolder', () => {
   it('builds a pointer with typeid and relPath', () => {
@@ -24,7 +25,7 @@ describe('DockPointer.forAssetFolder', () => {
   });
 
   it('preserves compute_node @local typeid', () => {
-    const dp = DockPointer.forAssetFolder('markdown', 'compute_node-@local', 'Users/shlom/.claude/docs');
+    const dp = DockPointer.forAssetFolder('markdown', 'compute_node-@local', 'Users/alice/.claude/docs');
     expect(dp.pointer).toBe('folder/markdown/compute_node-@local/Users/alice/.claude/docs');
   });
 });
@@ -53,7 +54,7 @@ describe('DockPointer.parseAssetFolderPointer', () => {
     expect(parsed).toEqual({
       typeName: 'markdown',
       typeid: 'compute_node-@local',
-      relPath: 'Users/shlom/.claude/docs',
+      relPath: 'Users/alice/.claude/docs',
     });
   });
 
@@ -125,11 +126,12 @@ describe('applyFilterToParams — parentPath', () => {
     const p = new URLSearchParams();
     applyFilterToParams(p, {
       ...DEFAULT_ASSET_FILTER,
-      scope: 'user',
+      scope: userScope(),
       tags: ['a', 'b'],
       parentPath: '/docs',
     });
-    expect(p.get('scope')).toBe('user');
+    expect(p.get('user')).toBe('true');
+    expect(p.get('projects')).toBe('');
     expect(p.get('tags')).toBe('a,b');
     expect(p.get('parent_path')).toBe('/docs');
   });

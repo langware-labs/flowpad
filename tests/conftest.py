@@ -17,6 +17,108 @@ import pytest
 # Set environment variable for testing
 os.environ["TESTING"] = "true"
 
+
+# -----------------------------------------------------------------------------
+# CRITICAL: sandbox HOME before any flow_sdk import.
+#
+# Several flow_sdk modules still hard-code `Path.home() / ".claude"` (e.g.
+# transcript_analyzer/resolver.py, fs_records/claude/claude_settings/__init__.py,
+# fs_records/claude/claude_debug_log.py, server/routes/bootstrap.py). They
+# bypass InstanceSettings.claude_home — the
+# contract violation flagged at flow_sdk/core/.../system_profile/utils.py:9.
+#
+# Overriding HOME redirects every Path.home() call (including those direct
+# ones AND the InstanceSettings defaults at base_settings.py:210) into an
+# empty sandbox. Without this, the indexer's default_roots() walks the real
+# user home: 61 real projects × project_folder_walker_fn recursion =
+# 272k folder waypoints, 93s wall — blowing every pytest.mark.timeout(30)
+# in test_record_get_id.py / test_index_handler.py / test_scan_handler.py.
+#
+# Done BEFORE the flow_sdk import below so module-level `Path.home()`
+# evaluations (e.g. resolver.py:20's `Final[Path]`) pick up the sandbox.
+# -----------------------------------------------------------------------------
+import tempfile  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+_TEST_HOME = _Path(tempfile.gettempdir()) / "flowpad_test_home"
+for _sub in (".claude", ".codex", ".flow"):
+    (_TEST_HOME / _sub).mkdir(parents=True, exist_ok=True)
+# Stash the pre-sandbox HOME so child conftests can hand it to subprocess
+# environments that need real CLI auth (e.g. tests/long_tests/conftest.py
+# restoring HOME for tests that spawn the real Claude/Codex CLI). This is
+# the actual user-facing HOME on POSIX, macOS, AND Windows — `pwd.getpwuid`
+# returns the passwd-entry home which can diverge under `sudo -u` / CI
+# service accounts, and `pwd` doesn't exist on Windows at all.
+os.environ["FLOWPAD_PRE_SANDBOX_HOME"] = os.environ.get("HOME") or os.path.expanduser("~")
+os.environ["HOME"] = str(_TEST_HOME)
+
+
+# -----------------------------------------------------------------------------
+# CRITICAL: force keyring to an in-memory backend BEFORE any flow_sdk import.
+#
+# pytest sets PYTEST_CURRENT_TEST per-test, which makes flow_sdk's instance
+# resolver pick instance_name="test". Any test that reaches enable_secrets()
+# or instance.sod without the sod_env fixture would otherwise hit the real
+# macOS Keychain with the brand-new "Flowpad.ai.sod_key" service — and if the
+# login keychain is in any unusual state, macOS pops a *catastrophic*
+# "Keychain Not Found" dialog (which offers "Reset To Defaults" → wipes ALL
+# stored passwords). The dialog re-pops per test on Cancel.
+#
+# This in-memory backend is registered BEFORE any flow_sdk import so the
+# real OS keychain is never reachable from the test process. Per-test
+# sod_env fixture monkeypatches keyring.get_password/set_password on top of
+# this; both layers are belt-and-suspenders.
+# -----------------------------------------------------------------------------
+import keyring  # noqa: E402
+from keyring.backend import KeyringBackend  # noqa: E402
+from keyring.errors import PasswordDeleteError  # noqa: E402
+
+
+class _InMemoryKeyring(KeyringBackend):
+    """Process-local in-memory keyring backend.
+
+    Replaces the real OS keyring globally for the test session. Tests that
+    need to inspect keyring contents directly can read ``_InMemoryKeyring._store``.
+    """
+
+    priority = 1  # type: ignore[assignment]
+    _store: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service, username):
+        return self._store.get((service, username))
+
+    def set_password(self, service, username, password):
+        self._store[(service, username)] = password
+
+    def delete_password(self, service, username):
+        if (service, username) not in self._store:
+            raise PasswordDeleteError(f"no entry for {service}/{username}")
+        del self._store[(service, username)]
+
+
+keyring.set_keyring(_InMemoryKeyring())
+
+# Force the SOD-key path to use the (in-memory) keyring above rather than
+# shelling out to the vendored, signed flow-rs binary — which, once committed,
+# IS present in the source tree and would otherwise reach the REAL OS keychain
+# (defeating the in-memory backend and risking the catastrophic dialog above).
+# See flow_sdk/flow_rs_binary.py::vendored_flow_rs_enabled.
+os.environ["FLOWPAD_DISABLE_VENDORED_FLOW_RS"] = "1"
+
+# Neutralize inherited Electron-desktop env for the test session. When the suite
+# is launched from inside the Flowpad desktop app's PTY (an agentic-process
+# worker), the desktop exports these vars and they leak into the tests:
+#   FLOWPAD_DESKTOP   flips the consent gate into its desktop-only branch
+#                     (is_secrets_enabled marker-only => False)
+#   SOD_ENC_KEY       makes sod_key resolve to a fixed env key that bypasses the
+#                     keychain entirely (breaks keychain-loss/recovery tests)
+#   DEPLOY_ENV        leaks "desktop" — an invalid value for tooling that parses it
+# Default the session to a clean non-desktop env; tests that exercise these paths
+# set the vars themselves via monkeypatch. Listed explicitly so the next leak is a
+# one-line addition here rather than another scattered special case.
+for _inherited in ("FLOWPAD_DESKTOP", "SOD_ENC_KEY", "DEPLOY_ENV"):
+    os.environ.pop(_inherited, None)
+
 from flow_sdk.config import FLOWPAD_TEMP_DIR
 
 # Ensure tests use a separate DB path (prevents conflicts with a running dev server)
@@ -64,10 +166,10 @@ def async_context(func):
 def clean_claude_temp_projects():
     """Remove temp-path Claude projects before and after the test session."""
     import asyncio
-    from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
-    asyncio.get_event_loop().run_until_complete(ClaudeProjectFsRecord.clean_temp_projects())
+    from flow_sdk.fs_store.operations.claude_project import clean_temp_projects
+    asyncio.get_event_loop().run_until_complete(clean_temp_projects())
     yield
-    asyncio.get_event_loop().run_until_complete(ClaudeProjectFsRecord.clean_temp_projects())
+    asyncio.get_event_loop().run_until_complete(clean_temp_projects())
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -144,4 +246,61 @@ def isolated_records_root(tmp_path, monkeypatch):
     monkeypatch.setenv("FS_RECORD_PATH", str(tmp_path / "records"))
     reset_instance_settings()
     yield tmp_path / "records"
+    reset_instance_settings()
+
+
+# ----------------------------------------------------------------------
+# Phase C: per-instance sod sandbox — usable from every test directory.
+#
+# Sets up FLOW_HOME=<tmp_path>, FLOW_INSTANCE=test-<uuid>, in-memory keyring
+# for the per-instance Fernet key, and calls enable_secrets() so the consent
+# gate is open. Yields the active InstanceSettings.
+#
+# Replaces the per-file ``memory_keyring`` fixtures that patched
+# ``credentials_mod.keyring`` — that import is gone in Phase C.
+# ----------------------------------------------------------------------
+
+@pytest.fixture
+def sod_env(monkeypatch, tmp_path):
+    import uuid as _uuid
+    from pathlib import Path
+
+    instance_name = f"test-{_uuid.uuid4().hex[:8]}"
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", instance_name)
+    monkeypatch.delenv("FLOWPAD_DEV", raising=False)
+    monkeypatch.delenv("FLOWPAD_TEST", raising=False)
+
+    from flow_sdk.instance_settings import (
+        get_instance_settings,
+        reset_instance_settings,
+    )
+    reset_instance_settings()
+
+    store: dict[tuple[str, str], str] = {}
+    import keyring as _keyring
+    import keyring.errors as _keyring_errors
+
+    def _get(service, account):
+        return store.get((service, account))
+
+    def _set(service, account, value):
+        store[(service, account)] = value
+
+    def _del(service, account):
+        if (service, account) not in store:
+            raise _keyring_errors.PasswordDeleteError("not in fake")
+        del store[(service, account)]
+
+    monkeypatch.setattr(_keyring, "get_password", _get)
+    monkeypatch.setattr(_keyring, "set_password", _set)
+    monkeypatch.setattr(_keyring, "delete_password", _del)
+
+    from flow_sdk.fs_store import set_default_records_root
+    set_default_records_root(Path(tmp_path) / "records")
+
+    from flow_sdk.cli.auth.secrets import enable_secrets
+    assert enable_secrets() is True
+
+    yield get_instance_settings()
     reset_instance_settings()

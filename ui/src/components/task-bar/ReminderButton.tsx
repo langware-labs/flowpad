@@ -9,6 +9,7 @@ import { Slider } from '@src/components/ui/slider';
 import { Bell } from 'lucide-react';
 import { useState } from 'react';
 import type { Task } from '@sdk';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface ReminderButtonProps {
   task: Task;
@@ -16,6 +17,7 @@ interface ReminderButtonProps {
 }
 
 export function ReminderButton({ task, onSetReminder }: ReminderButtonProps) {
+  const { t } = useLingui();
   const [count, setCount] = useState(1);
   const [unit, setUnit] = useState<'days' | 'weeks'>('days');
   const [open, setOpen] = useState(false);
@@ -40,7 +42,7 @@ export function ReminderButton({ task, onSetReminder }: ReminderButtonProps) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="task-card-action" title="Set reminder" onClick={(e) => e.stopPropagation()}>
+        <button className="task-card-action" title={t`Set reminder`} onClick={(e) => e.stopPropagation()}>
           <Bell className="h-3.5 w-3.5" />
         </button>
       </PopoverTrigger>
@@ -51,13 +53,13 @@ export function ReminderButton({ task, onSetReminder }: ReminderButtonProps) {
             onClick={() => handleQuickPick(1, 'days')}
             className="rounded-md bg-muted px-2 py-1 text-xs hover:bg-accent"
           >
-            Tomorrow
+            <Trans>Tomorrow</Trans>
           </button>
           <button
             onClick={() => handleQuickPick(1, 'weeks')}
             className="rounded-md bg-muted px-2 py-1 text-xs hover:bg-accent"
           >
-            Next week
+            <Trans>Next week</Trans>
           </button>
         </div>
         <Separator />
@@ -81,15 +83,15 @@ export function ReminderButton({ task, onSetReminder }: ReminderButtonProps) {
             className="shrink-0"
           >
             <ToggleGroupItem value="days" className="h-6 px-1.5 text-[10px]">
-              d
+              <Trans>d</Trans>
             </ToggleGroupItem>
             <ToggleGroupItem value="weeks" className="h-6 px-1.5 text-[10px]">
-              w
+              <Trans>w</Trans>
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
         <span className="mt-1 block text-[10px] text-muted-foreground">
-          Remind in {count} {unit === 'days' ? (count === 1 ? 'day' : 'days') : count === 1 ? 'week' : 'weeks'}
+          <Trans>Remind in {count} {unit === 'days' ? (count === 1 ? 'day' : 'days') : count === 1 ? 'week' : 'weeks'}</Trans>
         </span>
       </PopoverContent>
     </Popover>

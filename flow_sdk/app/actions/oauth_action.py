@@ -14,7 +14,10 @@ from flow_sdk.core import action
 from flow_sdk.api.oauth_api import OAuthAction, OAuthErrorCode, OAuthProvider, OauthClientRequestInfo
 from flow_sdk.app.actions.desktop_oauth import (
     _desktop_oauth_sessions,
+    cancel_github_device_flow,
+    delete_anthropic_token_for_current_user,
     get_desktop_oauth_auth_url,
+    get_anthropic_token_for_current_user,
     handle_desktop_oauth_callback,
     wait_for_desktop_oauth_callback,
 )
@@ -90,6 +93,14 @@ async def oauth_main() -> ApiResponse:
                 return ApiFailResponse(message="State parameter required for wait-callback")
             return await _handle_wait_callback(provider, state)
 
+        # Cancel — explicit teardown for device-flow sessions (used by UI Cancel button).
+        if oauth_action_str == "cancel":
+            state = request_info.request_parameters.get("state") if request_info.request_parameters else None
+            if not state:
+                return ApiFailResponse(message="State parameter required for cancel")
+            cancelled = cancel_github_device_flow(state) if provider == "github" else False
+            return ApiSuccessResponse(data={"cancelled": cancelled})
+
         # Attach
         if oauth_action_str == OAuthAction.Attach:
             return ApiSuccessResponse(message=f"OAuth {provider} attached (desktop stub)")
@@ -105,6 +116,10 @@ async def oauth_main() -> ApiResponse:
         if oauth_action_str == OAuthAction.Disconnect:
             if provider == OAuthProvider.FLOWPAD_CLOUD:
                 return await _handle_flowpad_cloud_disconnect()
+            if provider == "github":
+                return await _handle_github_disconnect()
+            if provider == "anthropic":
+                return await delete_anthropic_token_for_current_user()
             return ApiSuccessResponse(
                 message=f"OAuth {provider} disconnected (desktop stub)",
                 data={"remaining_attachment_count": 0},
@@ -120,25 +135,56 @@ async def oauth_main() -> ApiResponse:
 async def _handle_status(provider: str) -> ApiResponse:
     """Check OAuth connection status for a provider.
 
-    Desktop mode: checks if Anthropic auth is available via detect_claude_code_auth.
-    For other providers, returns MISSING status.
+    Desktop mode reads Flowpad-owned SOD entries. It never inspects Claude Code's
+    credential store.
     """
     try:
         if provider == "anthropic":
-            try:
-                from flow_sdk.builtin.faas.claude_code_auth import detect_claude_code_auth
-                auth_status = await detect_claude_code_auth()
+            credentials, error = await get_anthropic_token_for_current_user()
+            if error is not None:
                 return ApiSuccessResponse(
                     message="Connection status checked",
                     data={
-                        "status": "available" if auth_status.is_authenticated else "missing",
-                        "has_token": auth_status.is_authenticated,
-                        "is_attached": auth_status.is_authenticated,
-                        "auth_method": auth_status.auth_method.value if hasattr(auth_status, 'auth_method') else "none",
+                        "status": "error",
+                        "has_token": False,
+                        "is_attached": False,
+                        "auth_method": "anthropic",
+                        "error": error,
                     },
                 )
-            except ImportError:
-                pass
+            return ApiSuccessResponse(
+                message="Connection status checked",
+                data={
+                    "status": "available" if credentials else "missing",
+                    "has_token": bool(credentials),
+                    "is_attached": bool(credentials),
+                    "auth_method": "anthropic",
+                },
+            )
+
+        if provider == "github":
+            token, error = await _get_github_token_for_current_user()
+            if error is not None:
+                # SOD driver outage / FK ValueError / DB error — distinct from "no token".
+                return ApiSuccessResponse(
+                    message="Connection status checked",
+                    data={
+                        "status": "error",
+                        "has_token": False,
+                        "is_attached": False,
+                        "auth_method": "github",
+                        "error": error,
+                    },
+                )
+            return ApiSuccessResponse(
+                message="Connection status checked",
+                data={
+                    "status": "available" if token else "missing",
+                    "has_token": bool(token),
+                    "is_attached": bool(token),
+                    "auth_method": "github",
+                },
+            )
 
         # Default: no credentials available
         return ApiSuccessResponse(
@@ -147,13 +193,22 @@ async def _handle_status(provider: str) -> ApiResponse:
                 "status": "missing",
                 "has_token": False,
                 "is_attached": False,
+                "auth_method": "none",
             },
         )
     except Exception as e:
+        # Unexpected error path (above branches handle their own errors). Surface
+        # status="error" so the UI can distinguish from a genuine "no credential".
         logger.warning(f"OAuth status check error for {provider}: {e}")
         return ApiSuccessResponse(
             message="Connection status checked",
-            data={"status": "missing", "has_token": False, "is_attached": False},
+            data={
+                "status": "error",
+                "has_token": False,
+                "is_attached": False,
+                "auth_method": provider if provider in {"anthropic", "github"} else "none",
+                "error": str(e),
+            },
         )
 
 
@@ -163,7 +218,7 @@ async def _handle_flowpad_cloud_disconnect() -> ApiResponse:
     from flow_sdk.cli.auth.cloud_urls import get_logout_url
     from flow_sdk.instance_settings import get_instance_settings
 
-    clear_cloud_credentials()
+    await clear_cloud_credentials()
 
     port = get_instance_settings().port
     post_logout_url = f"http://127.0.0.1:{port}/api/v1/cloud/logout_callback"
@@ -192,17 +247,15 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
 
 async def _get_flowpad_cloud_oauth_auth() -> ApiResponse:
     """Generate Flowpad cloud login URL."""
-    import os
-
     from flow_sdk.cli.auth.cloud_urls import get_login_url
     from flow_sdk.instance_settings import get_instance_settings
 
-    public_url = os.environ.get("FLOWPAD_DOCKER_PUBLIC_URL", "").strip()
+    settings = get_instance_settings()
     callback_path = "/auth/login_callback"
-    if public_url:
-        callback_url = f"{public_url}{callback_path}"
+    if settings.docker_public_url:
+        callback_url = f"{settings.docker_public_url}{callback_path}"
     else:
-        callback_url = f"http://127.0.0.1:{get_instance_settings().port}{callback_path}"
+        callback_url = f"http://127.0.0.1:{settings.port}{callback_path}"
 
     return ApiSuccessResponse(
         data=OauthClientRequestInfo(
@@ -244,3 +297,53 @@ async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
     then exchanges it for a token and saves credentials.
     """
     return await wait_for_desktop_oauth_callback(state)
+
+
+async def _get_github_token_for_current_user() -> tuple[str | None, str | None]:
+    """Look up the current request's user and return ``(token, error)``.
+
+    Returns ``(token, None)`` on success (token may be None if no SOD entry).
+    Returns ``(None, error_str)`` when something went wrong — so callers can
+    distinguish a genuine 'no credential' from an infrastructure failure."""
+    try:
+        from flow_sdk.builtin.user import User
+        from flow_sdk.request_context.methods import get_user_credentials
+
+        request_info = get_current_request_info()
+        if not request_info or not getattr(request_info, "user", None):
+            return None, None  # no request user → treat as missing (not an error)
+        user = await User.get_by_typeid(request_info.user)
+        if not user:
+            return None, None
+        # Same FK convention as the write side in _save_github_token_to_sod.
+        try:
+            token = await get_user_credentials(user, "github_credentials", user.id)
+            return token, None
+        except KeyError:
+            # Standard "no SOD entry" — distinct from infrastructure errors below.
+            return None, None
+    except Exception as e:
+        logger.warning(f"github token lookup failed: {e}")
+        return None, str(e)
+
+
+async def _handle_github_disconnect() -> ApiResponse:
+    """Delete the user's github_credentials SOD entry."""
+    try:
+        from flow_sdk.builtin.user import User
+        from flow_sdk.request_context.methods import delete_user_credentials
+
+        request_info = get_current_request_info()
+        if not request_info or not getattr(request_info, "user", None):
+            return ApiFailResponse(message="No request user")
+        user = await User.get_by_typeid(request_info.user)
+        if not user:
+            return ApiFailResponse(message="User not found")
+        await delete_user_credentials(user, "github_credentials", user.id)
+        return ApiSuccessResponse(
+            message="GitHub disconnected",
+            data={"remaining_attachment_count": 0},
+        )
+    except Exception as e:
+        logger.exception(f"GitHub disconnect error: {e}")
+        return ApiFailResponse(message=f"GitHub disconnect error: {e}")

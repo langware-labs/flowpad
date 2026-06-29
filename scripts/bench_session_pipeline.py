@@ -20,8 +20,8 @@ from pathlib import Path
 
 async def main(limit: int) -> None:
     # Trigger record/type registration
-    import flow_sdk.fs_records  # noqa: F401
-    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+    import flow_sdk.fs_store.indexer.registrations  # noqa: F401
+    from flow_sdk.fs_store.fs_record import FSRecord as ClaudeSessionRecord
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.record_types import RecordType
     from flow_sdk.core.entity.entity_model import Entity

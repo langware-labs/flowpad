@@ -7,7 +7,7 @@ test.describe('Chat Input Controls', () => {
   });
 
   test('Shell terminal input accepts text and executes on Enter', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
 
     // Capture console errors from the start
     const errors: string[] = [];
@@ -30,7 +30,7 @@ test.describe('Chat Input Controls', () => {
   });
 
   test('Empty Enter press does not crash terminal', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 
@@ -43,7 +43,7 @@ test.describe('Chat Input Controls', () => {
   });
 
   test('Tab opener menu exposes Claude and Terminal rows', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 

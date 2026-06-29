@@ -79,7 +79,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
     # Validate post-refactor field set
     expected = {
         "worker_type", "instruction_content", "cli_config", "context_data",
-        "workdir", "visible", "additional_dirs", "project_id", "target_vfs_path",
+        "workdir", "visible", "additional_dirs", "project_id", "target_typeid_str",
     }
     assert expected.issubset(captured.keys()), captured.keys()
     assert captured["workdir"] == "/tmp/proj"
@@ -93,7 +93,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
 @pytest.mark.asyncio
 async def test_scan_create_process_headless_does_not_eagerly_start():
     """Headless (visible=False) processes manage their lifecycle per-turn via
-    ``run_print_turn``. Eagerly calling ``start()`` here pre-allocates a
+    ``headless_prompt``. Eagerly calling ``start()`` here pre-allocates a
     session_id without ever writing a JSONL, which then makes the next
     ``/prompt`` land on a stale session and emit no assistant turn."""
     node = _make_compute_node()
@@ -135,8 +135,8 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
 @pytest.mark.asyncio
 async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
     """When no existing AgenticProcess matches session_id, a new one is built
-    with session_id, use_worker_history=True, context_data, project_id,
-    project_encoded_name — no source_vfs_path."""
+    with session_id, use_worker_history=True, context_data, project_id —
+    no source_vfs_path."""
     node = _make_compute_node()
     info = _make_request_info({
         "sessionId": "sess-new-1",
@@ -148,8 +148,9 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
     class FakeProc:
         # get_all returns [] (no existing), so fall through to construct branch
         @classmethod
-        async def get_all(cls, entities_filter=None):
-            return []
+        async def get_by_session_id(cls, session_id):
+            # No existing process for this session → construct branch.
+            return None
 
         def __init__(self, **kwargs):
             captured.update(kwargs)
@@ -229,8 +230,8 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
         constructed = False
 
         @classmethod
-        async def get_all(cls, entities_filter=None):
-            return [existing]
+        async def get_by_session_id(cls, session_id):
+            return existing
 
         def __init__(self, **kwargs):
             FakeProc.constructed = True

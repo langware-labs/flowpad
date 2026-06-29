@@ -1,5 +1,6 @@
 import { Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface ProjectSelectorItem {
   /** Stable identifier the consumer cares about (encoded_name, project id, etc). */
@@ -19,6 +20,13 @@ export interface ProjectSelectorProps {
   isLoading?: boolean;
   /** Override the empty-state copy (e.g. inside a modal). */
   emptyMessage?: string;
+  /**
+   * Ids to hide from the list (e.g. projects that are already open in the
+   * hosting surface). Matched exactly against item `id`s — derive both from
+   * the same key (see `projectListToSelectorItems`). Applied before the text
+   * filter.
+   */
+  excludeIds?: ReadonlyArray<string>;
 }
 
 function timeAgo(iso?: string | null): string | null {
@@ -50,13 +58,17 @@ export function ProjectSelector({
   onSelect,
   isLoading = false,
   emptyMessage,
+  excludeIds,
 }: ProjectSelectorProps) {
+  const { t } = useLingui();
   const [filter, setFilter] = useState('');
 
   const filtered = useMemo(() => {
+    const excluded = excludeIds?.length ? new Set(excludeIds) : null;
     const q = filter.trim().toLowerCase();
     return projects
       .filter((p) => {
+        if (excluded?.has(p.id)) return false;
         if (!q) return true;
         return p.name.toLowerCase().includes(q) || (p.path ?? '').toLowerCase().includes(q);
       })
@@ -65,7 +77,7 @@ export function ProjectSelector({
         const tb = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
         return tb - ta;
       });
-  }, [projects, filter]);
+  }, [projects, filter, excludeIds]);
 
   return (
     <div className="flex h-full flex-col gap-2">
@@ -75,7 +87,7 @@ export function ProjectSelector({
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter projects…"
+          placeholder={t`Filter projects…`}
           className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         />
       </div>
@@ -84,11 +96,11 @@ export function ProjectSelector({
         {isLoading && projects.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-6">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Loading…</span>
+            <span className="text-xs text-muted-foreground"><Trans>Loading…</Trans></span>
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-6 text-center text-xs text-muted-foreground">
-            {filter ? 'No matches' : emptyMessage ?? 'No projects'}
+            {filter ? t`No matches` : (emptyMessage ?? t`No projects`)}
           </div>
         ) : (
           <div className="space-y-0.5">
@@ -100,6 +112,7 @@ export function ProjectSelector({
                   key={p.id}
                   type="button"
                   onClick={() => onSelect(isSelected ? null : p.id)}
+                  data-testid={`project-selector-row-${p.id}`}
                   className={`flex w-full flex-col items-stretch gap-0.5 rounded px-2 py-1.5 text-left transition-colors ${
                     isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
                   }`}
@@ -107,15 +120,9 @@ export function ProjectSelector({
                 >
                   <div className="flex items-baseline gap-2">
                     <span className="truncate text-sm font-medium">{p.name}</span>
-                    {ago && (
-                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{ago}</span>
-                    )}
+                    {ago && <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{ago}</span>}
                   </div>
-                  {p.path && (
-                    <div className="truncate font-mono text-[10px] text-muted-foreground">
-                      {p.path}
-                    </div>
-                  )}
+                  {p.path && <div className="truncate font-mono text-[10px] text-muted-foreground">{p.path}</div>}
                 </button>
               );
             })}

@@ -1,9 +1,11 @@
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
-import type { Browseable, BrowseableTreeProps, ToolbarAction } from './types';
+import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
+import { subscribeRefresh } from './refresh-store';
 
 /**
  * Generic Notion-like tree menu.
@@ -18,19 +20,24 @@ import { useBrowseableTree } from './useBrowseableTree';
  *    asked for the ancestor chain and every ancestor is expanded.
  */
 export function BrowseableTree(props: BrowseableTreeProps) {
+  const { t } = useLingui();
   const {
     roots,
     activePointer,
+    activeKey,
     header,
     onNavigate,
     isLoading,
     error,
     emptyState,
     className = '',
+    persistKey,
+    defaultExpandedIds,
   } = props;
 
-  const tree = useBrowseableTree(roots);
+  const tree = useBrowseableTree(roots, { persistKey, defaultExpandedIds });
   const lastResolvedRef = useRef<string | null>(null);
+  const [dragData, setDragData] = useState<BrowseableDragData | null>(null);
 
   const handleNavigate = useCallback(
     (pointer: DockPointer) => {
@@ -39,27 +46,45 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     [onNavigate],
   );
 
+  // Subscribe to external refresh signals (e.g. asset deleted from a hover
+  // toolbar). The adapter that emits the signal owns the node id and decides
+  // which subtree to invalidate.
+  useEffect(
+    () =>
+      subscribeRefresh((nodeId) => {
+        void tree.invalidate(nodeId);
+      }),
+    [tree],
+  );
+
   // Auto-expand ancestors for the active pointer. Dedupe by pointer value so
   // we don't re-walk on every render — but only mark as resolved once a leaf
   // was actually found, so we retry when `roots` populate later (e.g. async
   // adapter like useAssetTypes loads after initial render).
   useEffect(() => {
     if (!activePointer) return;
-    const key = `${activePointer.viewType ?? ''}::${activePointer.pointer ?? ''}`;
+    const key = `${activePointer.viewType ?? ''}::${activePointer.pointer ?? ''}::${activeKey ?? ''}`;
     if (key === lastResolvedRef.current) return;
     void tree.expandParentsForPointer(activePointer).then((leaf) => {
-      if (!leaf) return;
-      lastResolvedRef.current = key;
       requestAnimationFrame(() => {
-        const el = document.querySelector(`[data-browseable-id="${CSS.escape(leaf.id)}"]`);
-        el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        // Prefer the keyed target: a typeid URL expands the type root (pathFor →
+        // [root]) so the matching leaf renders, but it's keyed by vfs path, not
+        // the URL's typeid. Find it by `data-selection-key`; fall back to the
+        // pathFor leaf (the vfs case). Only mark resolved once a target is found
+        // so a not-yet-rendered typeid leaf retries on the next children load.
+        const el =
+          (activeKey && document.querySelector(`[data-selection-key="${CSS.escape(activeKey)}"]`)) ||
+          (leaf && document.querySelector(`[data-browseable-id="${CSS.escape(leaf.id)}"]`));
+        if (!el) return;
+        lastResolvedRef.current = key;
+        el.scrollIntoView({ block: 'center' });
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePointer, tree.expandParentsForPointer]);
+  }, [activePointer, activeKey, tree.expandParentsForPointer]);
 
   if (isLoading) {
-    return <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}>Loading...</div>;
+    return <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}><Trans>Loading...</Trans></div>;
   }
 
   if (error) {
@@ -69,17 +94,13 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   if (roots.length === 0) {
     return (
       <div className={`p-4 text-center ${className}`}>
-        {emptyState ?? <p className="text-xs text-muted-foreground">No items</p>}
+        {emptyState ?? <p className="text-xs text-muted-foreground"><Trans>No items</Trans></p>}
       </div>
     );
   }
 
   return (
-    <div
-      className={`flex h-full flex-col ${className}`}
-      role="tree"
-      aria-label={header?.title}
-    >
+    <div className={`flex h-full flex-col ${className}`} role="tree" aria-label={header?.title}>
       {header && (
         <div className="flex items-center gap-1 border-b p-1.5">
           <span className="text-xs font-medium text-muted-foreground">{header.title}</span>
@@ -99,7 +120,11 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             level={0}
             tree={tree}
             activePointer={activePointer}
+            activeKey={activeKey}
             onNavigate={handleNavigate}
+            dragData={dragData}
+            onDragStart={setDragData}
+            onDragEnd={() => setDragData(null)}
           />
         ))}
       </div>
@@ -112,25 +137,51 @@ interface RowProps {
   level: number;
   tree: ReturnType<typeof useBrowseableTree>;
   activePointer: DockPointer | null;
+  activeKey?: string | null;
   onNavigate: (p: DockPointer) => void;
+  dragData: BrowseableDragData | null;
+  onDragStart: (data: BrowseableDragData) => void;
+  onDragEnd: () => void;
 }
 
-function BrowseableRow({ node, level, tree, activePointer, onNavigate }: RowProps) {
+function BrowseableRow({ node, level, tree, activePointer, activeKey, onNavigate, dragData, onDragStart, onDragEnd }: RowProps) {
+  const { t } = useLingui();
   const expanded = tree.isExpanded(node.id);
   const loadState = tree.getLoadState(node.id);
   const children = tree.getChildren(node.id);
+  const [isDropTarget, setIsDropTarget] = useState(false);
+  const [isDropping, setIsDropping] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const canRename = !!node.onRename && !node.content;
+
+  // Restored expansion (persistKey / defaultExpandedIds) marks nodes expanded
+  // without the children fetch that interactive expand() runs — load on first
+  // render in that state so restored layers aren't empty.
+  useEffect(() => {
+    if (expanded && loadState.status === 'idle' && node.listChildren) {
+      void tree.loadChildren(node);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, loadState.status, node.id]);
 
   const isSelected = !!(
-    node.pointer &&
-    activePointer &&
-    node.pointer.viewType === activePointer.viewType &&
-    node.pointer.pointer === activePointer.pointer
+    // Stable-id match: a typeid URL (activeKey) selects this row even though its
+    // `pointer` is the vfs form.
+    (node.selectionKey && activeKey && node.selectionKey === activeKey) ||
+    // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
+    (node.pointer &&
+      activePointer &&
+      node.pointer.viewType === activePointer.viewType &&
+      node.pointer.pointer === activePointer.pointer)
   );
 
-  const hasChildrenHint =
-    node.hasChildren === true || (node.hasChildren === 'unknown' && !!node.listChildren);
+  const hasChildrenHint = node.hasChildren === true || (node.hasChildren === 'unknown' && !!node.listChildren);
 
   const handleRowClick = useCallback(() => {
+    // Inline rename in progress — a click commits via the input's own handlers;
+    // never navigate/toggle underneath it.
+    if (editing) return;
     // Toggle expand on the row click for nodes that have children AND
     // navigate if the node has a pointer. Matches Notion's behavior where
     // clicking a page both navigates AND expands.
@@ -140,7 +191,20 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate }: RowProp
     if (node.pointer) {
       onNavigate(node.pointer);
     }
-  }, [hasChildrenHint, node, tree, onNavigate]);
+  }, [editing, hasChildrenHint, node, tree, onNavigate]);
+
+  // Inline rename: double-click a *selected* row to edit its label in place.
+  const handleDoubleClick = useCallback(() => {
+    if (!canRename || !isSelected) return;
+    setDraft(node.label);
+    setEditing(true);
+  }, [canRename, isSelected, node.label]);
+
+  const commitRename = useCallback(async () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (next && next !== node.label) await node.onRename?.(next);
+  }, [draft, node]);
 
   const handleChevronClick = useCallback(
     (e: React.MouseEvent) => {
@@ -150,26 +214,103 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate }: RowProp
     [node, tree],
   );
 
+  const canAcceptDrop = !!(dragData && node.onDrop && (!node.canDrop || node.canDrop(dragData)));
+  // Space reserved (on hover/focus only) so the label clears the
+  // absolutely-positioned compact toolbar when it appears
+  // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1). At rest the toolbar is
+  // hidden, so the label keeps its full width.
+  const toolbarSpace =
+    node.toolbar && node.toolbar.length > 0
+      ? node.toolbar.length * 22 + 6
+      : 0;
+
+  const handleDragStart = useCallback(
+    (e: React.DragEvent) => {
+      if (!node.dragData) return;
+      e.stopPropagation();
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('application/x-flowpad-browseable', JSON.stringify(node.dragData));
+      e.dataTransfer.setData('text/plain', node.label);
+      onDragStart(node.dragData);
+    },
+    [node.dragData, node.label, onDragStart],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    setIsDropTarget(false);
+    onDragEnd();
+  }, [onDragEnd]);
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!canAcceptDrop) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      setIsDropTarget(true);
+    },
+    [canAcceptDrop],
+  );
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setIsDropTarget(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      if (!canAcceptDrop || !dragData || !node.onDrop) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDropTarget(false);
+      setIsDropping(true);
+      try {
+        await node.onDrop(dragData);
+      } finally {
+        setIsDropping(false);
+        onDragEnd();
+      }
+    },
+    [canAcceptDrop, dragData, node, onDragEnd],
+  );
+
   return (
-    <div data-browseable-id={node.id}>
+    <div data-browseable-id={node.id} data-selection-key={node.selectionKey}>
       <div
-        className={`group relative flex cursor-pointer items-center gap-1 rounded-md p-1.5 text-xs transition-colors ${
-          isSelected ? 'bg-accent text-accent-foreground font-medium' : 'hover:bg-muted'
-        }`}
+        className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-colors ${
+          isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
+        } ${node.pointer ? 'cursor-pointer' : 'cursor-default'} ${node.dragData ? 'active:cursor-grabbing' : ''} ${
+          isDropTarget ? 'bg-primary/10 ring-1 ring-primary/40' : ''
+        } ${isDropping ? 'opacity-60' : ''} ${node.rowClassName ?? ''}`}
         style={{ marginLeft: `${level * 14}px` }}
         role="treeitem"
         aria-level={level + 1}
         aria-selected={isSelected}
         aria-expanded={hasChildrenHint ? expanded : undefined}
+        draggable={!!node.dragData}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => {
+          void handleDrop(e);
+        }}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+        <div
+          className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
+            toolbarSpace
+              ? 'transition-[padding] group-hover:pr-[var(--toolbar-space)] group-focus-within:pr-[var(--toolbar-space)]'
+              : ''
+          }`}
+          style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}
+        >
           {hasChildrenHint ? (
             <button
               type="button"
               onClick={handleChevronClick}
               className="flex h-4 w-4 flex-shrink-0 items-center justify-center"
-              title={expanded ? 'Collapse' : 'Expand'}
-              aria-label={expanded ? 'Collapse' : 'Expand'}
+              title={expanded ? t`Collapse` : t`Expand`}
+              aria-label={expanded ? t`Collapse` : t`Expand`}
               data-testid={`browseable-chevron-${node.id}`}
             >
               {loadState.status === 'loading' ? (
@@ -187,17 +328,40 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate }: RowProp
           <div
             className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
             onClick={handleRowClick}
+            onDoubleClick={handleDoubleClick}
           >
-            {node.icon}
-            <span className="min-w-0 flex-1 truncate" title={node.label}>
-              {node.label}
-            </span>
-            {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
+            {node.content ? (
+              node.content
+            ) : editing ? (
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.target.select()}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') void commitRename();
+                  else if (e.key === 'Escape') setEditing(false);
+                }}
+                onBlur={() => void commitRename()}
+                className="min-w-0 flex-1 rounded border border-input bg-background px-1 py-0.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+                data-testid={`browseable-rename-${node.id}`}
+              />
+            ) : (
+              <>
+                {node.icon}
+                <span className="min-w-0 flex-1 truncate" title={node.label}>
+                  {node.label}
+                </span>
+                {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
+              </>
+            )}
           </div>
         </div>
 
         {node.toolbar && node.toolbar.length > 0 && (
-          <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-hover:opacity-100">
+          <div className="pointer-events-none absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
             {node.toolbar.map((a) => (
               <ToolbarButton key={a.id} action={a} compact />
             ))}
@@ -208,27 +372,18 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate }: RowProp
       {expanded && (
         <div className="space-y-0.5">
           {loadState.status === 'loading' && children.length === 0 && (
-            <div
-              className="p-1 text-xs text-muted-foreground"
-              style={{ marginLeft: `${(level + 1) * 14}px` }}
-            >
-              Loading…
+            <div className="p-1 text-xs text-muted-foreground" style={{ marginLeft: `${(level + 1) * 14}px` }}>
+              <Trans>Loading…</Trans>
             </div>
           )}
           {loadState.status === 'error' && (
-            <div
-              className="p-1 text-xs text-destructive"
-              style={{ marginLeft: `${(level + 1) * 14}px` }}
-            >
-              {loadState.message || 'Failed to load'}
+            <div className="p-1 text-xs text-destructive" style={{ marginLeft: `${(level + 1) * 14}px` }}>
+              {loadState.message || t`Failed to load`}
             </div>
           )}
           {loadState.status === 'ready' && children.length === 0 && (
-            <div
-              className="p-1 text-xs text-muted-foreground"
-              style={{ marginLeft: `${(level + 1) * 14}px` }}
-            >
-              Empty
+            <div className="p-1 text-xs text-muted-foreground" style={{ marginLeft: `${(level + 1) * 14}px` }}>
+              <Trans>Empty</Trans>
             </div>
           )}
           {children.map((child) => (
@@ -238,7 +393,11 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate }: RowProp
               level={level + 1}
               tree={tree}
               activePointer={activePointer}
+              activeKey={activeKey}
               onNavigate={onNavigate}
+              dragData={dragData}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
             />
           ))}
         </div>
@@ -247,7 +406,7 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate }: RowProp
   );
 }
 
-function ToolbarButton({ action, compact }: { action: ToolbarAction; compact?: boolean }) {
+export function ToolbarButton({ action, compact }: { action: ToolbarAction; compact?: boolean }) {
   const [busy, setBusy] = useState(false);
   const showBusy = action.showBusyIndicator ?? true;
 

@@ -1,6 +1,17 @@
 import type { ReactNode } from 'react';
 import type { DockPointer } from '@src/navigation/DockPointer';
 
+export interface BrowseableDragData {
+  /** Adapter-specific discriminator. */
+  kind: string;
+  /** Stable id of the dragged row. */
+  id: string;
+  /** Human-readable label used for drag feedback and validation messages. */
+  label: string;
+  /** Adapter-specific payload. Keep this JSON-serializable. */
+  [key: string]: unknown;
+}
+
 /**
  * Browseable — generic node in a tree menu.
  *
@@ -33,21 +44,60 @@ export interface Browseable {
   /** Optional trailing content (count chips, status dots, time-ago labels). */
   badge?: ReactNode;
 
+  /** Optional extra classes applied to the row container. Lets an adapter
+   *  de-emphasize a row (e.g. an out-of-active-project chat row uses
+   *  `opacity-50 hover:opacity-100`). Cosmetic only — never carries behavior. */
+  rowClassName?: string;
+
+  /** Optional full-row body that replaces the default `icon | label | badge`
+   *  zone. Use for rich, multi-line rows (e.g. a trigger showing scope chip +
+   *  name + type-specific metadata lines). When set, `label`/`icon`/`badge` are
+   *  ignored for rendering (but `label` is still used for the drag/aria text).
+   *  The chevron, toolbar, and selection styling are still provided by the row. */
+  content?: ReactNode;
+
+  /** When set, the row supports inline rename: double-clicking the row while it
+   *  is selected swaps the label for a text input. Commit on Enter/blur, cancel
+   *  on Escape. Ignored when `content` is set (rich rows manage their own
+   *  editing). The side effect (persisting the new name) is the adapter's. */
+  onRename?: (newName: string) => void | Promise<void>;
+
   /** Tri-state hint so the chevron can show before children are loaded.
    *  - `true`: children exist, load on expand
    *  - `false`: leaf, no chevron
    *  - `'unknown'`: show a chevron optimistically; resolve on first expand */
   hasChildren: boolean | 'unknown';
 
-  /** Lazy loader; called at most once per expand. Cached by `id` in the tree. */
-  listChildren?: () => Promise<Browseable[]>;
+  /** Lazy loader; called at most once per expand. Cached by `id` in the tree.
+   *  When called with `{ refresh: true }`, the adapter MUST bypass any caches
+   *  it controls (e.g. fsStore's browseCache) so the result reflects fresh
+   *  on-disk state. The tree uses this on deep-link auto-expand when the
+   *  target leaf is missing from the parent's previously-loaded children. */
+  listChildren?: (opts?: { refresh?: boolean }) => Promise<Browseable[]>;
 
   /** Click == navigate to this pointer. `null` means header-only row
    *  (clicking just toggles the chevron). */
   pointer: DockPointer | null;
 
+  /** Optional stable alternate identity for *selection* matching, used when the
+   *  active pointer addresses this row by a different serialization than its
+   *  `pointer` (e.g. an `editor/<t>/typeid/<id>` URL vs a vfs-path leaf). The
+   *  tree compares it (as a string) against its `activeKey` prop, in addition to
+   *  the pointer-string match. Only set where a row has a stable id (asset
+   *  leaves set their `<type>-<uuid>` typeid); other rows leave it undefined. */
+  selectionKey?: string;
+
   /** Inline hover actions. Side effects only. */
   toolbar?: ToolbarAction[];
+
+  /** Internal tree drag payload. When present, the row can be dragged. */
+  dragData?: BrowseableDragData;
+
+  /** Return true when this row can accept the currently-dragged row. */
+  canDrop?: (dragData: BrowseableDragData) => boolean;
+
+  /** Side effect for a successful drop. */
+  onDrop?: (dragData: BrowseableDragData) => void | Promise<void>;
 }
 
 /**
@@ -116,6 +166,13 @@ export interface BrowseableTreeProps {
    *  ancestor auto-expand. */
   activePointer: DockPointer | null;
 
+  /** Optional URL-derived alternate selection key (e.g. the active entity's
+   *  `<type>-<uuid>` typeid when the URL addresses an asset by typeid). A row is
+   *  selected when its `selectionKey` equals this, in addition to the
+   *  pointer-string match — so a typeid URL selects a vfs-pointer leaf. Stays
+   *  URL-derived (not from context). Null/undefined ⇒ pointer-string match only. */
+  activeKey?: string | null;
+
   /** Optional header with title + base-menu toolbar. */
   header?: BrowseableTreeHeader;
 
@@ -134,4 +191,10 @@ export interface BrowseableTreeProps {
 
   /** Extra class name on the outer container. */
   className?: string;
+
+  /** localStorage key persisting the expanded-ids set — see `useBrowseableTree`. */
+  persistKey?: string;
+
+  /** Node ids expanded when no persisted state exists (e.g. the root id). */
+  defaultExpandedIds?: string[];
 }

@@ -14,7 +14,6 @@ from flow_sdk.request_context.methods import get_current_request_info
 class Workspace(Entity):
     type: str = APIField(default=BuiltinEntityType.WORKSPACE.value)
     name: str = APIField()
-    _api_visible: ClassVar[bool] = True
 
     async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> EntityType:
         save_result = await super().save(owner, notify=notify)

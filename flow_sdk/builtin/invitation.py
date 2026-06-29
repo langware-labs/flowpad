@@ -28,6 +28,16 @@ class MembershipRequest(BaseModel):
     type: str = field(init=False, default="invitation")
 
 
+def conversation_target_path(conversation_id: str) -> str:
+    """Canonical ``target_url_path`` for a conversation-targeted invitation.
+
+    The single place that knows the path shape — producers (invitation
+    materialization) and matchers (receiver-side pickers) reference this
+    instead of hand-building ``/conversation/<id>`` strings.
+    """
+    return f"/conversation/{conversation_id}"
+
+
 class Invitation(Entity):
     type: str = APIField(default=BuiltinEntityType.INVITATION.value)
     recipient_email: str = APIField()
@@ -36,7 +46,14 @@ class Invitation(Entity):
     expiration_at: Optional[datetime] = APIField(None)
     sent: Optional[bool] = APIField(False)
     message: Optional[str] = APIField(None)
-    _api_visible: ClassVar[bool] = True
+    # Membership invitations (organization / team) carry a lightweight target
+    # descriptor instead of a backing conversation, so the inbox can render a
+    # generic "Organization/Team invitation" row and accept knows what was
+    # joined. None for conversation invitations.
+    target_type: Optional[str] = APIField(None)
+    target_id: Optional[str] = APIField(None)
+    target_name: Optional[str] = APIField(None)
+    target_role: Optional[str] = APIField(None)
 
     def __init__(self, **data):
         super().__init__(**data)

@@ -206,12 +206,17 @@ describe('entity.record()', () => {
   beforeEach(async (context: any) => {
     await apiTestSetup(signupInfo, context.task.name);
     if (!skillId) {
-      // Pick the first discovered skill ID from scan
-      const res = await apiClient.get<unknown>(
-        `${GRAPH_API_PREFIX}/compute_node/@local/fs-records/scan?type=skill`,
-      );
-      const data = ((res as any)?.data ?? res) as Record<string, unknown>;
-      const records = (data.records as Array<{ id: string }>) ?? [];
+      // Discover a skill from the graph ENTITY list — not the fs-records scan.
+      // The scan also surfaces orphaned fs-only skill records (leftover test
+      // skills with no graph entity), and `.record()` resolves through the
+      // entity action (`/graph/skill/<id>/refs`), which 404s for those orphans.
+      // The entity list only returns graph-resolvable skills, so the chosen id
+      // is guaranteed to have a record.
+      const res = await apiClient.get<unknown>(`${GRAPH_API_PREFIX}/skill`);
+      const data = (res as any)?.data ?? res;
+      const records = (Array.isArray(data)
+        ? data
+        : (data?.records ?? data?.items ?? data?.results ?? [])) as Array<{ id: string }>;
       skillId = records[0]?.id ?? null;
     }
   });

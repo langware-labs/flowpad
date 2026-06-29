@@ -7,7 +7,7 @@ test.describe('Terminal PTY No Duplicates (Claude CLI)', () => {
   });
 
   test('claude CLI terminal has no duplicated lines or escape artifacts', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     // Navigate to a new shell, then start a Claude session via the tab-opener menu.
     await page.goto('/dock/shell/new_terminal');

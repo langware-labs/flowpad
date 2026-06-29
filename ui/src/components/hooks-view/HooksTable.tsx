@@ -2,6 +2,7 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { Plus, Trash2 } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 export interface HookTableRow {
   id: string;
@@ -40,10 +41,10 @@ export function HooksTable({ rows, selectedRowId, onRowClick, onAddClick, onDele
     // Compact empty state
     return (
       <div className="flex items-center justify-between rounded-lg border border-dashed p-4">
-        <p className="text-sm text-muted-foreground">No hooks configured</p>
+        <p className="text-sm text-muted-foreground"><Trans>No hooks configured</Trans></p>
         <Button onClick={onAddClick} size="sm">
           <Plus className="mr-2 h-4 w-4" />
-          Add Hook
+          <Trans>Add Hook</Trans>
         </Button>
       </div>
     );
@@ -57,7 +58,7 @@ export function HooksTable({ rows, selectedRowId, onRowClick, onAddClick, onDele
         </p>
         <Button onClick={onAddClick} size="sm">
           <Plus className="mr-2 h-4 w-4" />
-          Add Hook
+          <Trans>Add Hook</Trans>
         </Button>
       </div>
 
@@ -65,12 +66,12 @@ export function HooksTable({ rows, selectedRowId, onRowClick, onAddClick, onDele
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[180px]">Event</TableHead>
-              <TableHead className="w-[120px]">Matcher</TableHead>
-              <TableHead className="w-[100px]">Type</TableHead>
-              <TableHead>Content</TableHead>
-              <TableHead className="w-[80px]">Timeout</TableHead>
-              <TableHead className="w-[80px] text-right">Actions</TableHead>
+              <TableHead className="w-[180px]"><Trans>Event</Trans></TableHead>
+              <TableHead className="w-[120px]"><Trans>Matcher</Trans></TableHead>
+              <TableHead className="w-[100px]"><Trans>Type</Trans></TableHead>
+              <TableHead><Trans>Content</Trans></TableHead>
+              <TableHead className="w-[80px]"><Trans>Timeout</Trans></TableHead>
+              <TableHead className="w-[80px] text-right"><Trans>Actions</Trans></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -89,7 +90,7 @@ export function HooksTable({ rows, selectedRowId, onRowClick, onAddClick, onDele
                 </TableCell>
                 <TableCell>
                   <Badge variant={row.hookType === 'command' ? 'default' : 'secondary'}>
-                    {row.hookType === 'command' ? '🔧 Command' : '🤖 Prompt'}
+                    {row.hookType === 'command' ? <Trans>🔧 Command</Trans> : <Trans>🤖 Prompt</Trans>}
                   </Badge>
                 </TableCell>
                 <TableCell>

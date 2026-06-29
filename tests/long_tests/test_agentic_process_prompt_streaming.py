@@ -107,8 +107,15 @@ async def test_prompt_streams_xml_flowdata_for_trivial_turn(hub_and_node, tmp_pa
     assert close_tags[-1] == "</flow-end>", f"stream did not close with flow-end: last={close_tags[-1]}"
 
 
-async def test_prompt_rejects_visible_process(hub_and_node, tmp_path):
-    """visible=true processes must not be admitted to the prompt action."""
+async def test_prompt_admits_visible_process_via_pty_transport(hub_and_node, tmp_path):
+    """visible=true (PTY) processes are admitted to the unified prompt action.
+
+    The prompt action is a single endpoint with two transports keyed off
+    ``visible`` (the tabs/chat unification): ``visible=False`` streams a
+    print-mode worker's stdout, ``visible=True`` streams the PTY session
+    transcript (``_run_pty_prompt``). Both return a 200 streaming response —
+    the older "PTY processes reject with 409" contract no longer holds.
+    """
     hub_client, local_compute_node_id = hub_and_node
     body = {
         "context": {"workdir": str(tmp_path), "permission_mode": "bypassPermissions"},
@@ -121,8 +128,18 @@ async def test_prompt_rejects_visible_process(hub_and_node, tmp_path):
     assert r.status_code == 200
     pid = (r.json().get("data") or r.json())["id"]
 
-    r2 = await hub_client.post(
+    received = b""
+    async with hub_client.stream(
+        "POST",
         f"/api/v1/graph/agentic_process/{pid}/prompt",
-        json={"message": "hi"},
-    )
-    assert r2.status_code != 200, f"prompt unexpectedly admitted visible=true: {r2.text[:200]}"
+        json={"message": 'Respond with exactly the single word "pong" and nothing else.'},
+    ) as r2:
+        assert r2.status_code == 200, (
+            f"visible=true prompt not admitted: {r2.status_code}: {(await r2.aread()).decode()[:200]}"
+        )
+        async for chunk in r2.aiter_bytes():
+            received += chunk
+            if b"<flow-" in received:
+                break
+
+    assert b"<flow-" in received, f"no flow-* frame from PTY transport: {received.decode('utf-8', 'replace')[:300]}"

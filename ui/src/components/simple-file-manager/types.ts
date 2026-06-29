@@ -41,12 +41,10 @@ export interface SimpleFileManagerProps {
   compact?: boolean;
   /** Custom class name */
   className?: string;
-  /** Full path to the sandbox home directory (shown as tooltip on Home icon) */
-  homePath?: string | null;
-  /** Path to workspace folder (used for Home button navigation) */
-  workspacePath?: string | null;
-  /** Project folder path for adding a dedicated "Project" root entry (compute node paths) */
-  projectPath?: string | null;
+  /** Called after a filesystem mutation (create/delete/rename/move/upload) with
+   *  the affected parent folder's path, so the host can refresh its own tree
+   *  (e.g. the Explorer navigator's `refreshNode`). */
+  onFsMutated?: (parentRelPath: string) => void;
 }
 
 export type SortField = 'name' | 'size' | 'modifiedAt' | 'type';

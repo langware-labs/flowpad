@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  classifyExecutionMode,
+  ExecutionMode,
   getDisplayStatus,
   hasWorkerStarted,
   isProcessActive,
@@ -11,6 +13,7 @@ import {
   isWorkerRunning,
   isWorkerTerminal,
   ProcessStatus,
+  supportedExecutionModes,
   WorkerStatus,
 } from '@sdk';
 
@@ -35,6 +38,7 @@ interface StatusSetsFixture {
   worker_running: string[];
   worker_terminal: string[];
   worker_ready_for_input: string[];
+  worker_execution_error: string[];
   process_running: string[];
   process_startable: string[];
 }
@@ -88,7 +92,7 @@ describe('ProcessStatus', () => {
 // ─── WorkerStatus wire values ────────────────────────────────────────────────
 
 describe('WorkerStatus', () => {
-  it('has exactly 12 canonical values post-consolidation', () => {
+  it('has exactly 14 canonical values (13 post-consolidation + pending_user)', () => {
     expect(Object.values(WorkerStatus).sort()).toEqual(
       [
         'initializing',
@@ -100,6 +104,9 @@ describe('WorkerStatus', () => {
         'complete',
         'interrupted',
         'inactive',
+        // Backend pending_user projection mirrored into TS (7659daf9);
+        // deliberately in NO helper set — see the enum doc comment.
+        'pending_user',
         'error',
         'api_error',
         'api_timeout',
@@ -145,6 +152,104 @@ describe('set parity (vs test_fixtures/status_sets.json)', () => {
   it('process_startable fixture matches isProcessStartable', () => {
     const actual = Object.values(ProcessStatus).filter((s) => isProcessStartable(s as ProcessStatus));
     expect(new Set(actual)).toEqual(new Set(fixture.process_startable));
+  });
+
+  it('ERROR_WORKER_STATUSES matches fixture worker_execution_error', () => {
+    // Re-derive via classifyExecutionMode rather than importing the private set:
+    // any RUNNING worker whose status classifies as Error must be in the fixture.
+    const actual = Object.values(WorkerStatus).filter(
+      (s) =>
+        classifyExecutionMode({ status: ProcessStatus.RUNNING, workerStatus: s as WorkerStatus }) ===
+        ExecutionMode.Error,
+    );
+    expect(new Set(actual)).toEqual(new Set(fixture.worker_execution_error));
+  });
+});
+
+// ─── classifyExecutionMode truth table ───────────────────────────────────────
+
+describe('classifyExecutionMode', () => {
+  it('returns null for non-live lifecycle states', () => {
+    for (const s of [
+      ProcessStatus.NEW,
+      ProcessStatus.STOPPING,
+      ProcessStatus.STOPPED,
+      ProcessStatus.FAILED,
+    ]) {
+      expect(classifyExecutionMode({ status: s, visible: true })).toBeNull();
+      expect(classifyExecutionMode({ status: s, visible: false })).toBeNull();
+    }
+  });
+
+  it.each([ProcessStatus.RUNNING, ProcessStatus.STARTING])(
+    'live %s + visible=true → Interactive',
+    (s) => {
+      expect(classifyExecutionMode({ status: s, visible: true })).toBe(ExecutionMode.Interactive);
+    },
+  );
+
+  it.each([ProcessStatus.RUNNING, ProcessStatus.STARTING])(
+    'live %s + visible=false → Background',
+    (s) => {
+      expect(classifyExecutionMode({ status: s, visible: false })).toBe(ExecutionMode.Background);
+    },
+  );
+
+  it.each([WorkerStatus.ERROR, WorkerStatus.API_TIMEOUT, WorkerStatus.INACTIVE])(
+    'error worker_status=%s wins over visible (PTY)',
+    (w) => {
+      expect(
+        classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: true, workerStatus: w }),
+      ).toBe(ExecutionMode.Error);
+    },
+  );
+
+  it.each([WorkerStatus.ERROR, WorkerStatus.API_TIMEOUT, WorkerStatus.INACTIVE])(
+    'CLI error via worker_status=%s (no PID needed)',
+    (w) => {
+      expect(
+        classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: false, workerStatus: w }),
+      ).toBe(ExecutionMode.Error);
+    },
+  );
+
+  it('PTY with dead PID → Error', () => {
+    expect(
+      classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: true, pidAlive: false }),
+    ).toBe(ExecutionMode.Error);
+  });
+
+  it('CLI with no PID liveness is not forced to Error by dead-PID rule', () => {
+    // pidAlive undefined → rule 2 never fires; a healthy CLI stays Background.
+    expect(
+      classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: false }),
+    ).toBe(ExecutionMode.Background);
+  });
+
+  it('reflects a visible flip Interactive↔Background', () => {
+    const base = { status: ProcessStatus.RUNNING, workerStatus: WorkerStatus.THINKING };
+    expect(classifyExecutionMode({ ...base, visible: true })).toBe(ExecutionMode.Interactive);
+    expect(classifyExecutionMode({ ...base, visible: false })).toBe(ExecutionMode.Background);
+  });
+});
+
+// ─── supportedExecutionModes gating ──────────────────────────────────────────
+
+describe('supportedExecutionModes', () => {
+  it('standard hides error + external', () => {
+    expect(supportedExecutionModes(false)).toEqual([
+      ExecutionMode.Interactive,
+      ExecutionMode.Background,
+    ]);
+  });
+
+  it('advanced/dev adds error + external', () => {
+    expect(supportedExecutionModes(true)).toEqual([
+      ExecutionMode.Interactive,
+      ExecutionMode.Background,
+      ExecutionMode.Error,
+      ExecutionMode.External,
+    ]);
   });
 });
 

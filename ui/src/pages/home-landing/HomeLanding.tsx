@@ -1,70 +1,34 @@
 import { IncomingTaskDialog } from '@src/components/task-receive/IncomingTaskDialog';
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
-import { MemoIframeModal } from '@src/components/memo-panel/MemoIframeModal';
 import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
-import { NotificationFeed } from '@src/components/notification-feed';
-import { type ProjectResourceListItem } from '@src/components/project-resource-list';
-import { ProjectActivityStrip, RecentConversationsStrip, BookmarkColumn } from '@src/components/project-activity-strip';
+import { NotificationFeed, notify } from '@src/notifications';
+import { RecentConversationsStrip } from '@src/components/project-activity-strip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
 import { MiniDesktop } from '@src/components/quick-create';
 import { SessionInput } from '@src/components/session-input/session-input';
-import { isSkillCreationTask, TaskStatus } from '@src/components/task-bar/task-utils';
-import { useBookmarkMutations } from '@src/hooks/use-bookmark-mutations';
-import { useClaudeErrorRecords } from '@src/hooks/useClaudeErrorRecords';
-import { useAnnotations } from '@src/hooks/use-annotations';
-import { useProjectBookmarks } from '@src/hooks/use-project-bookmarks';
-import { useProjectTasks } from '@src/hooks/use-project-tasks';
-import { useTaskMutations } from '@src/hooks/use-task-mutations';
-import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
-import { useSnifferContext } from '@src/contexts/SnifferContext';
-import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
+import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
+import { AdvancedOnly } from '@src/components/view-mode';
 import { useProjects } from '@src/hooks/use-projects';
-import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
-import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
-import { useForkInTerminal } from '@src/hooks/use-fork-in-terminal';
-import { Annotation, claudeSessionManager, ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
-import { refreshNotifications } from '@sdk/entities/notifications';
+import { claudeSessionManager, dataContext } from '@sdk';
 import { useAuth, useProject } from '@sdk/react/hooks';
-import { useAgentContext } from '@src/contexts/agent-context';
-import { useToast } from '@src/hooks/use-toast';
 import { useSystemTools } from '@src/hooks/use-system-tools';
-import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
+import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
-import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
-import { JoinConversationDialog } from '@src/components/join-room-dialog/JoinConversationDialog';
 import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
-import { useLoginRequired } from '@src/hooks/use-login-required';
-import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
-import { Button } from '@src/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Loader2, PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
+import { HomeFeedColumn } from './feed';
+import { X, CheckCircle2, Users } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
-import { listInboxMessages, fetchInboxFromHub } from '@src/components/inbox-view/inbox-api';
-import { ViewType } from '@src/types/ViewType';
+import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDevMode } from '@src/contexts/dev-mode-context';
 import type { LastScanResult } from '@sdk';
-
-const getSafeTimestamp = (value?: string | null): number => {
-  if (!value) return 0;
-  const timestamp = new Date(value).getTime();
-  return Number.isNaN(timestamp) ? 0 : timestamp;
-};
-
-const normalizePath = (value: string): string => {
-  const normalized = value.trim().replace(/\\/g, '/');
-  if (!normalized) return '';
-  if (normalized === '/') return '/';
-  return normalized.replace(/\/+$/, '');
-};
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -72,14 +36,16 @@ const normalizePath = (value: string): string => {
  * Layout:
  * - Top row: Usage bar
  * - Main row:
- *   - Left column: Project list (full height)
- *   - Right column: Greeting, session input, project buttons, and Quick Access
+ *   - Left column: Inbox
+ *   - Middle column: Greeting, session input, and Quick Access
+ *   - Right column: Feed
  * URL: /dock/home
  */
 const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
 const _SCAN_DISMISSED_KEY = 'flowpad-scan-dismissed';
 
 export function HomeLanding() {
+  const { t } = useLingui();
   const { user } = useAuth();
   const { navigation } = useDockNavigation();
   useProjects();
@@ -116,92 +82,23 @@ export function HomeLanding() {
       return;
     }
 
-    void (async () => {
-      if (convId) {
-        // Resolve project_id from the local Task (if any) for the dock pointer.
-        let projectId: string | null = null;
-        if (taskId) {
-          const { dataManager, Task, TypeId } = await import('@sdk');
-          const task = await dataManager
-            .getByTypeId<import('@sdk').Task>(new TypeId(Task.type, taskId))
-            .catch(() => null);
-          projectId = task?.project_id ?? null;
-        }
-        navigation.openDock(
-          resolveConversationDockPointer({
-            conversationId: convId,
-            taskId: taskId || null,
-            projectId,
-          }),
-        );
-        return;
-      }
+    if (convId) {
+      navigation.openDock(DockPointer.forConversation(convId));
+      return;
+    }
 
-      // Last resort: no convId in the deep link. If we have a taskId, open the
-      // tasks dock; otherwise stay on home and let the strip surface the share
-      // once inbox-fetch lands the FM. ``fmId`` is unused here but kept in the
-      // URL params for diagnostics / future fallback.
-      void fmId;
-      if (taskId) {
-        navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
-      }
-    })();
+    // Last resort: no convId in the deep link. If we have a taskId, open the
+    // tasks dock; otherwise stay on home and let the strip surface the share
+    // once inbox-fetch lands the FM. ``fmId`` is unused here but kept in the
+    // URL params for diagnostics / future fallback.
+    void fmId;
+    if (taskId) {
+      navigation.openDock(DockPointer.fromUrl('tasks', taskId));
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();
   const { project: currentProject } = useProject();
-  const { toast } = useToast();
-  const { events: snifferEvents } = useSnifferContext();
-
-  // Per-session event counts for notification badges
-  const sessionEventCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const evt of snifferEvents) {
-      if (evt.session_id) {
-        counts.set(evt.session_id, (counts.get(evt.session_id) ?? 0) + 1);
-      }
-    }
-    return counts;
-  }, [snifferEvents]);
-
-  // Skill creation tasks for the Learnings tab
-  const { data: allTasks, refetch: taskRefetch, excludeTasks } = useProjectTasks();
-  const { archiveTask, removeTasks } = useTaskMutations({ refetch: taskRefetch, excludeTasks });
-  const learningTasks = useMemo(
-    () => allTasks.filter((t) => t.status !== 'archived' && !t.archived_at),
-    [allTasks],
-  );
-
-  // Bookmarks for the Bookmarks tab
-  const { data: bookmarks, refetch: bookmarkRefetch, excludeBookmarks } = useProjectBookmarks();
-  const { openDisplayCount: errorCount } = useClaudeErrorRecords();
-  const { closeBookmark, deleteBookmark, remindBookmark } = useBookmarkMutations({ refetch: bookmarkRefetch, excludeBookmarks });
-
-  // Comment annotations for the current project
-  const { annotations: allAnnotations, refetch: annotationsRefetch } = useAnnotations(currentProject?.typeId ?? null);
-  const commentAnnotations = useMemo(
-    () => allAnnotations.filter((a) => a.labels?.includes('comment:')),
-    [allAnnotations],
-  );
-  const createComment = useCallback(
-    async (content: string) => {
-      if (!currentProject?.typeId) return;
-      const annotation = new Annotation({
-        labels: ['comment:'],
-        target_type: currentProject.typeId.type,
-        target_id: currentProject.typeId.id,
-        content,
-        iso_timestamp: new Date().toISOString(),
-      });
-      await annotation.save([]);
-      await annotationsRefetch();
-    },
-    [currentProject?.typeId, annotationsRefetch],
-  );
-
-  const devMode = useDevMode();
-  const { busy, resetAndRescan, clearIndex, currentActivity, progressTable, scanInfo, lastScanResult } = useSystemTools();
-  const [progressOpen, setProgressOpen] = useState(false);
+  const { resetAndRescan, scanInfo, lastScanResult } = useSystemTools();
   const [showWelcome, setShowWelcome] = useState(false);
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
 
@@ -221,42 +118,22 @@ export function HomeLanding() {
   }, [scanInfo]);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
-  const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
-  const [showNewConversation, setShowNewConversation] = useState(false);
-  const [showJoinConversation, setShowJoinConversation] = useState(false);
   const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
-  const handleStartConversation = () => {
-    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
-    setShowNewConversation(true);
-  };
-  const handleJoinConversation = () => {
-    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
-    setShowJoinConversation(true);
-  };
 
-  // Inbox state
-  const { unreadCount, setUnreadCount } = useInboxStore();
-  const [inboxRefreshing, setInboxRefreshing] = useState(false);
+  // Inbox unread count — populates the shared store consumed by the sidebar
+  // Inbox badge. The home Inbox row was removed; the Recent conversations strip
+  // (now labelled "Inbox") is the home inbox surface and has its own refresh.
+  const { setUnreadCount } = useInboxStore();
   useEffect(() => {
     void listInboxMessages().then((msgs) => setUnreadCount(msgs.filter((m) => !m.is_read).length));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const handleInboxRefresh = useCallback(async () => {
-    setInboxRefreshing(true);
-    try {
-      await fetchInboxFromHub();
-      const msgs = await listInboxMessages();
-      setUnreadCount(msgs.filter((m) => !m.is_read).length);
-    } finally {
-      setInboxRefreshing(false);
-    }
-  }, [setUnreadCount]);
 
-  const [memoPanelOpen, setMemoPanelOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
+  const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
   // Clear post-scan panel when user starts a real search
@@ -279,55 +156,12 @@ export function HomeLanding() {
     void navigateToResult(result, navigation);
   }, [navigation]);
 
-  const { resumeInTerminal } = useResumeInTerminal();
-  const { forkInTerminal } = useForkInTerminal();
-
   // Get paths from desktop_info
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
 
-  const apiUrl = useMemo(() => {
-    // __API_URL__ is the vite-time define populated from LOCAL_SERVER_PORT in
-    // .env.local. Falls back to a derived hostname-based URL only if the
-    // define somehow resolves to an empty string (packaged build).
-    const fromDefine = (typeof __API_URL__ === 'string' && __API_URL__) || '';
-    if (fromDefine) return fromDefine;
-    return `${window.location.protocol}//${window.location.host}`;
-  }, []);
-  const currentProjectPath = useMemo(
-    () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
-    [currentProject?.fs_storage_mount_path, currentProject?.name],
-  );
-
-  const selectedClaudeProjectEncodedName = useMemo(() => {
-    if (!currentProject) return null;
-
-    const byId = claudeProjects.find((project) => project.id === currentProject.id);
-    if (byId?.encoded_name) return byId.encoded_name;
-
-    if (!currentProjectPath) return null;
-    const byPath = claudeProjects.find((project) => {
-      const scanPath = normalizePath(project.cwd || project.name || '');
-      return !!scanPath && scanPath === currentProjectPath;
-    });
-    return byPath?.encoded_name || null;
-  }, [claudeProjects, currentProject, currentProjectPath]);
-
-  const { actOnClassification, actingSessionId } = useActAccordingToClassification({
-    onStarted: () => {
-      void taskRefetch();
-    },
-    onCompleted: () => {
-      void taskRefetch();
-    },
-  });
-
   const handleSessionSubmit = (message: string) => {
     if (!currentProject?.typeId) {
-      toast({
-        title: 'Project Required',
-        description: 'Please select or create a project first.',
-        variant: 'destructive',
-      });
+      notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
       return;
     }
 
@@ -343,196 +177,13 @@ export function HomeLanding() {
     })();
   };
 
-  const resourceNavigationOptions = useMemo(
-    () =>
-      selectedClaudeProjectEncodedName
-        ? {
-            scope: 'project',
-            project: selectedClaudeProjectEncodedName,
-          }
-        : undefined,
-    [selectedClaudeProjectEncodedName],
-  );
-
-  const { items: collaborationRoomRows } = useCollaborationRooms({
-    projectId: currentProject?.typeId.id,
-    limit: 20,
-  });
-  const activityItems = useMemo(
-    () =>
-      collaborationRoomRows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        type: 'collaboration_room' as const,
-        // Subtitle = host. ProjectActivityStrip already renders the timestamp
-        // (from modifiedAt) on the row, so the subtitle line reads:
-        //   `<name>`  (big)
-        //   `by <host> · <time-ago>`  (rendered across subtitle + timestamp slots)
-        subtitle: row.hostName ? `by ${row.hostName}` : '',
-        // `path`'s last segment is rendered as the chip — use the project name.
-        path: row.projectName,
-        modifiedAt: row.updatedAt,
-      })),
-    [collaborationRoomRows],
-  );
-
-  const selectedClaudeProjectCwd = useMemo(() => {
-    if (!selectedClaudeProjectEncodedName) return undefined;
-    const match = claudeProjects.find((p) => p.encoded_name === selectedClaudeProjectEncodedName);
-    return match?.cwd || undefined;
-  }, [claudeProjects, selectedClaudeProjectEncodedName]);
-
-  /**
-   * Switch the current project context to match the given cwd.
-   * Finds an existing Project entity by path or creates a new one,
-   * then sets it as the active project so the terminal spawns there
-   * and the footer path updates accordingly.
-   */
-  const switchProjectByCwd = useCallback(
-    async (cwd: string) => {
-      if (!dataContext.someone) return;
-      const targetPath = normalizePath(cwd);
-      if (!targetPath) return;
-
-      // Skip if already on this project
-      if (currentProjectPath && currentProjectPath === targetPath) return;
-
-      const pathKey = targetPath.toLowerCase();
-      const getPath = (p: Project) => normalizePath(p.fs_storage_mount_path || p.name || '').toLowerCase();
-
-      const freshProjects = await Project.query(
-        new QueryRequest({
-          type: Project.type,
-          query: null,
-          scope: [],
-          name: 'home-landing-switch-project',
-        }),
-      );
-      let target = freshProjects.find((p) => getPath(p) === pathKey) || null;
-
-      if (!target) {
-        target = new Project({ name: targetPath });
-        await target.save([dataContext.someone]);
-      }
-      await target.setupForDesktop();
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, target.typeId);
-      await dataContext.refreshProject();
-      dataContext.setWorkdir(target.fs_storage_mount_path ?? null);
-    },
-    [currentProjectPath],
-  );
-
-  /** Switch project context and resume a Claude session in the terminal. */
-  const switchAndResume = useCallback(
-    (sessionId: string, resource: ProjectResourceListItem) => {
-      const sessionCwd = resource.path || selectedClaudeProjectCwd;
-      const doSwitch = sessionCwd ? switchProjectByCwd(sessionCwd) : Promise.resolve();
-      doSwitch
-        .then(() => resumeInTerminal(sessionId, sessionCwd))
-        .catch((err) => console.error('[HomeLanding] Failed to switch project for resume:', err));
-    },
-    [resumeInTerminal, selectedClaudeProjectCwd, switchProjectByCwd],
-  );
-
-  const handleSessionResume = useCallback(
-    (resource: ProjectResourceListItem) => {
-      if (!resource.sessionId) return;
-      switchAndResume(resource.sessionId, resource);
-    },
-    [switchAndResume],
-  );
-
-  const handleResourceClick = useCallback(
-    (resource: ProjectResourceListItem) => {
-      if (resource.type === 'skill') {
-        navigation.openDock(DockPointer.forSkills(resource.skillDockPath));
-        return;
-      }
-
-      switch (resource.type) {
-        case 'claude_session': {
-          // Same behavior as the resume icon — switch project and open terminal
-          handleSessionResume(resource);
-          break;
-        }
-        case 'collaboration_room': {
-          const row = collaborationRoomRows.find((r) => r.id === resource.id);
-          if (row && row.projectId) {
-            navigation.openDock(
-              DockPointer.forProject(row.projectId, { roomId: row.id }),
-            );
-          }
-          break;
-        }
-        case 'hook':
-          navigation.openSystemProfile('hooks', resource.itemId, resourceNavigationOptions);
-          break;
-        case 'command':
-          navigation.openSystemProfile('commands', resource.itemId, resourceNavigationOptions);
-          break;
-        case 'agent':
-          navigation.openSystemProfile('agents', resource.itemId, resourceNavigationOptions);
-          break;
-        case 'todo':
-          navigation.openSystemProfile('todos', resource.itemId, resourceNavigationOptions);
-          break;
-        case 'plugin':
-          navigation.openSystemProfile('plugins', resource.itemId, resourceNavigationOptions);
-          break;
-        case 'mcp_server':
-          navigation.openSystemProfile('projects', undefined, {
-            project: selectedClaudeProjectEncodedName ?? undefined,
-          });
-          break;
-        case 'claude_md':
-          navigation.openSystemProfile('summary', undefined, resourceNavigationOptions);
-          break;
-        default:
-          navigation.openSystemProfile();
-      }
-    },
-    [
-      navigation,
-      resourceNavigationOptions,
-      selectedClaudeProjectEncodedName,
-      handleSessionResume,
-      collaborationRoomRows,
-    ],
-  );
-
-  const handleSessionTasks = useCallback(
-    (resource: ProjectResourceListItem) => {
-      if (resource.sessionId) {
-        navigation.openLens('claude', 'tasks', resource.sessionId);
-      }
-    },
-    [navigation],
-  );
-
-
-  const handleActAccordingToClassification = useCallback(
-    async (resource: ProjectResourceListItem, command: string) => {
-      const cwd = resource.path || selectedClaudeProjectCwd;
-      if (!resource.sessionId || !cwd) {
-        toast({
-          title: 'Session unavailable',
-          description: 'No session ID or working directory found.',
-          variant: 'destructive',
-        });
-        return;
-      }
-      await actOnClassification(resource.sessionId, cwd, command);
-    },
-    [actOnClassification, toast, selectedClaudeProjectCwd],
-  );
-
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Top row: UsageBar + Search */}
       <div className="flex shrink-0 items-center gap-2 p-4">
-        <div className="w-72 shrink-0">
+        <AdvancedOnly className="w-72 shrink-0">
           <UsageBar />
-        </div>
+        </AdvancedOnly>
         <div className="flex-1" />
         <div className="relative w-72 shrink-0">
           <RecordSearchBar
@@ -542,13 +193,15 @@ export function HomeLanding() {
             onFiltersChange={setSearchFilters}
             onSubmit={handleSearchSubmit}
             onKeyDown={handleSearchKeyDown}
-            placeholder="Search..."
+            placeholder={t`Search...`}
           />
           {searchQuery.trim().length >= 2 && (
             <div className="absolute right-0 top-full z-50 w-[600px] pt-1">
               <InlineSearchResults
                 query={searchQuery}
                 filters={searchFilters}
+                scope={searchScope}
+                scopeLoading={searchScopeLoading}
                 selectedIndex={selectedResultIndex}
                 onSelectedIndexChange={setSelectedResultIndex}
                 onOpenFullSearch={handleSearchSubmit}
@@ -561,145 +214,54 @@ export function HomeLanding() {
 
       {/* Main row: Sidebar + Content */}
       <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
-        {/* Left column: Inbox header + Bookmarks */}
+        {/* Left column: Inbox */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
-          {/* Inbox icon row — same box model as the Recent conversations strip header so both columns share an invisible top line */}
-          <div className="flex h-9 items-center justify-between rounded-lg border border-transparent px-3">
-            <button
-              className="flex items-center gap-1.5 rounded-md py-1 text-xs font-medium hover:bg-accent transition-colors"
-              onClick={() => navigation.openTab(ViewType.INBOX)}
-            >
-              <div className="relative">
-                <Inbox className="h-3.5 w-3.5 text-muted-foreground" />
-                {unreadCount > 0 && (
-                  <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-destructive px-0.5 text-[8px] font-bold leading-none text-destructive-foreground">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </div>
-              <span className="text-muted-foreground hover:text-foreground transition-colors">Inbox</span>
-              {unreadCount > 0 && (
-                <span className="text-muted-foreground">({unreadCount})</span>
-              )}
-            </button>
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-              onClick={() => void handleInboxRefresh()}
-              disabled={inboxRefreshing}
-              title="Fetch new messages from hub"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${inboxRefreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-
-          <BookmarkColumn
-            learningTasks={learningTasks}
-            bookmarks={bookmarks}
-            annotations={commentAnnotations}
-            errorCount={errorCount}
-            onErrorClick={() => navigation.openLens('heartbeat', 'errors', 'open')}
-            onAddComment={createComment}
-            onArchiveLearning={(task) => void archiveTask(task)}
-            onArchiveAllLearnings={() => void removeTasks(learningTasks)}
-            onCloseBookmark={(m) => void closeBookmark(m)}
-            onDeleteBookmark={(m) => void deleteBookmark(m)}
-            onRemindBookmark={(m, mins) => void remindBookmark(m, mins)}
-            onOpenSession={(m) => m.session_id && resumeInTerminal(m.session_id, m.work_dir ?? undefined, m.created_date ?? undefined)}
-            onForkSession={(m) => forkInTerminal(m.work_dir ?? undefined)}
-            onRefresh={() => refreshNotifications(currentProject?.fs_storage_mount_path ?? undefined)}
-            sessionEventCounts={sessionEventCounts}
-            snifferEvents={snifferEvents}
-          />
+          {/* Invisible spacer mirroring the right Feed column so Inbox aligns with Feed */}
+          <div aria-hidden className="h-9 shrink-0" />
+          <RecentConversationsStrip />
         </div>
 
-        {/* Middle column: Main content + Quick Access */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {/* Main content area - shrink-0 so it never collapses */}
-          <div className="flex shrink-0 flex-col items-center gap-6 pb-6 text-center">
+        {/* Middle column: Main content + Quick Access. The column itself never
+            scrolls; side panels own their own scrolling. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-hidden">
+          {/* Hero — fixed at the top, never scrolls */}
+          <div className="flex shrink-0 flex-col items-center gap-6 text-center">
             <h1 className="text-4xl font-bold tracking-tight">
-              Hey{' '}
-              <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+              <Trans>
+                Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+              </Trans>
             </h1>
 
             <div className="w-full max-w-3xl flex flex-col items-end gap-2">
               <SessionInput
-                placeholder="What would you like to work on?"
+                placeholder={t`What would you like to work on?`}
                 value={draftPrompt}
                 onChange={setDraftPrompt}
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
               />
-              <div className="flex w-full items-center justify-between gap-2">
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
-                    onClick={handleJoinConversation}
-                  >
-                    Join conversation
-                  </Button>
-                  <Button
-                    type="button"
-                    className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
-                    onClick={handleStartConversation}
-                  >
-                    Start conversation
-                  </Button>
-                </div>
+              <div className="flex w-full flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="inline-flex h-6 items-center gap-1 rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
+                  className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
                   onClick={() => setShowCommunityAssistance(true)}
                 >
                   <Users className="h-3 w-3" />
-                  Community assistance
+                  <Trans>Community assistance</Trans>
                 </button>
               </div>
             </div>
+          </div>
 
+          {/* Quick Access — fixed below the hero */}
+          <div className="flex shrink-0 flex-col items-center gap-6 text-center">
             <div className="w-full max-w-3xl">
               <MiniDesktop />
             </div>
 
-            {/* Activity strip — shown while any system activity is running */}
-            {currentActivity && (
-              <button
-                onClick={() => setProgressOpen(true)}
-                className="w-full max-w-3xl flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted/60 transition-colors text-left"
-              >
-                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-primary" />
-                <span className="text-muted-foreground shrink-0">
-                  {currentActivity === 'archive' ? 'Archiving…'
-                    : currentActivity === 'clear' ? 'Clearing index…'
-                    : currentActivity === 'load_from_archive' ? 'Restoring…'
-                    : currentActivity === 'scan' ? 'Scanning'
-                    : 'Indexing'}
-                </span>
-                {progressTable?.current && (
-                  <span className="font-mono text-foreground truncate max-w-[180px]">
-                    {progressTable.current}
-                  </span>
-                )}
-                {progressTable && (
-                  <>
-                    <span className="ml-auto text-muted-foreground shrink-0 tabular-nums">
-                      {progressTable.total > 0
-                        ? `${progressTable.done.toLocaleString()}/${progressTable.total.toLocaleString()}`
-                        : progressTable.done.toLocaleString()}
-                    </span>
-                    {progressTable.total > 0 && (
-                      <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
-                        <div
-                          className="h-full bg-primary rounded-full transition-all"
-                          style={{ width: `${(progressTable.done / progressTable.total) * 100}%` }}
-                        />
-                      </div>
-                    )}
-                  </>
-                )}
-              </button>
-            )}
+            <ActivityIndicator
+              variant="strip"
+              className="w-full max-w-3xl flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted/60 transition-colors text-left"
+            />
           </div>
 
           {/* Post-scan results panel — shown after scan completes when user hasn't searched yet */}
@@ -709,7 +271,7 @@ export function HomeLanding() {
                 <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
                   <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Scan & index complete — {postScanResult.grand_total.toLocaleString()} records found
+                    <Trans>Scan & index complete — {postScanResult.grand_total.toLocaleString()} records found</Trans>
                   </span>
                   <button
                     type="button"
@@ -732,7 +294,7 @@ export function HomeLanding() {
                       ))}
                   </div>
                 ) : (
-                  <p className="px-3 py-2 text-xs text-muted-foreground">No records found on disk.</p>
+                  <p className="px-3 py-2 text-xs text-muted-foreground"><Trans>No records found on disk.</Trans></p>
                 )}
               </div>
             </div>
@@ -743,18 +305,14 @@ export function HomeLanding() {
             <NotificationFeed />
           </div>
 
-          {/* Event Sniffer chip - aligned to bottom of side columns */}
-          <div className="mt-auto w-full max-w-3xl shrink-0 self-center">
+          {/* Event Sniffer chip (trace heartbeat), aligned to bottom of side
+              columns — Advanced-only, hidden in Standard to tune down UI. */}
+          <AdvancedOnly className="mt-auto w-full max-w-3xl shrink-0 self-center">
             <EventSnifferChip />
-          </div>
+          </AdvancedOnly>
         </div>
 
-        {/* Right column: Recent conversations */}
-        <div className="w-72 shrink-0 flex flex-col gap-2">
-          {/* Invisible spacer mirroring the left column's Inbox row so Recent conversations aligns with Todos */}
-          <div aria-hidden className="h-9 shrink-0" />
-          <RecentConversationsStrip />
-        </div>
+        <HomeFeedColumn />
 
       </div>
 
@@ -772,34 +330,9 @@ export function HomeLanding() {
         }}
       />
 
-      <NewConversationDialog
-        open={showNewConversation}
-        onClose={() => setShowNewConversation(false)}
-      />
-      <JoinConversationDialog
-        open={showJoinConversation}
-        onClose={() => setShowJoinConversation(false)}
-        defaultName={user?.name ?? undefined}
-      />
       <CommunityAssistanceDialog
         open={showCommunityAssistance}
         onClose={() => setShowCommunityAssistance(false)}
-      />
-      <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
-
-      {/* Activity progress detail modal */}
-      <ActivityProgressModal
-        open={progressOpen}
-        onOpenChange={setProgressOpen}
-        table={progressTable}
-        title={currentActivity ? (
-          currentActivity === 'archive' ? 'Archiving…'
-          : currentActivity === 'clear' ? 'Clearing index…'
-          : currentActivity === 'load_from_archive' ? 'Restoring…'
-          : currentActivity === 'scan'
-            ? `Scanning… ${progressTable ? progressTable.done.toLocaleString() : 0}`
-            : `Indexing… ${progressTable && progressTable.total > 0 ? `${progressTable.done}/${progressTable.total}` : (progressTable?.done ?? 0)}`
-        ) : 'Activity'}
       />
 
       {/* Incoming task dialog — pull/clone flow for shared tasks */}

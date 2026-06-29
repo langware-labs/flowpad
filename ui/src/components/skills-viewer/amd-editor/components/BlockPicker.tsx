@@ -1,5 +1,6 @@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 import { DropdownMenuLabel } from '@src/components/ui/dropdown-menu';
+import { Trans } from '@lingui/react/macro';
 import { InstructionElementType } from '@sdk';
 import { Box, Code, FileText, GitBranch, MonitorPlay, Repeat, Settings, Type } from 'lucide-react';
 import { BLOCK_CONFIGS, CREATABLE_BLOCK_TYPES } from '../types';
@@ -25,7 +26,7 @@ export function BlockPicker({ onSelect, trigger }: BlockPickerProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel>Add Block</DropdownMenuLabel>
+        <DropdownMenuLabel><Trans>Add Block</Trans></DropdownMenuLabel>
         <DropdownMenuSeparator />
 
         {CREATABLE_BLOCK_TYPES.map((type) => {

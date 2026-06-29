@@ -5,15 +5,23 @@ import { EventEmitter } from 'events';
 import { dataContext } from '../FlowSync/context';
 import { ContextEntitiesEnum } from '../FlowSync/context';
 import { Project } from '../entities/project';
+import { FlowpadDiagnosis } from '../entities/flowpad-diagnosis';
 import { QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import { connectionManager } from '../websocket';
+import { scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '../utils/scope-filter';
 
 const ACTION = 'desktop-db';
 const FS_RECORDS_BASE = '/graph/compute_node/@local/fs-records';
 
 export interface IndexTypeResult {
   indexed: number;
+}
+
+export interface IndexTypeOptions {
+  /** Bypass skip-fresh so rows are re-parsed even when source mtime did not change. */
+  force?: boolean;
+  orphanAction?: 'index' | 'ignore' | 'delete';
 }
 
 /** Returned by `systemTools.discoverByPath()`. */
@@ -121,6 +129,13 @@ export interface IndexProgressTable {
 }
 
 /**
+ * Terminal marker on ``IndexProgressTable.text`` — mirrors the backend's
+ * ``PROGRESS_TEXT_COMPLETE`` (flow_sdk/fs_store/indexer/progress_table.py).
+ * Other text values are informational phase labels (e.g. "sweeping").
+ */
+export const PROGRESS_TEXT_COMPLETE = 'complete';
+
+/**
  * SDK service for system-level data management.
  *
  * Extends EventEmitter and maintains reactive state:
@@ -138,6 +153,10 @@ export class SystemToolsService extends EventEmitter {
   private _lastProgressAt = 0;
   /** Active idle-watchdog handle. */
   private _idleWatchdog: ReturnType<typeof setTimeout> | null = null;
+  /** Pending phase-complete → null transition. Cancelled when the next phase
+   *  starts before the timer fires, so resetAndRescan's archive→clear→scan→index
+   *  hand-off doesn't briefly drop the indicator to idle between phases. */
+  private _completionTimer: ReturnType<typeof setTimeout> | null = null;
   /** Idle threshold: how long without a WS event before we ask the backend. */
   private static readonly _IDLE_TIMEOUT_MS = 5000;
 
@@ -164,23 +183,36 @@ export class SystemToolsService extends EventEmitter {
       const attrs = flowData?.attributes as IndexProgressTable | undefined;
       if (!attrs?.job_name) return;
 
+      // Drop late events for a phase we've already moved past. Without this
+      // guard, a stale `complete` event for the previous phase (archive's
+      // complete-WS arriving after we've already set _setActivity('clear'))
+      // would overwrite currentActivity back, then the 2 s timer would null
+      // the indicator mid-rescan — visible flicker between phases.
+      if (this.currentActivity != null && this.currentActivity !== attrs.job_name) {
+        return;
+      }
+
       this._lastProgressAt = Date.now();
       this._armIdleWatchdog();
 
       this.currentActivity = attrs.job_name;
       this.progressTable = attrs;
 
-      // Terminal event: text="complete" is the authoritative signal that the
-      // job is done. Brief delay lets a scan→index transition (in
-      // resetAndRescan) flip currentActivity before we clear.
-      if (attrs.text === 'complete') {
+      // Terminal event: PROGRESS_TEXT_COMPLETE is the authoritative signal
+      // that the job is done. The delay must be long enough that an in-flight
+      // phase HTTP (e.g. clear-index can run >500 ms past its complete-event)
+      // returns and calls _setActivity('next-phase') before this timer fires.
+      // If the next phase arrives in time, `_setActivity` cancels the timer.
+      if (attrs.text === PROGRESS_TEXT_COMPLETE) {
         const finishedJob = attrs.job_name;
-        setTimeout(() => {
+        if (this._completionTimer != null) clearTimeout(this._completionTimer);
+        this._completionTimer = setTimeout(() => {
+          this._completionTimer = null;
           if (this.currentActivity === finishedJob) {
             this._setActivity(null);
             void dataManager.refreshScanInfo();
           }
-        }, 500);
+        }, 2000);
       }
 
       this._emitProgressThrottled();
@@ -234,9 +266,20 @@ export class SystemToolsService extends EventEmitter {
   private _setActivity(activity: SystemActivity | null): void {
     this.currentActivity = activity;
     if (activity == null) {
-      this.progressTable = null;
+      // Keep the last progressTable across the inter-phase boundary of a
+      // resetAndRescan (archive→clear→scan→index). All consumers gate on
+      // `currentActivity && progressTable` before reading, so a truly-idle
+      // strip stays hidden; the retained table only matters for the <100 ms
+      // window before the next phase's first WS event replaces it.
       this._clearIdleWatchdog();
     } else {
+      // Phase hand-off: cancel any pending completion-timer from the previous
+      // phase so it doesn't fire a stale _setActivity(null) and blink the
+      // indicator to idle between scan→index etc.
+      if (this._completionTimer != null) {
+        clearTimeout(this._completionTimer);
+        this._completionTimer = null;
+      }
       // Treat the explicit phase change as a recent "event" so the watchdog
       // doesn't misfire just because no WS message has arrived yet.
       this._lastProgressAt = Date.now();
@@ -332,9 +375,13 @@ export class SystemToolsService extends EventEmitter {
         return null;
       }
 
-      this.currentActivity = data.job_name;
+      // Set progressTable directly, then route the phase through _setActivity
+      // so the idle-watchdog arms. Without that arming, if the backend has
+      // advanced past data.job_name by the time we get here, the drop-late-
+      // events guard would silently swallow every incoming event with no
+      // self-heal — the indicator would stay stuck on a stale snapshot.
       this.progressTable = data;
-      this.emit('state_changed');
+      this._setActivity(data.job_name);
       return data.job_name;
     } catch {
       return null;
@@ -343,10 +390,26 @@ export class SystemToolsService extends EventEmitter {
 
   // ---- scan index (fs-records) ---------------------------------------------
 
-  /** Index a single record type into the entity DB / FTS. */
-  async indexType(typeName: string): Promise<IndexTypeResult> {
+  /** Index a single record type into the entity DB / FTS.
+   *
+   *  Optional second arg `scope` is the unified ScopeFilter ({user, projects});
+   *  when present it's forwarded as `?user=…&projects=…` so the indexer
+   *  narrows its walk to the matching roots. Omit to run a full scan.
+   */
+  async indexType(
+    typeName: string,
+    scope?: ScopeFilter,
+    options?: IndexTypeOptions,
+  ): Promise<IndexTypeResult> {
+    const qs = new URLSearchParams({ type: typeName });
+    if (scope) {
+      qs.set('user', scopeIncludesUser(scope) ? 'true' : 'false');
+      qs.set('projects', scopeProjectIds(scope).join(','));
+    }
+    if (options?.force) qs.set('force', 'true');
+    if (options?.orphanAction) qs.set('orphan_action', options.orphanAction);
     const res = await apiClient.post<IndexTypeResult>(
-      `${FS_RECORDS_BASE}/index?type=${encodeURIComponent(typeName)}`,
+      `${FS_RECORDS_BASE}/index?${qs.toString()}`,
     );
     void dataManager.refreshScanInfo();
     return res as unknown as IndexTypeResult;
@@ -422,11 +485,19 @@ export class SystemToolsService extends EventEmitter {
   }
 
   /**
-   * Compound reset + rescan:
+   * Compound reset + rescan — full reindex from scratch.
+   *
    *   1. Archive (DB + records snapshot)
-   *   2. Clear index (FTS + entity records)
+   *   2. Clear index (FTS + all anonymous entities; @local is preserved)
    *   3. Aggregate scan — backend streams IndexProgressTable snapshots
    *   4. Aggregate index — backend streams IndexProgressTable snapshots
+   *
+   * The whole flow is intentionally unscoped: clear-index wipes every
+   * anonymous entity (no scope kwarg accepted), so the project ids the
+   * caller might pass for narrowing the scan/index would all refer to rows
+   * that were just deleted — scan's project-id-to-mount-path lookup would
+   * 404 ("Project '<id>' not found") and abort the rebuild. The scan
+   * rediscovers projects from disk; downstream UI re-resolves via bootstrap.
    *
    * Each phase's backend WS feed drives ``progressTable`` directly; we just
    * flag the local ``currentActivity`` so the footer label phases through
@@ -443,12 +514,14 @@ export class SystemToolsService extends EventEmitter {
       void dataManager.refreshScanInfo();
 
       this._setActivity('scan');
-      const scanData = await apiClient.get(`${FS_RECORDS_BASE}/scan?trigger=manual`);
+      const scanData = await apiClient.get(
+        `${FS_RECORDS_BASE}/scan?trigger=manual`,
+      );
       const scanResult = scanData as unknown as LastScanResult;
       if (scanResult?.types) capturedScanResult = scanResult;
 
       this._setActivity('index');
-      await apiClient.post(`${FS_RECORDS_BASE}/index`);
+      await apiClient.post(`${FS_RECORDS_BASE}/index?_=1`);
     } finally {
       if (capturedScanResult) this.lastScanResult = capturedScanResult;
       this._setActivity(null);
@@ -480,13 +553,16 @@ export class SystemToolsService extends EventEmitter {
    * Project-scoped fast scan: indexer walks only the project's
    * `fs_storage_mount_path` subtree (one REAL_PROJECT_CWD root). Same
    * skip-fresh + WS progress + index_end settle path as `fastScan()`.
+   *
+   * Wire format matches the canonical ScopeFilter encoding
+   * (`?user=false&projects=<id>`) so the backend takes one parse path
+   * regardless of which client sent the request.
    */
   async fastScanProject(projectId: string): Promise<void> {
     this._setActivity('index');
     try {
-      await apiClient.post(
-        `${FS_RECORDS_BASE}/index?project_id=${encodeURIComponent(projectId)}`,
-      );
+      const qs = new URLSearchParams({ user: 'false', projects: projectId });
+      await apiClient.post(`${FS_RECORDS_BASE}/index?${qs.toString()}`);
       void dataManager.refreshScanInfo();
     } finally {
       if (this.currentActivity === 'index') this._setActivity(null);
@@ -502,9 +578,31 @@ export class SystemToolsService extends EventEmitter {
   async hardRefreshProject(projectId: string): Promise<void> {
     this._setActivity('index');
     try {
-      await apiClient.post(
-        `${FS_RECORDS_BASE}/index?project_id=${encodeURIComponent(projectId)}&force=true`,
-      );
+      const qs = new URLSearchParams({
+        user: 'false',
+        projects: projectId,
+        force: 'true',
+      });
+      await apiClient.post(`${FS_RECORDS_BASE}/index?${qs.toString()}`);
+      void dataManager.refreshScanInfo();
+    } finally {
+      if (this.currentActivity === 'index') this._setActivity(null);
+    }
+  }
+
+  /**
+   * Fast, session-scoped re-index for one project — backs the "Recent Sessions"
+   * refresh button. Indexes Claude sessions precisely (the project's
+   * `~/.claude/projects/<encoded>` dir) plus Codex/Copilot sessions
+   * (user-global storage, skip-fresh keeps it cheap). Emits the same WS
+   * progress_report → footer-pill path as `fastScan`. Settle via `index_end`,
+   * with the `finally` as a request-failed safety net.
+   */
+  async indexProjectSessions(projectId: string): Promise<void> {
+    this._setActivity('index');
+    try {
+      const qs = new URLSearchParams({ project_id: projectId });
+      await apiClient.post(`${FS_RECORDS_BASE}/index-sessions?${qs.toString()}`);
       void dataManager.refreshScanInfo();
     } finally {
       if (this.currentActivity === 'index') this._setActivity(null);
@@ -529,13 +627,7 @@ export class SystemToolsService extends EventEmitter {
     entity?: { project_id?: string | null; save: () => Promise<void> },
   ): Promise<void> {
     if (!workdir) return;
-    const projects = await Project.query<Project>(new QueryRequest({ type: Project.type, scope: [] }));
-    const candidates = projects.filter(
-      (p) => p.fs_storage_mount_path && workdir.startsWith(p.fs_storage_mount_path),
-    );
-    const match = candidates.sort(
-      (a, b) => (b.fs_storage_mount_path?.length ?? 0) - (a.fs_storage_mount_path?.length ?? 0),
-    )[0];
+    const match = await Project.getProjectByPath(workdir);
     if (match) {
       await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, match.typeId);
       if (entity && !entity.project_id) {
@@ -543,6 +635,24 @@ export class SystemToolsService extends EventEmitter {
         await entity.save();
       }
     }
+  }
+
+  // ---- System diagnoses (flowpad_diagnosis) --------------------------------
+
+  /** List all recorded diagnoses, newest first when a created timestamp exists. */
+  async getDiagnoses(): Promise<FlowpadDiagnosis[]> {
+    const rows = await FlowpadDiagnosis.query<FlowpadDiagnosis>(
+      new QueryRequest({ type: FlowpadDiagnosis.type, scope: [] }),
+    );
+    return rows.sort(
+      (a, b) =>
+        new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime(),
+    );
+  }
+
+  /** Delete a diagnosis by id. */
+  async deleteDiagnosis(id: string): Promise<void> {
+    await dataManager.delete(new TypeId(FlowpadDiagnosis.type, id));
   }
 
   // ---- OS folder openers ---------------------------------------------------

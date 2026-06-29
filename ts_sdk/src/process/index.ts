@@ -17,17 +17,29 @@ export {
   isProcessStartable,
   isWorkerRunning,
   isWorkerTerminal,
+  isAwaitingUserInput,
   hasWorkerStarted,
   isReadyForInput,
   isBusy,
   getDisplayStatus,
   getWorkerMode,
+  ExecutionMode,
+  ERROR_WORKER_STATUSES,
+  classifyExecutionMode,
+  supportedExecutionModes,
 } from './agentic-types';
 export type { ParsedUIUri, ProcessIconKey, UIComponentPayload, StatusBearingProcess } from './agentic-types';
 
-export { AgenticProcess } from './agentic-process';
-export type { IAgenticProcess, ProcessState, ExecuteOptions, SpawnResult } from './agentic-process';
-export { ProcessType } from './process-types';
+export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
+export type {
+  AgenticProcessReportEventResult,
+  IAgenticProcess,
+  MarkdownDoc,
+  ProcessState,
+  ExecuteOptions,
+  SpawnResult,
+} from './agentic-process';
+export { ProcessKind, ProcessType } from './process-types';
 export type { AssetDescriptor, AssetSource } from './asset-descriptor';
 export { ASSET_SOURCE_LABEL, READONLY_ASSET_SOURCES, isReadOnlySource } from './asset-descriptor';
 

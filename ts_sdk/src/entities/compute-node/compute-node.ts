@@ -31,21 +31,19 @@ import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError } from './service-control';
 import { Shell } from '../shell';
 import { PtyConnection } from '../../services/shell/ptyConnection';
-import { GitRepo } from '../git-repo';
+import { GitWorkdir } from '../git-workdir';
 
 /** Callback for when a new machine session is detected */
 export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
 
-/** CLI worker kind (Claude Code vs Codex) shared across resolver APIs. */
-export type WorkerKind = 'claude' | 'codex';
+/** CLI worker kind shared across resolver APIs. */
+export type WorkerKind = 'claude' | 'codex' | 'copilot';
 
 /** Descriptor returned by {@link ComputeNode.findSession} on hit. */
 export interface FindSessionResult {
   session_id: string;
   worker_type: WorkerKind;
   transcript_path: string | null;
-  /** Encoded project dir name under `~/.claude/projects/`. Null for codex. */
-  project_encoded_name: string | null;
   cwd: string | null;
   project_id: string | null;
   session_name: string | null;
@@ -126,6 +124,42 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
+   * Resolve the singleton `@local` compute node — "this machine".
+   *
+   * The robust frontend counterpart to the backend `ComputeNode.get_local()`.
+   * Resolution order (cheap → authoritative):
+   *   1. the current context compute node, when it is the @local one
+   *   2. the bootstrap-issued `default_compute_node`
+   *   3. a fetch by the `@local` alias typeid (server resolves it)
+   *
+   * This is a READ: minting the node is a backend concern (the client cannot
+   * create entities). The backend self-heals on any action that touches @local
+   * — including {@link Project.getComputeNode} — so a missing row is recreated
+   * server-side rather than here. Returns null only if the backend has no
+   * @local node AND cannot resolve the alias (should not happen in local mode).
+   */
+  static async getLocal(): Promise<ComputeNode | null> {
+    const { dataContext } = await import('../../FlowSync/context');
+    const current = dataContext.computeNode;
+    // The context node is @local unless a cloud/sandbox node is active. Treat a
+    // local_machine-provider node as @local; otherwise fall through.
+    if (current && current.node_provider_type === ComputeProviderType.LOCAL_MACHINE) {
+      return current;
+    }
+    const fromBootstrap = dataContext.bootstrapInfo?.default_compute_node;
+    if (fromBootstrap) {
+      const node = new ComputeNode(fromBootstrap as any);
+      node.markAsExpanded();
+      return node;
+    }
+    try {
+      return await dataManager.getByTypeId<ComputeNode>(new TypeId(ComputeNode.type, '@local'));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Create a new idle AgenticProcess on this ComputeNode.
    *
    * @param context - Execution context (workdir, permissionMode, model, etc.)
@@ -145,6 +179,19 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       result?: { uname?: string; resultType?: string; sourceSessionId?: string };
       watchProcess?: boolean;
       visible?: boolean;
+      /**
+       * Transport intent for the new session: true → interactive PTY (default
+       * when omitted), false → headless JSON-stream (no PTY/xterm). Omitted →
+       * the backend defaults to true, preserving today's behaviour.
+       */
+      pty_mode?: boolean;
+      /**
+       * First prompt to seed onto the process's queue server-side, BEFORE the
+       * visible auto-start. The worker then boots with it as its launch
+       * instruction (deterministic — no post-spawn stdin race). Used by
+       * {@link AgenticProcess.openTab}.
+       */
+      launchPrompt?: string;
     },
   ): Promise<import('../../process/agentic-process').AgenticProcess> {
     const { AgenticProcess } = await import('../../process/agentic-process');
@@ -155,6 +202,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       context: serializeAgenticContext(context),
       ...(options?.result ? { result: { uname: options.result.uname, resultType: options.result.resultType, sourceSessionId: options.result.sourceSessionId } } : {}),
       ...(options?.visible !== undefined ? { visible: options.visible } : {}),
+      ...(options?.pty_mode !== undefined ? { pty_mode: options.pty_mode } : {}),
+      ...(options?.launchPrompt ? { launch_prompt: options.launchPrompt } : {}),
     };
 
     const response = await dataManager.callAction<unknown, IAgenticProcess>(action);
@@ -170,7 +219,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
-   * Resolve a session id to its on-disk descriptor (Claude or Codex).
+   * Resolve a session id to its on-disk descriptor.
    *
    * Pure read-only lookup: never creates an AgenticProcess. Use
    * `AgenticProcess.getByWorkerId(id)` for the find+open flow.
@@ -736,11 +785,11 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
-   * Create a GitRepo helper bound to this compute node and the given directory.
+   * Create a workdir-bound git ops helper for this compute node.
    * @param workDir - Absolute path to the working directory
    */
-  git(workDir: string): GitRepo {
-    return new GitRepo(workDir, this.id);
+  git(workDir: string): GitWorkdir {
+    return new GitWorkdir(workDir, this.id);
   }
 
 }

@@ -35,16 +35,67 @@ from flow_sdk._compat import StrEnum
 
 from ..entries import (
     AssistantMessageEntry,
+    CodexUsageEntry,
+    CompactionEntry,
+    ExitPlanModeEntry,
+    FileEditEntry,
+    FileWriteEntry,
     MetaEntry,
-    SummaryEntry,
+    SkillCallEntry,
+    SkillInvocationKind,
     SystemEntry,
-    TokenUsageEntry,
     ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
+    UsageEntry,
     UserMessageEntry,
 )
 from ..entry import TranscriptEntry
+from ._apply_patch import (
+    add_op_to_content,
+    parse_apply_patch,
+    update_op_to_hunks,
+)
+
+# Codex has no native skill tool — it loads a skill by reading its
+# ``…/skills/<name>/SKILL.md``. Recognising that read lets us surface a
+# normalized SkillCallEntry alongside the shell command.
+_SKILL_MD_RE = re.compile(r"/skills/([^/\s\"']+)/SKILL\.md\b")
+
+
+def _skill_name_from_command(command: object) -> str | None:
+    """Skill name if ``command`` loads a ``…/skills/<name>/SKILL.md``, else None.
+
+    Accepts a raw command string or a function_call ``arguments`` dict whose
+    shell command lives under ``command``/``cmd`` — pulling just that field
+    avoids serializing unrelated tool args for every non-shell call.
+    """
+    if isinstance(command, dict):
+        command = command.get("command") or command.get("cmd") or ""
+    if not isinstance(command, str):
+        command = json.dumps(command, default=str) if command else ""
+    match = _SKILL_MD_RE.search(command)
+    return match.group(1) if match else None
+
+
+# Codex Plan Mode emits the finalized plan inside an assistant message wrapped
+# in ``<proposed_plan>...</proposed_plan>``. We synthesize an
+# ``ExitPlanModeEntry`` from that marker so downstream code (PlanHandler,
+# ``AgentTranscriptFile.latest_plan``, the UI "Open last plan" button) treats Codex
+# plans identically to Claude's ``ExitPlanMode`` tool_use entries.
+PROPOSED_PLAN_RE = re.compile(r"<proposed_plan>(.*?)</proposed_plan>", re.DOTALL)
+
+
+def _codex_plan_path_for_session(session_id: str) -> str:
+    """Deterministic plan-file path used by both the stream worker (writer)
+    and the parser (reader). Returns empty string when ``session_id`` is empty
+    so the caller can avoid emitting a bogus path.
+    """
+    if not session_id:
+        return ""
+    from flow_sdk.instance_settings import get_instance_settings
+
+    return str(get_instance_settings().claude_plans_dir / f"codex-{session_id}.md")
 
 
 class CodexLineType(StrEnum):
@@ -111,6 +162,12 @@ class _CodexParserBase:
         # Last seen ``turn_context.model`` — propagated onto subsequent
         # ``AssistantMessageEntry`` and ``TokenUsageEntry`` envelopes.
         self._current_model: str | None = None
+        # Last token_count info dict — duplicate-emission guard (old-format
+        # rollouts write each token_count event twice).
+        self._last_usage_info: dict | None = None
+        # Previous cumulative totals — usage is billed as the increment of
+        # ``total_token_usage`` between token_count events.
+        self._prev_usage_totals: dict | None = None
 
     def _capture_common_state(self, raw: dict, rtype: CodexLineType | None) -> None:
         # Capture session id whenever it shows up.
@@ -142,6 +199,34 @@ class _CodexParserBase:
 
     def _unknown(self, raw: dict, rtype: str, line_index: int) -> list[TranscriptEntry]:
         return [UnknownEntry(raw_data=raw, **self._base(raw, rtype, line_index))]
+
+    def _maybe_synthesize_plan_entry(
+        self, text: str, base: dict
+    ) -> list[TranscriptEntry]:
+        """Synthesize ``ExitPlanModeEntry`` from a ``<proposed_plan>`` block.
+
+        Codex Plan Mode finalizes the plan inside an assistant message wrapped
+        in ``<proposed_plan>...</proposed_plan>``. We map that to the same
+        ``ExitPlanModeEntry`` Claude's parser emits so the downstream contract
+        stays uniform: ``tool_name == "ExitPlanMode"``,
+        ``tool_input == {"plan": body, "planFilePath": <deterministic path>}``.
+
+        The on-disk file is written by the Codex stream worker as soon as it
+        sees the same marker; the path here is computed from ``session_id``
+        with the same convention so the two agree without side-channel state.
+        """
+        m = PROPOSED_PLAN_RE.search(text or "")
+        if not m:
+            return []
+        body = m.group(1).strip()
+        plan_path = _codex_plan_path_for_session(self.session_id)
+        use_id = f"{base['id']}:exit_plan_mode"
+        return [ExitPlanModeEntry(
+            tool_name="ExitPlanMode",
+            tool_use_id=use_id,
+            tool_input={"plan": body, "planFilePath": plan_path},
+            **{**base, "id": use_id},
+        )]
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -280,10 +365,40 @@ class _CodexParserBase:
             return int(round(value))
         return None
 
-    def _make_token_usage(self, payload: dict, base: dict) -> TokenUsageEntry:
+    def _emit_usage(self, payload: dict, base: dict) -> list[TranscriptEntry]:
+        """Per-dim ``UsageEntry`` list + one ``CodexUsageEntry`` for cumulative totals.
+
+        Codex packs both per-turn (``last_token_usage``) and cumulative
+        (``total_token_usage``) into one ``token_count`` event. We emit
+        per-dim entries from ``last`` (so cost math sees only this turn's
+        spend) and one separate cumulative carrier for sanity-checking.
+
+        Dimension semantics (validated against real rollouts and the file's
+        own monotonic cumulative counter, 2026-06-12): ``input_tokens``
+        INCLUDES ``cached_input_tokens`` and ``output_tokens`` INCLUDES
+        ``reasoning_output_tokens`` — so billing dims are split as uncached
+        input (input − cached), cache read (cached), and output (as-is, no
+        separate reasoning dim).
+
+        Which counter to bill from: old-format rollouts are unreliable on
+        ``last_token_usage`` in BOTH directions — every token_count event is
+        written twice (naive summing doubles every count) AND many events
+        carry ``info: null`` so their per-turn delta never appears at all.
+        The cumulative ``total_token_usage`` is the only complete record, so
+        when it's present we bill the per-event INCREMENT of the cumulative
+        counter (a drop means the counter reset — e.g. compaction — and the
+        new total is the delta). ``last_token_usage`` is the fallback for
+        events that carry no cumulative block.
+        """
         info = payload.get("info") if isinstance(payload, dict) else None
         if not isinstance(info, dict):
             info = payload if isinstance(payload, dict) else {}
+        # Duplicate-event guard: skip an event whose info is byte-identical
+        # to the previous token_count (old-format double emission).
+        if info and info == self._last_usage_info:
+            return []
+        if info:
+            self._last_usage_info = info
         last = info.get("last_token_usage") or {}
         total = info.get("total_token_usage") or {}
         if not isinstance(last, dict):
@@ -293,17 +408,65 @@ class _CodexParserBase:
         turn_id = info.get("turn_id")
         if not turn_id and isinstance(payload, dict):
             turn_id = payload.get("turn_id")
-        return TokenUsageEntry(
-            input_tokens=last.get("input_tokens"),
-            output_tokens=last.get("output_tokens"),
-            cached_input_tokens=last.get("cached_input_tokens"),
-            reasoning_output_tokens=last.get("reasoning_output_tokens"),
-            total_input_tokens=total.get("input_tokens"),
-            total_output_tokens=total.get("output_tokens"),
-            turn_id=str(turn_id) if turn_id else None,
-            model=self._current_model,
-            **base,
-        )
+        turn_id_str = str(turn_id) if turn_id else None
+
+        out: list[TranscriptEntry] = []
+        base_id = base["id"]
+        base_envelope = {k: v for k, v in base.items() if k != "id"}
+        entry_id = f"{base_id}:usage"
+
+        def _emit(**fields: object) -> None:
+            count = fields.get("count")
+            if not isinstance(count, (int, float)) or count <= 0:
+                return
+            dim_id = f"{base_id}:usage:dim_{len(out)}"
+            out.append(UsageEntry(
+                id=dim_id,
+                entry_id=entry_id,
+                model=self._current_model,
+                **base_envelope,
+                **fields,  # type: ignore[arg-type]
+            ))
+
+        if total:
+            # Bill the increment of the cumulative counter (complete record).
+            prev = self._prev_usage_totals or {}
+            deltas: dict[str, int] = {}
+            reset = any(
+                (total.get(k) or 0) < (prev.get(k) or 0)
+                for k in ("input_tokens", "output_tokens", "cached_input_tokens")
+            )
+            for k in ("input_tokens", "output_tokens", "cached_input_tokens"):
+                now = total.get(k) or 0
+                deltas[k] = now if reset else now - (prev.get(k) or 0)
+            self._prev_usage_totals = dict(total)
+            billed = deltas
+        else:
+            billed = last
+        cached = billed.get("cached_input_tokens") or 0
+        # Uncached input only — ``input_tokens`` includes the cached subset.
+        _emit(count=max(0, (billed.get("input_tokens") or 0) - cached), io="input", cache="none")
+        # Output as-is — already includes reasoning tokens; emitting a
+        # separate reasoning dim would bill them twice.
+        _emit(count=billed.get("output_tokens") or 0, io="output")
+        _emit(count=cached, io="input", cache="read")
+
+        # Cumulative totals — one carrier per token_count event, even if
+        # all per-dim entries were zero. Useful for matching against
+        # OpenAI's own session totals.
+        if total or turn_id_str:
+            out.append(CodexUsageEntry(
+                id=f"{base_id}:usage:cumulative",
+                entry_id=entry_id,
+                model=self._current_model,
+                count=0,
+                io="input",
+                total_input_tokens=total.get("input_tokens"),
+                total_output_tokens=total.get("output_tokens"),
+                turn_id=turn_id_str,
+                **base_envelope,
+            ))
+        return out
 
     def _parse_compacted(self, raw: dict, base: dict) -> list[TranscriptEntry]:
         payload = raw.get("payload") or raw
@@ -320,7 +483,7 @@ class _CodexParserBase:
                 text = json.dumps(payload, sort_keys=True)
             except (TypeError, ValueError):
                 text = str(payload)
-        return [SummaryEntry(summary_text=text, **base)]
+        return [CompactionEntry(trigger="auto", summary_preview=text[:500], **base)]
 
     # ── stream-event item.completed ─────────────────────────────────────────
 
@@ -329,7 +492,11 @@ class _CodexParserBase:
         itype = item.get("type")
         if itype == "agent_message":
             text = str(item.get("text") or "")
-            return [AssistantMessageEntry(text=text, model=self._current_model, **base)]
+            out: list[TranscriptEntry] = [
+                AssistantMessageEntry(text=text, model=self._current_model, **base)
+            ]
+            out.extend(self._maybe_synthesize_plan_entry(text, base))
+            return out
         if itype == "command_execution":
             cmd = str(item.get("command") or "")
             output = str(item.get("aggregated_output") or "")
@@ -338,24 +505,34 @@ class _CodexParserBase:
             tool_use_id = str(item.get("id") or base["id"])
             use_base = {**base, "id": f"{tool_use_id}:tool_use"}
             result_base = {**base, "id": f"{tool_use_id}:tool_result"}
-            return [
-                ToolUseEntry(
+            entries: list[TranscriptEntry] = []
+            skill_name = _skill_name_from_command(cmd)
+            if skill_name:
+                entries.append(SkillCallEntry(
+                    skill_name=skill_name,
+                    invocation_kind=SkillInvocationKind.FILE_LOAD,
                     tool_name="shell",
-                    tool_use_id=tool_use_id,
+                    tool_use_id=f"{tool_use_id}:skill",
                     tool_input={"command": cmd},
-                    **use_base,
-                ),
-                ToolResultEntry(
-                    tool_use_id=tool_use_id,
-                    tool_output=output,
-                    is_error=isinstance(exit_code, int) and exit_code != 0,
-                    file_path=None,
-                    tool_name="shell",
-                    duration_ms=duration_ms,
-                    exit_code=exit_code if isinstance(exit_code, int) else None,
-                    **result_base,
-                ),
-            ]
+                    **{**base, "id": f"{tool_use_id}:skill_call"},
+                ))
+            entries.append(ToolUseEntry(
+                tool_name="shell",
+                tool_use_id=tool_use_id,
+                tool_input={"command": cmd},
+                **use_base,
+            ))
+            entries.append(ToolResultEntry(
+                tool_use_id=tool_use_id,
+                tool_output=output,
+                is_error=isinstance(exit_code, int) and exit_code != 0,
+                file_path=None,
+                tool_name="shell",
+                duration_ms=duration_ms,
+                exit_code=exit_code if isinstance(exit_code, int) else None,
+                **result_base,
+            ))
+            return entries
         if itype == "file_change":
             return [MetaEntry(meta_kind="file_change", payload=item, **base)]
         return [UnknownEntry(raw_data=raw, **base)]
@@ -377,13 +554,27 @@ class _CodexParserBase:
             call_id = str(payload.get("call_id") or "")
             if call_id and tool_name:
                 self._call_tool_name[call_id] = tool_name
-            return [ToolUseEntry(
+            tool_use_id = call_id or str(eid or base["id"])
+            tool_input = self._safe_json(payload.get("arguments") or {}) or {}
+            out: list[TranscriptEntry] = []
+            skill_name = _skill_name_from_command(tool_input)
+            if skill_name:
+                out.append(SkillCallEntry(
+                    skill_name=skill_name,
+                    invocation_kind=SkillInvocationKind.FILE_LOAD,
+                    tool_name=tool_name or "shell",
+                    tool_use_id=f"{tool_use_id}:skill",
+                    tool_input=tool_input if isinstance(tool_input, dict) else {},
+                    **{**envelope, **base, "id": f"{base['id']}:skill_call"},
+                ))
+            out.append(ToolUseEntry(
                 tool_name=tool_name,
-                tool_use_id=call_id or str(eid or base["id"]),
-                tool_input=self._safe_json(payload.get("arguments") or {}) or {},
+                tool_use_id=tool_use_id,
+                tool_input=tool_input if isinstance(tool_input, dict) else {},
                 **envelope,
                 **base,
-            )]
+            ))
+            return out
         if ptype is CodexResponseItemType.FUNCTION_CALL_OUTPUT:
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
@@ -406,10 +597,44 @@ class _CodexParserBase:
             call_id = str(payload.get("call_id") or "")
             if call_id and tool_name:
                 self._call_tool_name[call_id] = tool_name
+            tool_use_id = call_id or str(eid or base["id"])
+            raw_input = payload.get("input") or payload.get("arguments") or ""
+
+            # apply_patch decomposes into one File*Entry per file op so
+            # downstream consumers can isinstance-check uniformly with Claude's
+            # native Write/Edit. Delete ops have no FileDeleteEntry — skipped.
+            if tool_name == "apply_patch" and isinstance(raw_input, str) and raw_input:
+                file_entries: list[TranscriptEntry] = []
+                for op in parse_apply_patch(raw_input):
+                    if op.op == "add":
+                        content = add_op_to_content(op)
+                        trailing = 0 if not content or content.endswith("\n") else 1
+                        file_entries.append(FileWriteEntry(
+                            path=op.path,
+                            content=content,
+                            bytes_count=len(content.encode("utf-8")),
+                            line_count=content.count("\n") + trailing,
+                            is_new=True,
+                            tool_name="apply_patch",
+                            tool_use_id=tool_use_id,
+                            **envelope, **base,
+                        ))
+                    elif op.op == "update":
+                        file_entries.append(FileEditEntry(
+                            path=op.path,
+                            hunks=update_op_to_hunks(op),
+                            tool_name="apply_patch",
+                            tool_use_id=tool_use_id,
+                            **envelope, **base,
+                        ))
+                if file_entries:
+                    return file_entries
+                # Zero parseable ops → fall through to generic ToolUseEntry.
+
             return [ToolUseEntry(
                 tool_name=tool_name,
-                tool_use_id=call_id or str(eid or base["id"]),
-                tool_input=self._safe_json(payload.get("input") or payload.get("arguments") or {}) or {},
+                tool_use_id=tool_use_id,
+                tool_input=self._safe_json(raw_input or {}) or {},
                 **envelope,
                 **base,
             )]
@@ -535,13 +760,15 @@ class _CodexParserBase:
         if role is CodexMessageRole.ASSISTANT:
             text = self._join_text_blocks(content, kinds=("output_text",)).strip()
             phase = payload.get("phase")
-            return [AssistantMessageEntry(
+            out: list[TranscriptEntry] = [AssistantMessageEntry(
                 text=text,
                 phase=str(phase) if phase else None,
                 model=self._current_model,
                 **envelope,
                 **base,
             )]
+            out.extend(self._maybe_synthesize_plan_entry(text, base))
+            return out
         if role in (CodexMessageRole.DEVELOPER, CodexMessageRole.SYSTEM):
             return [SystemEntry(
                 subtype=f"{role.value}_message",
@@ -569,7 +796,7 @@ class _CodexParserBase:
         if etype in ("agent_message", "user_message"):
             return []
         if etype == "token_count":
-            return [self._make_token_usage(payload, base)]
+            return self._emit_usage(payload, base)
         if etype in {
             "task_started",
             "task_complete",
@@ -685,7 +912,7 @@ class CodexRolloutParser(_CodexParserBase):
             return self._parse_compacted(raw, base)
         if rtype is CodexLineType.TOKEN_COUNT:
             payload = raw.get("payload") or raw
-            return [self._make_token_usage(payload, base)]
+            return self._emit_usage(payload, base)
         if rtype in {CodexLineType.TASK_STARTED, CodexLineType.TASK_COMPLETE}:
             return [SystemEntry(
                 subtype=rtype.value,

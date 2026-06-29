@@ -4,28 +4,23 @@ Search route for the local server.
 Uses FTS5 full-text search via Entity.search().
 """
 
-import asyncio
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
+from flow_sdk.server.search_filters import (
+    apply_folder_filter,
+    apply_scope_filter,
+    apply_system_filter,
+    apply_tag_filter,
+    scope_record_project_ids,
+)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-async def _reindex_all() -> int:
-    """Discover all indexable record types and submit them for indexing via Record.sync_to_db().
-
-    Returns the count of records indexed.
-    """
-    from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer  # noqa: PLC0415
-
-    result = await get_shared_indexer().index(IndexerOptions(verbose=False))
-    logger.info("reindex: indexed %d records", result.total_indexed)
-    return result.total_indexed
 
 
 async def _entity_asset_ref(ent) -> str:
@@ -39,14 +34,12 @@ async def _entity_asset_ref(ent) -> str:
     if path:
         return path
     try:
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         rec = await ent.get_record()
         if rec is None:
-            record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
-            if record_cls:
-                ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
-                if ent_name:
-                    rec = record_cls.get(ent_name)
+            from flow_sdk.fs_store.fs_record import FSRecord
+            ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
+            if ent_name:
+                rec = FSRecord.load_or_none(ent.type or ent.get_type(), ent_name)
         if rec:
             ar = getattr(rec, "_asset_ref", None)
             if ar is not None:
@@ -54,42 +47,6 @@ async def _entity_asset_ref(ent) -> str:
     except Exception:
         pass
     return ""
-
-
-def _apply_scope_filter(entities: list, scope: str | None, project_ids: str | None) -> list:
-    """Filter entities by scope and optional project IDs."""
-    if not scope:
-        return entities
-    if scope == "user":
-        return [e for e in entities if (getattr(e, "scope", None) or "") == "user"]
-    if scope == "project":
-        pid_list = [p.strip() for p in project_ids.split(",") if p.strip()] if project_ids else []
-        if pid_list:
-            pid_set = set(pid_list)
-            return [
-                e for e in entities
-                if (getattr(e, "scope", None) or "") == "project"
-                and (getattr(e, "project_encoded", None) or getattr(e, "id", "")) in pid_set
-            ]
-        return [e for e in entities if (getattr(e, "scope", None) or "") == "project"]
-    return entities
-
-
-def _apply_folder_filter(entities: list, parent_path: str | None, vault_root: str | None) -> list:
-    """Filter entities by parent_path (exact) and/or vault_root (prefix).
-
-    parent_path  → direct children only (exact equality).
-    vault_root   → all descendants at any depth.
-    Both can be combined (AND).
-    """
-    if not parent_path and not vault_root:
-        return entities
-    filtered = entities
-    if parent_path:
-        filtered = [e for e in filtered if (getattr(e, "parent_path", None) or "") == parent_path]
-    if vault_root:
-        filtered = [e for e in filtered if (getattr(e, "vault_root", None) or "") == vault_root]
-    return filtered
 
 
 async def _entity_to_result(ent) -> dict:
@@ -106,23 +63,17 @@ async def _entity_to_result(ent) -> dict:
         "snippet": getattr(ent, "_fts_snippet", None),
         "status": getattr(ent, "status", None) or "",
         "scope": getattr(ent, "scope", "") or "",
+        "project_id": getattr(ent, "project_id", None) or None,
         "asset_ref": await _entity_asset_ref(ent) or "",
         "created_at": str(getattr(ent, "created_date", "") or ""),
         "modified_at": str(getattr(ent, "updated_date", "") or ""),
     }
     # Extra fields for per-type column rendering
-    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "session_id", "asset_type", "parent_path", "vault_root"):
+    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "session_id", "asset_type", "parent_path", "vault_root"):
         val = getattr(ent, field, None)
         if val:
             result[field] = val
     return result
-
-
-def _apply_system_filter(entities: list, include_system: bool) -> list:
-    """Drop system-project entities unless the caller opted in."""
-    if include_system:
-        return entities
-    return [e for e in entities if not getattr(e, "system", False)]
 
 
 @router.get("/api/v1/search")
@@ -132,9 +83,9 @@ async def search_records(
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     record_type: Optional[str] = Query(default=None, description="Filter by record type"),
     status: Optional[str] = Query(default=None, description="Filter by record status"),
-    scope: Optional[str] = Query(default=None, description="Filter by scope (user, project)"),
+    user: Optional[str] = Query(default=None, description="ScopeFilter.user: include user-scope records. 'true' (default if absent) or 'false'."),
+    projects: Optional[str] = Query(default=None, description="ScopeFilter.projects: comma-separated project entity IDs to include."),
     tags: Optional[str] = Query(default=None, description="Comma-separated tags to filter by"),
-    project_ids: Optional[str] = Query(default=None, description="Comma-separated project entity IDs (used when scope=project)"),
     parent_path: Optional[str] = Query(default=None, description="Filter to records whose parent_path is exactly this absolute path (direct children only)"),
     vault_root: Optional[str] = Query(default=None, description="Filter to records whose vault_root is exactly this absolute path (descendants at any depth)"),
     include_system: bool = Query(default=False, description="Include entities from SDK-shipped system projects. Default off."),
@@ -148,7 +99,23 @@ async def search_records(
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
     from flow_sdk.db.drivers.sqlite.sqlite_driver import SearchCalibration  # noqa: PLC0415
+    from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
     import json as _json  # noqa: PLC0415
+
+    # Build the unified ScopeFilter. If `user` param is absent (legacy
+    # caller), pass None so the filter is disabled (back-compat for any
+    # request that hasn't migrated to the new wire format yet).
+    scope_filter = (
+        ScopeFilter.from_query_params({"user": user, "projects": projects})
+        if user is not None or projects is not None
+        else None
+    )
+    # Resolve project *uname* tokens (e.g. ``@flowpad_assistant``) to entity
+    # ids so the scope match stays symmetric with how records are stamped.
+    scope_filter = await resolve_project_scope(scope_filter)
+    # Projects explicitly in scope — system entities of these projects stay in
+    # the list (the count clause already counts them), keeping list/count in sync.
+    scoped_pids = scope_record_project_ids(scope_filter) if scope_filter else ()
 
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
@@ -186,21 +153,10 @@ async def search_records(
         qf.order_by = {"updated_date": "desc"}
         all_entities = await Entity.get_all(qf)
 
-        # Apply scope + project_ids filtering
-        all_entities = _apply_scope_filter(all_entities, scope, project_ids)
-
-        # Apply folder filter (parent_path / vault_root)
-        all_entities = _apply_folder_filter(all_entities, parent_path, vault_root)
-
-        # Filter out system entities unless the caller opted in
-        all_entities = _apply_system_filter(all_entities, include_system)
-
-        # Apply tags filter
-        if tag_list:
-            all_entities = [
-                e for e in all_entities
-                if all(t in (getattr(e, "tags", None) or []) for t in tag_list)
-            ]
+        all_entities = apply_scope_filter(all_entities, scope_filter)
+        all_entities = apply_folder_filter(all_entities, parent_path, vault_root)
+        all_entities = apply_system_filter(all_entities, include_system, scoped_pids)
+        all_entities = apply_tag_filter(all_entities, tag_list)
 
         total_count = len(all_entities)
         page = all_entities[offset:offset + limit]
@@ -210,8 +166,32 @@ async def search_records(
             "data": {"results": results, "query": "", "total": total_count, "indexer_ready": True},
         })
 
+    # Sanitize the FTS query: the unicode61 tokenizer used for entities_fts
+    # treats '-' as a word separator, AND FTS5 syntax interprets a hyphen
+    # adjacent to a term as a NEGATION operator. A user query like
+    # ``hello-flowpad`` therefore parses as ``hello NOT flowpad`` and
+    # matches nothing. Replace operator-y punctuation with spaces so
+    # callers can type hyphenated names directly. (Quotation marks left
+    # alone — callers can still escape for phrase queries.)
+    fts_q = q
+    if fts_q:
+        for ch in "-/_:":
+            fts_q = fts_q.replace(ch, " ")
+        fts_q = " ".join(fts_q.split())
+
     try:
-        entities = await Entity.search(query=q, limit=limit + offset, record_type=record_type, status=status, calibration=calibration)
+        # Fetch (offset + limit) rows from FTS, then apply python-side
+        # filters. NOTE: if filters drop more than `offset` rows here, page 2+
+        # may be short. A correct fix needs offset pushed into the SQL — left
+        # as a follow-up. `total` is the post-filter count BEFORE pagination,
+        # so callers see a consistent "matches found" number.
+        entities = await Entity.search(
+            query=fts_q,
+            limit=limit + offset,
+            record_type=record_type,
+            status=status,
+            calibration=calibration,
+        )
     except Exception:
         logger.warning("FTS search failed (index may not be ready), returning empty results", exc_info=True)
         return JSONResponse(content={
@@ -219,86 +199,37 @@ async def search_records(
             "data": {"results": [], "query": q, "total": 0, "indexer_ready": False},
         })
 
-    # Apply scope + project_ids filtering
-    entities = _apply_scope_filter(entities, scope, project_ids)
+    entities = apply_scope_filter(entities, scope_filter)
+    entities = apply_folder_filter(entities, parent_path, vault_root)
+    entities = apply_system_filter(entities, include_system, scoped_pids)
+    entities = apply_tag_filter(entities, tag_list)
 
-    # Apply folder filter (parent_path / vault_root)
-    entities = _apply_folder_filter(entities, parent_path, vault_root)
+    total_count = len(entities)
+    page = entities[offset:offset + limit]
+    results = [await _entity_to_result(e) for e in page]
 
-    # Filter out system entities unless the caller opted in
-    entities = _apply_system_filter(entities, include_system)
-
-    # Apply tags filter
-    if tag_list:
-        entities = [
-            e for e in entities
-            if all(t in (getattr(e, "tags", None) or []) for t in tag_list)
-        ]
-
-    # Apply offset slice
-    entities = entities[offset:]
-
-    results = [await _entity_to_result(e) for e in entities]
-
-    return JSONResponse(content={
-        "status": "SUCCESS",
-        "data": {"results": results, "query": q, "total": len(results), "indexer_ready": True},
-    })
-
-
-@router.post("/api/v1/search/reindex")
-async def reindex_records():
-    """Re-index all discoverable records via Record.sync_to_db()."""
-    indexed = await _reindex_all()
-    return JSONResponse(content={
-        "status": "SUCCESS",
-        "data": {"indexed": indexed},
-    })
-
-
-@router.post("/api/v1/search/reindex/{record_type}")
-async def reindex_records_by_type(record_type: str):
-    """Re-index all records of a specific type via Record.sync_to_db()."""
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    if SchemaRegistry.get_record_cls(record_type) is None:
-        return JSONResponse(
-            status_code=404,
-            content={"status": "FAIL", "message": f"Unknown record type: {record_type}", "data": None},
-        )
-
-    from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
-
-    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-
-    record_cls = SchemaRegistry.get_record_cls(record_type)
-    count = 0
-    live_ids: set[str] = set()
-    for rec in RecordList(record_class=record_cls):
+    # Resolve project_name for each unique project_id in one batched read so
+    # the UI can label per-project tree groups without a second round-trip.
+    pid_set = {r.get("project_id") for r in results if r.get("project_id")}
+    if pid_set:
         try:
-            await rec.sync_to_db()
-            live_ids.add(rec.id)
-            count += 1
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            projs = await Project.get_all()
+            pid_to_name = {}
+            for p in projs:
+                name = getattr(p, "name", None) or p.id
+                pid_to_name[p.id] = name
+                legacy_pid = Project.derive_id_for_path(getattr(p, "fs_storage_mount_path", None))
+                if legacy_pid:
+                    pid_to_name[legacy_pid] = name
+            for r in results:
+                pid = r.get("project_id")
+                if pid and pid in pid_to_name:
+                    r["project_name"] = pid_to_name[pid]
         except Exception:
-            logger.exception("reindex: failed to index %s %s", record_type, rec.id)
-
-    # Delete entities whose records no longer exist on disk
-    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-    stale = await Entity.get_all(QueryFilter(type=record_type))
-    from flow_sdk.db import get_db_driver  # noqa: PLC0415
-    driver = get_db_driver()
-    deleted = 0
-    for ent in stale:
-        if ent.id not in live_ids:
-            try:
-                if hasattr(driver, "fts_delete"):
-                    await driver.fts_delete(ent.id)
-                await ent.delete()
-                deleted += 1
-            except Exception:
-                pass
+            logger.warning("project_name resolution failed", exc_info=True)
 
     return JSONResponse(content={
         "status": "SUCCESS",
-        "data": {"indexed": count, "deleted": deleted, "record_type": record_type},
+        "data": {"results": results, "query": q, "total": total_count, "indexer_ready": True},
     })

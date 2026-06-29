@@ -1,8 +1,12 @@
+---
+id: fd9c724d-532e-5414-b02f-e2ee9d2bce67
+---
+
 test 1: Switch between sidebar dock views from a session
 - navigate to {APP_URL}/
 - fill landing input with "tab switching test"
 - press Enter
-- wait for URL to change to /dock/session/...
+- wait for URL to change to /dock/shell/...
 - click "New Session" button
 - validate instruction input is visible and status is IDLE
 - hover over the sidebar chevron to expand secondary nav items

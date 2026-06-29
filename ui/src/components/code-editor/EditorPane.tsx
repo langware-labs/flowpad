@@ -5,6 +5,7 @@ import {
   downloadFile,
   EditorLanguage,
   /* FSItem, */ fsStore,
+  isImagePath,
   VFSPath,
 } from '@sdk';
 import { useContext, useProject } from '@sdk/react/hooks';
@@ -19,6 +20,7 @@ import { editor } from 'monaco-editor';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createHighlighter, Highlighter } from 'shiki';
+import { useLingui } from '@lingui/react/macro';
 
 const SAVE_TIMEOUT = 1000; // 1 second
 
@@ -74,6 +76,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   onShellCmd,
   onDirtyChange,
 }) => {
+  const { t } = useLingui();
   const { flow } = useContext();
   const { project } = useProject();
   // const { navigation } = useDockNavigation();
@@ -93,6 +96,17 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   }, [parsedFilePath.typeId, parsedFilePath.entitySubPath, file?.path]);
 
   const fs = useFS(effectiveTypeId);
+
+  // Images are binary: render them inline via the backend download URL instead
+  // of decoding the bytes as text into Monaco (which shows garbage).
+  const isImage = useMemo(
+    () => isImagePath(effectiveFilePath || file?.path || ''),
+    [effectiveFilePath, file?.path],
+  );
+  const imageUrl = useMemo(
+    () => (isImage && effectiveFilePath && fs ? fs.getDownloadUrl(effectiveFilePath) : null),
+    [isImage, effectiveFilePath, fs],
+  );
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
@@ -119,6 +133,10 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   // Auto-download file content if not in cache
   useEffect(() => {
     if (!effectiveFilePath || !effectiveTypeId) return;
+
+    // Images are streamed straight from the download URL into an <img>; never
+    // pull their bytes as text.
+    if (isImage) return;
 
     // Check if content is already cached
     if (cached) {
@@ -400,6 +418,33 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     );
   }
 
+  // Image files render inline rather than in Monaco.
+  if (isImage) {
+    return (
+      <div className="group relative flex h-full min-h-0 flex-1 items-center justify-center overflow-auto bg-muted/20 p-4">
+        {imageUrl ? (
+          <>
+            <img
+              src={imageUrl}
+              alt={file.path.split('/').pop() || file.path}
+              className="max-h-full max-w-full object-contain"
+            />
+            <a
+              href={imageUrl}
+              download={file.path.split('/').pop() || file.path}
+              title={t`Download`}
+              className="absolute right-5 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-lg border bg-background/50 text-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+            >
+              <Download className="h-4 w-4" />
+            </a>
+          </>
+        ) : (
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="group relative flex h-full min-h-0 flex-1 flex-col">
       <div className="editor-pane-actions absolute right-5 top-2 z-10 flex flex-row-reverse rounded-lg border bg-background/50 group-hover:gap-2">
@@ -418,7 +463,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               variant="ghost"
               size="icon"
               onClick={() => handleExecuteScript(file.language, file.path)}
-              title="Run script"
+              title={t`Run script`}
               className="hover:bg-muted"
               disabled={isExecuting}
             >
@@ -434,7 +479,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               variant="ghost"
               size="icon"
               onClick={() => setIsCustomView((prev) => !prev)}
-              title="Toggle view"
+              title={t`Toggle view`}
               className="hover:bg-muted"
             >
               <Eye className="h-4 w-4" />
@@ -447,7 +492,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               variant="ghost"
               size="icon"
               onClick={() => void handleRefreshFile()}
-              title="Refresh file from server"
+              title={t`Refresh file from server`}
               className="hover:bg-muted"
               disabled={isRefreshing}
             >
@@ -457,7 +502,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               variant="ghost"
               size="icon"
               onClick={() => void copyToClipboard(fileContent)}
-              title="Copy"
+              title={t`Copy`}
               className="hover:bg-muted"
             >
               <Copy className="h-4 w-4" />
@@ -466,7 +511,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               variant="ghost"
               size="icon"
               onClick={() => downloadFile({ name: file.path, content: file.blob || new Blob([fileContent]) })}
-              title="Download"
+              title={t`Download`}
               className="hover:bg-muted"
             >
               <Download className="h-4 w-4" />
@@ -490,7 +535,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               className="h-full w-full border-0"
               srcDoc={fileContent}
               sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"
-              title="HTML Preview"
+              title={t`HTML Preview`}
             />
           ) : null
         ) : (

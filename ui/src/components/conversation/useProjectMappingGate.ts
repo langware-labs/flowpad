@@ -1,15 +1,12 @@
 import { useEffect, useRef } from 'react';
+import { useNavigation } from 'react-router';
 import { dataManager, Project, TypeId, ViewType } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
 import type { IConversation } from '@sdk/entities/conversation';
 import { useContext } from '@src/hooks/useContext';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import {
-  applyProjectToConversation,
-  applyProjectToTask,
-  persistRemoteToLocalMapping,
-} from './apply-project-choice';
+import { applyProjectToConversation, applyProjectToTask, persistRemoteToLocalMapping } from './apply-project-choice';
 import { useProjectGate } from './useProjectGate';
 import { useProjectMapping } from './useProjectMapping';
 
@@ -36,13 +33,14 @@ import { useProjectMapping } from './useProjectMapping';
  * mapped conversation is a navigation shortcut, not a re-mapping. Re-mapping
  * is reserved for the explicit gate flow on a still-unmapped subject.
  */
-export function useProjectMappingGate(
-  task: ITask | null | undefined,
-  conversation?: IConversation | null,
-) {
+export function useProjectMappingGate(task: ITask | null | undefined, conversation?: IConversation | null) {
   const { mapping, loaded: mappingLoaded } = useProjectMapping();
   const ctx = useContext();
   const { navigation, currentDock } = useDockNavigation();
+  // Router transition state. `currentDock` is derived from the *committed*
+  // URL, so it lags during an in-flight navigation; `routerNav.state` tells
+  // us a navigation is underway even before the URL/loader settles.
+  const routerNav = useNavigation();
   const autoApplyAttemptedRef = useRef<Set<string>>(new Set());
   const autoMapAttemptedRef = useRef<Set<string>>(new Set());
 
@@ -55,14 +53,12 @@ export function useProjectMappingGate(
 
   // Local project this view is filed under, from whichever side carries it
   // (same precedence the page loader uses for ctx.project).
-  const existingLocalProjectId =
-    task?.project_id ?? conversation?.project_id ?? null;
+  const existingLocalProjectId = task?.project_id ?? conversation?.project_id ?? null;
 
   const mappedLocalId = remoteProjectId ? mapping[remoteProjectId] : undefined;
   const hasMapping = !!existingLocalProjectId || !!mappedLocalId;
 
-  const fetchProject = (id: string) =>
-    dataManager.getByTypeId<Project>(new TypeId(Project.type, id)).catch(() => null);
+  const fetchProject = (id: string) => dataManager.getByTypeId<Project>(new TypeId(Project.type, id)).catch(() => null);
 
   const stampSubject = async (project: Project) => {
     if (taskId) await applyProjectToTask(taskId, project);
@@ -87,7 +83,12 @@ export function useProjectMappingGate(
 
     void (async () => {
       const project = await fetchProject(mappedLocalId);
-      if (project) await stampSubject(project);
+      if (!project) return;
+      try {
+        await stampSubject(project);
+      } catch {
+        // Silent auto-apply is best-effort; explicit picker flows still surface failures.
+      }
     })();
   }, [existingLocalProjectId, mappingLoaded, remoteProjectId, mappedLocalId, subjectKey]);
 
@@ -136,6 +137,13 @@ export function useProjectMappingGate(
       // sets ctx.project from process.project_id as a side-effect — not a
       // user pick. Bouncing them to the project home would override the
       // navigation they just took.
+      //
+      // The SHELL check alone races: the loader sets ctx.project *during* the
+      // transition, while `currentDock` still reflects the OLD (conversation)
+      // view, so the guard misses and we wrongly bounce to the project. A
+      // project change observed while a navigation is in flight is never a
+      // user pick — bail until the router settles.
+      if (routerNav.state !== 'idle') return;
       if (currentDock?.viewType === ViewType.SHELL) return;
       navigateToProjectHome(activeProjectId);
       return;
@@ -145,12 +153,26 @@ export function useProjectMappingGate(
     void (async () => {
       const project = await fetchProject(activeProjectId);
       if (!project) return;
-      await stampSubject(project);
+      try {
+        await stampSubject(project);
+      } catch {
+        // Silent auto-persist is best-effort; do not leave an unhandled rejection.
+        return;
+      }
       if (remoteProjectId && project.id && mapping[remoteProjectId] !== project.id) {
         await persistRemoteToLocalMapping(remoteProjectId, project.id);
       }
     })();
-  }, [mappingLoaded, remoteProjectId, subjectKey, activeProjectId, existingLocalProjectId, mapping, currentDock?.viewType]);
+  }, [
+    mappingLoaded,
+    remoteProjectId,
+    subjectKey,
+    activeProjectId,
+    existingLocalProjectId,
+    mapping,
+    currentDock?.viewType,
+    routerNav.state,
+  ]);
 
   // Direct pick (gate's own dialog → onPicked). The picker only opens when
   // unmapped, so this is always a first-time map — no remap branch needed.

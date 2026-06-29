@@ -10,10 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessError, RunResult
-from flow_sdk.fs_records.agent_status import WorkerStatus
-from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.responses.response import ApiSuccessResponse
-from flow_sdk.fs_store.record import (
+from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
     get_default_records_root,
     set_default_records_data_root,
@@ -195,8 +195,9 @@ async def test_fork_action_creates_sibling_with_fork_session_id():
     mock_fork.assert_called_once_with(
         session_id="source-session-abc",
         workdir="/project",
+        project_id=None,
         visible=False,
-        context_entities=[],
+        shared_context_entities=[],
     )
     fake_new_proc.save.assert_awaited_once_with(None)
     from flow_sdk.responses.response import ApiSuccessResponse
@@ -220,8 +221,9 @@ async def test_fork_action_visible_false_by_default():
     mock_fork.assert_called_once_with(
         session_id="src-sess",
         workdir="/project",
+        project_id=None,
         visible=False,
-        context_entities=[],
+        shared_context_entities=[],
     )
 
 
@@ -245,8 +247,31 @@ async def test_fork_action_visible_true_when_passed():
     mock_fork.assert_called_once_with(
         session_id="src-sess",
         workdir="/project",
+        project_id=None,
         visible=True,
-        context_entities=[],
+        shared_context_entities=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_fork_action_propagates_project_id():
+    """fork_action() forwards self.project_id so the sibling keeps the parent's project."""
+    source = _proc(session_id="src-sess", workdir="/project", project_id="proj-xyz")
+
+    fake_new_proc = MagicMock()
+    fake_new_proc.save = AsyncMock()
+    fake_new_proc.to_dict = MagicMock(return_value={"id": "x"})
+
+    with patch.object(AgenticProcess, "fork", return_value=fake_new_proc) as mock_fork, \
+         patch("flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info", return_value=None):
+        await source.fork_action()
+
+    mock_fork.assert_called_once_with(
+        session_id="src-sess",
+        workdir="/project",
+        project_id="proj-xyz",
+        visible=False,
+        shared_context_entities=[],
     )
 
 
@@ -299,7 +324,8 @@ async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attacha
 
     with patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
          patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
-         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project:
+         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project, \
+         patch.object(AgenticProcess, "get_by_id", new_callable=AsyncMock, return_value=proc):
         result = await proc.start_pty()
 
     assert isinstance(result, ApiSuccessResponse)
@@ -331,7 +357,8 @@ async def test_start_persists_visible_true_on_running_reattach():
 
     with patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
          patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
-         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project:
+         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project, \
+         patch.object(AgenticProcess, "get_by_id", new_callable=AsyncMock, return_value=proc):
         result = await proc.start_pty(visible=True)
 
     assert isinstance(result, ApiSuccessResponse)

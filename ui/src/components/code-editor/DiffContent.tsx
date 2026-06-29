@@ -6,15 +6,19 @@ import { editor } from 'monaco-editor';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createHighlighter, Highlighter } from 'shiki';
+import { Trans } from '@lingui/react/macro';
 
 let shikiHighlighter: Highlighter | null = null;
 let themeLoadingPromise: Promise<void> | null = null;
 
 interface DiffContentProps {
   diffString: string;
+  /** Side-by-side (default) vs unified inline rendering. Narrow hosts (e.g.
+   *  the Knowledge Atlas drawer) use inline so wrapped lines stay visible. */
+  sideBySide?: boolean;
 }
 
-export const DiffContent: React.FC<DiffContentProps> = ({ diffString }) => {
+export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide = true }) => {
   const { resolvedTheme } = useTheme();
   const monacoRef = useRef<Monaco | null>(null);
   const editorInstancesRef = useRef<Map<string, editor.IStandaloneDiffEditor>>(new Map());
@@ -41,6 +45,27 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString }) => {
     (diffEditor: editor.IStandaloneDiffEditor, monaco: Monaco, editorKey: string) => {
       editorInstancesRef.current.set(editorKey, diffEditor);
       monacoRef.current = monaco;
+
+      // Wrap-aware sizing: the static height estimate counts logical lines, but
+      // wordWrap can produce more visual lines — anything past the fixed height
+      // is silently clipped. Track real content height and grow the container.
+      const container = diffEditor.getContainerDomNode();
+      const fit = () => {
+        const h = Math.max(
+          diffEditor.getModifiedEditor().getContentHeight(),
+          diffEditor.getOriginalEditor().getContentHeight(),
+        );
+        // Only act on real height changes — layout() can itself emit
+        // onDidContentSizeChange, so an unconditional call could thrash.
+        if (h > 0 && container && container.clientHeight !== h) {
+          container.style.height = `${h}px`;
+          diffEditor.layout();
+        }
+      };
+      diffEditor.getModifiedEditor().onDidContentSizeChange(fit);
+      diffEditor.getOriginalEditor().onDidContentSizeChange(fit);
+      fit();
+
       async function setup() {
         if (themeLoadingPromise) await themeLoadingPromise;
         if (!shikiHighlighter) return;
@@ -67,7 +92,11 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString }) => {
       const hunkHeader = `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
       const original = `${hunkHeader}\n${originalLines}`;
       const modified = `${hunkHeader}\n${modifiedLines}`;
-      const maxLines = Math.max(original.split('\n').length, modified.split('\n').length) + 1;
+      // Inline mode stacks deletes+inserts in one column; side-by-side shows the
+      // max of the two panes. +1 row of slack for wrapped long lines.
+      const maxLines = sideBySide
+        ? Math.max(original.split('\n').length, modified.split('\n').length) + 1
+        : hunk.changes.length + 2;
       const lineHeight = 20;
       const vPad = 16;
       const height = maxLines * lineHeight + vPad * 2;
@@ -85,7 +114,7 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString }) => {
             onMount={(ed, monaco) => { void handleEditorDidMount(ed, monaco, editorKey); }}
             theme={resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus'}
             options={{
-              renderSideBySide: true,
+              renderSideBySide: sideBySide,
               readOnly: true,
               fontSize: 14,
               lineHeight,
@@ -103,7 +132,7 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString }) => {
         </div>
       );
     },
-    [handleEditorDidMount, resolvedTheme],
+    [handleEditorDidMount, resolvedTheme, sideBySide],
   );
 
   const renderFile = useCallback(
@@ -123,13 +152,13 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString }) => {
           <div className="grid grid-cols-2 border-b bg-muted/40">
             <div className="flex items-center gap-1.5 border-r px-4 py-1.5">
               <GitBranch className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">HEAD</span>
-              <span className="ml-1 text-xs text-muted-foreground/60">— before</span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide"><Trans>HEAD</Trans></span>
+              <span className="ml-1 text-xs text-muted-foreground/60"><Trans>— before</Trans></span>
             </div>
             <div className="flex items-center gap-1.5 px-4 py-1.5">
               <HardDrive className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Working Tree</span>
-              <span className="ml-1 text-xs text-muted-foreground/60">— current</span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide"><Trans>Working Tree</Trans></span>
+              <span className="ml-1 text-xs text-muted-foreground/60"><Trans>— current</Trans></span>
             </div>
           </div>
           <div className="space-y-2">
@@ -149,7 +178,7 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString }) => {
   if (parsedDiff.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-        No changes to show
+        <Trans>No changes to show</Trans>
       </div>
     );
   }

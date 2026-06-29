@@ -4,6 +4,7 @@ import { Label } from '@src/components/ui/label';
 import { Switch } from '@src/components/ui/switch';
 import { SearchCalibration } from '@src/hooks/use-record-search';
 import { X } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 
 const KNOWN_TYPES = ['skill', 'bookmark', 'claude_session', 'agentic_process', 'snippet', 'note'];
 
@@ -27,10 +28,10 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
   return (
     <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm space-y-4">
       <div className="flex items-center justify-between">
-        <span className="font-medium text-muted-foreground">Search Calibration</span>
+        <span className="font-medium text-muted-foreground"><Trans>Search Calibration</Trans></span>
         <div className="flex items-center gap-2">
           {latencyMs != null && (
-            <span className="text-xs text-muted-foreground">⚡ {latencyMs} ms</span>
+            <span className="text-xs text-muted-foreground"><Trans>⚡ {latencyMs} ms</Trans></span>
           )}
           <Button
             variant="ghost"
@@ -53,7 +54,7 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
               onChange({ ...calibration, recency_factor: checked ? recencyFactor : undefined });
             }}
           />
-          <Label htmlFor="recency-factor-toggle" className="font-medium">Recency Factor (k)</Label>
+          <Label htmlFor="recency-factor-toggle" className="font-medium"><Trans>Recency Factor (k)</Trans></Label>
         </div>
         {recencyFactorEnabled && (
           <div className="pl-8 flex items-center gap-3">
@@ -67,7 +68,7 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
               }}
               className="h-7 w-28 text-xs"
             />
-            <span className="text-xs text-muted-foreground">bm25 / (1 + days × k)</span>
+            <span className="text-xs text-muted-foreground"><Trans>bm25 / (1 + days × k)</Trans></span>
           </div>
         )}
       </div>
@@ -82,7 +83,7 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
               onChange({ ...calibration, overfetch: checked ? overfetch : undefined });
             }}
           />
-          <Label htmlFor="overfetch-toggle" className="font-medium">Overfetch</Label>
+          <Label htmlFor="overfetch-toggle" className="font-medium"><Trans>Overfetch</Trans></Label>
         </div>
         {overfetchEnabled && (
           <div className="pl-8 flex items-center gap-3">
@@ -96,7 +97,7 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
               }}
               className="h-7 w-28 text-xs"
             />
-            <span className="text-xs text-muted-foreground">extra rows fetched (limit + overfetch)</span>
+            <span className="text-xs text-muted-foreground"><Trans>extra rows fetched (limit + overfetch)</Trans></span>
           </div>
         )}
       </div>
@@ -114,7 +115,7 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
               });
             }}
           />
-          <Label htmlFor="col-weights-toggle" className="font-medium">Column Weights</Label>
+          <Label htmlFor="col-weights-toggle" className="font-medium"><Trans>Column Weights</Trans></Label>
         </div>
         {colWeightsEnabled && (
           <div className="grid grid-cols-4 gap-2 pl-8">
@@ -149,7 +150,7 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
               onChange({ ...calibration, recency_boost: checked ? recencyBoost : undefined });
             }}
           />
-          <Label htmlFor="recency-toggle" className="font-medium">Recency Boost</Label>
+          <Label htmlFor="recency-toggle" className="font-medium"><Trans>Recency Boost</Trans></Label>
         </div>
         {recencyBoostEnabled && (
           <div className="pl-8">
@@ -169,7 +170,7 @@ export function SearchCalibrationPanel({ calibration, onChange, latencyMs }: Sea
 
       {/* Type Scores */}
       <div className="space-y-2">
-        <Label className="font-medium">Type Scores</Label>
+        <Label className="font-medium"><Trans>Type Scores</Trans></Label>
         <div className="grid grid-cols-3 gap-2">
           {KNOWN_TYPES.map((t) => (
             <div key={t} className="space-y-1">

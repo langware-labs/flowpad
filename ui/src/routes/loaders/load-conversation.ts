@@ -1,5 +1,10 @@
 /**
- * Conversation dock loader for /dock/conversation/<conversationId>.
+ * Conversation dock loader for
+ * /dock/conversation/<conversationId>[/message/<messageId>].
+ *
+ * The optional `/message/<id>` deep-link segment is view-level state — the
+ * route component derives the selected bubble from `currentDock` and scrolls
+ * it into view; the loader only resolves the conversation (head segment).
  *
  * Pure primitive `loadConversation(id)`:
  *   - Cache-first fetch of the Conversation entity.
@@ -15,7 +20,7 @@
  * Wrapper `loadConversationRoute(pointer)` is the URL-aware shell. Mirrors
  * the load-shell / load-project two-layer split: the primitive doesn't know
  * about URLs and only throws typed errors; the wrapper translates failures
- * into redirects + toasts.
+ * into declarative dock-load resolutions.
  */
 
 import {
@@ -27,13 +32,17 @@ import {
   type Task,
   TypeId,
 } from '@sdk';
-import { Conversation as ConversationEntity, Task as TaskEntity } from '@sdk';
-import { toast } from '@src/hooks/use-toast';
-import { redirect } from 'react-router';
+import { Conversation as ConversationEntity } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { DockLoadError } from './dock-load-error';
+
+export type ConversationLoadErrorKind = 'not_found' | 'unauthorized' | 'network_error';
 
 export class ConversationLoadError extends Error {
+  readonly severity = 'hard'; // conversation not found is always terminal
+
   constructor(
-    readonly kind: 'not_found',
+    readonly kind: ConversationLoadErrorKind,
     readonly conversationId: string,
   ) {
     super(`conversation-load:${kind}`);
@@ -47,9 +56,22 @@ export class ConversationLoadError extends Error {
  * load (the page can still render the conversation without those).
  */
 export async function loadConversation(conversationId: string): Promise<Conversation> {
-  const conv = await dataManager
-    .getByTypeId<Conversation>(new TypeId(ConversationEntity.type, conversationId))
-    .catch(() => null);
+  let conv: Conversation | null = null;
+
+  try {
+    conv = await dataManager.getByTypeId<Conversation>(new TypeId(ConversationEntity.type, conversationId));
+  } catch (error) {
+    const typedError = error as { response?: { status?: number }; status?: number } | null;
+    const status = typedError?.response?.status ?? typedError?.status;
+
+    // Distinguish error types
+    if (status === 404 || status === 403) {
+      throw new ConversationLoadError('not_found', conversationId);
+    }
+    // Network or other errors
+    throw new ConversationLoadError('network_error', conversationId);
+  }
+
   if (!conv) {
     throw new ConversationLoadError('not_found', conversationId);
   }
@@ -104,7 +126,7 @@ export async function loadConversation(conversationId: string): Promise<Conversa
 }
 
 /**
- * Route-level loader for /dock/conversation/<id>. Owns redirect policy.
+ * Route-level loader for /dock/conversation/<id>. Owns route error policy.
  * Delegates the actual work to `loadConversation`.
  */
 export async function loadConversationRoute(pointer: string | undefined): Promise<void> {
@@ -114,21 +136,44 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
     return;
   }
 
-  // Pointers can in principle have trailing segments; the conversation view
-  // only uses the head id (matches `ConversationRoute.tsx`).
-  const conversationId = pointer.split('/')[0];
+  // Trailing segments (e.g. `/message/<id>`) are view-level deep-link state;
+  // the loader only needs the head id. Same parser as `ConversationRoute.tsx`
+  // so the pointer grammar lives in exactly one place.
+  const { conversationId } = DockPointer.parseConversationPointer(pointer);
   if (!conversationId) return;
 
   try {
     await loadConversation(conversationId);
   } catch (e) {
-    if (!(e instanceof ConversationLoadError)) throw e;
-    toast({
-      title: 'Conversation not found',
-      description: 'This conversation no longer exists.',
-      variant: 'destructive',
-    });
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect('/dock/inbox');
+    if (e instanceof ConversationLoadError) {
+      if (e.kind === 'not_found') {
+        throw new DockLoadError(
+          'conversation_not_found',
+          'hard',
+          {
+            action: 'render_error',
+            title: 'Conversation not found',
+            message: 'This conversation no longer exists or is unavailable.',
+          },
+          'conversation',
+          e,
+        );
+      }
+      if (e.kind === 'network_error') {
+        throw new DockLoadError(
+          'conversation_network_error',
+          'soft',
+          {
+            action: 'render_error',
+            title: 'Conversation unavailable',
+            message: 'Could not load this conversation. Try again in a moment.',
+            retryable: true,
+          },
+          'conversation',
+          e,
+        );
+      }
+    }
+    throw e;
   }
 }

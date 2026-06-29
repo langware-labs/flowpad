@@ -24,6 +24,7 @@ describe('Terminal shell state guards', () => {
 
   it('does not treat a missing cached tab as a disconnected shell', () => {
     expect(contentPanelSource).not.toContain('(!tab && terminalTabs.length > 0)');
-    expect(contentPanelSource).toContain('if (tab?.isDisabled) {');
+    // Redirect-off-active fires only when the URL's active row is closing.
+    expect(contentPanelSource).toContain('if (active?.is_disabled) {');
   });
 });

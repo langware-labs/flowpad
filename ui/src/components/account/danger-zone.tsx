@@ -1,4 +1,5 @@
-import { useSettings } from '@sdk/react/hooks/use-settings';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { useInstancePreferences } from '@sdk/react/hooks/use-instance-preferences';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DatabasePaths, TerminalType } from '@sdk';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -7,12 +8,13 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Label } from '@src/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { AlertTriangle, BarChart3, ChevronDown, Copy, FolderOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DbStatsDialog } from './db-stats';
 
 export function DangerZone() {
+  const { t } = useLingui();
   const { currentActivity, backup, clearAllData, getPaths, openBackupFolder, openDbFolder, openLogsFolder } = useSystemTools();
   const isClearing = currentActivity === 'clear';
   const isBackingUp = currentActivity === 'archive';
@@ -20,8 +22,7 @@ export function DangerZone() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showDbStats, setShowDbStats] = useState(false);
   const [paths, setPaths] = useState<DatabasePaths | null>(null);
-  const { toast } = useToast();
-  const { settings } = useSettings();
+  const { preferences } = useInstancePreferences();
 
   // Fetch paths on mount
   useEffect(() => {
@@ -36,17 +37,16 @@ export function DangerZone() {
     setShowClearConfirm(false);
     try {
       const result = await clearAllData();
-      toast({
-        title: 'Database Cleared',
-        description: result.message || 'All data has been cleared. Redirecting to home...',
+      notify.success({
+        title: t`Database Cleared`,
+        message: result.message || t`All data has been cleared. Redirecting to home...`,
       });
       setTimeout(() => { window.location.href = '/'; }, 1500);
     } catch (error) {
       console.error('Failed to clear database:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to clear database',
-        variant: 'destructive',
+      notify.error({
+        title: t`Error`,
+        message: error instanceof Error ? error.message : t`Failed to clear database`,
       });
     }
   };
@@ -54,13 +54,12 @@ export function DangerZone() {
   const handleBackupDb = async () => {
     try {
       const result = await backup();
-      toast({ title: 'Database Backed Up', description: result.message });
+      notify.success({ title: t`Database Backed Up`, message: result.message });
     } catch (error) {
       console.error('Failed to backup database:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to backup database',
-        variant: 'destructive',
+      notify.error({
+        title: t`Error`,
+        message: error instanceof Error ? error.message : t`Failed to backup database`,
       });
     }
   };
@@ -72,10 +71,9 @@ export function DangerZone() {
       else await openLogsFolder();
     } catch (error) {
       console.error(`Failed to open ${folderType} folder:`, error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : `Failed to open ${folderType} folder`,
-        variant: 'destructive',
+      notify.error({
+        title: t`Error`,
+        message: error instanceof Error ? error.message : `Failed to open ${folderType} folder`,
       });
     }
   };
@@ -83,16 +81,15 @@ export function DangerZone() {
   const handleCopyPath = async (path: string) => {
     try {
       await navigator.clipboard.writeText(path);
-      toast({
-        title: 'Copied',
-        description: 'Path copied to clipboard',
+      notify.success({
+        title: t`Copied`,
+        message: t`Path copied to clipboard`,
       });
     } catch (error) {
       console.error('Failed to copy path:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to copy path to clipboard',
-        variant: 'destructive',
+      notify.error({
+        title: t`Error`,
+        message: t`Failed to copy path to clipboard`,
       });
     }
   };
@@ -104,7 +101,7 @@ export function DangerZone() {
           <div className="flex cursor-pointer items-center justify-between border-b pb-3 text-sm font-medium text-muted-foreground hover:text-foreground">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-destructive" />
-              <span>Danger Zone</span>
+              <span><Trans>Danger Zone</Trans></span>
             </div>
             <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
           </div>
@@ -114,35 +111,35 @@ export function DangerZone() {
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => void handleBackupDb()} disabled={isBackingUp} className="flex-1">
-                  {isBackingUp ? 'Backing up...' : 'Backup DB'}
+                  {isBackingUp ? <Trans>Backing up...</Trans> : <Trans>Backup DB</Trans>}
                 </Button>
                 <Button variant="outline" onClick={() => setShowDbStats(true)} className="flex-1">
                   <BarChart3 className="mr-2 h-4 w-4" />
-                  DB Stats
+                  <Trans>DB Stats</Trans>
                 </Button>
               </div>
               <Button variant="destructive" onClick={handleClearDb} disabled={isClearing} className="w-full">
-                {isClearing ? 'Clearing...' : 'Clear All Data'}
+                {isClearing ? <Trans>Clearing...</Trans> : <Trans>Clear All Data</Trans>}
               </Button>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => void handleOpenFolder('backup')} className="flex-1">
                   <FolderOpen className="mr-2 h-4 w-4" />
-                  Open Backup Folder
+                  <Trans>Open Backup Folder</Trans>
                 </Button>
                 <Button variant="outline" onClick={() => void handleOpenFolder('db')} className="flex-1">
                   <FolderOpen className="mr-2 h-4 w-4" />
-                  Open DB Folder
+                  <Trans>Open DB Folder</Trans>
                 </Button>
               </div>
               <Button variant="outline" onClick={() => void handleOpenFolder('logs')} className="w-full">
                 <FolderOpen className="mr-2 h-4 w-4" />
-                Open Logs Folder
+                <Trans>Open Logs Folder</Trans>
               </Button>
               {paths?.logs_folder && (
                 <div
                   className="flex cursor-pointer items-center gap-2 rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
                   onClick={() => void handleCopyPath(paths.logs_folder)}
-                  title="Click to copy path"
+                  title={t`Click to copy path`}
                 >
                   <Copy className="h-3 w-3 flex-shrink-0" />
                   <span className="truncate font-mono">{paths.logs_folder}</span>
@@ -154,38 +151,37 @@ export function DangerZone() {
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="show-system-skills"
-                    checked={settings.showSystemSkills}
+                    checked={preferences.showSystemSkills}
                     onCheckedChange={(checked) => {
-                      settings.showSystemSkills = checked === true;
+                      preferences.showSystemSkills = checked === true;
                     }}
                   />
                   <Label htmlFor="show-system-skills" className="cursor-pointer text-sm">
-                    Show system skills
+                    <Trans>Show system skills</Trans>
                   </Label>
                 </div>
 
                 <div className="mt-4">
-                  <Label className="mb-2 block text-sm font-medium">External Terminal</Label>
+                  <Label className="mb-2 block text-sm font-medium"><Trans>External Terminal</Trans></Label>
                   <p className="mb-2 text-xs text-muted-foreground">
-                    The in-app terminal is always the primary shell. This setting controls
-                    whether a sidecar OS Terminal window is also opened.
+                    <Trans>The in-app terminal is always the primary shell. This setting controls whether a sidecar OS Terminal window is also opened.</Trans>
                   </p>
                   <RadioGroup
-                    value={settings.defaultTerminal}
+                    value={preferences.defaultTerminal}
                     onValueChange={(value) => {
-                      settings.defaultTerminal = value as TerminalType;
+                      preferences.defaultTerminal = value as TerminalType;
                     }}
                   >
                     <div className="flex items-center gap-2">
                       <RadioGroupItem value={TerminalType.BUILTIN_XTERM} id="terminal-builtin" />
                       <Label htmlFor="terminal-builtin" className="cursor-pointer text-sm">
-                        In-app only
+                        <Trans>In-app only</Trans>
                       </Label>
                     </div>
                     <div className="flex items-center gap-2">
                       <RadioGroupItem value={TerminalType.EXTERNAL_TERMINAL} id="terminal-external" />
                       <Label htmlFor="terminal-external" className="cursor-pointer text-sm">
-                        Also open sidecar OS Terminal
+                        <Trans>Also open sidecar OS Terminal</Trans>
                       </Label>
                     </div>
                   </RadioGroup>
@@ -199,9 +195,9 @@ export function DangerZone() {
       <ConfirmDialog
         open={showClearConfirm}
         onOpenChange={setShowClearConfirm}
-        title="Clear All Data"
-        description="Are you sure you want to clear all data from the database? This will create a backup first and reload the page."
-        confirmLabel="Clear All Data"
+        title={t`Clear All Data`}
+        description={t`Are you sure you want to clear all data from the database? This will create a backup first and reload the page.`}
+        confirmLabel={t`Clear All Data`}
         variant="destructive"
         onConfirm={() => void confirmClearDb()}
       />

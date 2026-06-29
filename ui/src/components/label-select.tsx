@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { LabelChipBlock } from './label-chip-block';
 
 interface LabelSelectProps {
@@ -10,6 +11,7 @@ interface LabelSelectProps {
 }
 
 export function LabelSelect({ selected, available, onToggle, onAdd, onRemove }: LabelSelectProps) {
+  const { t } = useLingui();
   const [inputValue, setInputValue] = useState('');
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -31,7 +33,7 @@ export function LabelSelect({ selected, available, onToggle, onAdd, onRemove }: 
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Add custom label..."
+        placeholder={t`Add custom label...`}
         className="w-full border-none bg-transparent px-2 py-1 text-xs outline-none placeholder:text-muted-foreground"
       />
     </div>

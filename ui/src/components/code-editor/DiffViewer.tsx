@@ -6,6 +6,7 @@ import { useProcessCheckpoints } from '@src/hooks/flow-hooks';
 import { DiffContent } from './DiffContent';
 import React, { useMemo } from 'react';
 import { useParams } from 'react-router';
+import { Trans } from '@lingui/react/macro';
 
 interface DiffViewerProps {
   checkpoint_hash: string;
@@ -71,7 +72,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ checkpoint_hash }) => {
         <div className="border-b bg-background px-4 py-3">
           <div className="flex items-center gap-3">
             <label htmlFor="checkpoint-selector" className="text-sm font-medium">
-              Checkpoint:
+              <Trans>Checkpoint:</Trans>
             </label>
             <select
               id="checkpoint-selector"
@@ -101,17 +102,17 @@ const DiffViewer: React.FC<DiffViewerProps> = ({ checkpoint_hash }) => {
           <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
             <div className="flex flex-col items-center gap-2">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted-foreground border-t-transparent"></div>
-              <span>Loading checkpoint diff...</span>
+              <span><Trans>Loading checkpoint diff...</Trans></span>
             </div>
           </div>
         ) : diffError ? (
           <div className="flex h-full items-center justify-center p-4 text-destructive">
-            Error loading checkpoint: {diffError.message || 'Checkpoint not found'}
+            <Trans>Error loading checkpoint: {diffError.message || 'Checkpoint not found'}</Trans>
           </div>
         ) : gitDiff ? (
           <DiffContent diffString={gitDiff} />
         ) : (
-          <div className="flex h-full items-center justify-center p-4 text-muted-foreground">No changes to show</div>
+          <div className="flex h-full items-center justify-center p-4 text-muted-foreground"><Trans>No changes to show</Trans></div>
         )}
       </div>
     </div>

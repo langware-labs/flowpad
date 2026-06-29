@@ -1,7 +1,9 @@
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
-import { Agent, AgenticProcess, FSRef, ProcessType } from '@sdk';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { Agent, AgenticProcess, FSRef, ProcessKind } from '@sdk';
 import { useCallback } from 'react';
 
 interface AgentAssetEditorProps {
@@ -16,7 +18,7 @@ interface AgentAssetEditorProps {
 }
 
 /**
- * Agent files render two surfaces, keyed on different `target_vfs_path`
+ * Agent files render two surfaces, keyed on different `target_typeid_str`
  * values so they own separate AgenticProcess rows:
  *
  *   - Side-drawer editor process — generic, no agent embed,
@@ -44,18 +46,31 @@ export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEdit
     },
     [sourcePath],
   );
-  const chatTarget = fsRef.vpath;
+  // chatTarget MUST be the entity's TypeId — MarkdownEditor builds `new TypeId(chatTarget)`
+  // and uses it as docTypeId. Passing a path here is what caused the "Invalid typeId" crash.
+  const chatTarget = agent ? agent.typeId.toString() : null;
   const agentExecutionTarget = agent ? agent.typeId.toString() : null;
+  const { navigation } = useDockNavigation();
+  const onDelete = useCallback(async () => {
+    if (!agent) return;
+    await agent.delete();
+    navigation.openDock(DockPointer.forAssetList(Agent.type));
+  }, [agent, navigation]);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
-        <MarkdownEditor fsRef={editorRef} chatTarget={chatTarget} />
+        <MarkdownEditor
+          fsRef={editorRef}
+          chatTarget={chatTarget}
+          onDelete={agent ? onDelete : undefined}
+          deleteLabel={agent?.name ?? undefined}
+        />
       </div>
       {agentExecutionTarget && (
         <div className="h-[300px] flex-shrink-0 border-t" data-testid="agent-execution">
           <EntityExecutionPanel
             target={agentExecutionTarget}
-            processType={ProcessType.Execution}
+            processType={ProcessKind.Execution}
             onProcessCreated={loadAgent}
             headerLabel="Agent execution"
             className="h-full"

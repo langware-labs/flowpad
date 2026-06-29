@@ -1,5 +1,9 @@
+---
+id: 3eb36a84-3997-5904-beb8-de3a24592aff
+---
+
 test 1: Creating content in skills view and navigating to home does not crash app (FLOWPAD-1623)
-- navigate to {APP_URL}/dock/skills
+- navigate to {APP_URL}/dock/assets/list/skill
 - validate the skills view is visible
 - look for a "New" or "Add" button in the skills view
 - click it to create a new skill if button exists

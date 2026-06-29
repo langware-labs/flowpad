@@ -12,80 +12,91 @@ import { ExecuteFlowView } from '@src/components/execute-flow-view';
 import { ExplorerView } from '@src/components/explorer-view';
 import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
-import { SessionViewer } from '@src/components/live-workflow';
 import { MachineOverview } from '@src/components/machine-overview/machine-overview';
 import { MarkdownViewer } from '@src/components/markdown-viewer';
 import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { ShowView } from '@src/components/show-view/ShowView';
+import { AppHost } from '@src/components/app-host/AppHost';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 import { TasksViewer } from '@src/components/tasks-viewer/TasksViewer';
 import { HomeLanding } from '@src/pages/home-landing';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
 
-import { ConnectionStatus, dataContext, navigator, ShellStatus, type OAuthConnection } from '@sdk';
+import { ConnectionStatus, dataContext, navigator, type OAuthConnection } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
-import { CollaborationPage } from '@src/components/collaboration';
 import { ConnectionsManager } from '@src/components/connections-manager';
+import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
 import { SurveyView } from '@src/components/survey/SurveyView';
-import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
+import { TabbedTerminal } from '@src/components/terminal';
 import { TriggersView } from '@src/components/triggers-view';
 import { Button } from '@src/components/ui/button';
-import { Tabs, TabsContent } from '@src/components/ui/tabs';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
-import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { useToast } from '@src/hooks/use-toast';
-import {
-  terminalTargetKey,
-  terminalTransportShellId,
-  useAllTerminals,
-} from '@src/hooks/useActiveTerminals';
+import { Tab } from '@sdk';
+import { useTerminalTabs } from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
+import { GraphContextViewer } from '@src/components/graph-context/GraphContextViewer';
+import { DiagnosisViewer } from '@src/components/diagnosis-viewer/DiagnosisViewer';
 import { useSendMessageStore } from '@src/store/use-send-message-store';
 import { useSurveyStore } from '@src/store/use-survey-store';
-import { ViewType } from '@src/types/ViewType';
-import { LogIn } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
+import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
+import { useDockLoadError } from '@src/routes/loaders/dock-load-error-store';
+import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { AlertTriangle, LogIn } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+
+// Lazy-loaded: GraphView pulls in sigma.js + @sigma/node-image, which run
+// WebGL init (gl.getParameter) at module load. Importing it eagerly crashes
+// the entire app in any WebGL-less context (headless browsers, GPU-disabled
+// CI, software-render fallbacks). Loading it only when the graph tab opens
+// keeps app bootstrap independent of WebGL availability.
+const GraphView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })));
+const DocsGraphView = lazy(() =>
+  import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
+);
 import { UserDropdown } from './user-dropdown/user-dropdown';
+import { UnifiedTabStrip } from './unified-tab-strip';
+import { Trans } from '@lingui/react/macro';
 
 export function ContentPanel() {
   // Get navigation instance for URL-first architecture
-  const { navigation, currentDock, isDockUrl } = useDockNavigation();
-  const { toast } = useToast();
+  const { navigation, currentDock, isDockUrl, windowMode } = useDockNavigation();
+  const activeLifecycle = useTabLifecycle(currentDock?.tabHash);
+  const dockLoadError = useDockLoadError(currentDock);
 
   const { user } = useAuth();
 
-  const { flow, agent, computeNode } = useAgentContext();
+  const { flow, agent } = useAgentContext();
   const { project: contextProject } = useContext();
 
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer(flow);
 
-  const { data: terminalTabs } = useAllTerminals();
-  const terminalsLoading = false;
-  const { onTabClick, onTabClose, onTabOpen } = useStandardTabNav();
+  const terminalTabs = useTerminalTabs();
 
-  /** Navigate to a terminal tab's shell or agentic process */
+  /** Navigate to a terminal tab by its dockPointer. */
   const navigateToTab = useCallback(
-    (tab: (typeof terminalTabs)[number]) => {
-      const pointer = tab.agenticProcess?.dockPointer ?? tab.shell?.dockPointer;
-      if (pointer) navigation.openDock(pointer);
+    (tab: Tab) => {
+      if (tab.dockPointer) navigation.openDock(tab.dockPointer);
     },
     [navigation],
   );
 
-  // State from viewer store (centralized tab and view management)
-  const { currentOverviewTab, currentContext, addTab } = useViewerStore();
+  // State from viewer store (overview-axis only — the header tab membership
+  // moved to the unified TabStrip, tab-management.md Part 3 U1)
+  const { currentContext } = useViewerStore();
 
   // Survey state (shared with chat-panel)
   const { activeSurveyData, onSurveyComplete } = useSurveyStore();
@@ -107,7 +118,6 @@ export function ContentPanel() {
   }, []);
 
   const { setOpenEnvironmentTab } = useEnvVarsStore();
-  const { setAddTab } = useContentPanelStore();
 
   const { sendMessage } = useSendMessageStore();
 
@@ -127,12 +137,6 @@ export function ContentPanel() {
     [navigation],
   );
 
-  const handleExplorerPathChange = useCallback(
-    (path: string) => {
-      navigation.openDock(DockPointer.forExplorer(path));
-    },
-    [navigation],
-  );
 
   // Shell entity sync is automatic via DataOp stream — no manual sync needed.
 
@@ -141,45 +145,17 @@ export function ContentPanel() {
     setOpenEnvironmentTab(() => navigation.openTab(ViewType.ENVIRONMENT));
   }, [navigation, setOpenEnvironmentTab]);
 
+  // When the URL's active terminal is closing (is_disabled), redirect to the
+  // first alive tab. A pointer-less shell URL is loader-owned (the loader
+  // resolves the default target), so we only act when a tab matches the URL.
   useEffect(() => {
-    setAddTab(addTab);
-  }, [addTab, setAddTab]);
-
-  // Handle shell routing based on URL pointer
-  useEffect(() => {
-    if (currentDock?.viewType !== ViewType.SHELL) return;
-    // Wait until both shells and processes are loaded so navigateToTab
-    // can correctly distinguish plain shells from claude sessions.
-    if (terminalsLoading) return;
-
-    const pointer = currentDock.pointer;
-    // No pointer is loader-owned. Let the route loader resolve the default
-    // shell/process target so we do not race explicit tab navigation.
-    if (!pointer) {
-      return;
+    if (currentDock?.viewType !== ViewType.SHELL || !currentDock.pointer) return;
+    const active = terminalTabs.find((t) => t.dockPointer?.tabHash === currentDock.tabHash);
+    if (active?.is_disabled) {
+      const alive = terminalTabs.find((t) => t.id !== active.id && !t.is_disabled);
+      if (alive) navigateToTab(alive);
     }
-    const targetKey = DockPointer.isAgenticProcessPointer(pointer)
-      ? pointer
-      : pointer.startsWith('shell-')
-        ? pointer
-        : `shell-${pointer}`;
-
-    // Disabled shell -> redirect to first alive tab.
-    // Missing tab here is not enough to conclude disconnection because the
-    // tab query can lag behind the loader/navigation path for a newly opened shell.
-    // Only toast for unexpected disconnections (ERROR status), not for user-initiated
-    // closes (CLOSING status) which are handled by TabbedTerminal's closeShell flow.
-    const tab = terminalTabs.find((t) => terminalTargetKey(t) === targetKey);
-    if (tab?.isDisabled) {
-      const transportShellId = terminalTransportShellId(tab);
-      const shell = transportShellId ? (tab.shell ?? null) : null;
-      if (shell?.status !== ShellStatus.CLOSING) {
-        toast({ title: 'Shell is disconnected', variant: 'destructive' });
-      }
-      const aliveTab = terminalTabs.find((t) => terminalTargetKey(t) !== targetKey && !t.isDisabled);
-      if (aliveTab) navigateToTab(aliveTab);
-    }
-  }, [currentDock, navigateToTab, terminalsLoading, terminalTabs, toast]);
+  }, [currentDock, navigateToTab, terminalTabs]);
 
   const { editorActivePath, checkpointHash } = useMemo(() => {
     return {
@@ -188,356 +164,213 @@ export function ContentPanel() {
     };
   }, [currentContext]);
 
-  // Get current tab from URL (URL-first architecture)
-  const currentTab = isDockUrl && currentDock?.viewType ? currentDock.viewType : 'overview';
+  // The body's viewType is the URL's dock viewType; no dock URL → Home (the
+  // landing). URL-first: the URL is the single source of "what's shown".
+  const bodyViewType = isDockUrl && currentDock?.viewType ? currentDock.viewType : ViewType.HOME;
+  const activeOpenFailed = activeLifecycle?.state === TabLifecycleState.OpenFailed;
+
+  // Chrome-less when the surface is full-bleed (Home — a welcome landing, not a
+  // tabbed workspace) or in the win/ focus layout. `chrome` (the registry
+  // "takeover" bit) is separate from `DockPointer.tabHash` (chip-or-not).
+  const hideChrome = windowMode || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
 
   // File manager filters
   const [enabledFilters, setEnabledFilters] = useState<FilterName[]>([FilterName.HIDDEN]);
 
-  return (
-    <div data-testid="content-panel" className="flex h-full flex-col bg-background">
-      <Tabs
-        value={currentTab}
-        onValueChange={(value) => {
-          // Always navigate - URL-first architecture
-          if (value === 'overview') {
-            navigation.closeDock();
-          } else {
-            navigation.openTab(value as ViewType);
-          }
-        }}
-        className="flex h-full w-full flex-col"
-      >
-        {/* Simple header - show UserDropdown only for non-logged-in users */}
-        {!user && (
-          <div className="flex items-center justify-end border-b bg-muted/30 px-3 py-1.5">
-            <UserDropdown />
+  // The single body switch (one place, was duplicated between the overview slot
+  // and a per-viewType TabsContent ladder). Renders the surface for `vt`; only
+  // the active body is mounted (matches the old radix Tabs, which did not
+  // forceMount). `null`/unknown → the Home landing.
+  const renderBody = (vt: ViewType | null) => {
+    if (dockLoadError) {
+      return <DockLoadErrorView error={dockLoadError} />;
+    }
+
+    if (activeOpenFailed) {
+      return (
+        <div
+          className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground"
+          data-testid="tab-open-failed-placeholder"
+        >
+          <AlertTriangle className="h-9 w-9 text-destructive" />
+          <div>
+            <h2 className="text-base font-semibold text-foreground"><Trans>Tab failed to open</Trans></h2>
+            <p className="mt-1 max-w-md text-sm">
+              {activeLifecycle?.error || <Trans>The tab content could not be prepared.</Trans>}
+            </p>
           </div>
-        )}
+        </div>
+      );
+    }
+
+    switch (vt) {
+      case ViewType.SHELL:
+        return <TabbedTerminal className="h-full" />;
+      case ViewType.EDITOR:
+        return <CodeEditor activePath={editorActivePath} />;
+      case ViewType.WEB_APP:
+        return <WebappViewer onWebappErrorRetry={onWebappErrorRetry} />;
+      case ViewType.DIFF:
+        return checkpointHash ? (
+          <DiffViewer checkpoint_hash={checkpointHash} />
+        ) : (
+          <div className="p-4 text-gray-500"><Trans>No checkpoint selected</Trans></div>
+        );
+      case ViewType.MARKDOWN:
+        return <MarkdownViewer />;
+      case ViewType.SURVEY:
+        return activeSurveyData && onSurveyComplete ? (
+          <SurveyView surveyData={activeSurveyData} onComplete={onSurveyComplete} />
+        ) : (
+          <div className="p-6 text-muted-foreground"><Trans>No active survey</Trans></div>
+        );
+      case ViewType.SYSTEM_PROFILE:
+        return <LiveStatus />;
+      case ViewType.ENVIRONMENT:
+        return user?.id && dataContext.project?.typeId ? (
+          <EnvVarsManager
+            entityTypeId={dataContext.project.typeId}
+            onEnvVarSaved={addEnvVar}
+            onEnvVarDeleted={deleteEnvVar}
+            onEnvVarUpdated={() => {
+              // noteItemUpdated was a Flow entity method - no-op for now
+            }}
+          />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-gray-200 p-6 text-center">
+            <LogIn className="h-10 w-10 text-gray-400" />
+            <div>
+              <h2 className="text-lg font-semibold"><Trans>Login Required</Trans></h2>
+              <p className="mt-1 text-sm text-gray-500"><Trans>Please log in to view and manage environment variables.</Trans></p>
+            </div>
+            <Button onClick={() => void navigator.navigateToLogin()} className="px-6">
+              <Trans>Login</Trans>
+            </Button>
+          </div>
+        );
+      case ViewType.CONNECTIONS:
+        return (
+          <ConnectionsManager
+            connections={connections}
+            currentProject={contextProject?.typeId}
+            onConnectionConnect={handleConnectionConnect}
+            onConnectionDisconnect={handleConnectionDisconnect}
+          />
+        );
+      case ViewType.API_KEYS:
+        return <ApiKeysView />;
+      case ViewType.AI_CONFIG:
+        return <AIConfigView />;
+      case ViewType.HOOKS:
+        return <HooksManager />;
+      case ViewType.ARTIFACTS:
+        return <ArtifactsView />;
+      case ViewType.DOCS:
+        return <DocsViewer />;
+      case ViewType.PLAN:
+        return <SpecEditor />;
+      case ViewType.ASSISTANCE:
+        return agent?.site_config?.feature_flags?.enable_escalation ? <AssistanceViewer /> : null;
+      case ViewType.MACHINE:
+        return <MachineOverview />;
+      case ViewType.EXPLORER:
+        return (
+          <ExplorerView
+            filterDefinitions={getAllFilterDefinitions()}
+            enabledFilters={enabledFilters}
+            onEnabledFiltersChange={setEnabledFilters}
+            onFileSelect={handleExplorerFileSelect}
+          />
+        );
+      case ViewType.TRIGGERS:
+      case ViewType.CRON:
+        return <TriggersView />;
+      case ViewType.CAPABILITIES:
+        return <CapabilitiesView />;
+      case ViewType.EXECUTE_FLOW:
+        return <ExecuteFlowView />;
+      case ViewType.SHOW:
+        return <ShowView />;
+      case ViewType.APPS:
+        return <AppHost />;
+      case ViewType.GRAPH:
+        return (
+          <Suspense fallback={null}>
+            <GraphView />
+          </Suspense>
+        );
+      case ViewType.K_BROWSER:
+        return (
+          <Suspense fallback={null}>
+            <DocsGraphView />
+          </Suspense>
+        );
+      case ViewType.LENS:
+        return <LensViewer />;
+      case ViewType.TASKS:
+        return <TasksViewer />;
+      case ViewType.SETTINGS:
+        return <SettingsView />;
+      case ViewType.SEARCH:
+        return <SearchView />;
+      case ViewType.WORKFLOWS:
+        return <WorkflowsPage />;
+      case ViewType.AGENTIC_PROCESS:
+        return currentDock?.pointer ? (
+          <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />
+        ) : (
+          <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No process ID specified</Trans></div>
+        );
+      case ViewType.ASSETS:
+      case ViewType.PROJECT:
+        return <AssetsPage />;
+      case ViewType.INBOX:
+        return <InboxView />;
+      case ViewType.CONVERSATION:
+        return <ConversationRoute />;
+      case ViewType.SPEC:
+        return <SpecRoute />;
+      case ViewType.GRAPH_CONTEXT:
+        return <GraphContextViewer pointer={currentDock?.pointer} />;
+      case ViewType.DIAGNOSIS:
+        return <DiagnosisViewer pointer={currentDock?.pointer} />;
+      case ViewType.HOME:
+      default:
+        return <HomeLanding />;
+    }
+  };
+
+  return (
+    <div data-testid="content-panel" className="flex h-full w-full flex-col bg-background">
+      {/* Simple header - show UserDropdown only for non-logged-in users */}
+      {!user && !hideChrome && (
+        <div className="flex items-center justify-end border-b bg-muted/30 px-3 py-1.5">
+          <UserDropdown />
+        </div>
+      )}
+
+      {/* Unified tab strip — hidden in the win/ focus layout and on the Home
+          landing (full-bleed). The body below renders the URL-derived view. */}
+      {!hideChrome && <UnifiedTabStrip />}
+
+      {/* Zone B — shared left-menu slot, now nested UNDER the tab strip so the
+          active view's navigator (assets tree / workflows / docs / triggers /
+          chats) is scoped to the current tab's content row rather than spanning
+          the full app height beside the tabs. The `border-t` draws the tab
+          body's top edge; the active chip's `-mb-px border-b-transparent`
+          opens its bottom over this line, so the menu + body read as one panel
+          hanging from the current tab (the folder-tab continuum). */}
+      <div className={`flex min-h-0 flex-1 overflow-hidden ${!hideChrome ? 'border-t border-border' : ''}`}>
+        <NavigatorSlot />
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
-          <TabsContent
-            value="overview"
-            className="absolute inset-0 mt-0 flex h-full flex-1 animate-fade-in flex-col shadow-lg data-[state=inactive]:hidden"
-          >
-            <div className="min-h-0 flex-1 overflow-auto">
-              {currentOverviewTab === ViewType.SHELL ? (
-                <TabbedTerminal
-                  className="h-full"
-                  addTabButton
-                  onTabClick={onTabClick}
-                  onTabClose={onTabClose}
-                  onTabOpen={onTabOpen}
-                />
-              ) : currentOverviewTab === ViewType.EDITOR ? (
-                <CodeEditor activePath={editorActivePath} />
-              ) : currentOverviewTab === ViewType.WEB_APP ? (
-                <WebappViewer onWebappErrorRetry={onWebappErrorRetry} />
-              ) : currentOverviewTab === ViewType.DIFF ? (
-                checkpointHash ? (
-                  <DiffViewer checkpoint_hash={checkpointHash} />
-                ) : (
-                  <div className="p-4 text-gray-500">No checkpoint selected</div>
-                )
-              ) : currentOverviewTab === ViewType.MARKDOWN ? (
-                <MarkdownViewer />
-              ) : currentOverviewTab === ViewType.SURVEY ? (
-                activeSurveyData && onSurveyComplete ? (
-                  <SurveyView surveyData={activeSurveyData} onComplete={onSurveyComplete} />
-                ) : (
-                  <div className="p-6 text-muted-foreground">No active survey</div>
-                )
-              ) : currentOverviewTab === ViewType.HOME ? (
-                <HomeLanding />
-              ) : currentOverviewTab === ViewType.SYSTEM_PROFILE ? (
-                <LiveStatus />
-              ) : (
-                <HomeLanding />
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.SHELL}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
-          >
-            <TabbedTerminal
-              className="h-full"
-              addTabButton
-              onTabClick={onTabClick}
-              onTabClose={onTabClose}
-              onTabOpen={onTabOpen}
-            />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.EDITOR}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <CodeEditor activePath={editorActivePath} />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.WEB_APP}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
-          >
-            <WebappViewer onWebappErrorRetry={onWebappErrorRetry} />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.ENVIRONMENT}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            {user?.id && dataContext.project?.typeId ? (
-              <EnvVarsManager
-                entityTypeId={dataContext.project.typeId}
-                onEnvVarSaved={addEnvVar}
-                onEnvVarDeleted={deleteEnvVar}
-                onEnvVarUpdated={() => {
-                  // noteItemUpdated was a Flow entity method - no-op for now
-                }}
-              />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-gray-200 p-6 text-center">
-                <LogIn className="h-10 w-10 text-gray-400" />
-                <div>
-                  <h2 className="text-lg font-semibold">Login Required</h2>
-                  <p className="mt-1 text-sm text-gray-500">Please log in to view and manage environment variables.</p>
-                </div>
-                <Button onClick={() => navigator.navigateToLogin()} className="px-6">
-                  Login
-                </Button>
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.CONNECTIONS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <ConnectionsManager
-              connections={connections}
-              currentProject={contextProject?.typeId}
-              onConnectionConnect={handleConnectionConnect}
-              onConnectionDisconnect={handleConnectionDisconnect}
-            />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.API_KEYS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <ApiKeysView />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.AI_CONFIG}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <AIConfigView />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.HOOKS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <HooksManager />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.ARTIFACTS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <ArtifactsView />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.DIFF}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            {checkpointHash ? (
-              <DiffViewer checkpoint_hash={checkpointHash} />
-            ) : (
-              <div className="p-4 text-gray-500">No checkpoint selected</div>
-            )}
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.DOCS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <DocsViewer />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.PLAN}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <SpecEditor />
-          </TabsContent>
-
-          {agent?.site_config?.feature_flags?.enable_escalation && (
-            <TabsContent
-              value={ViewType.ASSISTANCE}
-              className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-            >
-              <AssistanceViewer />
-            </TabsContent>
-          )}
-
-          <TabsContent
-            value={ViewType.MACHINE}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <MachineOverview />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.EXPLORER}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <ExplorerView
-              filterDefinitions={getAllFilterDefinitions()}
-              enabledFilters={enabledFilters}
-              onEnabledFiltersChange={setEnabledFilters}
-              onFileSelect={handleExplorerFileSelect}
-              onPathChange={handleExplorerPathChange}
-            />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.TRIGGERS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <TriggersView />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.CRON}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <TriggersView />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.EXECUTE_FLOW}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <ExecuteFlowView />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.SHOW}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <ShowView />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.HOME}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <HomeLanding />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.SYSTEM_PROFILE}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <LiveStatus />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.LENS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <LensViewer />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.SESSION}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <SessionViewer />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.TASKS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <TasksViewer />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.SETTINGS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <SettingsView />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.SEARCH}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <SearchView />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.WORKFLOWS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <WorkflowsPage />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.AGENTIC_PROCESS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            {currentDock?.pointer ? (
-              <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />
-            ) : (
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                No process ID specified
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.ASSETS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <AssetsPage />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.PROJECT}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <CollaborationPage />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.INBOX}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <InboxView />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.CONVERSATION}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <ConversationRoute />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.SPEC}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <SpecRoute />
-          </TabsContent>
+          {/* Matches the proven per-viewType slot layout (plain h-full, no flex-col)
+              so xterm fits on first paint — a flex-col parent broke its initial sizing. */}
+          <div className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg">
+            {renderBody(bodyViewType)}
+          </div>
         </div>
-      </Tabs>
+      </div>
     </div>
   );
 }

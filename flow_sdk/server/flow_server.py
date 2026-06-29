@@ -87,11 +87,12 @@ class FlowServer:
         app.add_middleware(CORSMiddleware, **self._cors_config)
 
         # 5. Core routers
-        from .routes import bootstrap_router, health_router
+        from .routes import bootstrap_router, health_router, wiki_router
 
         app.include_router(bootstrap_router)
         app.include_router(health_router, prefix="/api/v1/health")
         app.include_router(health_router, prefix="/health")
+        app.include_router(wiki_router)
 
         # 6. User routers (in order added)
         for router, kwargs in self._routers:
@@ -145,14 +146,18 @@ class FlowServer:
             # ── Startup ──────────────────────────────────────────────
             await init_db()
 
-            # SOD driver
+            # SOD driver. An explicitly-registered driver (tests / embedders /
+            # cloud) wins. Otherwise there is NO desktop driver to install:
+            # get_current_sod_store() falls through to the single per-instance
+            # get_instance_settings().sod. Drop the legacy global machine-key
+            # store on the way.
             sod = drivers.get(FlowDrivers.SOD)
             if sod is not None:
                 from flow_sdk.request_context.methods import set_default_test_sod_driver
                 set_default_test_sod_driver(sod)
             else:
-                from .startup import init_sod_driver
-                init_sod_driver()
+                from .startup import cleanup_legacy_sod_local
+                cleanup_legacy_sod_local()
 
             # Storage driver
             storage = drivers.get(FlowDrivers.STORAGE)

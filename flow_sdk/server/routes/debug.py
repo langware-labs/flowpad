@@ -55,3 +55,28 @@ async def debug_connections():
             "count": len(connections),
         }
     )
+
+
+@router.get("/api/v1/debug/trigger_callbacks")
+async def debug_trigger_callbacks():
+    """List registered Python callbacks usable as `ActionType.CALLBACK` targets.
+
+    The triggers UI reads this to surface a human-readable `meaning` for the
+    callback wired into a FSOp trigger (e.g. `builtin_transcript_streamer_route`).
+
+    Standard ``ApiResponse`` envelope (consumed via the SDK ``apiClient``,
+    which unwraps ``data``)::
+
+        { "status": "SUCCESS", "data": {
+            "callbacks": [
+              {"name": "<registered name>", "meaning": "<docstring-ish>", "is_async": true},
+              ...
+            ],
+            "count": <int>
+        } }
+    """
+    from flow_sdk.builtin import trigger_callbacks
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    items = trigger_callbacks.list_registered()
+    return ApiSuccessResponse(data={"callbacks": items, "count": len(items)})

@@ -47,7 +47,7 @@ dependencies = [
     "groq",
     "openai",
     "anthropic",
-    "pydantic-ai-slim",
+    "pydantic-ai-slim>=1.62,<2",
     "distro",
     "appdirs",
     "colorama",
@@ -89,6 +89,21 @@ include = ["flow_sdk*"]
     "system_projects/**/*",
     "system_projects/**/.claude/**/*",
     "server/static/**/*",
+    # Separately-signed standalone flow-rs binaries (macOS universal2 +
+    # Windows x64), vendored by scripts/deploy_to_github.sh. NOT the crate
+    # source or target/ — only the signed binaries under rust/bin/.
+    "rust/bin/**/*",
+]
+
+# Keep skill UI source + the built main.html, but never ship node_modules,
+# the intermediate vite dist/, or build/test caches. Without these excludes
+# the wheel inflates by hundreds of MB per skill that has a ui/ project.
+[tool.setuptools.exclude-package-data]
+"flow_sdk" = [
+    "system_projects/**/node_modules/**",
+    "system_projects/**/ui/dist/**",
+    "system_projects/**/package-lock.json",
+    "system_projects/**/.vite/**",
 ]
 
 [tool.ruff]

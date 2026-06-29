@@ -3,6 +3,7 @@ import { Badge } from '@src/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Folder, Loader2, Pin, PinOff, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import './SkillsSidebar.css';
 
 type SkillLocation = 'User' | 'Project' | 'Plugin' | 'Draft';
@@ -36,6 +37,7 @@ function getSkillTimestamp(skill: SkillItem): number {
 }
 
 export function SkillsSidebar({ skills, isLoading, onSkillClick }: SkillsSidebarProps) {
+  const { t } = useLingui();
   const favoriteGap = 1000;
   const storageKey = 'flowpad.skills.favoriteIndex';
   const [activeFilters, setActiveFilters] = useState<Set<SkillLocation>>(() => new Set<SkillLocation>(locationFilters));
@@ -137,7 +139,7 @@ export function SkillsSidebar({ skills, isLoading, onSkillClick }: SkillsSidebar
       <div className="skills-sidebar-header">
         <div className="skills-sidebar-header-row">
           <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
-          <h3>Skills</h3>
+          <h3><Trans>Skills</Trans></h3>
           <span className="skills-sidebar-count">{filteredSkills.length}</span>
         </div>
       </div>
@@ -163,7 +165,7 @@ export function SkillsSidebar({ skills, isLoading, onSkillClick }: SkillsSidebar
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search skills..."
+          placeholder={t`Search skills...`}
           className="skills-sidebar-search-input"
         />
       </div>
@@ -172,16 +174,16 @@ export function SkillsSidebar({ skills, isLoading, onSkillClick }: SkillsSidebar
         {isLoading ? (
           <div className="skills-sidebar-loading">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span>Loading...</span>
+            <span><Trans>Loading...</Trans></span>
           </div>
         ) : !skills || skills.length === 0 ? (
           <div className="skills-sidebar-empty">
             <Folder className="h-8 w-8 opacity-30" />
-            <span>No skills yet</span>
+            <span><Trans>No skills yet</Trans></span>
           </div>
         ) : filteredSkills.length === 0 ? (
           <div className="skills-sidebar-empty">
-            <span>No skills match those filters</span>
+            <span><Trans>No skills match those filters</Trans></span>
           </div>
         ) : (
           <ul className="skills-sidebar-list">
@@ -208,7 +210,7 @@ export function SkillsSidebar({ skills, isLoading, onSkillClick }: SkillsSidebar
                             event.stopPropagation();
                             handleTogglePin(skill);
                           }}
-                          aria-label="Unpin skill"
+                          aria-label={t`Unpin skill`}
                           aria-pressed
                         >
                           <Pin className="h-3.5 w-3.5" />
@@ -246,7 +248,7 @@ export function SkillsSidebar({ skills, isLoading, onSkillClick }: SkillsSidebar
                             event.stopPropagation();
                             handleTogglePin(skill);
                           }}
-                          aria-label="Pin skill"
+                          aria-label={t`Pin skill`}
                           aria-pressed={false}
                         >
                           <PinOff className="h-3.5 w-3.5" />

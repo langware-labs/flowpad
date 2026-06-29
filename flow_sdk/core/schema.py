@@ -13,6 +13,13 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 # Module-level cache for full schema
 _full_schema_cache: Optional[List[Dict[str, Any]]] = None
+# Memoized {type_name: json_schema} derived from _full_schema_cache.
+_entity_schema_map_cache: Optional[Dict[str, Dict[str, Any]]] = None
+# Memoized assembled payload list keyed by ``include_schema`` — the per-type
+# ``info.to_dict()`` assembly over ~150 types costs ~225ms, identical every
+# call (the type registry is static after startup). Warmed at server-module
+# import so the first (cold) bootstrap reads it instead of building it inline.
+_all_type_payloads_cache: Dict[bool, List[Dict[str, Any]]] = {}
 
 
 def compare_json_schemas(src: Dict[str, Any], dst: Dict[str, Any]) -> Dict[str, Any]:
@@ -176,7 +183,7 @@ def get_full_schema(allow_cache: bool = True) -> List[Dict[str, Any]]:
     Returns:
         List of JSON schemas for all registered entity types
     """
-    global _full_schema_cache
+    global _full_schema_cache, _entity_schema_map_cache
 
     # Return cached schema if allowed and available
     if allow_cache and _full_schema_cache is not None:
@@ -194,8 +201,9 @@ def get_full_schema(allow_cache: bool = True) -> List[Dict[str, Any]]:
             error(f"Error getting schema for entity type {entity_type}: {e}")
             continue
 
-    # Cache the result
+    # Cache the result; drop the derived map so it rebuilds from the fresh list.
     _full_schema_cache = all_schemas
+    _entity_schema_map_cache = None
     return all_schemas
 
 
@@ -213,3 +221,82 @@ def get_public_schema(allow_cache: bool = True) -> List[Dict[str, Any]]:
     return [
         schema for schema in all_schemas if schema.get("properties", {}).get("type", {}).get("const") in public_types
     ]
+
+
+def invalidate_schema_cache() -> None:
+    """Reset the module-level schema caches (call after dynamic type registration)."""
+    global _full_schema_cache, _entity_schema_map_cache
+    _full_schema_cache = None
+    _entity_schema_map_cache = None
+    _all_type_payloads_cache.clear()
+
+
+def _entity_schema_map(allow_cache: bool = True) -> Dict[str, Dict[str, Any]]:
+    """`{type_name: json_schema}` for every entity type, from the cached
+    ``get_full_schema()`` (keyed by each schema's ``properties.type.const``).
+
+    Memoized alongside ``_full_schema_cache`` so per-type lookups via
+    ``build_type_payload`` don't rebuild the whole map each call.
+    """
+    global _entity_schema_map_cache
+    if allow_cache and _entity_schema_map_cache is not None:
+        return _entity_schema_map_cache
+    out: Dict[str, Dict[str, Any]] = {}
+    for schema in get_full_schema(allow_cache=allow_cache):
+        const = schema.get("properties", {}).get("type", {}).get("const")
+        if const:
+            out[const] = schema
+    _entity_schema_map_cache = out
+    return out
+
+
+def build_type_payload(
+    type_name: str, include_schema: bool = True, allow_cache: bool = True
+) -> Optional[Dict[str, Any]]:
+    """Unified per-type payload for the frontend SchemaRegistry: the type's
+    ``TypeInfo.to_dict()`` (icon, browseable, creatable, fields, schema_hash…)
+    with a nested ``schema`` key carrying its JSON validation schema.
+
+    ``schema`` is attached for any entity-backed type (``entity_cls`` set);
+    non-entity types get ``schema: None`` so icons/metadata still ship.
+
+    The "callable per type" seam — the frontend registry is the list of these,
+    one per registered type. Returns ``None`` if ``type_name`` is unregistered.
+
+    Type-info registrations (icons etc.) are loaded eagerly at server startup
+    (see ``flow_sdk/server/app.py``), so this is a pure read.
+    """
+    info = SchemaRegistry.get(type_name)
+    if info is None:
+        return None
+    payload = info.to_dict()
+    schema = None
+    if include_schema and SchemaRegistry.get_entity_cls(type_name) is not None:
+        schema = _entity_schema_map(allow_cache=allow_cache).get(type_name)
+    payload["schema"] = schema
+    return payload
+
+
+def build_all_type_payloads(
+    include_schema: bool = True, allow_cache: bool = True
+) -> List[Dict[str, Any]]:
+    """Unified payloads for EVERY registered type (so the UI has metadata/icons
+    for everything it renders). Delegates to ``build_type_payload`` per type;
+    the memoized ``_entity_schema_map`` keeps each per-type schema lookup O(1).
+
+    The assembled list is memoized per ``include_schema`` (cleared by
+    ``invalidate_schema_cache`` on dynamic type registration): the ~225ms
+    assembly is identical once the registry is settled.
+    """
+    if allow_cache and include_schema in _all_type_payloads_cache:
+        return _all_type_payloads_cache[include_schema]
+    payloads: List[Dict[str, Any]] = []
+    for type_name in SchemaRegistry.get_all_types():
+        payload = build_type_payload(
+            type_name, include_schema=include_schema, allow_cache=allow_cache
+        )
+        if payload is not None:
+            payloads.append(payload)
+    if allow_cache:
+        _all_type_payloads_cache[include_schema] = payloads
+    return payloads

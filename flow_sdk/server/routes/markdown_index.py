@@ -1,0 +1,41 @@
+"""MarkdownIndex JSON endpoint — serves the canonical structured form."""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, Query
+
+from flow_sdk.fs_store.operations.markdown_index_render import load_index_md_json
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+def _json_for_folder(folder: Path) -> dict:
+    """Return parsed sidecar in the frontend apiClient `{status, data}` envelope."""
+    sidecar = folder / "index.md.json"
+    parsed = load_index_md_json(sidecar)
+    if parsed is None:
+        raise HTTPException(status_code=404, detail=f"No index.md.json at {sidecar}")
+    return {"status": "SUCCESS", "message": "success", "data": parsed.model_dump()}
+
+
+@router.get("/markdown-index/json")
+async def get_index_json_by_folder(folder: str = Query(...)) -> dict:
+    """Return ``<folder>/index.md.json`` parsed. 404 when sidecar is missing."""
+    return _json_for_folder(Path(folder))
+
+
+@router.get("/markdown-index/{entity_id}/json")
+async def get_index_json_by_entity(entity_id: str) -> dict:
+    """Resolve the MarkdownIndex entity and return its sidecar JSON."""
+    from flow_sdk.builtin.markdown_index import MarkdownIndex
+    entity = await MarkdownIndex.get(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity not found: {entity_id}")
+    asset_ref = getattr(entity, "asset_ref", None)
+    if not asset_ref:
+        raise HTTPException(status_code=404, detail="Entity has no asset_ref")
+    return _json_for_folder(Path(asset_ref).parent)

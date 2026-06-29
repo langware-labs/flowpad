@@ -8,6 +8,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
 import { ErrorMessage } from './constants';
 import { useState, useEffect } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface TriggerFormProps {
   trigger: Trigger | null;
@@ -17,6 +18,7 @@ interface TriggerFormProps {
 }
 
 export function TriggerForm({ trigger, hookId, onSave, onCancel }: TriggerFormProps) {
+  const { t } = useLingui();
   const [formData, setFormData] = useState<Partial<Trigger>>({
     name: '',
     description: '',
@@ -71,36 +73,36 @@ export function TriggerForm({ trigger, hookId, onSave, onCancel }: TriggerFormPr
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>{trigger ? 'Edit Trigger' : 'Create Trigger'}</DialogTitle>
+          <DialogTitle>{trigger ? t`Edit Trigger` : t`Create Trigger`}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Name *</Label>
+            <Label htmlFor="name"><Trans>Name *</Trans></Label>
             <Input
               id="name"
               value={formData.name}
               onChange={(e) => handleChange('name', e.target.value)}
-              placeholder="Enter trigger name"
+              placeholder={t`Enter trigger name`}
               required
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="description"><Trans>Description</Trans></Label>
             <Textarea
               id="description"
               value={formData.description || ''}
               onChange={(e) => handleChange('description', e.target.value)}
-              placeholder="Enter trigger description"
+              placeholder={t`Enter trigger description`}
               rows={3}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="mask">Mask (JSON) *</Label>
+            <Label htmlFor="mask"><Trans>Mask (JSON) *</Trans></Label>
             <p className="text-xs text-muted-foreground">
-              Define the conditions that must match for this trigger to fire
+              <Trans>Define the conditions that must match for this trigger to fire</Trans>
             </p>
             <Textarea
               id="mask"
@@ -114,7 +116,7 @@ export function TriggerForm({ trigger, hookId, onSave, onCancel }: TriggerFormPr
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="actionType">Action Type</Label>
+            <Label htmlFor="actionType"><Trans>Action Type</Trans></Label>
             <Select
               value={formData.action?.action_type}
               onValueChange={(value) =>
@@ -128,8 +130,8 @@ export function TriggerForm({ trigger, hookId, onSave, onCancel }: TriggerFormPr
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={TriggerActionType.NOP}>No Operation (Trace Only)</SelectItem>
-                <SelectItem value={TriggerActionType.NOTIFY_ENTITY}>Notify Entity (Increment Counter)</SelectItem>
+                <SelectItem value={TriggerActionType.NOP}><Trans>No Operation (Trace Only)</Trans></SelectItem>
+                <SelectItem value={TriggerActionType.NOTIFY_ENTITY}><Trans>Notify Entity (Increment Counter)</Trans></SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -140,16 +142,16 @@ export function TriggerForm({ trigger, hookId, onSave, onCancel }: TriggerFormPr
               checked={formData.enabled}
               onCheckedChange={(checked) => handleChange('enabled', checked)}
             />
-            <Label htmlFor="enabled">Enabled</Label>
+            <Label htmlFor="enabled"><Trans>Enabled</Trans></Label>
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>
-            Cancel
+            <Trans>Cancel</Trans>
           </Button>
           <Button onClick={handleSave} disabled={!!maskError}>
-            Save
+            <Trans>Save</Trans>
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -51,6 +51,14 @@ function readMarkdownBody(md: Markdown): string {
   }
 }
 
+function hasClaudeLimitMessage(lines: string[]): boolean {
+  const text = lines.join('\n').toLowerCase();
+  const compact = text.replace(/\s+/g, '');
+  return /(hit your limit|weekly limit|usage limit|rate limit|quota|too many requests|overloaded|used 100%)/i.test(text)
+    || compact.includes('hityourlimit')
+    || compact.includes('used100%');
+}
+
 describe('AgenticProcess plan detection — end-to-end', () => {
   beforeEach(async (ctx: any) => {
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
@@ -66,7 +74,7 @@ describe('AgenticProcess plan detection — end-to-end', () => {
 
   it(
     'PTY prompt → onPlan({validate:true}) resolves a Markdown referencing fibonacci',
-    async () => {
+    async (context: any) => {
       const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-detection-'));
       // Launch Claude in plan mode at the CLI level. ``ExitPlanMode``
       // is gated by session-level plan state — without this flag the
@@ -117,7 +125,7 @@ describe('AgenticProcess plan detection — end-to-end', () => {
         // eslint-disable-next-line no-console
         console.log(
           `[plan_detection] PTY live=${proc.ptyConnection?.isLive} ` +
-            `replayDone=${proc.ptyConnection?.replayDone} after start. ` +
+            `attached=${proc.ptyConnection?.attached} after start. ` +
             `session_id now=${proc.session_id ?? 'null'}`,
         );
 
@@ -141,6 +149,9 @@ describe('AgenticProcess plan detection — end-to-end', () => {
         while (Date.now() < deadline) {
           resolved = await proc.getPlan();
           if (resolved) break;
+          if (hasClaudeLimitMessage(triggerLines)) {
+            context.skip(`Claude unavailable for plan detection test: ${triggerLines.join('\n').slice(0, 240)}`);
+          }
           await new Promise((r) => setTimeout(r, 2000));
         }
 

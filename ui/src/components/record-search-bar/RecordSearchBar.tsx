@@ -5,9 +5,10 @@ import { cn } from '@src/lib/utils';
 import { RecordType } from '@sdk';
 import { CornerDownLeft, Search, SlidersHorizontal, X } from 'lucide-react';
 import { KeyboardEvent, useCallback, useRef, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
-const RECORD_TYPES = [
-  'bookmark', 'claude_session', 'codex_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
+export const RECORD_TYPES = [
+  'bookmark', 'claude_session', 'codex_session', 'copilot_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
   RecordType.ANNOTATION, 'comment', RecordType.TASK, 'workflow', RecordType.MARKDOWN, RecordType.PLAN,
   RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT, 'codex_project',
 ];
@@ -19,17 +20,19 @@ const TIME_PRESETS = [
 ] as const;
 const STATUSES = ['active', 'closed', 'archived'];
 
-const TYPE_DISPLAY_NAMES: Record<string, string> = {
+export const TYPE_DISPLAY_NAMES: Record<string, string> = {
   claude_session: 'session',
   claude_hook: 'hook',
   codex_session: 'codex',
+  copilot_session: 'copilot',
   codex_project: 'codex project',
 };
 
-const TYPE_COLORS: Record<string, string> = {
+export const TYPE_COLORS: Record<string, string> = {
   bookmark: 'bg-violet-500/20 text-violet-700 dark:text-violet-300',
   claude_session: 'bg-blue-500/20 text-blue-700 dark:text-blue-300',
   codex_session: 'bg-green-500/20 text-green-700 dark:text-green-300',
+  copilot_session: 'bg-sky-500/20 text-sky-700 dark:text-sky-300',
   codex_project: 'bg-green-700/20 text-green-800 dark:text-green-200',
   skill: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
   agent: 'bg-amber-500/20 text-amber-700 dark:text-amber-300',
@@ -96,7 +99,7 @@ function CustomDateRangeInputs({
 export function RecordSearchBar({
   compact = true,
   showTools = false,
-  placeholder = 'Search records...',
+  placeholder,
   query,
   filters,
   onQueryChange,
@@ -106,8 +109,10 @@ export function RecordSearchBar({
   onKeyDown: onKeyDownProp,
   className,
 }: RecordSearchBarProps) {
+  const { t } = useLingui();
   const [showFilters, setShowFilters] = useState(!compact);
   const inputRef = useRef<HTMLInputElement>(null);
+  const finalPlaceholder = placeholder ?? t`Search records...`;
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
@@ -155,7 +160,7 @@ export function RecordSearchBar({
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          placeholder={finalPlaceholder}
           className="h-auto flex-1 border-none bg-transparent p-0 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
           data-testid="search-input"
         />
@@ -165,7 +170,7 @@ export function RecordSearchBar({
             type="button"
             onClick={clearQuery}
             className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-            aria-label="Clear search"
+            aria-label={t`Clear search`}
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -183,7 +188,7 @@ export function RecordSearchBar({
             data-testid="search-tools-btn"
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />
-            Tools
+            <Trans>Tools</Trans>
           </Button>
         )}
 
@@ -193,7 +198,7 @@ export function RecordSearchBar({
             size="sm"
             className="h-6 px-2 text-muted-foreground hover:text-foreground"
             onClick={onSubmit}
-            aria-label="Search"
+            aria-label={t`Search`}
           >
             <CornerDownLeft className="h-3.5 w-3.5" />
           </Button>
@@ -209,7 +214,7 @@ export function RecordSearchBar({
           {/* Type row */}
           <div className="flex flex-wrap items-center gap-1">
             <span className="mr-1 w-10 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
-              Type
+              <Trans>Type</Trans>
             </span>
             {RECORD_TYPES.map((t) => (
               <button
@@ -237,7 +242,7 @@ export function RecordSearchBar({
             {/* Status filter */}
             <div className="flex items-center gap-1">
               <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
-                Status
+                <Trans>Status</Trans>
               </span>
               {STATUSES.map((s) => (
                 <button
@@ -262,7 +267,7 @@ export function RecordSearchBar({
             {/* Time filter */}
             <div className="flex flex-wrap items-center gap-1">
               <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">
-                Time
+                <Trans>Time</Trans>
               </span>
               {TIME_PRESETS.map(({ value, label }) => (
                 <button
@@ -292,7 +297,7 @@ export function RecordSearchBar({
               onClick={onClearAll ?? (() => onFiltersChange({}))}
               className="text-muted-foreground hover:text-foreground"
             >
-              Clear All
+              <Trans>Clear All</Trans>
             </button>
           </div>
         </div>

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import pytest
 
 from flow_sdk.builtin.shell import Shell
-from flow_sdk.fs_store.record import (
+from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
     get_default_records_root,
     set_default_records_data_root,
@@ -86,7 +86,7 @@ async def test_ensure_live_compute_node_binding_rebinds_stale_node_to_local():
     assert rebound is True
     assert shell.compute_node_id == "local-node"
     assert shell.compute_node_uname == "local"
-    get_by_id.assert_awaited_once_with("compute_node-stale-node")
+    get_by_id.assert_any_await("compute_node-stale-node")
     get_by_uname.assert_awaited_once_with("local")
     save.assert_awaited_once()
 
@@ -102,6 +102,34 @@ async def test_cleanup_stale_session_terminates_orphan_worker_without_pty():
          patch.object(Shell, "compute_node", new_callable=PropertyMock, return_value=fake_compute_node), \
          patch.object(Shell, "terminate_worker", new=AsyncMock()) as terminate_worker:
         await shell._cleanup_stale_session()
+
+    terminate_worker.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_stop_terminates_worker():
+    """Shell.stop() greedily kills the worker before tearing down the PTY."""
+    shell = Shell(id=str(uuid.uuid4()), compute_node_id=None, worker_pid=12345)
+
+    with patch.object(Shell, "terminate_worker", new=AsyncMock()) as terminate_worker, \
+         patch.object(Shell, "save", new=AsyncMock()):
+        await shell.stop()
+
+    terminate_worker.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_terminates_worker():
+    """Shell.close() greedily kills the worker before deleting record/entity."""
+    shell = Shell(id=str(uuid.uuid4()), compute_node_id="local-node", worker_pid=12345)
+    fake_compute_node = MagicMock()
+    fake_compute_node.get_pty.return_value = None
+
+    with patch.object(Shell, "terminate_worker", new=AsyncMock()) as terminate_worker, \
+         patch.object(Shell, "compute_node", new_callable=PropertyMock, return_value=fake_compute_node), \
+         patch.object(Shell, "get_record", new=AsyncMock(return_value=None)), \
+         patch.object(Shell, "delete", new=AsyncMock()):
+        await shell.close()
 
     terminate_worker.assert_awaited_once()
 
@@ -302,16 +330,22 @@ async def test_output_returns_empty_iterator_when_no_pty():
 
 
 # ---------------------------------------------------------------------------
-# rename() / set_env()
+# auto_rename / set_env()
 # ---------------------------------------------------------------------------
+# Tab rename is no longer a Shell concern. Tabs are renamed by writing
+# `entity.name` and `entity.auto_rename` through the canonical PUT
+# /graph/<type>/<id> path on whichever entity is the tab's source
+# (AgenticProcess for process-backed tabs, Shell for pure shells). The
+# allow_rename / spinner-filter rules live on the frontend in
+# ui/src/components/terminal/rename-rules.ts. Covered by playwright
+# tab-rename.spec.ts and the canonical-write HTTP test in test_shell_lifecycle.
+
 
 @pytest.mark.asyncio
-async def test_rename_sets_name_and_user_renamed():
-    """rename() updates shell.name and sets user_renamed=True."""
+async def test_auto_rename_defaults_true():
+    """A fresh shell allows PTY OSC titles to rename it."""
     shell = _shell()
-    await shell.rename("My Tab")
-    assert shell.name == "My Tab"
-    assert shell.user_renamed is True
+    assert shell.auto_rename is True
 
 
 @pytest.mark.asyncio

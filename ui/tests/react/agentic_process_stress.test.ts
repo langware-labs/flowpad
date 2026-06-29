@@ -19,6 +19,7 @@ import { AgenticProcess, ConnectionManager, dataManager, ProcessStatus, Shell, T
 import { v4 as uuidv4 } from 'uuid';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, createAgenticProcess, getTestSignupInfo } from '../utils/test-utils';
+import { trackForCleanup } from '../_cleanup';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -32,12 +33,12 @@ function registerProcess(process: AgenticProcess): void {
 }
 
 /**
- * Wait until the shell has replayDone=true (i.e. startPty() has completed).
+ * Wait until the shell has attached=true (i.e. startPty() has completed).
  */
 async function waitForShellReady(shell: Shell, timeoutMs = 15000): Promise<void> {
   await vi.waitFor(
     () => {
-      if (!shell.replayDone) throw new Error('Shell not ready');
+      if (!shell.attached) throw new Error('Shell not ready');
     },
     { timeout: timeoutMs, interval: 200 },
   );
@@ -45,7 +46,7 @@ async function waitForShellReady(shell: Shell, timeoutMs = 15000): Promise<void>
 
 /**
  * Collect raw PTY output from a shell over a time window.
- * Requires shell to have replayDone=true (i.e. connect() must have been called).
+ * Requires shell to have attached=true (i.e. connect() must have been called).
  */
 async function collectPtyOutput(shell: Shell, durationMs: number): Promise<string> {
   const chunks: string[] = [];
@@ -79,7 +80,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       nodeName: `pty-lifecycle-${Date.now()}`,
       model: 'claude-haiku-4-5-20251001',
     });
-    const process = await createIdleProcess();
+    const process = trackForCleanup(await createIdleProcess());
 
     // Before open: no shell
     expect(process.shell_id).toBeFalsy();
@@ -99,7 +100,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       nodeName: `pty-status-${Date.now()}`,
       model: 'claude-haiku-4-5-20251001',
     });
-    const process = await createIdleProcess();
+    const process = trackForCleanup(await createIdleProcess());
 
     // Idle before PTY
     expect(process.resolvedStatus).toBe(ProcessorStatus.IDLE);
@@ -117,7 +118,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       nodeName: `pty-prompt-${Date.now()}`,
       model: 'claude-haiku-4-5-20251001',
     });
-    const process = await createIdleProcess();
+    const process = trackForCleanup(await createIdleProcess());
     await process.start();
     const shellId = process.shell_id;
 
@@ -145,7 +146,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       nodeName: `pty-prompt2-${Date.now()}`,
       model: 'claude-haiku-4-5-20251001',
     });
-    const process = await createIdleProcess();
+    const process = trackForCleanup(await createIdleProcess());
     await process.start();
     const shellId = process.shell_id;
 
@@ -207,7 +208,7 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
       nodeName: `pty-restore-${Date.now()}`,
       model: 'claude-haiku-4-5-20251001',
     });
-    const process = await createIdleProcess();
+    const process = trackForCleanup(await createIdleProcess());
     await process.start();
     const shellId = process.shell_id;
     const workerSessionId = process.session_id;

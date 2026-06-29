@@ -13,6 +13,7 @@ export const EntityTypes = {
   Flow: 'flow',
   FsItem: 'fs_item',
   Func: 'func',
+  GraphContext: 'graph_context',
   Job: 'job',
   JobExecution: 'job_execution',
   KnowledgeBase: 'knowledge_base',

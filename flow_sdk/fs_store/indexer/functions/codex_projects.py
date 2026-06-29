@@ -14,15 +14,58 @@ merges the flags onto the existing row.
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
-from flow_sdk.fs_records.codex.codex_project import (
-    _is_valid_cwd,
-    _read_codex_projects_from_config,
-)
+try:
+    import tomllib as _tomllib  # type: ignore[import-not-found]
+except ImportError:
+    import tomli as _tomllib  # type: ignore[import-not-found,no-redef]
+
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.utils.file_system import is_temp_path
+
+
+# ── Codex project path helpers (inlined from former fs_records/codex/codex_project.py) ──
+
+
+def _codex_project_id(cwd: str) -> str:
+    """Deterministic uuid5 id for a codex project keyed on canonical cwd."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"codex_project:{cwd}"))
+
+
+def _is_valid_cwd(cwd: str) -> bool:
+    """Filter out system/temp paths that should never appear as user projects."""
+    if not cwd or not cwd.startswith("/"):
+        return False
+    if cwd == "/":
+        return False
+    return not is_temp_path(cwd)
+
+
+def _read_codex_projects_from_config(config_path: Path) -> dict[str, dict]:
+    """Return ``{absolute_path: {trust_level}}`` from ``config.toml``."""
+    if not config_path.is_file():
+        return {}
+    try:
+        with open(config_path, "rb") as fh:
+            data = _tomllib.load(fh)
+    except (OSError, ValueError):
+        return {}
+    projects = data.get("projects")
+    if not isinstance(projects, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for path, entry in projects.items():
+        if not isinstance(path, str) or not _is_valid_cwd(path):
+            continue
+        if isinstance(entry, dict):
+            out[path] = {"trust_level": entry.get("trust_level")}
+        else:
+            out[path] = {"trust_level": None}
+    return out
 
 
 def _scan_cwd(jsonl: Path) -> str | None:
@@ -48,7 +91,7 @@ def _scan_cwd(jsonl: Path) -> str | None:
     return None
 
 
-async def codex_projects_fn(
+def codex_projects_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:

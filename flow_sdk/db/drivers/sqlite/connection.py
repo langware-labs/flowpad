@@ -1,6 +1,9 @@
 """SQLite connection and schema definitions for async SQLAlchemy."""
 
-import os
+import sqlite3
+from pathlib import Path
+from typing import Literal
+from urllib.parse import quote as _urlquote
 
 from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -17,7 +20,17 @@ def get_database_path() -> str:
     return str(get_instance_settings().db_path)
 
 
-DEVELOPMENT = os.environ.get("FLOWPAD_DEV", "true").lower() == "true"
+def is_development() -> bool:
+    """Return whether the current instance is the dev instance.
+
+    Delegates to InstanceSettings (single source of truth). Replaces the
+    legacy ``DEVELOPMENT`` module-level constant that snapshotted
+    ``FLOWPAD_DEV`` at import time — same class-of-bug as the config.py
+    env-mirror corruption: the value froze before ``.env.local`` could
+    load, locking the instance to whatever ambient env said.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings().is_dev
 
 
 class Base(DeclarativeBase):
@@ -122,6 +135,14 @@ def get_database_url(path: str | None = None) -> str:
     return f"sqlite+aiosqlite:///{path}"
 
 
+# Execution-option key marking connections that belong to the WRITE session
+# path. Absent (default) → writer semantics (BEGIN IMMEDIATE). The driver's
+# reader session factory derives its engine via
+# ``engine.execution_options(**{FLOW_WRITER_OPT: False})`` so read-only driver
+# methods skip the writer lock entirely — see ``_on_begin`` below.
+FLOW_WRITER_OPT = "flow_writer"
+
+
 def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
     """Register the SQLite production pragmas + BEGIN IMMEDIATE on an engine.
 
@@ -134,11 +155,21 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
       - mmap_size=268435456       256 MB memory-mapped I/O for reads
       - foreign_keys=ON           enforce FK constraints
 
-    BEGIN IMMEDIATE on every transaction so SQLite acquires the writer
-    lock up-front instead of upgrading mid-transaction. This eliminates
-    the "SQLITE_BUSY despite busy_timeout" trap that fires when a
-    deferred transaction starts as a reader and then tries to upgrade
-    after another writer has taken the lock.
+    Transaction discipline is split by intent (``FLOW_WRITER_OPT``):
+
+    WRITE path (default): BEGIN IMMEDIATE on every transaction so SQLite
+    acquires the writer lock up-front instead of upgrading mid-transaction.
+    This eliminates the "SQLITE_BUSY despite busy_timeout" trap that fires
+    when a deferred transaction starts as a reader and then tries to
+    upgrade after another writer has taken the lock.
+
+    READ path (``FLOW_WRITER_OPT=False``, set by the driver's reader
+    session factory): emit NO BEGIN at all. Under WAL, readers need no
+    lock — each SELECT runs against a consistent snapshot in DBAPI-level
+    autocommit. Forcing reads through BEGIN IMMEDIATE (the previous
+    behavior) made every SELECT queue on the single writer slot, so a
+    long-running writer (e.g. an indexer batch) froze every read-serving
+    endpoint for the duration of its transaction.
     """
 
     @event.listens_for(engine.sync_engine, "connect")
@@ -153,14 +184,81 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
             "PRAGMA mmap_size=268435456",
             # foreign_keys intentionally OFF: existing schema doesn't declare
             # FK constraints in the SQL DDL; they're enforced at app level.
-            # Turning this on changes nothing for existing data and risks
-            # surprising failures on legacy rows.
+            # Set explicitly so the sync ``open_sqlite`` and this async
+            # ``_on_connect`` pragma set are documented-identical.
+            "PRAGMA foreign_keys=OFF",
         ):
             cursor.execute(stmt)
         cursor.close()
 
     @event.listens_for(engine.sync_engine, "begin")
     def _on_begin(conn):
-        conn.exec_driver_sql("BEGIN IMMEDIATE")
+        # Reader connections (FLOW_WRITER_OPT=False) emit no BEGIN: SELECTs
+        # run in DBAPI autocommit against a WAL snapshot, never touching the
+        # writer lock. Everything else keeps the up-front BEGIN IMMEDIATE.
+        if conn.get_execution_options().get(FLOW_WRITER_OPT, True):
+            conn.exec_driver_sql("BEGIN IMMEDIATE")
+
+
+# Sync-side pragmas applied by ``open_sqlite``. Mirror the async engine's
+# ``_on_connect`` set so a process that touches the same DB through both
+# paths never mixes WAL with rollback-journal — the secondary corruption
+# vector identified during the env-mirror RCA. ``foreign_keys=OFF`` matches
+# the async side's documented choice (see ``_on_connect`` for the rationale);
+# we set it explicitly here so the symmetry is documented in code rather than
+# relying on SQLite's default.
+_SYNC_PRAGMAS: tuple[str, ...] = (
+    "PRAGMA journal_mode=WAL",
+    "PRAGMA synchronous=NORMAL",
+    "PRAGMA busy_timeout=15000",
+    "PRAGMA temp_store=MEMORY",
+    "PRAGMA cache_size=-64000",
+    "PRAGMA mmap_size=268435456",
+    "PRAGMA foreign_keys=OFF",
+)
+
+
+def open_sqlite(
+    path: "Path | str | None" = None,
+    *,
+    mode: Literal["rw", "ro"] = "rw",
+) -> sqlite3.Connection:
+    """Open a sync SQLite connection with the project's standard pragmas.
+
+    All raw ``sqlite3.connect`` sites in ``flow_sdk/`` route through this
+    helper so the WAL + busy_timeout discipline is uniform — mixing pragma
+    configurations on the same file is a documented SQLite corruption vector.
+
+    ``path=None`` resolves to the current instance's main DB via
+    ``get_database_path()``. ``mode="ro"`` opens read-only; on a read-only
+    handle SQLite refuses ``journal_mode=WAL`` and ``foreign_keys`` writes,
+    so we swallow those ``sqlite3.DatabaseError``s cleanly.
+    """
+    if path is None:
+        path = get_database_path()
+    # ``mode=rw`` refuses to create the file; raw ``sqlite3.connect(path)`` and
+    # ``uri=file:?mode=rwc`` both create-on-open. Match the raw default so
+    # callers migrating from plain ``sqlite3.connect`` see no behavior change.
+    sqlite_mode = "rwc" if mode == "rw" else mode
+    # Build a valid SQLite URI:
+    #  - resolve to an absolute path with forward slashes (Windows backslashes
+    #    are NOT valid in SQLite URI paths)
+    #  - percent-encode `?`, `#`, `%`, ` `, etc. so they don't end the path
+    #    component or be interpreted as URI control chars
+    abs_path = Path(path).expanduser().resolve()
+    encoded_path = _urlquote(abs_path.as_posix(), safe="/:")
+    uri = f"file:{encoded_path}?mode={sqlite_mode}"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    for stmt in _SYNC_PRAGMAS:
+        try:
+            conn.execute(stmt)
+        except sqlite3.DatabaseError:
+            # Several pragmas (journal_mode=WAL, foreign_keys writes, ...) are
+            # legitimately refused on a read-only handle. Swallow ONLY in that
+            # case so typos in the pragma list still surface during dev.
+            if mode != "ro":
+                raise
+    return conn
 
 

@@ -1,3 +1,8 @@
+---
+id: 933703f1-5762-5ca6-ad2b-665a655e7f34
+---
+
+- PRECONDITION: switch the app to Advanced view (footer view pill or `window.setView('advanced')` / localStorage `viewMode=advanced`) — the process toolbar (Restart / Open Terminal / Fork / Worktree / Session Info / Transcript) and side-ribbon panels only exist in Advanced view; the default Standard view shows the simple-chat header without them
 test 1: Open Terminal button opens a plain shell in the process workdir
 - navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for the Claude banner

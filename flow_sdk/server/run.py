@@ -21,6 +21,21 @@ _sdk_path = os.path.join(_repo_root, "sdk", "python")
 if _sdk_path not in sys.path:
     sys.path.insert(0, _sdk_path)
 
+# On Windows the console/stdio defaults to a legacy code page (e.g. cp1252),
+# so a log line carrying non-ASCII text — a Hebrew project path, an exception
+# traceback referencing one — raises UnicodeEncodeError ("charmap") inside the
+# logging StreamHandler, which then silently drops the record. Force UTF-8 on
+# stdio before anything logs so those tracebacks reach the captured backend log
+# instead of vanishing. No-op on platforms that already default to UTF-8.
+from flow_sdk.config import PLATFORM_WIN32
+
+if sys.platform == PLATFORM_WIN32:
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
+
 import uvicorn
 from dotenv import load_dotenv
 from filelock import FileLock, Timeout
@@ -28,12 +43,29 @@ from filelock import FileLock, Timeout
 _lock: FileLock | None = None  # kept alive for the process lifetime
 
 
+def _raise_nofile_soft_limit(min_soft: int = 4096) -> None:
+    """Raise the process file-descriptor soft limit when the OS permits it."""
+    try:
+        import resource
+    except ImportError:
+        return
+
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        target = min(max(soft, min_soft), hard)
+        if target > soft:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+            logging.info("[startup] Raised RLIMIT_NOFILE soft limit from %s to %s", soft, target)
+    except (OSError, ValueError) as exc:
+        logging.warning("[startup] Could not raise RLIMIT_NOFILE: %s", exc)
+
+
 def _pid_alive(pid: int) -> bool:
     """Return True if the process with the given PID is still running."""
     try:
         os.kill(pid, 0)
         return True
-    except (ProcessLookupError, PermissionError):
+    except (OSError, SystemError):
         return False
 
 
@@ -104,11 +136,22 @@ def _release_singleton_lock() -> None:
 
 
 # Load environment variables (guard against PyInstaller bundle where find_dotenv fails)
+#
+# ``override=True`` is load-bearing for the dev/prod dual-instance setup: the
+# per-instance ``.env.local`` MUST win over whatever is already in the ambient
+# environment. Without it, an ambient ``SQLITE_DATABASE_PATH`` (or any other
+# override var) silently shadows ``.env.local`` — e.g. a dev backend inherits
+# the prod ``SQLITE_DATABASE_PATH`` and the two instances end up sharing one
+# database, clobbering each other's conversation projections.
 try:
     from dotenv import find_dotenv
-    env_name = os.getenv("ENV", ".env.local")
-    env_file = find_dotenv(env_name)
-    load_dotenv(env_file)
+    # FLOWPAD_SKIP_DOTENV: opt-out for isolated test subprocesses that pin
+    # LOCAL_SERVER_PORT / SQLITE_DATABASE_PATH via Popen env — without this,
+    # ``override=True`` would clobber those back to .env.local's values.
+    if os.environ.get("FLOWPAD_SKIP_DOTENV", "").lower() != "true":
+        env_name = os.getenv("ENV", ".env.local")
+        env_file = find_dotenv(env_name)
+        load_dotenv(env_file, override=True)
 except (FileNotFoundError, OSError):
     pass
 
@@ -128,23 +171,19 @@ from flow_sdk.instance_settings import get_instance_settings, reset_instance_set
 reset_instance_settings()
 get_instance_settings()
 
-# Configuration
-# Use 0.0.0.0 to listen on all interfaces (both IPv4 and IPv6)
-DEFAULT_HOST = "0.0.0.0"
-
-
 def main():
     """Start the minihub server."""
     startup_start = time.time()
+    _raise_nofile_soft_limit()
 
     if not _acquire_singleton_lock():
         print(f"[pid={os.getpid()}] Another server instance is already running. Exiting.")
         sys.exit(0)
 
-    host = os.environ.get("MINIHUB_HOST", DEFAULT_HOST)
-    port = get_instance_settings().port
-    # Auto-reload disabled by default; set MINIHUB_RELOAD=true to enable for development
-    reload_enabled = os.environ.get("MINIHUB_RELOAD", "false").lower() == "true"
+    settings = get_instance_settings()
+    host = settings.host
+    port = settings.port
+    reload_enabled = settings.reload_enabled
 
     print(f"Starting Flowpad server at http://{host}:{port}")
     print(f"Bootstrap endpoint: http://{host}:{port}/api/v1/graph/bootstrap")

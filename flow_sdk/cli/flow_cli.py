@@ -21,6 +21,7 @@ from flow_sdk.cli.config_manager import (
     setup_defaults,
 )
 from flow_sdk.cli.env_loader import cli_init
+from flow_sdk.instance_settings import get_instance_settings
 
 # Initialize CLI - load environment variables as first step
 cli_init()
@@ -47,7 +48,7 @@ def _discover_port() -> int:
     server_info = read_server_info()
     if server_info:
         return server_info.port
-    return int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    return get_instance_settings().port
 
 
 @app.callback(invoke_without_command=True)
@@ -145,8 +146,8 @@ def upgrade(
     import sys
 
     if info:
-        from flow_sdk.flowpad_types.enums import get_machine_id
         from flow_sdk.server.launch import get_status
+        from flow_sdk.utils.machine_id import get_machine_id
 
         status = get_status()
         status["version"] = __version__
@@ -188,6 +189,20 @@ def _start_service(port: int) -> None:
     """Start the Flow server and monitor. Shared by `flow start` and `flow start service`."""
     from flow_sdk.server.launch import check_server_health, start_monitor_detached, wait_for_server_health
 
+    # Run any pending migration for the current version BEFORE the server
+    # boots. The migration is itself a headless AgenticProcess, so its
+    # stdout streams to this same terminal — the user sees progress.
+    # ``run_if_needed`` is a no-op when no recipe exists or the migration
+    # already completed, so this is safe on every start.
+    from flow_sdk.migrations import runner as migration_runner
+    migration_exit = migration_runner.run_if_needed()
+    if migration_exit != 0:
+        typer.echo(
+            f"Migration failed (exit={migration_exit}); refusing to start server.",
+            err=True,
+        )
+        raise typer.Exit(migration_exit)
+
     if check_server_health(port):
         typer.echo(f"Server already running on port {port}")
     else:
@@ -216,11 +231,28 @@ def start(ctx: typer.Context):
     if ctx.invoked_subcommand is not None:
         return
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    port = get_instance_settings().port
     _start_service(port)
 
     # Skip browser open when launched from Electron (it has its own BrowserWindow)
     if not os.environ.get("FLOWPAD_NO_BROWSER"):
+        import time
+        from flow_sdk.server.launch import check_server_health
+
+        healthy = False
+        for _ in range(5):
+            if check_server_health(port):
+                healthy = True
+                break
+            time.sleep(0.3)
+
+        if not healthy:
+            typer.echo(
+                f"Server is not responding on port {port}; skipping browser launch. "
+                f"Try `flow start` again once it comes up."
+            )
+            return
+
         import webbrowser
 
         webbrowser.open(f"http://127.0.0.1:{port}")
@@ -236,7 +268,7 @@ def service():
 
     Example: flow start service
     """
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    port = get_instance_settings().port
     _start_service(port)
 
 
@@ -316,7 +348,7 @@ def trace():
     from flow_sdk.server.reporters import PrintReporter
     from flow_sdk.server.state import reporter_registry
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    port = get_instance_settings().port
 
     typer.echo(f"Starting Flow trace server on port {port}...")
 
@@ -723,7 +755,6 @@ def hooks_report(
             if project_settings.exists():
                 return (metadata or None), str(project_settings)
 
-        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         fallback_path = get_instance_settings().claude_settings_json_path
         settings_path = str(fallback_path) if fallback_path.exists() else None
         return (metadata or None), settings_path
@@ -826,7 +857,7 @@ def hooks_report(
                         if verbose:
                             typer.echo(f"  Request failed: {e}")
             else:
-                port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+                port = get_instance_settings().port
                 fallback_url = f"http://127.0.0.1:{port}/api/hooks/report"
                 if verbose:
                     typer.echo(f"\nNo server.json found, using legacy fallback (port {port})")
@@ -943,8 +974,25 @@ app.add_typer(schema_app, name="schema")
 from flow_sdk.cli.commands.record_cmd import record_app
 app.add_typer(record_app, name="record")
 
+from flow_sdk.cli.commands.conversation_cmd import conversation_app
+app.add_typer(conversation_app, name="conversation")
+
 from flow_sdk.cli.commands.workflow_cmd import workflow_app
 app.add_typer(workflow_app, name="workflow")
+
+from flow_sdk.cli.commands.process_cmd import process_app
+app.add_typer(process_app, name="process")
+
+from flow_sdk.cli.commands.migrate_cmd import migrate_app
+app.add_typer(migrate_app, name="migrate")
+
+from flow_sdk.cli.commands.diagnose_cmd import diagnose_command
+# No positional MESSAGE arg — the issue is read at a prompt. allow_extra_args so
+# stray words (e.g. `flow diagnose backend down`) are ignored, not errors.
+app.command(
+    "diagnose",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)(diagnose_command)
 
 
 @log_app.callback(invoke_without_command=True)
@@ -1088,6 +1136,93 @@ def _resolve_entry(entries, ref: str):
         if ts.startswith(ref):
             return entry
     return None
+
+
+@app.command()
+def uninstall():
+    """
+    Uninstall flowpad by removing all sniffer hooks from Claude Code settings.
+
+    Scans user, project, and local Claude Code settings files and removes
+    any hook entries that belong to the flowpad sniffer.
+
+    Example: flow uninstall
+    """
+    import json
+    from pathlib import Path
+
+    def _remove_sniffer_from_file(settings_path: Path) -> int:
+        """Remove sniffer hooks from a settings file. Returns count of removed hooks."""
+        if not settings_path.exists():
+            return 0
+
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return 0
+
+        if "hooks" not in settings or not isinstance(settings["hooks"], dict):
+            return 0
+
+        removed = 0
+        events_to_delete = []
+
+        for event_name, hook_entries in settings["hooks"].items():
+            if not isinstance(hook_entries, list):
+                continue
+            new_entries = []
+            for entry in hook_entries:
+                hooks_list = entry.get("hooks", [])
+                filtered = [h for h in hooks_list if "--name=flowpad_sniffer" not in h.get("command", "")]
+                removed += len(hooks_list) - len(filtered)
+                if filtered:
+                    entry["hooks"] = filtered
+                    new_entries.append(entry)
+            if new_entries:
+                settings["hooks"][event_name] = new_entries
+            else:
+                events_to_delete.append(event_name)
+
+        if removed == 0:
+            return 0
+
+        for event_name in events_to_delete:
+            del settings["hooks"][event_name]
+
+        # Clean up empty hooks dict
+        if not settings["hooks"]:
+            del settings["hooks"]
+
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+
+        return removed
+
+    total_removed = 0
+
+    # User-level settings
+    user_settings = Path.home() / ".claude" / "settings.json"
+    count = _remove_sniffer_from_file(user_settings)
+    if count:
+        typer.echo(f"Removed {count} sniffer hook(s) from {user_settings}")
+        total_removed += count
+
+    # Project-level settings (if in a git repo)
+    context = get_context()
+    if context.is_in_repo():
+        for filename in ("settings.json", "settings.local.json"):
+            project_settings = Path(context.repo_root) / ".claude" / filename
+            count = _remove_sniffer_from_file(project_settings)
+            if count:
+                typer.echo(f"Removed {count} sniffer hook(s) from {project_settings}")
+                total_removed += count
+
+    if total_removed > 0:
+        typer.echo(f"\nRemoved {total_removed} sniffer hook(s) total.")
+    else:
+        typer.echo("No sniffer hooks found.")
 
 
 def cli_main():

@@ -1,5 +1,6 @@
 import { File, FileText, Image, Loader2, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 
 export interface FileUploadItem {
   id: string;
@@ -61,6 +62,7 @@ function createThumbnail(file: File): Promise<string | null> {
 }
 
 function FileItem({ fileItem, onRemove }: { fileItem: FileUploadItem; onRemove?: (fileId: string) => void }) {
+  const { t } = useLingui();
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(fileItem.thumbnailUrl || null);
 
   useEffect(() => {
@@ -100,7 +102,7 @@ function FileItem({ fileItem, onRemove }: { fileItem: FileUploadItem; onRemove?:
 
       {fileItem.isUploading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
 
-      <button className="ml-1 text-muted-foreground hover:text-destructive" onClick={handleRemove} title="Remove file">
+      <button className="ml-1 text-muted-foreground hover:text-destructive" onClick={handleRemove} title={t`Remove file`}>
         <X className="h-3 w-3" />
       </button>
     </div>

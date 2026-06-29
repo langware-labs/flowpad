@@ -5,8 +5,9 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
-from flow_sdk.fs_records.skill_record import SkillRecord  # noqa: F401
-from flow_sdk.fs_records.task import TaskResource  # noqa: F401
+from flow_sdk.fs_store.indexer.functions.task import extract_task
+from flow_sdk.fs_store.fs_record import FSRecord
+TaskResource = FSRecord  # noqa: F401
 from tests.test_settings import test_service_config
 
 pytestmark = pytest.mark.skipif(
@@ -16,11 +17,23 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-def isolate_records_root(tmp_path):
+def isolate_records_root(tmp_path, monkeypatch):
+    # Isolate records root AND claude home so unscoped index/scan stay hermetic
+    # and don't materialise real ~/.claude/projects rows into the shared session
+    # DB (which would leak into a later unscoped scan). See the matching note in
+    # test_fs_records_index_all.py / test_fs_scan_aggregate.py.
+    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+
+    claude_home = tmp_path / "claude_home"
+    claude_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", str(claude_home))
+    reset_instance_settings()
+
     original = get_default_records_root()
     set_default_records_root(tmp_path)
     yield tmp_path
     set_default_records_root(original)
+    reset_instance_settings()
 
 
 async def _bootstrap(client):

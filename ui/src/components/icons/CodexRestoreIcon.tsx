@@ -1,3 +1,4 @@
+import { useLingui } from '@lingui/react/macro';
 import { CodexIcon } from './CodexIcon';
 
 interface CodexRestoreIconProps {
@@ -10,8 +11,9 @@ interface CodexRestoreIconProps {
  * session_id (as opposed to a fresh-start CodexIcon).
  */
 export function CodexRestoreIcon({ className }: CodexRestoreIconProps) {
+  const { t } = useLingui();
   return (
-    <span className={`relative inline-flex ${className ?? ''}`} aria-label="Codex (restored session)">
+    <span className={`relative inline-flex ${className ?? ''}`} aria-label={t`Codex (restored session)`}>
       <CodexIcon className="h-full w-full" />
       <svg
         xmlns="http://www.w3.org/2000/svg"

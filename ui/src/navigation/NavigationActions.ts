@@ -6,15 +6,17 @@ import {
   DockPointerData,
   FSItem,
   type IDockPointer,
+  Layout,
   QueryRequest,
   Shell,
   TypeId,
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
-import { DockPointer } from './DockPointer';
+import { DockPointer, HIGHLIGHT_PARAM } from './DockPointer';
 import { FileOptions, TabOptions } from './types';
-import { buildDockUrl, stripDockPortion } from './url-builder';
+import { preserveWindowLayout, stripDockPortion } from './url-builder';
+import { allScope, projectScope } from '@src/lib/scope-filter';
 
 function toStringRecord(obj?: Record<string, unknown>): Record<string, string> | undefined {
   if (!obj) return undefined;
@@ -27,6 +29,20 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> |
 }
 
 let pendingDockNavigationUrl: string | null = null;
+
+// View types whose dock adopts the current project's scope when opened without an
+// explicit one (see openDock). These are the project-aware browser surfaces: the
+// minted Tab attaches to the active project (project tab) or stays global. SHELL
+// is included so the Chats/worker rail seeds the active project's scope onto the
+// URL — the ChatsNavigator reads currentDock.scopeFilter to filter history, exactly
+// like assets/explorer/triggers (SHELL's tabHash ignores scope, so the open
+// session's identity is unaffected).
+const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
+  ViewType.ASSETS,
+  ViewType.TRIGGERS,
+  ViewType.EXPLORER,
+  ViewType.SHELL,
+]);
 
 /**
  * NavigationActions - Navigation actions implementation
@@ -48,6 +64,10 @@ export class NavigationActions {
     return `${window.location.pathname}${window.location.search}`;
   }
 
+  private static needsRouterFallback(): boolean {
+    return typeof navigator !== 'undefined' && /\bjsdom\b/i.test(navigator.userAgent);
+  }
+
   private static clearCommittedPendingNavigation(): void {
     if (pendingDockNavigationUrl && pendingDockNavigationUrl === NavigationActions.getCurrentBrowserUrl()) {
       pendingDockNavigationUrl = null;
@@ -63,8 +83,37 @@ export class NavigationActions {
     }, 1000);
   }
 
+  private commitBrowserNavigation(fullUrl: string, routerUrl: string): void {
+    this.markPendingNavigation(fullUrl);
+
+    if (NavigationActions.getCurrentBrowserUrl() !== fullUrl) {
+      window.history.pushState(null, '', fullUrl);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+
+    // createMemoryRouter in RTL/jsdom is not wired to window.history/popstate.
+    // BrowserRouter is wired to popstate, so calling navigate there would run
+    // the route loaders twice.
+    if (NavigationActions.needsRouterFallback()) {
+      void this.navigate(routerUrl);
+    }
+  }
+
   static resetPendingNavigationForTests(): void {
     pendingDockNavigationUrl = null;
+  }
+
+  /**
+   * Navigate to the home root with `?highlight=<wikiword>` set, so a home/feed
+   * element matching that wiki word renders highlighted. URL-carried (shareable,
+   * back-button-safe), mirroring the `selected` option — see docs/wikitip.md.
+   * Used by the WikiTip backward link ("click here to highlight the feedentry").
+   */
+  highlight(wikiword: string): void {
+    NavigationActions.clearCommittedPendingNavigation();
+    const url = `/?${HIGHLIGHT_PARAM}=${encodeURIComponent(wikiword)}`;
+    if (NavigationActions.getCurrentBrowserUrl() === url) return;
+    this.commitBrowserNavigation(url, url);
   }
 
   // ========== Core Navigation ==========
@@ -86,32 +135,54 @@ export class NavigationActions {
 
     if (pointer === null) {
       if (this.currentDock === null) return; // already not on a dock URL
-      const baseUrl = stripDockPortion(currentPath);
-      if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) return;
-      this.markPendingNavigation(baseUrl);
-      void this.navigate(baseUrl);
+      // Root-level dock URLs strip to '' — and navigate('') is a react-router
+      // relative no-op, so close-dock silently did nothing outside the
+      // /agent|/flow prefixed namespaces. Normalize to the app root.
+      const baseUrl = stripDockPortion(currentPath) || '/';
+      this.navigateToBaseUrl(baseUrl);
       return;
     }
 
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    const dock = extraOptions
+    let dock = extraOptions
       ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
       : base;
 
+    // URL-first default scope for scope-aware surfaces (assets, triggers, file
+    // explorer): a dock opened WITHOUT an explicit scope (no `scope-*` keys →
+    // `scopeFilter === null`) adopts the current project's scope — project mode
+    // when a project is in context (so the minted Tab attaches to that project),
+    // else "all". This puts the scope on the URL where the loader and
+    // Tab.getFromDockPointer can read it, instead of leaving it to component
+    // state (which the tab can't see). An explicit scope (incl. `all`) is
+    // respected untouched. This is what makes the left-rail Triggers / Files
+    // icons open a project tab when a project is active and a global one
+    // otherwise — exactly like the Assets icon.
+    if (dock.viewType && SCOPE_SEEDED_VIEWS.has(dock.viewType) && dock.scopeFilter === null) {
+      const projectId = dataContext.project?.id ?? null;
+      dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
+    }
+
     if (this.currentDock?.equals(dock)) return; // already at this pointer, no-op
 
-    const { viewType, pointer: pointerValue, layout } = dock.toUrlSegments();
-    const searchParams = dock.toSearchParams();
-
-    const fullUrl = buildDockUrl(
-      currentPath,
-      viewType,
-      pointerValue,
-      Object.fromEntries(searchParams.entries()),
-      layout,
-    );
+    const layout = preserveWindowLayout(currentPath, dock.layout);
+    const targetDock = layout === dock.layout
+      ? dock
+      : new DockPointer(dock.viewType, dock.pointer, dock.options, layout);
+    const fullUrl = targetDock.toUrl(currentPath);
 
     if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) return;
+
+    if (import.meta.env.DEV) {
+      try {
+        const roundTrippedUrl = DockPointer.fromUrl(fullUrl).toUrl(currentPath);
+        if (roundTrippedUrl !== fullUrl) {
+          console.error(`DockPointer URL round-trip mismatch: ${fullUrl} -> ${roundTrippedUrl}`);
+        }
+      } catch (error) {
+        console.error(`DockPointer URL round-trip check failed for ${fullUrl}`, error);
+      }
+    }
 
     // For react-router with a basename, we need to navigate relative to the base.
     // Extract just the dock portion (everything from /dock/ or /dev/) from the full URL.
@@ -119,8 +190,31 @@ export class NavigationActions {
     const basePath = stripDockPortion(currentPath);
     const url = basePath && fullUrl.startsWith(basePath) ? fullUrl.substring(basePath.length) : fullUrl;
 
-    this.markPendingNavigation(fullUrl);
-    void this.navigate(url);
+    this.commitBrowserNavigation(fullUrl, url);
+  }
+
+  private navigateToBaseUrl(baseUrl: string): void {
+    const currentUrl = NavigationActions.getCurrentBrowserUrl();
+    if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) return;
+
+    this.markPendingNavigation(baseUrl);
+    if (NavigationActions.getCurrentBrowserUrl() !== baseUrl) {
+      window.history.pushState(null, '', baseUrl);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+    if (NavigationActions.needsRouterFallback()) {
+      void this.navigate(baseUrl);
+    }
+  }
+
+  /**
+   * Build the absolute deep-link URL for a dock pointer without navigating.
+   * Pure helper — used by share/copy-link flows and openInBrowserTab.
+   */
+  getDockUrl(pointer: IDockPointer | DockPointer): string {
+    const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+    const fullUrl = base.toUrl(window.location.pathname);
+    return `${window.location.origin}${fullUrl}`;
   }
 
   /**
@@ -133,20 +227,34 @@ export class NavigationActions {
    * Useful for shell / Claude Code sessions launched from a non-shell view.
    */
   openInBrowserTab(pointer: IDockPointer | DockPointer): void {
-    const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    const { viewType, pointer: pointerValue, layout } = base.toUrlSegments();
-    const searchParams = base.toSearchParams();
-
-    const fullUrl = buildDockUrl(
-      window.location.pathname,
-      viewType,
-      pointerValue,
-      Object.fromEntries(searchParams.entries()),
-      layout,
-    );
-    const absoluteUrl = `${window.location.origin}${fullUrl}`;
+    const absoluteUrl = this.getDockUrl(pointer);
     const opened = window.open(absoluteUrl, 'flowpad-shell');
     if (opened) opened.focus();
+  }
+
+  /**
+   * Open a dock pointer in a NEW browser tab (`_blank`), one per call —
+   * unlike {@link openInBrowserTab}, which reuses the single named
+   * "flowpad-shell" tab. Used by pop-out flows where each popped entity
+   * must get its own window. Inside Electron, the main process's
+   * setWindowOpenHandler routes this to the system browser.
+   */
+  openInNewBrowserTab(pointer: IDockPointer | DockPointer): void {
+    window.open(this.getDockUrl(pointer), '_blank', 'noopener,noreferrer');
+  }
+
+  /**
+   * Open a dock pointer in a chrome-less `win/` focus window
+   * (docs/tab-management.md Part 3 §7): builds the absolute URL with
+   * Layout.WIN and opens it via `window.open(url, '_blank')`. On the web
+   * that's a new browser tab; inside Electron the main process's
+   * setWindowOpenHandler carve-out allows same-origin `/win/` URLs so they
+   * open as in-app BrowserWindows.
+   */
+  openDockInWindow(pointer: IDockPointer | DockPointer): void {
+    const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+    const winDock = new DockPointer(base.viewType, base.pointer, base.options, Layout.WIN);
+    window.open(this.getDockUrl(winDock), '_blank');
   }
 
   /**
@@ -246,7 +354,7 @@ export class NavigationActions {
     if (!process) {
       return null;
     }
-    this.openDock(process.dockPointer, extraOptions);
+    this.openDock(process.terminalDockPointer, extraOptions);
     return process;
   }
 
@@ -262,7 +370,7 @@ export class NavigationActions {
   async openProcessTab(processId: string, options?: Record<string, string>): Promise<void> {
     const process = AgenticProcess.getByIdFromCache(processId) ?? (await AgenticProcess.getById(processId));
     if (!process) return;
-    this.openDock(process.dockPointer, options);
+    this.openDock(process.terminalDockPointer, options);
   }
 
   /** Open a plain Shell in a terminal tab. */
@@ -273,9 +381,9 @@ export class NavigationActions {
   }
 
   /**
-   * Resolve a worker/session/thread id (Claude or Codex) and navigate to it.
+   * Resolve a worker/session/thread id and navigate to it.
    * Backend auto-discovers worker_type. Returns null when the id is unknown
-   * to either Claude or Codex history; caller is expected to surface a toast.
+   * to worker history; caller is expected to surface a toast.
    */
   async openWorkerSession(workerId: string): Promise<AgenticProcess | null> {
     const process = await AgenticProcess.getByWorkerId(workerId).catch((err) => {
@@ -307,7 +415,7 @@ export class NavigationActions {
   async openNewClaudeProcess(options?: {
     cwd?: string;
     projectId?: string;
-    workerType?: 'claude_code' | 'codex';
+    workerType?: 'claude_code' | 'codex' | 'copilot';
   }): Promise<{ processId: string; shellId: string | null; dockPointer: IDockPointer } | null> {
     try {
       const computeNode = dataContext.computeNode;
@@ -350,7 +458,7 @@ export class NavigationActions {
         if (!options?.skipNavigate) this.openShellView();
         return null;
       }
-      const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
+      const { nextTerminalName } = await import('@src/components/terminal/rename-rules');
       const shells = await Shell.list(cn.id);
       const name = nextTerminalName(shells.map((s) => ({ name: s.name ?? '' })));
       // For sandbox compute nodes the project's host path is meaningless;
@@ -390,13 +498,17 @@ export class NavigationActions {
   }
 
   /**
-   * Open plan viewer with file path
-   * @param agenticProcessTypeId - TypeId of the owning AgenticProcess
+   * Open the plan viewer for a plan file. Addresses the plan by its **VFS path**
+   * (race-free — independent of the fs-records scanner having minted the PLAN
+   * entity, and of the owning process still being alive). The originating
+   * process — needed only for Execute/Update — is read from the current process
+   * context entity, not the URL. `agenticProcessTypeId` is retained in the
+   * signature so the live call sites stay unchanged; it is intentionally unused.
+   * @param _agenticProcessTypeId - (unused) TypeId of the owning AgenticProcess
    * @param filePath - Absolute path to plan .md file
    */
-  openPlan(agenticProcessTypeId: TypeId, filePath: string): void {
-    const pointer = DockPointer.forPlan(agenticProcessTypeId, filePath);
-    this.openDock(pointer);
+  openPlan(_agenticProcessTypeId: TypeId, filePath: string): void {
+    this.openDock(DockPointer.forPlanByPath(filePath));
   }
 
   openDiff(checkpointHash: string): void {

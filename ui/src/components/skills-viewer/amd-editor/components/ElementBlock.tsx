@@ -1,5 +1,6 @@
 import { Button } from '@src/components/ui/button';
 import { Plus } from 'lucide-react';
+import { Trans } from '@lingui/react/macro';
 import { useAMDEditor } from '../AMDEditorContext';
 import { AMDElement, isContainerType } from '../types';
 import { BlockWrapper } from './BlockWrapper';
@@ -40,7 +41,7 @@ function renderBlockByType(element: AMDElement) {
     case 'header':
       return null;
     default:
-      return <div className="text-xs text-muted-foreground">Unknown block</div>;
+      return <div className="text-xs text-muted-foreground"><Trans>Unknown block</Trans></div>;
   }
 }
 
@@ -77,7 +78,7 @@ export function ElementBlock({ element, depth = 0, parentId: _parentId }: Elemen
                 className="mt-0.5 h-5 px-2 text-[10px] text-muted-foreground/60 hover:text-muted-foreground"
               >
                 <Plus className="mr-0.5 h-3 w-3" />
-                add
+                <Trans>add</Trans>
               </Button>
             }
           />

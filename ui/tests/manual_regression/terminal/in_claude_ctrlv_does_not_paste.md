@@ -1,3 +1,7 @@
+---
+id: ed36bbc9-dbcd-508b-a21e-4ea8a6bb2dbf
+---
+
 test 1: Ctrl+V in Claude terminal input does not paste from clipboard (FLOWPAD-1618)
 - [browser] navigate to {APP_URL}/dock/shell/new_terminal
 - wait for terminal to be ready (active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)

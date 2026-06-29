@@ -1,0 +1,181 @@
+"""The single canonical type enum for FlowPad.
+
+`EntityType` is the one source of truth for every record/entity type name. It
+replaces the two historical enums — `RecordType` (fs_store) and
+`BuiltinEntityType` (db) — which are now thin aliases re-exported from their old
+modules for backward compatibility during the migration.
+
+String VALUES are persisted in the DB and on the filesystem (`record.type`,
+`TypeId.type`), so they must never change. Member names are the union of the two
+old enums (17 names overlapped with identical values; no value divergences).
+"""
+
+from flow_sdk._compat import StrEnum
+
+
+class EntityType(StrEnum):
+    # ── FS-indexed / Claude record types (formerly RecordType) ───────────────
+    PROJECT = "project"
+    CLAUDE_SESSION = "claude_session"
+    TASK = "task"
+    RULE = "rule"
+    SKILL = "skill"
+    AGENT = "agent"
+    LOG = "log"
+    AGENTIC_PROCESS = "agentic_process"
+    ARTIFACT = "artifact"
+    BOOKMARK = "bookmark"
+    ANNOTATION = "annotation"
+    COMMENT = "comment"
+    APP_SECRET = "app_secret"
+    CLAUDE_ROOT = "claude_root"
+    ACCOUNT = "account"
+    HOOK = "hook"
+    HOOK_ENTRY = "hook_entry"
+    CLAUDE_HOOK = "claude_hook"
+    # Scaffold type — settings.json-shaped files that contain hook definitions.
+    CLAUDE_HOOK_SOURCE = "claude_hook_source"
+    TODO_FILE = "todo_file"
+    TODO_ITEM = "todo_item"
+    PLAN = "plan"
+    CLAUDE_MEMORY = "claude_memory"
+    CLAUDE_RULES = "claude_rules"
+    COMMAND = "command"
+    MCP_SERVER = "mcp_server"
+    # Scaffold type — .mcp.json / mcp.json files that contain server definitions.
+    MCP_SERVER_SOURCE = "mcp_server_source"
+    PLUGIN = "plugin"
+    CLAUDE_MD = "claude_md"
+    HISTORY = "history"
+    HISTORY_ENTRY = "history_entry"
+    TRANSCRIPT_ENTRY = "transcript_entry"
+    TRANSCRIPT_PROGRESS = "transcript_entry:progress"
+    TRANSCRIPT_TOOL_USE = "transcript_entry:tool_use"
+    TRANSCRIPT_TOOL_RESULT = "transcript_entry:tool_result"
+    TRANSCRIPT_FILE_SNAPSHOT = "transcript_entry:file_snapshot"
+    TRANSCRIPT_QUEUE_OPERATION = "transcript_entry:queue_operation"
+    TRANSCRIPT_SUMMARY = "transcript_entry:summary"
+    TRANSCRIPT_CUSTOM_TITLE = "transcript_entry:custom_title"
+    TRANSCRIPT_PR_LINK = "transcript_entry:pr_link"
+    COMPUTE_NODE = "compute_node"
+    ENVIRONMENT = "environment"
+    SESSION_ANALYSIS = "session_analysis"
+    SESSION_CLASSIFICATION = "session_classification"
+    ACTIVE_SESSIONS = "active_sessions"
+    ACTIVE_SESSION = "active_session"
+    SHELL = "shell"
+    CLAUDE_DEBUG_LOG = "claude_debug_log"
+    CLAUDE_ERROR = "claude_error"
+    CLAUDE_SETTINGS = "claude_settings"
+    CLAUDE_SETTINGS_OAUTH = "claude_settings:oauth_account"
+    CLAUDE_SETTINGS_PROJECT = "claude_settings:project_entry"
+    CLAUDE_SETTINGS_MODEL_USAGE = "claude_settings:model_usage"
+    CLAUDE_SETTINGS_MCP_SERVER = "claude_settings:mcp_server_config"
+    CLAUDE_SETTINGS_FEATURE_FLAGS = "claude_settings:feature_flags"
+    CLAUDE_SETTINGS_TIPS_HISTORY = "claude_settings:tips_history"
+    CLAUDE_SETTINGS_SKILL_USAGE = "claude_settings:skill_usage"
+    CLAUDE_SETTINGS_GITHUB_REPOS = "claude_settings:github_repos"
+    CLAUDE_SETTINGS_JSON = "claude_settings_json"
+    CLAUDE_SETTINGS_JSON_PERMISSIONS = "claude_settings_json:permissions"
+    CLAUDE_SETTINGS_JSON_SANDBOX = "claude_settings_json:sandbox"
+    CLAUDE_SETTINGS_JSON_ATTRIBUTION = "claude_settings_json:attribution"
+    CLAUDE_MANAGED_SETTINGS = "claude_managed_settings"
+    CLAUDE_MCP_JSON = "claude_mcp_json"
+    # Per-server fragment of a ``.mcp.json`` file, emitted by the source-file
+    # extractor (fs_store/source_file_records.py) for the /fs-records/file
+    # settings API. Follows the ``claude_settings_json:permissions`` fragment
+    # convention: the *file* shape is Claude-specific, while the server entity
+    # itself is the agent-neutral MCP_SERVER asset above. (The extractor
+    # previously referenced a non-existent CLAUDE_MCP_SERVER member and raised
+    # AttributeError on any .mcp.json with servers.)
+    CLAUDE_MCP_JSON_ENTRY = "claude_mcp_json:entry"
+    CODEX_SESSION = "codex_session"
+    # DEPRECATED 2026-05-09: codex projects now stored as PROJECT with a
+    # codex_project=True provenance flag. Kept for backward compatibility.
+    CODEX_PROJECT = "codex_project"
+    COPILOT_SESSION = "copilot_session"
+    CLI_LOG = "cli_log"
+    CLI_LOG_SETTINGS = "cli_log_settings"
+    TRIGGER_LOG = "trigger_log"
+    SCAN_LOG = "scan_log"
+    INDEX_LOG = "index_log"
+    DOC_DB = "doc_db"
+    RECORD_ERROR = "record_error"
+    TEXT_FILE = "text_file"
+    WORKFLOW = "workflow"
+    MARKDOWN = "markdown"
+    MARKDOWN_INDEX = "markdown_index"
+    SPEC = "spec"
+    PROMPT = "prompt"
+    CONVERSATION = "conversation"
+    WHITEBOARD = "whiteboard"
+    AGENT_TRACE = "agent_trace"
+    DYNAMIC_WORKFLOW = "dynamic_workflow"
+    # A Claude Code workflow *run* — the provider's wf_<runId>.json journal,
+    # parsed & served like a worker transcript/session (worker_type "workflow").
+    WORKFLOW_RUN = "workflow_run"
+    USAGE_REPORT = "usage_report"
+    DATASET = "dataset"
+    FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
+    COLLABORATION_ROOM = "collaboration_room"
+    # Transient indexer waypoints — fan-out scaffolding, never persisted.
+    USER_HOME_FOLDER = "user_home_folder"
+    REAL_PROJECT_CWD = "real_project_cwd"
+    SYSTEM_ROOT = "system_root"
+    CWD_ROOT = "cwd_root"
+    FOLDER = "folder"
+
+    # ── DB / hub entity types (formerly BuiltinEntityType-only) ──────────────
+    USER = "user"
+    VISITOR = "visitor"
+    APP_HOST = "app_host"
+    TEAM = "team"
+    GROUP = "group"
+    ORGANIZATION = "organization"
+    WORKSPACE = "workspace"
+    PAGE = "page"
+    FLOW = "flow"
+    INVITATION = "invitation"
+    MENTION = "mention"
+    CONNECTION = "connection"
+    EXTENSION = "extension"
+    FUNC = "func"
+    SYNC_SERVICE = "sync_service"
+    PLUGIN_MANIFEST = "plugin_manifest"
+    FLOWPAD_SERVICE = "flowpad_service"
+    STORAGE = "storage_device"
+    FLOW_FILE = "flow_file"
+    MICRO_APP = "micro_app"
+    WEB_DOMAIN = "web_domain"
+    JOB = "job"
+    SYSTEM_JOB = "system_job"
+    JOB_EXECUTION = "job_execution"
+    API_KEY = "api_key"
+    CODE_REF = "code_ref"
+    AGENT_HOOK = "agent_hook"
+    TRIGGER = "trigger"
+    PROCESS_RESULT = "process_result"
+    CRON_EVENT = "cron_event"
+    FLOW_MESSAGE = "flow_message"
+    TEAM_SPACE = "team_space"
+    NOTIFICATION = "notification"
+    RUN = "run"
+    # Git identity split (see builtin/git_remote.py / builtin/git_branch.py).
+    GIT_REMOTE = "git_remote"
+    GIT_BRANCH = "git_branch"
+    # A file on disk outside the record store (DB-only; SemanticLock targets).
+    FILE = "file"
+    # A content-panel tab — DB-only placement record keyed by a DockPointer
+    # hash (docs/tab-management.md). Minted on demand (Tab.ensure_for).
+    TAB = "tab"
+    # Entity types that previously had no enum member (string-literal `type`).
+    ARTIFACT_RELATION = "artifact_relation"
+    FS_ITEM = "fs_item"
+    KNOWLEDGE_BASE = "knowledge_base"
+    # A frozen snapshot of the global context (a list of typeids) — the saved
+    # "context" half of an automation (agentic process = prompt + context).
+    GRAPH_CONTEXT = "graph_context"
+
+    # ── Skillit ──────────────────────────────────────────────────────────────
+    SKILLIT_SESSION = "skillit_session"
+    SKILLIT_CONFIG = "skillit_config"

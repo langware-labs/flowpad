@@ -1,8 +1,9 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { FileUploadIndicator, FileUploadItem } from '@src/components/file-upload-indicator';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 import { useInputHistory } from '@src/hooks/use-input-history';
-import { useLoginRequired } from '@src/hooks/use-login-required';
+import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import { useChatOptions } from '@src/hooks/useChatOptions';
 import { useEditorStore } from '@src/store/use-editor-store';
 import { useSendMessageStore } from '@src/store/use-send-message-store';
@@ -29,7 +30,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { FileArchive, GitBranch, Loader2, Paperclip, Send, Settings2, Square } from 'lucide-react';
@@ -41,6 +42,7 @@ import { DragDropOverlay } from './drag-drop-overlay';
 import { GitHubConnectionDialog } from './GitHubConnectionDialog';
 import LoginDialog, { ActionType } from './login-required-dialog';
 import { ToolsPanel } from './tools';
+import { useLingui } from '@lingui/react/macro';
 
 // Constants for connection types
 const CONNECTION_TYPES = {
@@ -85,6 +87,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   codebaseConnectionEnabled = false,
 }) => {
   const { agent } = useAgentContext();
+  const { t } = useLingui();
   const isExecutionFlowEnabled = agent?.agent_config?.execution_enabled ?? true;
   // Use context as single source of truth for IDs
   const agentId = dataContext.agentTypeId?.id;
@@ -109,7 +112,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [pendingSubmission, setPendingSubmission] = useState<{
     message: string;
     options: ICompletionOptions;
-    dismissToast: () => void;
+    notifyId: string;
   } | null>(null);
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
   const [pendingGitUrl, setPendingGitUrl] = useState<string>('');
@@ -121,7 +124,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const zipFileInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
 
   const flowTypeId = useMemo(() => (processId ? new TypeId(AgenticProcess.type, processId) : null), [processId]);
 
@@ -137,9 +139,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
     closeLoginDialog,
     requiresLogin,
     checkLoginAndProceed,
-    pendingAction,
-    clearPending,
-    isPostLogin,
   } = useLoginRequired();
   useColorPalette(siteConfig);
 
@@ -168,7 +167,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       void navigate(`/agent/${agentId}/flow/${pendingSubmission.options.processId}`);
       clearEditorContent();
     }
-    pendingSubmission.dismissToast();
+    notify.dismiss(pendingSubmission.notifyId);
     setIsWaitingForOperations(false);
     onSendMessage?.(pendingSubmission.message, pendingSubmission.options);
     setMessage('');
@@ -201,7 +200,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
   }, [someone, chatOptions]);
 
   const addUploadingFiles = useCallback(
-    async (files: File[]) => {
+    async (incoming: File[]) => {
+      // Let the user mark up captured images before they're attached.
+      const files = await annotateImageFiles(incoming);
+      // Cancelling the markup aborts the capture — nothing to upload.
+      if (files.length === 0) return;
       const fileItems = files.map((file) => ({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
         file,
@@ -245,13 +248,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       await Promise.all(fileItems.map(uploadFile));
 
-      toast({
-        title: 'Uploaded files',
-        description: files.map((file) => file.name).join(', '),
-        variant: 'default',
+      notify.success({
+        title: t`Uploaded files`,
+        message: files.map((file) => file.name).join(', '),
       });
     },
-    [currentFlowId, currentProjectId, createFlow, toast],
+    [currentFlowId, currentProjectId, createFlow],
   );
 
   const removeUploadingFile = useCallback(
@@ -369,14 +371,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
       } catch (error) {
         console.error('Error uploading zip file:', error);
         setCodebaseConnection(null);
-        toast({
-          title: 'Zip Upload Failed',
-          description: 'Failed to upload the zip file. Please try again.',
-          variant: 'destructive',
+        notify.error({
+          title: t`Zip Upload Failed`,
+          message: t`Failed to upload the zip file. Please try again.`,
         });
       }
     },
-    [createFlow, currentProjectId, currentFlowId, saveRepoArtifact, toast],
+    [createFlow, currentProjectId, currentFlowId, saveRepoArtifact],
   );
 
   const handleFilesDrop = useCallback(
@@ -394,18 +395,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       if (zipFiles.length > 0) {
         if (!codebaseConnectionEnabled) {
-          toast({
-            title: 'ZIP File Upload Not Allowed',
-            description: `ZIP file upload is only available as a codebase connection`,
-            variant: 'destructive',
+          notify.error({
+            title: t`ZIP File Upload Not Allowed`,
+            message: t`ZIP file upload is only available as a codebase connection`,
           });
           return;
         }
         if (zipFiles.length > 1) {
-          toast({
-            title: 'Multiple ZIP Files Not Allowed',
-            description: `Only one ZIP file can be uploaded at a time`,
-            variant: 'destructive',
+          notify.error({
+            title: t`Multiple ZIP Files Not Allowed`,
+            message: t`Only one ZIP file can be uploaded at a time`,
           });
           return;
         }
@@ -415,7 +414,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         await addUploadingFiles(nonZipFiles);
       }
     },
-    [addUploadingFiles, addZipUpload, codebaseConnectionEnabled, toast],
+    [addUploadingFiles, addZipUpload, codebaseConnectionEnabled],
   );
 
   const isVisitorWithLimitReached = useMemo(
@@ -436,30 +435,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
     navigator.navigateToLogin();
   }, []);
 
-  // Handle post-login actions (restore message or auto-send)
-  useEffect(() => {
-    if (!pendingAction || !isPostLogin) return;
-
-    if (pendingAction.action === ActionType.SEND && pendingAction.message) {
-      // Auto-send after login - will be triggered after component is ready
-      // Use a small timeout to ensure the component is fully mounted
-      const timer = setTimeout(() => {
-        if (pendingAction.message) {
-          setMessage(pendingAction.message);
-          clearPending();
-        }
-        // Note: The actual send will happen via form submission or user pressing Enter
-        // We set the message and the user can adjust or send immediately
-      }, 100);
-      return () => clearTimeout(timer);
-    } else if (pendingAction.message) {
-      // For tools/codebase/files actions, just restore the message
-      setMessage(pendingAction.message);
-      clearPending();
-    } else {
-      clearPending();
-    }
-  }, [pendingAction, isPostLogin, clearPending]);
+  // After login, restore the message the user had typed for any gated action
+  // (SEND / TOOLS / CODEBASE / FILES). We only restore — never auto-submit — so
+  // the user can review and send themselves.
+  useResumeAfterLogin(
+    [ActionType.SEND, ActionType.TOOLS, ActionType.CODEBASE, ActionType.FILES],
+    (pending) => {
+      if (pending.message) setMessage(pending.message);
+    },
+  );
 
   const handleCodebaseButtonClick = useCallback(() => {
     // If user is logged in and has a codebase connection, do nothing (button is just for display)
@@ -525,17 +509,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
           waitingMessages.push(`Connecting codebase: ${codebaseConnection?.name}`);
         }
 
-        // Set waiting state and show toast
+        // Set waiting state and show a busy (spinner) toast
         setIsWaitingForOperations(true);
-        const { dismiss: dismissToast } = toast({
-          title: 'Please wait...',
-          description: (
-            <div className="flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              {waitingMessages.join('. ')}
-            </div>
-          ),
-          variant: 'default',
+        const waitingId = `chat-waiting:${currentFlowId ?? 'new'}`;
+        notify.busy({
+          id: waitingId,
+          title: t`Please wait...`,
+          message: waitingMessages.join('. '),
         });
 
         // Store the pending submission and return early
@@ -552,8 +532,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
           baseSkill: chatOptions.skill,
           labels: chatOptions.labels,
         };
-        pendingSubmission?.dismissToast();
-        setPendingSubmission({ message: messageToSend, options: completionOptions, dismissToast });
+        if (pendingSubmission) notify.dismiss(pendingSubmission.notifyId);
+        setPendingSubmission({ message: messageToSend, options: completionOptions, notifyId: waitingId });
         return;
       }
 
@@ -787,14 +767,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
       } catch (error) {
         console.error('Error cloning git repository:', error);
         setCodebaseConnection(null);
-        toast({
-          title: 'Git Clone Failed',
-          description: 'Failed to clone the git repository. Please check the URL and try again.',
-          variant: 'destructive',
+        notify.error({
+          title: t`Git Clone Failed`,
+          message: t`Failed to clone the git repository. Please check the URL and try again.`,
         });
       }
     },
-    [currentProjectId, currentFlowId, createFlow, toast, saveRepoArtifact, getRepoNameFromUrl],
+    [currentProjectId, currentFlowId, createFlow, saveRepoArtifact, getRepoNameFromUrl],
   );
 
   const handleGitCloneSubmit = useCallback(async () => {
@@ -834,10 +813,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }
       } else {
         // Error occurred while checking access
-        toast({
-          title: 'Error Checking Repository',
-          description: 'An error occurred while checking the repository. Please try again.',
-          variant: 'destructive',
+        notify.error({
+          title: t`Error Checking Repository`,
+          message: t`An error occurred while checking the repository. Please try again.`,
         });
         // Clear the codebase button
         setCodebaseConnection(null);
@@ -846,17 +824,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
     } catch (error) {
       console.error('Error checking repository access:', error);
       // If there's an error checking access, show alert and clear codebase button
-      toast({
-        title: 'Error Checking Repository',
-        description: 'An error occurred while checking the repository. Please try again.',
-        variant: 'destructive',
+      notify.error({
+        title: t`Error Checking Repository`,
+        message: t`An error occurred while checking the repository. Please try again.`,
       });
       // Clear the codebase button
       setCodebaseConnection(null);
     } finally {
       setIsCheckingRepo(false);
     }
-  }, [gitUrl, performGitClone, someone, visitor, project?.typeId, createFlow, toast]);
+  }, [gitUrl, performGitClone, someone, visitor, project?.typeId, createFlow]);
 
   const handleGitHubConnectionSuccess = useCallback(
     async (branch?: string) => {
@@ -908,15 +885,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onKeyDown={handleKeyDown}
           placeholder={
             isVisitorWithLimitReached
-              ? 'Login to continue asking...'
+              ? t`Login to continue asking...`
               : isFollowup
                 ? siteConfig?.branding?.company_name
-                  ? `Ask ${siteConfig.branding.company_name}...`
-                  : 'Ask a follow up...'
+                  ? t`Ask ${siteConfig.branding.company_name}...`
+                  : t`Ask a follow up...`
                 : siteConfig?.content?.placeholder ||
                   (siteConfig?.branding?.company_name
-                    ? `Ask ${siteConfig.branding.company_name} to solve...`
-                    : 'Ask Flowpad to solve...')
+                    ? t`Ask ${siteConfig.branding.company_name} to solve...`
+                    : t`Ask Flowpad to solve...`)
           }
           className="overflow-y min-h-[40px] flex-1 resize-none border-none shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
           disabled={isDisabled}
@@ -944,10 +921,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   }
                   setIsToolsPanelOpen(true);
                 }}
-                title="Open tools panel"
+                title={t`Open tools panel`}
               >
                 <Settings2 className="mr-1 h-3 w-3" />
-                Tools
+                {t`Tools`}
               </Button>
             )}
             {codebaseConnectionEnabled && (
@@ -965,13 +942,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
                     onClick={handleCodebaseButtonClick}
                     title={
                       codebaseConnection.isConnecting
-                        ? `Connecting: ${codebaseConnection.name}...`
-                        : `Connected: ${codebaseConnection.name}`
+                        ? t`Connecting: ${codebaseConnection.name}...`
+                        : t`Connected: ${codebaseConnection.name}`
                     }
                   >
                     <FileArchive className="mr-1 h-3 w-3" />
                     {codebaseConnection.isConnecting
-                      ? getRepoNameFromUrl(codebaseConnection.name) || 'Connecting...'
+                      ? getRepoNameFromUrl(codebaseConnection.name) || t`Connecting...`
                       : getRepoNameFromUrl(codebaseConnection.name)}
                     {codebaseConnection.isConnecting && (
                       <div className="ml-1 h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
@@ -987,7 +964,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         variant="outline"
                       >
                         <FileArchive className="mr-1 h-3 w-3" />
-                        Codebase
+                        {t`Codebase`}
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-48">
@@ -999,19 +976,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         disabled={isDisabled}
                       >
                         <FileArchive className="mr-2 h-3 w-3" />
-                        Upload ZIP
+                        {t`Upload ZIP`}
                       </DropdownMenuItem>
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger className="flex items-center py-2" disabled={isDisabled}>
                           <GitBranch className="mr-2 h-3 w-3" />
-                          Git
+                          {t`Git`}
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="w-64">
                           <div className="flex items-center gap-2 p-1">
                             <Input
                               value={gitUrl}
                               onChange={(e) => setGitUrl(e.target.value)}
-                              placeholder="Enter Git URL"
+                              placeholder={t`Enter Git URL`}
                               className="flex-1 text-xs"
                             />
                             <Button
@@ -1030,10 +1007,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
                               {isCheckingRepo ? (
                                 <>
                                   <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                  Checking...
+                                  {t`Checking...`}
                                 </>
                               ) : (
-                                'Connect'
+                                t`Connect`
                               )}
                             </Button>
                           </div>
@@ -1055,10 +1032,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 }
                 fileInputRef.current?.click();
               }}
-              title="Attach files"
+              title={t`Attach files`}
             >
               <Paperclip className="mr-1 h-3 w-3" />
-              Files
+              {t`Files`}
             </Button>
           </div>
           {disabled && onCancel ? (
@@ -1075,7 +1052,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               onClick={handleLoginClick}
               className="ml-auto rounded-full bg-gradient-to-r from-primary to-primary/80 text-white"
             >
-              Login to Proceed
+              {t`Login to Proceed`}
             </Button>
           ) : (
             <Button
@@ -1107,8 +1084,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
       <Dialog open={isToolsPanelOpen} onOpenChange={setIsToolsPanelOpen}>
         <DialogContent className="flex max-h-[80vh] max-w-md flex-col gap-0 p-0">
           <DialogHeader className="border-b px-6 pb-4 pt-6">
-            <DialogTitle>Tools</DialogTitle>
-            <DialogDescription>Configure execution mode, AI skill, and additional capabilities</DialogDescription>
+            <DialogTitle>{t`Tools`}</DialogTitle>
+            <DialogDescription>{t`Configure execution mode, AI skill, and additional capabilities`}</DialogDescription>
           </DialogHeader>
           <div className="overflow-y-auto px-6 py-4">
             <ToolsPanel

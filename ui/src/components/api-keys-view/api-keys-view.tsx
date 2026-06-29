@@ -3,10 +3,11 @@ import { useAuth } from '@sdk/react/hooks';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { AlertCircle, Copy, Key, Trash2 } from 'lucide-react';
 import React, { useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface ApiKeyListItem {
   id: string;
@@ -20,11 +21,11 @@ interface ApiKeyListItem {
 }
 
 export function ApiKeysView() {
+  const { t } = useLingui();
   const [generatedApiKey, setGeneratedApiKey] = useState<ApiKeyCredentials | null>(null);
   const [hasFlowPadApiKey, setHasFlowPadApiKey] = useState(false);
   const [apiKeysReloadTrigger, setApiKeysReloadTrigger] = useState(0);
   const [userApiKeys, setUserApiKeys] = useState<ApiKeyListItem[]>([]);
-  const { toast } = useToast();
   const { user } = useAuth();
 
   // Load API keys from the user
@@ -58,10 +59,9 @@ export function ApiKeysView() {
 
   const handleGenerateApiKey = async () => {
     if (!user?.typeId) {
-      toast({
-        title: 'Error',
-        description: 'User not found',
-        variant: 'destructive',
+      notify.error({
+        title: t`Error`,
+        message: t`User not found`,
       });
       return;
     }
@@ -83,32 +83,30 @@ export function ApiKeysView() {
       // Reload API keys list by triggering useEffect dependency
       setApiKeysReloadTrigger((prev) => prev + 1);
 
-      toast({
-        title: 'API Key Generated',
-        description: 'Your new API key has been created. Please save it securely.',
+      notify.success({
+        title: t`API Key Generated`,
+        message: t`Your new API key has been created. Please save it securely.`,
       });
     } catch (error) {
       console.error('Failed to generate API key:', error);
 
-      let errorMessage = 'Failed to generate API key';
+      let errorMessage = t`Failed to generate API key`;
       if (error instanceof Error) {
         errorMessage = error.message;
       }
 
-      toast({
-        title: 'API Key Generation',
-        description: errorMessage,
-        variant: 'destructive',
+      notify.error({
+        title: t`API Key Generation`,
+        message: errorMessage,
       });
     }
   };
 
   const handleDeleteApiKey = async (keyName: string) => {
     if (!user?.typeId) {
-      toast({
-        title: 'Error',
-        description: 'User not found',
-        variant: 'destructive',
+      notify.error({
+        title: t`Error`,
+        message: t`User not found`,
       });
       return;
     }
@@ -127,22 +125,21 @@ export function ApiKeysView() {
       // Reload API keys list by triggering useEffect dependency
       setApiKeysReloadTrigger((prev) => prev + 1);
 
-      toast({
-        title: 'API Key Deleted',
-        description: 'API key has been removed successfully',
+      notify.success({
+        title: t`API Key Deleted`,
+        message: t`API key has been removed successfully`,
       });
     } catch (error) {
       console.error('Failed to delete API key:', error);
 
-      let errorMessage = 'Failed to delete API key';
+      let errorMessage = t`Failed to delete API key`;
       if (error instanceof Error) {
         errorMessage = error.message;
       }
 
-      toast({
-        title: 'API Key Deletion',
-        description: errorMessage,
-        variant: 'destructive',
+      notify.error({
+        title: t`API Key Deletion`,
+        message: errorMessage,
       });
     }
   };
@@ -153,20 +150,22 @@ export function ApiKeysView() {
         <div className="max-w-4xl space-y-6">
           {/* Header */}
           <div>
-            <h2 className="text-2xl font-bold text-foreground">API Keys</h2>
+            <h2 className="text-2xl font-bold text-foreground"><Trans>API Keys</Trans></h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Manage your FlowPad API keys for authenticating API requests
+              <Trans>Manage your FlowPad API keys for authenticating API requests</Trans>
             </p>
           </div>
 
           {/* Main API Key Section */}
           <div className="rounded-lg border border-gray-200 bg-transparent p-6">
             <div className="mb-4">
-              <h3 className="text-base font-semibold text-foreground">FlowPad API Key</h3>
+              <h3 className="text-base font-semibold text-foreground"><Trans>FlowPad API Key</Trans></h3>
               <p className="text-sm text-muted-foreground">
-                {hasFlowPadApiKey
-                  ? 'Your API key for authenticating API requests to FlowPad'
-                  : 'Generate an API key to authenticate API requests to FlowPad'}
+                {hasFlowPadApiKey ? (
+                  <Trans>Your API key for authenticating API requests to FlowPad</Trans>
+                ) : (
+                  <Trans>Generate an API key to authenticate API requests to FlowPad</Trans>
+                )}
               </p>
             </div>
 
@@ -175,17 +174,17 @@ export function ApiKeysView() {
               <div className="space-y-3">
                 <div className="rounded-md border border-gray-300 bg-transparent p-4">
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium text-muted-foreground">Name:</span>
+                    <span className="text-sm font-medium text-muted-foreground"><Trans>Name:</Trans></span>
                     <span className="font-mono text-sm text-foreground">{existingApiKey.name}</span>
                   </div>
                   {existingApiKey.description && (
                     <div className="mb-2 flex items-center justify-between">
-                      <span className="text-sm font-medium text-muted-foreground">Description:</span>
+                      <span className="text-sm font-medium text-muted-foreground"><Trans>Description:</Trans></span>
                       <span className="text-sm text-muted-foreground">{existingApiKey.description}</span>
                     </div>
                   )}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-muted-foreground">Value:</span>
+                    <span className="text-sm font-medium text-muted-foreground"><Trans>Value:</Trans></span>
                     <span className="font-mono text-sm text-muted-foreground">{existingApiKey.visible_value}</span>
                   </div>
                 </div>
@@ -198,7 +197,7 @@ export function ApiKeysView() {
                   className="flex items-center gap-2"
                 >
                   <Trash2 className="h-4 w-4" />
-                  Delete API Key
+                  <Trans>Delete API Key</Trans>
                 </Button>
               </div>
             ) : (
@@ -211,7 +210,7 @@ export function ApiKeysView() {
                 className="flex items-center gap-2"
               >
                 <Key className="h-4 w-4" />
-                Generate FlowPad API Key
+                <Trans>Generate FlowPad API Key</Trans>
               </Button>
             )}
           </div>
@@ -221,8 +220,8 @@ export function ApiKeysView() {
             <div className="rounded-lg border-2 border-yellow-500/50 bg-yellow-500/10 p-4">
               <div className="mb-3 flex items-center gap-2 rounded bg-yellow-500/20 p-2 text-sm">
                 <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-500" />
-                <strong className="text-foreground">Important:</strong>{' '}
-                <span className="text-muted-foreground">Save this API key now. You won't be able to see it again!</span>
+                <strong className="text-foreground"><Trans>Important:</Trans></strong>{' '}
+                <span className="text-muted-foreground"><Trans>Save this API key now. You won't be able to see it again!</Trans></span>
               </div>
               <div className="flex gap-3">
                 <Textarea
@@ -235,9 +234,9 @@ export function ApiKeysView() {
                 <Button
                   onClick={() => {
                     void navigator.clipboard.writeText(generatedApiKey.api_key);
-                    toast({
-                      title: 'Copied to Clipboard',
-                      description: 'API key copied successfully',
+                    notify.success({
+                      title: t`Copied to Clipboard`,
+                      message: t`API key copied successfully`,
                     });
                   }}
                   variant="outline"
@@ -245,7 +244,7 @@ export function ApiKeysView() {
                   className="flex items-center gap-2"
                 >
                   <Copy className="h-4 w-4" />
-                  Copy
+                  <Trans>Copy</Trans>
                 </Button>
               </div>
             </div>
@@ -255,16 +254,16 @@ export function ApiKeysView() {
           {userApiKeys.length > 0 && (
             <div className="rounded-lg border border-gray-200 bg-transparent">
               <div className="border-b border-gray-200 p-4">
-                <h3 className="text-base font-semibold text-foreground">Your API Keys</h3>
+                <h3 className="text-base font-semibold text-foreground"><Trans>Your API Keys</Trans></h3>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Value</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead><Trans>Name</Trans></TableHead>
+                    <TableHead><Trans>Description</Trans></TableHead>
+                    <TableHead><Trans>Value</Trans></TableHead>
+                    <TableHead><Trans>Status</Trans></TableHead>
+                    <TableHead className="text-right"><Trans>Actions</Trans></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -277,7 +276,7 @@ export function ApiKeysView() {
                       </TableCell>
                       <TableCell>
                         <Badge variant={apiKey.is_active ? 'default' : 'secondary'}>
-                          {apiKey.is_active ? 'Active' : 'Inactive'}
+                          {apiKey.is_active ? <Trans>Active</Trans> : <Trans>Inactive</Trans>}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">

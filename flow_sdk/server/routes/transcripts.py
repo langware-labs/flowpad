@@ -2,7 +2,7 @@
 
 ``GET /api/v1/transcripts/{worker_type}?path=<absolute_path>``
 
-Loads a worker JSONL transcript via :class:`AgentTranscript` (worker-agnostic
+Loads a worker JSONL transcript via :class:`AgentTranscriptFile` (worker-agnostic
 parser) and returns the typed entries plus the extracted session header.
 The UI's ``GenericTranscriptViewer`` consumes the response — both claude
 and codex paths flow through the same shape.
@@ -13,18 +13,34 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from flow_sdk.transcript_analyzer.entries import MetaEntry
-from flow_sdk.transcript_analyzer.transcript import AgentTranscript
+from flow_sdk.transcript_analyzer.assembly import assemble_tree
+from flow_sdk.transcript_analyzer.entries import AgentSpawnEntry, MetaEntry
+from flow_sdk.transcript_analyzer.resolver import (
+    TranscriptNotFoundError,
+    received_transcript_dest,
+    resolve_session_jsonl,
+)
+from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
 
 logger = logging.getLogger(__name__)
+
+
+def _is_received(worker_type: str, session_id: str, resolved: Path) -> bool:
+    """True when ``resolved`` is the instance's received-transcripts copy for this
+    session — i.e. the transcript arrived via a shared message and never ran here,
+    so it is not resumable. Path-based (single source of truth: the same
+    ``received_transcript_dest`` the resolver falls back to). Both paths are
+    already absolute/canonical, so compare directly — no symlink-resolving I/O."""
+    dest = received_transcript_dest(worker_type, session_id)
+    return dest is not None and resolved == dest
 
 router = APIRouter()
 
 
-_SUPPORTED_WORKERS: frozenset[str] = frozenset({"claude", "codex"})
+_SUPPORTED_WORKERS: frozenset[str] = frozenset({"claude", "codex", "copilot", "workflow"})
 
 
 def _error(status_code: int, code: str, message: str) -> JSONResponse:
@@ -34,10 +50,48 @@ def _error(status_code: int, code: str, message: str) -> JSONResponse:
     )
 
 
-def _build_header(transcript: AgentTranscript) -> dict:
+def _assemble_subagents(transcript: AgentTranscriptFile) -> None:
+    """Best-effort: nest spawned sub-agents under their AgentSpawnEntry.
+
+    Static-doc step — stitches each sub-agent's separate transcript onto the
+    spawn's ``children`` so the serialized doc carries the whole nested run. A
+    sub-agent parse hiccup must never fail the main transcript response, so this
+    is swallowed (the doc just renders without nesting).
+    """
+    try:
+        assemble_tree(transcript)
+    except Exception:  # noqa: BLE001 — nesting is additive; never 500 over it
+        logger.exception("transcripts: sub-agent assembly failed for %s", transcript.path)
+
+
+def _stamp_workflow_child_paths(transcript: AgentTranscriptFile, journal: Path) -> None:
+    """Workflow runs only: stamp each AgentSpawnEntry with the absolute path to
+    its spawned agent's own transcript, so the UI can drill into the child.
+
+    The journal lives at ``…/<sid>/workflows/wf_<runId>.json``; a spawned agent's
+    transcript is ``…/<sid>/subagents/workflows/<runId>/agent-<agentId>.jsonl``
+    (agentId == the spawn's ``tool_use_id``). Stamped only when the child exists,
+    so the affordance appears only when openable. Additive + best-effort — a
+    failure must never fail the main response.
+    """
+    if transcript.worker_type != "workflow":
+        return
+    try:
+        run_id = transcript.session_id or journal.stem
+        child_dir = journal.parent.parent / "subagents" / "workflows" / run_id
+        for e in transcript.entries:
+            if isinstance(e, AgentSpawnEntry) and e.tool_use_id:
+                child = child_dir / f"agent-{e.tool_use_id}.jsonl"
+                if child.exists():
+                    e.child_transcript_path = str(child)
+    except Exception:  # noqa: BLE001 — drill-in is additive; never 500 over it
+        logger.exception("transcripts: workflow child-path stamp failed for %s", journal)
+
+
+def _build_header(transcript: AgentTranscriptFile) -> dict:
     """Pull session_meta-style fields onto the response header.
 
-    Mirrors the scan that :meth:`AgentTranscript.to_string` does so the UI
+    Mirrors the scan that :meth:`AgentTranscriptFile.to_string` does so the UI
     can render a stable header strip (cwd, git, cli_version, originator,
     model_provider) without reaching into MetaEntry payloads.
     """
@@ -58,6 +112,43 @@ def _build_header(transcript: AgentTranscript) -> dict:
                 }
             break
     return out
+
+
+async def _header_with_name(worker_type: str, transcript: AgentTranscriptFile) -> dict:
+    """``_build_header`` plus a generic worker-session display ``name`` (the same
+    title the ``history_entry`` list shows), so the transcript tab can label
+    itself for any worker (claude/codex/copilot). Best-effort: a name-resolve
+    failure never blocks the transcript response."""
+    header = _build_header(transcript)
+    try:
+        from flow_sdk.builtin.worker_history import get_worker_session_name
+
+        name = await get_worker_session_name(
+            worker_type, transcript.session_id, jsonl_path=transcript.path
+        )
+        if name:
+            header["name"] = name
+    except Exception:  # noqa: BLE001
+        logger.exception("transcripts: session name resolve failed for %s", transcript.session_id)
+    return header
+
+
+async def _post_agent_trace_feed_entry(trace_entity) -> str | None:
+    """Best-effort Home Feed entry for a completed session analysis."""
+    try:
+        from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+
+        user = await get_or_create_local_user()
+        feed = FeedEntry(
+            feed_status=FeedStatus.NEW.value,
+            data={"type_id": str(trace_entity.typeid)},
+        )
+        feed = await feed.save(user.typeid)
+        return feed.id
+    except Exception:
+        logger.exception("transcripts: failed to post AgentTrace feed entry")
+        return None
 
 
 @router.get("/api/v1/transcripts/{worker_type}")
@@ -82,16 +173,143 @@ async def get_transcript(worker_type: str, path: str = ""):
         return _error(404, "NOT_FOUND", f"Transcript not found: {path!r}")
 
     try:
-        transcript = AgentTranscript(worker_type, p)
+        transcript = AgentTranscriptFile(worker_type, p)
     except Exception as exc:  # noqa: BLE001 — surface the parser failure verbatim
         logger.exception("transcripts: parse failed for %s", path)
         return _error(500, "PARSE_FAILED", str(exc))
 
+    _assemble_subagents(transcript)
+    _stamp_workflow_child_paths(transcript, p)
     return {
         "ok": True,
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
-        "header": _build_header(transcript),
+        "received": _is_received(worker_type, transcript.session_id, p),
+        "header": await _header_with_name(worker_type, transcript),
+        "entries": [entry.to_dict() for entry in transcript.entries],
+    }
+
+
+@router.get("/api/v1/workers/{worker_type}/{session_id}/trace-skeleton")
+async def get_trace_skeleton(worker_type: str, session_id: str):
+    """Deterministic AgentTrace skeleton for a session (lanes/segments/markers).
+
+    Server-side twin of ``python -m flow_sdk.transcript_analyzer.synthesizers.
+    agent_trace`` so the agent-trace skill works from any workdir (no repo
+    venv needed). Synthesis runs in a thread — team sessions parse 80+ files.
+    """
+    import asyncio
+
+    from flow_sdk.transcript_analyzer.synthesizers.agent_trace import synthesize_agent_trace
+
+    if worker_type not in _SUPPORTED_WORKERS:
+        return _error(400, "INVALID_ARG", f"Unsupported worker_type: {worker_type!r}")
+    try:
+        skeleton = await asyncio.to_thread(synthesize_agent_trace, session_id, worker_type)
+    except TranscriptNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except ValueError as exc:
+        return _error(400, "INVALID_ARG", str(exc))
+    return {"ok": True, "skeleton": skeleton}
+
+
+@router.post("/api/v1/workers/{worker_type}/{session_id}/agent-trace")
+async def create_agent_trace(worker_type: str, session_id: str, request: Request):
+    """Create an AgentTrace record for a session from skill annotations.
+
+    Body: ``{"annotations": {...}}`` (the agent-trace skill's judgment layer —
+    goals/divergences/issues/verdict). The server re-synthesizes the skeleton,
+    merges, and creates a NEW AgentTrace entity every call (analyses are
+    history, never overwritten); names are ``trace-<sid8>-<utc compact>``.
+    """
+    import asyncio
+    from datetime import datetime, timezone
+
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agent_trace import AgentTrace
+    from flow_sdk.transcript_analyzer.synthesizers.agent_trace import (
+        merge_annotations,
+        synthesize_agent_trace,
+    )
+
+    if worker_type not in _SUPPORTED_WORKERS:
+        return _error(400, "INVALID_ARG", f"Unsupported worker_type: {worker_type!r}")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    annotations = (body or {}).get("annotations") or {}
+    if not isinstance(annotations, dict):
+        return _error(400, "INVALID_ARG", "annotations must be an object")
+
+    try:
+        skeleton = await asyncio.to_thread(synthesize_agent_trace, session_id, worker_type)
+    except TranscriptNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except ValueError as exc:
+        return _error(400, "INVALID_ARG", str(exc))
+
+    trace = merge_annotations(skeleton, annotations)
+    try:
+        analyzed_process = await AgenticProcess.get_by_session_id(session_id)
+    except Exception:
+        logger.exception("transcripts: failed to resolve analyzed process for %s", session_id)
+        analyzed_process = None
+    if analyzed_process:
+        trace["analyzed_process_id"] = analyzed_process.id
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    trace["name"] = f"trace-{session_id[:8]}-{stamp}"
+    entity = AgentTrace.from_trace(trace)
+    await entity.save()
+    feed_entry_id = await _post_agent_trace_feed_entry(entity)
+    return {
+        "ok": True,
+        "id": entity.id,
+        "asset_ref": entity.asset_ref,
+        "summary": trace["summary"],
+        "feed_entry_id": feed_entry_id,
+    }
+
+
+@router.get("/api/v1/workers/{worker_type}/{session_id}/transcript")
+async def get_worker_session_transcript(worker_type: str, session_id: str):
+    """Return parsed entries for a worker's session, resolved by session id.
+
+    Server resolves the on-disk JSONL path via ``resolve_session_jsonl``
+    (Claude: globs ``~/.claude/projects/*/<sid>.jsonl``; Codex: globs
+    ``~/.codex/sessions/**/rollout-*-<sid>.jsonl``; Copilot:
+    ``~/.copilot/session-state/<sid>/events.jsonl``). Callers never need to
+    know the encoded directory layout — pass ``(worker_type, session_id)``
+    and get the transcript.
+
+    Response shape matches ``GET /api/v1/transcripts/{worker_type}?path=``.
+    """
+    if worker_type not in _SUPPORTED_WORKERS:
+        return _error(400, "INVALID_ARG", f"Unsupported worker_type: {worker_type!r}")
+    if not session_id:
+        return _error(400, "INVALID_ARG", "Missing session_id")
+    try:
+        path = resolve_session_jsonl(worker_type, session_id)
+    except TranscriptNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except ValueError as exc:
+        return _error(400, "INVALID_ARG", str(exc))
+
+    try:
+        transcript = AgentTranscriptFile(worker_type, path)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("transcripts: parse failed for %s", path)
+        return _error(500, "PARSE_FAILED", str(exc))
+
+    _assemble_subagents(transcript)
+    _stamp_workflow_child_paths(transcript, path)
+    return {
+        "ok": True,
+        "worker_type": worker_type,
+        "session_id": transcript.session_id,
+        "path": str(transcript.path),
+        "received": _is_received(worker_type, transcript.session_id, path),
+        "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
     }

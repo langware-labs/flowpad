@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import apiClient from '@sdk/client';
+import { Loader2, Search } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Dialog,
   DialogContent,
@@ -8,6 +9,9 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@src/components/ui/dialog';
+import { Input } from '@src/components/ui/input';
+import { useProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import type { ProjectListItem } from '@sdk';
 
 interface ProjectPickerModalProps {
   open: boolean;
@@ -16,9 +20,67 @@ interface ProjectPickerModalProps {
   onConfirm: (ids: string[]) => void;
 }
 
-interface ProjectResult {
-  record_id: string;
-  name: string;
+function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const diff = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(diff)) return '—';
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.floor(mo / 12)}y ago`;
+}
+
+interface RowItem {
+  pid: string;
+  raw: ProjectListItem;
+  label: string;
+  cwd: string;
+  modifiedMs: number;
+}
+
+function renderRow(
+  r: RowItem,
+  checked: boolean,
+  toggle: (pid: string) => void,
+): React.ReactElement {
+  return (
+    <label
+      key={r.pid}
+      className={`flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50 ${
+        checked ? 'bg-accent/30' : ''
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => toggle(r.pid)}
+        className="h-4 w-4 shrink-0 rounded border-input"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium">{r.label}</div>
+        {r.cwd && (
+          <div className="truncate font-mono text-xs text-muted-foreground">{r.cwd}</div>
+        )}
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-0.5">
+        {r.raw.session_count > 0 && (
+          <span className="text-xs text-muted-foreground">
+            {r.raw.session_count} session{r.raw.session_count !== 1 ? 's' : ''}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground/70">
+          {relativeTime(r.raw.modified_at)}
+        </span>
+      </div>
+    </label>
+  );
 }
 
 export function ProjectPickerModal({
@@ -27,88 +89,141 @@ export function ProjectPickerModal({
   selectedIds,
   onConfirm,
 }: ProjectPickerModalProps): React.ReactElement {
-  const [projects, setProjects] = useState<ProjectResult[]>([]);
+  const { t } = useLingui();
+  const { projects, isLoading } = useProjectList({ enabled: open });
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set(selectedIds));
-  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  // Snapshot of the selection taken when the modal opens. Drives the
+  // selected-first ordering so rows stay put as the user toggles checkboxes
+  // (live `checkedIds` would make rows jump between the two groups mid-click).
+  const [initialSelected, setInitialSelected] = useState<Set<string>>(new Set(selectedIds));
 
   useEffect(() => {
     if (!open) return;
     setCheckedIds(new Set(selectedIds));
+    setInitialSelected(new Set(selectedIds));
     setSearch('');
-    setLoading(true);
-    apiClient
-      .get('/search?record_type=project&limit=200')
-      .then((data: unknown) => {
-        const d = data as { results?: ProjectResult[] } | null;
-        setProjects(d?.results ?? []);
-      })
-      .catch(() => {
-        setProjects([]);
-      })
-      .finally(() => setLoading(false));
   }, [open, selectedIds]);
+
+  const rows = useMemo<RowItem[]>(() => {
+    const out: RowItem[] = [];
+    for (const p of projects) {
+      const pid = p.id;
+      if (!pid) continue;
+      out.push({
+        pid,
+        raw: p,
+        label: getProjectDisplayName(p),
+        cwd: p.cwd || '',
+        modifiedMs: p.modified_at ? new Date(p.modified_at).getTime() : 0,
+      });
+    }
+    out.sort((a, b) => b.modifiedMs - a.modifiedMs);
+    return out;
+  }, [projects]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter((p) => p.name.toLowerCase().includes(q));
-  }, [projects, search]);
+    if (!q) return rows;
+    return rows.filter((r) =>
+      r.label.toLowerCase().includes(q) || r.cwd.toLowerCase().includes(q),
+    );
+  }, [rows, search]);
 
-  const toggleProject = (id: string) => {
+  // Selected projects (as of when the modal opened) float to the top, followed
+  // by a separator and the rest. Order within each group keeps the latest-activity sort.
+  const { selectedRows, otherRows } = useMemo(() => {
+    const sel: RowItem[] = [];
+    const other: RowItem[] = [];
+    for (const r of filtered) {
+      if (initialSelected.has(r.pid)) sel.push(r);
+      else other.push(r);
+    }
+    return { selectedRows: sel, otherRows: other };
+  }, [filtered, initialSelected]);
+
+  const toggle = (pid: string) => {
     setCheckedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(pid)) next.delete(pid);
+      else next.add(pid);
       return next;
     });
   };
 
+  const selectAllFiltered = () => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      for (const r of filtered) next.add(r.pid);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setCheckedIds(new Set());
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Select Projects</DialogTitle>
-          <DialogDescription>Choose which projects to filter by.</DialogDescription>
+          <DialogTitle><Trans>Select Projects</Trans></DialogTitle>
+          <DialogDescription><Trans>Choose which projects to filter by. Sorted by latest activity.</Trans></DialogDescription>
         </DialogHeader>
 
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search projects…"
-          className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          autoFocus
-        />
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder={t`Search projects…`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 pl-8 text-sm"
+            autoFocus
+          />
+        </div>
 
-        <div className="max-h-96 overflow-y-auto rounded-md border border-input">
-          {loading ? (
-            <div className="flex h-20 items-center justify-center text-sm text-muted-foreground">
-              Loading...
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            <Trans>{checkedIds.size} selected</Trans>
+            {search.trim() ? ` · ${filtered.length} match${filtered.length === 1 ? '' : 'es'}` : ''}
+          </span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={selectAllFiltered}
+              disabled={filtered.length === 0}
+              className="rounded-md px-2 py-1 hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {search.trim() ? t`Select all matches` : t`Select all`}
+            </button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              disabled={checkedIds.size === 0}
+              className="rounded-md px-2 py-1 hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trans>Clear selection</Trans>
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-96 overflow-y-auto rounded-lg border border-border bg-card">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Trans>Loading projects...</Trans>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex h-20 items-center justify-center text-sm text-muted-foreground">
-              {search ? 'No matches' : 'No projects found'}
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {rows.length === 0 ? t`No projects found` : t`No matches`}
             </div>
           ) : (
-            <div className="flex flex-col gap-0.5 p-1">
-              {filtered.map((p) => (
-                <label
-                  key={p.record_id}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
-                >
-                  <input
-                    type="checkbox"
-                    checked={checkedIds.has(p.record_id)}
-                    onChange={() => toggleProject(p.record_id)}
-                    className="h-4 w-4 rounded border-input"
-                  />
-                  <span className="truncate" title={p.name}>{p.name}</span>
-                </label>
-              ))}
+            <div className="divide-y divide-border">
+              {selectedRows.map((r) => renderRow(r, checkedIds.has(r.pid), toggle))}
+              {selectedRows.length > 0 && otherRows.length > 0 && (
+                <div className="bg-muted/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Trans>Other projects</Trans>
+                </div>
+              )}
+              {otherRows.map((r) => renderRow(r, checkedIds.has(r.pid), toggle))}
             </div>
           )}
         </div>
@@ -118,13 +233,13 @@ export function ProjectPickerModal({
             onClick={() => onOpenChange(false)}
             className="h-8 rounded-md border border-input bg-background px-3 text-sm text-muted-foreground hover:text-foreground"
           >
-            Cancel
+            <Trans>Cancel</Trans>
           </button>
           <button
             onClick={() => onConfirm(Array.from(checkedIds))}
             className="h-8 rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90"
           >
-            Confirm
+            <Trans>Confirm</Trans>
           </button>
         </DialogFooter>
       </DialogContent>

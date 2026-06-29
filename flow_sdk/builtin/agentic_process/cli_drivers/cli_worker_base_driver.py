@@ -10,6 +10,7 @@ Modules layout::
         cli_worker_base_driver.py  ← this file
         claude/                    ← ClaudeDriver + Claude CLI specifics
         codex/                     ← CodexDriver + Codex CLI specifics
+        copilot/                   ← CopilotDriver + GitHub Copilot specifics
 
 Bringing all the cross-vendor types into one file (instead of a ``base/``
 sub-package) keeps the import graph flat: vendor drivers depend on this
@@ -45,7 +46,8 @@ from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.fs_records.agent_status import WorkerStatus
+    from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
+    from flow_sdk.builtin.worker_status import WorkerStatus
     from flow_sdk.responses.response import ApiResponse
 
 
@@ -275,12 +277,62 @@ def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any
 
     Runtime-only env vars are injected after the process identity is known but
     are not user launch config, so they must not force a restart prompt.
+
+    ``resume`` is derived from (session_id, transcript-on-disk) by the driver's
+    ``cli_options`` and flips False→True as soon as the worker writes its first
+    JSONL line. Hashing it would race the snapshot captured at the end of
+    ``start_pty()`` against that write and light up a phantom restart glow on
+    fresh processes, so it's stripped here.
+
+    ``fork_session_id`` is the same shape of derived/transient input: it points
+    at the parent session at fork time, then gets stripped from ``cli_config``
+    as soon as the new session materialises on disk (see
+    ``ClaudeDriver.headless_prompt``'s fork-strip and ``cli_options``'s
+    ``fork_session_id = None`` on resume). Hashing it would flip
+    ``restart_required`` purely as a side effect of that strip, so it's
+    excluded for the same reason as ``resume``.
     """
     data = dict(options.to_json())
     env_vars = dict(data.get("env_vars") or {})
     env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
     data["env_vars"] = env_vars
+    data.pop("resume", None)
+    data.pop("fork_session_id", None)
     return data
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# capability consumption — workers spawn with the discovered harness folder
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def worker_capability_kind(worker_type: str) -> str:
+    """The capability kind whose discovered value provides this worker's CLI."""
+    return f"harness.{worker_type}.cli"
+
+
+def worker_path_env(worker_type: str) -> dict[str, str] | None:
+    """PATH override for spawning this worker, from the discovered capability.
+
+    The harness capability's value (RecordType.FOLDER, an FSRef dict) is the
+    CLI's bin directory as a standard terminal would resolve it. Prepending it
+    to the spawn PATH makes both argv[0] and the CLI's ``#!/usr/bin/env node``
+    shebang resolve regardless of how the backend process was launched.
+
+    Returns ``{"PATH": "<folder>:<current>"}`` when the capability has a
+    value; ``None`` ⇔ no value discovered (CLI not installed) — callers fail
+    fast with a clear error instead of spawning into FileNotFoundError.
+    """
+    from flow_sdk.core.capabilities.discovery import get_capability_value
+
+    discovered = get_capability_value(worker_capability_kind(worker_type))
+    if discovered is None or not isinstance(discovered.value, dict):
+        return None
+    folder = discovered.value.get("path")
+    if not folder:
+        return None
+    current = os.environ.get("PATH", "")
+    return {"PATH": f"{folder}{os.pathsep}{current}" if current else str(folder)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -291,7 +343,7 @@ def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any
 def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
     """Return the correct WorkerCLIOptions subclass for the given worker_type.
 
-    String keys (``"claude"``, ``"codex"``) are the wire form used by
+    String keys (``"claude"``, ``"codex"``, ``"copilot"``) are the wire form used by
     serialised ``AgenticProcess.cli_config`` — kept stable across enum
     renames. Local imports break the cli_drivers/<vendor> → base cycle.
     """
@@ -301,6 +353,9 @@ def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
     if worker_type == "codex":
         from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
         return CodexCliOptions.from_json(cli_json)
+    if worker_type == "copilot":
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+        return CopilotCliOptions.from_json(cli_json)
     raise ValueError(f"Unknown worker_type: {worker_type!r}")
 
 
@@ -323,7 +378,13 @@ class WorkerDriver(Protocol):
     - **Discovery**: where the transcript lives + how to read its tail.
     """
 
-    name: str  # wire id: "claude" | "codex"
+    name: str  # wire id: "claude" | "codex" | "copilot"
+    preassign_interactive_session_id: bool
+    # True iff this vendor's interactive TUI submits a pasted prompt that ends
+    # in ``\r`` (claude). False for TUIs that treat the trailing ``\r`` as
+    # literal text and need a discrete Enter after the paste settles (copilot,
+    # codex) — see ``Shell.write_then_submit`` and the ``prompt-pty`` action.
+    pty_submits_on_paste: bool
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -343,7 +404,7 @@ class WorkerDriver(Protocol):
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
-    async def run_print_turn(
+    async def headless_prompt(
         self,
         process: "AgenticProcess",
         instruction: str,
@@ -351,6 +412,28 @@ class WorkerDriver(Protocol):
         """Headless one-shot turn: spawn the worker, capture session_id onto
         ``process``, manage lifecycle. Returns an ApiResponse the caller can
         send back over HTTP."""
+        ...
+
+    def stream_worker(self, process: "AgenticProcess") -> AgenticWorker:
+        """Return a worker instance for HTTP print-mode streaming.
+
+        This is separate from ``headless_prompt`` because the HTTP ``prompt``
+        action streams FlowData directly to the response while still needing
+        the vendor-specific subprocess wrapper and transcript path.
+        """
+        ...
+
+    async def report_event(
+        self,
+        process: "AgenticProcess",
+        name: "AgenticProcessEventName",
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Handle a client-reported process event.
+
+        Drivers decide which events matter. Unknown or unsupported events
+        should return a debug payload rather than raising.
+        """
         ...
 
     # ── Transcript discovery ─────────────────────────────────────────────────
@@ -364,8 +447,30 @@ class WorkerDriver(Protocol):
         given process — or None if no session id is yet assigned."""
         ...
 
+    def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
+        """Directory a skill folder is laid into so this worker discovers it.
+
+        Claude/Copilot mount the process ``assets_dir`` (``--add-dir``) and read
+        ``.claude/skills`` from it; Codex reads only ``$CODEX_HOME/skills``. The
+        orchestrator routes skill materialization through this seam so it never
+        branches on the vendor."""
+        ...
+
     def tail_status(self, transcript_path: Path) -> "WorkerStatus":
         """Map the tail of the transcript to a WorkerStatus."""
+        ...
+
+    def has_resumable_session(self, process: "AgenticProcess") -> bool:
+        """True iff this vendor has a transcript to ``--resume`` for the
+        process's ``session_id``. Probes the vendor's own session store —
+        used by restart recovery to decide whether to relaunch with resume."""
+        ...
+
+    def supports_plan_mode(self, process: "AgenticProcess") -> bool:
+        """True iff this vendor supports CLI plan mode in headless turns
+        (``--permission-mode plan`` + the ExitPlanMode/AskUserQuestion tools).
+        Surfaced on the entity as ``supports_plan_mode`` so the chat UI can
+        offer the plan toggle only for capable workers. Defaults False."""
         ...
 
     # ── History materialisation ──────────────────────────────────────────────
@@ -422,6 +527,7 @@ def get_driver(worker_type: Any) -> WorkerDriver:
         "claude_code_cli": "claude",
         "claude": "claude",
         "codex": "codex",
+        "copilot": "copilot",
     }
     name = aliases.get(key, key)
 
@@ -435,6 +541,9 @@ def get_driver(worker_type: Any) -> WorkerDriver:
     elif name == "codex":
         from flow_sdk.builtin.agentic_process.cli_drivers.codex.driver import CodexDriver
         driver = CodexDriver()
+    elif name == "copilot":
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver import CopilotDriver
+        driver = CopilotDriver()
     else:
         raise ValueError(f"No WorkerDriver registered for worker_type={worker_type!r}")
 

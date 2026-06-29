@@ -72,8 +72,8 @@ def _resolve_backend_url() -> str:
     if svc and hasattr(svc, "api_url"):
         return svc.api_url
     # Desktop mode: service_urls_config is not set, use local server
-    port = os.environ.get("LOCAL_SERVER_PORT", "9007")
-    return f"http://localhost:{port}"
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return f"http://localhost:{get_instance_settings().port}"
 
 
 def get_webhook_listen_url(backend_url: str | None = None) -> str:

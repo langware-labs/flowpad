@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
-from flow_sdk.fs_store.indexer import IndexProgressTable, TypeProgressRow
+from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow
 
 
 @dataclass
@@ -29,10 +29,17 @@ class InProcessActivity:
 
     @property
     def is_complete(self) -> bool:
+        """The indexer's terminal snapshot is the ONLY completion signal.
+
+        Deliberately not inferred from ``done >= total``: that holds for the
+        whole post-loop orphan sweep, and a mid-sweep "complete" would both
+        drop the activity from refresh-time status replay and open
+        ``_start_activity``'s duplicate-start gate to a second concurrent
+        index run (SQLite writer contention). Abnormal endings are covered by
+        the caller's ``finally: _complete_activity(...)`` plus ``is_timed_out``.
+        """
         t = self.latest_table
-        if t is None:
-            return False
-        return t.text == "complete" or (t.total > 0 and t.done >= t.total)
+        return t is not None and t.text == PROGRESS_TEXT_COMPLETE
 
     def make_flow_data(self) -> dict:
         """Build a ``progress_report`` flow_data envelope from ``latest_table``.

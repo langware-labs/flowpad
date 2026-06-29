@@ -9,6 +9,7 @@ server via WS (reads MACHINE_ID/FLOW_CONNECT_KEY/FLOW_OUTER_URL from env).
 `flow compute list` — shows registered docker compute nodes and their status.
 """
 from __future__ import annotations
+from flow_sdk.instance_settings import get_instance_settings
 
 import os
 import secrets
@@ -97,7 +98,7 @@ def compute_connect(
     typer.echo(f"  {r.stdout.strip()}")
 
     # 7. Write /etc/flowpad/machine.env inside container
-    port = os.environ.get("LOCAL_SERVER_PORT", "9007")
+    port = str(get_instance_settings().port)
     outer_url = f"ws://host.docker.internal:{port}/api/v1/compute/ws"
     env_content = (
         f"MACHINE_ID={machine_id}\n"

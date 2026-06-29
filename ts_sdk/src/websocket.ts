@@ -2,6 +2,13 @@ import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import config from './config'; // Import the 'config' module
 import { TypeId } from './models/TypeId';
+import {
+  ConnectionSlot,
+  HubConnectionStatus,
+  HubLoginStatus,
+  LocalConnectionStatus,
+  makeConnectionSlot,
+} from './services/cloud_status';
 import { defineGlobal } from './utils/globals';
 
 type MessageType =
@@ -18,22 +25,13 @@ type MessageType =
   | 'llm_config_msg'
   | 'hub_client_error_msg'
   | 'auth_expired_msg'
-  | 'ui_command';
+  | 'cloud_login_status_msg'
+  | 'cloud_connection_status_msg'
+  | 'privacy_mode_msg'
+  | 'toplog_state_msg'
+  | 'ui_command'
+  | 'recovered_msg';
 
-function convertToWebSocketUrl(url: string) {
-  // Create a URL object to parse the input URL
-  const parsedUrl = new URL(url);
-
-  // Replace the protocol
-  if (parsedUrl.protocol === 'http:') {
-    parsedUrl.protocol = 'ws:';
-  } else if (parsedUrl.protocol === 'https:') {
-    parsedUrl.protocol = 'wss:';
-  }
-
-  // Return the modified URL as a string
-  return parsedUrl.toString();
-}
 
 interface BaseMessage {
   message_type: MessageType;
@@ -105,6 +103,30 @@ export interface AuthExpiredMessage extends BaseMessage {
   reason: string;
 }
 
+export interface CloudLoginStatusMessage extends BaseMessage {
+  message_type: 'cloud_login_status_msg';
+  status: HubLoginStatus;
+  user?: Record<string, unknown> | null;
+  reason?: string | null;
+}
+
+export interface CloudConnectionStatusMessage extends BaseMessage {
+  message_type: 'cloud_connection_status_msg';
+  status: HubConnectionStatus;
+  error?: string | null;
+}
+
+export interface PrivacyModeMessage extends BaseMessage {
+  message_type: 'privacy_mode_msg';
+  privacy_mode: 'local' | 'connected';
+}
+
+export interface ToplogStateMessage extends BaseMessage {
+  message_type: 'toplog_state_msg';
+  enabled: boolean;
+  filter: Record<string, boolean>;
+}
+
 /**
  * Server → client directive to drive the UI (navigate, open, etc.).
  * Emitted by the local Flowpad server when an agent invokes a `flow navigate ...`
@@ -114,11 +136,13 @@ export interface AuthExpiredMessage extends BaseMessage {
 export interface UiCommandMessage extends BaseMessage {
   message_type: 'ui_command';
   /** Discriminator for the specific action the UI should perform. */
-  kind: 'navigate_entity' | string;
+  kind: 'navigate_entity' | 'navigate_vfs' | string;
   /** For `navigate_entity`: the entity's type (e.g. "shell", "project"). */
   type?: string;
   /** For `navigate_entity`: the entity's id. */
   id?: string;
+  /** For `navigate_vfs`: the absolute file path to open in the asset editor. */
+  path?: string;
 }
 
 export interface LlmConfigMessage extends BaseMessage {
@@ -164,6 +188,9 @@ export interface RestApiMessage extends BaseMessage {
   sub_path?: string | null;
   query_params?: Record<string, unknown> | null;
   body?: Record<string, unknown> | null;
+  // Per-call hub-reflection opt-in (default false). The WS-REST handler copies
+  // this onto request_info.hub_reflect (the HTTP path uses the Hub-Reflect header).
+  hub_reflect?: boolean;
 }
 
 export interface ResponseMessage extends BaseMessage {
@@ -202,6 +229,15 @@ export interface FlowDataMessage extends EntityMessage {
 
 export type DataOpType = 'create' | 'update' | 'delete';
 
+/** Enum form of {@link DataOpType}. Use these members instead of bare
+ *  'create' / 'update' / 'delete' string literals when matching a
+ *  data_op frame's ``op``. */
+export enum DataOp {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+}
+
 interface DataOpMessage extends EntityMessage {
   op: DataOpType;
   data?: { [key: string]: any }; // Use a dictionary to represent the data or define the specific structure if known
@@ -218,6 +254,30 @@ export class ConnectionManager extends EventEmitter {
   private reconnectAttempts: number = 0;
   private baseReconnectDelay: number = 500; // ms
   private isReconnecting: boolean = false;
+
+  // Local WS connection slot — same enum vocabulary as the cloud side
+  // (narrower: no auth_rejected/verified since the local server is the
+  // user's own process). Mutated only at the socket lifecycle points
+  // below; broadcast via 'connection_status_changed'.
+  private _connection: ConnectionSlot<LocalConnectionStatus> = makeConnectionSlot<LocalConnectionStatus>('disconnected');
+
+  get connectionStatus(): LocalConnectionStatus {
+    return this._connection.status;
+  }
+
+  get connectionSlot(): Readonly<ConnectionSlot<LocalConnectionStatus>> {
+    return this._connection;
+  }
+
+  private setConnectionStatus(status: LocalConnectionStatus, error: string | null = null) {
+    const prev = this._connection.status;
+    const prevError = this._connection.error;
+    this._connection = { status, error };
+    void import('./FlowSync/context').then((mod) => mod.dataContext.setLocalConnectionStatus?.(status));
+    if (prev !== status || prevError !== error) {
+      this.emit('connection_status_changed', this._connection);
+    }
+  }
 
   // In-flight connect promise. Set when a `new WebSocket(...)` is created and
   // cleared on `open` or on `close-before-open` of that same socket. Lets
@@ -254,15 +314,17 @@ export class ConnectionManager extends EventEmitter {
       reject_promise = reject;
     });
     this._openPromise = connected_promise;
+    this.setConnectionStatus('connecting');
     try {
-      const ws_url = `${config.SERVER_URL}${config.API_PREFIXES.connect}/${this.id}`;
-      const ws = new WebSocket(convertToWebSocketUrl(ws_url));
+      const ws_url = `${config.WS_URL}/${this.id}`;
+      const ws = new WebSocket(ws_url);
       this.socket = ws;
       ws.binaryType = 'arraybuffer';
       let didOpen = false;
       ws.addEventListener('open', (event) => {
         didOpen = true;
         if (this._openPromise === connected_promise) this._openPromise = null;
+        this.setConnectionStatus('connected');
         this.onOpen(event);
         resolve_promise();
       });
@@ -288,6 +350,11 @@ export class ConnectionManager extends EventEmitter {
           this.socket = null;
           if (this._openPromise === connected_promise) this._openPromise = null;
         }
+        if (!didOpen) {
+          this.setConnectionStatus('error', `WebSocket closed before connecting (code: ${event.code})`);
+        } else {
+          this.setConnectionStatus('disconnected');
+        }
         this.onClose(event);
         if (!didOpen) {
           reject_promise(new Error(`WebSocket closed before connecting (code: ${event.code})`));
@@ -295,10 +362,12 @@ export class ConnectionManager extends EventEmitter {
       });
       ws.addEventListener('error', (event) => {
         console.error('WebSocket error:', event);
+        this.setConnectionStatus('error', 'WebSocket error');
       });
     } catch (e) {
       console.error('Error connecting to WebSocket server:', e);
       if (this._openPromise === connected_promise) this._openPromise = null;
+      this.setConnectionStatus('error', e instanceof Error ? e.message : String(e));
       reject_promise(e instanceof Error ? e : new Error(String(e)));
     }
     return connected_promise;
@@ -428,9 +497,47 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'auth_expired_msg') {
       return this.onAuthExpiredMessage(data as AuthExpiredMessage);
     }
+    if (data.message_type === 'cloud_login_status_msg') {
+      return this.onCloudLoginStatusMessage(data as CloudLoginStatusMessage);
+    }
+    if (data.message_type === 'cloud_connection_status_msg') {
+      return this.onCloudConnectionStatusMessage(data as CloudConnectionStatusMessage);
+    }
+    if (data.message_type === 'privacy_mode_msg') {
+      return this.onPrivacyModeMessage(data as PrivacyModeMessage);
+    }
+    if (data.message_type === 'toplog_state_msg') {
+      return this.onToplogStateMessage(data as ToplogStateMessage);
+    }
     if (data.message_type === 'ui_command') {
       return this.onUiCommandMessage(data as UiCommandMessage);
     }
+    if (data.message_type === 'recovered_msg') {
+      return this.onRecoveredMessage(data);
+    }
+  }
+
+  /** Distinct PTY-recovery signal: the backend watchdog respawned a session's
+   *  worker after a restart and this client is watching it. Consumers (the
+   *  terminal) re-attach their PTY stream. See flow_sdk/server/pty_recovery.py. */
+  onRecoveredMessage(data: BaseMessage) {
+    this.emit('on_recovered', data);
+  }
+
+  onCloudLoginStatusMessage(data: CloudLoginStatusMessage) {
+    this.emit('on_cloud_login_status_msg', data);
+  }
+
+  onCloudConnectionStatusMessage(data: CloudConnectionStatusMessage) {
+    this.emit('on_cloud_connection_status_msg', data);
+  }
+
+  onPrivacyModeMessage(data: PrivacyModeMessage) {
+    this.emit('on_privacy_mode_msg', data);
+  }
+
+  onToplogStateMessage(data: ToplogStateMessage) {
+    this.emit('on_toplog_state_msg', data);
   }
 
   onUiCommandMessage(data: UiCommandMessage) {

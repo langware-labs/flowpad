@@ -1,3 +1,8 @@
+---
+id: 925602af-69eb-5555-b24b-230dd698c9cb
+---
+
+- PRECONDITION: switch the app to Advanced view (footer view pill or `window.setView('advanced')` / localStorage `viewMode=advanced`) — the process toolbar (Restart / Open Terminal / Fork / Worktree / Session Info / Transcript) and side-ribbon panels only exist in Advanced view; the default Standard view shows the simple-chat header without them
 test 1: Top-left Restart button respawns the PTY
 - navigate to {APP_URL}/dock/shell/new_terminal then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for Claude CLI banner (up to 45s) and note pty_pid (via Session Info popover -> PTY ID row, or websocket trace)

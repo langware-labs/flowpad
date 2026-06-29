@@ -12,17 +12,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-    AgenticContext,
-    WorkerDriver,
-    WorkerCLIOptions,
-    restart_payload_from_cli_options,
-)
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
     load_session_history as _claude_load_session_history,
@@ -30,7 +23,12 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import 
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
-from flow_sdk.fs_records.agent_status import WorkerStatus, _tail_status
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    AgenticContext,
+    WorkerCLIOptions,
+    restart_payload_from_cli_options,
+)
+from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
@@ -54,6 +52,8 @@ class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
 
     name = "claude"
+    preassign_interactive_session_id = True
+    pty_submits_on_paste = True
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -65,22 +65,21 @@ class ClaudeDriver:
         registers embedded agents via ``--agents``; sets ``CLAUDE_PROJECT_DIR``
         env from the workdir.
 
-        The Flowpad Assistant mount is gated by ``ServiceConfig.load_flowpad_assistant``
-        — set to ``False`` to keep the SDK-shipped skills/agents out of the session.
+        The Flowpad Assistant mount is gated by ``process.assistant_enabled`` —
+        the per-process ``load_flowpad_assistant`` flag, falling back to the
+        global ``ServiceConfig.load_flowpad_assistant``. Set the flag (e.g.
+        ``process.enable_assistant()``) to override per process; ``None`` keeps
+        the global default.
         """
-        from flow_sdk.config import default_service_config, flowpad_assistant_project_root
-
         cmd = ClaudeCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
+        if cmd.session_id and self.transcript_path(process) is not None:
+            cmd.resume = True
+            cmd.fork_session_id = None
         if cmd.workdir:
             cmd.env_vars.setdefault("CLAUDE_PROJECT_DIR", cmd.workdir)
-        if default_service_config.load_flowpad_assistant:
-            core_dir = str(flowpad_assistant_project_root())
-            extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-            cmd.add_dirs = [core_dir] + extra
-        else:
-            cmd.add_dirs = list(process.additional_dirs or [])
+        cmd.add_dirs = process.resolved_add_dirs
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.agents_json = agents_json
@@ -95,7 +94,7 @@ class ClaudeDriver:
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
-    async def run_print_turn(
+    async def headless_prompt(
         self,
         process: "AgenticProcess",
         instruction: str,
@@ -114,7 +113,7 @@ class ClaudeDriver:
         try:
             await process.get_project()
         except Exception:
-            logger.debug("ClaudeDriver.run_print_turn: get_project failed", exc_info=True)
+            logger.debug("ClaudeDriver.headless_prompt: get_project failed", exc_info=True)
         if not process.workdir:
             return ApiFailResponse(message="claude print prompt: workdir is not set")
 
@@ -135,22 +134,18 @@ class ClaudeDriver:
         # session-id (cli_options sets ``cmd.fork_session_id``). When present,
         # we resume from the source and tell the worker to fork; the new
         # session id is ``process.session_id``.
+        # Once the fork has already materialised on disk, the new session
+        # is no longer "new" — re-issuing ``--fork-session --session-id <existing>``
+        # errors with "Session ID is already in use". Drop the fork source
+        # so this turn plain-resumes the materialised session instead.
         fork_source = cli_cfg.get("fork_session_id")
+        if fork_source and self.transcript_path(process) is not None:
+            fork_source = None
         # Default the headless parent to sonnet — opus's parent-side latency
         # blows past the 28-s long-test budget on multi-step flows. Callers
         # can override via cli_config["model"] / ["effort"].
         parent_model = cli_cfg.get("model") or "sonnet"
         parent_effort = cli_cfg.get("effort")
-        # Mirror the add_dirs gate used by ``cli_options`` (PTY mode) so the
-        # print-mode worker sees the same skill/agent mount surface.
-        from flow_sdk.config import default_service_config, flowpad_assistant_project_root
-        if default_service_config.load_flowpad_assistant:
-            core_dir = str(flowpad_assistant_project_root())
-            extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-            ctx_add_dirs = [core_dir] + extra
-        else:
-            ctx_add_dirs = list(process.additional_dirs or [])
-
         # Mirror PTY path's FLOWPAD_EXECUTION_SCOPE injection
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow workflow report``) back to this process.
@@ -169,17 +164,23 @@ class ClaudeDriver:
             resume_session_id=(fork_source or process.session_id) if (is_resume or fork_source) else None,
             session_id=process.session_id if fork_source else (None if is_resume else process.session_id),
             fork_session=bool(fork_source),
-            add_dirs=ctx_add_dirs,
+            add_dirs=process.resolved_add_dirs,
         )
 
         # Lifecycle: flip to RUNNING before launching the worker.
-        from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+        from flow_sdk.builtin.process_lifecycle import ProcessStatus
         if process.status != ProcessStatus.RUNNING.value:
             process.status = ProcessStatus.RUNNING.value
             try:
                 await process.save()
             except Exception:
-                logger.debug("ClaudeDriver.run_print_turn: lifecycle save failed", exc_info=True)
+                # WARNING so headless / migration callers can observe that
+                # lifecycle state isn't being persisted. See the matching
+                # change at agentic_process.py:_run_turn.
+                logger.warning(
+                    "ClaudeDriver.headless_prompt: lifecycle save failed",
+                    exc_info=True,
+                )
 
         worker = ClaudeCLIStreamWorker()
         from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_WORKERS
@@ -188,6 +189,16 @@ class ClaudeDriver:
         composed = self.compose_prompt(instruction, process.get_agents_json())
         process_ref = process
         process_id = process.id
+
+        # Multi-turn correctness: see AgenticProcess._discover_status_from_transcript.
+        # Flip the projection to RUNNING for the duration of this turn and
+        # broadcast it now so the closing notify_updated (which carries the
+        # JSONL-derived COMPLETE) is a real edge for SDK mirrors.
+        object.__setattr__(process_ref, "_turn_in_flight", True)
+        try:
+            await process_ref.notify_updated()
+        except Exception:
+            logger.exception("ClaudeDriver.headless_prompt: start-of-turn notify_updated failed")
 
         async def _run_turn() -> None:
             try:
@@ -198,15 +209,37 @@ class ClaudeDriver:
                             process_ref.session_id = sid
                             await process_ref.save()
                         except Exception:
-                            logger.debug("ClaudeDriver.run_print_turn: session_id save failed", exc_info=True)
+                            logger.warning(
+                                "ClaudeDriver.headless_prompt: session_id save failed",
+                                exc_info=True,
+                            )
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:
-                        logger.exception("ClaudeDriver.run_print_turn: emit_flow_data failed")
+                        logger.exception("ClaudeDriver.headless_prompt: emit_flow_data failed")
             except Exception:
-                logger.exception("ClaudeDriver.run_print_turn: worker error")
+                logger.exception("ClaudeDriver.headless_prompt: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
+                # Clear the override before the closing notify_updated so it
+                # carries the real JSONL-derived status.
+                object.__setattr__(process_ref, "_turn_in_flight", False)
+                # If the fork materialised on disk (the new session's JSONL
+                # was written), drop ``fork_session_id`` from cli_config so
+                # subsequent launches plain ``--resume`` the new session
+                # instead of trying to re-fork from the parent — which
+                # errors with "Session ID is already in use" against the
+                # now-existing new session. Guarded by transcript existence
+                # so an early-failed fork keeps the parent reference for
+                # retry.
+                if self.transcript_path(process_ref) is not None:
+                    cli_cfg_next = dict(process_ref.cli_config or {})
+                    if cli_cfg_next.pop("fork_session_id", None) is not None:
+                        process_ref.cli_config = cli_cfg_next
+                        try:
+                            await process_ref.save()
+                        except Exception:
+                            logger.debug("ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True)
                 # ``worker_status`` is a computed projection re-derived from
                 # the JSONL tail by ``to_dict`` / ``api_json_serializer``, so
                 # ``save()`` short-circuits when no real entity field changed.
@@ -218,10 +251,27 @@ class ClaudeDriver:
                 try:
                     await process_ref.notify_updated()
                 except Exception:
-                    logger.exception("ClaudeDriver.run_print_turn: terminal notify_updated failed")
+                    logger.exception("ClaudeDriver.headless_prompt: terminal notify_updated failed")
 
         asyncio.create_task(_run_turn(), name=f"claude-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
+
+    def stream_worker(self, process: "AgenticProcess") -> ClaudeCLIStreamWorker:
+        return ClaudeCLIStreamWorker()
+
+    async def report_event(
+        self,
+        process: "AgenticProcess",
+        name,
+        data: dict,
+    ) -> dict:
+        return {
+            "handled": False,
+            "worker": self.name,
+            "event_name": getattr(name, "value", str(name)),
+            "session_id": process.session_id,
+            "reason": "unsupported_event",
+        }
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
@@ -229,8 +279,8 @@ class ClaudeDriver:
         """Path to the Claude session JSONL — None when no session_id yet."""
         if not process.session_id:
             return None
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-        record = ClaudeSessionRecord.get(process.session_id)
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+        record = get_claude_session(process.session_id)
         if record and record.jsonl_path:
             path = Path(record.jsonl_path)
             if path.exists():
@@ -246,9 +296,24 @@ class ClaudeDriver:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
 
+    def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
+        """Claude discovers skills from ``.claude/skills`` under the mounted
+        assets dir (passed via ``--add-dir``)."""
+        return assets_dir / ".claude" / "skills"
+
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         """Map the tail of the Claude JSONL to a WorkerStatus."""
         return _tail_status(transcript_path)
+
+    def has_resumable_session(self, process: "AgenticProcess") -> bool:
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+
+        return bool(process.session_id) and get_claude_session(process.session_id) is not None
+
+    def supports_plan_mode(self, process: "AgenticProcess") -> bool:
+        """Claude supports CLI plan mode (``--permission-mode plan`` + the
+        ``ExitPlanMode``/``AskUserQuestion`` tools) in headless turns."""
+        return True
 
     # ── History materialisation ──────────────────────────────────────────────
 

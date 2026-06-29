@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { OpenerId } from './tab_opener_types';
+import { VALID_OPENER_IDS, type OpenerId } from './tab_opener_types';
+import { readLastOpenerId, subscribeLastOpener, writeLastOpenerId } from './useLastWorkerType';
 
 const STORAGE_KEY = 'flowpad.terminal.pinnedOpeners';
 
-const VALID_IDS: OpenerId[] = ['claude', 'claude-resume-by-id', 'terminal', 'sandbox', 'docker', 'history'];
+function isValidOpenerId(value: unknown): value is OpenerId {
+  return typeof value === 'string' && (VALID_OPENER_IDS as string[]).includes(value);
+}
 
 function readFromStorage(): OpenerId[] {
   if (typeof window === 'undefined') return [];
@@ -12,7 +15,7 @@ function readFromStorage(): OpenerId[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((v): v is OpenerId => typeof v === 'string' && (VALID_IDS as string[]).includes(v));
+    return parsed.filter(isValidOpenerId);
   } catch {
     return [];
   }
@@ -20,13 +23,15 @@ function readFromStorage(): OpenerId[] {
 
 export interface UsePinnedOpenersResult {
   pinned: OpenerId[];
+  lastOpened: OpenerId | null;
   isPinned: (id: OpenerId) => boolean;
   togglePin: (id: OpenerId) => void;
-  shouldAutoPinNext: boolean;
+  rememberOpened: (id: OpenerId) => void;
 }
 
 export function usePinnedOpeners(): UsePinnedOpenersResult {
   const [pinned, setPinned] = useState<OpenerId[]>(() => readFromStorage());
+  const [lastOpened, setLastOpened] = useState<OpenerId | null>(() => readLastOpenerId());
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -37,16 +42,25 @@ export function usePinnedOpeners(): UsePinnedOpenersResult {
     }
   }, [pinned]);
 
+  // Stay in sync when another surface (e.g. WorkerToolbar) writes the shared key.
+  useEffect(() => subscribeLastOpener(() => setLastOpened(readLastOpenerId())), []);
+
   const isPinned = useCallback((id: OpenerId) => pinned.includes(id), [pinned]);
 
   const togglePin = useCallback((id: OpenerId) => {
     setPinned((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
   }, []);
 
+  const rememberOpened = useCallback((id: OpenerId) => {
+    setLastOpened(id);
+    writeLastOpenerId(id);
+  }, []);
+
   return {
     pinned,
+    lastOpened,
     isPinned,
     togglePin,
-    shouldAutoPinNext: pinned.length === 0,
+    rememberOpened,
   };
 }

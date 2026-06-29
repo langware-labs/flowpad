@@ -7,9 +7,8 @@ normal Python attribute lookup (no dependency injection needed).
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
-import re as _re
+import time
 import uuid
 from typing import TYPE_CHECKING, Callable
 
@@ -27,40 +26,6 @@ if TYPE_CHECKING:
 # Prevents OS PTY device exhaustion (macOS default limit: 511).
 _PTY_CAP = 70
 _PTY_EVICT_COUNT = 10
-
-# ---------------------------------------------------------------------------
-# Session title tracking — captures Claude-generated tab titles in real time.
-# Keyed by shell_id (entity UUID).  Populated by on_pty_output() whenever an
-# ANSI OSC title escape is detected that isn't a Claude Code spinner frame.
-# ---------------------------------------------------------------------------
-_pty_session_titles: dict[str, str] = {}
-
-# Matches OSC 0 terminal title sequences: ESC ] 0 ; <title> BEL (or ST)
-_OSC_TITLE_RE = _re.compile(rb"\x1b\]0;([^\x07\x1b]+)(?:\x07|\x1b\\)")
-# Strips a leading spinner glyph + space (e.g. "✳ Morning coding session" → "Morning coding session")
-_SPINNER_PREFIX_RE = _re.compile(r"^[^\x00-\x7F] ")
-
-
-def _detect_osc_title(data: bytes) -> str | None:
-    """Extract the last meaningful session title from a raw PTY chunk, or None."""
-    matches = _OSC_TITLE_RE.findall(data)
-    for raw in reversed(matches):
-        try:
-            title = raw.decode("utf-8", errors="replace").strip()
-        except Exception:
-            continue
-        if "Claude Code" in title:
-            continue  # spinner-only frame ("⠂ Claude Code") — not a real title
-        title = _SPINNER_PREFIX_RE.sub("", title).strip()
-        if title:
-            return title
-    return None
-
-
-def get_pty_session_title(shell_id: str) -> str | None:
-    """Return the last Claude-generated title seen for *shell_id*, or None."""
-    return _pty_session_titles.get(shell_id)
-
 
 class PtyActionsMixin:
     """PTY session management implementation mixed into ComputeNode.
@@ -83,7 +48,7 @@ class PtyActionsMixin:
 
         Operations:
         - start: Start a new PTY session
-        - attach: Reattach to existing PTY session (with replay)
+        - attach: Reattach to existing PTY session (asserts size + repaint)
         - input: Send input to PTY session
         - resize: Resize PTY terminal
         - close: Close PTY session
@@ -271,7 +236,7 @@ class PtyActionsMixin:
 
         Unlike directly calling compute_provider.get_or_create_pty_session(), this method:
         1. Sets up proper output routing to WebSocket clients
-        2. Registers the session in session_manager
+        2. Registers the session in pty_registry
         3. Adds the session to active_pty_sessions
         4. Sends DataOp notifications to all watchers (clients should watch the compute node)
 
@@ -285,10 +250,12 @@ class PtyActionsMixin:
             on_exit: Optional callback fired when the PTY process exits (receives exit code).
 
         Returns:
-            True if session was created successfully, False otherwise
+            True if session was created successfully, False on pre-flight
+            guard failures (no provider node id). Spawn errors RAISE with the
+            root cause (e.g. ``Command not found: 'codex'``) so callers and
+            the start_failure latch surface a real message.
         """
-        from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
-        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
         if not self.node_provider_id:
             logging.error("[PTY] No node_provider_id set for machine PTY session")
@@ -299,14 +266,14 @@ class PtyActionsMixin:
         pty_key = (self.id, self.node_provider_id, shell_id)
 
         # Check if session already exists
-        existing_session = await session_manager.get_session(pty_key)
+        existing_session = await pty_registry.get_session(pty_key)
         if existing_session:
             logging.info(f"[PTY] Machine session already exists: {pty_key}, attaching connection")
-            await session_manager.attach_session(pty_key, connection_id)
+            await pty_registry.attach(pty_key, connection_id)
             return True
 
         # Evict oldest sessions when the cap is reached, to prevent PTY device exhaustion.
-        node_sessions = [k for k in session_manager.sessions if k[0] == self.id]
+        node_sessions = [k for k in pty_registry.states if k[0] == self.id]
         if len(node_sessions) >= _PTY_CAP:
             evict_keys = node_sessions[:_PTY_EVICT_COUNT]
             logging.warning(f"[PTY] Cap ({_PTY_CAP}) reached — evicting {len(evict_keys)} oldest sessions")
@@ -321,8 +288,7 @@ class PtyActionsMixin:
                         await entity.save()
                 except Exception:
                     pass
-                await session_manager.close_session(evict_key)
-                replay_buffer.clear(evict_key)
+                await pty_registry.close_session(evict_key)
 
         # Create output callback that sends data over WebSocket
         main_loop = asyncio.get_event_loop()
@@ -332,34 +298,26 @@ class PtyActionsMixin:
         session_state_holder: list = []
 
         def on_pty_output(data: bytes):
-            logging.info(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
+            logging.debug(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
             current_pty_key = (self.id, self.node_provider_id, shell_id)
 
-            # Track Claude-generated session title (set via ANSI OSC escape after first prompt).
-            # Stored in module-level dict so AgenticProcess.close() can read it at close time.
-            _title = _detect_osc_title(data)
-            if _title and _pty_session_titles.get(shell_id) != _title:
-                _pty_session_titles[shell_id] = _title
-
-            # Append to replay buffer (returns OutputChunk with seq and timestamp)
-            chunk_record = replay_buffer.append(current_pty_key, data)
-            seq = chunk_record.seq
-            chunk_timestamp = chunk_record.timestamp
-            logging.info(f"[PTY] on_pty_output (machine): appended to replay buffer, seq={seq}")
+            # Advance the per-session output counter (activity signal; no data stored)
+            seq = session_state_holder[0].next_seq() if session_state_holder else 0
+            chunk_timestamp = time.time()
 
             # Write to PTY stream file for persistence
             if session_state_holder:
                 ss = session_state_holder[0]
                 if ss.pty_stream_file:
-                    ss.pty_stream_file.write(data)
+                    ss.pty_stream_file.write(data, seq)
                 # Feed Pty.output() iterators
                 for _q in ss.output_queues:
                     asyncio.run_coroutine_threadsafe(_q.put(data), main_loop)
 
             async def get_and_send():
-                current_session = await session_manager.get_session(current_pty_key)
-                if current_session and current_session.connection_ids:
-                    for current_connection_id in current_session.connection_ids:
+                current_session = await pty_registry.get_session(current_pty_key)
+                if current_session and current_session.attached_connections:
+                    for current_connection_id in current_session.attached_connections:
                         await self._send_pty_output_to_client(
                             request_message_id,
                             current_connection_id,
@@ -369,8 +327,8 @@ class PtyActionsMixin:
                             seq,
                             chunk_timestamp,
                         )
-                    logging.info(
-                        f"[PTY] on_pty_output (machine): sent to {len(current_session.connection_ids)} client(s)"
+                    logging.debug(
+                        f"[PTY] on_pty_output (machine): sent to {len(current_session.attached_connections)} client(s)"
                     )
                 elif not current_session:
                     logging.debug(f"[PTY] on_pty_output (machine): session {current_pty_key} not found in manager")
@@ -393,51 +351,105 @@ class PtyActionsMixin:
             )
             logging.info(f"[PTY] Machine PTY session created: {pty_key}")
         except Exception as e:
+            # Propagate — the root cause (e.g. "Command not found: 'codex'")
+            # must reach the API error / start_failure latch, not be flattened
+            # into a generic bool-False → "Failed to create PTY session".
             logging.error(f"[PTY] Failed to create machine PTY session: {e}", exc_info=True)
-            return False
+            raise
 
-        # Register session in session_manager
-        session_state = await session_manager.generate_session(pty_key, self.id, connection_id, cols, rows)
+        # Register session in pty_registry
+        session_state = await pty_registry.generate_session(pty_key, self.id, connection_id, cols, rows)
         session_state.provider_session_data = provider_session_data
         if name:
             session_state.name = name
 
-        # Create or update ShellRecord and wire PtyStreamFile
+        # Create or update shell FSRecord and wire PtyStreamFile
         try:
             from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
-            from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
+            from flow_sdk.fs_store.fs_record import FSRecord
+            from flow_sdk.builtin.shell import (
+                ShellStatus,
+                get_shell_record,
+                shell_pty_stream_path,
+            )
 
-            existing_record = ShellRecord.get(shell_id)
+            existing_record = get_shell_record(shell_id)
             if not existing_record:
-                record = ShellRecord(
+                record = FSRecord(
+                    type="shell",
                     id=shell_id,
                     pty_pid=shell_id,
                     workdir=working_dir,
                     name=name,
-                    state=ShellStatus.RUNNING,
+                    status=ShellStatus.RUNNING.value,
                 )
                 record.save()
             else:
-                # Recovery case: update process_id and touch
+                # Recovery case: backfill pty_pid (may be missing when the
+                # record was first materialized via Entity.save() before PTY
+                # start) and update process_id from the provider session.
+                patch: dict = {}
+                if not existing_record.__dict__.get("pty_pid"):
+                    patch["pty_pid"] = shell_id
                 pid = provider_session_data.get("pid") if isinstance(provider_session_data, dict) else None
-                object.__setattr__(existing_record, "process_id", str(pid) if pid is not None else None)
-                dirty = object.__getattribute__(existing_record, "_dirty_keys")
-                dirty.add("process_id")
-                existing_record.touch()
+                if pid is not None:
+                    patch["process_id"] = str(pid)
+                if patch:
+                    existing_record.save_metadata(patch)
                 record = existing_record
 
-            # Create PtyStreamFile at the record's pty_stream_path
-            pty_stream_file = PtyStreamFile(path=record.pty_stream_path)
+            # Create PtyStreamFile at the record's pty stream path. Initial
+            # winsize goes in the framed header — replay interprets output at
+            # the recorded sizes (resize frames are appended on every change).
+            pty_stream_file = PtyStreamFile(
+                path=shell_pty_stream_path(record.id, record.__dict__.get("pty_pid")),
+                cols=cols,
+                rows=rows,
+            )
             session_state.pty_stream_file = pty_stream_file
+            # Resume the seq counter past any previous server process's epoch
+            # (recovery respawns into the SAME stream file): seqs must stay
+            # monotonic within one file or the frontend's replay-vs-live
+            # dedup drops post-restart output — "PTY looks dead after restart".
+            persisted_max = pty_stream_file.max_seq()
+            if persisted_max > session_state.seq:
+                session_state.seq = persisted_max
 
-            # Write-through: create/update Shell DB entity
+            # Write-through: create/update the Shell DB entity from the record
+            # via the generic base sync, then apply the shell-specific side
+            # effects (tab ordering for new tabs, compute-node binding). The
+            # compute node is this action's context (self.typeid), so the
+            # binding lives here — not in a per-type from_record override.
             try:
+                import re as _re
                 from flow_sdk.builtin.shell import Shell
+                from flow_sdk.core.entity.entity_model import Entity
 
-                shell = await Shell.from_record(record, self.typeid)
-                if shell and shell.status != ShellStatus.RUNNING.value:
-                    shell.status = ShellStatus.RUNNING.value
-                    await shell.save()
+                _UUID = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                if _re.match(_UUID, str(record.id), _re.I):
+                    was_new = await Shell.get_one({"id": record.id}) is None
+                    shell = await Shell.from_record(record)
+                    if shell:
+                        changed = False
+                        if was_new:
+                            shell.tab_order = await Shell.next_tab_order()
+                            changed = True
+                        cn_parts = str(self.typeid).split("-", 1)
+                        cn_id = cn_parts[1] if len(cn_parts) == 2 else str(self.typeid)
+                        if cn_id and not shell.compute_node_id:
+                            shell.compute_node_id = cn_id
+                            changed = True
+                        if shell.status != ShellStatus.RUNNING.value:
+                            shell.status = ShellStatus.RUNNING.value
+                            changed = True
+                        if changed:
+                            await shell.save()
+                        try:
+                            cn = await Entity.get_by_typeid(self.typeid)
+                            if cn:
+                                await cn.attach_child(shell.typeid)
+                        except Exception as _e_attach:
+                            logging.debug(f"[PTY] attach shell to compute node failed: {_e_attach}")
             except Exception as e_shell:
                 logging.warning(f"[PTY] Error creating Shell entity: {e_shell}", exc_info=True)
         except Exception as e:
@@ -534,7 +546,10 @@ class PtyActionsMixin:
           - session_id (required): The Claude session UUID
           - project (optional): Absolute project path for O(1) lookup
         """
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import (
+            claude_session_to_transcript_dicts,
+            get_claude_session,
+        )
 
         request_info = get_current_request_info()
         session_id = request_info.request.query_params.get("session_id")
@@ -542,15 +557,48 @@ class PtyActionsMixin:
             return ApiFailResponse(message="session_id query parameter required")
 
         project = request_info.request.query_params.get("project")
-        kwargs = {}
-        if project:
-            kwargs["project"] = project
-
-        record = ClaudeSessionRecord.get(session_id, **kwargs)
+        record = get_claude_session(session_id, project=project)
         if not record:
             return ApiSuccessResponse(data=[])
 
-        return ApiSuccessResponse(data=record.to_transcript_dicts())
+        return ApiSuccessResponse(data=claude_session_to_transcript_dicts(record))
+
+    async def _pty_session_transcript_raw(self) -> ApiResponse:
+        """Return raw JSONL bytes for a Claude session as a UTF-8 string.
+
+        The browser cannot fetch ``~/.claude/projects/.../<sid>.jsonl`` directly
+        (no static mount), so callers that need the *original* bytes (e.g. to
+        attach the transcript to an outbound share) ask us to read the file
+        server-side and return its content in the response payload.
+
+        Query params:
+          - session_id (required): The Claude session UUID
+          - project (optional): Absolute project path for O(1) lookup
+        """
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+
+        request_info = get_current_request_info()
+        session_id = request_info.request.query_params.get("session_id")
+        if not session_id:
+            return ApiFailResponse(message="session_id query parameter required")
+
+        project = request_info.request.query_params.get("project")
+        record = get_claude_session(session_id, project=project)
+        if not record or not record.jsonl_path:
+            return ApiSuccessResponse(data={"content": "", "session_id": session_id, "jsonl_path": None})
+
+        from pathlib import Path as _Path
+        path = _Path(record.jsonl_path)
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return ApiFailResponse(message=f"failed to read transcript: {exc}")
+
+        return ApiSuccessResponse(data={
+            "content": content,
+            "session_id": session_id,
+            "jsonl_path": str(path),
+        })
 
     async def _pty_discovery_action(self) -> ApiResponse:
         """Run discovery on a record type and return the result.
@@ -573,38 +621,54 @@ class PtyActionsMixin:
         # Resolve Record class from the global type registry (supports all registered types)
         from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
 
-        cls = _SR.get_record_cls(record_type)
-        if cls is None:
-            # Lazy-import well-known record types that aren't loaded at startup.
-            # Importing the module triggers __init_subclass__ → SchemaRegistry registration.
-            if record_type == "claude_session":
-                from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord  # noqa: PLC0415
-
-                cls = ClaudeSessionRecord
-            else:
-                return ApiFailResponse(message=f"Unknown record type: {record_type!r}")
-
         uuid_param = request_info.request.query_params.get("uuid") if request_info.request else None
         project = request_info.request.query_params.get("project") if request_info.request else None
-        kwargs = {}
-        if project:
-            kwargs["project"] = project
 
         loop = asyncio.get_event_loop()
 
+        # Parser-fn-only types need their own dispatch (no record_cls). Add
+        # cases here as more types migrate.
+        if record_type == "claude_session":
+            from flow_sdk.fs_store.indexer.functions.claude_sessions import (  # noqa: PLC0415
+                claude_session_meta_dict,
+                discover_claude_session_paths_iter,
+                ensure_claude_session_stats,
+                extract_claude_session_from_path,
+                get_claude_session,
+            )
+            try:
+                if uuid_param:
+                    record = await loop.run_in_executor(
+                        None, lambda: get_claude_session(uuid_param, project=project)
+                    )
+                    if not record:
+                        return ApiSuccessResponse(data=None)
+                    await loop.run_in_executor(None, lambda: ensure_claude_session_stats(record))
+                    return ApiSuccessResponse(data=claude_session_meta_dict(record))
+                else:
+                    paths = await loop.run_in_executor(
+                        None, lambda: list(discover_claude_session_paths_iter())
+                    )
+                    records = [extract_claude_session_from_path(p) for p in paths]
+                    return ApiSuccessResponse(
+                        data=[claude_session_meta_dict(r) for r in records]
+                    )
+            except Exception as exc:
+                logging.warning("discovery action error for %r uuid=%r: %s", record_type, uuid_param, exc)
+                return ApiSuccessResponse(data=None)
+
+        if _SR.get(record_type) is None:
+            return ApiFailResponse(message=f"Unknown record type: {record_type!r}")
+
+        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
         try:
             if uuid_param:
-                record = await loop.run_in_executor(None, lambda: cls.get(uuid_param, **kwargs))
-                if not record:
-                    # Return 200 with null data — the session file may not exist yet
-                    # during normal startup (race condition), so this is not an error.
+                record = await loop.run_in_executor(None, lambda: FSRecord.load_or_none(record_type, uuid_param))
+                if record is None:
                     return ApiSuccessResponse(data=None)
-                await loop.run_in_executor(None, lambda: record.discovery(force=True))
                 return ApiSuccessResponse(data=record.meta_dict())
             else:
-                records = await loop.run_in_executor(None, lambda: cls.discover())
-                for rec in records:
-                    await loop.run_in_executor(None, lambda r=rec: r.discovery(force=True))
+                records = await loop.run_in_executor(None, lambda: FSRecord.discover(record_type))
                 return ApiSuccessResponse(data=[r.meta_dict() for r in records])
         except Exception as exc:
             logging.warning("discovery action error for %r uuid=%r: %s", record_type, uuid_param, exc)
@@ -614,9 +678,8 @@ class PtyActionsMixin:
         """Clear all in-memory PTY state for this compute node (mimics server restart).
 
         Wipes:
-        - session_manager sessions for this node
-        - replay_buffer entries for this node
-        - compute_provider._pty_sessions for this node
+        - pty_registry sessions for this node
+        - compute_provider._pty_processes for this node
         - active_pty_sessions list on this entity
 
         Shell entities in the DB retain their status; _open_shell will detect
@@ -634,7 +697,7 @@ class PtyActionsMixin:
         name (str). Updates the record on disk and returns
         the updated record data.
         """
-        from flow_sdk.fs_records.shell_record import ShellRecord
+        from flow_sdk.builtin.shell import get_shell_record
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data()
@@ -642,43 +705,43 @@ class PtyActionsMixin:
         if not shell_id:
             return ApiFailResponse(message="shell_id is required")
 
-        record = ShellRecord.get(shell_id)
-        if not record:
+        # Entity-first write-through: mutate the Shell entity and save(). The
+        # base store mirrors persisted fields (name) to metadata.json; tab_order
+        # is DB-only (persist=FALSE). No direct record poke / sync_from_record.
+        from flow_sdk.builtin.shell import Shell
+
+        shell_entity = await Shell.get_one({"id": shell_id})
+        if not shell_entity:
             return ApiFailResponse(message="Shell session not found")
 
         if "tab_order" in body:
-            object.__setattr__(record, "tab_order", body["tab_order"])
-            dirty = object.__getattribute__(record, "_dirty_keys")
-            dirty.add("tab_order")
+            shell_entity.tab_order = body["tab_order"]
         if "name" in body:
-            object.__setattr__(record, "name", body["name"])
-            dirty = object.__getattribute__(record, "_dirty_keys")
-            dirty.add("name")
-        record.save()
+            shell_entity.name = body["name"]
+        await shell_entity.save()
 
-        # Write-through: update Shell DB entity
-        try:
-            from flow_sdk.builtin.shell import Shell
-
-            shell_entity = await Shell.get_one({"id": shell_id})
-            if shell_entity:
-                shell_entity.sync_from_record(record)
-                await shell_entity.save()
-        except Exception as e:
-            logging.warning(f"[PTY] Failed to update Shell entity: {e}")
-
-        return ApiSuccessResponse(data=record.meta_dict())
+        record = get_shell_record(shell_id)
+        data = record.meta_dict() if record else {}
+        data["tab_order"] = shell_entity.tab_order
+        return ApiSuccessResponse(data=data)
 
     async def _attach_pty_session(self, body: dict) -> ApiResponse:
-        """Reattach to existing PTY session with output replay."""
+        """Reattach to an existing PTY session.
+
+        No byte replay: the client mounts a blank terminal, so the server
+        asserts the client's size on the PTY and forces the running TUI to
+        repaint its live frame (real resize when the size changed, winsize
+        jiggle when it didn't). ``since_seq`` from older clients is ignored.
+        """
         logging.info(f"[PTY] _attach_pty_session called with body: {body}")
         request_info = get_current_request_info()
-        if not request_info or not request_info.request_message_id:
+        if not request_info:
             return ApiFailResponse(message="Invalid request context")
 
-        request_message_id = request_info.request_message_id
+        # request_message_id rides the WS message; REST callers don't carry one,
+        # so fall back to the body or a fresh id (shared helper).
+        request_message_id = self._request_message_id(body)
         pty_id = body.get("pty_id") or body.get("shell_id")
-        since_seq = body.get("since_seq")
 
         if not pty_id:
             logging.error("[PTY] Missing required parameters")
@@ -690,8 +753,11 @@ class PtyActionsMixin:
             )
             return ApiFailResponse(message="Missing required parameters", data=response_msg.model_dump())
 
-        # Get connection_id from request context
-        if not request_info.request_connection_id:
+        # Get connection_id from request context (WS) or body (REST callers) —
+        # mirrors _start_pty_session, so a headless REST client can re-attach the
+        # same connection it started with.
+        request_connection_id = request_info.request_connection_id or body.get("connection_id")
+        if not request_connection_id:
             logging.error("[PTY] No WebSocket connection available")
             response_msg = ResponseMessage(
                 session_id=pty_id,
@@ -701,7 +767,6 @@ class PtyActionsMixin:
             )
             return ApiFailResponse(message="No WebSocket connection available", data=response_msg.model_dump())
 
-        request_connection_id = request_info.request_connection_id
         logging.info(f"[PTY] Attaching with connection_id: {request_connection_id}")
 
         pty_handle = self.get_pty(pty_id)
@@ -720,17 +785,6 @@ class PtyActionsMixin:
             )
             return ApiSuccessResponse(data=response_msg.model_dump())
 
-        # Snapshot the replay buffer BEFORE attaching the connection.
-        # Once attached, live PTY output starts flowing to this connection via
-        # on_pty_output.  Taking the snapshot first avoids a race where live
-        # output (with high seq) arrives at the client before the replay (low
-        # seq), which would cause the client's dedup to reject the replay.
-        replay_chunks = []
-        if since_seq is not None:
-            logging.info(f"[PTY] Snapshotting replay buffer from seq {since_seq}, shell_id={pty_id}")
-            replay_chunks = pty_handle.snapshot(since_seq)
-            logging.info(f"[PTY] Snapshotted {len(replay_chunks)} chunks for shell_id={pty_id}")
-
         # Attach to session (updates connection_id — live output starts flowing)
         try:
             await pty_handle.attach(request_connection_id)
@@ -746,33 +800,21 @@ class PtyActionsMixin:
             )
             return ApiFailResponse(message=f"Failed to attach to session: {e}", data=response_msg.model_dump())
 
-        # Send replay chunks (snapshot was taken before attach to avoid races)
-        if replay_chunks:
-            handler = get_connection_handler(TypeId(type=Connection.get_type(), id=request_connection_id))
-            if handler:
-                for i, chunk in enumerate(replay_chunks):
-                    pty_msg = PtyOutputMessage(
-                        provider_node_id=self.node_provider_id,
-                        shell_id=pty_id,
-                        data=base64.b64encode(chunk.data).decode("utf-8"),
-                        seq=chunk.seq,
-                        timestamp_ms=int(chunk.timestamp * 1000),
-                    )
-                    # Send replay chunk over WebSocket with UNIQUE message_id
-                    # This prevents collision with the attach request's pending response
-                    replay_msg_id = str(uuid.uuid4())
-                    try:
-                        logging.info(f"[PTY] Sending replay chunk {i + 1}/{len(replay_chunks)}, seq={chunk.seq}")
-                        await handler.send_message(
-                            ResponseMessage(
-                                session_id=pty_id,
-                                message_id=replay_msg_id,
-                                response_message_id=replay_msg_id,  # Use unique ID, not request_message_id
-                                content=pty_msg,
-                            ).model_dump()
-                        )
-                    except Exception as e:
-                        logging.warn(f"[PTY] Failed to send replay chunk {i + 1}: {e}")
+        # Make the running program repaint for this freshly-attached client.
+        # ``repaint`` asserts the client's size (or jiggles the winsize when it
+        # is unchanged/omitted) — the size policy lives on the handle, not here.
+        # 0/missing dims → None (no size override); a real 0 is not a valid size.
+        try:
+            cols = int(body.get("cols") or 0) or None
+            rows = int(body.get("rows") or 0) or None
+        except (TypeError, ValueError):
+            cols = rows = None
+        try:
+            await pty_handle.repaint(cols, rows)
+        except Exception as e:
+            # Repaint is best-effort: the attach itself succeeded and live
+            # output flows regardless.
+            logging.warning(f"[PTY] attach repaint failed for {pty_id}: {e}")
 
         # Send status message
         latest_seq = pty_handle.latest_seq
@@ -806,7 +848,7 @@ class PtyActionsMixin:
             provider_node_id: Provider node ID
             shell_id: PTY shell ID
             data: Raw PTY output bytes
-            seq: Sequence number (already assigned by replay buffer)
+            seq: Sequence number (per-session monotonic counter)
             timestamp: Unix timestamp (seconds) when chunk was captured
         """
         handler = get_connection_handler(TypeId(type=Connection.get_type(), id=request_connection_id))
@@ -819,10 +861,19 @@ class PtyActionsMixin:
                     response_message_id=request_message_id,
                     content=pty_msg,
                 )
-                logging.info(f"[PTY] Sending PTY output to client: seq={seq}, size={len(data)} bytes")
+                logging.debug(f"[PTY] Sending PTY output to client: seq={seq}, size={len(data)} bytes")
                 await handler.send_message(response_msg.model_dump())
             except Exception as e:
-                logging.warning(f"Failed to send PTY output to client: {e}")
+                # A closed socket (tab closed mid-stream) is normal, not a
+                # warning — the PTY keeps running and reattach repaints the frame.
+                _m = str(e).lower()
+                if any(s in _m for s in (
+                    "close message has been sent", "websocket.close",
+                    "after sending", "disconnect",
+                )):
+                    logging.debug(f"PTY output send skipped — client gone: {e}")
+                else:
+                    logging.warning(f"Failed to send PTY output to client: {e}")
                 response_msg = ResponseMessage(
                     session_id=shell_id,
                     message_id=request_message_id,
@@ -974,16 +1025,14 @@ class PtyActionsMixin:
 
         # Also update disk record directly (covers migration period)
         try:
-            from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
+            from flow_sdk.builtin.shell import ShellStatus, get_shell_record
 
-            record = ShellRecord.get(shell_id)
+            record = get_shell_record(shell_id)
             if record:
-                object.__setattr__(record, "state", ShellStatus.CLOSED)
-                dirty = object.__getattribute__(record, "_dirty_keys")
-                dirty.add("state")
-                record.save()
+                # Canonical `status` write through the unified metadata path.
+                record.save_metadata_field("status", ShellStatus.CLOSED.value)
         except Exception as e:
-            logging.warning(f"[PTY] Failed to update ShellRecord on close: {e}")
+            logging.warning(f"[PTY] Failed to update shell record on close: {e}")
 
         # Write-through: update Shell DB entity status to CLOSED
         try:

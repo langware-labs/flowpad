@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { AppSecretSummary, secretsService } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -13,11 +14,11 @@ import {
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Textarea } from '@src/components/ui/textarea';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Plus, Trash2 } from 'lucide-react';
 
 export function SecretsSection() {
-  const { toast } = useToast();
+  const { t } = useLingui();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [secrets, setSecrets] = useState<AppSecretSummary[]>([]);
   const [busy, setBusy] = useState(false);
@@ -49,10 +50,9 @@ export function SecretsSection() {
       const list = await secretsService.list();
       setSecrets(list ?? []);
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to load secrets',
-        variant: 'destructive',
+      notify.error({
+        title: t`Error`,
+        message: error instanceof Error ? error.message : t`Failed to load secrets`,
       });
     }
   };
@@ -63,19 +63,17 @@ export function SecretsSection() {
       const result = await secretsService.enable();
       if (result?.enabled) {
         setEnabled(true);
-        toast({ title: 'Secrets enabled' });
+        notify.success({ title: t`Secrets enabled` });
       } else {
-        toast({
-          title: 'Could not enable secrets',
-          description: 'Keychain approval was not granted',
-          variant: 'destructive',
+        notify.error({
+          title: t`Could not enable secrets`,
+          message: t`Keychain approval was not granted`,
         });
       }
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to enable secrets',
-        variant: 'destructive',
+      notify.error({
+        title: t`Error`,
+        message: error instanceof Error ? error.message : t`Failed to enable secrets`,
       });
     } finally {
       setBusy(false);
@@ -97,12 +95,11 @@ export function SecretsSection() {
       setShowAdd(false);
       resetForm();
       await refreshList();
-      toast({ title: 'Secret saved', description: trimmed });
+      notify.success({ title: t`Secret saved`, message: trimmed });
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save secret',
-        variant: 'destructive',
+      notify.error({
+        title: t`Error`,
+        message: error instanceof Error ? error.message : t`Failed to save secret`,
       });
     } finally {
       setBusy(false);
@@ -114,12 +111,11 @@ export function SecretsSection() {
     try {
       await secretsService.delete(secretName);
       await refreshList();
-      toast({ title: 'Secret deleted', description: secretName });
+      notify.success({ title: t`Secret deleted`, message: secretName });
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to delete secret',
-        variant: 'destructive',
+      notify.error({
+        title: t`Error`,
+        message: error instanceof Error ? error.message : t`Failed to delete secret`,
       });
     } finally {
       setBusy(false);
@@ -127,18 +123,17 @@ export function SecretsSection() {
   };
 
   if (enabled === null) {
-    return <p className="text-xs text-muted-foreground">Loading…</p>;
+    return <p className="text-xs text-muted-foreground"><Trans>Loading…</Trans></p>;
   }
 
   if (!enabled) {
     return (
       <div className="flex flex-col gap-3">
         <p className="text-sm text-muted-foreground">
-          App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store
-          third-party API keys and other secrets used by your flows.
+          <Trans>App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows.</Trans>
         </p>
         <Button onClick={() => void handleEnable()} disabled={busy}>
-          {busy ? 'Requesting…' : 'Enable secrets'}
+          {busy ? t`Requesting…` : t`Enable secrets`}
         </Button>
       </div>
     );
@@ -148,16 +143,16 @@ export function SecretsSection() {
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          {secrets.length} secret{secrets.length === 1 ? '' : 's'}
+          <Trans>{secrets.length} secret{secrets.length === 1 ? '' : 's'}</Trans>
         </p>
         <Button size="sm" onClick={() => setShowAdd(true)} disabled={busy}>
           <Plus className="mr-1 h-4 w-4" />
-          Add secret
+          <Trans>Add secret</Trans>
         </Button>
       </div>
 
       {secrets.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No secrets yet. Click "Add secret" to create one.</p>
+        <p className="text-xs text-muted-foreground"><Trans>No secrets yet. Click "Add secret" to create one.</Trans></p>
       ) : (
         <ul className="flex flex-col divide-y rounded-md border">
           {secrets.map((s) => (
@@ -173,7 +168,7 @@ export function SecretsSection() {
                 variant="ghost"
                 onClick={() => setConfirmDelete(s.name)}
                 disabled={busy}
-                aria-label={`Delete ${s.name}`}
+                aria-label={t`Delete ${s.name}`}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -191,37 +186,37 @@ export function SecretsSection() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add secret</DialogTitle>
+            <DialogTitle><Trans>Add secret</Trans></DialogTitle>
             <DialogDescription>
-              The value is stored in your operating system keychain and never readable from this UI.
+              <Trans>The value is stored in your operating system keychain and never readable from this UI.</Trans>
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="secret-name">Name</Label>
+              <Label htmlFor="secret-name"><Trans>Name</Trans></Label>
               <Input
                 id="secret-name"
-                placeholder="OPENAI_API_KEY"
+                placeholder={t`OPENAI_API_KEY`}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="secret-value">Value</Label>
+              <Label htmlFor="secret-value"><Trans>Value</Trans></Label>
               <Input
                 id="secret-value"
                 type="password"
-                placeholder="sk-…"
+                placeholder={t`sk-…`}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="secret-description">Description (optional)</Label>
+              <Label htmlFor="secret-description"><Trans>Description (optional)</Trans></Label>
               <Textarea
                 id="secret-description"
-                placeholder="What is this secret used for?"
+                placeholder={t`What is this secret used for?`}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
@@ -230,10 +225,10 @@ export function SecretsSection() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => { setShowAdd(false); resetForm(); }} disabled={busy}>
-              Cancel
+              <Trans>Cancel</Trans>
             </Button>
             <Button onClick={() => void handleSave()} disabled={busy || !name.trim() || !value}>
-              {busy ? 'Saving…' : 'Save'}
+              {busy ? t`Saving…` : t`Save`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -242,9 +237,9 @@ export function SecretsSection() {
       <ConfirmDialog
         open={confirmDelete !== null}
         onOpenChange={(next) => { if (!next) setConfirmDelete(null); }}
-        title="Delete secret"
-        description={`Delete "${confirmDelete ?? ''}" from the OS keychain? This cannot be undone.`}
-        confirmLabel="Delete"
+        title={t`Delete secret`}
+        description={t`Delete "${confirmDelete ?? ''}" from the OS keychain? This cannot be undone.`}
+        confirmLabel={t`Delete`}
         variant="destructive"
         onConfirm={() => {
           const target = confirmDelete;

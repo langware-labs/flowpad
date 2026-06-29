@@ -1,12 +1,13 @@
-import { BASE_PATH } from '@src/constants/basePath';
 import { Button } from '@src/components/ui/button';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
-import { ProcessType } from '@sdk';
+import { ProcessKind } from '@sdk';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { useFloatingChat } from './FloatingChatContext';
 import { useFlowpadAssistantProject } from './useFlowpadAssistantProject';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 interface Bounds {
   x: number;
@@ -75,9 +76,25 @@ function clampToViewport(b: Bounds): Bounds {
  * back into the button. The transform-origin / starting transform are derived
  * from the `triggerRect` captured at click time.
  */
+// EXPERIMENT: PTY-transcript chat transport. Set
+// `localStorage.setItem('flowpad.experiment.ptyChat', '1')` (and reload) to
+// drive the assistant through a PTY worker whose FlowData is derived by
+// polling the session transcript, with the stream closing on inactivity.
+const PTY_CHAT_EXPERIMENT_KEY = 'flowpad.experiment.ptyChat';
+
+function loadPtyChatExperiment(): boolean {
+  try {
+    return localStorage.getItem(PTY_CHAT_EXPERIMENT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function FloatingChatWindow() {
+  const { t } = useLingui();
   const { open, closeChat, triggerRect, restoredFromStorage } = useFloatingChat();
   const { project: flowpadAssistantProject, target, isLoading } = useFlowpadAssistantProject();
+  const [ptyExperiment] = useState<boolean>(() => loadPtyChatExperiment());
 
   const [bounds, setBounds] = useState<Bounds>(() =>
     clampToViewport(loadBounds() ?? defaultBounds()),
@@ -196,7 +213,7 @@ export function FloatingChatWindow() {
   // Use the same dedicated round Flowpad icon as the trigger button for visual
   // continuity. siteConfig branding stays out of this surface — see the button
   // component for the rationale.
-  const logoSrc = `${BASE_PATH}flowpad-icon.png`;
+  const logoSrc = flowpadIcon;
 
   // Compute the entrance/exit transform that starts at the trigger button's
   // rect and ends at identity (the centered window position).
@@ -220,7 +237,7 @@ export function FloatingChatWindow() {
     <div
       ref={containerRef}
       role="dialog"
-      aria-label="Flowpad Assistant"
+      aria-label={t`Flowpad Assistant`}
       data-testid="floating-chat-window"
       onTransitionEnd={(e) => {
         if (e.target !== e.currentTarget) return;
@@ -272,7 +289,17 @@ export function FloatingChatWindow() {
           alt=""
           className="h-5 w-5 flex-shrink-0 object-contain"
         />
-        <span className="flex-1 truncate text-xs font-medium">Flowpad Assistant</span>
+        <span className="flex-1 truncate text-xs font-medium">
+          <Trans>Flowpad Assistant</Trans>
+          {ptyExperiment && (
+            <span
+              className="ml-1.5 rounded bg-amber-500/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400"
+              data-testid="floating-chat-pty-experiment-badge"
+            >
+              <Trans>pty experiment</Trans>
+            </span>
+          )}
+        </span>
         <Button
           type="button"
           variant="ghost"
@@ -280,7 +307,7 @@ export function FloatingChatWindow() {
           className="h-6 w-6"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={closeChat}
-          title="Close"
+          title={t`Close`}
           data-testid="floating-chat-close"
         >
           <X className="h-3.5 w-3.5" />
@@ -291,14 +318,14 @@ export function FloatingChatWindow() {
         {target ? (
           <EntityExecutionPanel
             target={target}
-            processType={ProcessType.Chat}
+            processType={ProcessKind.Chat}
             className="h-full"
-            emptyStateText="Ask the Flowpad Assistant anything."
-            newSessionLabel="New chat"
-            historyLabel="Chat history"
-            pastSessionsLabel="Past chats"
-            noPastSessionsLabel="No past chats"
-            placeholder="What can flowpad do for you ?"
+            emptyStateText={t`Ask the Flowpad Assistant anything.`}
+            newSessionLabel={t`New chat`}
+            historyLabel={t`Chat history`}
+            pastSessionsLabel={t`Past chats`}
+            noPastSessionsLabel={t`No past chats`}
+            placeholder={t`What can flowpad do for you ?`}
             dense
             // Pin newly-spawned chat processes to the Flowpad Assistant
             // project so the asset manager and workdir are sourced from
@@ -306,10 +333,11 @@ export function FloatingChatWindow() {
             // have active in the dock (e.g. flowpad-oss).
             defaultProjectId={flowpadAssistantProject?.id ?? null}
             defaultWorkdir={flowpadAssistantProject?.fs_storage_mount_path ?? null}
+            transport={ptyExperiment ? 'pty-poll' : 'print'}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">
-            {isLoading ? 'Loading Flowpad Assistant…' : 'Flowpad Assistant project not available.'}
+            {isLoading ? <Trans>Loading Flowpad Assistant…</Trans> : <Trans>Flowpad Assistant project not available.</Trans>}
           </div>
         )}
       </div>

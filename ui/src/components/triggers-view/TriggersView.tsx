@@ -1,121 +1,107 @@
-import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { ViewType } from '@src/types/ViewType';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { type ITrigger } from '@sdk';
+import { Trans } from '@lingui/react/macro';
+import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import { useTriggers } from '@src/hooks/useTriggers';
 import { useProject } from '@src/hooks/useProject';
-import { TriggersList } from './TriggersList';
 import { TriggerEditor } from './TriggerEditor';
 import { ScheduleTriggerEditor } from './ScheduleTriggerEditor';
+import { FsopTriggerDetail } from './FsopTriggerDetail';
 import { TriggerInvocationsPanel } from './TriggerInvocationsPanel';
 
+/**
+ * Triggers body — the center editor + right invocations panel for the trigger
+ * addressed by the URL. The list moved to `TriggersNavigator` (the shared Zone
+ * B left menu); selection is URL-first: the selected trigger id and the
+ * transient "creating" mode live in the dock OPTIONS
+ * (`DockPointer.forTriggers`), read here via `currentDock.options`.
+ */
 export function TriggersView() {
-  const { triggers: allTriggers, isLoading: loading } = useTriggers();
+  const { triggers, isLoading: loading } = useTriggers();
   const { project } = useProject();
-  // Schedule triggers are project-scoped; hook triggers are global (system/user).
-  const triggers = useMemo(() => {
-    return allTriggers.filter(t => {
-      if (t.trigger_type !== 'schedule') return true;
-      return t.project_id === project?.id;
-    });
-  }, [allTriggers, project?.id]);
-  const [selectedTrigger, setSelectedTrigger] = useState<ITrigger | null>(null);
-  const [isCreatingSchedule, setIsCreatingSchedule] = useState(false);
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
 
-  const openLog = useCallback((trigger: ITrigger) => {
-    if (trigger.id) {
-      navigation.openTab(ViewType.LENS, DockPointer.forLens('trigger', 'log', trigger.id));
-    }
-  }, [navigation]);
+  const urlScope = useMemo<ScopeFilter>(
+    () => currentDock?.scopeFilter ?? defaultScopeFilter(project?.id ?? null),
+    [currentDock, project?.id],
+  );
 
-  const handleScheduleSaved = (saved: ITrigger) => {
-    setIsCreatingSchedule(false);
-    setSelectedTrigger(saved);
-  };
+  const selectedTrigger = useMemo<ITrigger | null>(() => {
+    const id = currentDock?.options?.trigger;
+    return id ? triggers.find((t) => t.id === id) ?? null : null;
+  }, [currentDock, triggers]);
+  const isCreatingSchedule = currentDock?.options?.creating === 'schedule';
 
-  const handleNewSchedule = () => {
-    setIsCreatingSchedule(true);
-    setSelectedTrigger(null);
-  };
+  const clearSelection = useCallback(() => {
+    navigation.openDock(DockPointer.forTriggers().withScopeFilter(urlScope));
+  }, [navigation, urlScope]);
+
+  const startNewSchedule = useCallback(() => {
+    navigation.openDock(DockPointer.forTriggers(undefined, { creating: 'schedule' }).withScopeFilter(urlScope));
+  }, [navigation, urlScope]);
+
+  const handleScheduleSaved = useCallback(
+    (saved: ITrigger) => {
+      if (saved.id) navigation.openDock(DockPointer.forTriggers(saved.id).withScopeFilter(urlScope));
+      else clearSelection();
+    },
+    [navigation, urlScope, clearSelection],
+  );
 
   if (loading) {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading triggers...</div>;
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground"><Trans>Loading triggers...</Trans></div>
+    );
   }
 
-  // Determine center panel content
   const renderCenter = () => {
     if (isCreatingSchedule) {
-      return (
-        <ScheduleTriggerEditor
-          trigger={null}
-          onSaved={handleScheduleSaved}
-          onCancel={() => setIsCreatingSchedule(false)}
-        />
-      );
+      return <ScheduleTriggerEditor trigger={null} onSaved={handleScheduleSaved} onCancel={clearSelection} />;
     }
     if (!selectedTrigger) {
       if (triggers.length === 0) {
         return (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
-            <p className="text-sm">No triggers yet</p>
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleNewSchedule}>
+            <p className="text-sm"><Trans>No triggers yet</Trans></p>
+            <Button variant="outline" size="sm" className="gap-2" onClick={startNewSchedule}>
               <Plus className="h-4 w-4" />
-              New Schedule Trigger
+              <Trans>New Schedule Trigger</Trans>
             </Button>
             <p className="max-w-xs text-center text-xs text-muted-foreground/70">
-              Hook triggers live as rules in <code className="rounded bg-muted px-1">~/.flow/rules/</code>
+              <Trans>
+                Hook triggers come from rule files under{' '}
+                <code className="rounded bg-muted px-1">~/.flow/skill_rules/</code>. FSOp triggers are installed by the
+                system or via the API.
+              </Trans>
             </p>
           </div>
         );
       }
       return (
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          Select a trigger to edit
+          <Trans>Select a trigger to view</Trans>
         </div>
       );
     }
-    if (selectedTrigger.trigger_type === 'schedule') {
-      return (
-        <ScheduleTriggerEditor
-          trigger={selectedTrigger}
-          onSaved={handleScheduleSaved}
-          onCancel={() => setSelectedTrigger(null)}
-        />
-      );
+    switch (selectedTrigger.trigger_type) {
+      case 'schedule':
+        return <ScheduleTriggerEditor trigger={selectedTrigger} onSaved={handleScheduleSaved} onCancel={clearSelection} />;
+      case 'fsop':
+        return <FsopTriggerDetail key={selectedTrigger.id} trigger={selectedTrigger} />;
+      case 'hook':
+      default:
+        return <TriggerEditor trigger={selectedTrigger} />;
     }
-    return <TriggerEditor trigger={selectedTrigger} />;
   };
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Left panel — trigger list */}
-      <div className="flex w-[280px] flex-shrink-0 flex-col border-r">
-        <div className="flex items-center gap-2 border-b px-3 py-2">
-          <span className="text-sm font-medium">Triggers</span>
-          <Badge variant="secondary" className="text-[10px]">{triggers.length}</Badge>
-        </div>
-        <div className="flex-1 overflow-auto">
-          <TriggersList
-            triggers={triggers}
-            selectedTrigger={selectedTrigger}
-            onSelect={(t) => { setSelectedTrigger(t); setIsCreatingSchedule(false); }}
-            onOpenLog={openLog}
-            onLogModeChange={() => {/* cache updates via useEntitiesQuery */}}
-            onNewSchedule={handleNewSchedule}
-            isCreatingSchedule={isCreatingSchedule}
-          />
-        </div>
-      </div>
-
       {/* Center panel — type-specific editor */}
-      <div className="flex flex-1 flex-col overflow-hidden border-r">
-        {renderCenter()}
-      </div>
+      <div className="flex flex-1 flex-col overflow-hidden border-r">{renderCenter()}</div>
 
       {/* Right panel — invocations */}
       <div className="flex w-[300px] flex-shrink-0 flex-col">

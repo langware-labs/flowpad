@@ -12,7 +12,7 @@ test.describe('Return to Home', () => {
   });
 
   test('navigate back to home from active shell session', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoLanding(page);
     await submitFromLanding(page, 'return home test');

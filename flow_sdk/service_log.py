@@ -79,10 +79,8 @@ _last_log_time: dict[int, float | None] = {
 }
 start_time = time.time()
 
-# File logging variables (desktop mode only)
-log_folder_path: str | None = None
+# File logging state — set by init_dev_file_logging(), read by _log_with_timer().
 log_to_folder: bool = False
-log_files_limit: int = 10
 _log_file: Path | None = None
 
 __logger = logging.getLogger(__name__)
@@ -94,25 +92,51 @@ if _log_level is None:
 __logger.setLevel(_log_level)
 
 
-def init_file_logging(path: str) -> None:
-    """Initialize file logging for desktop mode.
+def init_dev_file_logging() -> Path | None:
+    """Mirror all log output to a timestamped file on disk (development only).
 
-    Args:
-        path: Path to the log folder. Created if it doesn't exist.
+    PyCharm/uvicorn keep printing to the console; this *additionally* writes
+    every log line to the per-instance logs directory
+    ``<flow_home>/instances/<instance_name>/logs/<timestamp>.log`` so a
+    session can be inspected after the fact. Captures both logging paths:
+
+      * this module's ``info``/``debug``/... (rich-console path) — via the
+        existing ``log_to_folder`` / ``_log_file`` file writer.
+      * the stdlib ``logging`` tree (uvicorn, ``flow_sdk.*`` module loggers) —
+        via a ``FileHandler`` attached to the root logger, pointed at the
+        same file.
+
+    No-op (returns None) outside development mode (e.g. a prod cloud deploy).
     """
-    global log_folder_path, log_to_folder, _log_file
+    global log_to_folder, _log_file
 
-    log_folder = Path(path)
-    log_folder.mkdir(parents=True, exist_ok=True)
-    log_folder_path = str(log_folder)
+    if not is_development:
+        return None
 
-    # Clean up old log files (7-day retention, keep at least one)
-    cleanup_old_logs(log_folder)
-
-    _log_file = log_folder / _timestamped_filename()
+    # ``_logs_base()`` already resolves to the canonical per-instance logs
+    # directory (instance_settings.logs_dir) — write session logs straight
+    # into it, no extra subdirectory.
+    log_dir = _logs_base()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    cleanup_old_logs(log_dir)
+    _log_file = log_dir / _timestamped_filename()
     _log_file.touch()
-
     log_to_folder = True
+
+    # Mirror the stdlib logging tree into the same file. The marker attribute
+    # guards against re-adding the handler on a reloader restart.
+    root = logging.getLogger()
+    if not any(getattr(h, "_flowpad_dev_file", False) for h in root.handlers):
+        handler = logging.FileHandler(str(_log_file), encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        )
+        handler.setLevel(logging.DEBUG)
+        handler._flowpad_dev_file = True  # type: ignore[attr-defined]
+        root.addHandler(handler)
+        if root.level == logging.NOTSET or root.level > logging.INFO:
+            root.setLevel(logging.INFO)
+    return _log_file
 
 
 def _on_first_log(level: int | None = None) -> None:
@@ -162,8 +186,11 @@ def _log_with_timer(level: int, msg: str, style: str) -> None:
         if log_to_folder and _log_file:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
             level_name = logging.getLevelName(level)
-            with open(_log_file, "a") as f:
-                f.write(f"{timestamp} [{level_name}] {msg}{timer_info}\n")
+            try:
+                with open(_log_file, "a", encoding="utf-8") as f:
+                    f.write(f"{timestamp} [{level_name}] {msg}{timer_info}\n")
+            except OSError as exc:
+                __logger.warning("Dev log mirror write skipped: %s", exc)
 
 
 def error(err: str) -> None:

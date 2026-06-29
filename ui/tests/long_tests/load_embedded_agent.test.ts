@@ -31,6 +31,10 @@ function chatContent(outputs: FlowData[]): string {
     .join('');
 }
 
+function isClaudeUnavailable(content: string): boolean {
+  return /(hit your limit|weekly limit|usage limit|rate limit|quota|too many requests|overloaded)/i.test(content);
+}
+
 async function collectOutput(proc: AgenticProcess, timeoutMs: number): Promise<FlowData[]> {
   const outputs: FlowData[] = [];
   const collect = (async () => {
@@ -97,7 +101,7 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     console.log('[load_embedded_agent] agents_json:', JSON.stringify(agentsJson));
   }, TIMEOUT);
 
-  it('executeInstruction produces CHAT/TEXT output', async () => {
+  it('executeInstruction produces CHAT/TEXT output', async (context: any) => {
     const proc = await new AgenticProcess({ workdir }).save([]);
     await proc.loadEmbeddedAgent(agentFilePath);
     await proc.watch();
@@ -111,6 +115,9 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     console.log('[load_embedded_agent] element types:', outputs.map((o) => o.elementType).join(', '));
     console.log('[load_embedded_agent] chat content:', content);
 
+    if (isClaudeUnavailable(content)) {
+      context.skip(`Claude unavailable for loadEmbeddedAgent executeInstruction test: ${content.slice(0, 240)}`);
+    }
     expect(outputs.length, 'Expected at least one FlowData item').toBeGreaterThan(0);
     expect(content.length, 'Expected non-empty CHAT/TEXT content').toBeGreaterThan(0);
 
@@ -156,7 +163,7 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     ).toBeGreaterThan(0);
   }, TIMEOUT);
 
-  it('multi-turn: second executeInstruction on the same process produces output', async () => {
+  it('multi-turn: second executeInstruction on the same process produces output', async (context: any) => {
     const proc = await new AgenticProcess({ workdir }).save([]);
     await proc.loadEmbeddedAgent(agentFilePath);
     await proc.watch();
@@ -168,22 +175,35 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
 
     const turn1Content = chatContent(turn1Outputs);
     console.log('[load_embedded_agent] turn1 content:', turn1Content);
+    if (isClaudeUnavailable(turn1Content)) {
+      context.skip(`Claude unavailable for loadEmbeddedAgent multi-turn test: ${turn1Content.slice(0, 240)}`);
+    }
     expect(turn1Content.length, 'Turn 1: expected non-empty chat content').toBeGreaterThan(0);
 
-    // Turn 2 — capture stream position, executeInstruction resets _completed,
-    // then output() yields all existing items + new ones.
+    // Turn 2 — workerStatus is COMPLETE from Turn 1, so output() would
+    // observe a terminal state and exit immediately. Subscribe to the
+    // 'complete' event BEFORE triggering, then slice the stream after
+    // the next completion edge lands.
     const afterTurn1Count = proc.flowDataStream.items.length;
+    const turn2Done = new Promise<void>((resolve) => {
+      const unsub = proc.on('complete', () => {
+        unsub();
+        resolve();
+      });
+    });
     await proc.executeInstruction('Say goodbye', { sync: false });
-
-    const allOutputs2: FlowData[] = [];
-    for await (const item of proc.output()) {
-      allOutputs2.push(item);
-    }
-
-    const turn2Items = allOutputs2.slice(afterTurn1Count);
+    await Promise.race([
+      turn2Done,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Turn 2 timed out after 12s')), 12_000),
+      ),
+    ]);
+    const turn2Items = proc.flowDataStream.items.slice(afterTurn1Count);
     const turn2Content = chatContent(turn2Items);
     console.log('[load_embedded_agent] turn2 content:', turn2Content);
+    if (isClaudeUnavailable(turn2Content)) {
+      context.skip(`Claude unavailable for loadEmbeddedAgent multi-turn test: ${turn2Content.slice(0, 240)}`);
+    }
     expect(turn2Content.length, 'Turn 2: expected non-empty chat content').toBeGreaterThan(0);
   }, TIMEOUT);
 });
-

@@ -1,21 +1,27 @@
 import '@src/styles/highlightjs.css';
 import { trackEvent } from '@src/utils/analytics';
-import { cloudManager, config, dataContext, navigator } from '@sdk';
-import { useAuth, useGlobalEvents, useWarnings } from '@sdk/react/hooks';
+import { config, dataContext, navigator } from '@sdk';
+import { useLocation } from 'react-router';
+import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
+import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster as Sonner, toast } from 'sonner';
-import { Toaster } from '@src/components/ui/toaster';
+import { NotificationOutlet, NotificationCommandBridge, DiagnoseErrorModal, initNotificationIngest } from '@src/notifications';
+import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
+import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
-import { useEffect, useRef, useState } from 'react';
-import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/components/desktop-setup-modal';
-import SecretApprovalDialog from '@src/components/secret-approval-dialog';
+import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
+import { ImageAnnotatorRoot } from '@src/components/image-annotator/image-annotator-store';
+import { useEffect, useRef } from 'react';
+import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
+import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
-import { useBrowserContextReporter } from '@src/hooks/use-browser-context-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
+import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,66 +33,15 @@ const queryClient = new QueryClient({
   },
 });
 
-// Component that handles desktop setup modal (must be inside QueryClientProvider)
-const DesktopSetupModalHandler = () => {
-  const { someone } = useAuth();
-  const [showDesktopSetup, setShowDesktopSetup] = useState(false);
-  const [authFailure, setAuthFailure] = useState(false);
-  const { isOAuthConfigured, isLlmConfigLoading } = useWarnings();
-
-  // Listen for custom event to open desktop setup modal
-  useEffect(() => {
-    const handleOpenDesktopSetup = (event: Event) => {
-      const detail = (event as CustomEvent<{ reason?: string }>).detail;
-      if (detail?.reason === DESKTOP_SETUP_REASON_AUTH_FAILURE) {
-        setAuthFailure(true);
-      }
-      setShowDesktopSetup(true);
-    };
-    window.addEventListener('open-desktop-setup', handleOpenDesktopSetup);
-    return () => {
-      window.removeEventListener('open-desktop-setup', handleOpenDesktopSetup);
-    };
-  }, []);
-
-  // Show desktop setup modal on first load if LLM is NOT configured
-  useEffect(() => {
-    if (!someone) return;
-
-    // Wait for LLM config query to complete before deciding to show modal
-    if (isLlmConfigLoading) return;
-
-    // Check if desktop_info exists in bootstrap data (indicates desktop mode)
-    const bootstrapInfo = dataContext.bootstrapInfo;
-    const desktopInfo = bootstrapInfo?.desktop_info;
-    const hasDesktopInfo = !!desktopInfo;
-
-    // Show modal on first launch if the user didn't do oauth or has API key. If he has oauth, we don't need the modal.
-    if (hasDesktopInfo && !showDesktopSetup && !isOAuthConfigured) {
-      const hasSeenModal = localStorage.getItem('llm-setup-modal-seen');
-      if (!hasSeenModal) {
-        setShowDesktopSetup(true);
-      }
-    }
-  }, [someone, showDesktopSetup, isOAuthConfigured, isLlmConfigLoading]);
-
-  return (
-    <DesktopSetupModal
-      isOpen={showDesktopSetup}
-      authFailure={authFailure}
-      onClose={() => {
-        setShowDesktopSetup(false);
-        setAuthFailure(false);
-        localStorage.setItem('llm-setup-modal-seen', 'true');
-      }}
-    />
-  );
-};
-
 // Bootstrap-error UX is handled by the router's root `errorElement`
 // (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
 // service-unavailable / network / config errors before any React tree mounts,
 // so a parallel inline error UI here is no longer needed.
+
+// The harness capability triple (Claude/Codex/Copilot) is owned by
+// `HarnessCapabilitiesProvider` below: it subscribes once, warms the cache at
+// startup, and every consumer (terminal strips, openers) reads the shared
+// snapshots via `useHarnessCapabilities` instead of re-subscribing.
 
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
@@ -96,14 +51,22 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
   const GlobalEvents = () => {
     void useGlobalEvents();
     usePresenceReporter();
-    useBrowserContextReporter();
     useUiCommandListener();
+    useSpotlightHotkey();
+    // Re-report browser_context (incl. the current URL) on every navigation.
+    // The reporter's mobx autorun only fires on context-slot changes, so a
+    // pure-URL move (e.g. leaving a conversation for Home) wouldn't otherwise
+    // refresh the pathname the backend reads to tell what page is open.
+    const { pathname } = useLocation();
+    useEffect(() => {
+      dataContext.resendBrowserContext();
+    }, [pathname]);
     return null;
   };
 
-  // Initialize notification listener (skills, hooks, etc.)
+  // Wire all WS-driven notifications (hub errors, bootstrap notice, skill/task badges).
   useEffect(() => {
-    const cleanup = initNotificationListener();
+    const cleanup = initNotificationIngest();
     return cleanup;
   }, []);
 
@@ -128,46 +91,29 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     });
   }, [someone, user]);
 
-  useEffect(() => {
-    const handleHubClientError = (msg: Record<string, unknown>) => {
-      const method = String(msg.method ?? '').trim();
-      const path = String(msg.path ?? '').trim();
-      const status = String(msg.status_code ?? '').trim();
-      const message = String(msg.message ?? 'Hub client error');
-      const suppressedCount = Number(msg.suppressed_count ?? 0);
-
-      if (suppressedCount > 0) {
-        toast.warning('Hub errors suppressed', {
-          description: `${suppressedCount} hub errors were suppressed in the current window.`,
-        });
-        return;
-      }
-
-      toast.error('Hub client error', {
-        description: `${method} ${path} -> ${status}: ${message}`.trim(),
-      });
-    };
-
-    cloudManager.on('hub_client_error', handleHubClientError);
-    return () => {
-      cloudManager.off('hub_client_error', handleHubClientError);
-    };
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Toaster />
-        <Sonner />
+        <NotificationOutlet />
+        <NotificationCommandBridge />
+        <DiagnoseErrorModal />
         <CleanupModal />
+        <DeleteAssetModal />
+        <InputPromptModal />
+        <ImageAnnotatorRoot />
+        <Spotlight />
+        <ActivityProgressModalRoot />
+        <WikiModalRoot />
         <GlobalEvents />
-        <DesktopSetupModalHandler />
-        <SecretApprovalDialog />
-        <SnifferProvider>
-          <FloatingChatProvider>
-            {children}
-          </FloatingChatProvider>
-        </SnifferProvider>
+        <GitHubDeviceFlowModal />
+        <MigrateLegacyKeychain />
+        <HarnessCapabilitiesProvider>
+          <SnifferProvider>
+            <FloatingChatProvider>
+              {children}
+            </FloatingChatProvider>
+          </SnifferProvider>
+        </HarnessCapabilitiesProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

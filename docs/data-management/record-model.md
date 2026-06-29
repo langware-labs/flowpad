@@ -1,175 +1,177 @@
+---
+id: 7c2c149b-83be-576f-8dd0-d91b1ef11f39
+---
+
 # Record Model
 
-This document describes the `Record` base class and the surrounding infrastructure in `flow_sdk/fs_store/`. The Record layer is the persistence backbone for all typed data objects in flow-cli: agent sessions, tasks, skills, hooks, settings, transcript entries, and more.
+This document describes the `FSRecord` class and the surrounding infrastructure in `flow_sdk/fs_store/`. The record layer is the on-disk shadow / index-source for every typed object in flow-cli: agent sessions, tasks, skills, hooks, settings, transcript entries, and more. Disk is the source of truth; the Entity/DB layer is a rebuildable index over it.
+
+> **Renamed: `Record` → `FSRecord`.** The old `Record` base class (with a `_data` dict, `RecordStatus`, multiple `StorageLayout` variants, split `metadata.json` + `_data.json`, `__init_subclass__` auto-registration, and a `discover()` family) has been **deleted**. The current class is `FSRecord` in `flow_sdk/fs_store/fs_record.py` — a lean filesystem manifest. There are **no `FSRecord` subclasses**; all per-type behaviour lives in free functions registered on `TypeInfo` (see [TypeInfo and the SchemaRegistry](#typeinfo-and-the-schemaregistry)).
 
 ## Overview
 
-`Record` is a single, unified base class. All state lives in a single `_data` dict plus instance-level attributes. Subclasses define domain-specific behaviour by setting `_record_type`, declaring properties over `_data`, and optionally overriding discovery or serialization methods.
+`FSRecord` is a single concrete class. Construct as `FSRecord(type, id, **fields)`. The on-disk shadow lives at `<records_root>/<type>/<type>-@<id>/metadata.json`. Meta fields are stored as **direct instance attributes** on the object's `__dict__` (not a `_data` dict). The record holds an `asset_ref` (`FSRef` to the user-facing source file) and a free-form bag of meta fields. Per-type typed metadata is opt-in via `TypeInfo.meta_model` (a Pydantic model).
+
+The class deliberately omits, by design (see the module docstring at `flow_sdk/fs_store/fs_record.py:13`):
+
+- `state.json` / `RecordState` / `PropertyRecord` lazy-cache machinery — per-type extractors precompute derived fields into meta.
+- `raw_json` field + dict-like `__getitem__`/`__setitem__` shims.
+- `fs_sync` auto-save on attribute mutation.
+- `parent_ref` / `children_refs` / `origin_ref` — Entity owns parent/child edges via the DB.
+- `discover_one(uid)` / `RecordStatus` / multiple storage layouts.
+- polymorphic load fallbacks for legacy on-disk formats.
 
 Source files:
 
 | File | Purpose |
 |---|---|
-| `flow_sdk/fs_store/record.py` | `Record` base class, `RecordStatus`, on-disk helpers |
-| `flow_sdk/fs_store/record_types.py` | `RecordType` / `SkillitRecordType` string enums |
-| `flow_sdk/fs_store/storage_layout.py` | `StorageLayout` enum |
-| `flow_sdk/fs_store/record_ref.py` | `RecordRef` dataclass |
-| `flow_sdk/fs_store/record_list.py` | `RecordList` (storage-agnostic collection) |
-| `flow_sdk/fs_store/resource_record_list.py` | `ResourceRecordList` (per-file/per-folder collection) |
-| `flow_sdk/fs_store/source_file_record_list.py` | `SourceFileRecordList` (multi-record inside one JSON file) |
-| `flow_sdk/fs_store/factory/type_registry.py` | `TypeRegistry` singleton |
+| `flow_sdk/fs_store/fs_record.py` | `FSRecord` class, on-disk + index-state helpers |
+| `flow_sdk/fs_store/record_types.py` | `RecordType` / `SkillitRecordType` — backward-compat aliases of `EntityType` |
+| `flow_sdk/schema/types.py` | `EntityType` — the single canonical type enum |
+| `flow_sdk/fs_store/schema_registry.py` | `SchemaRegistry` singleton + `TypeInfo` per-type metadata |
+| `flow_sdk/fs_store/record_paths.py` | records-root path helpers + `record_stem()` |
+| `flow_sdk/fs_store/record_ref.py` | `RecordRef` / `RecordDataRef` dataclasses |
+| `flow_sdk/fs_store/record_list.py` | `RecordList` (storage-agnostic collection over `FSRecord`) |
+| `flow_sdk/fs_store/source_file_records.py` | source-file extractors (settings.json, .mcp.json, …) |
 | `flow_sdk/fs_store/record_query.py` | `RecordQuery` filter/sort/paginate helper |
-| `flow_sdk/fs_store/record_state.py` | `RecordState` per-record index cache |
 | `flow_sdk/fs_store/manifest.py` | `CollectionManifest` per-type collection manifest |
+| `flow_sdk/fs_store/storage_layout.py` | `StorageLayout` enum (legacy; FSRecord is always folder) |
 
 ---
 
-## Single-Dict Internal Storage
+## Instance Storage
 
-Every `Record` instance carries one internal dict and one dirty flag:
-
-| Attribute | Content | Persisted to |
-|---|---|---|
-| `_data` | All fields: id, type, name, status, and all domain-specific fields | Split across `metadata.json` + `_data.json` (see [On-Disk Split Format](#on-disk-split-format)) |
-| `_data_dirty` | `bool` — unsaved changes | (tracked only) |
-
-Two instance-level attributes are stored directly on the object (not in `_data`):
-
-| Attribute | Type | Purpose |
-|---|---|---|
-| `_source_file` | `str \| None` | Absolute path to the JSON file last read/written |
-| `_path` | `str \| None` | Absolute path to the enclosing folder (FOLDER layout) |
-| `fs_sync` | `bool` | When `True`, every field write auto-saves immediately |
-| `storage_layout` | `StorageLayout` | How this instance is stored on disk |
-
-### `_SKIP_SERIALIZE` frozenset
+`FSRecord` has **no `_data` dict**. Every meta field is a plain instance attribute on `__dict__`. A small set of attribute names is reserved as system state and excluded from serialization:
 
 ```python
-_SKIP_SERIALIZE: frozenset[str] = frozenset({
-    "source_file", "path",
-    "json_path",
-    "fs_sync", "storage_layout",
-    "raw_json",
-})
+_SYSTEM_ATTRS: frozenset[str] = frozenset({"type", "id", "_asset_ref"})
 ```
 
-Fields in `_SKIP_SERIALIZE` are excluded from `to_dict()` and `from_dict()` output. These are infrastructure fields that don't belong in the serialized record.
+The `meta` property (`fs_record.py:111`) returns a read-only dict view of the meta fields — every attribute that is not in `_SYSTEM_ATTRS` and does not start with `_`. If `TypeInfo.meta_model` is registered for the record's type, `meta` returns an instance of that Pydantic model instead of a dict (falling back to the raw dict on validation error).
 
-### Attribute Routing
-
-`__getattr__` is only invoked when Python's normal lookup fails. It checks `_data` and raises `AttributeError` if the key is absent. Private names (starting with `_`) immediately raise `AttributeError` to prevent recursion.
-
-`__setattr__` applies the following routing rules in order:
-
-1. Names starting with `_` — written directly via `object.__setattr__`.
-2. Names that have a property descriptor with a setter in the MRO — the property setter is called.
-3. Names that have a read-only property in the MRO — `AttributeError` raised.
-4. `"fs_sync"` and `"storage_layout"` — written via `object.__setattr__`.
-5. Everything else — written into `_data`, `_data_dirty` set to `True`, `_auto_sync` called.
-
-`__getitem__` / `__setitem__` / `__delitem__` / `__contains__` are also defined for dict-style access.
+`meta_dict()` (`fs_record.py:130`) is the flat dict used for serialization and for building the Entity DB row: it includes `type`, `id`, the `asset_ref` path string, and every non-system, non-`None`, non-`_`-prefixed attribute. `to_dict()` and the `data` property are backward-compat aliases that both delegate to `meta_dict()`.
 
 ---
 
-## RecordStatus Enum
+## Identity
 
-```python
-class RecordStatus(str, Enum):
-    CREATING = "creating"
-    NEW      = "new"
-    ACTIVE   = "active"
-    ORPHAN   = "orphan"
-```
+`FSRecord` carries exactly two identity fields, both reserved system attrs:
 
-`CREATING` is used for records that are being constructed but not yet fully persisted. `NEW` is the initial persisted state. `ACTIVE` marks a record that has been acknowledged or activated. `ORPHAN` is set when an external data reference can no longer be resolved.
+| Field | Type | Notes |
+|---|---|---|
+| `type` | `str` | Record type string, e.g. `"claude_session"`. Defaults to the `_record_type` ClassVar (empty by default). |
+| `id` | `str \| None` | Stable identity for both the filesystem path and the Entity DB row. May be `None` until `save()` mints it. |
 
-When `status` is set, `on_status_change(old_status, new_status)` is called. Subclasses override this hook to react to transitions.
+There is no `name`/`status`/`uid` property on the base class — `name`, `status`, `scope`, etc. are ordinary meta attributes when a caller sets them.
+
+### `fingerprint` and id minting
+
+`fingerprint` (`fs_record.py:179`) is a deterministic `uuid5(NAMESPACE_URL, f"{type}:{key}")` where `key` is the `asset_ref` path (or the `name` attr if there is no asset). It matches `Entity.allocate_id` so that indexing an existing entity's record never creates a duplicate.
+
+`save()` mints `id = self.fingerprint` when `id` is `None`. A constructor-provided `id` always wins.
+
+### Stem / folder naming
+
+The folder name is `<type>-@<uid>` (separator constant `_NAME_SEP = "-@"`). `record_stem(type, uid)` builds it; `parse_record_stem(stem)` splits it back (both in `fs_record.py`, also re-exported from `record_paths.py`).
 
 ---
 
-## Identity Properties
+## On-Disk Layout
 
-All identity fields are stored in `_data` and exposed as Python properties.
+An `FSRecord` is **always** a folder. There is no FILE or LIST_ITEM layout for `FSRecord` (the `StorageLayout` enum still exists in `storage_layout.py` but is legacy and unused by `FSRecord`).
 
-### Identity
+```
+<records_root>/<type>/<type>-@<uid>/
+  metadata.json                 # the only file FSRecord writes: identity + meta fields
+  <int_epoch>_<hexdigest>.hash  # index freshness sentinel (asset-backed records only)
+```
+
+`metadata.json` is a **single flat JSON object** — `meta_dict()` written via `json.dumps(..., indent=2)`. It is **not** wrapped in a `{"data": {...}}` envelope. There is no separate `_data.json`, no `state.json`, and no `_META_FIELDS` / `_ENTITY_META_FIELDS` / `_OLD_META_FIELDS` split.
+
+> `from_dict()` (`fs_record.py:159`) does still unwrap a legacy top-level `{"data": {...}}` envelope on read, for compatibility with files written by the deleted `Record` class. New writes are always flat.
+
+### Records root
+
+`shadow_dir` resolves to `get_default_records_root() / type / record_stem(type, id)`. The root is looked up lazily on every access (`record_paths.get_default_records_root`), so tests can redirect it via `set_default_records_root(path)` / `FS_RECORD_PATH`. Data blobs (when present) live under a separate `get_default_records_data_root()`.
+
+---
+
+## Save / Load / Discover
+
+| Method | Signature | Notes |
+|---|---|---|
+| `save()` | `() -> Path` | Mints `id` if absent, `mkdir -p`s the shadow folder, writes `metadata.json` (full `to_dict()`). |
+| `save_metadata(patch)` | `(dict) -> Path` | The single DB→disk writer. Reads existing `metadata.json`, overlays `patch` (skipping `None` and system/`_` keys), re-anchors `type`/`id`, writes once. Updates in-memory attrs too. |
+| `save_metadata_field(key, val)` | `(str, Any) -> Path` | Convenience single-field partial merge. |
+| `current_meta_keys()` | `() -> set[str]` | Keys present in the on-disk `metadata.json` (empty set if none). |
+| `load(type, id)` | `classmethod -> FSRecord` | Reads `<root>/<type>/<type>-@<id>/metadata.json`. Raises `FileNotFoundError` if absent. |
+| `load_or_none(type, id)` | `classmethod -> FSRecord \| None` | Like `load` but returns `None` on a missing shadow. |
+| `load_record(path)` | `classmethod -> FSRecord` | Loads from a shadow folder OR a direct `metadata.json` path. |
+| `discover(type)` | `classmethod -> list[FSRecord]` | Walks `<root>/<type>/`, loading each child shadow via `load_record`; skips malformed entries. |
+| `count(type)` | `classmethod -> int` | Counts shadow folders for `type` without reading/parsing any `metadata.json`. |
+
+There is **no** `discover_one`, `init_record`, `init`, `clone`, `move`, `read_record`, `save_record_json`, `write_record`, `persist`, or `open()` on `FSRecord`.
+
+---
+
+## FSRefs
+
+`FSRecord` exposes filesystem pointers as computed properties, never as hardcoded path strings:
 
 | Property | Type | Notes |
 |---|---|---|
-| `id` | `str` | UUID, auto-generated in `__init__` if absent. Has NO setter — `AttributeError` on assignment. |
-| `uid` | `str` (read-only) | Returns the value of `uid_field_name` (default: `"id"`) |
-| `type` | `str` | Record type string, e.g. `"session"` |
-| `name` | `str` | Human-readable name |
-| `status` | `str \| RecordStatus \| None` | Lifecycle state |
-| `stem` | `str` (read-only) | `"<type>-@<uid>"` — canonical filesystem stem |
+| `record_folder_ref` | `FSRef` | The shadow folder. |
+| `metadata_ref` | `FSRef` | `<shadow_dir>/metadata.json`. |
+| `asset_ref` | `FSRef \| None` | The primary user-facing content file/folder. Backed by `_asset_ref`; the setter coerces a `str` into an `FSRef`. Only the path string is persisted (in `metadata.json`). |
+| `main_ref` | `FSRef \| None` | Alias for `asset_ref`. |
+| `shadow_dir` | `Path` | `records_root/<type>/<type>-@<id>/`. Raises if `type`/`id` unset. |
 
-`uid_field_name` is a class variable (default `"id"`). Subclasses may point it at a different field, in which case `uid` falls back to `id` if that field is absent.
+`ensure_asset_ref()` binds `asset_ref` from a `fs_storage_mount_path` / `cwd` meta attr when it is not already set, so index-state properties resolve for records loaded from disk.
 
-### Relationship Refs
-
-| Property | Type | Key in _data |
-|---|---|---|
-| `parent_ref` | `RecordRef \| None` | `"parent"` |
-| `children_refs` | `list[RecordRef]` | `"children"` |
-| `origin_ref` | `RecordRef \| None` | `"origin"` |
-| `data_ref` | `RecordRef \| None` | `"data_ref"` |
-
-Legacy aliases (`parent_id`, `parent_ref`, `children_refs`, `origin_ref`) are accepted in the constructor and normalized to the canonical key names.
+`compute_asset_ref(scope_root, entity)` resolves the user-facing asset location under `scope_root` using the registered `TypeInfo.main_subdir` / `main_layout` (`"file"` → `<safe_name>.md`, `"folder"` → `<safe_name>/`). `upsert_main_ref(entity)` writes `TypeInfo.default_body_fn(entity)` into `asset_ref` iff that file does not yet exist.
 
 ---
 
-## Location Properties
+## Index State (on-disk, zero DB)
 
-These are stored as instance attributes, not in `_data`:
+The freshness oracle lives beside the record in its `shadow_dir`, never in the DB — so the index layer never reads the store it produces. A single sentinel file named `<int_epoch>_<hexdigest>.hash` encodes both the last-indexed time and the source hash at that index.
 
-| Property | Type | Notes |
-|---|---|---|
-| `source_file` | `str \| None` | Path of the JSON file that was read or written |
-| `path` | `str \| None` | Path of the enclosing folder (FOLDER layout only) |
-| `record_dir` | `Path \| None` (read-only) | Computed: `path` if set, else parent of `source_file` |
-| `default_path` | `Path \| None` (read-only) | `~/.flow/records/<type>/<type>-@<uid>/` |
-| `fs_modified_at` | `datetime \| None` (read-only) | mtime from the filesystem |
-| `output_dir` | `Path` (read-only) | `<record_dir>/output/`, created on access |
+| Member | Notes |
+|---|---|
+| `get_hash()` / `record_hash` | Digest (blake2b, 8-byte) of the asset's current freshness token — `TypeInfo.asset_hash_fn(asset_ref)` if registered, else `FSRef.fingerprint` (mtime+size). Empty string when there is no asset. |
+| `indexed_hash` | Source hash captured at the last index, parsed from the sentinel filename; `None` if never indexed. |
+| `indexed_at` | ISO-8601 UTC time of the last index, parsed from the sentinel filename. |
+| `index_required` | `True` when `record_hash != (indexed_hash or "")` — the source changed since the last index (or was never indexed). |
+| `orphan` | `True` when the record's `asset_ref` no longer exists on disk. |
+| `write_hash()` | Stamps `<now>_<record_hash>.hash`, replacing any prior sentinel. No-op for asset-less records. |
+| `clear_hash()` | Removes the sentinel so the record reads as never-indexed. |
+| `clear_hashes_for_type(type)` | Bulk counterpart — drops every sentinel under `<root>/<type>/`. |
 
 ---
 
 ## `asset_ref` and folder queries
 
-For Entity types whose Record carries an external content file (skills,
-agents, workflows, markdown docs, …), the entity row stores an `asset_ref`
-field with the absolute path of that file or folder.
+For Entity types whose record carries an external content file (skills, agents, workflows, markdown docs, …), the entity row stores an `asset_ref` field with the absolute path of that file or folder.
 
-**Storage format — canonical POSIX.** Paths are normalised on write via
-`flow_sdk.fs_store.path_utils.canonical_posix_path` =
-`unicodedata.normalize("NFC", Path(p).resolve().as_posix())`. This:
+**Storage format — canonical POSIX.** Paths are normalised on write via `flow_sdk.fs_store.path_utils.canonical_posix_path` = `unicodedata.normalize("NFC", Path(p).resolve().as_posix())`. This:
 
 - collapses `\` vs `/` (Windows paths become `C:/Users/...`);
 - canonicalises case on macOS APFS / Windows NTFS via `Path.resolve()`;
 - folds NFD vs NFC differences from macOS APFS filenames.
 
-The conversion runs in `Entity._prepare_for_storage()` at the single write
-site `flow_sdk/core/entity/entity_model.py:644`. Existing rows written
-before this rule was introduced may retain non-canonical values until the
-next save; a one-shot backfill can re-save them.
+The conversion runs in `Entity._prepare_for_storage()` at the single write site `flow_sdk/core/entity/entity_model.py:1289`. Existing rows written before this rule was introduced may retain non-canonical values until the next save; a one-shot backfill can re-save them.
 
-**Query — `Entity.assets_by_path(PathQueryOptions)`.** Returns entities whose
-`asset_ref` is a strict descendant of any of `opts.search_dirs`, optionally
-narrowed by `opts.types`. Pushdown uses a half-open lex range against
-`json_extract(data, '$.asset_ref')`:
+**Query — `Entity.assets_by_path(PathQueryOptions)`** (`entity_model.py:295`). Returns entities whose `asset_ref` is a strict descendant of any of `opts.search_dirs`, optionally narrowed by `opts.types`. Pushdown uses a half-open lex range against `json_extract(data, '$.asset_ref')`:
 
 ```sql
 asset_ref >= '<dir>/'  AND  asset_ref < '<dir>0'
 ```
 
-`/` is `0x2F`; the next codepoint `0` (`0x30`) terminates the range.
-Multiple search dirs are OR'd, types are AND'd via `IN`. The query reads
-`asset_ref` only — `parent_path` and `vault_root` are not consulted.
+`/` is `0x2F`; the next codepoint `0` (`0x30`) terminates the range. Multiple search dirs are OR'd, types are AND'd via `IN`. The query reads `asset_ref` only — `parent_path` and `vault_root` are not consulted.
 
-The dir itself is **not** returned — only strict descendants. Querying for
-`<dir>` where the dir IS an entity's `asset_ref` returns an empty list.
+The dir itself is **not** returned — only strict descendants. Querying for `<dir>` where the dir IS an entity's `asset_ref` returns an empty list.
 
-HTTP wrapper: `GET /api/v1/assets/by-path?folder=<abs>&record_type=<type>`
-(both `folder` and `record_type` are repeatable). See
-`flow_sdk/server/routes/assets.py`.
+HTTP wrapper: `GET /api/v1/assets/by-path?folder=<abs>&record_type=<type>` (both `folder` and `record_type` are repeatable). See `flow_sdk/server/routes/assets.py:107`.
 
 ---
 
@@ -178,380 +180,190 @@ HTTP wrapper: `GET /api/v1/assets/by-path?folder=<abs>&record_type=<type>`
 The `__init__` signature is:
 
 ```python
-def __init__(
-    self,
-    _data: dict | None = None,
-    **kwargs: Any,
-)
+def __init__(self, type: str = "", id: str | None = None, **fields: Any) -> None
 ```
-
-Two calling conventions are supported:
-
-### 1. Empty construction
 
 ```python
-r = Record()
-# Generates a new UUID for id in _data
+r = FSRecord("claude_session", "abc-123", name="my-session", prompt="hello")
+# type/id are reserved; everything else lands as a meta attr on __dict__.
+# Passing asset_ref="..." (str) is coerced into an FSRef via the setter.
 ```
 
-### 2. Flat kwargs
+`type` falls back to the class `_record_type` ClassVar when omitted. `id` may stay `None` until `save()` mints it from `fingerprint`.
+
+### Loading via `from_dict`
 
 ```python
-r = Record(id="abc", type="session", name="my-session", prompt="hello")
-# All kwargs go to _data
+rec = FSRecord.from_dict(flat_dict)
 ```
 
-A special kwarg `raw_json` merges its dict value into `_data` directly.
-
-### Factory loading via `from_dict`
-
-```python
-rec = MyRecordSubclass.from_dict(flat_dict)
-```
-
-`from_dict` populates `_data` from the flat dict, coercing `status` and datetime strings, without triggering dirty flags.
-
-### Polymorphic loading via `Record.load`
-
-```python
-rec = Record.load("/path/to/folder-or-json-file")
-```
-
-Tries `metadata.json` first (new split format via `_load_split_format`), then falls back to `data.json`, then to `.flow_record/record.json` (triggering migration). Looks up the `type` field in `type_registry`, instantiates the correct subclass via `from_dict`, and sets `source_file`. Returns a `Record` base instance if the type is not registered.
+Unwraps a legacy `{"data": {...}}` envelope if present, drops `None` values, pops `type`/`id`/`asset_ref`, and rebuilds the instance. The `asset_ref` string is re-wrapped into an `FSRef`.
 
 ---
 
-## StorageLayout Enum
+## TypeInfo and the SchemaRegistry
+
+There are no `FSRecord` subclasses and no `__init_subclass__` auto-registration. Type metadata is owned by `SchemaRegistry` (`flow_sdk/fs_store/schema_registry.py`), keyed by the type string. Each entry is a `TypeInfo` dataclass (`schema_registry.py:199`):
+
+| Field | Purpose |
+|---|---|
+| `entity_cls` | Paired `Entity` subclass for the type (DB index). |
+| `icon` / `browseable` / `creatable` / `api_visible` | Catalog/UI metadata. |
+| `meta_model` | Optional Pydantic model for the `meta` view. |
+| `from_disk_fn` | Cold-path parser: `(FSRef) -> list[FSRecord]`. |
+| `gen_uuid_fn` | Hot-path id mint/read: `(FSRef) -> str`. |
+| `asset_hash_fn` | Cheap freshness token: `(FSRef) -> ...`. |
+| `post_sync_fn` | Async hook run after `sync_to_db`. |
+| `default_body_fn` | Per-type default body for `upsert_main_ref`. |
+| `main_subdir` / `main_layout` | Asset placement under the user's scope root. |
+
+Per-type `TypeInfo` definitions live in `flow_sdk/schema/type_info/<type>_info.py` and are registered via `SchemaRegistry.register(info)` (merging into any existing entry). `SchemaRegistry` is the single source of truth for types — `get(type)`, `get_all_types()`, `get_entity_cls(type)`, `get_icon(type)`, etc.
+
+### Type enum: `EntityType`
+
+There is now **one** canonical type enum: `EntityType` (a `StrEnum`) in `flow_sdk/schema/types.py`. It replaces the two historical enums — `RecordType` (fs_store) and `BuiltinEntityType` (db) — which are now thin aliases:
 
 ```python
-class StorageLayout(str, Enum):
-    FILE      = "file"       # standalone <type>-@<uid>.json file
-    LIST_ITEM = "list_item"  # one line inside a JSONL file
-    FOLDER    = "folder"     # <type>-@<uid>/ directory with data.json inside
+# flow_sdk/fs_store/record_types.py
+from flow_sdk.schema.types import EntityType
+RecordType = EntityType
+SkillitRecordType = EntityType
 ```
 
-### FILE
-
-A single JSON file named `<type>-@<uid>.json` inside the collection directory. Used for lightweight records where a sibling directory is unnecessary.
-
-### LIST_ITEM
-
-Used by `SourceFileRecordList` subclasses. The record is not a standalone file — it is a fragment embedded in a larger JSON document. Its position is tracked via `json_path` (an RFC 6901 JSON Pointer).
-
-### FOLDER
-
-The default for `Record`. Each record lives in a directory named `<type>-@<uid>/`.
-
-The stem format is `<type>-@<uid>` (separator constant `"-@"`). `record_stem(type, uid)` builds it; `parse_record_stem(stem)` splits it back.
-
----
-
-## On-Disk Split Format
-
-Record data is split across two files in the record folder:
-
-```
-<type>-@<uid>/
-  metadata.json    # identity fields: id, type, name
-  _data.json       # domain fields: everything else (status, prompt, etc.)
-  state.json       # RecordState cache (synced on save)
-```
-
-Both files use the wrapped `{"data": {...}}` format.
-
-### `metadata.json` — Identity Fields
-
-Contains the fields defined in `_META_FIELDS`:
-
-```python
-_META_FIELDS: frozenset[str] = frozenset({"id", "type", "name"})
-```
-
-```json
-{"data": {"id": "abc-123", "type": "task", "name": "My Task"}}
-```
-
-Written by `_save_split_format(folder)`. On load, `_load_split_format(folder)` reads this file first.
-
-**Heal-on-read**: If `metadata.json` is corrupt (invalid JSON), identity is recovered from the folder name (`<type>-@<uid>`) via `parse_record_stem()`, and a valid `metadata.json` is written back so subsequent loads use the same stable id.
-
-### `_data.json` — Domain Fields
-
-Contains all fields NOT in `_META_FIELDS` (status, description, prompt, created_at, custom fields, etc.):
-
-```json
-{"data": {"status": "active", "prompt": "hello", "description": "..."}}
-```
-
-Only written if there are domain fields to persist. Old meta fields (`created_at`, `modified_at`, `created_by`, `updated_by`, `scope`, `entity_id`, `json_path` — defined in `_OLD_META_FIELDS`) are stripped on read to prevent legacy field pollution.
-
-### `_ENTITY_META_FIELDS` — Extended Meta Set
-
-A broader frozenset used by the Entity sync layer:
-
-```python
-_ENTITY_META_FIELDS: frozenset[str] = frozenset({
-    "id", "type", "name", "status", "created_at", "modified_at", "scope"
-})
-```
-
-This is NOT used for file splitting — only `_META_FIELDS` controls which fields go into `metadata.json`. `_ENTITY_META_FIELDS` is used when syncing record metadata into Entity DB rows.
-
-### `state.json` — Per-Record Index Cache
-
-Managed by `RecordState` (in `flow_sdk/fs_store/record_state.py`). Synced on every `save()` call via `self._get_index().save(meta=meta_dict)`. Contains cached identity metadata used by the index/discovery layer for fast lookups without reading the full record data.
-
-### `CollectionManifest` — Per-Type Manifest
-
-Managed by `CollectionManifest` (in `flow_sdk/fs_store/manifest.py`). Updated on every `save()` and `delete()` call via `self._bump_manifest(op)`. Tracks collection-level metadata (add/delete operations) for the record type under the default records root.
-
-### Backward-Compatible Migration
-
-Two migration paths exist for older on-disk formats:
-
-1. **Oldest format** (`.flow_record/record.json`): `_migrate_old_format(folder)` reads the old file, writes `data.json` in wrapped format, and removes `.flow_record/`.
-
-2. **Legacy combined format** (`data.json` with all fields): `_migrate_data_to_split_format(folder)` splits the combined `data.json` into `metadata.json` + `_data.json`, then removes `data.json`.
-
-Both migrations are lazy — they run on first read. `Record.load()` tries `metadata.json` first (new split format), then falls back to `data.json`, then to `.flow_record/record.json`.
-
-All discovery methods (`Record.discover()`, `Record.discover_one()`, `Record.load()`, `Record.init_record()`) trigger migration transparently.
-
----
-
-## TypeRegistry and Auto-Registration
-
-`Record.__init_subclass__` fires whenever a subclass is defined. If the subclass has a non-empty `_record_type` class variable, it is registered automatically with `SchemaRegistry`:
-
-```python
-class MyRecord(Record):
-    _record_type = "my_record"
-    # Automatically registers with SchemaRegistry (record_cls=MyRecord)
-```
-
-`Record.load` uses `SchemaRegistry.get_record_cls(type_name)` to instantiate the correct subclass from a JSON file.
-
-The legacy `type_registry` singleton (`flow_sdk/fs_store/factory/type_registry.py`) still exists as a thin backward-compat shim. Its `get()` and `get_all_types()` methods delegate to `SchemaRegistry`. Calling `type_registry.register()` is a no-op — use the `_record_type` class variable to trigger auto-registration instead.
+String **values** are persisted in the DB and on the filesystem (`record.type`, `TypeId.type`), so they must never change. New code should import `EntityType` directly; the `RecordType` / `SkillitRecordType` names remain only for backward compatibility during the migration.
 
 ---
 
 ## RecordRef
 
-`RecordRef` is a `@dataclass` in `flow_sdk/fs_store/record_ref.py`. A lightweight pointer for parent/child relationships, origin tracking, and external data references.
+`RecordRef` is a `@dataclass` in `flow_sdk/fs_store/record_ref.py`. A lightweight pointer used for clone provenance and external-data addressing. `FSRecord` itself **no longer carries `parent_ref` / `children_refs` / `origin_ref` / `data_ref` properties** — Entity owns parent/child edges via the DB. `RecordRef` survives for the source-file / data-pointer use cases.
 
 ```python
 @dataclass
 class RecordRef:
     id: str = ""
     type: str = ""
-    path: str | None = None
-    json_path: str | None = None
+    path: str | None = None          # filesystem path (to record or data file)
+    json_path: str | None = None     # RFC 6901 pointer
     key_field: str | None = None
     key_value: str | None = None
-    format: str | None = None
 ```
 
-> **Note — `data_ref` is structurally defined but unused for external data indexing.** The `data_ref` property on `Record` stores a `RecordRef` with fields designed for pointing at external data (path, json_path, key_field, key_value, format), but no code currently uses `data_ref` for automatic external data discovery or indexing. The only path for external data into the record system is through hardcoded `SourceFileRecordList` subclasses (see [folder-layout.md](folder-layout.md#sourcefileregistry-and-the-config-file-whitelist)).
+`RecordRef.content_hash` is a deterministic 12-char md5 of the addressing fields. `RecordRef.from_dict` returns a `RecordDataRef` subclass when a `format` key is present; `RecordDataRef` adds a `format` field plus `resolve_data_dir()` / `resolve_data_file()` helpers that target the records-data root (`~/.flow/records_data/<type>/<type>-@<id>/`).
 
 ---
 
-## CRUD on a Single Record
+## DB integration
 
-### Initialization and loading
+`FSRecord` is the bridge into the Entity DB.
 
-| Method | Signature | Notes |
-|---|---|---|
-| `init_record` | `cls.init_record(path_or_data, path=None, indent=2) -> T` | Load from path or create at path from dict |
-| `init` | `cls.init(data, path, indent=2) -> T` | Alias for `init_record(data, path)` |
-| `load` | `cls.load(path) -> Record` | Polymorphic — uses TypeRegistry to pick subclass |
-| `discover` | `cls.discover(scope=None, **kwargs) -> list[T]` | Directory scan of `~/.flow/records/<type>/` |
-| `discover_one` | `cls.discover_one(uid, scope=None, **kwargs) -> T \| None` | O(1) direct path lookup |
-| `read_record` | `self.read_record(path: Path) -> None` | Reload this instance's fields from a file |
+### `sync_to_db()`
 
-### Saving
+```python
+await record.sync_to_db(fts_batch=None, notify=True)
+```
 
-| Method | Notes |
+Persists this record into the Entity DB + FTS + wiki, all inside a single shared DB session (`fs_record.py:530`):
+
+1. Entity row via `Entity.from_record(self)`.
+2. Mirror DB state back to `metadata.json` via `sync_from_entity`.
+3. FTS upsert — an `FtsEntry` read directly from `search_title` / `search_description` / `search_content` instance attrs (batched if `fts_batch` is provided, else immediate).
+4. Wiki edge re-extraction over `wiki_body()`.
+5. Type-specific `TypeInfo.post_sync_fn(self)`.
+
+On any exception it records a `RecordError` and re-raises.
+
+### `sync_from_entity(entity)`
+
+Pulls canonical state (`id`, `scope`, `project_id`, `updated_date`, `asset_ref`) from the DB back into instance attrs, and `save()`s if anything changed. Returns `True` on change.
+
+### `unindex()` / `destroy()` / `delete()`
+
+`unindex()` removes the Entity row, FTS entry, and wiki edges. `destroy()` calls `unindex()` then `shutil.rmtree(shadow_dir)`. `delete()` is an alias for `destroy()` — full purge.
+
+### Wiki links
+
+`get_links()` / `get_backlinks()` return outgoing / inbound wiki edges via `flow_sdk.wiki`.
+
+---
+
+## Search fields
+
+FTS reads are default readers over instance attrs — type-specific extractors populate these fields directly during parsing:
+
+| Property | Source |
 |---|---|
-| `save()` | For FOLDER layout, writes `metadata.json` + `_data.json` via `_save_split_format()`, syncs `state.json`, and bumps the collection manifest. Auto-assigns `default_path` if `source_file` is unset. |
-| `save_record_json(path=None, indent=2)` | Write to an explicit path (or `source_file`) |
-| `write_record(path, indent=2)` | Low-level write; raises `ReadOnlyRecordError` if `_read_only` is True |
-| `persist()` | Default: delegates to `save()`; overridden in source-file-backed records |
-
-### Mutation helpers
-
-| Method | Notes |
-|---|---|
-| `clone(new_path)` | Deep copy with new UUID, sets `origin_ref` to this record, saves at `new_path` |
-| `move(new_path)` | Writes to `new_path`, removes old `record_dir` with `shutil.rmtree` |
-| `delete()` | FOLDER layout: `shutil.rmtree` on `record_dir`; FILE layout: unlinks `source_file` |
-| `open()` | Opens `record_dir` in the native OS file manager |
-
-### Read-only records
-
-Setting `_read_only = True` on a subclass causes `write_record`, `clone`, and `move` to raise `ReadOnlyRecordError`. Source-file-backed records that represent parsed fragments of external files typically set this.
-
----
-
-## `Record.sync_to_db()` Async Method
-
-```python
-await record.sync_to_db()
-```
-
-Creates or updates the corresponding Entity in SQLite and upserts into the `entities_fts` FTS5 table. **The ONLY way to get a Record into the Entity DB.**
-
-No-op for `_read_only` records. The FTS upsert is skipped when `record.content` returns None (i.e., the record has opted out of search indexing). See [record-search.md](record-search.md) for full details.
-
----
-
-## fs_sync Auto-Save
-
-When `fs_sync = True` on a record instance, any attribute write triggers `_auto_sync`, which calls `save()` immediately if `source_file` is set.
-
-```python
-rec = MyRecord.load("/some/path")
-rec.fs_sync = True
-rec.name = "updated"   # writes to disk immediately
-```
-
----
-
-## Companion Files
-
-Any record with `record_dir` set can store arbitrary companion files alongside the record data:
-
-```python
-def read_file(self, filename: str) -> str | None:
-    """Read a companion text file from record_dir. Returns None if missing."""
-
-def write_file(self, filename: str, content: str) -> Path:
-    """Write a companion text file to record_dir. Creates dirs if needed."""
-```
-
-The `output_dir` property returns `<record_dir>/output/`, creating it if it does not exist.
-
----
-
-## Serialization
-
-### to_dict
-
-`to_dict()` returns a flat dict containing all `_data` fields, excluding keys in `_SKIP_SERIALIZE`. `datetime` values are serialized to ISO-8601 strings; `Enum` values to their `.value`.
-
-```python
-rec = Record(id="abc", type="session", name="test", prompt="hello")
-rec.to_dict()
-# {"id": "abc", "type": "session", "name": "test", "prompt": "hello"}
-```
-
-### from_dict
-
-`from_dict(data)` populates `_data` from the flat dict and returns a new instance without triggering any property setters or dirty flags.
+| `search_title` | `title` → `name` |
+| `search_content` | `content` → `body` |
+| `search_description` | `description` |
+| `wiki_body()` | `body` → `content` |
 
 ---
 
 ## RecordList
 
-`RecordList` in `flow_sdk/fs_store/record_list.py` is a storage-agnostic typed collection. It delegates all discovery to `record_class.discover()` / `record_class.discover_one()` and all persistence to `record.persist()`.
+`RecordList` in `flow_sdk/fs_store/record_list.py` is a thin storage-agnostic typed collection backed by `FSRecord`. The caller passes a **type name string** (not a record class):
 
 ```python
 from flow_sdk.fs_store.record_list import RecordList
-from my_module import MyRecord
 
-lst = RecordList(MyRecord, scope=Scope.USER)
+lst = RecordList(type_name="claude_session", scope=Scope.USER)
 ```
 
-### Methods
+Discovery is always live (no caching).
 
 | Method | Signature | Notes |
 |---|---|---|
-| `get` | `(uid: str) -> Record \| None` | Calls `discover_one` |
-| `__iter__` | | Calls `discover`; no caching |
-| `__len__` | | Calls `discover`; no caching |
-| `records` | property | `list(self)` |
-| `create` | `(record: Record \| dict) -> Record` | Checks for duplicate uid; calls `persist()` |
-| `save` | `(record: Record) -> None` | Calls `persist()` (create or overwrite) |
-| `update` | `(uid: str, data: dict) -> Record` | Fetch, setattr each field, persist; raises `KeyError` if missing |
-| `delete` | `(uid: str) -> bool` | Calls `record.delete()`; returns `True` if existed |
-| `query` | `(q: RecordQuery) -> list[Record]` | Applies a `RecordQuery` to all discovered records |
+| `get(uid)` | `(str) -> FSRecord \| None` | `FSRecord.load_or_none(type_name, uid)` |
+| `__iter__` | | `FSRecord.discover(type_name)` |
+| `__len__` | | `FSRecord.count(type_name)` — count-only, no parses |
+| `create(record \| dict)` | `-> FSRecord` | Raises `ValueError` on duplicate id; calls `save()` |
+| `save(record)` | `-> None` | `record.save()` |
+| `update(uid, data)` | `-> FSRecord` | `save_metadata(patch)`; raises `KeyError` if missing |
+| `delete(uid)` | `async -> bool` | `shutil.rmtree(shadow_dir)`; returns `True` if existed |
+| `query(q)` | `-> list[FSRecord]` | Applies a `RecordQuery` in-memory over discovered records |
 
 ---
 
-## ResourceRecordList
+## Source-file extractors
 
-`ResourceRecordList` in `flow_sdk/fs_store/resource_record_list.py` is an explicit per-file/per-folder collection with direct disk control. It is a `@dataclass`.
+`flow_sdk/fs_store/source_file_records.py` replaces the dissolved `JsonFileRecordList` / `SourceFileRecordList` Record-subclass hierarchy. Each extractor is a **pure function** `(data: dict, source_file: str) -> list[dict]`, where each returned dict carries at least `type` (a `RecordType`/`EntityType` value) and `json_path` (RFC-6901 pointer; empty string for the root record).
 
-### Constructor fields
+Registered extractors (`_EXTRACTORS`): `settings.json`, `settings.local.json`, `managed-settings.json`, `mcp.json`, `.mcp.json`. The allow-list `_ALLOWED_FILENAMES` is derived from `_EXTRACTORS` so it can't drift. Public surface: `known_filename(path)`, `extract_from_data(data, path)`, `extract_records(path)`, plus `load_raw` / `write_raw` and the JSON-pointer set/delete helpers.
 
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `list_path` | `Path \| None` | `None` | Root directory; auto-computed from `record_class` type if omitted |
-| `record_class` | `type[Record]` | `Record` | The record type to manage |
-| `storage_layout` | `StorageLayout` | `StorageLayout.FOLDER` | FILE or FOLDER |
-| `records_path` | `Path \| None` | `None` | Override for `~/.flow/records/` |
-
-### Methods
-
-| Method | Notes |
-|---|---|
-| `get(uid)` | Reads from disk |
-| `create(record \| dict)` | Raises `ValueError` if uid already exists |
-| `save(record)` | Write to disk; create or overwrite |
-| `update(uid, data)` | Read-modify-write |
-| `delete(uid)` | FOLDER: `shutil.rmtree`; FILE: `unlink` |
-| `__iter__` | Sorted; skips corrupt/empty files silently |
-| `__len__` | Counts matching entries without loading |
-
----
-
-## SourceFileRecordList
-
-`SourceFileRecordList` in `flow_sdk/fs_store/source_file_record_list.py` is for record types embedded inside a single JSON file. Uses an in-memory cache.
-
-Typical examples: entries inside `~/.claude.json`, items inside a `.mcp.json` file, transcript entries inside a JSONL session file.
-
-### Abstract methods to override
-
-| Method | Notes |
-|---|---|
-| `_extract(data)` | **Required.** Parse the JSON dict and return typed records. |
-| `_record_to_json(record)` | Optional. Convert a record back to its JSON fragment. |
-
-### Write-back CRUD
-
-| Method | Notes |
-|---|---|
-| `update(record_type, uid, data)` | Apply field updates, patch the source file at `record.json_path`, reload cache. |
-| `delete_record(record_type, uid)` | Removes the JSON fragment at `record.json_path` from the source file. |
+The path-based API handler in `fs_records_actions._handle_path_based_source_file` delegates here.
 
 ---
 
 ## RecordQuery
 
-`RecordQuery` in `flow_sdk/fs_store/record_query.py` is a `@dataclass` for declarative filter, sort, and pagination of records. All fields are optional and are AND-ed together.
+`RecordQuery` in `flow_sdk/fs_store/record_query.py` is a `@dataclass` for declarative filter, sort, and pagination. All filter fields are optional and AND-ed together. Apply with `q.apply(records)` (or via `RecordList.query(q)`).
 
 ### Filter fields
 
 | Field | Type | Behavior |
 |---|---|---|
-| `ids` | `list[str] \| None` | Keep records whose `uid` is in the list |
+| `ids` | `list[str] \| None` | Keep records whose `id` is in the list |
 | `types` | `list[str] \| None` | Keep records whose `type` is in the list |
 | `status` | `str \| list[str] \| None` | Keep records whose `str(status)` matches |
-| `created_after` | `datetime \| None` | Keep records with `created_at >= value` |
-| `created_before` | `datetime \| None` | Keep records with `created_at <= value` |
-| `modified_after` | `datetime \| None` | Keep records with `modified_at >= value` |
-| `modified_before` | `datetime \| None` | Keep records with `modified_at <= value` |
+| `created_after` / `created_before` | `datetime \| None` | Compare against `created_at` |
+| `modified_after` / `modified_before` | `datetime \| None` | Compare against `modified_at` |
 | `parent_id` | `str \| None` | Keep records whose `parent_ref.id == value` |
+| `child_filter` | `RecordQuery \| None` | Recursive composition |
+| `scope` | `Scope \| None` | Value-coerced comparison against `record.scope` |
+| `field_predicates` | `dict[str, Any] \| None` | Exact-match `getattr(record, key) == expected` |
 | `predicate` | `Callable[[Record], bool] \| None` | Arbitrary caller-supplied function |
 
 ### Sort and pagination fields
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `sort_by` | `str \| None` | `None` | Attribute name to sort by |
+| `sort_by` | `str \| None` | `None` | Attribute name to sort by (`None` values pushed to the end) |
 | `sort_desc` | `bool` | `True` | Descending order |
 | `limit` | `int \| None` | `None` | Max records to return |
 | `offset` | `int` | `0` | Skip this many records |
+
+`to_provider_params()` serializes the query to a pushdown-safe dict for external providers.
 
 ### Usage example
 
@@ -560,7 +372,7 @@ from flow_sdk.fs_store.record_query import RecordQuery
 from datetime import datetime
 
 q = RecordQuery(
-    types=["session"],
+    types=["claude_session"],
     status="active",
     modified_after=datetime(2026, 1, 1),
     sort_by="modified_at",
@@ -570,3 +382,9 @@ q = RecordQuery(
 
 results = record_list.query(q)
 ```
+
+---
+
+## CollectionManifest
+
+`CollectionManifest` in `flow_sdk/fs_store/manifest.py` tracks collection-level metadata (a monotonically bumped version) per record type. `bump(op)` is called on collection mutations; `read()` / `needs_refresh(last_seen_version)` / `rebuild(record_ids)` support the discovery layer. Unlike the old `Record.save()`, `FSRecord.save()` does **not** itself bump a manifest — manifest maintenance is driven by the indexer/discovery layer.

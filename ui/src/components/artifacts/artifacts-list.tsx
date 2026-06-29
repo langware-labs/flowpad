@@ -1,9 +1,10 @@
 import { Artifact, ArtifactType } from '@sdk';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useArtifactActions } from '@src/hooks/flow-hooks';
 import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
 import { FileText, Loader2 } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ArtifactCard } from './artifact-card';
 import { getArtifactTypeConfig } from './artifact-type-config';
 
@@ -23,8 +24,8 @@ interface ArtifactsListProps {
 export const ArtifactsList: React.FC<ArtifactsListProps> = ({ filterType, groupByType = true, className = '' }) => {
   const { data: artifacts = [], isLoading } = useCurrentArtifacts();
   const { deleteArtifact, isDeleting } = useArtifactActions();
-  const { toast } = useToast();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { t } = useLingui();
 
   // Filter artifacts
   const filteredArtifacts = useMemo(() => {
@@ -56,21 +57,20 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ filterType, groupB
       setDeletingId(artifactId);
       try {
         await deleteArtifact(artifactId);
-        toast({
-          title: 'Artifact deleted',
-          description: 'The artifact has been removed successfully.',
+        notify.success({
+          title: t`Artifact deleted`,
+          message: t`The artifact has been removed successfully.`,
         });
       } catch (error) {
-        toast({
-          title: 'Failed to delete',
-          description: error instanceof Error ? error.message : 'An error occurred',
-          variant: 'destructive',
+        notify.error({
+          title: t`Failed to delete`,
+          message: error instanceof Error ? error.message : t`An error occurred`,
         });
       } finally {
         setDeletingId(null);
       }
     },
-    [deleteArtifact, toast],
+    [deleteArtifact, t],
   );
 
   if (isLoading) {
@@ -85,9 +85,9 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ filterType, groupB
     return (
       <div className={`flex h-64 flex-col items-center justify-center text-center ${className}`}>
         <FileText className="mb-3 h-12 w-12 text-muted-foreground/50" />
-        <p className="text-sm font-medium text-muted-foreground">No artifacts yet</p>
+        <p className="text-sm font-medium text-muted-foreground"><Trans>No artifacts yet</Trans></p>
         <p className="mt-1 text-xs text-muted-foreground/70">
-          Artifacts created during flow execution will appear here
+          <Trans>Artifacts created during flow execution will appear here</Trans>
         </p>
       </div>
     );

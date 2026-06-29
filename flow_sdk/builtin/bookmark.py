@@ -19,6 +19,7 @@ class BookmarkType(StrEnum):
     NOTIFICATION_FAILED = "notification_failed"
     TERMINAL_ANNOTATION = "terminal_annotation"
     FAVORITE = "favorite"
+    PLAN = "plan"
 
 
 class Bookmark(Entity):
@@ -33,8 +34,6 @@ class Bookmark(Entity):
     status: str = APIField(BookmarkStatus.OPEN)
     closed_at: Optional[str] = APIField(None)
     remind_at: Optional[str] = APIField(None)
-    _api_visible: ClassVar[bool] = True
-    _icon: ClassVar[str] = "Bookmark"
 
     @property
     def display_name(self) -> str:

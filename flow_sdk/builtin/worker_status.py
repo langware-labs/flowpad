@@ -1,0 +1,533 @@
+"""WorkerStatus — expert-level state of the worker running inside an AgenticProcess.
+
+Derived from the Claude transcript JSONL on every serialize (via ``_tail_status``);
+never stored. Only meaningful when the containing ``ProcessStatus`` is one of
+``RUNNING``, ``STOPPING``, or ``STOPPED`` — in any other lifecycle state, consumers
+should treat the worker status as undefined.
+
+See ``agentic_process_lifecycle.py`` for the companion ``ProcessStatus`` enum and
+the two-axis model overview.
+
+Neutral module with no intra-package imports. Both ClaudeSessionRecord and
+AgenticProcessRecord import from here; this breaks the circular dependency that
+would arise if the enum lived in either of those modules.
+"""
+
+from __future__ import annotations
+
+import json
+import time as _time
+from datetime import datetime as _datetime
+from pathlib import Path as _Path
+from flow_sdk._compat import StrEnum
+
+
+class WorkerStatus(StrEnum):
+    """Expert-level worker state. Derived from the Claude JSONL transcript."""
+
+    # Worker spun up; transcript not yet materialised. Replaces the former INIT + EMPTY split —
+    # both meant "worker exists but has no parseable content yet", which is one state.
+    INITIALIZING = "initializing"
+
+    # Workflow default — no Claude session linked yet. Also the "ready for input" state
+    # used by the ``isReadyForInput`` predicate (together with COMPLETE, INTERRUPTED).
+    IDLE = "idle"
+
+    # Terminal — session ended, cannot resume
+    COMPLETE     = "complete"     # finished cleanly (end_turn / last-prompt)
+    ERROR        = "error"        # abnormal end (stop_sequence / crash)
+    INTERRUPTED  = "interrupted"  # user interrupted (Escape / Ctrl-C)
+    INACTIVE     = "inactive"     # stale file >5 min with no terminal signal,
+                                  # OR terminal+aged >5 min since terminal_at
+                                  # (drop-from-active-list semantics — single
+                                  # value regardless of cause)
+
+    # Backend-derived from terminal + ``AgenticProcess.terminal_at`` age. The
+    # 5-minute window after a session completes during which the UI keeps the
+    # session visible in the active list. After 5 min the projection layer in
+    # ``_discover_status_from_transcript`` flips it to INACTIVE.
+    PENDING_USER = "pending_user"
+
+    # Active — transcript-derivable
+    WAITING      = "waiting"      # user message received, Claude has not yet responded
+    THINKING     = "thinking"     # assistant streaming / generating text
+    TOOL_CALL    = "tool_call"    # Claude finished its turn and dispatched tool(s)
+    TOOL_RUNNING = "tool_running" # tool is actively executing (progress events)
+    API_ERROR    = "api_error"    # Anthropic API returned an error (e.g. 529); Claude is retrying — mid-turn
+    API_TIMEOUT  = "api_timeout"  # JSONL stalled in WAITING state — connection hang / model slow to start
+
+    # Parse fallback — the last JSONL entry did not match any known pattern. Surfaces
+    # bugs (new Claude event types, malformed writes) instead of hiding them as "RUNNING".
+    UNKNOWN      = "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Status helper sets
+#
+# Invariant: these sets are kept byte-for-byte identical to the TS equivalents
+# in ``ts_sdk/src/process/agentic-types.ts`` and enforced via a contract test
+# loading ``test_fixtures/status_sets.json``.
+# ---------------------------------------------------------------------------
+
+_RUNNING_STATUSES: frozenset[WorkerStatus] = frozenset({
+    WorkerStatus.WAITING,
+    WorkerStatus.THINKING,
+    WorkerStatus.TOOL_CALL,
+    WorkerStatus.TOOL_RUNNING,
+    WorkerStatus.API_ERROR,  # mid-turn retry — still running from the user's POV
+})
+
+_BUSY_STATUSES: frozenset[WorkerStatus] = frozenset({
+    WorkerStatus.THINKING,
+    WorkerStatus.TOOL_CALL,
+    WorkerStatus.TOOL_RUNNING,
+})
+
+_TERMINAL_STATUSES: frozenset[WorkerStatus] = frozenset({
+    WorkerStatus.COMPLETE,
+    WorkerStatus.ERROR,
+    WorkerStatus.INTERRUPTED,
+    WorkerStatus.INACTIVE,
+    WorkerStatus.API_TIMEOUT,  # stuck — needs intervention, not resumable as-is
+})
+
+
+_ERROR_STATUSES: frozenset[WorkerStatus] = frozenset({
+    WorkerStatus.ERROR,
+    WorkerStatus.API_TIMEOUT,
+    WorkerStatus.INACTIVE,
+})
+
+# Live process-lifecycle states. String literals (not ProcessStatus) keep this a
+# true leaf module — they mirror ``ProcessStatus.RUNNING`` / ``STARTING``.
+_LIVE_PROCESS_STATUSES: frozenset[str] = frozenset({"running", "starting"})
+
+
+class ExecutionMode(StrEnum):
+    """Coarse "kind of running worker" for the footer worker-list chip.
+
+    Mirrors the TS ``ExecutionMode`` in ``ts_sdk/src/process/agentic-types.ts``.
+    Derived, never stored. ``EXTERNAL`` is server-only (OS-scanned).
+    """
+
+    INTERACTIVE = "interactive"   # PTY worker (visible=true)
+    BACKGROUND = "background"     # headless CLI worker (visible=false)
+    ERROR = "error"              # error/dead state
+    EXTERNAL = "external"        # running outside the app (OS-scanned)
+
+
+def classify_execution_mode(
+    *,
+    status: str | None,
+    worker_status: str | None,
+    visible: bool | None,
+    pid_alive: bool | None = None,
+) -> ExecutionMode | None:
+    """Classify a *live* worker into an ``ExecutionMode`` (or ``None`` when the
+    process is not live). Mirrors the TS ``classifyExecutionMode`` truth table:
+
+      1. worker_status ∈ _ERROR_STATUSES               → ERROR
+      2. visible is True and pid_alive is False (dead PTY) → ERROR
+      3. visible is True                                → INTERACTIVE
+      4. visible is False                               → BACKGROUND
+
+    ``EXTERNAL`` is never returned here. ``pid_alive`` only matters for PTY;
+    CLI workers have no PID so rule 2 never applies to them.
+    """
+    if status not in _LIVE_PROCESS_STATUSES:
+        return None
+    if worker_status is not None and worker_status in _ERROR_STATUSES:
+        return ExecutionMode.ERROR
+    if visible is True and pid_alive is False:
+        return ExecutionMode.ERROR
+    return ExecutionMode.INTERACTIVE if visible else ExecutionMode.BACKGROUND
+
+
+def is_running(status: WorkerStatus) -> bool:
+    """True while the worker is mid-turn (WAITING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR)."""
+    return status in _RUNNING_STATUSES
+
+
+def is_busy(status: WorkerStatus) -> bool:
+    """True when actively processing (THINKING/TOOL_CALL/TOOL_RUNNING). Excludes WAITING/API_ERROR."""
+    return status in _BUSY_STATUSES
+
+
+def is_idle(status: WorkerStatus) -> bool:
+    """True when the worker is not mid-turn. Inverse of is_running()."""
+    return status not in _RUNNING_STATUSES
+
+
+def is_terminal(status: WorkerStatus) -> bool:
+    """True when the session has ended and cannot be resumed."""
+    return status in _TERMINAL_STATUSES
+
+
+# ---------------------------------------------------------------------------
+# _tail_status — fast JSONL tail-read → WorkerStatus
+# ---------------------------------------------------------------------------
+
+_TAIL_BYTES = 4096
+_ACTIVE_SECONDS = 300  # JSONL mtime within 5 min → session still being written
+
+# Upper bound for the expanding tail read. A transcript can accumulate a long
+# trailing run of content-free session-envelope lines (ai-title / agent-name /
+# mode / bridge-session …) that buries the last real chat entry well beyond the
+# initial 4 KB window. When the first window holds nothing but ignored types we
+# read progressively larger tails — up to this cap — so the true WorkerStatus is
+# still recoverable instead of collapsing to UNKNOWN. Bounded so the per-serialize
+# cost stays trivial for healthy sessions (which resolve in the first 4 KB).
+_TAIL_MAX_BYTES = 2 * 1024 * 1024
+
+# Content-free Claude/Flowpad transcript line types — they carry no worker-state
+# signal and MUST be skipped when scanning the tail for the last meaningful entry.
+# Kept in sync with ``transcript_analyzer/parsers/claude.py`` ``_META_TYPES``
+# (minus ``last-prompt``, which ``_tail_status`` classifies explicitly). The
+# contract test ``test_ignored_types_match_meta_types`` enforces that parity, so a
+# future Claude format-drift — which is exactly how ``mode`` / ``agent-name`` /
+# ``bridge-session`` slipped in and regressed this set to masking real status as
+# UNKNOWN — can't silently happen again.
+_IGNORED_TYPES: frozenset[str] = frozenset({
+    "file-history-snapshot",
+    "queue-operation",
+    "custom-title",
+    "ai-title",
+    "pr-link",
+    "attachment",
+    "permission-mode",
+    "mode",
+    "agent-name",
+    "bridge-session",
+})
+
+
+def _has_pending_tool_use(chunk: str) -> bool:
+    """True when the latest assistant ``tool_use`` has no completion evidence.
+
+    Walks the JSONL chunk forward (oldest→newest) and tracks the most recent
+    ``assistant`` entry whose ``stop_reason == "tool_use"``. If a completion
+    signal — ``file-history-snapshot``, a ``user`` event with a ``tool_result``
+    block, or another ``assistant`` with ``stop_reason == "end_turn"`` —
+    appears after that entry, the tool has been resolved. Otherwise the worker
+    is mid-tool execution and ``last-prompt`` is a premature idle marker.
+    """
+    pending = False
+    for line in chunk.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        t = entry.get("type", "")
+        msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
+        if t == "assistant":
+            stop = msg.get("stop_reason")
+            if stop == "tool_use":
+                pending = True
+            elif stop == "end_turn":
+                pending = False
+        elif t == "user" and pending:
+            content = msg.get("content")
+            if isinstance(content, list) and any(
+                isinstance(b, dict) and b.get("type") == "tool_result"
+                for b in content
+            ):
+                pending = False
+        elif t == "file-history-snapshot" and pending:
+            pending = False
+    return pending
+
+
+def _has_completed_assistant(chunk: str) -> bool:
+    """True when at least one ``assistant`` entry has appeared in the chunk.
+
+    Claude 2.x can write ``last-prompt`` as a queue/ack marker BEFORE the
+    assistant turn starts (right after ``user`` + ``attachment`` events).
+    Treating that early ``last-prompt`` as terminal causes the test to exit
+    before Claude has actually thought about the prompt. Requiring at least
+    one assistant entry guarantees Claude has begun (and typically finished)
+    generating output before we consider the turn complete.
+    """
+    for line in chunk.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if entry.get("type") == "assistant":
+            return True
+    return False
+
+
+def _last_assistant_stop_reason(chunk: str) -> str | None:
+    """Return the ``stop_reason`` of the most recent ``assistant`` entry, or None.
+
+    Used by ``stream_transcript`` to distinguish "model just used a tool and is
+    planning the next call" (``stop_reason=tool_use``, more work expected) from
+    "model finished its turn" (``stop_reason=end_turn``). Treating both as
+    soft-terminal exits before the next tool call lands.
+    """
+    for line in reversed(chunk.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if entry.get("type") != "assistant":
+            continue
+        msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
+        return msg.get("stop_reason")
+    return None
+
+
+def _last_user_is_tool_result(chunk: str) -> bool:
+    """True when the most recent ``user`` entry carries a ``tool_result`` block.
+
+    Distinguishes "user just sent a fresh prompt" (the worker is genuinely
+    WAITING for assistant output) from "user is the tool runtime returning a
+    tool_result" (the worker just finished its side effects). The latter is
+    safe to treat as terminal once no other tool_use remains pending.
+    """
+    for line in reversed(chunk.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if entry.get("type") != "user":
+            continue
+        msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
+        content = msg.get("content")
+        if isinstance(content, list):
+            return any(
+                isinstance(b, dict) and b.get("type") == "tool_result"
+                for b in content
+            )
+        return False
+    return False
+
+
+def _last_user_text(chunk: str) -> str:
+    """Extract text content from the last user entry in a JSONL chunk."""
+    for line in reversed(chunk.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if entry.get("type") == "user":
+            msg = entry.get("message", {})
+            content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
+            if isinstance(content, list):
+                return " ".join(
+                    c.get("text", "") for c in content if c.get("type") == "text"
+                )
+            return str(content)
+    return ""
+
+
+class ApiErrorTimeoutError(TimeoutError):
+    """Raised by stream_transcript when it times out while the process is in API_ERROR state.
+
+    This means the Anthropic API returned repeated errors (e.g. HTTP 529 overloaded)
+    and Claude was still retrying when the timeout expired. This is an infrastructure
+    issue, not a logic failure — tests should skip rather than fail on this exception.
+    """
+
+
+def _scan_reversed(
+    chunk: str,
+) -> tuple[str | None, str | None, str | None, float | None]:
+    """Walk a JSONL chunk newest→oldest and return the classification inputs for
+    the last *meaningful* entry: ``(last_type, last_subtype, last_stop_reason,
+    last_user_ts)``.
+
+    Content-free session-envelope lines (``_IGNORED_TYPES``) are skipped so the
+    trailing ai-title / agent-name / mode / bridge-session run that Claude Code
+    writes as a session prologue/epilogue doesn't mask the real terminal/active
+    signal. ``last_type`` is None when the chunk holds no non-ignored, parseable
+    entry — the caller uses that to decide whether to widen the tail read.
+    """
+    last_type: str | None = None
+    last_subtype: str | None = None
+    last_stop_reason: str | None = None
+    last_user_ts: float | None = None
+    for line in reversed(chunk.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        t = entry.get("type", "")
+        if t in _IGNORED_TYPES:
+            continue
+        if last_type is None:
+            last_type = t
+            if t == "system":
+                last_subtype = entry.get("subtype")
+            if t == "user":
+                ts_str = entry.get("timestamp", "")
+                if ts_str:
+                    try:
+                        last_user_ts = _datetime.fromisoformat(
+                            ts_str.replace("Z", "+00:00")
+                        ).timestamp()
+                    except Exception:
+                        pass
+        if t == "assistant" and last_stop_reason is None:
+            last_stop_reason = entry.get("message", {}).get("stop_reason")
+        if last_type and last_stop_reason is not None:
+            break
+    return last_type, last_subtype, last_stop_reason, last_user_ts
+
+
+def _tail_status(path: "str | _Path") -> WorkerStatus:
+    """Derive WorkerStatus from the tail of a JSONL transcript.
+
+    Algorithm:
+      1. mtime check — is the file still being actively written (≤5 min)?
+      2. Tail parse — scan the last 4 KB (widening up to ``_TAIL_MAX_BYTES`` if
+         that window is all content-free envelope lines) for the last meaningful
+         entry type and stop_reason.
+      3. Classify: terminal signals take priority; granular busy states only
+         when the file is still active. Fallback is UNKNOWN (not RUNNING) so
+         that new / malformed event types are visible.
+
+    Returns one of: INITIALIZING, COMPLETE, ERROR, INTERRUPTED, INACTIVE,
+                    WAITING, THINKING, TOOL_CALL, TOOL_RUNNING, API_ERROR,
+                    API_TIMEOUT, UNKNOWN.
+    (IDLE is a workflow state set externally, not transcript-derivable.)
+    """
+    p = _Path(path)
+    try:
+        stat = p.stat()
+    except OSError:
+        # Transcript file doesn't exist yet — worker initialising.
+        return WorkerStatus.INITIALIZING
+
+    is_active = (_time.time() - stat.st_mtime) <= _ACTIVE_SECONDS
+    sz = stat.st_size
+
+    # Expanding tail read: start at 4 KB and widen (×16, clamped to
+    # ``_TAIL_MAX_BYTES``) while the window holds nothing but ignored
+    # session-envelope lines (``last_type is None``), so a long trailing meta run
+    # can't bury the real last chat entry and force a spurious UNKNOWN. Healthy
+    # sessions find a meaningful entry in the first 4 KB and never expand; the
+    # read never exceeds ``_TAIL_MAX_BYTES``.
+    #
+    # ALSO widen when the tail ends in a ``last-prompt`` idle marker but the
+    # window doesn't yet contain a completed assistant turn: the ``last-prompt``
+    # branch below classifies COMPLETE vs WAITING from the ``end_turn`` of the
+    # last assistant entry, and a single oversized tool_use line just ahead of
+    # the trailing ``last-prompt``/``system``/envelope run can strand that
+    # ``end_turn`` past the 4 KB window — making ``_has_completed_assistant``
+    # falsely return False and pinning a genuinely-finished worker at WAITING
+    # forever (never projected to PENDING_USER). Widen until the assistant turn
+    # is in-window (or we hit the file start / ``_TAIL_MAX_BYTES``).
+    last_type: str | None = None
+    last_subtype: str | None = None
+    last_stop_reason: str | None = None
+    last_user_ts: float | None = None
+    read_bytes = _TAIL_BYTES
+    while True:
+        window = min(read_bytes, sz)
+        try:
+            with open(p, "rb") as f:
+                if sz > window:
+                    f.seek(sz - window)
+                chunk = f.read().decode("utf-8", errors="replace")
+        except OSError:
+            return WorkerStatus.INITIALIZING
+        last_type, last_subtype, last_stop_reason, last_user_ts = _scan_reversed(chunk)
+        if window >= sz or read_bytes >= _TAIL_MAX_BYTES:
+            break
+        need_wider = last_type is None or (
+            last_type == "last-prompt" and not _has_completed_assistant(chunk)
+        )
+        if not need_wider:
+            break
+        read_bytes = min(read_bytes * 16, _TAIL_MAX_BYTES)
+
+    # Claude 2.x writes ``last-prompt`` as an idle marker — but in PTY mode it
+    # can appear *between* an assistant ``stop_reason=tool_use`` and the actual
+    # tool execution (which the JSONL records via a subsequent
+    # ``file-history-snapshot`` and a SECOND ``last-prompt``). Treating the
+    # first ``last-prompt`` as terminal causes ``stream_transcript`` to exit
+    # before the file write lands, breaking long tests that assert artifacts on
+    # disk. Detect the in-flight tool case by walking forward and checking
+    # whether the most recent ``last-prompt`` is preceded by an unclosed
+    # ``tool_use`` (no ``file-history-snapshot`` or ``end_turn`` after it).
+    if last_type == "last-prompt":
+        # ``last-prompt`` can appear *before* any assistant message — Claude
+        # writes a queue/ack marker right after ``user`` + ``attachment`` and
+        # only then starts thinking. Don't declare COMPLETE until there's at
+        # least one assistant entry AND no pending tool execution.
+        if not _has_completed_assistant(chunk):
+            return WorkerStatus.WAITING
+        if _has_pending_tool_use(chunk):
+            return WorkerStatus.TOOL_RUNNING
+        # ``last-prompt`` also rides in as an idle ack *between* tool calls:
+        # the model finished a tool (tool_result landed, so nothing is pending)
+        # and is slowly planning its next call. When the most recent assistant
+        # turn ended with ``stop_reason=tool_use`` the model is still mid-turn —
+        # the trailing ``last-prompt`` is NOT a turn end. Declaring COMPLETE here
+        # cuts ``stream_transcript`` off during a long inter-tool pause (Opus can
+        # take 20-40 s), so the diagnose runner never scrapes the final report
+        # and falsely reports "not recorded". Only a genuine ``end_turn`` is
+        # terminal; otherwise stay WAITING and keep reading. (Mirrors the
+        # ``stop_reason=="end_turn"`` guard on the ``_post_tool_idle`` path.)
+        if _last_assistant_stop_reason(chunk) != "end_turn":
+            return WorkerStatus.WAITING
+        return WorkerStatus.COMPLETE
+    if last_type == "user" and "interrupted" in _last_user_text(chunk).lower():
+        return WorkerStatus.INTERRUPTED
+    if last_stop_reason == "end_turn":
+        return WorkerStatus.COMPLETE
+    if last_stop_reason == "stop_sequence":
+        return WorkerStatus.ERROR
+
+
+    # Stale file with no clean termination signal → assumed dead
+    if not is_active:
+        return WorkerStatus.INACTIVE
+
+    # JSONL exists but has no parseable content — still initialising.
+    if last_type is None:
+        return WorkerStatus.INITIALIZING
+
+    # Granular active states (only when file is still being written)
+    if last_type == "system" and last_subtype == "api_error":
+        return WorkerStatus.API_ERROR
+    # ``system:init`` is Claude's first JSONL line — it means the worker booted,
+    # established the session, and is now sitting at the prompt waiting for the
+    # first user turn. Nothing after it = idle/ready, NOT "still initialising"
+    # and NOT an unrecognised type. (Once a turn starts, later lines override
+    # this on the next tail read.)
+    if last_type == "system" and last_subtype == "init":
+        return WorkerStatus.IDLE
+    if last_type == "assistant" and last_stop_reason is None:
+        return WorkerStatus.THINKING
+    if last_type == "assistant" and last_stop_reason == "tool_use":
+        return WorkerStatus.TOOL_CALL
+    if last_type == "progress":
+        return WorkerStatus.TOOL_RUNNING
+    if last_type == "user":
+        if last_user_ts and (_time.time() - last_user_ts) > 90:
+            return WorkerStatus.API_TIMEOUT
+        return WorkerStatus.WAITING
+
+    # Unrecognised entry type — surface as UNKNOWN so new Claude event types or
+    # malformed writes are visible, rather than silently masked as "running".
+    return WorkerStatus.UNKNOWN

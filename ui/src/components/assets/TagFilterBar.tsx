@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
+import { useLingui } from '@lingui/react/macro';
 
 interface Props {
   tags: string[];
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export function TagFilterBar({ tags, onTagsChange }: Props) {
+  const { t } = useLingui();
   const [input, setInput] = useState('');
 
   const addTag = (tag: string) => {
@@ -37,7 +39,7 @@ export function TagFilterBar({ tags, onTagsChange }: Props) {
             addTag(input);
           }
         }}
-        placeholder="Add tag…"
+        placeholder={t`Add tag…`}
         className="h-6 min-w-[80px] rounded border-none bg-transparent px-1 text-xs outline-none placeholder:text-muted-foreground"
       />
     </div>

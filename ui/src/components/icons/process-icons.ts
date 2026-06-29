@@ -5,6 +5,8 @@ import { ClaudeIcon } from './ClaudeIcon';
 import { ClaudeRestoreIcon } from './ClaudeRestoreIcon';
 import { CodexIcon } from './CodexIcon';
 import { CodexRestoreIcon } from './CodexRestoreIcon';
+import { CopilotIcon } from './CopilotIcon';
+import { CopilotRestoreIcon } from './CopilotRestoreIcon';
 
 /**
  * UI-side resolver for the symbolic ``ProcessIconKey`` exposed by
@@ -18,6 +20,8 @@ export const PROCESS_ICONS: Record<ProcessIconKey, ComponentType<{ className?: s
   'claude-restore': ClaudeRestoreIcon,
   codex: CodexIcon,
   'codex-restore': CodexRestoreIcon,
+  copilot: CopilotIcon,
+  'copilot-restore': CopilotRestoreIcon,
   generic: Sparkles,
   'generic-restore': History,
 };

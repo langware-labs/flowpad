@@ -51,7 +51,7 @@ def _setup_logging() -> None:
     cleanup_old_logs(monitor_log_dir)
     monitor_log_path = generate_timestamped_log_path("monitor")
 
-    handler = logging.FileHandler(str(monitor_log_path))
+    handler = logging.FileHandler(str(monitor_log_path), encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     log.addHandler(handler)
     log.addHandler(logging.StreamHandler(sys.stderr))
@@ -223,6 +223,7 @@ def ensure_monitor_singleton(server_info: dict) -> dict:
 def monitor_loop(port: int, interval: float = 30.0) -> None:
     """Infinite loop: sleep → health check → restart if needed."""
     consecutive_failures = 0
+    restart_failure_threshold = 3
     max_backoff = 300.0  # 5 minutes
     last_resource_log = 0.0
 
@@ -262,8 +263,15 @@ def monitor_loop(port: int, interval: float = 30.0) -> None:
         info = _load_info()
         server_pid = info.get("server_pid")
 
-        # If server process is alive but not responding, kill it
         if server_pid and is_process_alive(server_pid, expected_name=_SERVER_CMD_MARKER):
+            if consecutive_failures < restart_failure_threshold:
+                log.warning(
+                    "Server PID=%d alive but health check failed — waiting for %d consecutive failures before restart",
+                    server_pid,
+                    restart_failure_threshold,
+                )
+                continue
+
             log.warning("Server PID=%d alive but unhealthy — killing", server_pid)
             kill_process(server_pid)
             time.sleep(1)

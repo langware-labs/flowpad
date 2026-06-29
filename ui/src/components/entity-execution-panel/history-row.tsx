@@ -1,6 +1,7 @@
 import type { AgenticProcess } from '@sdk';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 
 /**
@@ -46,6 +47,13 @@ export function pickHistoryTitle(
   if (display && !display.startsWith('agentic_process-')) {
     return display.length > 80 ? `${display.slice(0, 80)}…` : display;
   }
+  // No real title — fall through to the last prompt so the row stays
+  // identifiable in surfaces that show a single line (worker_history
+  // splits name vs last_prompt; only HistoryModal renders both).
+  const prompt = (entry?.last_prompt ?? '').trim();
+  if (prompt) {
+    return prompt.length > 80 ? `${prompt.slice(0, 80)}…` : prompt;
+  }
   const id = process?.id ?? entry?.agentic_process_id ?? entry?.worker_id ?? '';
   return id ? `Session ${shortId(id)}` : 'Session';
 }
@@ -84,10 +92,13 @@ interface WorkerIconProps {
   className?: string;
 }
 
-/** Tiny worker-vendor glyph (Claude vs Codex). Defaults to Claude. */
+/** Tiny worker-vendor glyph. Defaults to Claude. */
 export function WorkerIcon({ workerType, className = 'h-3 w-3 shrink-0' }: WorkerIconProps) {
   if (workerType === 'codex') {
     return <CodexIcon className={`${className} text-emerald-500`} />;
+  }
+  if (workerType === 'copilot') {
+    return <CopilotIcon className={`${className} text-sky-500`} />;
   }
   return <ClaudeIcon className={`${className} text-orange-500`} />;
 }

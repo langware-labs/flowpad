@@ -33,6 +33,10 @@ class WSMessageType(Enum):
     FLOW_DATA_MSG = "flow_data_msg"
     HUB_CLIENT_ERROR_MSG = "hub_client_error_msg"
     AUTH_EXPIRED_MSG = "auth_expired_msg"
+    CLOUD_LOGIN_STATUS_MSG = "cloud_login_status_msg"
+    CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
+    PRIVACY_MODE_MSG = "privacy_mode_msg"
+    TOPLOG_STATE_MSG = "toplog_state_msg"
 
 
 class ExeMessageSubType(StrEnum):
@@ -130,6 +134,21 @@ class AuthExpiredMessage(BaseMessage):
     reason: str
 
 
+class PrivacyModeMessage(BaseMessage):
+    """Broadcast when this instance's data-privacy mode changes, so every open
+    client updates the footer control + cloud-access guards without a reload."""
+    message_type: str = WSMessageType.PRIVACY_MODE_MSG.value
+    privacy_mode: str  # "local" | "connected"
+
+
+class ToplogStateMessage(BaseMessage):
+    """Broadcast when this instance's toplog state changes, so every open client
+    updates its in-memory topic set live (no reload). See flow_sdk/toplog.py."""
+    message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
+    enabled: bool
+    filter: Dict[str, bool]
+
+
 class EntityMessage(BaseMessage):
     message_type: str = WSMessageType.ENTITY_MSG.value
     from_entity: Optional[TypeId] = None
@@ -161,6 +180,9 @@ class DataOpMessage(EntityMessage):
 
 class APIMessage(BaseMessage, APIRequest):
     message_type: str = WSMessageType.REST_API_MSG.value
+    # Per-call hub-reflection opt-in for the WS-REST path (the HTTP path uses the
+    # ``Hub-Reflect`` header). Default False — do not reflect.
+    hub_reflect: bool = False
 
     @property
     def auth_info(self) -> AuthContext:
@@ -243,7 +265,6 @@ class PtySessionStatusMessage(BaseMessage):
     message_type: str = WSMessageType.PTY_SESSION_STATUS_MSG.value
     shell_id: str
     status: str  # "connected", "reattached", "not_found", "expired"
-    replay_truncated: bool = False
     latest_seq: Optional[int] = None
 
 
@@ -259,9 +280,9 @@ class LlmConfigMessage(BaseMessage):
     """
 
     message_type: str = WSMessageType.LLM_CONFIG_MSG.value
-    is_configured: bool  # True if any auth method is available
-    auth_method: str  # "oauth", "api_key", or "none"
-    auth_data: Optional[dict] = None  # Full ClaudeCodeAuthStatus as dict
+    is_configured: bool  # True if the relevant provider auth is available
+    auth_method: str  # Provider or auth mechanism name, e.g. "github" or "anthropic"
+    auth_data: Optional[dict] = None  # Optional provider-specific auth metadata
     # OAuth request fields (for tracking which OAuth request completed)
     oauth_request_id: Optional[str] = None
     status: Optional[OAuthMessageStatus] = None

@@ -1,0 +1,111 @@
+{
+  "_doc": "Shared tab-ordering contract. Consumed by BOTH ui/tests/unit/tab-order.test.ts (predictOrder) and tests/unit/test_tab_order.py (compute_reorder). Both suites must produce identical results for every case — this is the front/back parity proof. `tabs` is the current GLOBAL order (each id + its project; null = projectless). `op` selects the pure operation; `args` are its inputs (null anchors allowed). `expectedOrder` is the new global order. `expectedWrites` (optional) is the SET of ids whose contiguous index changed (the rows persist_order would write). `expectedFiltered` (optional) maps a project view to its filtered subsequence; the key \"null\" is the projectless (no active project) view; a project view = {id.project == key OR id.project == null}.",
+  "cases": [
+    {
+      "name": "reorder: move-right within project",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p1"}, {"id": "c", "project": "p1"}],
+      "op": "reorder",
+      "args": {"reorder_id": "a", "after_id": "b", "before_id": "c"},
+      "expectedOrder": ["b", "a", "c"],
+      "expectedWrites": ["a", "b"],
+      "expectedFiltered": {"p1": ["b", "a", "c"], "p2": []}
+    },
+    {
+      "name": "reorder: move-left within project",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p1"}, {"id": "c", "project": "p1"}],
+      "op": "reorder",
+      "args": {"reorder_id": "c", "after_id": "a", "before_id": "b"},
+      "expectedOrder": ["a", "c", "b"],
+      "expectedWrites": ["b", "c"],
+      "expectedFiltered": {"p1": ["a", "c", "b"]}
+    },
+    {
+      "name": "reorder: to start (after null)",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p1"}, {"id": "c", "project": "p1"}],
+      "op": "reorder",
+      "args": {"reorder_id": "c", "after_id": null, "before_id": "a"},
+      "expectedOrder": ["c", "a", "b"],
+      "expectedWrites": ["a", "b", "c"],
+      "expectedFiltered": {"p1": ["c", "a", "b"]}
+    },
+    {
+      "name": "reorder: to end (before null)",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p1"}, {"id": "c", "project": "p1"}],
+      "op": "reorder",
+      "args": {"reorder_id": "a", "after_id": "c", "before_id": null},
+      "expectedOrder": ["b", "c", "a"],
+      "expectedWrites": ["a", "b", "c"],
+      "expectedFiltered": {"p1": ["b", "c", "a"]}
+    },
+    {
+      "name": "reorder: no-op (dropped in same gap) -> no writes",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p1"}, {"id": "c", "project": "p1"}],
+      "op": "reorder",
+      "args": {"reorder_id": "b", "after_id": "a", "before_id": "c"},
+      "expectedOrder": ["a", "b", "c"],
+      "expectedWrites": [],
+      "expectedFiltered": {"p1": ["a", "b", "c"]}
+    },
+    {
+      "name": "reorder: project tab moved past a projectless tab (cross-boundary inline)",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "s", "project": null}, {"id": "b", "project": "p1"}],
+      "op": "reorder",
+      "args": {"reorder_id": "a", "after_id": "s", "before_id": "b"},
+      "expectedOrder": ["s", "a", "b"],
+      "expectedWrites": ["a", "s"],
+      "expectedFiltered": {"p1": ["s", "a", "b"], "null": ["s"]}
+    },
+    {
+      "name": "reorder: projectless tab moved among project tabs",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p1"}, {"id": "s", "project": null}],
+      "op": "reorder",
+      "args": {"reorder_id": "s", "after_id": "a", "before_id": "b"},
+      "expectedOrder": ["a", "s", "b"],
+      "expectedWrites": ["b", "s"],
+      "expectedFiltered": {"p1": ["a", "s", "b"], "null": ["s"]}
+    },
+    {
+      "name": "new_tab: opener inserts right after the opener",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p1"}, {"id": "c", "project": "p1"}],
+      "op": "new_tab",
+      "args": {"new_id": "x", "project": "p1", "after_id": "a"},
+      "expectedOrder": ["a", "x", "b", "c"],
+      "expectedWrites": ["x", "b", "c"],
+      "expectedFiltered": {"p1": ["a", "x", "b", "c"]}
+    },
+    {
+      "name": "new_tab: no opener appends last",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p1"}, {"id": "c", "project": "p1"}],
+      "op": "new_tab",
+      "args": {"new_id": "x", "project": "p2", "after_id": null},
+      "expectedOrder": ["a", "b", "c", "x"],
+      "expectedWrites": ["x"],
+      "expectedFiltered": {"p1": ["a", "b", "c"], "p2": ["x"]}
+    },
+    {
+      "name": "reopen: existing tab keeps its slot",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p1"}, {"id": "c", "project": "p1"}],
+      "op": "reopen",
+      "args": {"id": "b"},
+      "expectedOrder": ["a", "b", "c"],
+      "expectedWrites": [],
+      "expectedFiltered": {"p1": ["a", "b", "c"]}
+    },
+    {
+      "name": "close: removed, remaining keep relative order",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p1"}, {"id": "c", "project": "p1"}],
+      "op": "close",
+      "args": {"id": "b"},
+      "expectedOrder": ["a", "c"],
+      "expectedFiltered": {"p1": ["a", "c"]}
+    },
+    {
+      "name": "filter: per-project view is the global subsequence + projectless",
+      "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p2"}, {"id": "s", "project": null}, {"id": "c", "project": "p1"}],
+      "op": "filter",
+      "args": {},
+      "expectedOrder": ["a", "b", "s", "c"],
+      "expectedFiltered": {"p1": ["a", "s", "c"], "p2": ["b", "s"], "null": ["s"]}
+    }
+  ]
+}

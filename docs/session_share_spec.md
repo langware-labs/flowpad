@@ -1,3 +1,7 @@
+---
+id: c93b1ae0-d77d-5365-bec3-550949369fb3
+---
+
 # Session Share Spec
 
 How Claude Code sessions are structured, what needs to move between machines, and how to patch transcripts so the receiving machine works cleanly.

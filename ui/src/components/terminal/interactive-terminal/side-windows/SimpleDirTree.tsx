@@ -1,7 +1,7 @@
 import { type TypeId } from '@sdk';
 import apiClient from '@sdk/client';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { lucideByName } from '@src/lib/lucide-by-name';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
@@ -12,11 +12,16 @@ import {
   FileCode,
   FileText,
   Folder,
+  FolderSearch,
   Image,
   RefreshCw,
+  Share2,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { fileShareSource } from '@src/hooks/share-sources';
 import { useFS } from '@src/hooks/useFS';
 
 interface SimpleDirTreeProps {
@@ -48,18 +53,6 @@ const ASSET_RECORD_TYPES = [
   'command',
   'plan',
 ];
-
-const ASSET_ICON_FALLBACKS: Record<string, string> = {
-  skill: 'Sparkles',
-  agent: 'Bot',
-  workflow: 'Workflow',
-  markdown: 'BookOpen',
-  claude_md: 'BookOpen',
-  claude_memory: 'Brain',
-  claude_rules: 'Shield',
-  command: 'Terminal',
-  plan: 'FileText',
-};
 
 const TEXT_EXTENSIONS = new Set(['md', 'txt', 'json', 'yaml', 'yml', 'toml', 'ini', 'csv', 'log']);
 
@@ -139,6 +132,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   initialPath,
   onSelectFile,
 }) => {
+  const { t } = useLingui();
   const fs = useFS(computeNodeTypeId);
   const { navigation } = useDockNavigation();
   const fsRef = React.useRef(fs);
@@ -148,7 +142,21 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   const [currentPath, setCurrentPath] = useState<string>(() => normalize(initialPath ?? topLevel));
   const [assetRefreshKey, setAssetRefreshKey] = useState(0);
   const [pathAssets, setPathAssets] = useState<PathAsset[]>([]);
-  const [assetIconNames, setAssetIconNames] = useState<Record<string, string | null>>({});
+  const [filterQuery, setFilterQuery] = useState('');
+  // Absolute node path of the file being shared; non-null opens the dialog.
+  const [sharePath, setSharePath] = useState<string | null>(null);
+  const shareSource = useMemo(
+    () =>
+      sharePath
+        ? fileShareSource({ computeNodeTypeId, absPath: sharePath })
+        : null,
+    [computeNodeTypeId, sharePath],
+  );
+
+  // Reset filter when navigating between directories — a query that fit the
+  // old listing rarely fits the next one, and a stale filter that hides
+  // every entry looks like the panel is broken.
+  useEffect(() => { setFilterQuery(''); }, [currentPath]);
 
   const atTop = currentPath === normalizedTop;
   const browseResult = fs?.browse(currentPath);
@@ -161,28 +169,8 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
     void fsRef.current?.listDirectory(currentPath);
   }, [browseResult, currentPath]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    apiClient
-      .get('/assets/types')
-      .then((data: unknown) => {
-        if (cancelled) return;
-        const d = data as { types?: { type_name: string; icon: string | null }[] } | null;
-        const next: Record<string, string | null> = {};
-        for (const type of d?.types ?? []) {
-          next[type.type_name] = type.icon;
-        }
-        setAssetIconNames(next);
-      })
-      .catch(() => {
-        if (!cancelled) setAssetIconNames({});
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Asset-record-type glyphs come from the bootstrap-loaded SchemaRegistry
+  // (iconForType) — no per-type /assets/types fetch needed.
 
   useEffect(() => {
     let cancelled = false;
@@ -261,6 +249,17 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
     [computeNodeTypeId.id],
   );
 
+  const handleRevealInFinder = useCallback(
+    async (path: string) => {
+      try {
+        await openExternalFromComputeNode(computeNodeTypeId.id, path, { select: true });
+      } catch (error) {
+        console.error('[SimpleDirTree] Failed to reveal in file manager:', path, error);
+      }
+    },
+    [computeNodeTypeId.id],
+  );
+
   const handleEnter = useCallback(
     (item: { name: string; is_dir?: boolean; vfs_abs_path?: string }, asset?: PathAsset) => {
       const childPath = joinPath(currentPath, item.name);
@@ -288,22 +287,22 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
 
   const renderItemIcon = useCallback(
     (item: { name: string; is_dir?: boolean }, asset?: PathAsset) => {
-      const Icon = asset
-        ? lucideByName(assetIconNames[asset.type] ?? ASSET_ICON_FALLBACKS[asset.type])
-        : defaultIconForItem(item);
+      const Icon = asset ? iconForType(asset.type) : defaultIconForItem(item);
       return <Icon className={`h-4 w-4 shrink-0 ${asset ? 'text-primary' : 'text-muted-foreground'}`} />;
     },
-    [assetIconNames],
+    [],
   );
 
   const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
+    const q = filterQuery.trim().toLowerCase();
+    const base = q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items;
+    return [...base].sort((a, b) => {
       const aDir = a.is_dir ? 0 : 1;
       const bDir = b.is_dir ? 0 : 1;
       if (aDir !== bDir) return aDir - bDir;
       return a.name.localeCompare(b.name);
     });
-  }, [items]);
+  }, [items, filterQuery]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -316,13 +315,25 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
         </Button>
       </div>
 
+      <div className="shrink-0 border-b px-2 py-1">
+        <input
+          type="text"
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+          placeholder={t`Filter…`}
+          className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+          aria-label={t`Filter files`}
+          data-testid="dir-tree-filter"
+        />
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto p-1">
         <div className="flex flex-col">
           <button
             type="button"
             onClick={handleRefresh}
             className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted"
-            title="Current directory (click to refresh)"
+            title={t`Current directory (click to refresh)`}
           >
             <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="font-mono">.</span>
@@ -333,7 +344,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
               type="button"
               onClick={handleUp}
               className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted"
-              title="Parent directory"
+              title={t`Parent directory`}
             >
               <CornerLeftUp className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="font-mono">..</span>
@@ -367,12 +378,33 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
                 >
                   <span className="block truncate">{item.name}</span>
                 </button>
+                {!item.is_dir && (
+                  <button
+                    type="button"
+                    onClick={() => setSharePath(childPath)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                    aria-label={t`Share to a conversation: ${childPath}`}
+                    title={t`Share to a conversation\n${childPath}`}
+                    data-testid={`dir-tree-share-${item.name}`}
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleRevealInFinder(childPath)}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                  aria-label={t`Reveal in Finder/Explorer: ${childPath}`}
+                  title={t`Reveal in Finder/Explorer\n${childPath}`}
+                >
+                  <FolderSearch className="h-3.5 w-3.5" />
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleOpenExternal(childPath)}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-                  aria-label={`Open externally: ${childPath}`}
-                  title={`Open externally\n${childPath}`}
+                  aria-label={t`Open externally: ${childPath}`}
+                  title={t`Open externally\n${childPath}`}
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </button>
@@ -381,10 +413,20 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
           })}
 
           {sortedItems.length === 0 && browseResult && (
-            <p className="mt-4 px-2 text-center text-xs text-muted-foreground">empty</p>
+            <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
+              {filterQuery.trim() ? <Trans>no matches</Trans> : <Trans>empty</Trans>}
+            </p>
           )}
         </div>
       </div>
+
+      {shareSource && (
+        <ShareToConversationDialog
+          open
+          onClose={() => setSharePath(null)}
+          source={shareSource}
+        />
+      )}
     </div>
   );
 };
