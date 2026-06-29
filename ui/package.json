@@ -11,6 +11,7 @@
     "build": "lingui extract && lingui compile && vite build",
     "build:sdk": "vite build --config vite.iife.config.ts",
     "preview": "vite preview",
+    "type-check": "tsc --noEmit",
     "lint": "eslint .",
     "test": "npm run test:vitest:unit && npm run test:vitest:api && npm run test:vitest:react",
     "test:vitest": "npm run test:vitest:unit && npm run test:vitest:api && npm run test:vitest:react",
