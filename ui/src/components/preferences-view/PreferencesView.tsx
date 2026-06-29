@@ -1,5 +1,5 @@
 import { PREF_CATEGORIES, prefsForCategory } from '@sdk';
-import { Card } from '@src/components/ui/card';
+import { SettingsCard } from '@src/components/settings/settings-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { humanizeType } from '@src/tabs/provider-meta';
@@ -43,11 +43,11 @@ export function PreferencesView() {
 
           {categories.map((cat) => (
             <TabsContent key={cat} value={cat} className="mt-0 focus-visible:outline-none">
-              <Card className="divide-y divide-border/60 overflow-hidden border-border/70 bg-card/30 shadow-sm">
+              <SettingsCard>
                 {prefsForCategory(cat).map((info) => (
                   <PrefControl key={info.key} info={info} />
                 ))}
-              </Card>
+              </SettingsCard>
             </TabsContent>
           ))}
         </Tabs>
