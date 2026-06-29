@@ -52,6 +52,9 @@ export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggle
   // Project · branch survive only as a hover tooltip on the row (no visible subline).
   const meta = [entry.project_name, entry.git_branch].filter(Boolean).join(' · ');
   const hasMsgs = !!entry.message_count && entry.message_count > 0;
+  // Total transcript turns (user + assistant), not prompts — labelled plainly so the
+  // count doesn't read as a prompt count.
+  const msgCountLabel = entry.message_count === 1 ? t`1 message` : t`${entry.message_count} messages`;
   const fav = process?.favorite_index != null;
 
   return (
@@ -128,8 +131,8 @@ export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggle
           <span className="flex shrink-0 items-center gap-1">
             <span
               className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"
-              title={entry.message_count === 1 ? t`1 message` : t`${entry.message_count} messages`}
-              aria-label={entry.message_count === 1 ? t`1 message` : t`${entry.message_count} messages`}
+              title={msgCountLabel}
+              aria-label={msgCountLabel}
               data-testid="chat-history-row-msgcount"
             >
               <MessageSquare className="h-2.5 w-2.5" />
