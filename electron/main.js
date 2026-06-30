@@ -352,8 +352,42 @@ function createWindow() {
   // navigation, so we wire them up — and the OS surfaces them differently per
   // platform, so we listen per platform (one source each, no double-navigation).
   const nav = () => mainWindow.webContents.navigationHistory;
-  const goBack = () => { if (nav().canGoBack()) nav().goBack(); };
-  const goForward = () => { if (nav().canGoForward()) nav().goForward(); };
+
+  // [nav] tracing: every back/forward source and every resulting history
+  // transition is logged so a double-navigation (e.g. "back jumps two") shows
+  // up as either two trigger lines for one gesture, or one trigger followed by
+  // two did-navigate lines. Pairs with the frontend toplog `navigation` topic
+  // (window.history pushState/popstate from NavigationActions) — together they
+  // tell us whether the main process or the renderer is double-stepping.
+  const navState = () => {
+    try {
+      const h = nav();
+      return `idx=${h.getActiveIndex()}/${h.length() - 1} canBack=${h.canGoBack()} canFwd=${h.canGoForward()} url=${mainWindow.webContents.getURL()}`;
+    } catch (err) {
+      return `<navState unavailable: ${err.message}>`;
+    }
+  };
+  const goBack = (source) => {
+    const can = nav().canGoBack();
+    log.info(`[nav] goBack source=${source} willNavigate=${can} ${navState()}`);
+    if (can) nav().goBack();
+  };
+  const goForward = (source) => {
+    const can = nav().canGoForward();
+    log.info(`[nav] goForward source=${source} willNavigate=${can} ${navState()}`);
+    if (can) nav().goForward();
+  };
+
+  // Log the actual history transitions the main process observes, regardless of
+  // who triggered them (gesture, renderer history.back, react-router). These are
+  // the ground truth for "how many steps did one gesture cause".
+  mainWindow.webContents.on('did-navigate', (_e, url) => {
+    log.info(`[nav] did-navigate (full load) url=${url} ${navState()}`);
+  });
+  mainWindow.webContents.on('did-navigate-in-page', (_e, url, isMainFrame) => {
+    if (!isMainFrame) return;
+    log.info(`[nav] did-navigate-in-page (SPA/pushState) url=${url} ${navState()}`);
+  });
 
   if (process.platform === 'darwin') {
     // macOS surfaces the buttons two ways and never reaches the renderer:
@@ -363,18 +397,18 @@ function createWindow() {
     //    mouse button / app-command (confirmed by event capture). Handle both.
     mainWindow.webContents.on('input-event', (_e, input) => {
       if (input.type !== 'mouseDown') return;
-      if (input.button === 'back') goBack();
-      else if (input.button === 'forward') goForward();
+      if (input.button === 'back') goBack('mac:mouse-input-event');
+      else if (input.button === 'forward') goForward('mac:mouse-input-event');
     });
     mainWindow.on('swipe', (_e, direction) => {
-      if (direction === 'left') goBack();
-      else if (direction === 'right') goForward();
+      if (direction === 'left') goBack('mac:swipe');
+      else if (direction === 'right') goForward('mac:swipe');
     });
   } else {
     // Windows/Linux: the buttons arrive as an app-command.
     mainWindow.webContents.on('app-command', (_e, command) => {
-      if (command === 'browser-backward') goBack();
-      else if (command === 'browser-forward') goForward();
+      if (command === 'browser-backward') goBack('app-command');
+      else if (command === 'browser-forward') goForward('app-command');
     });
   }
 
@@ -406,6 +440,7 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
+    log.info(`[nav] will-navigate url=${url}`);
     // Allow navigation to the backend (same-origin), block everything else.
     // Same-origin /win/ URLs are covered by this allow — they are in-app
     // destinations, consistent with the window-open carve-out above.

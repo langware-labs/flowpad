@@ -1,8 +1,21 @@
 import { FlowElementTypes } from '@sdk';
+import { Fragment } from 'react';
 import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
 import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import ExecutionMessage from './execution-message/execution-message';
 import { MetaMessageChip } from './MetaMessageChip';
+
+/**
+ * Subtle book-style separator between turns: a short, centered hairline that
+ * stops well short of either edge, rather than an edge-to-edge rule.
+ */
+function TurnDivider() {
+  return (
+    <div className="flex justify-center py-1" aria-hidden="true">
+      <div className="h-px w-1/4 bg-border/50" />
+    </div>
+  );
+}
 
 /**
  * Renders a `groupTurnEvents` partition: text-shaped turns as
@@ -14,28 +27,42 @@ import { MetaMessageChip } from './MetaMessageChip';
 export function TurnGroupsList({ groups, worker }: { groups: TurnGroup[]; worker?: string }) {
   return (
     <>
-      {groups.map((g) =>
-        g.kind === 'message' ? (
-          g.flowData.attributes?.['is-meta'] === 'true' ? (
-            <MetaMessageChip
-              key={`meta-${g.flowData.id ?? g.flowData.timestamp ?? g.index}`}
-              flowData={g.flowData}
-            />
+      {groups.map((g, i) => {
+        const key =
+          g.kind === 'message'
+            ? `msg-${g.flowData.id ?? g.flowData.timestamp ?? g.index}`
+            : `dense-${g.index}`;
+        const isUser =
+          g.kind === 'message' &&
+          (g.flowData.elementType === FlowElementTypes.USER_MESSAGE ||
+            g.flowData.attributes?.role === 'user');
+        const node =
+          g.kind === 'message' ? (
+            g.flowData.attributes?.['is-meta'] === 'true' ? (
+              <MetaMessageChip flowData={g.flowData} />
+            ) : (
+              <ExecutionMessage flowData={g.flowData} worker={worker} isUser={isUser} />
+            )
           ) : (
-            <ExecutionMessage
-              key={`msg-${g.flowData.id ?? g.flowData.timestamp ?? g.index}`}
-              flowData={g.flowData}
-              worker={worker}
-              isUser={
-                g.flowData.elementType === FlowElementTypes.USER_MESSAGE ||
-                (g.flowData.attributes && g.flowData.attributes.role === 'user')
-              }
-            />
-          )
-        ) : (
-          <ToolEntryRow key={`dense-${g.index}`} events={g.events} />
-        ),
-      )}
+            <ToolEntryRow events={g.events} />
+          );
+        // `display: contents` wrapper carries the role for read-back/tests without
+        // generating a box (no layout impact). Assistant turns = message groups
+        // that aren't the user echo; dense tool runs aren't a chat role.
+        const role = g.kind === 'message' ? (isUser ? 'user' : 'assistant') : undefined;
+        return (
+          <Fragment key={key}>
+            {i > 0 && <TurnDivider />}
+            {role ? (
+              <div className="contents" data-role={role}>
+                {node}
+              </div>
+            ) : (
+              node
+            )}
+          </Fragment>
+        );
+      })}
     </>
   );
 }

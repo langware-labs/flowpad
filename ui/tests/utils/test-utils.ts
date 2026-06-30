@@ -12,6 +12,7 @@ import {
   clearStats,
   dataManager,
   dataContext,
+  instancePreferences,
 } from '@sdk';
 import { v4 as uuidv4 } from 'uuid';
 import type { AgenticContext, PermissionMode } from '@sdk';
@@ -93,6 +94,13 @@ export async function apiTestSetup(_signupInfo?: unknown, _test_name: string | n
     cn.markAsExpanded();
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentComputeNodeTypeId, cn.typeId);
   }
+
+  // Settle the registry-driven preferences load NOW (it needs the compute node
+  // + bootstrap path, both just set). Otherwise its one-time async download of
+  // preferences.json races into a later test's request window — e.g. the
+  // request-counting tests that assert `save()` issues exactly one request would
+  // otherwise see a stray background GET and read 2.
+  await instancePreferences.loadJson();
 
   // Ensure websocket is connected for tests that rely on watch/stream notifications.
   const connectionManager = ConnectionManager.getInstance();
