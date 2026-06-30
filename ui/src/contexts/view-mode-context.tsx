@@ -12,6 +12,8 @@ declare global {
 }
 
 export enum ViewMode {
+  // Hierarchy (simplest → fullest): Vibe ⊂ Standard ⊂ Advanced ⊂ Dev.
+  Vibe = 'vibe',
   Standard = 'standard',
   Advanced = 'advanced',
   Dev = 'dev',
@@ -20,14 +22,34 @@ export enum ViewMode {
 // View mode is a *user* preference, now owned by prefMan (`preferences.ui.view_mode`,
 // a boot key mirrored to localStorage for instant first paint). It is reflected as a
 // `data-view` attribute on the document root so CSS / other surfaces can react app-wide.
-// Default Standard (calm/minimal); opt up to Advanced; Dev for developers. Toggle with
+// Default Vibe for new accounts (super-simple, Lovable-style creator UI); Standard is
+// the calm/minimal app; opt up to Advanced; Dev for developers. Toggle with
 // window.setView() or the footer pill.
 
 function toViewMode(v: unknown): ViewMode {
-  return v === ViewMode.Advanced || v === ViewMode.Dev ? (v as ViewMode) : ViewMode.Standard;
+  return v === ViewMode.Advanced || v === ViewMode.Dev || v === ViewMode.Vibe
+    ? (v as ViewMode)
+    : ViewMode.Standard;
+}
+
+// Vibe's display font (Plus Jakarta Sans) is loaded lazily — and only the first
+// time Vibe is actually active — so Standard/Advanced/Dev users (the majority,
+// who never see it) don't pay a render-blocking cross-origin font fetch on boot.
+// A global CSS @import would block first paint for everyone.
+let vibeFontInjected = false;
+function ensureVibeFont(): void {
+  if (vibeFontInjected || typeof document === 'undefined') return;
+  vibeFontInjected = true;
+  const link = document.createElement('link');
+  link.id = 'vibe-font';
+  link.rel = 'stylesheet';
+  link.href =
+    'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap';
+  document.head.appendChild(link);
 }
 
 function applyAttribute(val: ViewMode): void {
+  if (val === ViewMode.Vibe) ensureVibeFont();
   // Guard: prefMan fires on EVERY pref change, but only a view-mode change need
   // touch the DOM. Skip the write when the attribute already matches.
   if (document.documentElement.getAttribute('data-view') !== val) {
@@ -92,4 +114,9 @@ export function useIsAdvanced(): boolean {
 /** Semantic boolean accessor — true only in Dev mode. */
 export function useIsDev(): boolean {
   return useViewMode() === ViewMode.Dev;
+}
+
+/** Semantic boolean accessor — true only in Vibe mode (the simplest creator skin). */
+export function useIsVibe(): boolean {
+  return useViewMode() === ViewMode.Vibe;
 }

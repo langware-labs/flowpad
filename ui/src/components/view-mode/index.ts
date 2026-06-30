@@ -7,6 +7,7 @@
 export { AdvancedOnly } from './AdvancedOnly';
 export { DevOnly } from './DevOnly';
 export { ViewSwap } from './ViewSwap';
+export { VibeSwap } from './VibeSwap';
 
 // Re-export the global flag API (state lives in contexts/)
 // so consumers have one place to import from.
@@ -15,6 +16,7 @@ export {
   useViewMode,
   useIsAdvanced,
   useIsDev,
+  useIsVibe,
   setViewMode,
   setDev,
   getViewMode,

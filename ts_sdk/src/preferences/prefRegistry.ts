@@ -210,10 +210,12 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     legacyLocalStorageKey: 'viewMode',
     category: 'ui',
     label: 'View mode',
-    description: 'Surface complexity: Standard (minimal), Advanced, or Dev.',
+    description: 'Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev.',
     dataType: PrefDataType.STRING,
+    // Standard is the default; Vibe is opt-in via the footer View toggle.
     defaultValue: 'standard',
     options: [
+      { value: 'vibe', label: 'Vibe' },
       { value: 'standard', label: 'Standard' },
       { value: 'advanced', label: 'Advanced' },
       { value: 'dev', label: 'Dev' },

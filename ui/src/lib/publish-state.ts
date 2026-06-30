@@ -45,7 +45,11 @@ export function derivePublishState(input: PublishStatusInput): PublishStatus {
   return { state, pendingCount: 0 };
 }
 
-const isAdvanced = (mode: ViewMode): boolean => mode !== ViewMode.Standard;
+// Advanced copy is for power-user tiers only. Vibe (simpler than Standard) and
+// Standard both get the plain-language copy — so test for the advanced tiers
+// explicitly rather than "!== Standard" (which would wrongly catch Vibe).
+const isAdvanced = (mode: ViewMode): boolean =>
+  mode === ViewMode.Advanced || mode === ViewMode.Dev;
 
 export interface PublishLabels {
   /** Button label for the publish action. */

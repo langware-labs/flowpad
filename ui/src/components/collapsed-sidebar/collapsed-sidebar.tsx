@@ -50,7 +50,11 @@ import { useLocation, useNavigate } from 'react-router';
 // matrix. The hierarchy is dev > advanced > standard; keep each row monotonic
 // (a higher mode never shows less than a lower one).
 type NavVisibility = 'visible' | 'collapsed' | 'hidden';
-type NavVisMap = Record<ViewMode, NavVisibility>;
+// Keyed by the three "core" modes. Vibe (the simplest skin) reuses Standard's
+// already-minimal visibility — see `effectiveMode` below — so the rail needs no
+// per-item Vibe column.
+type CoreViewMode = ViewMode.Standard | ViewMode.Advanced | ViewMode.Dev;
+type NavVisMap = Record<CoreViewMode, NavVisibility>;
 
 const ALL_VISIBLE: NavVisMap = {
   [ViewMode.Standard]: 'visible',
@@ -125,8 +129,10 @@ export function CollapsedSidebar() {
 
   // Partition the nav config by the current view mode: 'visible' items ride the
   // top rail, 'collapsed' items live behind the chevron expander, 'hidden' drop.
-  const visibleItems = navItems.filter((item) => item.vis[viewMode] === 'visible');
-  const collapsedItems = navItems.filter((item) => item.vis[viewMode] === 'collapsed');
+  // Vibe inherits Standard's minimal rail.
+  const effectiveMode: CoreViewMode = viewMode === ViewMode.Vibe ? ViewMode.Standard : viewMode;
+  const visibleItems = navItems.filter((item) => item.vis[effectiveMode] === 'visible');
+  const collapsedItems = navItems.filter((item) => item.vis[effectiveMode] === 'collapsed');
 
   const currentView = currentDock?.viewType;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;

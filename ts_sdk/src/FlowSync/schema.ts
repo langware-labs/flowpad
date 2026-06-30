@@ -16,9 +16,13 @@ export type ActionType =
  * A type's ``browseable_by`` is the *minimum* mode at which it is browseable
  * (cumulative: standard ⊂ advanced ⊂ dev). null ⇒ never browseable.
  */
-export type ViewMode = 'standard' | 'advanced' | 'dev';
+export type ViewMode = 'vibe' | 'standard' | 'advanced' | 'dev';
 
-const VIEW_MODE_ORDER: Record<ViewMode, number> = { standard: 0, advanced: 1, dev: 2 };
+// Vibe is the lowest tier (simpler than Standard): a type required at 'standard'
+// or above never shows in Vibe. The backend only ever emits standard/advanced/dev
+// as a type's `browseable_by` (its minimum tier); 'vibe' only appears here as the
+// client's *current* mode, so it just needs a well-defined rank.
+const VIEW_MODE_ORDER: Record<ViewMode, number> = { vibe: 0, standard: 1, advanced: 2, dev: 3 };
 
 /** True iff a type whose ``browseable_by`` is ``required`` shows in ``current`` (cumulative). */
 export function isBrowseableIn(required: ViewMode | null | undefined, current: ViewMode): boolean {

@@ -3723,6 +3723,30 @@ class AgenticProcess(Entity):
         shell = await self.shell()
         return shell.compute_node if shell else None
 
+    @action.all(action_name="get-host")
+    async def get_host(self, port: int, redirect: bool = True):
+        """Resolve the public host for a dev-server ``port`` running on this
+        process's compute node (e.g. the web-app-builder dev server). Mirrors the
+        legacy Flow ``get-host`` so the in-app web preview / Vibe display can load
+        the running app via the backend (works for @local and remote compute).
+        """
+        from fastapi.responses import RedirectResponse
+
+        int_port = int(port)
+        if not 1024 <= int_port <= 65535:
+            return ApiFailResponse(message="Invalid port")
+
+        compute_node = await self.get_compute_node()
+        if compute_node is None:
+            compute_node = await self._get_local_compute_node()
+        if not compute_node:
+            return ApiFailResponse(message="get-host: No compute node found")
+
+        host = compute_node.get_host(int_port)
+        if not redirect:
+            return ApiSuccessResponse(data={"url": host, "port": int_port})
+        return RedirectResponse(url=host)
+
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start_pty()."""
         self.session_id = session_id
