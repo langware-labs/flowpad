@@ -3,6 +3,7 @@ import { GitStatusProvider } from '@src/components/status-bar/GitStatusContext';
 import { GitPushButton } from '@src/components/status-bar/GitPushButton';
 import { GitStatusPill } from '@src/components/status-bar/GitStatusPill';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useProjects } from '@src/hooks/use-projects';
 import { useContext } from '@src/hooks/useContext';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -54,6 +55,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
   }, [workdir, project, workspacePath]);
 
   const isRoot = isRootPath(project?.fs_storage_mount_path);
+  const openFolderLabel = t`Open folder: ${projectPath}`;
 
   const handleOpenFolder = useCallback(async () => {
     if (!computeNode?.typeId || !projectPath) return;
@@ -119,19 +121,23 @@ export function StatusBar({ className = '' }: StatusBarProps) {
           onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
           className="text-xs font-medium transition-colors hover:underline"
           style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
-          title={isRoot ? rootTooltip : t`Open project view`}
+          title={isRoot ? rootTooltip : projectPath ? t`Open project view — ${projectPath}` : t`Open project view`}
         >
           {project.displayName}
         </button>
         {projectPath && computeNode && (
-          <button
-            onClick={() => void handleOpenFolder()}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground/70 transition-colors hover:text-primary"
-            title={t`Open folder`}
-          >
-            <span className="max-w-[400px] truncate">{projectPath}</span>
-            <ExternalLink className="h-3 w-3 shrink-0" />
-          </button>
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => void handleOpenFolder()}
+                className="flex items-center text-[10px] text-muted-foreground/70 transition-colors hover:text-primary"
+                aria-label={openFolderLabel}
+              >
+                <ExternalLink className="h-3 w-3 shrink-0" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{openFolderLabel}</TooltipContent>
+          </Tooltip>
         )}
         <GitStatusProvider computeNodeId={computeNode?.id ?? null} workdir={projectPath}>
           <GitStatusPill />
