@@ -112,6 +112,25 @@ async def handle_delete_by_id():
             status_code=400,
             detail=f"Delete error: Unknown entity type: {target_typeid.type}",
         )
+
+    # Auto-propagate removal — symmetric with ``handle_create_entity``'s auto-share.
+    # Create makes a ``remote`` child a hub ``is_child`` (the hub fans
+    # ``child_created`` to the parent's watchers); delete must do the inverse:
+    # remove the hub row so the hub fans ``child_deleted`` (remove_child) carried
+    # on the parent. Without this the deletion never leaves the deleter's instance.
+    # Server-owned, so the FE just calls delete (no ``Hub-Reflect`` opt-in). Non-fatal.
+    # Scoped to ``is_child`` entities (a ``parent_type_id`` is set) — the mirror of
+    # create's child-only auto-share; a top-level shared entity (no parent) keeps
+    # its explicit ``unshare`` semantics and is not auto-removed from the hub here.
+    entity = await entity_model.get_one({"id": target_typeid.id})
+    if entity is not None and getattr(entity, "remote", False) and getattr(entity, "parent_type_id", None):
+        try:
+            await entity.unshare(recursive=False)
+        except Exception as e:  # noqa: BLE001
+            service_log.warn(
+                f"[delete] auto-unshare {target_typeid} failed (non-fatal): {e}"
+            )
+
     is_deleted = await entity_model.delete_by_id(target_typeid.id)
     if not is_deleted:
         raise HTTPException(

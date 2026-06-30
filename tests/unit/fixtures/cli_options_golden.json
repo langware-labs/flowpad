@@ -1,0 +1,4466 @@
+{
+  "claude": {
+    "add_dirs": {
+      "linux": {
+        "json": {
+          "add_dirs": [
+            "/extra",
+            "/extra b"
+          ],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions -- $'-rf danger' --add-dir /extra --add-dir '/extra b'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions -- $'fix the bug' --add-dir /extra --add-dir '/extra b'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions -- $'line one\\nline two' --add-dir /extra --add-dir '/extra b'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --add-dir /extra --add-dir '/extra b'",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [
+            "/extra",
+            "/extra b"
+          ],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --add-dir /extra --add-dir '/extra b' ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --add-dir /extra --add-dir '/extra b' ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --add-dir /extra --add-dir '/extra b' ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --add-dir /extra --add-dir '/extra b'",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "agents": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": {
+            "rev": {
+              "description": "d",
+              "prompt": "p"
+            }
+          },
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions --agents '{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}' -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions --agents '{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}' -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions --agents '{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}' -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --agents '{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}'",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--agents",
+            "{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--agents",
+            "{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--agents",
+            "{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--agents",
+            "{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": {
+            "rev": {
+              "description": "d",
+              "prompt": "p"
+            }
+          },
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --agents '{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}' ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --agents '{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}' ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --agents '{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}' ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --agents '{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}'",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--agents",
+            "{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--agents",
+            "{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--agents",
+            "{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--agents",
+            "{\"rev\": {\"description\": \"d\", \"prompt\": \"p\"}}"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "bypass_session": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": "s1",
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions --session-id s1 -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions --session-id s1 -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions --session-id s1 -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --session-id s1",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--session-id",
+            "s1",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--session-id",
+            "s1",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--session-id",
+            "s1",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--session-id",
+            "s1"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": "s1",
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --session-id s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --session-id s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --session-id s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --session-id s1",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--session-id",
+            "s1",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--session-id",
+            "s1",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--session-id",
+            "s1",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--session-id",
+            "s1"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "chrome_debug_worktree": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": true,
+          "debug": true,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": true
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions --chrome --debug --worktree -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions --chrome --debug --worktree -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions --chrome --debug --worktree -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --chrome --debug --worktree",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--chrome",
+            "--debug",
+            "--worktree",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--chrome",
+            "--debug",
+            "--worktree",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--chrome",
+            "--debug",
+            "--worktree",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--chrome",
+            "--debug",
+            "--worktree"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": true,
+          "debug": true,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": true
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --chrome --debug --worktree ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --chrome --debug --worktree ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --chrome --debug --worktree ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --chrome --debug --worktree",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--chrome",
+            "--debug",
+            "--worktree",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--chrome",
+            "--debug",
+            "--worktree",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--chrome",
+            "--debug",
+            "--worktree",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--chrome",
+            "--debug",
+            "--worktree"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "default": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "effort": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": "high",
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions --effort high -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions --effort high -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions --effort high -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --effort high",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--effort",
+            "high",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--effort",
+            "high",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--effort",
+            "high",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--effort",
+            "high"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": "high",
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --effort high ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --effort high ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --effort high ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --effort high",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--effort",
+            "high",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--effort",
+            "high",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--effort",
+            "high",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--effort",
+            "high"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "fork": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": "src",
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": true,
+          "session_id": "new",
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions --resume src --fork-session --session-id new -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions --resume src --fork-session --session-id new -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions --resume src --fork-session --session-id new -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --resume src --fork-session --session-id new",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "src",
+            "--fork-session",
+            "--session-id",
+            "new",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "src",
+            "--fork-session",
+            "--session-id",
+            "new",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "src",
+            "--fork-session",
+            "--session-id",
+            "new",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "src",
+            "--fork-session",
+            "--session-id",
+            "new"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": "src",
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": true,
+          "session_id": "new",
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --resume src --fork-session --session-id new ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --resume src --fork-session --session-id new ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --resume src --fork-session --session-id new ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --resume src --fork-session --session-id new",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "src",
+            "--fork-session",
+            "--session-id",
+            "new",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "src",
+            "--fork-session",
+            "--session-id",
+            "new",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "src",
+            "--fork-session",
+            "--session-id",
+            "new",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "src",
+            "--fork-session",
+            "--session-id",
+            "new"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "full": {
+      "linux": {
+        "json": {
+          "add_dirs": [
+            "/a"
+          ],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": "low",
+          "env_vars": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar"
+          },
+          "fork_session_id": null,
+          "model": "haiku",
+          "output_format": "stream-json",
+          "permission_mode": "plan",
+          "print_mode": true,
+          "resume": true,
+          "session_id": "s1",
+          "verbose": true,
+          "workdir": "/repo",
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low -p -- $'-rf danger' --add-dir /a",
+        "shell_instr": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low -p -- $'fix the bug' --add-dir /a",
+        "shell_multi": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low -p -- $'line one\\nline two' --add-dir /a",
+        "shell_none": "cd /repo && FOO=bar CLAUDE_PROJECT_DIR=/repo claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low -p --add-dir /a",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--resume",
+            "s1",
+            "--model",
+            "haiku",
+            "--effort",
+            "low",
+            "-p",
+            "--add-dir",
+            "/a",
+            "--",
+            "-rf danger"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar"
+          }
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--resume",
+            "s1",
+            "--model",
+            "haiku",
+            "--effort",
+            "low",
+            "-p",
+            "--add-dir",
+            "/a",
+            "--",
+            "fix the bug"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar"
+          }
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--resume",
+            "s1",
+            "--model",
+            "haiku",
+            "--effort",
+            "low",
+            "-p",
+            "--add-dir",
+            "/a",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar"
+          }
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--resume",
+            "s1",
+            "--model",
+            "haiku",
+            "--effort",
+            "low",
+            "-p",
+            "--add-dir",
+            "/a"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar"
+          }
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [
+            "/a"
+          ],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": "low",
+          "env_vars": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar"
+          },
+          "fork_session_id": null,
+          "model": "haiku",
+          "output_format": "stream-json",
+          "permission_mode": "plan",
+          "print_mode": true,
+          "resume": true,
+          "session_id": "s1",
+          "verbose": true,
+          "workdir": "/repo",
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low --add-dir /a -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low --add-dir /a -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low --add-dir /a -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; $env:FOO = 'bar'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --permission-mode plan --verbose --output-format stream-json --resume s1 --model haiku --effort low --add-dir /a -p",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--resume",
+            "s1",
+            "--model",
+            "haiku",
+            "--effort",
+            "low",
+            "-p",
+            "--add-dir",
+            "/a",
+            "--",
+            "-rf danger"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar"
+          }
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--resume",
+            "s1",
+            "--model",
+            "haiku",
+            "--effort",
+            "low",
+            "-p",
+            "--add-dir",
+            "/a",
+            "--",
+            "fix the bug"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar"
+          }
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--resume",
+            "s1",
+            "--model",
+            "haiku",
+            "--effort",
+            "low",
+            "-p",
+            "--add-dir",
+            "/a",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar"
+          }
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--resume",
+            "s1",
+            "--model",
+            "haiku",
+            "--effort",
+            "low",
+            "-p",
+            "--add-dir",
+            "/a"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar"
+          }
+        }
+      }
+    },
+    "model_real": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": "claude-opus-4-5",
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions --model claude-opus-4-5 -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions --model claude-opus-4-5 -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions --model claude-opus-4-5 -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --model claude-opus-4-5",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "claude-opus-4-5",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "claude-opus-4-5",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "claude-opus-4-5",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "claude-opus-4-5"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": "claude-opus-4-5",
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --model claude-opus-4-5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --model claude-opus-4-5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --model claude-opus-4-5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --model claude-opus-4-5",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "claude-opus-4-5",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "claude-opus-4-5",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "claude-opus-4-5",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "claude-opus-4-5"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "model_tier_sm": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": "haiku",
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions --model haiku -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions --model haiku -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions --model haiku -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --model haiku",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "haiku",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "haiku",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "haiku",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "haiku"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": "haiku",
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --model haiku ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --model haiku ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --model haiku ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --model haiku",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "haiku",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "haiku",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "haiku",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--model",
+            "haiku"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "perm_default": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "default",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --permission-mode default -- $'-rf danger'",
+        "shell_instr": "cd . && claude --permission-mode default -- $'fix the bug'",
+        "shell_multi": "cd . && claude --permission-mode default -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --permission-mode default",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "default",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "default",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "default",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "default"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "default",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --permission-mode default ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --permission-mode default ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --permission-mode default ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --permission-mode default",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "default",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "default",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "default",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "default"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "perm_plan": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "plan",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --permission-mode plan -- $'-rf danger'",
+        "shell_instr": "cd . && claude --permission-mode plan -- $'fix the bug'",
+        "shell_multi": "cd . && claude --permission-mode plan -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --permission-mode plan",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "plan",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --permission-mode plan ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --permission-mode plan ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --permission-mode plan ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --permission-mode plan",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--permission-mode",
+            "plan"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "print_stream": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": "stream-json",
+          "permission_mode": "bypassPermissions",
+          "print_mode": true,
+          "resume": false,
+          "session_id": null,
+          "verbose": true,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions --verbose --output-format stream-json -p -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions --verbose --output-format stream-json -p -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions --verbose --output-format stream-json -p -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --verbose --output-format stream-json -p",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "-p",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "-p",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "-p",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "-p"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": "stream-json",
+          "permission_mode": "bypassPermissions",
+          "print_mode": true,
+          "resume": false,
+          "session_id": null,
+          "verbose": true,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --verbose --output-format stream-json -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --verbose --output-format stream-json -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --verbose --output-format stream-json -p ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --verbose --output-format stream-json -p",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "-p",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "-p",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "-p",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "-p"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "resume": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": true,
+          "session_id": "s1",
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd . && claude --dangerously-skip-permissions --resume s1 -- $'-rf danger'",
+        "shell_instr": "cd . && claude --dangerously-skip-permissions --resume s1 -- $'fix the bug'",
+        "shell_multi": "cd . && claude --dangerously-skip-permissions --resume s1 -- $'line one\\nline two'",
+        "shell_none": "cd . && claude --dangerously-skip-permissions --resume s1",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "s1",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "s1",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "s1",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "s1"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {},
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": true,
+          "session_id": "s1",
+          "verbose": false,
+          "workdir": null,
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '.'; claude --dangerously-skip-permissions --resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; claude --dangerously-skip-permissions --resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; claude --dangerously-skip-permissions --resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; claude --dangerously-skip-permissions --resume s1",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "s1",
+            "--",
+            "-rf danger"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "s1",
+            "--",
+            "fix the bug"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "s1",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--resume",
+            "s1"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "workdir_env": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar",
+            "K": "v v"
+          },
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": "/repo",
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd /repo && FOO=bar K='v v' CLAUDE_PROJECT_DIR=/repo claude --dangerously-skip-permissions -- $'-rf danger'",
+        "shell_instr": "cd /repo && FOO=bar K='v v' CLAUDE_PROJECT_DIR=/repo claude --dangerously-skip-permissions -- $'fix the bug'",
+        "shell_multi": "cd /repo && FOO=bar K='v v' CLAUDE_PROJECT_DIR=/repo claude --dangerously-skip-permissions -- $'line one\\nline two'",
+        "shell_none": "cd /repo && FOO=bar K='v v' CLAUDE_PROJECT_DIR=/repo claude --dangerously-skip-permissions",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "-rf danger"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar",
+            "K": "v v"
+          }
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "fix the bug"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar",
+            "K": "v v"
+          }
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar",
+            "K": "v v"
+          }
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar",
+            "K": "v v"
+          }
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "agents_json": null,
+          "chrome": false,
+          "debug": false,
+          "effort": null,
+          "env_vars": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar",
+            "K": "v v"
+          },
+          "fork_session_id": null,
+          "model": null,
+          "output_format": null,
+          "permission_mode": "bypassPermissions",
+          "print_mode": false,
+          "resume": false,
+          "session_id": null,
+          "verbose": false,
+          "workdir": "/repo",
+          "worker_type": "claude",
+          "worktree": false
+        },
+        "shell_dash": "cd '/repo'; $env:FOO = 'bar'; $env:K = 'v v'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --dangerously-skip-permissions ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; $env:FOO = 'bar'; $env:K = 'v v'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --dangerously-skip-permissions ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; $env:FOO = 'bar'; $env:K = 'v v'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --dangerously-skip-permissions ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; $env:FOO = 'bar'; $env:K = 'v v'; $env:CLAUDE_PROJECT_DIR = '/repo'; claude --dangerously-skip-permissions",
+        "spawn_dash": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "-rf danger"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar",
+            "K": "v v"
+          }
+        },
+        "spawn_instr": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "fix the bug"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar",
+            "K": "v v"
+          }
+        },
+        "spawn_multi": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--",
+            "line one\nline two"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar",
+            "K": "v v"
+          }
+        },
+        "spawn_none": {
+          "argv": [
+            "claude",
+            "--dangerously-skip-permissions"
+          ],
+          "env": {
+            "CLAUDE_PROJECT_DIR": "/repo",
+            "FOO": "bar",
+            "K": "v v"
+          }
+        }
+      }
+    }
+  },
+  "codex": {
+    "default": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": true,
+          "model": null,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low - -- $'-rf danger'",
+        "shell_instr": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low - -- $'fix the bug'",
+        "shell_multi": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low - -- $'line one\\nline two'",
+        "shell_none": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": true,
+          "model": null,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "headless_full": {
+      "linux": {
+        "json": {
+          "add_dirs": [
+            "/extra",
+            "/extra b"
+          ],
+          "env_vars": {
+            "FOO": "bar"
+          },
+          "ephemeral": true,
+          "json_stream": true,
+          "model": "gpt-5.2",
+          "permission_mode": "bypassPermissions",
+          "resume": true,
+          "session_id": "s1",
+          "skill_names": [],
+          "workdir": "/repo",
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd /repo && FOO=bar codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo -m gpt-5.2 --add-dir /extra --add-dir '/extra b' resume s1 - -- $'-rf danger'",
+        "shell_instr": "cd /repo && FOO=bar codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo -m gpt-5.2 --add-dir /extra --add-dir '/extra b' resume s1 - -- $'fix the bug'",
+        "shell_multi": "cd /repo && FOO=bar codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo -m gpt-5.2 --add-dir /extra --add-dir '/extra b' resume s1 - -- $'line one\\nline two'",
+        "shell_none": "cd /repo && FOO=bar codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo -m gpt-5.2 --add-dir /extra --add-dir '/extra b' resume s1 -",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "resume",
+            "s1",
+            "-"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "resume",
+            "s1",
+            "-"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "resume",
+            "s1",
+            "-"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "resume",
+            "s1",
+            "-"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [
+            "/extra",
+            "/extra b"
+          ],
+          "env_vars": {
+            "FOO": "bar"
+          },
+          "ephemeral": true,
+          "json_stream": true,
+          "model": "gpt-5.2",
+          "permission_mode": "bypassPermissions",
+          "resume": true,
+          "session_id": "s1",
+          "skill_names": [],
+          "workdir": "/repo",
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd '/repo'; $env:FOO = 'bar'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo -m gpt-5.2 --add-dir /extra --add-dir '/extra b' resume s1 - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; $env:FOO = 'bar'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo -m gpt-5.2 --add-dir /extra --add-dir '/extra b' resume s1 - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; $env:FOO = 'bar'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo -m gpt-5.2 --add-dir /extra --add-dir '/extra b' resume s1 - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; $env:FOO = 'bar'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo -m gpt-5.2 --add-dir /extra --add-dir '/extra b' resume s1 -",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "resume",
+            "s1",
+            "-"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "resume",
+            "s1",
+            "-"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "resume",
+            "s1",
+            "-"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "--add-dir",
+            "/extra b",
+            "resume",
+            "s1",
+            "-"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        }
+      }
+    },
+    "interactive": {
+      "linux": {
+        "json": {
+          "add_dirs": [
+            "/extra"
+          ],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": false,
+          "model": "gpt-5.2",
+          "permission_mode": "bypassPermissions",
+          "resume": true,
+          "session_id": "s1",
+          "skill_names": [],
+          "workdir": "/repo",
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'-rf danger'",
+        "shell_instr": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'fix the bug'",
+        "shell_multi": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'line one\\nline two'",
+        "shell_none": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "resume",
+            "s1"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "resume",
+            "s1"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "resume",
+            "s1"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "resume",
+            "s1"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [
+            "/extra"
+          ],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": false,
+          "model": "gpt-5.2",
+          "permission_mode": "bypassPermissions",
+          "resume": true,
+          "session_id": "s1",
+          "skill_names": [],
+          "workdir": "/repo",
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "resume",
+            "s1"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "resume",
+            "s1"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "resume",
+            "s1"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            "/repo",
+            "-m",
+            "gpt-5.2",
+            "--add-dir",
+            "/extra",
+            "resume",
+            "s1"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "interactive_default_perm": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": false,
+          "model": null,
+          "permission_mode": "default",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd . && codex -- $'-rf danger'",
+        "shell_instr": "cd . && codex -- $'fix the bug'",
+        "shell_multi": "cd . && codex -- $'line one\\nline two'",
+        "shell_none": "cd . && codex",
+        "spawn_dash": {
+          "argv": [
+            "codex"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": false,
+          "model": null,
+          "permission_mode": "default",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd '.'; codex ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; codex ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; codex ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; codex",
+        "spawn_dash": {
+          "argv": [
+            "codex"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "non_ephemeral": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": false,
+          "json_stream": true,
+          "model": null,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -c model_reasoning_effort=low - -- $'-rf danger'",
+        "shell_instr": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -c model_reasoning_effort=low - -- $'fix the bug'",
+        "shell_multi": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -c model_reasoning_effort=low - -- $'line one\\nline two'",
+        "shell_none": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -c model_reasoning_effort=low -",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": false,
+          "json_stream": true,
+          "model": null,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -c model_reasoning_effort=low - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -c model_reasoning_effort=low - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -c model_reasoning_effort=low - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --json -c model_reasoning_effort=low -",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "perm_default": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": true,
+          "model": null,
+          "permission_mode": "default",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd . && codex exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low - -- $'-rf danger'",
+        "shell_instr": "cd . && codex exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low - -- $'fix the bug'",
+        "shell_multi": "cd . && codex exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low - -- $'line one\\nline two'",
+        "shell_none": "cd . && codex exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low -",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": true,
+          "model": null,
+          "permission_mode": "default",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd '.'; codex exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; codex exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; codex exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; codex exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low -",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "skills": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": true,
+          "model": null,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [
+            "reviewer",
+            "bug fixer"
+          ],
+          "workdir": "/repo",
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd /repo && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo - # skill=reviewer # skill='bug fixer' -- $'-rf danger'",
+        "shell_instr": "cd /repo && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo - # skill=reviewer # skill='bug fixer' -- $'fix the bug'",
+        "shell_multi": "cd /repo && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo - # skill=reviewer # skill='bug fixer' -- $'line one\\nline two'",
+        "shell_none": "cd /repo && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo - # skill=reviewer # skill='bug fixer'",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": true,
+          "model": null,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [
+            "reviewer",
+            "bug fixer"
+          ],
+          "workdir": "/repo",
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd '/repo'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo - # skill=reviewer # skill='bug fixer' ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo - # skill=reviewer # skill='bug fixer' ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo - # skill=reviewer # skill='bug fixer' ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -C /repo - # skill=reviewer # skill='bug fixer'",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-C",
+            "/repo",
+            "-"
+          ],
+          "env": {}
+        }
+      }
+    }
+  },
+  "copilot": {
+    "default": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": null,
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -- $'-rf danger'",
+        "shell_instr": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -- $'fix the bug'",
+        "shell_multi": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -- $'line one\\nline two'",
+        "shell_none": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": null,
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "flags_off": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": false,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": null,
+          "no_ask_user": false,
+          "no_auto_update": false,
+          "no_custom_instructions": false,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd . && copilot --output-format=json --stream=on -- $'-rf danger'",
+        "shell_instr": "cd . && copilot --output-format=json --stream=on -- $'fix the bug'",
+        "shell_multi": "cd . && copilot --output-format=json --stream=on -- $'line one\\nline two'",
+        "shell_none": "cd . && copilot --output-format=json --stream=on",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": false,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": null,
+          "no_ask_user": false,
+          "no_auto_update": false,
+          "no_custom_instructions": false,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd '.'; copilot --output-format=json --stream=on ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; copilot --output-format=json --stream=on ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; copilot --output-format=json --stream=on ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; copilot --output-format=json --stream=on",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "fresh_session": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": null,
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": "new-session",
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --session-id new-session -- $'-rf danger'",
+        "shell_instr": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --session-id new-session -- $'fix the bug'",
+        "shell_multi": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --session-id new-session -- $'line one\\nline two'",
+        "shell_none": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --session-id new-session",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--session-id",
+            "new-session"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--session-id",
+            "new-session"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--session-id",
+            "new-session"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--session-id",
+            "new-session"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": null,
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": "new-session",
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --session-id new-session ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --session-id new-session ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --session-id new-session ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --session-id new-session",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--session-id",
+            "new-session"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--session-id",
+            "new-session"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--session-id",
+            "new-session"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--session-id",
+            "new-session"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "headless_full": {
+      "linux": {
+        "json": {
+          "add_dirs": [
+            "/extra"
+          ],
+          "allow_all": true,
+          "effort": "high",
+          "env_vars": {
+            "FOO": "bar"
+          },
+          "json_stream": true,
+          "model": "claude-haiku-4.5",
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": true,
+          "session_id": "abc-123",
+          "skill_names": [],
+          "workdir": "/repo",
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd /repo && FOO=bar copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo --model claude-haiku-4.5 --effort high --add-dir /extra --resume=abc-123 -- $'-rf danger'",
+        "shell_instr": "cd /repo && FOO=bar copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo --model claude-haiku-4.5 --effort high --add-dir /extra --resume=abc-123 -- $'fix the bug'",
+        "shell_multi": "cd /repo && FOO=bar copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo --model claude-haiku-4.5 --effort high --add-dir /extra --resume=abc-123 -- $'line one\\nline two'",
+        "shell_none": "cd /repo && FOO=bar copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo --model claude-haiku-4.5 --effort high --add-dir /extra --resume=abc-123",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--effort",
+            "high",
+            "--add-dir",
+            "/extra",
+            "--resume=abc-123"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--effort",
+            "high",
+            "--add-dir",
+            "/extra",
+            "--resume=abc-123"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--effort",
+            "high",
+            "--add-dir",
+            "/extra",
+            "--resume=abc-123"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--effort",
+            "high",
+            "--add-dir",
+            "/extra",
+            "--resume=abc-123"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [
+            "/extra"
+          ],
+          "allow_all": true,
+          "effort": "high",
+          "env_vars": {
+            "FOO": "bar"
+          },
+          "json_stream": true,
+          "model": "claude-haiku-4.5",
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": true,
+          "session_id": "abc-123",
+          "skill_names": [],
+          "workdir": "/repo",
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd '/repo'; $env:FOO = 'bar'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo --model claude-haiku-4.5 --effort high --add-dir /extra --resume=abc-123 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; $env:FOO = 'bar'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo --model claude-haiku-4.5 --effort high --add-dir /extra --resume=abc-123 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; $env:FOO = 'bar'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo --model claude-haiku-4.5 --effort high --add-dir /extra --resume=abc-123 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; $env:FOO = 'bar'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo --model claude-haiku-4.5 --effort high --add-dir /extra --resume=abc-123",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--effort",
+            "high",
+            "--add-dir",
+            "/extra",
+            "--resume=abc-123"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--effort",
+            "high",
+            "--add-dir",
+            "/extra",
+            "--resume=abc-123"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--effort",
+            "high",
+            "--add-dir",
+            "/extra",
+            "--resume=abc-123"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--effort",
+            "high",
+            "--add-dir",
+            "/extra",
+            "--resume=abc-123"
+          ],
+          "env": {
+            "FOO": "bar"
+          }
+        }
+      }
+    },
+    "interactive": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": false,
+          "model": "claude-haiku-4.5",
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": true,
+          "session_id": "abc",
+          "skill_names": [],
+          "workdir": "/repo",
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd /repo && copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc -- $'-rf danger'",
+        "shell_instr": "cd /repo && copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc -- $'fix the bug'",
+        "shell_multi": "cd /repo && copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc -- $'line one\\nline two'",
+        "shell_none": "cd /repo && copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--resume=abc"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--resume=abc"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--resume=abc"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--resume=abc"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": false,
+          "model": "claude-haiku-4.5",
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": true,
+          "session_id": "abc",
+          "skill_names": [],
+          "workdir": "/repo",
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd '/repo'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--resume=abc"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--resume=abc"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--resume=abc"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--allow-all",
+            "-C",
+            "/repo",
+            "--model",
+            "claude-haiku-4.5",
+            "--resume=abc"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "perm_default": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": null,
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "default",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions -- $'-rf danger'",
+        "shell_instr": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions -- $'fix the bug'",
+        "shell_multi": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions -- $'line one\\nline two'",
+        "shell_none": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": null,
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "default",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "skills": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": null,
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [
+            "x"
+          ],
+          "workdir": "/repo",
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd /repo && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo # skill=x -- $'-rf danger'",
+        "shell_instr": "cd /repo && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo # skill=x -- $'fix the bug'",
+        "shell_multi": "cd /repo && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo # skill=x -- $'line one\\nline two'",
+        "shell_none": "cd /repo && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo # skill=x",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": null,
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [
+            "x"
+          ],
+          "workdir": "/repo",
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd '/repo'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo # skill=x ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo # skill=x ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo # skill=x ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all -C /repo # skill=x",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "-C",
+            "/repo"
+          ],
+          "env": {}
+        }
+      }
+    }
+  }
+}

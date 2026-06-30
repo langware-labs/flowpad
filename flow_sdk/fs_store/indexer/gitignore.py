@@ -41,6 +41,22 @@ _WALK_IGNORED: frozenset[str] = frozenset({
 _FORCE_INCLUDE: frozenset[str] = frozenset({".claude"})
 
 
+def _is_claude_worktree(path: Path) -> bool:
+    """True if ``path`` is under ``.claude/worktrees`` (an agent git-worktree).
+
+    These are ephemeral, isolation-mode worktrees — each a FULL repo copy with
+    thousands of files. They live under ``.claude/``, so the ``.claude``
+    force-include (which exists to catch project skills/agents/commands) would
+    otherwise pull every worktree's tree into the index, making a single
+    ``markdown`` discover walk tens of thousands of duplicate files. Skip the
+    ``worktrees`` subtree specifically while keeping the rest of ``.claude``."""
+    parts = path.parts
+    for i in range(len(parts) - 1):
+        if parts[i] == ".claude" and parts[i + 1] == "worktrees":
+            return True
+    return False
+
+
 GitignoreStack = list[Tuple[Path, GitIgnoreSpec]]
 
 
@@ -93,11 +109,15 @@ def is_ignored(
     """Return True if ``path`` should be skipped.
 
     Ordering:
-      1. If basename in ``_FORCE_INCLUDE`` ancestor chain → never ignored.
-      2. If basename in ``_WALK_IGNORED`` → ignored (fast-path).
-      3. Walk the gitignore stack outermost→innermost, last-match-wins.
+      1. If basename in ``_WALK_IGNORED`` → ignored (fast-path).
+      2. If under ``.claude/worktrees`` → ignored (agent worktrees, full repo
+         copies; overrides the ``.claude`` force-include below).
+      3. If basename in ``_FORCE_INCLUDE`` ancestor chain → never ignored.
+      4. Walk the gitignore stack outermost→innermost, last-match-wins.
     """
     if path.name in _WALK_IGNORED:
+        return True
+    if _is_claude_worktree(path):
         return True
     if _is_force_include(path, root):
         return False
