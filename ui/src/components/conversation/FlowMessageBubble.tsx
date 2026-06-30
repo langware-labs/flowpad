@@ -8,6 +8,7 @@ import type { ConversationMessage, ConversationParticipant } from '@sdk/entities
 import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
 import { AlertCircle, Download, File, FileText, Loader2, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
+import { MessageContextButton } from './MessageContextButton';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, iconForEntity } from './EntityChip';
@@ -426,7 +427,7 @@ export function FlowMessageBubble({
 
   const progressPct = progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
-  const footer =
+  const attachmentFooter =
     hasAttachments || downloadError || isBareTranscriptShare ? (
       <div className="mt-2 space-y-1.5">
         {isBareTranscriptShare && (
@@ -555,6 +556,16 @@ export function FlowMessageBubble({
         ) : null}
       </div>
     ) : null;
+
+  // The attachment block (when present) + the per-message context-process control
+  // (self-gates to advanced mode; renders nothing otherwise — empty fragment is
+  // inert in MessageBubble's inline `{footer}` slot).
+  const footer = (
+    <>
+      {attachmentFooter}
+      <MessageContextButton fm={fm} projectId={attachmentProjectId} />
+    </>
+  );
 
   const canForward = !fm.is_draft && fm.kind !== FlowMessageKind.INVITATION && !!fm.conversation_id;
 
