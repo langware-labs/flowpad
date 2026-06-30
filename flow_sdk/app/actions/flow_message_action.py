@@ -2244,11 +2244,6 @@ def _dispatch_conversation_message_fetches(conv_ids: list[str], someone_typeid: 
         pass
 
 
-# Hub-hosted child types pulled during the shared-context catch-up. Comments
-# today; add other shareable is_child types here as they gain hub support.
-_SHARED_CHILD_TYPES = (BuiltinEntityType.COMMENT.value,)
-
-
 async def _materialize_remote_child(cls, data: dict, parent_ref: str, someone_typeid: str | None):
     """Upsert a hub child dict locally as a remote is_child of ``parent_ref``.
 
@@ -2257,14 +2252,16 @@ async def _materialize_remote_child(cls, data: dict, parent_ref: str, someone_ty
     return await cls.upsert_from_hub_child(data, parent_ref, someone_typeid)
 
 
-async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typeid: str | None) -> None:
+async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typeid: str | None) -> set[str]:
     """Pull ``parent_tid``'s hub children of ``child_type`` and materialize the
-    new/changed ones locally (LWW via ``is_stale``). Best-effort."""
+    new/changed ones locally (LWW via ``is_stale``). Best-effort. Returns the set
+    of hub child ids seen, so the caller can reconcile local deletions (children
+    removed on the hub whose row still lingers locally)."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     cls = SchemaRegistry.get_entity_cls(child_type)
     if cls is None:
-        return
+        return set()
     # hub_get expects a BuiltinEntityType for the entity_type arg (it reads
     # ``.value``); parent_tid.type is a plain string, so coerce.
     try:
@@ -2282,9 +2279,11 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
                 child_list = v
                 break
     parent_ref = f"{parent_tid.type}-{parent_tid.id}"
+    hub_ids: set[str] = set()
     for raw in child_list:
         if not isinstance(raw, dict) or not raw.get("id"):
             continue
+        hub_ids.add(raw["id"])
         local = await cls.get_one({"id": raw["id"]})
         if local is not None and not cls.is_stale(local, raw):
             continue
@@ -2292,6 +2291,59 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
             await _materialize_remote_child(cls, raw, parent_ref, someone_typeid)
         except Exception as e:  # noqa: BLE001
             logger.warning("[subtree-sync] materialize %s-%s failed (non-fatal): %s", child_type, raw.get("id"), e)
+    return hub_ids
+
+
+async def _reconcile_deleted_children(
+    conv, child_type: str, hub_ids: set[str], someone_typeid: str | None
+) -> None:
+    """Catch-up's delete half: prune local ``remote`` children of this
+    conversation whose hub row is gone (id not in ``hub_ids``).
+
+    The pull half (``_sync_remote_children``) only adds/updates; without this a
+    comment deleted by a peer lingers forever for anyone who wasn't live-watching.
+    The local ``delete_by_id`` fans the normal delete data-op, so the FE drops it.
+
+    Candidate parents are the conversation itself AND each ``shared_context``
+    doc — a child rides the hub under the conversation but binds locally to its
+    real parent, which is either the conversation (a direct comment) or a shared
+    doc (``parent_type_id`` = the markdown). Only ``remote`` rows are pruned
+    (never a locally-authored, not-yet-shared child)."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    cls = SchemaRegistry.get_entity_cls(child_type)
+    if cls is None:
+        return
+    try:
+        child_etype = BuiltinEntityType(child_type)
+    except ValueError:
+        child_etype = None
+    conv_ref = f"{BuiltinEntityType.CONVERSATION.value}-{conv.id}"
+    candidate_parents = [conv_ref, *(str(r) for r in (conv.shared_context_entities or []))]
+    for parent_ref in candidate_parents:
+        try:
+            local_children = await cls.get_all({"parent_type_id": parent_ref})
+        except Exception:  # noqa: BLE001
+            continue
+        for ent in local_children or []:
+            if not getattr(ent, "remote", False) or ent.id in hub_ids:
+                continue
+            # ``hub_ids`` is the conversation's child LIST, which can momentarily
+            # lag a just-shared comment (eventual consistency). Confirm the row is
+            # REALLY gone with a direct hub GET before pruning — otherwise a fresh
+            # comment, already delivered to a live-watching peer, would be deleted
+            # out from under it on the next catch-up sync (the create/update race).
+            if child_etype is not None:
+                try:
+                    if await hub_get(child_etype, ent.id) is not None:
+                        continue  # still on the hub → a list lag, not a deletion
+                except Exception:  # noqa: BLE001
+                    continue  # couldn't confirm → never prune on uncertainty
+            try:
+                await cls.delete_by_id(ent.id)
+                logger.info("[subtree-sync] reconciled delete %s-%s (confirmed removed on hub)", child_type, ent.id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[subtree-sync] reconcile delete %s-%s failed (non-fatal): %s", child_type, ent.id, e)
 
 
 async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None) -> None:
@@ -2310,24 +2362,31 @@ async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None)
     hasn't arrived yet are simply skipped by the linker and picked up on the
     next sync pass — order no longer decides the outcome.
 
-    This is what lets a recipient who never watched the doc live still see the
-    doc + everyone's comments after a sync. Best-effort; never raises."""
+    This is what lets a recipient who never watched the doc/conversation live
+    still see everyone's comments after a sync. Best-effort; never raises."""
     try:
         conv = await Conversation.get_one({"id": conv_id})
-        if conv is None or not conv.shared_context_entities:
-            return  # nothing shared → no subtree to catch up (skip the hub GET)
-        # 1) Link each locally-present shared-context doc to this conversation
-        #    so its ``effective_remote`` resolves (the doc is NOT a hub entity —
-        #    the hub has no markdown type — its content arrives via the bundle
-        #    unpack). Reuses the same linker the share path runs; missing rows
-        #    are skipped (bundle not downloaded yet).
-        await conv._link_context_to_conversation()
-        # 2) Pull the conversation's hub child entities (comments today; each
-        #    carries its real doc parent in ``parent_type_id``). Materialize
-        #    new/changed ones locally.
+        if conv is None:
+            return
+        # 1) Link each locally-present shared-context doc to this conversation so
+        #    its ``effective_remote`` resolves (the doc is NOT a hub entity — its
+        #    content arrives via the bundle unpack). Only when docs are shared;
+        #    missing rows are skipped (bundle not downloaded yet).
+        if conv.shared_context_entities:
+            await conv._link_context_to_conversation()
+        # 2) ALWAYS pull the conversation's hub child entities (comments) +
+        #    reconcile — a conversation-direct comment needs no shared doc, and a
+        #    comment on a shared doc rides the hub under the conversation either
+        #    way (it carries its real doc parent in ``parent_type_id``). Driven by
+        #    the registry (``shared_child=True``), like the live bridge.
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
         conv_tid = TypeId(f"{BuiltinEntityType.CONVERSATION.value}-{conv_id}")
-        for child_type in _SHARED_CHILD_TYPES:
-            await _sync_remote_children(conv_tid, child_type, someone_typeid)
+        for child_type in SchemaRegistry.get_shared_child_types():
+            hub_ids = await _sync_remote_children(conv_tid, child_type, someone_typeid)
+            # Delete half: prune local children removed on the hub (the pull above
+            # only adds/updates), so a non-watching peer converges on deletions.
+            await _reconcile_deleted_children(conv, child_type, hub_ids, someone_typeid)
     except Exception as e:  # noqa: BLE001
         logger.warning("[subtree-sync] conv=%s failed (non-fatal): %s", conv_id, e)
 

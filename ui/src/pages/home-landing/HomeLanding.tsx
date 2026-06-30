@@ -16,7 +16,6 @@ import { useAuth, useProject } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
-import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type React from 'react';
@@ -24,7 +23,7 @@ import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
 import { HomeFeedColumn } from './feed';
-import { X, CheckCircle2, Users } from 'lucide-react';
+import { X, CheckCircle2 } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -119,7 +118,6 @@ export function HomeLanding() {
   }, [scanInfo, indexApproved]);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
-  const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
 
   // Inbox unread count — populates the shared store consumed by the sidebar
@@ -249,14 +247,6 @@ export function HomeLanding() {
                   onSubmit={(msg) => void handleVibeSubmit(msg)}
                 />
               </div>
-              <button
-                type="button"
-                className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                onClick={() => setShowCommunityAssistance(true)}
-              >
-                <Users className="h-3 w-3" />
-                <Trans>Community assistance</Trans>
-              </button>
             </div>
           </div>
         }
@@ -322,16 +312,6 @@ export function HomeLanding() {
                 onChange={setDraftPrompt}
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
               />
-              <div className="flex w-full flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
-                  onClick={() => setShowCommunityAssistance(true)}
-                >
-                  <Users className="h-3 w-3" />
-                  <Trans>Community assistance</Trans>
-                </button>
-              </div>
             </div>
           </div>
 
@@ -414,11 +394,6 @@ export function HomeLanding() {
           sessionStorage.setItem(_SCAN_DISMISSED_KEY, '1');
           setShowWelcome(false);
         }}
-      />
-
-      <CommunityAssistanceDialog
-        open={showCommunityAssistance}
-        onClose={() => setShowCommunityAssistance(false)}
       />
 
       {/* Incoming task dialog — pull/clone flow for shared tasks */}

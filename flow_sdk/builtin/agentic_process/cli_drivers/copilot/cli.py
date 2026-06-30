@@ -44,61 +44,43 @@ class CopilotCliOptions(WorkerCLIOptions):
         self.no_custom_instructions = no_custom_instructions
         self.allow_all = allow_all
 
-    def _build_worker_args(self) -> list[str]:
-        import shlex
+    EXECUTABLE = "copilot"
+    PROMPT_CHANNEL = "stdin"  # copilot reads the prompt from stdin
+    SYSTEM_PROMPT_FLAG = None  # no flag — a system-prompt addition prepends into stdin
 
-        argv, _env = self.to_spawn_args()
-        args = [shlex.quote(a) for a in argv]
-        for skill in self.skill_names:
-            args.append(f"# skill={shlex.quote(skill)}")
-        return args
-
-    def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
-        """Return argv/env for ``asyncio.create_subprocess_exec``.
-
-        Copilot's headless path reads the prompt from stdin. ``instruction`` is
-        accepted for API parity with other workers but intentionally ignored.
-        """
-        if not self.json_stream:
-            argv: list[str] = ["copilot"]
-            if self._allow_all_enabled():
-                argv.append("--allow-all")
-            if self.workdir:
-                argv.extend(["-C", self.workdir])
-            if self.model:
-                argv.extend(["--model", self.model])
-            if self.effort:
-                argv.extend(["--effort", self.effort])
-            for directory in self.add_dirs:
-                argv.extend(["--add-dir", directory])
-            if self.resume and self.session_id:
-                argv.append(f"--resume={self.session_id}")
-            elif self.session_id:
-                argv.extend(["--session-id", self.session_id])
-            return argv, dict(self.env_vars)
-
-        argv = ["copilot", "--output-format=json", "--stream=on"]
-        if self.no_ask_user:
-            argv.append("--no-ask-user")
-        if self.no_auto_update:
-            argv.append("--no-auto-update")
-        if self.no_custom_instructions:
-            argv.append("--no-custom-instructions")
-        if self._allow_all_enabled():
-            argv.append("--allow-all")
+    def _common_tail(self) -> list[str]:
+        """Flags shared by both transports: cwd, model, effort, add-dirs, session."""
+        tail: list[str] = []
         if self.workdir:
-            argv.extend(["-C", self.workdir])
+            tail.extend(["-C", self.workdir])
         if self.model:
-            argv.extend(["--model", self.model])
+            tail.extend(["--model", self.model])
         if self.effort:
-            argv.extend(["--effort", self.effort])
+            tail.extend(["--effort", self.effort])
         for directory in self.add_dirs:
-            argv.extend(["--add-dir", directory])
+            tail.extend(["--add-dir", directory])
         if self.resume and self.session_id:
-            argv.append(f"--resume={self.session_id}")
+            tail.append(f"--resume={self.session_id}")
         elif self.session_id:
-            argv.extend(["--session-id", self.session_id])
-        return argv, dict(self.env_vars)
+            tail.extend(["--session-id", self.session_id])
+        return tail
+
+    def _emit_flags(self) -> list[str]:
+        """argv after ``copilot``. Two shapes keyed on ``json_stream`` (headless
+        JSON stream vs interactive PTY); both end with the shared
+        :meth:`_common_tail`."""
+        allow_all = ["--allow-all"] if self._allow_all_enabled() else []
+        if not self.json_stream:
+            return allow_all + self._common_tail()
+
+        head = ["--output-format=json", "--stream=on"]
+        if self.no_ask_user:
+            head.append("--no-ask-user")
+        if self.no_auto_update:
+            head.append("--no-auto-update")
+        if self.no_custom_instructions:
+            head.append("--no-custom-instructions")
+        return head + allow_all + self._common_tail()
 
     def to_json(self) -> dict[str, Any]:
         data = super().to_json()
