@@ -214,17 +214,21 @@ class CodexDriver:
     # ── Transcript discovery ─────────────────────────────────────────────────
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
-        """Resolve the Codex transcript path and native format for ``process``."""
-        if process.pty_mode:
-            rollout = self._rollout_descriptor(process)
-            if rollout is not None:
-                return rollout
+        """Resolve the Codex transcript for READING (history / prompts / status).
 
-        local = self._process_local_descriptor(process)
-        if local is not None:
-            return local
-
-        return self._rollout_descriptor(process)
+        Transcript↔output alignment: the rollout (``~/.codex/sessions/...``) is the
+        canonical, complete record — user-message entries AND assistant output, all
+        turns, one resumed session. The process-local file is only the tee'd
+        ``codex exec --json`` *stdout* — assistant output with NO user-message entry
+        (the headless prompt is an argv, not a stream event), so ``transcript/prompts``
+        came back empty for headless. Prefer the rollout for BOTH transports (visible
+        already did); fall back to the stdout tee only before codex mints/captures
+        its rollout id. (Live streaming reads the worker stdout directly, not this.)
+        """
+        rollout = self._rollout_descriptor(process)
+        if rollout is not None:
+            return rollout
+        return self._process_local_descriptor(process)
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
