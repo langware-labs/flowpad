@@ -3926,16 +3926,20 @@ class AgenticProcess(Entity):
     def _render_context_summary(resolved: "list[Entity]") -> str:
         """Render resolved context entities into the system-prompt block.
 
-        Pure (no DB) so it's trivially unit-testable. Inlines each entity's
-        content (a message's ``text``, else ``name``, else ``id``) so the worker
-        is told what it is working on without having to go fetch it.
+        Pure (no DB) so it's trivially unit-testable. Inlines each entity's id
+        (``<type>-<id>``) AND its content (a message's ``text``, else ``name``)
+        so the worker is told both what it is working on and how to reference it
+        — without having to go fetch anything.
         """
-        lines = [
-            f"- {str(getattr(e, 'type', '') or '').replace('_', ' ').title()}: "
-            f"{getattr(e, 'text', None) or getattr(e, 'name', None) or getattr(e, 'id', '')}"
-            for e in resolved
-            if e is not None
-        ]
+        lines = []
+        for e in resolved:
+            if e is None:
+                continue
+            etype = str(getattr(e, "type", "") or "")
+            label = etype.replace("_", " ").title()
+            tid = f"{etype}-{getattr(e, 'id', '')}"
+            content = getattr(e, "text", None) or getattr(e, "name", None) or getattr(e, "id", "")
+            lines.append(f"- {label} [{tid}]: {content}")
         return "At creation time, the context entities are:\n" + "\n".join(lines) if lines else ""
 
     def set_graph_context(self, ctx: "Entity") -> "AgenticProcess":
