@@ -54,6 +54,7 @@ class ClaudeDriver:
     name = "claude"
     preassign_interactive_session_id = True
     pty_submits_on_paste = True
+    pins_resume_cwd = True  # pins CLAUDE_PROJECT_DIR + workdir to the source session's cwd
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -165,6 +166,9 @@ class ClaudeDriver:
             session_id=process.session_id if fork_source else (None if is_resume else process.session_id),
             fork_session=bool(fork_source),
             add_dirs=process.resolved_add_dirs,
+            # ContextProcess §2.4: fold the bound context summary into the system
+            # prompt (maps to system_prompt.append). "" when no context is bound.
+            instructions=(await process.resolve_context_summary()) or None,
         )
 
         # Lifecycle: flip to RUNNING before launching the worker.
