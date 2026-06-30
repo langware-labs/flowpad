@@ -1,37 +1,30 @@
 import { ViewMode, setViewMode, useViewMode } from '@src/contexts/view-mode-context';
 
 const LABELS: Record<ViewMode, string> = {
+  [ViewMode.Vibe]: 'Vibe',
   [ViewMode.Standard]: 'Standard',
   [ViewMode.Advanced]: 'Advanced',
   [ViewMode.Dev]: 'Dev',
 };
 
-// 3-state cycle: Standard → Advanced → Dev → Standard (for developers in Dev mode)
-const NEXT_3: Record<ViewMode, ViewMode> = {
-  [ViewMode.Standard]: ViewMode.Advanced,
-  [ViewMode.Advanced]: ViewMode.Dev,
-  [ViewMode.Dev]: ViewMode.Standard,
-};
-
-// 2-state cycle: Standard ↔ Advanced (for normal users not in Dev mode)
-const NEXT_2: Record<ViewMode, ViewMode> = {
-  [ViewMode.Standard]: ViewMode.Advanced,
-  [ViewMode.Advanced]: ViewMode.Standard,
-  [ViewMode.Dev]: ViewMode.Advanced, // fallback, shouldn't be reached
-};
+// Ordered cycles. Normal users wrap at Advanced; developers (already in Dev) also
+// reach Dev before wrapping. One ordered list per ring — next = the entry after
+// `mode`, wrapping to the start (and from any off-ring mode back to Vibe).
+const RING_NORMAL: readonly ViewMode[] = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced];
+const RING_DEV: readonly ViewMode[] = [...RING_NORMAL, ViewMode.Dev];
 
 /**
- * Footer text-pill toggle for the global view mode (Standard / Advanced / Dev).
- * Normal users see 2-state cycle (Standard ↔ Advanced).
- * Developers in Dev mode see 3-state cycle (Standard → Advanced → Dev → Standard).
+ * Footer text-pill toggle for the global view mode (Vibe / Standard / Advanced / Dev).
+ * Normal users cycle Vibe → Standard → Advanced → Vibe.
+ * Developers in Dev mode also reach Dev (Vibe → Standard → Advanced → Dev → Vibe).
  * Behaves like the theme toggle: flips a persisted, app-wide flag. Lives at the far left.
  */
 export function ViewToggle() {
   const mode = useViewMode();
-  // Show 3-state cycle only when already in Dev mode (developers know they're there)
+  // Include Dev in the cycle only when already in Dev mode (developers know they're there)
   const isDev = mode === ViewMode.Dev;
-  const nextMap = isDev ? NEXT_3 : NEXT_2;
-  const next = nextMap[mode];
+  const ring = isDev ? RING_DEV : RING_NORMAL;
+  const next = ring[(ring.indexOf(mode) + 1) % ring.length];
 
   return (
     <button

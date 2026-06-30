@@ -55,6 +55,7 @@ import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
 import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
 import { useDockLoadError } from '@src/routes/loaders/dock-load-error-store';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { useIsVibe } from '@src/components/view-mode';
 import { AlertTriangle, LogIn } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -70,6 +71,23 @@ const DocsGraphView = lazy(() =>
 import { UserDropdown } from './user-dropdown/user-dropdown';
 import { UnifiedTabStrip } from './unified-tab-strip';
 import { Trans } from '@lingui/react/macro';
+
+// The curated set of "creator" surfaces that get the chrome-less Lovable-style
+// Vibe treatment (chat + live preview + code/docs). Anything not here keeps the
+// normal Standard chrome even in Vibe so its tabs/navigator remain usable.
+const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
+  ViewType.HOME,
+  ViewType.CONVERSATION,
+  ViewType.SHELL,
+  ViewType.AGENTIC_PROCESS,
+  ViewType.WEB_APP,
+  ViewType.EDITOR,
+  ViewType.DIFF,
+  ViewType.MARKDOWN,
+  ViewType.DOCS,
+  ViewType.PLAN,
+  ViewType.SPEC,
+]);
 
 export function ContentPanel() {
   // Get navigation instance for URL-first architecture
@@ -170,10 +188,20 @@ export function ContentPanel() {
   const bodyViewType = isDockUrl && currentDock?.viewType ? currentDock.viewType : ViewType.HOME;
   const activeOpenFailed = activeLifecycle?.state === TabLifecycleState.OpenFailed;
 
+  // Vibe mode = the simplest creator skin. On the curated creator surfaces (chat,
+  // live preview, code/diff, docs), Vibe strips the tab strip + navigator for a
+  // Lovable-style chrome-less canvas. Every OTHER surface (assets, graph,
+  // triggers, settings…) falls back to the normal Standard chrome so navigation
+  // still works. Skin-layer rule: arrangement/visibility only — never data.
+  const isVibe = useIsVibe();
+  const vibeMinimalChrome = isVibe && VIBE_CREATOR_SURFACES.has(bodyViewType);
+
   // Chrome-less when the surface is full-bleed (Home — a welcome landing, not a
-  // tabbed workspace) or in the win/ focus layout. `chrome` (the registry
-  // "takeover" bit) is separate from `DockPointer.tabHash` (chip-or-not).
-  const hideChrome = windowMode || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
+  // tabbed workspace), in the win/ focus layout, or a Vibe creator surface.
+  // `chrome` (the registry "takeover" bit) is separate from
+  // `DockPointer.tabHash` (chip-or-not).
+  const hideChrome =
+    windowMode || vibeMinimalChrome || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
 
   // File manager filters
   const [enabledFilters, setEnabledFilters] = useState<FilterName[]>([FilterName.HIDDEN]);
@@ -364,7 +392,7 @@ export function ContentPanel() {
           opens its bottom over this line, so the menu + body read as one panel
           hanging from the current tab (the folder-tab continuum). */}
       <div className={`flex min-h-0 flex-1 overflow-hidden ${!hideChrome ? 'border-t border-border' : ''}`}>
-        <NavigatorSlot />
+        {!vibeMinimalChrome && <NavigatorSlot />}
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {/* Matches the proven per-viewType slot layout (plain h-full, no flex-col)

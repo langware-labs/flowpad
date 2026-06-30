@@ -8,9 +8,9 @@ import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
 import { MiniDesktop } from '@src/components/quick-create';
 import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
-import { AdvancedOnly } from '@src/components/view-mode';
+import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
 import { useProjects } from '@src/hooks/use-projects';
-import { claudeSessionManager, dataContext, PrefKey } from '@sdk';
+import { claudeSessionManager, ComputeNode, dataContext, PrefKey, ProcessKind, Project, TypeId } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -178,8 +178,90 @@ export function HomeLanding() {
     })();
   };
 
+  // Vibe submit — seed a HEADLESS chat process that the VibeWorkspace's side
+  // chat attaches to (by the project-TypeId target), with the Flowpad Assistant
+  // mounted so the web-app-builder skill is discoverable. Navigating to the
+  // process's SHELL/agentic_process dock activates it (loader sets the active
+  // process) and flow-page renders the chat↔display split.
+  const handleVibeSubmit = (message: string) => {
+    if (!currentProject?.id) {
+      notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
+      return;
+    }
+    const projectId = currentProject.id;
+    // Key the build session to the project's id-based TypeId (NOT currentProject.typeId,
+    // which is the uname form `project-@local` — VibeWorkspace's chat target must match
+    // this exact string to attach to the same process).
+    const target = new TypeId(Project.type, projectId).toString();
+    const workdir = currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
+
+    void (async () => {
+      try {
+        const computeNode = await ComputeNode.getById('@local');
+        if (!computeNode) throw new Error('No local compute node');
+        const proc = await computeNode.createProcess({
+          workdir: workdir ?? undefined,
+          projectId,
+          targetVfsPath: target,
+          processType: ProcessKind.Chat,
+          loadFlowpadAssistant: true,
+          outputFormat: 'stream-json',
+        });
+        // Send the message verbatim — it's a chat. "hi" → the agent says hi; the
+        // web-app-builder skill (mounted via loadFlowpadAssistant) triggers on its
+        // own when the user actually asks to build something.
+        await proc.prompt(message);
+        void navigation.openShellProcess(proc.id);
+      } catch (error) {
+        console.error('[HomeLanding] Failed to start vibe session:', error);
+        notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
+      }
+    })();
+  };
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      <VibeSwap
+        vibe={
+          /* VibeHome — Lovable-style single centered column: the prompt is the
+             hero CTA. Side columns, search, feed, usage and notifications are
+             dropped (still mounted in the fallback). Reuses SessionInput; submit
+             goes to handleVibeSubmit (seeds a headless build session). */
+          <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4">
+            <div
+              aria-hidden
+              className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3"
+            />
+            <div className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-6 text-center">
+              <h1 className="text-5xl font-bold tracking-tight">
+                <Trans>
+                  Build something <span className="vibe-gradient-text">amazing</span>
+                </Trans>
+              </h1>
+              <p className="text-lg text-muted-foreground">
+                <Trans>Create apps and tools by chatting with AI</Trans>
+              </p>
+              <div className="w-full">
+                <SessionInput
+                  placeholder={t`What would you like to build, ${firstName}?`}
+                  value={draftPrompt}
+                  onChange={setDraftPrompt}
+                  onSubmit={(msg) => void handleVibeSubmit(msg)}
+                />
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                onClick={() => setShowCommunityAssistance(true)}
+              >
+                <Users className="h-3 w-3" />
+                <Trans>Community assistance</Trans>
+              </button>
+            </div>
+          </div>
+        }
+        fallback={
+          <>
       {/* Top row: UsageBar + Search */}
       <div className="flex shrink-0 items-center gap-2 p-4">
         <AdvancedOnly className="w-72 shrink-0">
@@ -316,6 +398,9 @@ export function HomeLanding() {
         <HomeFeedColumn />
 
       </div>
+          </>
+        }
+      />
 
       {/* Welcome modal for first-time / not-yet-indexed users */}
       <WelcomeModal
