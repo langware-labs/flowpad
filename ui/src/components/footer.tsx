@@ -13,10 +13,11 @@ import { WarningsPopover } from '@src/components/warnings-popover';
 import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-popover';
 import { Agent, ArtifactType, FLOWPAD_ASSISTANT_PROJECT_UNAME, TypeId } from '@sdk';
 import { useCurrentArtifacts, useEntity } from '@sdk/react/hooks';
+import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { BookOpen } from 'lucide-react';
-import { useMemo } from 'react';
+import { BookOpen, Users } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { useContext } from '@sdk/react/hooks';
 import { useColorPalette } from '../hooks/useColorPalette';
@@ -42,6 +43,7 @@ export function Footer({ className = '' }: FooterProps) {
   const { data: agent } = useEntity<Agent>(agentTypeId);
   const { data: projectArtifacts, isLoading: isLoadingArtifacts } = useCurrentArtifacts();
   const { navigation } = useDockNavigation();
+  const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   useColorPalette(agent?.site_config);
   usePendingCompletionSound();
 
@@ -121,11 +123,25 @@ export function Footer({ className = '' }: FooterProps) {
             <BookOpen className="h-3.5 w-3.5" />
             <span><Trans>Flowpad docs</Trans></span>
           </button>
+          <button
+            type="button"
+            onClick={() => setShowCommunityAssistance(true)}
+            className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-violet-600 transition-colors hover:bg-accent hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
+            title={t`Community assistance`}
+            aria-label={t`Community assistance`}
+          >
+            <Users className="h-3.5 w-3.5" />
+            <span><Trans>Community assistance</Trans></span>
+          </button>
           {version && <VersionPopover currentVersion={version} />}
           <PoweredBy />
           <LanguageSelector />
         </div>
       </div>
+      <CommunityAssistanceDialog
+        open={showCommunityAssistance}
+        onClose={() => setShowCommunityAssistance(false)}
+      />
     </footer>
   );
 }
