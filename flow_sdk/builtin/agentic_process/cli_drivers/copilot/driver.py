@@ -53,6 +53,7 @@ class CopilotDriver:
     # Copilot's TUI treats a pasted prompt ending in \r as literal text — needs
     # a discrete Enter after the paste settles (Shell.write_then_submit).
     pty_submits_on_paste = False
+    pins_resume_cwd = False  # no transcript-cwd pinning, no fork
 
     def cli_options(self, process: "AgenticProcess") -> CopilotCliOptions:
         cmd = CopilotCliOptions.from_json(process.cli_config)
@@ -62,7 +63,9 @@ class CopilotDriver:
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.skill_names = list(agents_json.keys())
-        if process.visible:
+        # Transport intent (``pty_mode``), not tab visibility, selects the argv
+        # shape: PTY → interactive (no json-stream); headless → json-stream.
+        if process.pty_mode:
             cmd.json_stream = False
         if process.session_id and self._has_session(process):
             cmd.resume = True
@@ -112,6 +115,9 @@ class CopilotDriver:
             add_dirs=list(process.resolved_add_dirs or []),
             session_id=process.session_id if not resumable else None,
             resume_session_id=process.session_id if resumable else None,
+            # ContextProcess §2.4: fold the bound context summary into the system
+            # prompt. Generic across vendors; "" when no context is bound.
+            instructions=(await process.resolve_context_summary()) or None,
         )
 
         worker = CopilotCLIStreamWorker.for_process(process.id)

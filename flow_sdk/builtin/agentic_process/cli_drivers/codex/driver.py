@@ -58,6 +58,7 @@ class CodexDriver:
     # Codex's TUI needs a discrete Enter after the paste settles, not a
     # trailing \r in the pasted text (Shell.write_then_submit).
     pty_submits_on_paste = False
+    pins_resume_cwd = False  # codex mints its own rollout; no transcript-cwd pinning, no fork
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -77,12 +78,13 @@ class CodexDriver:
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.skill_names = list(agents_json.keys())
-        # ``visible=True`` means the entity is wired into a PTY tab — codex's
+        # ``pty_mode=True`` means an interactive PTY transport — codex's
         # interactive TUI is the bare ``codex`` invocation, NOT ``codex exec
         # --json``. Toggle ``json_stream`` so ``to_spawn_args`` emits the right
         # argv. Headless print-mode turns flip back through ``CodexCLIStreamWorker``
-        # which always uses the json-stream shape.
-        if process.visible:
+        # which always uses the json-stream shape. (Keys on the transport intent,
+        # not ``visible`` — tab visibility never changes the worker argv.)
+        if process.pty_mode:
             cmd.json_stream = False
             cmd.ephemeral = False
         return cmd
@@ -130,6 +132,9 @@ class CodexDriver:
             # fresh lets the worker mint a rollout; its real id is captured from
             # the stream below and persisted back onto ``process.session_id``.
             resume_session_id=process.session_id if self.has_resumable_session(process) else None,
+            # ContextProcess §2.4: fold the bound context summary into the system
+            # prompt. Generic across vendors; "" when no context is bound.
+            instructions=(await process.resolve_context_summary()) or None,
         )
 
         worker = CodexCLIStreamWorker.for_process(process.id)
@@ -210,7 +215,7 @@ class CodexDriver:
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolve the Codex transcript path and native format for ``process``."""
-        if process.visible:
+        if process.pty_mode:
             rollout = self._rollout_descriptor(process)
             if rollout is not None:
                 return rollout
