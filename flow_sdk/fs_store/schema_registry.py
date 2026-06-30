@@ -251,6 +251,12 @@ class TypeInfo:
     # ``Entity.materialize_share_parent``. Runtime-only; not part of the
     # schema hash. Only safe when the parent type is deterministic/field-frozen.
     parent_share_on_default: bool = field(default=False, compare=False, repr=False)
+    # True ⇒ this hub-hosted ``is_child`` type is pulled during the shared-context
+    # catch-up sync (``_sync_shared_context_subtree``). The live bridge already
+    # materializes any child type generically, so this flag only declares the
+    # pull-side type list — sourced from the registry, not a hardcoded tuple.
+    # Runtime-only; not part of the schema hash.
+    shared_child: bool = field(default=False, compare=False, repr=False)
     # The declarative TypeMetadata (possibly a per-type subclass) this TypeInfo
     # was built from — home for type-specific extras beyond the flat fields.
     # Runtime-only; the flat fields above remain the serialized surface.
@@ -489,6 +495,8 @@ class SchemaRegistry:
                 existing.owns_main_ref = True
             if info.parent_share_on_default:
                 existing.parent_share_on_default = True
+            if info.shared_child:
+                existing.shared_child = True
             if info.metadata is not None:
                 existing.metadata = info.metadata
             if info.meta_model is not None:
@@ -581,6 +589,18 @@ class SchemaRegistry:
     def get_all_entity_classes(cls) -> list[type]:
         cls._ensure_loaded()
         return [v.entity_cls for v in cls._types.values() if v.entity_cls is not None]
+
+    @classmethod
+    def get_shared_child_types(cls) -> list[str]:
+        """Hub-hosted ``is_child`` type names the shared-context catch-up should pull.
+
+        Registry-driven companion to the live bridge (which materializes any child
+        generically): the catch-up sync iterates this list instead of a hardcoded
+        tuple, so a new shareable child type enrolls by setting ``shared_child=True``
+        on its ``TypeMetadata`` — no edit to the sync code.
+        """
+        cls._ensure_loaded()
+        return [k for k, v in cls._types.items() if v.entity_cls is not None and v.shared_child]
 
     @classmethod
     def get_public_entity_types(cls) -> list[str]:
