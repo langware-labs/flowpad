@@ -20,7 +20,7 @@
  * open) and reads the comment blob-expanded — exactly the vitest oracle, lifted
  * to the Playwright manual-regression tier.
  */
-import { request as pwRequest, type APIRequestContext } from '@playwright/test';
+import { request as pwRequest, test, type APIRequestContext } from '@playwright/test';
 
 export const HUB = process.env.QA_HUB_URL || 'http://localhost:8093';
 export const ALICE_API = process.env.QA_ALICE_API || 'http://localhost:6005';
@@ -51,6 +51,17 @@ async function json(rq: APIRequestContext, url: string, opts?: { method?: string
   return { status: res.status(), body: await res.json().catch(() => null) };
 }
 
+/** Generic poll: call `fn` until it returns a truthy value or CONVERGE elapses. */
+async function pollUntil<T>(fn: () => Promise<T | null>, timeoutMs: number): Promise<T | null> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const v = await fn();
+    if (v) return v;
+    if (Date.now() > deadline) return null;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
 export interface Rig {
   rq: APIRequestContext;
   convId: string;
@@ -67,33 +78,28 @@ export async function setupSharedConversation(rq: APIRequestContext): Promise<Ri
   const conv = await json(rq, `${ALICE_API}/api/v1/graph/conversation`, { method: 'POST', data: { title: `e2etest-collab-${Date.now()}` } });
   const convId: string = conv.body?.data?.id;
   if (!convId) throw new Error('alice conversation create failed');
-  const shareRes = await json(rq, `${ALICE_API}/api/v1/graph/conversation/${convId}/share`, { method: 'POST', data: { ...conv.body.data, recipients: [BOB_EMAIL] } });
-  if (process.env.QA_DEBUG) console.log(`[setup] convId=${convId} share=${shareRes.status} ${JSON.stringify(shareRes.body)?.slice(0, 200)}`);
+  await json(rq, `${ALICE_API}/api/v1/graph/conversation/${convId}/share`, { method: 'POST', data: { ...conv.body.data, recipients: [BOB_EMAIL] } });
 
-  // bob finds the pending invitation (hub-direct, where `conversation` carries
-  // the conv id) and accepts via his backend.
-  let accepted = false;
-  for (let i = 0; i < 30 && !accepted; i++) {
+  // bob finds the pending invitation (hub-direct) and accepts via his backend.
+  // Match the EMBEDDED conversation id precisely — same rule as
+  // ui/tests/hub/_matrix.ts pickPendingInvitation. A loose substring match would
+  // pick the wrong invitation when stale/concurrent ones share the recipient.
+  const invitation = await pollUntil(async () => {
     const pending = await json(rq, `${HUB}/api/v1/graph/invitation/pending`, { headers: { Authorization: `Bearer ${bobToken}` } });
-    if (process.env.QA_DEBUG && i === 0) console.log(`[setup] pending status=${pending.status} count=${(pending.body?.data ?? []).length} sample=${JSON.stringify((pending.body?.data ?? [])[0])?.slice(0, 300)}`);
-    const inv = (pending.body?.data ?? []).find((x: { id: string; conversation?: unknown; accepted?: boolean }) => JSON.stringify(x).includes(convId) && !x.accepted);
-    if (inv) {
-      await json(rq, `${BOB_API}/api/v1/graph/invitation-accept`, { method: 'POST', data: { invitation_id: inv.id } });
-      accepted = true;
-    } else {
-      await new Promise((r) => setTimeout(r, 500));
-    }
-  }
-  if (!accepted) throw new Error('bob never received/accepted the conversation invitation');
+    return (pending.body?.data ?? []).find(
+      (inv: { id: string; accepted?: boolean; conversation?: { id?: string }; conversation_id?: string; target_url_path?: string }) =>
+        !inv.accepted && ((inv.conversation?.id ?? inv.conversation_id) === convId || (inv.target_url_path || '').includes(convId)),
+    ) ?? null;
+  }, 15_000);
+  if (!invitation) throw new Error('bob never received the conversation invitation');
+  await json(rq, `${BOB_API}/api/v1/graph/invitation-accept`, { method: 'POST', data: { invitation_id: invitation.id } });
 
   // Gate on bob's per-conversation sync returning 200 (local row exists).
-  const deadline = Date.now() + 25_000;
-  for (;;) {
+  const synced = await pollUntil(async () => {
     const s = await json(rq, `${BOB_API}/api/v1/graph/conversation-message-sync`, { method: 'POST', data: { conversation_id: convId } });
-    if (s.status === 200) break;
-    if (Date.now() > deadline) throw new Error('bob local conversation row never materialized (sync 200)');
-    await new Promise((r) => setTimeout(r, 400));
-  }
+    return s.status === 200 ? true : null;
+  }, 25_000);
+  if (!synced) throw new Error('bob local conversation row never materialized (sync 200)');
   return { rq, convId, bobToken };
 }
 
@@ -122,32 +128,40 @@ async function syncAndRead(rq: APIRequestContext, api: string, convId: string, i
 
 /** Poll the receiver until the comment reads as `text` (returns it) or times out. */
 export async function waitText(rq: APIRequestContext, api: string, convId: string, id: string, text: string): Promise<unknown> {
-  const deadline = Date.now() + CONVERGE;
-  for (;;) {
+  return pollUntil(async () => {
     const d = await syncAndRead(rq, api, convId, id);
-    if (d && (d as { raw_content?: string }).raw_content === text) return d;
-    if (Date.now() > deadline) return null;
-    await new Promise((r) => setTimeout(r, 300));
-  }
+    return d && (d as { raw_content?: string }).raw_content === text ? d : null;
+  }, CONVERGE);
 }
 
 /** Poll the receiver until the comment is gone (returns true) or times out. */
 export async function waitAbsent(rq: APIRequestContext, api: string, convId: string, id: string): Promise<boolean> {
-  const deadline = Date.now() + CONVERGE;
-  for (;;) {
-    if ((await syncAndRead(rq, api, convId, id)) === null) return true;
-    if (Date.now() > deadline) return false;
-    await new Promise((r) => setTimeout(r, 300));
-  }
-}
-
-export async function newRig(): Promise<APIRequestContext> {
-  return pwRequest.newContext();
+  return (await pollUntil(async () => ((await syncAndRead(rq, api, convId, id)) === null ? true : null), CONVERGE)) === true;
 }
 
 /** Best-effort teardown: delete the shared e2etest- conversation on both backends. */
-export async function cleanup(rq: APIRequestContext, convId: string): Promise<void> {
+async function cleanup(rq: APIRequestContext, convId: string): Promise<void> {
   for (const api of [ALICE_API, BOB_API]) {
     await json(rq, `${api}/api/v1/graph/conversation/${convId}`, { method: 'DELETE' }).catch(() => undefined);
   }
+}
+
+/** Test-body wrapper owning the whole rig lifecycle: request context, skip-guard,
+ *  shared-conversation setup, and guaranteed teardown + dispose. Each scenario
+ *  file supplies only its assertions. */
+export function withSharedConversation(body: (rq: APIRequestContext, rig: Rig) => Promise<void>): () => Promise<void> {
+  return async () => {
+    test.setTimeout(60_000);
+    const rq = await pwRequest.newContext();
+    const skip = await rigUnavailable(rq);
+    test.skip(!!skip, skip ?? '');
+    let rig: Rig | undefined;
+    try {
+      rig = await setupSharedConversation(rq);
+      await body(rq, rig);
+    } finally {
+      if (rig) await cleanup(rq, rig.convId);
+      await rq.dispose();
+    }
+  };
 }
