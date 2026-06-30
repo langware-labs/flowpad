@@ -37,7 +37,12 @@ from flow_sdk.fs_store.type_id import TypeId
 
 _FM_FIELDS = {"type", "id", "text", "instruction", "shared_context_entities", "attachment",
               "sender_id", "sender_name", "receiver_address", "receiver_address_type",
-              "conversation_id", "kind"}
+              "conversation_id", "kind",
+              # Wire-meaningful send-time: the receiver preserves it under
+              # remote_reflection, so an unpacked message keeps its original
+              # timestamp instead of defaulting to now() (which collapsed the
+              # conversation's derived recency to the sync instant).
+              "created_date", "updated_date"}
 
 _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "priority", "shared_by_id",
