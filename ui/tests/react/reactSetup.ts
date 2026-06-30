@@ -5,6 +5,9 @@ import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { installCleanup } from '../_cleanup';
 
+// The `@lingui/react` shim is registered in its own setup file (../_lingui-mock,
+// listed first in this tier's setupFiles) and shared with the unit/api tiers.
+
 // The react tier runs against the live local backend (apiTestSetup → bootstrap).
 // Suites that create real AgenticProcess / ComputeNode entities (e.g.
 // agentic_process_stress.test.ts) trackForCleanup() each create; this installs

@@ -32,11 +32,15 @@ describe('TabbedTerminal – tab switching contract (FLOWPAD-1645)', () => {
   });
 
   it('locks tab creation buttons while a tab is being created', () => {
-    expect(tabbedTerminalSource).toContain('disabled={isTabCreationPending}');
+    // Opener-button rendering (incl. the disable-while-creating lock + spinner)
+    // moved out of TabbedTerminal into the TerminalOpenerToolbar sibling — the
+    // lock is now `opener.disabled || isTabCreationPending` driving `disabled`.
+    expect(openerToolbarSource).toContain('opener.disabled || isTabCreationPending');
+    expect(openerToolbarSource).toContain('disabled={disabled}');
     // Pending state drives an inline spinner (pendingInline) for each opener.
     expect(stripControllerSource).toContain('pendingInline: isClaudeCreationPending');
     expect(stripControllerSource).toContain('pendingInline: isTerminalCreationPending');
-    expect(tabbedTerminalSource).toContain('Loader2 className="h-4 w-4 animate-spin"');
+    expect(openerToolbarSource).toContain('Loader2 className="h-4 w-4 animate-spin"');
   });
 
   it('does NOT return null for inactive sessions (prevents unmount)', () => {
