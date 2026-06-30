@@ -1269,7 +1269,15 @@ class AgenticProcess(Entity):
                 status_code=409,
             )
         if self.shell_id and await self.is_running():
-            exit_result = await self.exit()
+            try:
+                exit_result = await self.exit()
+            except Exception as e:
+                # Switching to chat: a PTY that's already dead IS the desired end
+                # state. exit() can raise (e.g. "PTY session is not alive") when the
+                # worker died mid-session (a Ctrl-C, a crashed TUI) — that must not
+                # 500 the switch. Treat it as already-exited and continue headless.
+                logger.info("switch→cli: exit() ignored, PTY already gone: %s", e)
+                exit_result = None
             if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
                 return exit_result
         # Reload so the visible reset rides on the row exit() just saved (status,
@@ -1697,6 +1705,18 @@ class AgenticProcess(Entity):
             q.log("injected", source, entry_id=head.get("id"))
         except Exception as e:  # noqa: BLE001 — already popped; record the loss
             q.log("error", source, entry_id=head.get("id"), error=str(e))
+        finally:
+            # Chain the drain: this turn just completed and freed the worker, so
+            # run the next queued item NOW. Without this, a prompt enqueued WHILE
+            # this turn was in flight (the drain skipped it as not-ready) stalls
+            # until some later external submit — turns submitted faster than they
+            # run (slow codex/copilot) pile up undrained. One drain per completed
+            # turn keeps the queue aligned with output/turn completion.
+            try:
+                if not self.queue.is_empty:
+                    self._schedule_queue_drain("chain")
+            except Exception:
+                pass
 
     @action.post(action_name="enqueue")
     async def _enqueue_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -1797,6 +1817,12 @@ class AgenticProcess(Entity):
             return ApiSuccessResponse(data={"status": "sent"})
         return await self.start_pty(instruction=instruction)
 
+    async def _is_live_pty(self) -> bool:
+        """True iff this is a PTY transport with a worker currently alive — the
+        single seam ``input``/``submit`` route on (write to the live PTY vs the
+        headless queue), so the two can't drift."""
+        return self.pty_mode and await self.is_running()
+
     async def input(
         self, text: str, options: dict[str, Any] | None = None
     ) -> ApiSuccessResponse | ApiFailResponse:
@@ -1817,15 +1843,13 @@ class AgenticProcess(Entity):
         through to the queue (e.g. ``{"source": "..."}``) for the headless path.
         """
         options = options or {}
-        if self.pty_mode and await self.is_running():
+        if await self._is_live_pty():
             await self.send(text.encode())  # raw bytes ⇒ no submit
             return ApiSuccessResponse(data={"status": "typed", "staged": False})
+        # ``queue.enqueue`` persists the entry to its own file — durable without a
+        # row save (the queue is not an entity field).
         qopts = dict(options.get("queueOptions") or {})
         entry = self.queue.enqueue(text, source=qopts.get("source", "input"))
-        try:
-            await self.save()  # persist the staged entry
-        except Exception:
-            logger.warning("input: queue persist save failed", exc_info=True)
         return ApiSuccessResponse(
             data={"status": "queued", "staged": True, "entry_id": entry.get("id")}
         )
@@ -1850,7 +1874,7 @@ class AgenticProcess(Entity):
             staged = await self.input(instruction, options=options)
             if isinstance(staged, ApiFailResponse):
                 return staged
-        if self.pty_mode and await self.is_running():
+        if await self._is_live_pty():
             # Rich TUIs (codex/copilot, ``pty_submits_on_paste=False``) treat an
             # Enter glued to the just-typed text as literal input and never
             # submit — the input box must settle first. claude submits on paste,
@@ -3950,16 +3974,20 @@ class AgenticProcess(Entity):
     def _render_context_summary(resolved: "list[Entity]") -> str:
         """Render resolved context entities into the system-prompt block.
 
-        Pure (no DB) so it's trivially unit-testable. Inlines each entity's
-        content (a message's ``text``, else ``name``, else ``id``) so the worker
-        is told what it is working on without having to go fetch it.
+        Pure (no DB) so it's trivially unit-testable. Inlines each entity's id
+        (``<type>-<id>``) AND its content (a message's ``text``, else ``name``)
+        so the worker is told both what it is working on and how to reference it
+        — without having to go fetch anything.
         """
-        lines = [
-            f"- {str(getattr(e, 'type', '') or '').replace('_', ' ').title()}: "
-            f"{getattr(e, 'text', None) or getattr(e, 'name', None) or getattr(e, 'id', '')}"
-            for e in resolved
-            if e is not None
-        ]
+        lines = []
+        for e in resolved:
+            if e is None:
+                continue
+            etype = str(getattr(e, "type", "") or "")
+            label = etype.replace("_", " ").title()
+            tid = f"{etype}-{getattr(e, 'id', '')}"
+            content = getattr(e, "text", None) or getattr(e, "name", None) or getattr(e, "id", "")
+            lines.append(f"- {label} [{tid}]: {content}")
         return "At creation time, the context entities are:\n" + "\n".join(lines) if lines else ""
 
     def set_graph_context(self, ctx: "Entity") -> "AgenticProcess":

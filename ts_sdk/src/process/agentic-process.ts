@@ -910,6 +910,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     }
   }
 
+  /**
+   * Bind a captured `GraphContext` (by id) to this process BEFORE launch — the
+   * backend `set-graph-context` action. Folds the context summary into the
+   * worker's system prompt at launch (see contextProcess.md). Pre-launch only.
+   */
+  async setGraphContext(graphContextId: string): Promise<void> {
+    const actionInfo = new ActionInfo('set-graph-context', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { graph_context_id: graphContextId };
+    await dataManager.callAction(actionInfo);
+  }
+
   /** Remove a directory from additional_dirs. No-op if not present. */
   async removeDir(path: string): Promise<void> {
     const actionInfo = new ActionInfo('remove-dir', AgenticProcess.type, this.id, 'POST');
@@ -1782,6 +1793,54 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     });
 
     await processor.ingestStream(response.body.getReader(), ctrl);
+  }
+
+  /**
+   * Set ONLY tab-visibility (`visible`) — whether this process shows as a
+   * terminal tab. Decoupled from transport: `visible` does NOT pick PTY vs
+   * headless (that's `pty_mode`). Use this to show/hide the tab without
+   * restarting the worker or flipping the session. The backend broadcasts the
+   * update, so a watched process reflects the new `visible` on the entity.
+   */
+  async setVisible(visible: boolean): Promise<void> {
+    const actionInfo = new ActionInfo('set-visible', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { visible };
+    await dataManager.callAction(actionInfo);
+    this.visible = visible; // optimistic; the broadcast confirms it
+  }
+
+  /**
+   * Stage input WITHOUT submitting — "type" `text` into the input, no Enter.
+   *
+   * Pairs with {@link submit}: `input(x)` then `submit()` ≡ `submit(x)`. On a
+   * live PTY this writes the raw keystrokes (no trailing `\r`); headless, it
+   * enqueues onto the process's PERSISTED prompt queue (so the staged turn
+   * survives a reload / separate `submit` request), which `submit` drains.
+   *
+   * `options` is a generic per-call bag; `options.queueOptions` is passed to the
+   * queue on the headless path (e.g. `{ source }`).
+   */
+  async input(text: string, options?: { queueOptions?: Record<string, unknown> }): Promise<void> {
+    const actionInfo = new ActionInfo('input', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { text, ...(options ? { options } : {}) };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /**
+   * Commit the current input as one turn. `submit(x)` ≡ `input(x)` + `submit()`.
+   *
+   * If `instruction` is given it is {@link input} first; then a live PTY gets a
+   * discrete Enter, while a headless process fires the staged turn. Fire-and-
+   * forget — observe output on the stream. `options` is reserved for per-turn
+   * flags (e.g. permission mode); accepted now so the signature is stable.
+   */
+  async submit(instruction?: string, options?: { permissionMode?: PermissionMode }): Promise<void> {
+    const actionInfo = new ActionInfo('submit', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = {
+      ...(instruction !== undefined ? { instruction } : {}),
+      ...(options ? { options } : {}),
+    };
+    await dataManager.callAction(actionInfo);
   }
 
   /**

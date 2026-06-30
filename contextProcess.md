@@ -171,16 +171,29 @@ summarize*, and the *grid* query.
 
 ## 6. Implementation status
 
+Two design points moved during implementation (this doc's earlier prose lags):
+the context summary lives on **`AgenticProcess`**, not `GraphContext.summary()`
+(only the process has the resolved entities); and delivery rides the **unified
+`WorkerCLIOptions` base** — `system_prompt_append` is a first-class transient
+routed per vendor by `SYSTEM_PROMPT_FLAG` — rather than a `_system_prompt_additions`
+accumulator. (That base is the cli_drivers consolidation: 7 per-vendor builders →
+one `_emit_flags()` + spec each.)
+
 * [x] Spec (this document)
-* [x] Backend: `GraphContext.summary()` (`flow_sdk/builtin/graph_context.py`)
+* [x] Backend: `AgenticProcess._render_context_summary()` (pure: inlines each
+      entity's `[<type>-<id>]` + content) + `resolve_context_summary()` (loads the
+      bound `GraphContext`, fetches its entities, renders; **cached** in
+      `context_data` since the binding is frozen)
 * [x] Backend: `AgenticProcess.set_graph_context()` — bind + mirror onto
-      `shared_context_entities` + pre-launch freeze guard
-* [x] Backend: single `_system_prompt_additions()` accumulator, injected on the
-      headless launch path (`agentic_process.py` `_AgenticContext`)
-* [ ] Backend: wire the same accumulator into the **PTY** launch
-      (`--append-system-prompt`) — headless covers conversation/message/diagnose;
-      PTY covers visible chat tabs
-* [ ] Backend: `summary` HTTP action on `graph_context` (for UI display)
+      `shared_context_entities` + pre-launch freeze guard (+ `set-graph-context` action)
+* [x] Backend: `system_prompt_append` on the `WorkerCLIOptions` base, routed per
+      vendor (claude → `--append-system-prompt`; codex/copilot → prepended into
+      stdin via the single `stdin_text` sink). Wired on the headless launch path
+      for all three vendors.
+* [x] Test: live e2e (`tests/long_tests/test_context_process.py`) — a process bound
+      to a message **answers the message id from its context** (real worker, ~5s green)
+* [ ] Backend: wire `system_prompt_append` into the **PTY** launch too (headless
+      covers conversation/message/diagnose; PTY covers visible chat tabs)
 * [ ] Backend: `processes_in_context` / `last_process_in_context` query (§4 grid)
 * [ ] Frontend: generalize `captureContext()`; message surface adds message id;
       call `set_graph_context` at the message launch site

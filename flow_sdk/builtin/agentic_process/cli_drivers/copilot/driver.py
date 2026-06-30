@@ -185,10 +185,19 @@ class CopilotDriver:
         return CopilotCLIStreamWorker.for_process(process.id)
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
-        local = self._process_local_descriptor(process)
-        if local is not None:
-            return local
-        return self._session_descriptor(process)
+        """Resolve the Copilot transcript for READING (history / prompts / status).
+
+        Transcript↔output alignment (mirror of codex): the session record
+        (``~/.copilot/session-state/<id>/events.jsonl``) is the canonical, complete
+        transcript — user-message entries AND assistant output. The process-local
+        file is only the tee'd stdout (assistant output, no user-message entry), so
+        ``transcript/prompts`` came back empty for headless. Prefer the session
+        record; fall back to the stdout tee only before the session id resolves.
+        """
+        session = self._session_descriptor(process)
+        if session is not None:
+            return session
+        return self._process_local_descriptor(process)
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)

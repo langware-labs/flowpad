@@ -11,6 +11,7 @@ export {
   ProcessStatus,
   WorkerStatus,
   WorkerMode,
+  WorkerModelTier,
   parseUIUri,
   isProcessRunning,
   isProcessActive,
