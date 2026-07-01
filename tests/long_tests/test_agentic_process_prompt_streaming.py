@@ -34,12 +34,21 @@ pytestmark = [
     pytest.mark.asyncio,
 ]
 
-HUB_URL = os.environ.get("FLOWPAD_HUB_URL", "http://localhost:9008")
+# No hardcoded default: a long/e2e test must NEVER silently target the main
+# dev backend (its loaded DB makes createProcess pathologically slow and the
+# port is environment-specific). Require an explicit dedicated-instance URL;
+# the fixture skips with a clear message when it is unset.
+HUB_URL = os.environ.get("FLOWPAD_HUB_URL")
 
 
 @pytest.fixture
 async def hub_and_node():
     """Yields (httpx.AsyncClient, compute_node_id). Skips if hub isn't reachable."""
+    if not HUB_URL:
+        pytest.skip(
+            "FLOWPAD_HUB_URL not set — point this e2e test at a DEDICATED instance "
+            "(scripts/instance_ctl.sh launch <name>), never the main dev backend."
+        )
     client = httpx.AsyncClient(base_url=HUB_URL, timeout=httpx.Timeout(10.0, read=120.0))
     try:
         try:

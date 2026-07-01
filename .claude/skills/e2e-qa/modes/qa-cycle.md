@@ -81,12 +81,21 @@ python -m pytest tests/api/ -v
 ## Phase 3 — pytest long tests (backend required)
 
 ```bash
-# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
-DEEP_TESTING=1 FLOWPAD_HUB_URL="http://localhost:${LOCAL_SERVER_PORT}" python -m pytest tests/long_tests/ -v
+# Phase 3 is TIMING-SENSITIVE — run it against a DEDICATED instance you launch,
+# NEVER the main dev backend. The main backend's loaded DB makes createProcess
+# pathologically slow (~32s on a 61-project DB vs ~0.8s on a fresh instance),
+# which times out the real-CLI matrix tests for reasons that are pure
+# environment, not code. (The long tests now REQUIRE an explicit FLOWPAD_HUB_URL
+# and skip if unset — they will no longer silently target localhost:9008.)
+scripts/instance_ctl.sh status | grep -q '^  qa-cycle .*UP' || scripts/instance_ctl.sh launch qa-cycle
+QA_BE=$(grep -oE 'backend :[0-9]+' <(scripts/instance_ctl.sh status) | grep -A0 qa-cycle | grep -oE '[0-9]+' | head -1)
+# (or read the port from the launch output / .env.qa-cycle.local — instance_ctl assigns 600X)
+DEEP_TESTING=1 FLOWPAD_HUB_URL="http://localhost:${QA_BE}" python -m pytest tests/long_tests/ -v
 ```
 
 - Always set `DEEP_TESTING=1` (not `=true` — pydantic BaseSettings parses booleans inconsistently).
-- Some long tests hardcode `FLOWPAD_HUB_URL` default to 8093; pass it explicitly.
+- `FLOWPAD_HUB_URL` MUST point at the dedicated instance you launched, not `${LOCAL_SERVER_PORT}` (the main backend). The matrix/streaming long tests skip cleanly when it is unset.
+- **Cleanup**: `scripts/instance_ctl.sh kill qa-cycle` when Phase 3 (and any later timing phase reusing it) is done.
 - **Gate**: all tests pass → proceed to Phase 4
 
 ## Phase 4 — vitest unit tests

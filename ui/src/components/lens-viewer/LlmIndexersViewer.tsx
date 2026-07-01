@@ -128,7 +128,7 @@ export function LlmIndexersViewer() {
         target_typeid_str: index.typeId.toString(),
         process_type: ProcessKind.Execution,
       }).save([index.typeId]);
-      void process.prompt(instruction);
+      void process.submit(instruction);
       notify.success({
         title: t`Rebuild started`,
         message: t`MarkdownIndex ${index.name ?? index.id} is rebuilding.`,

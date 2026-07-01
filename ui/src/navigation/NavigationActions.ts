@@ -9,6 +9,7 @@ import {
   Layout,
   QueryRequest,
   Shell,
+  toplog,
   TypeId,
   ViewType,
 } from '@sdk';
@@ -83,10 +84,25 @@ export class NavigationActions {
     }, 1000);
   }
 
+  // `viewType:pointer` label for the navigation toplog trace.
+  private static dockLabel(d: { viewType: string; pointer?: string | null } | null): string | null {
+    return d ? `${d.viewType}:${d.pointer ?? ''}` : null;
+  }
+
   private commitBrowserNavigation(fullUrl: string, routerUrl: string): void {
     this.markPendingNavigation(fullUrl);
 
-    if (NavigationActions.getCurrentBrowserUrl() !== fullUrl) {
+    const from = NavigationActions.getCurrentBrowserUrl();
+    const willPush = from !== fullUrl;
+    toplog.log('navigation', 'commitBrowserNavigation', {
+      from,
+      to: fullUrl,
+      routerUrl,
+      willPushState: willPush,
+      routerFallback: NavigationActions.needsRouterFallback(),
+      historyLen: window.history.length,
+    });
+    if (willPush) {
       window.history.pushState(null, '', fullUrl);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
@@ -133,8 +149,18 @@ export class NavigationActions {
     const currentPath = window.location.pathname;
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
 
+    toplog.log('navigation', 'openDock', {
+      target: pointer === null ? null : `${(pointer as IDockPointer).viewType ?? '?'}:${(pointer as IDockPointer).pointer ?? ''}`,
+      currentDock: NavigationActions.dockLabel(this.currentDock),
+      currentUrl,
+      extraOptions,
+    });
+
     if (pointer === null) {
-      if (this.currentDock === null) return; // already not on a dock URL
+      if (this.currentDock === null) {
+        toplog.log('navigation', 'openDock(null) no-op (already not on a dock URL)', { currentUrl });
+        return; // already not on a dock URL
+      }
       // Root-level dock URLs strip to '' — and navigate('') is a react-router
       // relative no-op, so close-dock silently did nothing outside the
       // /agent|/flow prefixed namespaces. Normalize to the app root.
@@ -163,7 +189,12 @@ export class NavigationActions {
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
-    if (this.currentDock?.equals(dock)) return; // already at this pointer, no-op
+    if (this.currentDock?.equals(dock)) {
+      toplog.log('navigation', 'openDock no-op (currentDock equals target)', {
+        dock: NavigationActions.dockLabel(dock),
+      });
+      return; // already at this pointer, no-op
+    }
 
     const layout = preserveWindowLayout(currentPath, dock.layout);
     const targetDock = layout === dock.layout
@@ -171,7 +202,14 @@ export class NavigationActions {
       : new DockPointer(dock.viewType, dock.pointer, dock.options, layout);
     const fullUrl = targetDock.toUrl(currentPath);
 
-    if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) return;
+    if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) {
+      toplog.log('navigation', 'openDock no-op (URL already current/pending)', {
+        currentUrl,
+        fullUrl,
+        pending: pendingDockNavigationUrl,
+      });
+      return;
+    }
 
     if (import.meta.env.DEV) {
       try {
@@ -195,8 +233,20 @@ export class NavigationActions {
 
   private navigateToBaseUrl(baseUrl: string): void {
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
-    if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) return;
+    if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) {
+      toplog.log('navigation', 'navigateToBaseUrl no-op (already there/pending)', {
+        currentUrl,
+        baseUrl,
+        pending: pendingDockNavigationUrl,
+      });
+      return;
+    }
 
+    toplog.log('navigation', 'navigateToBaseUrl (close dock)', {
+      from: currentUrl,
+      to: baseUrl,
+      historyLen: window.history.length,
+    });
     this.markPendingNavigation(baseUrl);
     if (NavigationActions.getCurrentBrowserUrl() !== baseUrl) {
       window.history.pushState(null, '', baseUrl);
@@ -671,10 +721,19 @@ export class NavigationActions {
   // ========== History Navigation ==========
 
   goBack(): void {
+    toplog.log('navigation', 'NavigationActions.goBack → navigate(-1)', {
+      currentUrl: NavigationActions.getCurrentBrowserUrl(),
+      currentDock: NavigationActions.dockLabel(this.currentDock),
+      historyLen: window.history.length,
+    });
     void this.navigate(-1);
   }
 
   goForward(): void {
+    toplog.log('navigation', 'NavigationActions.goForward → navigate(1)', {
+      currentUrl: NavigationActions.getCurrentBrowserUrl(),
+      historyLen: window.history.length,
+    });
     void this.navigate(1);
   }
 

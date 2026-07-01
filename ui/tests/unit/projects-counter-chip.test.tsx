@@ -1,5 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { resetOpenerPrefs } from '../utils/opener-prefs';
 import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
 import { useAllProjects } from '@src/hooks/use-all-projects';
@@ -51,10 +52,12 @@ describe('ProjectsCounterChip', () => {
     mockUseTabProjectBuckets.mockReset();
     mockUseAllProjects.mockReset();
     mockUseAllProjects.mockReturnValue({ projects: [], isLoading: false });
-    // WorkerToolbar persists the last-launched worker (rememberWorker) and reads
-    // the view mode from localStorage. Clear it so every test starts in the
-    // standard `lastOpened` mode with `claude_code` as the primary worker —
-    // otherwise a test that launches codex would make codex primary in the next.
+    // WorkerToolbar persists the last-launched worker (rememberWorker) via the
+    // registry-driven preference store (PrefKey.LAST_OPENER) — NOT localStorage
+    // anymore. Reset it so every test starts with `claude_code` as the primary
+    // worker; otherwise a test that launches codex leaks codex-primary into the
+    // next test (the instancePreferences singleton persists across tests).
+    resetOpenerPrefs();
     localStorage.clear();
   });
 

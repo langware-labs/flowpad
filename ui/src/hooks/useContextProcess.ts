@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { AgenticProcess, GraphContext, TypeId } from '@sdk';
+import { AgenticProcess, GraphContext, Project, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { resolveWorkdir } from '@src/components/conversation/apply-project-choice';
@@ -60,7 +60,7 @@ export function useContextProcess(opts: {
         const gc = new GraphContext({});
         gc.context_typeids = opts.contextTypeids;
         gc.name = opts.name ?? `Context ${gc.id.slice(0, 8)}`;
-        const scope = opts.projectId ? [new TypeId('project', opts.projectId)] : [];
+        const scope = opts.projectId ? [new TypeId(Project.type, opts.projectId)] : [];
         await gc.save(scope);
 
         // Headless so set-graph-context binds before the worker's session exists.
