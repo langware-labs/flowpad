@@ -51,7 +51,7 @@ async function runSkillWorker(
   } catch (err) {
     console.error(`[skillWorker] attach ${attachSkillName} failed`, err);
   }
-  void proc.prompt(prompt);
+  void proc.submit(prompt);
   return proc;
 }
 

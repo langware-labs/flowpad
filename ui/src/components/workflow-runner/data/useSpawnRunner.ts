@@ -53,7 +53,7 @@ export function useSpawnRunner(): UseSpawnRunnerResult {
     }).save([workflow.typeId]);
 
     // Fire-and-forget — the streaming response is consumed elsewhere.
-    void process.prompt(instruction);
+    void process.submit(instruction);
     return process;
   }, []);
 
