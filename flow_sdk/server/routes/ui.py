@@ -11,18 +11,37 @@ from fastapi.responses import FileResponse, HTMLResponse
 router = APIRouter()
 
 
+def _frozen_static_bases() -> list[Path]:
+    """Candidate roots that may hold ``server/static`` in a PyInstaller bundle.
+
+    Covers ``sys._MEIPASS`` resolving to either the bundle/``_internal`` dir or
+    the exe dir across PyInstaller versions/onedir layouts (the built UI is added
+    via ``--add-data ...;server/static``, landing under ``_internal``).
+    """
+    import os
+    bases: list[Path] = []
+    mp = getattr(sys, '_MEIPASS', None)
+    if mp:
+        bases += [Path(mp), Path(mp) / '_internal']
+    exedir = Path(os.path.dirname(sys.executable))
+    bases += [exedir, exedir / '_internal']
+    return bases
+
+
 def _find_static_file(filename: str) -> Path | None:
     """Find a static file, checking ui/dist first then static/."""
     if getattr(sys, 'frozen', False):
-        base = Path(sys._MEIPASS) / 'server'
-    else:
-        base = Path(__file__).parent.parent
+        for base in _frozen_static_bases():
+            path = base / 'server' / 'static' / filename
+            if path.exists():
+                return path
+        return None
 
+    base = Path(__file__).parent.parent
     repo_root = base.parent
     for path_candidate in [repo_root / 'ui' / 'dist' / filename, base / 'static' / filename]:
-        path = path_candidate
-        if path.exists():
-            return path
+        if path_candidate.exists():
+            return path_candidate
     return None
 
 
@@ -57,11 +76,9 @@ def serve_index_html(html: str) -> HTMLResponse:
 def _get_index_candidates() -> list[Path]:
     """Get index.html candidates in priority order."""
     if getattr(sys, 'frozen', False):
-        # PyInstaller bundle — static dir has the built assets
-        base_path = Path(sys._MEIPASS)
-        return [
-            base_path / 'server' / 'static' / 'index.html',
-        ]
+        # PyInstaller bundle — the built UI is under server/static (added via
+        # --add-data). Try every plausible base since _MEIPASS layout varies.
+        return [b / 'server' / 'static' / 'index.html' for b in _frozen_static_bases()]
     else:
         server_dir = Path(__file__).parent.parent
         repo_root = server_dir.parent
@@ -79,9 +96,16 @@ async def serve_ui():
     1. ui/dist/index.html (Vite build output — matches bundled assets)
     2. server/static/index.html (production build via build_ui.py)
     """
-    for candidate in _get_index_candidates():
+    candidates = _get_index_candidates()
+    for candidate in candidates:
         if candidate.exists():
             return serve_index_html(candidate.read_text())
+    import logging
+    logging.getLogger("flow_sdk.server.ui").warning(
+        "UI index.html not found. frozen=%s MEIPASS=%s exe=%s tried=%s",
+        getattr(sys, "frozen", False), getattr(sys, "_MEIPASS", None),
+        sys.executable, [str(c) for c in candidates],
+    )
     return HTMLResponse(
         content="<h1>Flow UI not built. Run: python build_ui.py</h1>",
         status_code=404,
