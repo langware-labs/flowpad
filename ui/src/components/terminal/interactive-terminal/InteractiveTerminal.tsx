@@ -1007,7 +1007,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (data.includes('\x1b[3J'))
         console.log('[PTY] ESC[3J (clear scrollback) received, seq:', seq, 'size:', data.length);
       if (data.includes('\x1b[2J')) console.log('[PTY] ESC[2J (clear screen) received, seq:', seq);
-      if (data.includes('\x1b[H')) console.log('[PTY] ESC[H (cursor home) received, seq:', seq);
       if (seq !== undefined) {
         const chunk = shell.getPtyChunk(seq);
         if (chunk) ptySyncRef.current.processChunk(chunk);
