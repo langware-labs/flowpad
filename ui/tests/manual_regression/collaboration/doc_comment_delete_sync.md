@@ -1,5 +1,6 @@
 ---
 id: 7dbcead1-46c8-434c-96d2-eac23050729f
+version: 2
 ---
 
 # Doc comment delete — live child sync (Alice ↔ Bob)
@@ -22,15 +23,18 @@ server-side auto-share.
 Every delete is first validated as **present on BOTH sides**, then removed for the
 peer:
 
-- **A→B:** Alice creates a comment; it is confirmed present on Alice **and** Bob;
+* **A→B:** Alice creates a comment; it is confirmed present on Alice **and** Bob;
   Alice deletes it; within real-time bounds **the comment disappears for Bob**.
-- **B→A:** Bob creates a comment; confirmed present on Bob **and** Alice; Bob
+
+* **B→A:** Bob creates a comment; confirmed present on Bob **and** Alice; Bob
   deletes it; **the comment disappears for Alice**.
 
 ## Coverage (cross-layer)
 
 ScenarioId `7dbcead1-46c8-434c-96d2-eac23050729f`:
 
-- **pytest** — `tests/hub_tests/test_doc_comment_child_sync.py::test_doc_comment_delete_sync`
-- **vitest** — `ui/tests/hub/doc_comment_sync.test.ts` ("delete" case)
-- **browser** — `ui/tests/manual_regression/collaboration/doc_comment_delete_sync.md.ts`
+* **pytest** — `tests/hub_tests/test_doc_comment_child_sync.py::test_doc_comment_delete_sync`
+
+* **vitest** — `ui/tests/hub/doc_comment_sync.test.ts` ("delete" case)
+
+* **browser** — `ui/tests/manual_regression/collaboration/doc_comment_delete_sync.md.ts`
