@@ -176,6 +176,34 @@ async def test_deleting_target_soft_closes_its_tabs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_delete_by_id_soft_closes_its_tabs() -> None:
+    # Regression (proven this session — "Conversation not found" 404 on project
+    # switch): the HTTP delete action (graph_crud_actions.handle_delete_by_id)
+    # removes an entity via the CLASSMETHOD Entity.delete_by_id, NOT the instance
+    # Entity.delete. Only the instance delete() carries the orphan-Tab cleanup, so
+    # a delete through the real API path strands a visible Tab pointing at a now
+    # nonexistent target. The projects switcher then resolves that tab and
+    # navigates to a dead conversation URL that 404s.
+    probe = _TabTargetProbe(id=str(uuid.uuid4()))
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/probe-del-by-id#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+    )
+    assert tab.visible is True
+
+    # The exact method the HTTP delete action calls (graph_crud_actions.py:134).
+    await _TabTargetProbe.delete_by_id(probe.id)
+
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is not None and reloaded.visible is False, (
+        "deleting the target via delete_by_id (the HTTP delete path) must soft-close "
+        "its Tab, not leave a dangling chip that 404s on click"
+    )
+
+
+@pytest.mark.asyncio
 async def test_missing_project_cleanup_deletes_tab_without_target_teardown() -> None:
     # A missing project means the Tab row itself is stale. Clean it with
     # Tab.delete(), not Tab.close(), so the backing target is not torn down.
