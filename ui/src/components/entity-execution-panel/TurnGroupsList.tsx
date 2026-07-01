@@ -28,10 +28,14 @@ export function TurnGroupsList({ groups, worker }: { groups: TurnGroup[]; worker
   return (
     <>
       {groups.map((g, i) => {
+        // Partition index `i` is the tiebreaker: two messages can share a
+        // timestamp (and lack an id), which collided on `id ?? timestamp` and
+        // tripped React's duplicate-key warning (children duplicated/omitted)
+        // — visible when the chat re-renders on a mode switch.
         const key =
           g.kind === 'message'
-            ? `msg-${g.flowData.id ?? g.flowData.timestamp ?? g.index}`
-            : `dense-${g.index}`;
+            ? `msg-${i}-${g.flowData.id ?? g.flowData.timestamp ?? ''}`
+            : `dense-${i}`;
         const isUser =
           g.kind === 'message' &&
           (g.flowData.elementType === FlowElementTypes.USER_MESSAGE ||

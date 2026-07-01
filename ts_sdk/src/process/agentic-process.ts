@@ -1203,6 +1203,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   private _userInitiatedStop: boolean = false;
 
+  /**
+   * Desired-value latch for the transport/visibility fields the client sets
+   * optimistically (`switchMode`/`setVisible`). The backend is the authoritative
+   * writer of `pty_mode`/`visible`, but an in-flight entity broadcast can carry
+   * the PRE-switch value and (via `deepAssign`) clobber the optimistic one — and
+   * such a stale broadcast can arrive even AFTER an agreeing one. So once set,
+   * `onEntityUpdate` HOLDS the latch (stripping any disagreeing wire value) until
+   * the NEXT `switchMode`/`setVisible` overwrites it — these are the only ways
+   * `pty_mode`/`visible` change, so a disagreeing wire value is always stale.
+   * `undefined` = no switch yet on this client, trust the wire.
+   */
+  private _pendingPtyMode?: boolean;
+  private _pendingVisible?: boolean;
+
   constructor(entity: Partial<IAgenticProcess> = {}) {
     super(entity);
     this.instruction_content = entity.instruction_content;
@@ -1807,6 +1821,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     actionInfo.bodyParameters = { visible };
     await dataManager.callAction(actionInfo);
     this.visible = visible; // optimistic; the broadcast confirms it
+    this._pendingVisible = visible; // latch until the wire agrees (see onEntityUpdate)
   }
 
   /**
@@ -2260,6 +2275,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
     if (mode === WorkerMode.Interactive) {
       this.pty_mode = true;
+      this._pendingPtyMode = true;
+      this._pendingVisible = true;
       await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
       this.emit('restarted', { process: this });
       return;
@@ -2278,6 +2295,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
     this.visible = false;
     this.pty_mode = false;
+    this._pendingVisible = false;
+    this._pendingPtyMode = false;
   }
 
   /**
@@ -2485,6 +2504,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const q = data.queue;
       this.queue = q ? { enabled: !!q.enabled, entries: [...(q.entries ?? [])] } : null;
       delete data.queue;
+    }
+    // Desired-value latch: once the client optimistically sets the transport /
+    // visibility (`switchMode`/`setVisible`), HOLD that value against every
+    // broadcast until the NEXT client switch overwrites the latch. `pty_mode` /
+    // `visible` only ever change via those client actions, so a wire value that
+    // disagrees is always stale (a pre-switch broadcast, which can arrive even
+    // AFTER an agreeing one) — strip it so the optimistic value survives
+    // `deepAssign`. Do NOT clear on first match: an early agreeing broadcast
+    // followed by a delayed stale one is exactly the desync this guards against.
+    // Same "remove from payload before deepAssign" shape as the `queue` guard.
+    if (this._pendingPtyMode !== undefined && 'pty_mode' in data && data.pty_mode !== this._pendingPtyMode) {
+      delete data.pty_mode;
+    }
+    if (this._pendingVisible !== undefined && 'visible' in data && data.visible !== this._pendingVisible) {
+      delete data.visible;
     }
     // Skip no-op transitions: castAndDeepAssign() runs this hook for every
     // WS entity-op AND for every REST-response write-through, so the same
