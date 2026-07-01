@@ -1239,6 +1239,10 @@ class Entity(DBEntity):
                 cls.get_type(), eid, wiki_exc,
             )
 
+        # Orphan-Tab cleanup — the HTTP delete path (handle_delete_by_id) bypasses
+        # the instance delete(), so it must fire here too.
+        await cls._close_orphan_tabs_for(cls.get_type(), str(eid))
+
         # Call parent delete_by_id
         return await super().delete_by_id(eid)
 
@@ -1874,27 +1878,37 @@ class Entity(DBEntity):
                 self.type, self.id, wiki_exc,
             )
 
-        # Soft-close any content Tab pointing at this entity (denormalized
-        # target_id) so a deleted target can't leave an orphan chip in the strip
-        # (docs/tab-management.md). Generic — one chokepoint covers every type.
-        # Best-effort; the Tab type may be absent (e.g. a pytest env without
-        # register_all), so a failure here must never block the delete.
-        if self.type != "tab":  # don't recurse on a Tab deleting itself
-            try:
-                from flow_sdk.builtin.tab import Tab
-                orphans = await Tab.get_all({"target_type": self.type, "target_id": str(self.id)})
-                for tab in orphans:
-                    if getattr(tab, "visible", False):
-                        await tab.close()
-            except Exception as tab_exc:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Tab orphan-cleanup failed for %s:%s — %s",
-                    self.type, self.id, tab_exc,
-                )
+        # Soft-close any content Tab pointing at this entity so a deleted target
+        # can't leave an orphan chip in the strip (docs/tab-management.md).
+        await self._close_orphan_tabs_for(self.type, self.id)
 
         # Call parent delete
         return await super().delete()
+
+    @staticmethod
+    async def _close_orphan_tabs_for(entity_type: str, entity_id: str) -> None:
+        """Soft-close every visible content Tab denormalized onto a now-deleted
+        target entity so the deletion can't strand a dangling chip that 404s on
+        click (docs/tab-management.md). Generic — one chokepoint, invoked from
+        BOTH the instance :meth:`delete` and the classmethod :meth:`delete_by_id`
+        (the HTTP delete path). Run BEFORE the row is removed so ``Tab.close`` can
+        still dispatch teardown to the live target. Best-effort — the Tab type may
+        be absent (e.g. a pytest env without ``register_all``) and a failure here
+        must never block the delete.
+        """
+        if entity_type == "tab":  # don't recurse on a Tab deleting itself
+            return
+        try:
+            from flow_sdk.builtin.tab import _tabs_for_target
+            for tab in await _tabs_for_target(entity_type, str(entity_id)):
+                if getattr(tab, "visible", False):
+                    await tab.close()
+        except Exception as tab_exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Tab orphan-cleanup failed for %s:%s — %s",
+                entity_type, entity_id, tab_exc,
+            )
 
     async def update(self):
         """Override update to invalidate cache when entity is updated."""
