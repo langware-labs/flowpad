@@ -7,7 +7,7 @@ import { useTerminalTabs } from '@src/tabs/useTabs';
 import React, { useEffect, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
 import { TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
-import { allowRename, shouldAutoSaveTitleForTarget } from './rename-rules';
+import { allowRename, cleanTitle, shouldAutoSaveTitleForTarget } from './rename-rules';
 
 interface TabbedTerminalProps {
   className?: string;
@@ -49,12 +49,16 @@ const TerminalPanel: React.FC<{
     if (tab.is_disabled) return;
     if (!shouldAutoSaveTitleForTarget(tab.target_type, isProcess ? process : null)) return;
     if (!source || !source.auto_rename) return; // user pinned this tab
-    if (!allowRename(title) || source.name === title) return;
-    source.name = title;
+    // Clean spinner frames / icons / ANSI off the raw OSC title, then gate on
+    // real text and dedupe against the CLEANED name — so animation ticks that
+    // reduce to the same title never fire a save.
+    const clean = cleanTitle(title);
+    if (!allowRename(clean) || source.name === clean) return;
+    source.name = clean;
     void source.save().catch(() => {});
     // Mirror onto the durable Tab label so the chip stays right once inactive —
     // set_name, NOT rename (which would pin auto_rename off).
-    void Tab.setNameById(tab.id, title).catch(() => {});
+    void Tab.setNameById(tab.id, clean).catch(() => {});
   };
 
   return (
