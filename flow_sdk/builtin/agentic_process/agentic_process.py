@@ -549,6 +549,17 @@ class AgenticProcess(Entity):
             "Persists across reloads so the 'Open Doc' affordance survives a refresh."
         ),
     )
+    status_report: dict | None = APIField(
+        default=None,
+        description=(
+            "Latest ProcessStatusReport snapshot (transcript_analyzer.counters): "
+            "running token/message/tool counters + focused-asset pointer + "
+            "worker/process status. Backend-computed projection, recomputed from "
+            "the transcript each debounce flush and pushed live on the "
+            "'progress_report' flow_data envelope. Persisted so the counters "
+            "one-liner survives a reload."
+        ),
+    )
     terminal_at: datetime | None = APIField(
         default=None,
         description=(
@@ -4575,6 +4586,11 @@ class AgenticProcess(Entity):
             current = self.fetch_worker_status()
             previous = getattr(self, "_last_broadcast_status", None)
 
+            # Generic agent-progress projection. Runs every flush (counters move
+            # without a status transition), so it precedes the transition
+            # early-return below. Change-gated internally.
+            await self._emit_status_report(current)
+
             # Maintain terminal_at: set on transition INTO a clean terminal
             # (COMPLETE/ERROR/INTERRUPTED), clear on transition OUT. Used by
             # the projection layer to surface PENDING_USER for 5 min before
@@ -4697,6 +4713,88 @@ class AgenticProcess(Entity):
             f"markdown.{change}",
             {"path": path, "name": name, "session_id": self.session_id},
         )
+
+    def _derive_focused_asset(self, transcript) -> "FocusedAsset | None":
+        """Most-recent asset this process is pointing at, as a URL-ref pointer.
+
+        Stateless reverse-scan of the parsed transcript — the same entries the
+        plan/docs chips inspect, unified into one ``FocusedAsset``. Both a plan
+        file and a user-authored doc are markdown files opened via the same
+        ``forAssetEditor('markdown', path)`` navigation, so both map to
+        ``asset_type='markdown', ref_type='vfs'``. Skill/webapp/typeid focus is
+        a follow-up (needs name→typeid resolution; kept out of the hot path).
+        """
+        from flow_sdk.transcript_analyzer.counters import FocusedAsset
+        from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
+        from flow_sdk.transcript_analyzer.entries.file_edit import FileEditEntry
+        from flow_sdk.transcript_analyzer.entries.file_write import FileWriteEntry
+
+        for entry in reversed(transcript.entries):
+            if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
+                return FocusedAsset(
+                    asset_type="markdown", ref_type="vfs", ref_value=entry.plan_file_path,
+                )
+            if isinstance(entry, (FileWriteEntry, FileEditEntry)):
+                path = getattr(entry, "path", None)
+                if path and self._is_user_doc(path):
+                    return FocusedAsset(
+                        asset_type="markdown", ref_type="vfs", ref_value=path,
+                    )
+        return None
+
+    async def _emit_status_report(self, current) -> None:
+        """Recompute the ProcessStatusReport and push it (change-gated).
+
+        Runs on every debounce flush — counters change without a worker-status
+        transition — so it sits BEFORE the transition early-return. The snapshot
+        is persisted (restore-on-reload) and pushed live on the shared
+        ``progress_report`` flow_data envelope, both only when it actually
+        changed. Watcher-scoped via ``emit_flow_data`` (only clients watching
+        this process), not the global scan-pill ``broadcast_progress``.
+        """
+        try:
+            transcript = self._load_transcript()
+            if transcript is None:
+                return
+            from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+                FlowDataType as _FDT,
+            )
+            from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+                FlowElementType as _FET,
+            )
+            from flow_sdk.transcript_analyzer.counters import (
+                PROCESS_STATUS_KIND,
+                ProcessStatusReport,
+            )
+
+            report = ProcessStatusReport.from_transcript(
+                transcript,
+                worker_status=(current.value if current is not None else ""),
+                process_status=self.status,
+                focused_asset=self._derive_focused_asset(transcript),
+            )
+            report_dict = report.model_dump()
+            if report_dict == self.status_report:
+                return
+            self.status_report = report_dict
+            try:
+                await self.save()
+            except Exception:
+                logger.debug(
+                    "AgenticProcess %s: status_report save failed", self.id, exc_info=True,
+                )
+            await self.emit_flow_data({
+                "attributes": {
+                    "element-type": _FET.PROGRESS_REPORT,
+                    "data-type": _FDT.OBJECT,
+                    "kind": PROCESS_STATUS_KIND,
+                },
+                "flow_value": report_dict,
+            })
+        except Exception:
+            logger.debug(
+                "AgenticProcess %s: _emit_status_report failed", self.id, exc_info=True,
+            )
 
     async def on_plan_created(self, entry) -> None:
         """T7: Connect a freshly-detected plan to this AgenticProcess.

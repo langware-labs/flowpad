@@ -39,6 +39,12 @@ export function MessageRunStatus({
     session_id: run.session_id,
   };
 
+  // Live agent-progress counters (backend-computed projection; already a
+  // ProcessCounters instance via parseStatusReport). Shown only once there's a
+  // non-empty snapshot so the row doesn't flash "0 tok · 0 msgs".
+  const counters = run.statusReport?.counters ?? null;
+  const countersLabel = counters && counters.totalTokens > 0 ? counters.formatted() : null;
+
   return (
     <button
       type="button"
@@ -50,6 +56,14 @@ export function MessageRunStatus({
       <span>{t`Executed`}</span>
       <span className="opacity-70">·</span>
       <ProcessStatusIndicator process={indicator} showLabel size="sm" />
+      {countersLabel && (
+        <>
+          <span className="opacity-70">·</span>
+          <span className="tabular-nums opacity-80" data-testid="message-run-counters">
+            {countersLabel}
+          </span>
+        </>
+      )}
     </button>
   );
 }

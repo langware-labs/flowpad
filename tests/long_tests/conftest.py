@@ -188,6 +188,7 @@ def allocate_ports(unused_tcp_port_factory):
 _WORKER_PARAMS = [
     pytest.param("claude", id="claude"),
     pytest.param("codex", id="codex"),
+    pytest.param("copilot", id="copilot"),
 ]
 
 
@@ -221,6 +222,7 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
     _DRIVER_TO_ENUM = {
         "claude": WorkerType.CLAUDE_CODE,
         "codex": WorkerType.CODEX,
+        "copilot": WorkerType.COPILOT,
     }
     enum_value = _DRIVER_TO_ENUM[worker_id]
 
