@@ -257,11 +257,13 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
             <DiagnosisActionButtons
               suggestedConversationId={done.conversationId}
               canReport={!!done.diagnosisId}
+              diagnosisId={done.diagnosisId ?? undefined}
               busy={reporting}
               error={reportError}
               onDismiss={handleClose}
               onReportIssue={() => void handleReportIssue()}
               onForward={(conversationId) => void handleForward(conversationId)}
+              onForwardedNew={handleClose}
             />
           )}
 

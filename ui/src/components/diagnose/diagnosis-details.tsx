@@ -191,9 +191,12 @@ export function DiagnosisDetails({
         error={reportError}
         showDismiss={false}
         canReport={!!diagnosisId}
+        diagnosisId={diagnosisId}
+        diagnosisTitle={diag.title || diag.name || undefined}
         onDismiss={() => onActionDone?.()}
         onReportIssue={() => void handleReportIssue()}
         onForward={(targetConversationId) => void handleForward(targetConversationId)}
+        onForwardedNew={() => onActionDone?.()}
       />
     </div>
   );
