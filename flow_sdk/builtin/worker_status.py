@@ -201,6 +201,61 @@ _IGNORED_TYPES: frozenset[str] = frozenset({
 })
 
 
+# Tools whose ``tool_use`` block BLOCKS on a human response. While one is pending
+# (its ``tool_result`` — keyed by ``tool_use_id`` — hasn't landed yet) the worker
+# has handed control back to the user and is idle awaiting them, NOT executing a
+# tool. Surfacing that as PENDING_USER ("Waiting for you", no spinner) instead of
+# TOOL_CALL/TOOL_RUNNING is the whole point of ``_pending_user_input_tool``.
+_USER_INPUT_TOOLS: frozenset[str] = frozenset({
+    "AskUserQuestion",
+    "ExitPlanMode",
+})
+
+
+def _pending_user_input_tool(chunk: str) -> bool:
+    """True when an unresolved user-input ``tool_use`` (``AskUserQuestion`` /
+    ``ExitPlanMode``) sits at the tail — i.e. Claude asked and is blocked on the
+    user's answer.
+
+    Pairs ``tool_use`` blocks to their ``tool_result`` by ``tool_use_id`` (the
+    same id Claude echoes back when the user responds), so it is robust to the
+    streaming split that scatters one logical turn across several ``assistant``
+    lines and to intervening meta/idle markers. Returns True iff at least one
+    user-input tool id has no matching ``tool_result``.
+    """
+    open_ids: set[str] = set()
+    resolved: set[str] = set()
+    for line in chunk.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        t = entry.get("type", "")
+        msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        if t == "assistant":
+            for b in content:
+                if (
+                    isinstance(b, dict)
+                    and b.get("type") == "tool_use"
+                    and b.get("name") in _USER_INPUT_TOOLS
+                    and b.get("id")
+                ):
+                    open_ids.add(b["id"])
+        elif t == "user":
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    tid = b.get("tool_use_id")
+                    if tid:
+                        resolved.add(tid)
+    return bool(open_ids - resolved)
+
+
 def _has_pending_tool_use(chunk: str) -> bool:
     """True when the latest assistant ``tool_use`` has no completion evidence.
 
@@ -459,6 +514,18 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         if not need_wider:
             break
         read_bytes = min(read_bytes * 16, _TAIL_MAX_BYTES)
+
+    # A pending user-input tool (AskUserQuestion / ExitPlanMode) dominates every
+    # other reading of the tail: Claude has yielded to the user and is idle until
+    # they answer. Detect it by ``tool_use_id`` pairing (not last-entry shape) so
+    # trailing ``last-prompt``/``mode``/envelope markers — or the streaming split
+    # of the asking turn — can't mask it as TOOL_CALL/TOOL_RUNNING and spin the
+    # spinner forever. Answered questions pair their ``tool_result`` and fall
+    # through to the normal classification below. The cheap substring gate skips
+    # the extra parse pass on the hot path unless a user-input tool name is
+    # literally present in the tail (it must be, verbatim, for a match).
+    if any(name in chunk for name in _USER_INPUT_TOOLS) and _pending_user_input_tool(chunk):
+        return WorkerStatus.PENDING_USER
 
     # Claude 2.x writes ``last-prompt`` as an idle marker — but in PTY mode it
     # can appear *between* an assistant ``stop_reason=tool_use`` and the actual

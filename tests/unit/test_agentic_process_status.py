@@ -228,6 +228,56 @@ def test_tail_status_tool_call(tmp_path: Path):
     assert _tail_status(f) == WorkerStatus.TOOL_CALL
 
 
+def test_tail_status_pending_user_question_is_pending_user(tmp_path: Path):
+    """An unanswered blocking user-input tool (AskUserQuestion / ExitPlanMode)
+    is PENDING_USER ("Waiting for you"), NOT TOOL_CALL — Claude has yielded to
+    the user and is idle awaiting their answer, so the spinner must not spin.
+    """
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
+            {"type": "tool_use", "id": "toolu_ask1", "name": "AskUserQuestion", "input": {}},
+        ]}},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.PENDING_USER
+
+
+def test_tail_status_pending_user_question_survives_trailing_meta(tmp_path: Path):
+    """Trailing ``last-prompt``/``mode``/``permission-mode`` markers after the
+    asking turn must not mask the pending question (the real regressed case)."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
+            {"type": "tool_use", "id": "toolu_ask2", "name": "AskUserQuestion", "input": {}},
+        ]}},
+        {"type": "last-prompt"},
+        {"type": "mode"},
+        {"type": "permission-mode"},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.PENDING_USER
+
+
+def test_tail_status_answered_user_question_falls_through(tmp_path: Path):
+    """Once the user answers, the ``tool_result`` (paired by ``tool_use_id``)
+    resolves the question and the tail classifies normally (here → COMPLETE)."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
+            {"type": "tool_use", "id": "toolu_ask3", "name": "AskUserQuestion", "input": {}},
+        ]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_ask3", "content": "ok"},
+        ]}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
 def test_tail_status_tool_running(tmp_path: Path):
     """Active file + last entry type=progress → TOOL_RUNNING."""
     f = tmp_path / "session.jsonl"
