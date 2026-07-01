@@ -323,6 +323,25 @@ marker.
 
 ## Known Pitfalls
 
+### Locale `.po` files show up as modified after every build (`lingui extract`)
+
+`build_ui.py` runs `npm run build`, whose script is
+`lingui extract && lingui compile && vite build`. **`lingui extract` rewrites
+`ui/src/locales/{en-US,ar,he}/messages.po` in place** every build — so any deploy
+or local rehearsal that builds the UI leaves those three catalogs dirty in the
+working tree. This is generated output, not an edit you made.
+
+`ui/lingui.config.ts` sets `formatOptions: { lineNumbers: false }` so the volatile
+`:<line>` suffix is dropped from the `#: file.tsx` source references — otherwise
+every edit that shifts line numbers would rewrite hundreds of location comments
+(a 1000+ line diff with no real string changes). With that in place, a build only
+touches the catalogs when strings are genuinely added/removed/relocated.
+
+So after a build: if `git diff ui/src/locales/` shows only real string changes,
+commit them; if it's empty or you didn't intend to change any strings,
+`git checkout ui/src/locales/` to discard the regenerated copy. Do **not** carry
+this churn into a release commit or mistake it for hand edits.
+
 ### `flow start` silently no-ops when another instance backend is alive
 
 `flow start` runs a singleton check and **exits without binding 9007** if it
