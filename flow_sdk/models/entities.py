@@ -101,6 +101,16 @@ except ImportError as e:
     print(f"[WARN] Failed to import CollaborationRoom: {e}")
 
 try:
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import RemoteWorkerSession: {e}")
+
+try:
+    from flow_sdk.builtin.prompt_result import PromptResult  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import PromptResult: {e}")
+
+try:
     from flow_sdk.builtin.cron_event import CronEvent  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import CronEvent: {e}")

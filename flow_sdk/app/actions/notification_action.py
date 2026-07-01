@@ -821,7 +821,14 @@ async def handle_add_message(
         _atts = list(reply_fm.attachment or [])
         for _a in raw_attachments:
             if isinstance(_a, dict) and _a.get("attachment_type") and _a.get("data") is not None:
-                _atts.append(Attachment(attachment_type=_a["attachment_type"], data=_a["data"]))
+                # Preserve the preview/proposer fields so entity-backed attachments
+                # (prompt / prompt_result) stay previewable before the body downloads.
+                _atts.append(Attachment(
+                    attachment_type=_a["attachment_type"],
+                    data=_a["data"],
+                    prompt_preview=_a.get("prompt_preview"),
+                    proposer_id=_a.get("proposer_id"),
+                ))
         reply_fm.attachment = _atts
 
     if uploaded_files:
