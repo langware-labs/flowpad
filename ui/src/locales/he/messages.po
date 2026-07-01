@@ -30,7 +30,7 @@ msgstr "— לפני"
 msgid "— current"
 msgstr "— נוכחי"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:489
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:491
 msgid "— open, peek, or get highlighted here"
 msgstr "— פתח, הציץ, או קבל הדגשה כאן"
 
@@ -560,7 +560,7 @@ msgstr "סוג פעולה"
 msgid "Action:"
 msgstr "פעולה:"
 
-#: src/components/account/system-diagnoses.tsx:265
+#: src/components/account/system-diagnoses.tsx:295
 #: src/components/api-keys-view/api-keys-view.tsx:266
 #: src/components/connections-manager.tsx:192
 #: src/components/hooks-view/HooksTable.tsx:74
@@ -641,7 +641,7 @@ msgstr "הוסף הערה לסדרה הפעילה על הודעה זו"
 msgid "Add a personal note..."
 msgstr "הוסף הערה אישית..."
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:336
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:349
 msgid "Add a personal note…"
 msgstr "הוסף הערה אישית…"
 
@@ -1223,7 +1223,7 @@ msgstr "צרף נכס"
 msgid "Attach files"
 msgstr "צרף קבצים"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:354
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:368
 msgid "Attach session transcript"
 msgstr "צרף תמליל ההפעלה"
 
@@ -1494,6 +1494,10 @@ msgstr "קריאות"
 msgid "Calls"
 msgstr "קריאות"
 
+#: src/components/diagnose/open-in-terminal-button.tsx:90
+msgid "Can't open terminal"
+msgstr ""
+
 #: src/components/account/secrets-section.tsx:228
 #: src/components/artifacts/artifact-form.tsx:233
 #: src/components/assets/delete-asset-modal.tsx:109
@@ -1529,7 +1533,7 @@ msgstr "קריאות"
 #: src/components/project-sidebar/ProjectSidebar.tsx:190
 #: src/components/prompt-library/PromptEditDialog.tsx:122
 #: src/components/quick-create/QuickCreateDialog.tsx:257
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:424
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:438
 #: src/components/simple-file-manager/SimpleFileManager.tsx:1032
 #: src/components/simple-file-manager/SimpleFileManager.tsx:1069
 #: src/components/simple-file-manager/SimpleFileManager.tsx:1096
@@ -1951,7 +1955,7 @@ msgstr "משבוט…"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx:168
 #: src/components/login-required-dialog.tsx:102
 #: src/components/search-index/SweepOrphansDialog.tsx:211
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:260
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:270
 #: src/components/tabs/TabStrip.tsx:505
 #: src/components/task-receive/IncomingTaskDialog.tsx:321
 #: src/components/task-receive/IncomingTaskDialog.tsx:347
@@ -1959,7 +1963,7 @@ msgstr "משבוט…"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx:213
 #: src/components/terminal/interactive-terminal/PaneBar.tsx:23
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx:153
-#: src/components/version-popover/diagnose-modal.tsx:290
+#: src/components/version-popover/diagnose-modal.tsx:292
 #: src/components/version-popover/diagnosis-report-modal.tsx:83
 #: src/components/workflow-runner/detail/StepDetailPane.tsx:92
 msgid "Close"
@@ -2343,7 +2347,7 @@ msgstr "שיחה נמחקה"
 msgid "Conversation project set"
 msgstr "הגדר פרויקט השיחה"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:323
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:334
 msgid "Conversation title"
 msgstr "כותרת שיחה"
 
@@ -2394,8 +2398,8 @@ msgstr "העתק ${label}"
 msgid "Copy a link or download this {entityType} as a portable bundle."
 msgstr "העתק קישור או הורד את {entityType} כחבילה ניידת."
 
-#: src/components/account/system-diagnoses.tsx:170
-#: src/components/account/system-diagnoses.tsx:171
+#: src/components/account/system-diagnoses.tsx:200
+#: src/components/account/system-diagnoses.tsx:201
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx:533
 msgid "Copy all"
 msgstr "העתק הכל"
@@ -2517,7 +2521,7 @@ msgstr "לא ניתן להפעיל סודות"
 msgid "Could not end room"
 msgstr "לא הצלחנו להסתיים את החדר"
 
-#: src/components/account/system-diagnoses.tsx:137
+#: src/components/account/system-diagnoses.tsx:159
 msgid "Could not forward diagnosis"
 msgstr "לא היה ניתן להעביר את הדיאגנוזה"
 
@@ -2537,7 +2541,7 @@ msgstr "לא הצליח לפתוח כישור"
 msgid "Could not rename context"
 msgstr "לא ניתן היה לשנות את שם ההקשר"
 
-#: src/components/account/system-diagnoses.tsx:122
+#: src/components/account/system-diagnoses.tsx:144
 msgid "Could not report diagnosis"
 msgstr "לא היה ניתן לדווח על הדיאגנוזה"
 
@@ -2887,8 +2891,8 @@ msgid "Define the conditions that must match for this trigger to fire"
 msgstr "הגדר את התנאים שחייבים להתאים כדי שטריגר זה יופעל"
 
 #: src/components/account/secrets-section.tsx:242
-#: src/components/account/system-diagnoses.tsx:181
-#: src/components/account/system-diagnoses.tsx:314
+#: src/components/account/system-diagnoses.tsx:211
+#: src/components/account/system-diagnoses.tsx:344
 #: src/components/anchored-markdown/CommentPin.tsx:78
 #: src/components/assets/delete-asset-modal.tsx:120
 #: src/components/assets/editor/AssetEditorHeader.tsx:100
@@ -3000,8 +3004,8 @@ msgstr "מחק הקשר"
 msgid "Delete context?"
 msgstr "מחק הקשר?"
 
-#: src/components/account/system-diagnoses.tsx:180
-#: src/components/account/system-diagnoses.tsx:312
+#: src/components/account/system-diagnoses.tsx:210
+#: src/components/account/system-diagnoses.tsx:342
 msgid "Delete diagnosis"
 msgstr "מחק דיאגנוזה"
 
@@ -3069,7 +3073,7 @@ msgstr "למחוק שיחה זו?"
 msgid "Delete this conversation"
 msgstr "מחק שיחה זו"
 
-#: src/components/account/system-diagnoses.tsx:313
+#: src/components/account/system-diagnoses.tsx:343
 msgid "Delete this diagnosis? This cannot be undone."
 msgstr "מחק אבחנה זו? לא ניתן לבטל זאת."
 
@@ -3212,12 +3216,12 @@ msgstr "אבחן את השגיאה הזו"
 msgid "Diagnosis"
 msgstr "אבחון"
 
-#: src/components/account/system-diagnoses.tsx:147
+#: src/components/account/system-diagnoses.tsx:169
 #: src/components/diagnose/diagnosis-details.tsx:93
 msgid "Diagnosis copied to clipboard"
 msgstr "דיאגנוזה הועתקה ללוח"
 
-#: src/components/account/system-diagnoses.tsx:133
+#: src/components/account/system-diagnoses.tsx:155
 msgid "Diagnosis forwarded"
 msgstr "דיאגנוזה הועברה בהצלחה"
 
@@ -3229,7 +3233,7 @@ msgstr "לא נמצאה אבחנה."
 msgid "Diagnosis recorded."
 msgstr "אבחון נשמר."
 
-#: src/components/account/system-diagnoses.tsx:119
+#: src/components/account/system-diagnoses.tsx:141
 msgid "Diagnosis reported to the Flowpad team"
 msgstr "דיאגנוזה דווחה לצוות Flowpad"
 
@@ -3333,8 +3337,8 @@ msgstr "מגלה {typeLabel}…"
 msgid "Discovering…"
 msgstr "גילוי..."
 
-#: src/components/diagnose/diagnosis-action-buttons.tsx:69
-#: src/components/diagnose/diagnosis-action-buttons.tsx:70
+#: src/components/diagnose/diagnosis-action-buttons.tsx:88
+#: src/components/diagnose/diagnosis-action-buttons.tsx:89
 #: src/components/simple-file-manager/SimpleFileManager.tsx:872
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx:269
 #: src/components/workflow-runner/header/AttentionBanner.tsx:114
@@ -4240,6 +4244,10 @@ msgstr "כישלון בפתיחת תיקייה"
 msgid "Failed to open folder picker"
 msgstr "נכשל בפתיחת בוחר התיקייה"
 
+#: src/components/diagnose/open-in-terminal-button.tsx:108
+msgid "Failed to open in terminal"
+msgstr ""
+
 #: src/components/account/system-log.tsx:101
 msgid "Failed to open log file"
 msgstr "נכשל בפתיחת קובץ הרישום"
@@ -4705,8 +4713,8 @@ msgstr "יצור ענף של סדרה — כרטיסייה חדשה, אותו ה
 msgid "Forking…"
 msgstr "יצירת ענף בתהליך..."
 
-#: src/components/account/system-diagnoses.tsx:165
-#: src/components/diagnose/diagnosis-action-buttons.tsx:98
+#: src/components/account/system-diagnoses.tsx:189
+#: src/components/diagnose/diagnosis-action-buttons.tsx:117
 msgid "Forward"
 msgstr "העבר"
 
@@ -5532,7 +5540,7 @@ msgstr "הפעלות"
 msgid "Issue"
 msgstr "בעיה"
 
-#: src/components/account/system-diagnoses.tsx:249
+#: src/components/account/system-diagnoses.tsx:279
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "אבחנות בעיות שנרשמו על ידי העוזר. לחץ על שורה כדי לצפות באבחנה המלאה."
 
@@ -5655,7 +5663,7 @@ msgid "last {0}"
 msgstr "הפעלה אחרונה {0}"
 
 #. placeholder {0}: report.period_kind
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:534
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:536
 msgid "Last {0}"
 msgstr "{0} אחרון"
 
@@ -6075,7 +6083,7 @@ msgid "Loading..."
 msgstr "טוען..."
 
 #: src/components/account/secrets-section.tsx:126
-#: src/components/account/system-diagnoses.tsx:254
+#: src/components/account/system-diagnoses.tsx:284
 #: src/components/asset-manager/AssetPickerPopover.tsx:239
 #: src/components/assets/AssetListView.tsx:81
 #: src/components/assets/MarkdownIndexPanel.tsx:112
@@ -6874,8 +6882,7 @@ msgstr "אין שיחות"
 msgid "No conversations yet"
 msgstr "אין שיחות עדיין"
 
-#: src/components/account/system-diagnoses.tsx:88
-#: src/components/diagnose/diagnosis-action-buttons.tsx:110
+#: src/components/diagnose/diagnosis-action-buttons.tsx:130
 msgid "No conversations yet."
 msgstr "אין שיחות עדיין."
 
@@ -6903,7 +6910,7 @@ msgstr "לא נמצא סוכן ברירת מחדל, מזהה סוג הסוכן �
 msgid "No description provided."
 msgstr "אין תיאור."
 
-#: src/components/account/system-diagnoses.tsx:256
+#: src/components/account/system-diagnoses.tsx:286
 msgid "No diagnoses recorded."
 msgstr "לא נרשמו אבחנות."
 
@@ -7570,7 +7577,7 @@ msgstr "לא מוערך"
 msgid "Not runnable here"
 msgstr "לא ניתן להפעיל כאן"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:331
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:344
 msgid "Note (optional)"
 msgstr "הערה (אופציונלי)"
 
@@ -7688,7 +7695,7 @@ msgstr "פתוח"
 #: src/components/simple-file-manager/SimpleFileManager.tsx:957
 #: src/components/tasks-viewer/TasksViewer.tsx:183
 #: src/components/workers/WorkerToolbar.tsx:92
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:431
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:433
 msgid "Open"
 msgstr "פתח"
 
@@ -7867,6 +7874,11 @@ msgstr "פתח בכרטיסית מיומנויות"
 msgid "Open in system file explorer"
 msgstr "פתח במנהל הקבצים של המערכת"
 
+#: src/components/diagnose/open-in-terminal-button.tsx:141
+#: src/components/diagnose/open-in-terminal-button.tsx:171
+msgid "Open in terminal"
+msgstr ""
+
 #: src/components/conversation/ConversationContextPanel.tsx:592
 msgid "Open in the transcript viewer"
 msgstr "פתח בתצוגת התמלול"
@@ -7900,7 +7912,7 @@ msgstr "פתח קובץ רישום"
 msgid "Open Logs Folder"
 msgstr "פתח תיקיית יומנים"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:272
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:282
 msgid "Open message"
 msgstr "פתח הודעה"
 
@@ -7960,6 +7972,7 @@ msgstr "פתח הפעלה"
 msgid "Open Shared Terminal"
 msgstr "פתח טרמינל משותף"
 
+#: src/components/diagnose/open-in-terminal-button.tsx:141
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx:397
 msgid "Open terminal"
 msgstr "פתח טרמינל"
@@ -8269,7 +8282,7 @@ msgstr "הערה אישית, פריט שניתן לביצוע"
 msgid "Pick a contact or enter an email"
 msgstr "בחרו איש קשר או הזינו כתובת אימייל"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:367
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:381
 msgid "Pick a contact to see your conversations with them."
 msgstr "בחר איש קשר כדי לראות את השיחות שלך איתו."
 
@@ -8889,7 +8902,7 @@ msgstr "גורם העדכניות (k)"
 msgid "Recent"
 msgstr "אחרוני"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:363
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:377
 msgid "Recent conversations"
 msgstr "שיחות אחרונות"
 
@@ -8915,7 +8928,7 @@ msgstr "התחבר מחדש לענן כדי למחוק את השיחה הזו."
 msgid "Reconnected"
 msgstr "התחברת מחדש"
 
-#: src/components/account/system-diagnoses.tsx:263
+#: src/components/account/system-diagnoses.tsx:293
 msgid "Recorded"
 msgstr "נרשם"
 
@@ -9172,13 +9185,13 @@ msgstr "מאגר:"
 msgid "Report"
 msgstr "דוח"
 
-#: src/components/account/system-diagnoses.tsx:123
+#: src/components/account/system-diagnoses.tsx:145
 msgid "Report failed."
 msgstr "הדוח נכשל."
 
-#: src/components/account/system-diagnoses.tsx:159
-#: src/components/account/system-diagnoses.tsx:160
-#: src/components/diagnose/diagnosis-action-buttons.tsx:85
+#: src/components/account/system-diagnoses.tsx:181
+#: src/components/account/system-diagnoses.tsx:182
+#: src/components/diagnose/diagnosis-action-buttons.tsx:104
 msgid "Report issue"
 msgstr "דווח בעיה"
 
@@ -10114,7 +10127,7 @@ msgstr "סיכום עצמי"
 #: src/components/conversation/MessageComposer.tsx:460
 #: src/components/conversation/PromptComposerDialog.tsx:86
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx:155
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:421
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:423
 msgid "Send"
 msgstr "שלח"
 
@@ -10138,7 +10151,7 @@ msgstr "שלח הנחיה לנמען לסיכום מצב המשימה"
 msgid "Send a simple prompt to verify the LM proxy is working"
 msgstr "שלח הנמקה פשוטה כדי לאמת שה-LM Proxy פועל"
 
-#: src/components/account/system-diagnoses.tsx:138
+#: src/components/account/system-diagnoses.tsx:160
 msgid "Send failed."
 msgstr "השליחה נכשלה."
 
@@ -10300,8 +10313,8 @@ msgstr "הגדר גישת API מוגבלת למכונה לצומת חישוב ז
 
 #: src/components/entity-actions/ShareButton.tsx:47
 #: src/components/entity-actions/ShareButton.tsx:50
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:248
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:433
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:258
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:447
 #: src/components/spec-editor/SpecEditor.tsx:314
 #: src/components/spec-editor/SpecEditor.tsx:479
 msgid "Share"
@@ -10343,7 +10356,7 @@ msgid "Share to conversation"
 msgstr "שתף לשיחה"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx:333
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:257
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:267
 msgid "Shared"
 msgstr "משותף"
 
@@ -10356,7 +10369,7 @@ msgstr "שיתוף תמלול הפעילות - ראה את כרטיסיית הה
 msgid "Shared Context"
 msgstr "הקשר משותף"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:433
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:447
 msgid "Sharing…"
 msgstr "שוגר…"
 
@@ -10537,11 +10550,11 @@ msgstr "כישור"
 msgid "Skill"
 msgstr "כישורון"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:513
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:515
 msgid "Skill analysis"
 msgstr "ניתוח כישורים"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:515
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:517
 msgid "Skill analysis ready for review and improvements"
 msgstr "ניתוח כישורים מוכן לביקורת ושיפורים"
 
@@ -10769,7 +10782,12 @@ msgstr "התחל Copilot"
 msgid "Start date"
 msgstr "תאריך התחלה"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:412
+#: src/components/account/system-diagnoses.tsx:107
+#: src/components/diagnose/diagnosis-action-buttons.tsx:165
+msgid "Start new conversation"
+msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:426
 msgid "Start new conversation · {effectiveTitle}"
 msgstr "התחל שיחה חדשה · {effectiveTitle}"
 
@@ -10906,7 +10924,7 @@ msgstr "הצע prompt למשתמש השני לאישור"
 msgid "Suggest prompt"
 msgstr "הצע prompt"
 
-#: src/components/account/system-diagnoses.tsx:264
+#: src/components/account/system-diagnoses.tsx:294
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx:122
 #: src/pages/live-status/LiveStatus.tsx:204
 msgid "Summary"
@@ -10998,8 +11016,8 @@ msgstr "הסנתז אירוע"
 msgid "system"
 msgstr "מערכת"
 
-#: src/components/account/system-diagnoses.tsx:241
-#: src/components/account/system-diagnoses.tsx:247
+#: src/components/account/system-diagnoses.tsx:271
+#: src/components/account/system-diagnoses.tsx:277
 msgid "System Diagnoses"
 msgstr "אבחנות מערכת"
 
@@ -11191,6 +11209,10 @@ msgstr "לא ניתן היה למצוא את הסוכן המבוקש."
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
 msgstr "לישות שנבחרה אין שם עדיין. בחר אחד — הוא יישמר בישות ויהיה בשימוש כטקסט הקישור."
 
+#: src/components/diagnose/open-in-terminal-button.tsx:91
+msgid "The selected project has no folder on this machine."
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx:112
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
 msgstr "לסשן יש פעילות חדשה מאז הניתוח האחרון — הרץ ניתוח חדש (הניתוחים הקודמים נשמרים)"
@@ -11356,9 +11378,9 @@ msgstr "עצה: חבר GitHub כדי לשבוט מאגרים פרטיים."
 msgid "Tip: Press Ctrl+Enter to save"
 msgstr "טיפ: לחץ על Ctrl+Enter כדי לשמור"
 
-#: src/components/account/system-diagnoses.tsx:262
+#: src/components/account/system-diagnoses.tsx:292
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx:154
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:318
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:329
 #: src/components/task-bar/SharedTaskView.tsx:128
 #: src/components/tasks-viewer/TasksViewer.tsx:160
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx:177
@@ -11366,7 +11388,7 @@ msgstr "טיפ: לחץ על Ctrl+Enter כדי לשמור"
 msgid "Title"
 msgstr "כותרת"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:294
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:304
 msgid "To"
 msgstr "אל"
 
@@ -11638,7 +11660,7 @@ msgstr "לא ניתן לאחזר ענפים. אנא בדקו את הרשאות �
 msgid "Unavailable"
 msgstr "לא זמין"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:565
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:567
 msgid "Unavailable feed item"
 msgstr "פריט הזנה לא זמין"
 
@@ -11919,7 +11941,7 @@ msgstr "Version-bump + commit את הנכס"
 msgid "Version:"
 msgstr "גרסה:"
 
-#: src/components/account/system-diagnoses.tsx:152
+#: src/components/account/system-diagnoses.tsx:174
 #: src/components/conversation/ConversationContextPanel.tsx:507
 #: src/components/conversation/ConversationContextPanel.tsx:595
 #: src/components/conversation/ConversationContextPanel.tsx:1065
@@ -11946,8 +11968,8 @@ msgstr "צפה בהגדרות Claude Code בין ההיקפים של משתמש,
 msgid "View Context Details"
 msgstr "צפה בפרטי ההקשר"
 
-#: src/components/account/system-diagnoses.tsx:152
-#: src/components/version-popover/diagnose-modal.tsx:282
+#: src/components/account/system-diagnoses.tsx:174
+#: src/components/version-popover/diagnose-modal.tsx:284
 msgid "View diagnosis"
 msgstr "צפה בדיאגנוזה"
 
@@ -12084,7 +12106,7 @@ msgstr "סימנייה ברוכה הבאה וערך עדכוני ראשון, ז�
 msgid "What can flowpad do for you ?"
 msgstr "מה יכול Flowpad לעשות בשבילך?"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:323
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:334
 msgid "What do you need help with?"
 msgstr "עם מה אתה צריך עזרה?"
 
@@ -12202,7 +12224,7 @@ msgstr "זיכרון xterm: <0>{0}</0> נתחים ({1})"
 msgid "yanked"
 msgstr "הסור"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:534
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:536
 msgid "Yesterday"
 msgstr "אתמול"
 
