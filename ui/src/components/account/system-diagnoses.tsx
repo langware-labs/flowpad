@@ -26,6 +26,7 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { diagnosisToText } from '@src/components/diagnose/diagnosis-details';
 import { ForwardDiagnosisShareDialog } from '@src/components/diagnose/forward-diagnosis-share-dialog';
+import { OpenInTerminalButton } from '@src/components/diagnose/open-in-terminal-button';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -191,6 +192,7 @@ function DiagnosisRowActions({
         diagnosisTitle={diag.title || diag.name || undefined}
         onForwardedNew={onForwarded}
       />
+      <OpenInTerminalButton diagnosisId={diag.id} asIcon />
       <Button
         size="sm"
         variant="ghost"
