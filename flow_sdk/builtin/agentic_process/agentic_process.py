@@ -35,6 +35,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     WorkerDriver,
     get_driver,
 )
+from flow_sdk.builtin.agentic_process.heartbeat_tasks import _PENDING_USER_TTL_SECONDS
 from flow_sdk.builtin.agentic_process.status_predicates import WorkerMode, is_process_startable, is_ready_for_input
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.builtin.worker_status import WorkerStatus
@@ -3843,12 +3844,36 @@ class AgenticProcess(Entity):
             return WorkerStatus.INACTIVE
 
         # Project terminal underlying status to PENDING_USER (recent) or
-        # INACTIVE (aged > 5min) based on ``terminal_at``, backend-side, so every
-        # consumer (serializer, get_status, is_ready_for_input) sees the same
-        # projected value.
-        if derived in _PROJECTABLE_TERMINAL and self.terminal_at is not None:
-            age = (datetime.now(timezone.utc) - self.terminal_at).total_seconds()
-            return WorkerStatus.PENDING_USER if age < 300 else WorkerStatus.INACTIVE
+        # INACTIVE (aged > 5min), backend-side, so every consumer (serializer,
+        # get_status, is_ready_for_input) sees the same projected value.
+        #
+        # ``terminal_at`` is the authoritative terminal instant, but it is only
+        # stamped reactively inside ``_flush_transcript_change`` when a flush
+        # happens to observe a CLEAN_TERMINAL status. If the final transcript
+        # write (the turn's ``end_turn``) races the flush debounce — or no
+        # transcript watcher ever fired for this session (e.g. a PTY worker whose
+        # file-watch never attached) — no flush observes COMPLETE, so
+        # ``terminal_at`` stays ``None`` forever and the process is pinned on the
+        # raw terminal status (COMPLETE / stale→INACTIVE) and never surfaces the
+        # user-facing PENDING_USER ("Idle") window. Fall back to the transcript's
+        # last-write time as the terminal instant so the projection is
+        # self-sufficient and doesn't depend on the reactive stamp having run.
+        if derived in _PROJECTABLE_TERMINAL:
+            # ``path`` is guaranteed non-None here: the only branch that leaves it
+            # None (above) assigns a non-terminal ``derived``, so we never reach
+            # this projection with a missing transcript path.
+            terminal_ref = self.terminal_at
+            if terminal_ref is None:
+                try:
+                    terminal_ref = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                except OSError:
+                    pass
+            if terminal_ref is not None:
+                age = (datetime.now(timezone.utc) - terminal_ref).total_seconds()
+                return (
+                    WorkerStatus.PENDING_USER if age < _PENDING_USER_TTL_SECONDS
+                    else WorkerStatus.INACTIVE
+                )
         return derived
 
     @action.all(action_name="status")

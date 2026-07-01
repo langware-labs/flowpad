@@ -52,14 +52,46 @@ def test_projection_aged_terminal_becomes_inactive(monkeypatch) -> None:
     assert ap._discover_status_from_transcript() == WorkerStatus.INACTIVE
 
 
-def test_projection_skipped_when_terminal_at_unset(monkeypatch) -> None:
-    """If terminal_at is None we keep the raw underlying status — the
-    projection layer is opt-in via the field being set."""
+def test_projection_falls_back_to_mtime_when_terminal_at_unset(monkeypatch, tmp_path) -> None:
+    """``terminal_at`` is stamped only reactively by ``_flush_transcript_change``;
+    if the final transcript write raced the flush debounce (or no watcher ever
+    fired) it stays None. The projection must not depend on that stamp having
+    run — it falls back to the transcript's last-write time as the terminal
+    instant so a freshly-finished, parked session still surfaces PENDING_USER
+    ("Idle") instead of a raw COMPLETE that never enters the grace window."""
+    import os
+    import time
+
+    ap = _make_ap()
+    assert ap.terminal_at is None
+
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text("{}\n")
+
+    # Recent write (1 min ago) → PENDING_USER ("Idle").
+    recent = time.time() - 60
+    os.utime(transcript, (recent, recent))
+    monkeypatch.setattr(
+        type(ap), "driver",
+        property(lambda self: _StubDriver(WorkerStatus.COMPLETE, transcript)),
+        raising=False,
+    )
+    assert ap._discover_status_from_transcript() == WorkerStatus.PENDING_USER
+
+    # Aged write (> 5 min ago) → INACTIVE.
+    aged = time.time() - 400
+    os.utime(transcript, (aged, aged))
+    assert ap._discover_status_from_transcript() == WorkerStatus.INACTIVE
+
+
+def test_projection_keeps_raw_when_terminal_at_unset_and_no_transcript(monkeypatch) -> None:
+    """No stamp and no readable transcript → nothing to age against, so keep
+    the raw underlying status rather than inventing a terminal instant."""
     ap = _make_ap()
     assert ap.terminal_at is None
     monkeypatch.setattr(
         type(ap), "driver",
-        property(lambda self: _StubDriver(WorkerStatus.COMPLETE)),
+        property(lambda self: _StubDriver(WorkerStatus.COMPLETE, Path("/nonexistent/_missing.jsonl"))),
         raising=False,
     )
     assert ap._discover_status_from_transcript() == WorkerStatus.COMPLETE
@@ -84,13 +116,15 @@ class _StubDriver:
     transcript_path so the AP's _discover_status_from_transcript reaches
     the projection branch."""
 
-    def __init__(self, status: WorkerStatus) -> None:
+    def __init__(self, status: WorkerStatus, path: Path | None = None) -> None:
         self.next_status = status
+        self._path = path if path is not None else Path("/tmp/_pending_user_projection_test.jsonl")
 
     def tail_status(self, _path: Path) -> WorkerStatus:
         return self.next_status
 
     def transcript_path(self, _ap: AgenticProcess) -> Path:
-        # Any path the AP's stat() will see — projection ignores the value
-        # because we override tail_status.
-        return Path("/tmp/_pending_user_projection_test.jsonl")
+        # The projection ignores tail_status' input, but the terminal_at
+        # mtime-fallback stats this path — so tests that exercise the fallback
+        # point it at a real file with a controlled mtime.
+        return self._path
