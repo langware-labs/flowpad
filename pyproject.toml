@@ -75,6 +75,7 @@ dev = [
     "pytest-env>=1.2.0",
     "pytest-rerunfailures>=16.0",
     "memray>=1.19.2; sys_platform != 'win32'",
+    "pre-commit>=4.0.0",
 ]
 
 [tool.setuptools.dynamic]
