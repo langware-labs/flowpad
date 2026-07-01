@@ -25,13 +25,14 @@ import {
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { diagnosisToText } from '@src/components/diagnose/diagnosis-details';
+import { ForwardDiagnosisShareDialog } from '@src/components/diagnose/forward-diagnosis-share-dialog';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { Copy, Eye, Flag, Forward, Stethoscope, Trash2 } from 'lucide-react';
+import { Copy, Eye, Flag, Forward, MessageSquarePlus, Stethoscope, Trash2 } from 'lucide-react';
 import {
   systemTools,
   copyToClipboard,
@@ -57,44 +58,64 @@ function ConvPickerButton({
   icon: Icon,
   label,
   onPick,
+  diagnosisId,
+  diagnosisTitle,
+  onForwardedNew,
   disabled,
 }: {
   icon: ComponentType<{ className?: string }>;
   label: string;
   onPick: (conversationId: string) => void;
+  /** Diagnosis being forwarded — enables the "Start new conversation" item. */
+  diagnosisId: string;
+  diagnosisTitle?: string;
+  /** Called after a successful forward into a *new* conversation. */
+  onForwardedNew: (conversationId: string) => void;
   disabled?: boolean;
 }) {
-  const { t } = useLingui();
   const [open, setOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const conversations = useRecentConversations(open);
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 w-7 p-0"
-          aria-label={label}
-          title={label}
-          disabled={disabled}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Icon className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-        {conversations.length === 0 ? (
-          <DropdownMenuItem disabled><Trans>No conversations yet.</Trans></DropdownMenuItem>
-        ) : (
-          conversations.map((conv) => (
+    <>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            aria-label={label}
+            title={label}
+            disabled={disabled}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Icon className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+          {conversations.map((conv) => (
             <DropdownMenuItem key={conv.id} onSelect={() => onPick(conv.id)}>
               <span className="truncate">{deriveConversationTitle(conv)}</span>
             </DropdownMenuItem>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          ))}
+          {/* Forward into a brand-new conversation (opens the share dialog with
+              a recipient picker), not only an existing one. */}
+          <DropdownMenuItem onSelect={() => setShareOpen(true)}>
+            <MessageSquarePlus className="mr-2 h-3.5 w-3.5 text-primary" />
+            <span className="truncate"><Trans>Start new conversation</Trans></span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <ForwardDiagnosisShareDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        diagnosisId={diagnosisId}
+        diagnosisTitle={diagnosisTitle}
+        onForwarded={onForwardedNew}
+      />
+    </>
   );
 }
 
@@ -162,7 +183,14 @@ function DiagnosisRowActions({
       >
         <Flag className="h-4 w-4" />
       </Button>
-      <ConvPickerButton icon={Forward} label={t`Forward`} onPick={(id) => void handleForward(id)} />
+      <ConvPickerButton
+        icon={Forward}
+        label={t`Forward`}
+        onPick={(id) => void handleForward(id)}
+        diagnosisId={diag.id}
+        diagnosisTitle={diag.title || diag.name || undefined}
+        onForwardedNew={onForwarded}
+      />
       <Button
         size="sm"
         variant="ghost"
