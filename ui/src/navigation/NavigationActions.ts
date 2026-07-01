@@ -344,7 +344,7 @@ export class NavigationActions {
 
   openProject(
     projectId?: string,
-    sub?: { roomId?: string | null; tab?: import('@sdk').TypeId | null },
+    sub?: { roomId?: string | null; tab?: import('@sdk').TypeId | null; sessionId?: string | null },
   ): void {
     this.openDock(DockPointer.forProject(projectId, sub));
   }

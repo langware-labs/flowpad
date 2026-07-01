@@ -16,9 +16,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import logging
+
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.core import Entity
+from flow_sdk.core import Entity, action
+from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
+
+logger = logging.getLogger(__name__)
 
 
 class RemoteWorkerSessionStatus(StrEnum):
@@ -41,6 +46,9 @@ class RemoteWorkerSession(Entity):
     conversation_id: Optional[str] = APIField(
         default=None, description="Conversation whose messages carry the Prompt/PromptResult exchange."
     )
+    collaboration_room_id: Optional[str] = APIField(
+        default=None, description="CollaborationRoom this session lives inside."
+    )
 
     # Host/guest asymmetry. Roles are authoritative here; the room roster still
     # governs who may open the session (like Conversation).
@@ -50,6 +58,12 @@ class RemoteWorkerSession(Entity):
     guest_user_id: Optional[str] = APIField(
         default=None, description="User who requests runs (the caller)."
     )
+    # Denormalized display names (mirrors CollaborationRoom.host_name): host_user_id
+    # is a LOCAL user id while guest_user_id is the sender's HUB id — different id
+    # spaces — so stamping the names at write time lets any viewer render them
+    # without reconstructing from two rosters.
+    host_name: Optional[str] = APIField(default=None, description="Display name of the host.")
+    guest_name: Optional[str] = APIField(default=None, description="Display name of the guest.")
 
     # Host-only (null on the guest's mirror).
     host_process_id: Optional[str] = APIField(
@@ -78,3 +92,22 @@ class RemoteWorkerSession(Entity):
         self.last_activity_at = _now_iso()
         if status is not None:
             self.status = status
+
+    @action.post(action_name="disconnect")
+    async def _http_disconnect(self) -> ApiResponse:
+        """End this shared session — the host cutting off remote access to their
+        machine. Marks the session ENDED and best-effort stops the host worker so
+        no further guest prompts run. Idempotent."""
+        self.mark_activity(RemoteWorkerSessionStatus.ENDED)
+        await self.save()
+        # Best-effort: stop the host-side worker so queued/future remote prompts
+        # can't keep running on the host's machine after disconnect.
+        if self.host_process_id:
+            try:
+                from flow_sdk.builtin.agentic_process import AgenticProcess
+                ap = await AgenticProcess.get_one({"id": self.host_process_id})
+                if ap is not None and getattr(ap, "shell_id", None):
+                    await ap.exit()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[remote_worker_session] disconnect: host worker stop failed: %s", e)
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))

@@ -28,6 +28,7 @@ import { SearchView } from '@src/pages/search-view/SearchView';
 import { ConnectionStatus, dataContext, navigator, type OAuthConnection } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
+import { CollaborationPage } from '@src/components/collaboration';
 import { ConnectionsManager } from '@src/components/connections-manager';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
@@ -353,8 +354,14 @@ export function ContentPanel() {
           <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No process ID specified</Trans></div>
         );
       case ViewType.ASSETS:
-      case ViewType.PROJECT:
         return <AssetsPage />;
+      case ViewType.PROJECT: {
+        // A project dock scoped to a collaboration_room (…/collaboration_room/<id>)
+        // renders the collaboration room; a bare project dock is the assets
+        // workspace. roomId comes from the URL, so the room view is URL-first.
+        const { roomId } = DockPointer.parseProjectPointer(currentDock?.pointer);
+        return roomId ? <CollaborationPage /> : <AssetsPage />;
+      }
       case ViewType.INBOX:
         return <InboxView />;
       case ViewType.CONVERSATION:

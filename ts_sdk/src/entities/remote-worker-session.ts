@@ -1,5 +1,6 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
+import { ActionInfo } from '../models/ActionInfo';
 
 /**
  * RemoteWorkerSession — a host/guest remote-execution session living inside a
@@ -12,8 +13,11 @@ import { IEntity } from '../IEntity';
  */
 export interface IRemoteWorkerSession extends IEntity {
   conversation_id?: string | null;
+  collaboration_room_id?: string | null;
   host_user_id?: string | null;
   guest_user_id?: string | null;
+  host_name?: string | null;
+  guest_name?: string | null;
   /** Host only — null on the guest's mirror. */
   host_process_id?: string | null;
   project_id?: string | null;
@@ -30,8 +34,11 @@ export class RemoteWorkerSession
   static type: string = 'remote_worker_session';
 
   conversation_id: string | null = null;
+  collaboration_room_id: string | null = null;
   host_user_id: string | null = null;
   guest_user_id: string | null = null;
+  host_name: string | null = null;
+  guest_name: string | null = null;
   host_process_id: string | null = null;
   project_id: string | null = null;
   status: string = 'idle';
@@ -46,5 +53,15 @@ export class RemoteWorkerSession
   /** True when `userId` is this session's host (the executor). */
   isHost(userId: string | null | undefined): boolean {
     return !!this.host_user_id && userId === this.host_user_id;
+  }
+
+  /**
+   * Host cuts off remote access to their machine: marks the session ENDED and
+   * best-effort stops the host worker so no further guest prompts run.
+   */
+  public async disconnect(): Promise<void> {
+    const info = new ActionInfo('disconnect', this.typeId.type, this.typeId.id, 'POST');
+    await dataManager.callAction(info);
+    this.status = 'ended';
   }
 }
