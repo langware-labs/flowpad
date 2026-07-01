@@ -12,6 +12,12 @@ import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, 
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { useLingui } from '@lingui/react/macro';
+
+/**
+ * The collapsed icon rail's fixed width (Tailwind class). Single source of truth so
+ * the Vibe-mode spacer that reserves this footprint (flow-page.tsx) can't drift.
+ */
+export const RAIL_WIDTH_CLASS = 'w-[50px]';
 import {
   ArrowLeft,
   BadgeCheck,
@@ -192,7 +198,7 @@ export function CollapsedSidebar() {
   };
 
   return (
-    <Sidebar collapsible="none" className="flex w-[50px] flex-col border-r">
+    <Sidebar collapsible="none" className={`flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
       <SidebarContent className="flex-1">
         <SidebarGroup className="px-0 py-2">
           <SidebarMenu>
