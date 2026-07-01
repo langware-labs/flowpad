@@ -11,6 +11,7 @@
     "main.js",
     "preload.js",
     "uv-manager.js",
+    "blob-manager.js",
     "flow-rs-keychain.js",
     "semver.js",
     "loading.html",
