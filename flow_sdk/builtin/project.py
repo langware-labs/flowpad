@@ -99,6 +99,16 @@ class Project(Entity):
     fs_storage_mount_path: str | None = APIField(
         default=None, description="Full path to the project folder"
     )
+    # Project "context folders": extra directories that are auto-added to every
+    # agentic worker's ``--add-dir`` set and browseable in the Explorer as their
+    # own root. persist=TRUE (the ``community`` pattern) so the list round-trips
+    # FS<->DB without needing an entry in ``ProjectMeta``. Entries are canonical
+    # posix paths.
+    include_dirs: list[str] = APIField(
+        default_factory=list,
+        persist=Persist.TRUE,
+        description="Project context folders; auto-added to every agentic worker's --add-dir set.",
+    )
     # ── Collaboration overlay (merged from the former CollaborationSpace entity) ──
     session_code: str | None = APIField(
         default=None,
@@ -497,6 +507,44 @@ class Project(Entity):
         """Get worker sessions for current directory."""
         sessions = get_worker_sessions()
         return ApiSuccessResponse(data=sessions)
+
+    # ── Context folders (project include_dirs) ──────────────────────────────
+
+    @action.post(action_name="add-context-dir")
+    async def add_context_dir(self, path: str) -> "ApiResponse":
+        """Add a directory to this project's ``include_dirs`` (context folders).
+
+        The path is canonicalized; adding is idempotent. On add we kick a
+        one-shot indexer scan over the new path (reusing the AgenticProcess
+        helper) so any skills / agents living under it become discoverable in
+        the Asset Manager without a manual ``flow record index``.
+        """
+        if not path:
+            return ApiFailResponse(message="path is required")
+        canonical = canonical_posix_path(path)
+        if canonical not in (self.include_dirs or []):
+            self.include_dirs = list(self.include_dirs or []) + [canonical]
+            await self.save()
+            from flow_sdk.builtin.agentic_process.agentic_process import (
+                _index_additional_dir,
+            )
+            await _index_additional_dir(canonical)
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    @action.post(action_name="remove-context-dir")
+    async def remove_context_dir(self, path: str) -> "ApiResponse":
+        """Remove a directory from ``include_dirs``. No-op if not present.
+
+        Matches on the canonical form so a caller passing an un-canonical path
+        still removes the stored entry.
+        """
+        if not path:
+            return ApiFailResponse(message="path is required")
+        canonical = canonical_posix_path(path)
+        if canonical in (self.include_dirs or []):
+            self.include_dirs = [d for d in (self.include_dirs or []) if d != canonical]
+            await self.save()
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="setup-for-desktop")
     async def setup_for_desktop(self):

@@ -13,7 +13,8 @@ export type AssetSource =
   | 'project_dir'     // under project.fs_storage_mount_path
   | 'user_dir'        // under user_home
   | 'workdir'         // process workdir if distinct from project/user
-  | 'additional_dir'; // additional_dirs entries (excl. auto-appended assets dir)
+  | 'additional_dir'  // additional_dirs entries (excl. auto-appended assets dir)
+  | 'context_dir';    // project.include_dirs (context folders)
 
 export interface AssetDescriptor {
   /** Serialized TypeId, e.g. "skill-<uuid>" or "agent-<uuid>". */
@@ -40,6 +41,7 @@ export const ASSET_SOURCE_LABEL: Record<AssetSource, string> = {
   user_dir: 'user',
   workdir: 'workdir',
   additional_dir: 'additional',
+  context_dir: 'context folder',
 };
 
 /**
@@ -58,6 +60,7 @@ export const READONLY_ASSET_SOURCES: readonly AssetSource[] = [
   'user_dir',
   'workdir',
   'additional_dir',
+  'context_dir',
 ];
 
 export function isReadOnlySource(source: AssetSource): boolean {

@@ -13,6 +13,7 @@ const ALL_SOURCES: AssetSource[] = [
   'user_dir',
   'workdir',
   'additional_dir',
+  'context_dir',
 ];
 
 describe('isReadOnlySource — partition over every AssetSource member', () => {
@@ -25,6 +26,7 @@ describe('isReadOnlySource — partition over every AssetSource member', () => {
     user_dir: true,
     workdir: true,
     additional_dir: true,
+    context_dir: true,
   };
 
   it.each(ALL_SOURCES)('%s', (source) => {
