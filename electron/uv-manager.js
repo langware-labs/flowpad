@@ -496,6 +496,24 @@ class UvManager {
   }
 
   /**
+   * Read the desktop instance's server.json (written by the backend monitor).
+   * Returns {} if missing/corrupt. The progress-aware startup wait uses this to
+   * read the monitor's published boot state — `server_state`
+   * ("booting"|"healthy"|"stalled") and `server_progress_iso` (bumped whenever
+   * the monitor sees the boot make forward progress) — so it can tell a slow
+   * cold boot from a hung one instead of killing it on a blind countdown. The
+   * desktop app always targets the prod instance (port 9007).
+   */
+  getServerInfo() {
+    try {
+      const p = path.join(os.homedir(), '.flow', 'instances', 'prod', 'server.json');
+      return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch {
+      return {};
+    }
+  }
+
+  /**
    * Windows-only: kill any process whose executable lives inside the flowpad
    * uv tool venv, so a `--force`/`--reinstall` install can replace it.
    *

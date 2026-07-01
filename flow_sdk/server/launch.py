@@ -33,8 +33,23 @@ def _logs_base() -> Path:
 
 # Marker substring used to validate that a PID actually belongs to our
 # server / monitor (guards against recycled PIDs).
-_SERVER_CMD_MARKER = "flow_sdk.server"
-_MONITOR_CMD_MARKER = "flow_sdk.server.launch"
+# Frozen (PyInstaller) builds have no `python -m flow_sdk…` command line — they
+# run `<exe> serve` / `<exe> monitor` — so the marker becomes the subcommand
+# token in that case. The non-frozen path is unchanged.
+if getattr(sys, "frozen", False):
+    _SERVER_CMD_MARKER = "serve"
+    _MONITOR_CMD_MARKER = "monitor"
+else:
+    _SERVER_CMD_MARKER = "flow_sdk.server"
+    _MONITOR_CMD_MARKER = "flow_sdk.server.launch"
+
+# Absolute boot ceiling. Progress-awareness keeps us patient with a slow cold
+# boot, but "alive and active" is not the same as "getting closer to healthy" —
+# a busy/retry/spin loop looks active forever. So a server that is still NOT
+# healthy after this long, even if it looks busy, is treated as stuck and
+# restarted. Set comfortably above the worst-case legit cold boot (~90-100s on
+# Windows while Defender scans the fresh venv) so it never trips a real boot.
+_BOOT_CEILING_S = 180.0
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +165,12 @@ def start_server_process(port: int) -> int:
     server_log_path = generate_timestamped_log_path("server")
 
     server_log = open(server_log_path, "a")  # noqa: WPS515 — fd inherited by child
-    args = [sys.executable, "-m", "flow_sdk.server.run"]
+    # Frozen build: re-exec the bundled exe as the server (`<exe> serve`); a
+    # PyInstaller onefile/onedir binary can't be launched via `python -m`.
+    if getattr(sys, "frozen", False):
+        args = [sys.executable, "serve"]
+    else:
+        args = [sys.executable, "-m", "flow_sdk.server.run"]
     pid = start_detached_process(args, env=env, stderr=server_log)
     server_log.close()
     log.info("Started server process PID=%d on port %d (stderr → %s)", pid, port, server_log_path)
@@ -165,6 +185,61 @@ def wait_for_server_health(port: int, timeout: float = 10.0) -> bool:
             return True
         time.sleep(0.5)
     return False
+
+
+# ---------------------------------------------------------------------------
+# Boot-progress detection
+#
+# A cold post-install boot can spend 60-90s in a *silent* import while Windows
+# Defender scans the freshly-written venv files. We must never kill a boot
+# that's still making progress, and we publish that progress to server.json so
+# the desktop shell (electron) can tell "still importing" from "hung" without
+# racing us to kill the same boot. CPU is a poor signal here — during the AV
+# scan the process is mostly blocked on disk reads — so growing RSS and active
+# disk I/O are the reliable "still working" signals; a hung process shows none.
+# ---------------------------------------------------------------------------
+
+def _server_making_progress(server_pid: int, prev: dict | None) -> tuple[bool, dict]:
+    """Return ``(progressing, baseline)`` for *server_pid*.
+
+    ``progressing`` is True when the process is alive AND doing work: burning
+    CPU, growing its RSS, or actively reading from disk (the cold import / AV
+    scan case). A wedged process exhibits none of these. The first call (empty
+    ``prev``) always reports progress so we never judge on a single sample.
+    """
+    try:
+        proc = psutil.Process(server_pid)
+        with proc.oneshot():
+            cpu = proc.cpu_percent(interval=0.3)
+            rss = proc.memory_info().rss
+            try:
+                read_bytes = proc.io_counters().read_bytes
+            except (psutil.AccessDenied, NotImplementedError, AttributeError):
+                read_bytes = 0
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return False, (prev or {})
+    baseline = {"rss": rss, "read_bytes": read_bytes}
+    if not prev:
+        return True, baseline  # first observation — set a baseline, don't judge yet
+    progressing = (
+        cpu > 1.0
+        or rss > prev.get("rss", 0) + 1_000_000
+        or read_bytes > prev.get("read_bytes", 0)
+    )
+    return progressing, baseline
+
+
+def _publish_boot_state(info: dict, state: str, *, progressing: bool) -> None:
+    """Record boot liveness in server.json for the desktop shell to read.
+
+    *state* is ``"booting"`` | ``"healthy"`` | ``"stalled"``. ``server_progress_iso``
+    is bumped whenever we see forward progress (or health), so a reader can tell
+    a slow-but-advancing boot from a wedged one by how stale that stamp is.
+    """
+    info["server_state"] = state
+    if progressing or state == "healthy":
+        info["server_progress_iso"] = datetime.now(timezone.utc).isoformat()
+    _save_info(info)
 
 
 # ---------------------------------------------------------------------------
@@ -221,17 +296,27 @@ def ensure_monitor_singleton(server_info: dict) -> dict:
 
 
 def monitor_loop(port: int, interval: float = 30.0) -> None:
-    """Infinite loop: sleep → health check → restart if needed."""
-    consecutive_failures = 0
+    """Infinite loop: sleep → health check → restart only if dead or *stalled*.
+
+    Liveness, not a clock, decides a restart. A server that is alive and still
+    making progress (importing — see ``_server_making_progress``) is NEVER
+    killed, however long a cold AV-scan boot takes. We kill + restart only when
+    the process is dead, or alive but wedged (no CPU, no RSS growth, no disk
+    I/O) for ``restart_failure_threshold`` consecutive checks. This also stops
+    us from racing the desktop shell to execute the same slow-but-healthy boot.
+    """
+    consecutive_stalls = 0
     restart_failure_threshold = 3
     max_backoff = 300.0  # 5 minutes
     last_resource_log = 0.0
+    boot_baseline: dict = {}
+    boot_started_at: float | None = None  # when the current unhealthy boot began
 
     while True:
         # Sleep with backoff
-        if consecutive_failures >= 3:
-            backoff = min(2 ** consecutive_failures, max_backoff)
-            log.warning("Backoff: sleeping %.1fs after %d failures", backoff, consecutive_failures)
+        if consecutive_stalls >= 3:
+            backoff = min(2 ** consecutive_stalls, max_backoff)
+            log.warning("Backoff: sleeping %.1fs after %d stalls", backoff, consecutive_stalls)
             time.sleep(backoff)
         else:
             time.sleep(interval)
@@ -252,38 +337,79 @@ def monitor_loop(port: int, interval: float = 30.0) -> None:
             last_resource_log = now
 
         if check_server_health(port):
-            if consecutive_failures > 0:
-                log.info("Server recovered after %d failures", consecutive_failures)
-            consecutive_failures = 0
+            if consecutive_stalls > 0:
+                log.info("Server recovered after %d stalls", consecutive_stalls)
+            consecutive_stalls = 0
+            boot_baseline = {}
+            boot_started_at = None  # healthy → clear the boot ceiling clock
+            _publish_boot_state(_load_info(), "healthy", progressing=True)
             continue
-
-        consecutive_failures += 1
-        log.warning("Health check failed (attempt %d)", consecutive_failures)
 
         info = _load_info()
         server_pid = info.get("server_pid")
+        alive = bool(server_pid and is_process_alive(server_pid, expected_name=_SERVER_CMD_MARKER))
 
-        if server_pid and is_process_alive(server_pid, expected_name=_SERVER_CMD_MARKER):
-            if consecutive_failures < restart_failure_threshold:
-                log.warning(
-                    "Server PID=%d alive but health check failed — waiting for %d consecutive failures before restart",
-                    server_pid,
-                    restart_failure_threshold,
+        if alive:
+            if boot_started_at is None:
+                boot_started_at = time.monotonic()
+            boot_elapsed = time.monotonic() - boot_started_at
+            progressing, boot_baseline = _server_making_progress(server_pid, boot_baseline)
+
+            if progressing and boot_elapsed <= _BOOT_CEILING_S:
+                # Alive and doing work, within the boot ceiling — still booting,
+                # not hung. Never execute a boot that's making progress (this is
+                # the cold AV-scan import).
+                consecutive_stalls = 0
+                _publish_boot_state(info, "booting", progressing=True)
+                log.info(
+                    "Server PID=%d booting (alive, making progress, %.0fs) — waiting",
+                    server_pid, boot_elapsed,
                 )
                 continue
 
-            log.warning("Server PID=%d alive but unhealthy — killing", server_pid)
-            kill_process(server_pid)
-            time.sleep(1)
+            if progressing:
+                # Still NOT healthy past the ceiling though it looks busy: activity
+                # alone can't clear a busy/retry/spin loop, so past the ceiling we
+                # stop trusting it and restart (with backoff via consecutive_stalls).
+                consecutive_stalls += 1
+                log.warning(
+                    "Server PID=%d active but not healthy after %.0fs (> %.0fs ceiling) — stuck, restarting",
+                    server_pid, boot_elapsed, _BOOT_CEILING_S,
+                )
+                _publish_boot_state(info, "stalled", progressing=False)
+                kill_process(server_pid)
+                time.sleep(1)
+            else:
+                consecutive_stalls += 1
+                _publish_boot_state(info, "booting", progressing=False)
+                log.warning(
+                    "Server PID=%d alive but no progress (stall %d/%d)",
+                    server_pid,
+                    consecutive_stalls,
+                    restart_failure_threshold,
+                )
+                if consecutive_stalls < restart_failure_threshold:
+                    continue
+
+                log.warning("Server PID=%d wedged (no progress) — killing", server_pid)
+                _publish_boot_state(info, "stalled", progressing=False)
+                kill_process(server_pid)
+                time.sleep(1)
+        else:
+            consecutive_stalls += 1
+            log.warning("Server not alive (attempt %d) — restarting", consecutive_stalls)
 
         # Restart server
+        boot_started_at = None  # fresh boot below → restart the ceiling clock
         new_pid = start_server_process(port)
         info["server_pid"] = new_pid
-        _save_info(info)
+        boot_baseline = {}
+        _publish_boot_state(info, "booting", progressing=True)
 
         if wait_for_server_health(port, timeout=10.0):
             log.info("Server restarted successfully (PID=%d)", new_pid)
-            consecutive_failures = 0
+            consecutive_stalls = 0
+            _publish_boot_state(_load_info(), "healthy", progressing=True)
         else:
             log.error("Server failed to become healthy after restart (PID=%d)", new_pid)
 
@@ -314,10 +440,38 @@ def launch_monitor(port: int) -> None:
 
             new_pid = start_server_process(port)
             info["server_pid"] = new_pid
-            _save_info(info)
+            _publish_boot_state(info, "booting", progressing=True)
 
-            if not wait_for_server_health(port, timeout=15.0):
-                log.error("Server did not become healthy within 15s (check %s)", _logs_base() / "server")
+            # Initial-boot supervision: poll fast and publish progress every
+            # couple of seconds so the desktop shell can distinguish a slow cold
+            # boot (Windows AV-scanning the freshly-written venv — the process is
+            # alive and reading files) from a genuine hang, WITHOUT racing us to
+            # kill it. Exit to the steady-state monitor loop on health, death, or
+            # a real stall (alive but no CPU/RSS/IO progress). The range() is an
+            # absolute guard only — the real exits are the three conditions below.
+            boot_baseline: dict = {}
+            stalls = 0
+            boot_started = time.monotonic()
+            for _ in range(600):
+                if check_server_health(port):
+                    log.info("Server healthy on port %d", port)
+                    _publish_boot_state(_load_info(), "healthy", progressing=True)
+                    break
+                if not is_process_alive(new_pid, expected_name=_SERVER_CMD_MARKER):
+                    log.error("Server PID=%d died during initial boot (check %s)", new_pid, _logs_base() / "server")
+                    break
+                if time.monotonic() - boot_started > _BOOT_CEILING_S:
+                    # Past the ceiling and still not healthy — even if it looks
+                    # busy. Hand to monitor_loop, which restarts a stuck boot.
+                    log.warning("Server PID=%d not healthy within %.0fs boot ceiling — handing off to monitor", new_pid, _BOOT_CEILING_S)
+                    break
+                progressing, boot_baseline = _server_making_progress(new_pid, boot_baseline)
+                _publish_boot_state(_load_info(), "booting", progressing=progressing)
+                stalls = 0 if progressing else stalls + 1
+                if stalls >= 8:  # ~16s with no CPU/RSS/IO progress → wedged; let monitor_loop restart
+                    log.warning("Server PID=%d wedged during initial boot — handing off to monitor", new_pid)
+                    break
+                time.sleep(2.0)
 
             log.info("Entering monitor loop...")
             monitor_loop(port)
@@ -339,7 +493,11 @@ def start_monitor_detached(port: int) -> int:
     monitor_pid here to avoid the singleton guard killing the launcher (which
     cascades and kills the real monitor).
     """
-    args = [sys.executable, "-m", "flow_sdk.server.launch", str(port)]
+    # Frozen build: re-exec the bundled exe as the monitor (`<exe> monitor N`).
+    if getattr(sys, "frozen", False):
+        args = [sys.executable, "monitor", str(port)]
+    else:
+        args = [sys.executable, "-m", "flow_sdk.server.launch", str(port)]
     pid = start_detached_process(args)
 
     # Write port + launch time so CLI can discover the server,

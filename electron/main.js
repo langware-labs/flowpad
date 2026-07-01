@@ -6,6 +6,26 @@ const crypto = require('crypto');
 const UvManager = require('./uv-manager');
 const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
 
+// DRAFT (opt-in): frozen-blob backend delivery. Default OFF — production uses
+// UvManager unchanged. Set FLOWPAD_USE_BLOB=1 to use the PyInstaller blob path
+// (see freeze-draft/). blob-manager.js must be moved to electron/ to ship; the
+// try/catch falls back to UvManager if it's absent, so this is safe by default.
+function createBackendManager(log) {
+  try {
+    const BlobManager = require('./blob-manager');
+    // Use the frozen-blob backend when the installer bundled one (auto), or when
+    // opted in via env. Otherwise the current uv-install path is unchanged, so a
+    // normal build with no bundled blob behaves exactly as today.
+    if (process.env.FLOWPAD_USE_BLOB === '1' || BlobManager.bundledBlobPath()) {
+      log.info('[backend] using BlobManager (bundled blob or FLOWPAD_USE_BLOB=1)');
+      return new BlobManager(log);
+    }
+  } catch (err) {
+    log.warn(`[backend] BlobManager unavailable (${err.message}); using UvManager`);
+  }
+  return new UvManager(log);
+}
+
 // Exact, copy-pasteable terminal commands surfaced to the user when the backend
 // fails to come up in time — mirrors the upgrade uv-manager.js itself runs
 // (`uv tool install flowpad@latest --python 3.10 --force`). Keep these in sync
@@ -431,24 +451,70 @@ function createWindow() {
 }
 
 async function waitForBackend({ maxChecks = MAX_HEALTH_CHECKS } = {}) {
-  const timeoutSec = Math.round((maxChecks * HEALTH_CHECK_INTERVAL) / 1000);
-  log.info(`Waiting for backend at ${BACKEND_URL} (up to ${timeoutSec}s)...`);
+  // Progress-aware wait: liveness, not a fixed countdown, decides when to give
+  // up. A cold post-install boot can spend 60-90s in a *silent* import while
+  // Windows Defender scans the freshly-written venv files; killing it seconds
+  // before it goes healthy just forces a slower restart and races the backend
+  // monitor, which is itself nursing the same boot. So we keep waiting as long
+  // as the monitor reports forward progress (server.json: server_state /
+  // server_progress_iso, refreshed every ~2s during boot) and give up only on
+  // a real failure: the monitor declares the boot stalled, or NO progress is
+  // seen for STALL_MS. BACKSTOP_MS is a final anti-hang guard, not the
+  // functional timeout — the stall window is.
+  const STALL_MS = 45_000;
+  const BACKSTOP_MS = Math.max(maxChecks * HEALTH_CHECK_INTERVAL, 120_000) * 3;
+  log.info(
+    `Waiting for backend at ${BACKEND_URL} (progress-aware; ` +
+    `stall=${STALL_MS / 1000}s, backstop=${Math.round(BACKSTOP_MS / 1000)}s)...`,
+  );
 
-  for (let i = 0; i < maxChecks; i++) {
+  const startMs = Date.now();
+  let lastProgressMs = startMs;
+  let lastProgressIso = null;
+  let lastServerPid = null;
+
+  for (;;) {
     try {
       const response = await fetch(`${BACKEND_URL}/health/status`);
       if (response.ok) {
         log.info('Backend is ready!');
         return true;
       }
+      // Connection accepted (any HTTP status) → server is up and serving.
+      lastProgressMs = Date.now();
     } catch (error) {
-      // Backend not ready yet
+      // Not reachable yet — fall back to the monitor's published progress.
     }
+
+    const info = uvManager ? uvManager.getServerInfo() : {};
+
+    if (info.server_progress_iso && info.server_progress_iso !== lastProgressIso) {
+      lastProgressIso = info.server_progress_iso;
+      lastProgressMs = Date.now();
+    }
+    if (info.server_pid && info.server_pid !== lastServerPid) {
+      // pid changed → the monitor (re)started the server: forward progress.
+      lastServerPid = info.server_pid;
+      lastProgressMs = Date.now();
+    }
+
+    if (info.server_state === 'stalled') {
+      log.error('Backend monitor reports the server stalled (no progress) — giving up');
+      return false;
+    }
+
+    const sinceProgressMs = Date.now() - lastProgressMs;
+    if (sinceProgressMs > STALL_MS) {
+      log.error(`Backend made no progress for ${Math.round(sinceProgressMs / 1000)}s — giving up`);
+      return false;
+    }
+    if (Date.now() - startMs > BACKSTOP_MS) {
+      log.error(`Backend exceeded the ${Math.round(BACKSTOP_MS / 1000)}s backstop — giving up`);
+      return false;
+    }
+
     await new Promise(resolve => setTimeout(resolve, HEALTH_CHECK_INTERVAL));
   }
-
-  log.error(`Backend failed to start within ${timeoutSec}s timeout`);
-  return false;
 }
 
 function sendStatus(message) {
@@ -505,7 +571,7 @@ async function startApp() {
     log.info('Development mode: expecting backend to be running externally');
   } else {
     // Install and start backend via uv + flow CLI
-    uvManager = new UvManager(log);
+    uvManager = createBackendManager(log);
 
     // Did the user just upgrade to a new desktop build? Logged for diagnostics
     // only — the pre-start update prompt below decides (and asks) whether to
@@ -665,12 +731,11 @@ async function startApp() {
   const backendReady = await waitForBackend(waitOpts);
 
   if (!backendReady) {
-    // Try to gather diagnostics for the error dialog
-    const timeoutSec = Math.round(
-      ((backendJustUpgraded ? POST_UPGRADE_HEALTH_CHECKS : MAX_HEALTH_CHECKS) *
-        HEALTH_CHECK_INTERVAL) / 1000,
-    );
-    let detail = `Backend server failed to respond within ${timeoutSec} seconds.`;
+    // waitForBackend gives up only on a real failure — the monitor reported the
+    // boot stalled, or the backend made no forward progress for the stall
+    // window — not on a blind countdown (a slow-but-progressing cold boot is
+    // waited out, not killed). So this is a genuine stall/crash, not "too slow".
+    let detail = 'Backend server stopped making progress before it became healthy.';
     try {
       const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
       if (newest) {
@@ -700,7 +765,7 @@ async function startApp() {
     // the native OS error box. The user quits from the panel's Quit button; the
     // next launch re-runs startApp() (including the upgrade path) from scratch.
     showStartupTimeoutError(
-      `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ` +
+      'Flowpad’s backend stopped responding before it finished starting. ' +
         'This usually means the installed Flowpad package is out of date or broken.',
     );
     return;
@@ -725,7 +790,7 @@ async function startApp() {
 
   // Background update check (non-blocking, after UI is loaded)
   if (!uvManager) {
-    uvManager = new UvManager(log);
+    uvManager = createBackendManager(log);
     try {
       uvManager._flowBin = await uvManager._resolveFlowBin();
     } catch {

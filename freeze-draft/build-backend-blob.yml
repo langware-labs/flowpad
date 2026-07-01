@@ -1,0 +1,105 @@
+# ============================================================================
+# DRAFT — CI job to build + sign + publish the frozen flowpad backend blob.
+# For review. Add as a job in flowpad-desktop/.github/workflows/build-desktop.yml
+# (or a sibling workflow). Runs AFTER the PyPI wheel for <version> is published,
+# because it installs flowpad==<version> from PyPI and freezes it.
+#
+# Output: a GitHub release asset `flowpad-backend-<version>-win-x64.zip` that the
+# desktop app's BlobManager downloads instead of `uv tool install`.
+# ============================================================================
+
+name: Build Backend Blob (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: flowpad version to freeze (must already be on PyPI)
+        required: true
+  # Or: workflow_call, triggered by the PyPI deploy after publish.
+
+jobs:
+  freeze-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Create build venv + install flowpad + pyinstaller
+        shell: bash
+        run: |
+          uv venv .freeze --python 3.10
+          uv pip install --python .freeze "flowpad==${{ github.event.inputs.version }}" pyinstaller
+
+      # The entry script + the validated flag set (see freeze-draft/freeze_entry.py).
+      - name: PyInstaller freeze (onedir)
+        shell: bash
+        run: |
+          .freeze/Scripts/python.exe -m PyInstaller --onedir --noconfirm --clean \
+            --name flowpad-backend \
+            --collect-all flow_sdk --collect-submodules flow_sdk \
+            --copy-metadata flowpad --copy-metadata genai-prices \
+            --copy-metadata pydantic-ai-slim --copy-metadata logfire-api \
+            --hidden-import aiosqlite --collect-submodules sqlalchemy.dialects.sqlite \
+            freeze-draft/freeze_entry.py
+          # NOTE(review): once features are exercised, more --hidden-import /
+          # --collect-data entries will be needed here (see freeze-draft/README).
+
+      # Sign the frozen exe with the SAME Azure Trusted Signing identity used for
+      # flow-rs.exe (electron/signing/sign-flow-rs-win.js). Critical: SmartScreen
+      # judges THIS exe when a user runs the downloaded blob — an unsigned one is
+      # warned/blocked. Mechanism copied verbatim from the flow-rs signer.
+      - name: Sign flowpad-backend.exe (Azure Trusted Signing)
+        shell: pwsh
+        env:
+          # Same service-principal secrets the desktop Windows job exports.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          if (-not (Get-Module -ListAvailable -Name TrustedSigning)) {
+            Install-Module -Name TrustedSigning -Force -Scope CurrentUser -AllowClobber | Out-Null
+          }
+          Import-Module TrustedSigning
+          # Endpoint + account/profile are the same identity as electron/signing/
+          # metadata.json (CI injects the account/profile). Sign the main entry exe
+          # (what SmartScreen checks). NOTE(review): for WDAC/Device-Guard-strict
+          # machines, also pass the bundled *.pyd / *.dll to -Files.
+          Invoke-TrustedSigning `
+            -Endpoint 'https://eus.codesigning.azure.net/' `
+            -CodeSigningAccountName '${{ secrets.SIGNING_ACCOUNT_NAME }}' `
+            -CertificateProfileName '${{ secrets.SIGNING_PROFILE_NAME }}' `
+            -Files 'dist/flowpad-backend/flowpad-backend.exe' `
+            -FileDigest SHA256 `
+            -TimestampRfc3161 'http://timestamp.acs.microsoft.com' -TimestampDigest SHA256
+
+      - name: Smoke test (frozen --help)
+        shell: bash
+        run: ./dist/flowpad-backend/flowpad-backend.exe --help
+
+      - name: Package + checksum
+        shell: bash
+        run: |
+          V=${{ github.event.inputs.version }}
+          cd dist
+          7z a -tzip "flowpad-backend-$V-win-x64.zip" flowpad-backend
+          sha256sum "flowpad-backend-$V-win-x64.zip" > "flowpad-backend-$V-win-x64.zip.sha256"
+
+      - name: Publish to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          files: |
+            dist/flowpad-backend-${{ github.event.inputs.version }}-win-x64.zip
+            dist/flowpad-backend-${{ github.event.inputs.version }}-win-x64.zip.sha256
+
+  # TODO: mirror this job for macos-latest (mac-arm64) and ubuntu (linux-x64) so
+  # BlobManager's PLATFORM_TAG resolves on every OS. macOS also needs codesign +
+  # notarization of the frozen binary.
