@@ -61,7 +61,7 @@ const SWITCH_BUDGET_MS = 30_000; // toggle disabled (switching/mid-turn) → re-
 
 // Chat status-indicator labels that mean "the agent is waiting for you" (idle).
 // Mirrors status-indicator.tsx; the non-idle labels are Thinking/Using tool/etc.
-const IDLE_STATUS = new Set(['Idle', 'Complete', 'Interrupted', 'Waiting for you']);
+const IDLE_STATUS = new Set(['Idle', 'Complete', 'Interrupted']);
 
 describe('chat⇄terminal switch stress in the browser — one session, 10 iterations', () => {
   let browser: Browser | null = null;

@@ -44,7 +44,7 @@ describe('isAwaitingUserInput — the "your turn" gate', () => {
   it('is false for mid-turn / not-started / degenerate states (no 409 hole)', () => {
     for (const s of [
       WorkerStatus.INITIALIZING,
-      WorkerStatus.WAITING,
+      WorkerStatus.WORKING,
       WorkerStatus.THINKING,
       WorkerStatus.TOOL_CALL,
       WorkerStatus.TOOL_RUNNING,

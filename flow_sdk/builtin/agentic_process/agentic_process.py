@@ -173,7 +173,7 @@ _QUEUE_LOCKS: dict[str, asyncio.Lock] = {}
 # answer; ``None``/``IDLE`` mean "no work in flight" and shouldn't be flipped.
 _NON_TERMINAL_WORKER_STATUSES = frozenset({
     WorkerStatus.INITIALIZING,
-    WorkerStatus.WAITING,
+    WorkerStatus.WORKING,
     WorkerStatus.THINKING,
     WorkerStatus.TOOL_RUNNING,
     WorkerStatus.TOOL_CALL,
@@ -2023,7 +2023,7 @@ class AgenticProcess(Entity):
             tail_status = self.driver.tail_status(transcript_path)
             _terminal = tail_status in _terminal_states
             # Post-tool-idle peek: only meaningful for Claude (Codex never
-            # writes WAITING followed by tool_result without further events).
+            # writes WORKING followed by tool_result without further events).
             # Only treat as soft-terminal when the last assistant turn ended with
             # ``stop_reason=end_turn``. ``stop_reason=tool_use`` means the model
             # is still planning the next call; sonnet routinely takes 9–17 s
@@ -2031,7 +2031,7 @@ class AgenticProcess(Entity):
             # post-tool settle window. Exiting then would drop the rest of the
             # work — the bug surfaced in test_agentic_process_fix_it_with_agent.
             _post_tool_idle = False
-            if tail_status == _WS.WAITING:
+            if tail_status == _WS.WORKING:
                 try:
                     with open(transcript_path, "rb") as _fh:
                         _sz = transcript_path.stat().st_size
@@ -2066,7 +2066,7 @@ class AgenticProcess(Entity):
                     _post_tool_size = cur_size
                 elif now - _post_tool_since >= _post_tool_settle_seconds:
                     # Tell ``_discover_status_from_transcript`` to report
-                    # COMPLETE — the JSONL still says WAITING (no terminal
+                    # COMPLETE — the JSONL still says WORKING (no terminal
                     # marker yet) but all the side effects are flushed.
                     object.__setattr__(self, "_post_tool_idle_complete", True)
                     return
@@ -3793,7 +3793,7 @@ class AgenticProcess(Entity):
         finished its tool work but hasn't emitted its terminal marker yet),
         ``self._post_tool_idle_complete`` is set so subsequent status reads
         agree with the early exit — without that flag, ``is_ready_for_input``
-        would still see ``WAITING`` and the test's ``assert is_ready_for_input
+        would still see ``WORKING`` and the test's ``assert is_ready_for_input
         is True`` would fail despite all artifacts being on disk.
 
         For visible/PTY processes, falls back to a synchronous OS pid liveness

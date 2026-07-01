@@ -97,7 +97,7 @@ describe('WorkerStatus', () => {
       [
         'initializing',
         'idle',
-        'waiting',
+        'working',
         'thinking',
         'tool_call',
         'tool_running',
@@ -263,7 +263,7 @@ describe('isReadyForInput', () => {
   ];
   const notReadyWorkers: WorkerStatus[] = [
     WorkerStatus.INITIALIZING,
-    WorkerStatus.WAITING,
+    WorkerStatus.WORKING,
     WorkerStatus.THINKING,
     WorkerStatus.TOOL_CALL,
     WorkerStatus.TOOL_RUNNING,
@@ -347,7 +347,7 @@ describe('hasWorkerStarted', () => {
     expect(hasWorkerStarted(WorkerStatus.INITIALIZING)).toBe(false);
     const started: WorkerStatus[] = [
       WorkerStatus.IDLE,
-      WorkerStatus.WAITING,
+      WorkerStatus.WORKING,
       WorkerStatus.THINKING,
       WorkerStatus.TOOL_CALL,
       WorkerStatus.TOOL_RUNNING,

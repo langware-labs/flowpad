@@ -134,7 +134,7 @@ async def test_flush_invokes_on_timeout_for_api_timeout(initialize_test_db, monk
     """API_TIMEOUT triggers _on_timeout — migrated responsibility from
     the deleted _poll_for_completion."""
     ap = await _make_ap(WorkerStatus.API_TIMEOUT, monkeypatch)
-    object.__setattr__(ap, "_last_broadcast_status", WorkerStatus.WAITING)
+    object.__setattr__(ap, "_last_broadcast_status", WorkerStatus.WORKING)
 
     timeout_calls: list[None] = []
     notify_calls: list[None] = []

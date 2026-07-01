@@ -47,7 +47,7 @@ export interface TurnActivity {
  *     actual request lifecycle, so it's correct even when the transcript arrives
  *     as a post-hoc WS batch (no live deltas to derive from).
  *  2. stream-derived worker status ({@link useDerivedWorkerStatus}) — stays in a
- *     running state across the whole turn (thinking → each tool → the WAITING
+ *     running state across the whole turn (thinking → each tool → the WORKING
  *     lulls between tools) for a LIVE-streaming headless turn.
  *  3. the CANONICAL watched entity's `worker_status` — the loader-prop process
  *     and the entity-cache instance are different objects (InteractiveTerminal:

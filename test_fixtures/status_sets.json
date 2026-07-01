@@ -1,7 +1,7 @@
 {
   "_note": "Canonical source of truth for the WorkerStatus running/terminal set literals. Python (_RUNNING_STATUSES in flow_sdk/fs_records/agent_status.py, WORKER_RUNNING_STATUSES in ts_sdk/src/process/agentic-types.ts) must equal these byte-for-byte. Contract tests on both sides load this file and assert set equality; editing one side without the other breaks both.",
   "worker_running": [
-    "waiting",
+    "working",
     "thinking",
     "tool_call",
     "tool_running",

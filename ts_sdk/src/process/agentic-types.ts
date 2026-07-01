@@ -95,7 +95,7 @@ export enum WorkerStatus {
    */
   PENDING_USER = 'pending_user',
   /** Active — user message received; Claude hasn't responded yet. */
-  WAITING      = 'waiting',
+  WORKING      = 'working',
   /** Active — assistant generating. */
   THINKING     = 'thinking',
   /** Active — Claude dispatched tool(s). */
@@ -104,14 +104,14 @@ export enum WorkerStatus {
   TOOL_RUNNING = 'tool_running',
   /** Active — Anthropic API error, Claude is retrying mid-turn. */
   API_ERROR    = 'api_error',
-  /** Terminal — JSONL stalled in WAITING, needs intervention. */
+  /** Terminal — JSONL stalled in WORKING, needs intervention. */
   API_TIMEOUT  = 'api_timeout',
   /** Parse fallback — last JSONL entry did not match any known pattern. Replaces the former RUNNING catchall. */
   UNKNOWN      = 'unknown',
 }
 
 const WORKER_RUNNING_STATUSES = new Set<WorkerStatus>([
-  WorkerStatus.WAITING,
+  WorkerStatus.WORKING,
   WorkerStatus.THINKING,
   WorkerStatus.TOOL_CALL,
   WorkerStatus.TOOL_RUNNING,
@@ -136,7 +136,7 @@ const READY_WORKER_STATUSES = new Set<WorkerStatus>([
  * Statuses in which the worker has yielded the floor and is waiting for the
  * user's next message — i.e. "your turn". Superset of READY_WORKER_STATUSES
  * with PENDING_USER (the explicit "turn ended, waiting for next user message"
- * state, surfaced to the user as "Waiting for you").
+ * state, surfaced to the user as "Idle").
  *
  * This is the gate for the chat⇄terminal view toggle: switching mode is only
  * sensible (and only accepted by the backend — a mid-turn switchMode is 409'd)
@@ -155,7 +155,7 @@ export function isAwaitingUserInput(status: WorkerStatus | undefined): boolean {
   return status !== undefined && AWAITING_USER_INPUT_STATUSES.has(status);
 }
 
-/** True while the worker is mid-turn (WAITING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR). */
+/** True while the worker is mid-turn (WORKING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR). */
 export function isWorkerRunning(status: WorkerStatus): boolean {
   return WORKER_RUNNING_STATUSES.has(status);
 }

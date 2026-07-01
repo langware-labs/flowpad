@@ -101,7 +101,7 @@ def test_codex_rollout_user_message_is_waiting_when_active(tmp_path: Path):
         },
     ])
 
-    assert codex_tail_status(transcript) == WorkerStatus.WAITING
+    assert codex_tail_status(transcript) == WorkerStatus.WORKING
 
 
 def test_codex_rollout_tool_begin_is_tool_running_when_active(tmp_path: Path):

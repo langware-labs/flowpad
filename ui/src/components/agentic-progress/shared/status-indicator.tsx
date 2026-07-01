@@ -100,11 +100,11 @@ export const workerStatusConfig: Record<WorkerStatus, StatusConfig> = {
     bgColor: 'bg-gray-100 dark:bg-gray-800',
     label: 'Idle',
   },
-  [WorkerStatus.WAITING]: {
+  [WorkerStatus.WORKING]: {
     icon: Hourglass,
     color: 'text-blue-400',
     bgColor: 'bg-blue-100 dark:bg-blue-900/30',
-    label: 'Waiting',
+    label: 'Working',
     animate: true,
   },
   [WorkerStatus.THINKING]: {
@@ -150,7 +150,7 @@ export const workerStatusConfig: Record<WorkerStatus, StatusConfig> = {
     icon: MessageCircle,
     color: 'text-sky-500',
     bgColor: 'bg-sky-100 dark:bg-sky-900/30',
-    label: 'Waiting for you',
+    label: 'Idle',
   },
   [WorkerStatus.ERROR]: {
     icon: AlertCircle,
