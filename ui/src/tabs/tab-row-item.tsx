@@ -6,8 +6,7 @@
  * so the strip is homogeneous and the active chip is just `currentDock.tabHash`.
  *
  * Display data is backend-resolved on the Tab (`name`, `icon_key`, `worktree`,
- * `status`/`is_disabled`); the only client-side overlay is the pending-glow,
- * keyed by the process id.
+ * `status`/`is_disabled`).
  */
 import { AgentTrace, AgenticProcess, dataManager, editorForType, Shell, Tab, TypeId } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -15,7 +14,6 @@ import { type TabStripItem } from '@src/components/tabs/TabStrip';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { usePendingSessionIds } from '@src/store/pending-actions-store';
 import { TabLifecycleState, type TabLifecycleEntry, useTabLifecycles } from '@src/tabs/tab-lifecycle';
 import { ContentTabTooltip, humanizeType, LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
@@ -47,8 +45,8 @@ function lifecycleStatus(lifecycle: TabLifecycleEntry | null): {
   return { hasError: false, isClosing: false, statusReason: '' };
 }
 
-/** Tab → chip. `isPending` is the only caller-supplied glow overlay. */
-export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEntry | null = null): TabStripItem {
+/** Tab → chip. */
+export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): TabStripItem {
   // DockPointer from the stored JSON pointer; key is the tabHash.
   const dock = tab.dockPointer;
   const key = dock?.tabHash ?? tab.id;
@@ -77,7 +75,6 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
       isDisabled,
       hasError: lifecycleOverlay.hasError,
       statusReason,
-      isPending,
       renameable: true,
       tooltip: processId ? (
         <LazyProcessTooltip
@@ -129,9 +126,8 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
   };
 }
 
-/** Map the ordered tabs → chips, overlaying the pending-glow by process id. */
+/** Map the ordered tabs → chips. */
 export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
-  const pending = usePendingSessionIds();
   const lifecycles = useTabLifecycles();
   const { currentDock } = useDockNavigation();
 
@@ -169,7 +165,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
     () =>
       tabs.map((t) => {
         const key = t.dockPointer?.tabHash ?? t.id;
-        const item = tabItem(t, t.target_id ? pending.has(t.target_id) : false, lifecycles.get(key) ?? null);
+        const item = tabItem(t, lifecycles.get(key) ?? null);
         // `focusType` is only set on an assets dock, so it implies viewType==='assets'.
         if (key === currentDock?.tabHash && focusType && focusEditable) {
           if (activeAssetTitle) item.title = clip(activeAssetTitle);
@@ -180,7 +176,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
         }
         return item;
       }),
-    [tabs, pending, lifecycles, currentDock, focusType, focusEditable, activeAssetTitle],
+    [tabs, lifecycles, currentDock, focusType, focusEditable, activeAssetTitle],
   );
 }
 

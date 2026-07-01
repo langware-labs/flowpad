@@ -9,7 +9,7 @@
  *     the strip only manages the input UI and emits the trimmed name)
  *   - per-chip popout + close buttons, close-all / close-others / close-right
  *     context-menu actions, the close-all badge button
- *   - pending-glow rendering and per-chip tooltips
+ *   - per-chip tooltips
  *
  * It is URL-first by construction: a chip click only emits `onSelect(key)` —
  * the consumer navigates; active state arrives back via the `activeKey` prop
@@ -46,8 +46,6 @@ export interface TabStripItem {
   isDisabled?: boolean;
   hasError?: boolean;
   statusReason?: string;
-  /** Soft attention glow (never on the active chip). */
-  isPending?: boolean;
   /** Rename capability — present iff the tab has a target entity (Part 3 §3). */
   renameable?: boolean;
   /** Hover tooltip content; falls back to statusReason when disabled. */
@@ -373,7 +371,6 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const isActive = activeKey === key;
     const isDisabled = !!item.isDisabled;
     const hasError = !!item.hasError;
-    const isPending = !!item.isPending && !isActive;
 
     const tabContent = (
       <div
@@ -393,7 +390,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 : // Inactive tabs are raised, fully-bordered chips in the lighter
                   // muted tone so they never blend into the (darker) body.
                   'cursor-pointer border-border bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-        } ${isPending ? 'animate-pending-glow rounded-md' : ''} ${dragKey === key ? 'opacity-60' : ''}`}
+        } ${dragKey === key ? 'opacity-60' : ''}`}
         onPointerDown={(e) => startDrag(e, key, isDisabled)}
         onClick={() => {
           if (isDisabled) return;

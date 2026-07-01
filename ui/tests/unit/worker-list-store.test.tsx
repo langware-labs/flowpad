@@ -45,7 +45,6 @@ interface OpFields {
   worker_status?: WorkerStatus;
   visible?: boolean;
   project_id?: string | null;
-  ready_for_input_since?: number | null;
 }
 
 /** Push a synthetic WS op through the captured store callback. */
@@ -130,18 +129,18 @@ describe('per-mode counts + view-mode gating', () => {
   });
 });
 
-describe('glow/pulse flags preserved', () => {
-  it('marks a freshly-ready worker pending, and ack clears it', () => {
+describe('glow (transition-driven, PENDING_USER/IDLE only)', () => {
+  it('arms glow on a transition INTO pending_user, and ack clears it', () => {
     const id = uid();
-    emit(id, {
-      status: ProcessStatus.RUNNING,
-      worker_status: WorkerStatus.COMPLETE, // ready-for-input
-      visible: true,
-      ready_for_input_since: Date.now(),
-    });
+    // First observation is mid-turn (not a glow status) → no glow armed.
+    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, visible: true });
+    const initial = renderHook(() => useWorkerList(ADVANCED));
+    expect(initial.result.current.find((e) => e.processId === id)?.pending).toBe(false);
 
-    const first = renderHook(() => useWorkerList(ADVANCED));
-    expect(first.result.current.find((e) => e.processId === id)?.pending).toBe(true);
+    // Live transition into a glow status arms the glow.
+    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.PENDING_USER, visible: true });
+    const armed = renderHook(() => useWorkerList(ADVANCED));
+    expect(armed.result.current.find((e) => e.processId === id)?.pending).toBe(true);
 
     act(() => acknowledgePending(id));
 
@@ -150,5 +149,31 @@ describe('glow/pulse flags preserved', () => {
     // Still listed (live, Interactive) but no longer pending → no glow.
     expect(row?.mode).toBe(ExecutionMode.Interactive);
     expect(row?.pending).toBe(false);
+  });
+
+  it('arms glow on a transition INTO idle', () => {
+    const id = uid();
+    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, visible: false });
+    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.IDLE, visible: false });
+    const { result } = renderHook(() => useWorkerList(ADVANCED));
+    expect(result.current.find((e) => e.processId === id)?.pending).toBe(true);
+  });
+
+  it('does NOT glow a process first observed already in a glow status (no re-arm on seed/refresh)', () => {
+    const id = uid();
+    // First-ever observation is already pending_user (cache seed / reload).
+    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.PENDING_USER, visible: true });
+    const { result } = renderHook(() => useWorkerList(ADVANCED));
+    const row = result.current.find((e) => e.processId === id);
+    expect(row).toBeDefined();
+    expect(row?.pending).toBe(false);
+  });
+
+  it('does NOT glow on a transition into COMPLETE/INTERRUPTED (dropped from the glow set)', () => {
+    const id = uid();
+    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, visible: true });
+    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.COMPLETE, visible: true });
+    const { result } = renderHook(() => useWorkerList(ADVANCED));
+    expect(result.current.find((e) => e.processId === id)?.pending).toBe(false);
   });
 });
