@@ -167,11 +167,12 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Orphaned-worker reconcile: failed ({_e})")
 
-    # PTY recovery watchdog: respawn visible sessions whose worker died — both at
-    # startup (restart kills PTY children) AND periodically while running (a
-    # worker that crashes mid-session). Background — startup never blocks;
-    # recovered sessions push a ``recovered`` event on (re)watch. This is the
-    # backend home for what used to be the frontend os-status recovery poll.
+    # PTY recovery watchdog: respawn a visible session whose worker died, but only
+    # while a live UI is watching it (on-demand — never a global sweep, which would
+    # exhaust the pty device pool). Periodic, so a worker that crashes mid-session
+    # in an open UI is respawned; at boot nothing is watched, so restart recovery
+    # lands on the first tick after a client re-watches. Background — startup never
+    # blocks; recovered sessions push a ``recovered`` event on (re)watch.
     try:
         import asyncio as _asyncio_pty
 
