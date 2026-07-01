@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal, startClaudeSession } from './helpers';
+import { dismissSetupModal, ensureAdvancedView, skipIfPtyExhausted, startClaudeSession } from './helpers';
 
 /**
  * Navigate to an agentic process terminal with worker_session_id set.
@@ -10,18 +10,27 @@ async function gotoAgenticProcessWithSession(page: import('@playwright/test').Pa
   const skip = page.getByRole('button', { name: 'Skip' });
   if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
 
-  await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
+  try {
+    await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
 
-  if (!page.url().includes('agentic_process-')) {
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await startClaudeSession(page);
-    await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
+    if (!page.url().includes('agentic_process-')) {
+      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+      await startClaudeSession(page);
+      await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
+    }
+
+    // The annotation gutter + ribbon are Advanced-view surfaces; the backend pref
+    // now wins over the localStorage seed, so flip to Advanced at runtime.
+    await ensureAdvancedView(page);
+
+    // Wait for the process ribbon (indicates worker_session_id is set)
+    const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
+    const ribbon = activePanel.locator('.border-t .ml-auto');
+    await expect(ribbon).toBeVisible({ timeout: 60_000 });
+  } catch (e) {
+    await skipIfPtyExhausted(page);
+    throw e;
   }
-
-  // Wait for the process ribbon (indicates worker_session_id is set)
-  const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-  const ribbon = activePanel.locator('.border-t .ml-auto');
-  await expect(ribbon).toBeVisible({ timeout: 60_000 });
 
   return page.url();
 }

@@ -13,7 +13,20 @@
  * QA_API_URL overrides with an explicit backend; never hardcode a port.
  */
 import { test, expect, request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
-import { dismissSetupModal } from './helpers';
+import { dismissSetupModal, skipIfPtyExhausted } from './helpers';
+
+/**
+ * Dismiss the "Cleaned invalid sessions … couldn't be restored" alertdialog and,
+ * when the host is out of PTY devices (the cause of that notice), take the
+ * sanctioned live-env skip. Seeded shells restore a PTY on view mount; under
+ * host PTY exhaustion they can't, so the strip renders zero tabs and the notice
+ * overlay intercepts clicks. Not an app bug — passes when PTYs are free.
+ */
+async function dismissCleanedSessionsOrSkip(page: Page) {
+  const ok = page.getByRole('button', { name: 'OK' });
+  if (await ok.isVisible({ timeout: 500 }).catch(() => false)) await ok.click().catch(() => {});
+  await skipIfPtyExhausted(page);
+}
 
 const API = process.env.QA_API_URL || '';
 const tabSel = '[data-testid^="tab-shell|"]';
@@ -159,6 +172,7 @@ async function gotoDockShell(page: Page) {
   const skipForNow = page.getByRole('button', { name: 'Skip for now' });
   if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) await skipForNow.click();
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+  await dismissCleanedSessionsOrSkip(page);
 }
 
 async function gotoUrl(page: Page, path: string) {
@@ -254,6 +268,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.locator('[data-testid="terminal-panel"]').first().waitFor({ state: 'visible', timeout: 15_000 });
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     expect(page.url()).toContain(target);
     await expect(page.locator(tabSel)).toHaveCount(1, { timeout: 15_000 });
     await commonValidation(page);
@@ -274,6 +289,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const active = url.match(/(shell|agentic_process)-[0-9a-f-]+/)![0];
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => tabIds(page), { timeout: 15_000 }).toEqual(orderBefore);
     expect(page.url()).toContain(active);
     await commonValidation(page);
@@ -287,9 +303,11 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { id } = await createProcess(rq, projectId, 'claude_code');
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
     await commonValidation(page);
@@ -303,9 +321,11 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { id } = await createProcess(rq, projectId, 'codex');
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
     await commonValidation(page);
@@ -324,6 +344,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const target = page.url().match(/shell-[0-9a-f-]+/)![0];
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     expect(page.url()).toMatch(/\/dock\/shell\/shell-/);
     expect(page.url()).toContain(target);
     await commonValidation(page);
@@ -372,6 +393,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await expect(secondTab).toContainText('build-server');
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|shell-${ids[1]}"]`)).toContainText('build-server', { timeout: 15_000 });
     await commonValidation(page);
     await rq.dispose();
@@ -391,6 +413,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.waitForURL(/\/$/, { timeout: 15_000 });
     await gotoUrl(page, targetUrl);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     expect(page.url()).toContain(`shell-${ids[1]}`);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(2);
     await commonValidation(page);
@@ -404,6 +427,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { id } = await createProcess(rq, projectId, 'claude_code');
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     await commonValidation(page);
     await rq.dispose();
@@ -435,6 +459,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const pbShell = await createShell(rq, pb);
     await gotoUrl(page, `/dock/shell/shell-${pbShell}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     // project auto-switches to Proj-B; URL preserved.
     expect(page.url()).toContain(`shell-${pbShell}`);
     await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-b/i, { timeout: 15_000 });
@@ -476,6 +501,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const bIds = shells.filter((s) => s.project_id === pb).map((s) => s.id);
     await gotoUrl(page, `/dock/shell/shell-${aIds[0]}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     await expect(page.locator('[data-testid="close-all-tabs-button"]')).toContainText('3', { timeout: 10_000 });
     await page.locator('[data-testid="close-all-tabs-button"]').click();
@@ -570,6 +596,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // empty on a cold worker.
     await gotoUrl(page, `/dock/shell/shell-${ids[0]}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(4);
     const before = await tabIds(page);
     const secondTab = page.locator(`[data-testid="${before[1]}"]`);
@@ -623,6 +650,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 3; i++) await createShell(rq, pb);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await page.locator('[data-testid="projects-counter-chip"]').first().click();
     await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
     // Select Proj-B explicitly.
@@ -643,6 +671,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 4; i++) await createShell(rq, c);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator('[data-testid="projects-counter-chip"]').first()).toContainText('3', { timeout: 15_000 });
     await rq.dispose();
   });
@@ -680,6 +709,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const bShell = (await pureShells(rq)).find((s: { project_id: string }) => s.project_id === b).id;
     await gotoUrl(page, `/dock/shell/shell-${bShell}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await page.locator('[data-testid="projects-counter-chip"]').first().click();
     await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
     const rows = await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-[ABCD]/).allTextContents();
@@ -703,6 +733,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const bIds = shells.filter((s) => s.project_id === b).map((s) => s.id);
     await gotoUrl(page, `/dock/shell/shell-${aIds[0]}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     await page.locator('[data-testid="close-all-tabs-button"]').click();
     // Proj-A ends with zero tabs; rather than strand on the now-empty project the
@@ -724,6 +755,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const aShells = list.filter((s) => s.project_id === a);
     await gotoUrl(page, `/dock/shell/shell-${aShells[1].id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await page.locator('[data-testid="projects-counter-chip"]').first().click();
     await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
     await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-B/).first().click();
@@ -829,6 +861,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { projectId } = await bootstrapIds(rq);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     const before = (await tabIds(page)).length;
     await createShell(rq, projectId);
     // The strip syncs the tab set on load/navigation (it does not live-subscribe
@@ -836,6 +869,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // a refetch. The backend state is authoritative; reload to pull it.
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 10_000 }).toBeGreaterThan(before);
     await rq.dispose();
   });
@@ -846,10 +880,12 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { projectId } = await bootstrapIds(rq);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     const { id } = await createProcess(rq, projectId, 'claude_code');
     // Tab set syncs on load/navigation — reload to pull the externally-created AP.
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).toContain(`agentic_process-${id}`);
     await rq.dispose();
   });
@@ -866,6 +902,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await closeShell(rq, ids[2]);
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).not.toContain(ids[2]);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 10_000 }).toBe(2);
     await rq.dispose();
@@ -953,6 +990,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { id } = await createProcess(rq, projectId, 'claude_code');
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     const tab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
     await expect(tab).toBeVisible({ timeout: 15_000 });
     await tab.hover();
@@ -970,6 +1008,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await createShell(rq, projectId); // a 2nd tab to switch to
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     const tab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
     await renameTab(page, `tab-shell|agentic_process-${id}`, 'claude-fix');
     await expect(tab).toContainText('claude-fix', { timeout: 10_000 });
@@ -982,6 +1021,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // refresh
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toContainText('claude-fix', { timeout: 15_000 });
     // PTY title update must not override user rename
     await rq.post(`${API}/api/v1/graph/shell/${shellId}/update-display`, { data: { name: 'pty-title', is_pty: true } });
@@ -997,6 +1037,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const sid = await createShell(rq, projectId);
     await gotoUrl(page, `/dock/shell/shell-${sid}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     const tab = page.locator(`[data-testid="tab-shell|shell-${sid}"]`);
     const nameBefore = (await tab.textContent())?.trim() ?? '';
     await renameTab(page, `tab-shell|shell-${sid}`, 'shell-abcd1234-ef56-4789-9abc-567890abcdef');
@@ -1106,6 +1147,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { id } = await createProcess(rq, projectId, 'claude_code');
     await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
     await clickRail(page, 'home');
@@ -1145,6 +1187,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await createContentTab(rq, c);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     // Count = 2 even though Proj-C owns zero terminal tabs (the fix: the chip is
     // kind-agnostic, not terminal-only).
     await expect(page.locator('[data-testid="projects-counter-chip"]').first()).toContainText('2', { timeout: 15_000 });
