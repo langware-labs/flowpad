@@ -30,7 +30,7 @@ msgstr "— before"
 msgid "— current"
 msgstr "— current"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:489
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:491
 msgid "— open, peek, or get highlighted here"
 msgstr "— open, peek, or get highlighted here"
 
@@ -560,7 +560,7 @@ msgstr "Action Type"
 msgid "Action:"
 msgstr "Action:"
 
-#: src/components/account/system-diagnoses.tsx:265
+#: src/components/account/system-diagnoses.tsx:295
 #: src/components/api-keys-view/api-keys-view.tsx:266
 #: src/components/connections-manager.tsx:192
 #: src/components/hooks-view/HooksTable.tsx:74
@@ -641,7 +641,7 @@ msgstr "Add a note to the running session about this message"
 msgid "Add a personal note..."
 msgstr "Add a personal note..."
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:336
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:349
 msgid "Add a personal note…"
 msgstr "Add a personal note…"
 
@@ -1223,7 +1223,7 @@ msgstr "Attach asset"
 msgid "Attach files"
 msgstr "Attach files"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:354
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:368
 msgid "Attach session transcript"
 msgstr "Attach session transcript"
 
@@ -1494,6 +1494,10 @@ msgstr "calls"
 msgid "Calls"
 msgstr "Calls"
 
+#: src/components/diagnose/open-in-terminal-button.tsx:90
+msgid "Can't open terminal"
+msgstr "Can't open terminal"
+
 #: src/components/account/secrets-section.tsx:228
 #: src/components/artifacts/artifact-form.tsx:233
 #: src/components/assets/delete-asset-modal.tsx:109
@@ -1529,7 +1533,7 @@ msgstr "Calls"
 #: src/components/project-sidebar/ProjectSidebar.tsx:190
 #: src/components/prompt-library/PromptEditDialog.tsx:122
 #: src/components/quick-create/QuickCreateDialog.tsx:257
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:424
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:438
 #: src/components/simple-file-manager/SimpleFileManager.tsx:1032
 #: src/components/simple-file-manager/SimpleFileManager.tsx:1069
 #: src/components/simple-file-manager/SimpleFileManager.tsx:1096
@@ -1951,7 +1955,7 @@ msgstr "Cloning…"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx:168
 #: src/components/login-required-dialog.tsx:102
 #: src/components/search-index/SweepOrphansDialog.tsx:211
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:260
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:270
 #: src/components/tabs/TabStrip.tsx:505
 #: src/components/task-receive/IncomingTaskDialog.tsx:321
 #: src/components/task-receive/IncomingTaskDialog.tsx:347
@@ -1959,7 +1963,7 @@ msgstr "Cloning…"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx:213
 #: src/components/terminal/interactive-terminal/PaneBar.tsx:23
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx:153
-#: src/components/version-popover/diagnose-modal.tsx:290
+#: src/components/version-popover/diagnose-modal.tsx:292
 #: src/components/version-popover/diagnosis-report-modal.tsx:83
 #: src/components/workflow-runner/detail/StepDetailPane.tsx:92
 msgid "Close"
@@ -2343,7 +2347,7 @@ msgstr "Conversation deleted"
 msgid "Conversation project set"
 msgstr "Conversation project set"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:323
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:334
 msgid "Conversation title"
 msgstr "Conversation title"
 
@@ -2394,8 +2398,8 @@ msgstr "Copy {label}"
 msgid "Copy a link or download this {entityType} as a portable bundle."
 msgstr "Copy a link or download this {entityType} as a portable bundle."
 
-#: src/components/account/system-diagnoses.tsx:170
-#: src/components/account/system-diagnoses.tsx:171
+#: src/components/account/system-diagnoses.tsx:200
+#: src/components/account/system-diagnoses.tsx:201
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx:533
 msgid "Copy all"
 msgstr "Copy all"
@@ -2517,7 +2521,7 @@ msgstr "Could not enable secrets"
 msgid "Could not end room"
 msgstr "Could not end room"
 
-#: src/components/account/system-diagnoses.tsx:137
+#: src/components/account/system-diagnoses.tsx:159
 msgid "Could not forward diagnosis"
 msgstr "Could not forward diagnosis"
 
@@ -2537,7 +2541,7 @@ msgstr "Could not open skill"
 msgid "Could not rename context"
 msgstr "Could not rename context"
 
-#: src/components/account/system-diagnoses.tsx:122
+#: src/components/account/system-diagnoses.tsx:144
 msgid "Could not report diagnosis"
 msgstr "Could not report diagnosis"
 
@@ -2887,8 +2891,8 @@ msgid "Define the conditions that must match for this trigger to fire"
 msgstr "Define the conditions that must match for this trigger to fire"
 
 #: src/components/account/secrets-section.tsx:242
-#: src/components/account/system-diagnoses.tsx:181
-#: src/components/account/system-diagnoses.tsx:314
+#: src/components/account/system-diagnoses.tsx:211
+#: src/components/account/system-diagnoses.tsx:344
 #: src/components/anchored-markdown/CommentPin.tsx:78
 #: src/components/assets/delete-asset-modal.tsx:120
 #: src/components/assets/editor/AssetEditorHeader.tsx:100
@@ -3000,8 +3004,8 @@ msgstr "Delete context"
 msgid "Delete context?"
 msgstr "Delete context?"
 
-#: src/components/account/system-diagnoses.tsx:180
-#: src/components/account/system-diagnoses.tsx:312
+#: src/components/account/system-diagnoses.tsx:210
+#: src/components/account/system-diagnoses.tsx:342
 msgid "Delete diagnosis"
 msgstr "Delete diagnosis"
 
@@ -3069,7 +3073,7 @@ msgstr "Delete this chat?"
 msgid "Delete this conversation"
 msgstr "Delete this conversation"
 
-#: src/components/account/system-diagnoses.tsx:313
+#: src/components/account/system-diagnoses.tsx:343
 msgid "Delete this diagnosis? This cannot be undone."
 msgstr "Delete this diagnosis? This cannot be undone."
 
@@ -3212,12 +3216,12 @@ msgstr "Diagnose this error"
 msgid "Diagnosis"
 msgstr "Diagnosis"
 
-#: src/components/account/system-diagnoses.tsx:147
+#: src/components/account/system-diagnoses.tsx:169
 #: src/components/diagnose/diagnosis-details.tsx:93
 msgid "Diagnosis copied to clipboard"
 msgstr "Diagnosis copied to clipboard"
 
-#: src/components/account/system-diagnoses.tsx:133
+#: src/components/account/system-diagnoses.tsx:155
 msgid "Diagnosis forwarded"
 msgstr "Diagnosis forwarded"
 
@@ -3229,7 +3233,7 @@ msgstr "Diagnosis not found."
 msgid "Diagnosis recorded."
 msgstr "Diagnosis recorded."
 
-#: src/components/account/system-diagnoses.tsx:119
+#: src/components/account/system-diagnoses.tsx:141
 msgid "Diagnosis reported to the Flowpad team"
 msgstr "Diagnosis reported to the Flowpad team"
 
@@ -3333,8 +3337,8 @@ msgstr "Discovering {typeLabel}…"
 msgid "Discovering…"
 msgstr "Discovering…"
 
-#: src/components/diagnose/diagnosis-action-buttons.tsx:69
-#: src/components/diagnose/diagnosis-action-buttons.tsx:70
+#: src/components/diagnose/diagnosis-action-buttons.tsx:88
+#: src/components/diagnose/diagnosis-action-buttons.tsx:89
 #: src/components/simple-file-manager/SimpleFileManager.tsx:872
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx:269
 #: src/components/workflow-runner/header/AttentionBanner.tsx:114
@@ -4240,6 +4244,10 @@ msgstr "Failed to open folder"
 msgid "Failed to open folder picker"
 msgstr "Failed to open folder picker"
 
+#: src/components/diagnose/open-in-terminal-button.tsx:108
+msgid "Failed to open in terminal"
+msgstr "Failed to open in terminal"
+
 #: src/components/account/system-log.tsx:101
 msgid "Failed to open log file"
 msgstr "Failed to open log file"
@@ -4705,8 +4713,8 @@ msgstr "Fork session — new tab, same conversation history"
 msgid "Forking…"
 msgstr "Forking…"
 
-#: src/components/account/system-diagnoses.tsx:165
-#: src/components/diagnose/diagnosis-action-buttons.tsx:98
+#: src/components/account/system-diagnoses.tsx:189
+#: src/components/diagnose/diagnosis-action-buttons.tsx:117
 msgid "Forward"
 msgstr "Forward"
 
@@ -5532,7 +5540,7 @@ msgstr "Invocations"
 msgid "Issue"
 msgstr "Issue"
 
-#: src/components/account/system-diagnoses.tsx:249
+#: src/components/account/system-diagnoses.tsx:279
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 
@@ -5655,7 +5663,7 @@ msgid "last {0}"
 msgstr "last {0}"
 
 #. placeholder {0}: report.period_kind
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:534
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:536
 msgid "Last {0}"
 msgstr "Last {0}"
 
@@ -6075,7 +6083,7 @@ msgid "Loading..."
 msgstr "Loading..."
 
 #: src/components/account/secrets-section.tsx:126
-#: src/components/account/system-diagnoses.tsx:254
+#: src/components/account/system-diagnoses.tsx:284
 #: src/components/asset-manager/AssetPickerPopover.tsx:239
 #: src/components/assets/AssetListView.tsx:81
 #: src/components/assets/MarkdownIndexPanel.tsx:112
@@ -6874,8 +6882,7 @@ msgstr "No conversations"
 msgid "No conversations yet"
 msgstr "No conversations yet"
 
-#: src/components/account/system-diagnoses.tsx:88
-#: src/components/diagnose/diagnosis-action-buttons.tsx:110
+#: src/components/diagnose/diagnosis-action-buttons.tsx:130
 msgid "No conversations yet."
 msgstr "No conversations yet."
 
@@ -6903,7 +6910,7 @@ msgstr "No default agent found, missing agent type ID in context."
 msgid "No description provided."
 msgstr "No description provided."
 
-#: src/components/account/system-diagnoses.tsx:256
+#: src/components/account/system-diagnoses.tsx:286
 msgid "No diagnoses recorded."
 msgstr "No diagnoses recorded."
 
@@ -7570,7 +7577,7 @@ msgstr "not respected"
 msgid "Not runnable here"
 msgstr "Not runnable here"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:331
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:344
 msgid "Note (optional)"
 msgstr "Note (optional)"
 
@@ -7688,7 +7695,7 @@ msgstr "open"
 #: src/components/simple-file-manager/SimpleFileManager.tsx:957
 #: src/components/tasks-viewer/TasksViewer.tsx:183
 #: src/components/workers/WorkerToolbar.tsx:92
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:431
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:433
 msgid "Open"
 msgstr "Open"
 
@@ -7867,6 +7874,11 @@ msgstr "Open in Skills tab"
 msgid "Open in system file explorer"
 msgstr "Open in system file explorer"
 
+#: src/components/diagnose/open-in-terminal-button.tsx:141
+#: src/components/diagnose/open-in-terminal-button.tsx:171
+msgid "Open in terminal"
+msgstr "Open in terminal"
+
 #: src/components/conversation/ConversationContextPanel.tsx:592
 msgid "Open in the transcript viewer"
 msgstr "Open in the transcript viewer"
@@ -7900,7 +7912,7 @@ msgstr "Open Log File"
 msgid "Open Logs Folder"
 msgstr "Open Logs Folder"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:272
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:282
 msgid "Open message"
 msgstr "Open message"
 
@@ -7960,6 +7972,7 @@ msgstr "Open Session"
 msgid "Open Shared Terminal"
 msgstr "Open Shared Terminal"
 
+#: src/components/diagnose/open-in-terminal-button.tsx:141
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx:397
 msgid "Open terminal"
 msgstr "Open terminal"
@@ -8269,7 +8282,7 @@ msgstr "Personal note, actionable item"
 msgid "Pick a contact or enter an email"
 msgstr "Pick a contact or enter an email"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:367
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:381
 msgid "Pick a contact to see your conversations with them."
 msgstr "Pick a contact to see your conversations with them."
 
@@ -8889,7 +8902,7 @@ msgstr "Recency Factor (k)"
 msgid "Recent"
 msgstr "Recent"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:363
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:377
 msgid "Recent conversations"
 msgstr "Recent conversations"
 
@@ -8915,7 +8928,7 @@ msgstr "Reconnect to the cloud to delete this conversation."
 msgid "Reconnected"
 msgstr "Reconnected"
 
-#: src/components/account/system-diagnoses.tsx:263
+#: src/components/account/system-diagnoses.tsx:293
 msgid "Recorded"
 msgstr "Recorded"
 
@@ -9172,13 +9185,13 @@ msgstr "Repo:"
 msgid "Report"
 msgstr "Report"
 
-#: src/components/account/system-diagnoses.tsx:123
+#: src/components/account/system-diagnoses.tsx:145
 msgid "Report failed."
 msgstr "Report failed."
 
-#: src/components/account/system-diagnoses.tsx:159
-#: src/components/account/system-diagnoses.tsx:160
-#: src/components/diagnose/diagnosis-action-buttons.tsx:85
+#: src/components/account/system-diagnoses.tsx:181
+#: src/components/account/system-diagnoses.tsx:182
+#: src/components/diagnose/diagnosis-action-buttons.tsx:104
 msgid "Report issue"
 msgstr "Report issue"
 
@@ -10114,7 +10127,7 @@ msgstr "Self-Summary"
 #: src/components/conversation/MessageComposer.tsx:460
 #: src/components/conversation/PromptComposerDialog.tsx:86
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx:155
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:421
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:423
 msgid "Send"
 msgstr "Send"
 
@@ -10138,7 +10151,7 @@ msgstr "Send a PROMPT to the recipient asking for a status summary"
 msgid "Send a simple prompt to verify the LM proxy is working"
 msgstr "Send a simple prompt to verify the LM proxy is working"
 
-#: src/components/account/system-diagnoses.tsx:138
+#: src/components/account/system-diagnoses.tsx:160
 msgid "Send failed."
 msgstr "Send failed."
 
@@ -10300,8 +10313,8 @@ msgstr "Setup machine-restricted API access for this compute node"
 
 #: src/components/entity-actions/ShareButton.tsx:47
 #: src/components/entity-actions/ShareButton.tsx:50
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:248
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:433
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:258
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:447
 #: src/components/spec-editor/SpecEditor.tsx:314
 #: src/components/spec-editor/SpecEditor.tsx:479
 msgid "Share"
@@ -10343,7 +10356,7 @@ msgid "Share to conversation"
 msgstr "Share to conversation"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx:333
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:257
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:267
 msgid "Shared"
 msgstr "Shared"
 
@@ -10356,7 +10369,7 @@ msgstr "Shared a session transcript — see the Context tab"
 msgid "Shared Context"
 msgstr "Shared Context"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:433
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:447
 msgid "Sharing…"
 msgstr "Sharing…"
 
@@ -10537,11 +10550,11 @@ msgstr "skill"
 msgid "Skill"
 msgstr "Skill"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:513
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:515
 msgid "Skill analysis"
 msgstr "Skill analysis"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:515
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:517
 msgid "Skill analysis ready for review and improvements"
 msgstr "Skill analysis ready for review and improvements"
 
@@ -10769,7 +10782,12 @@ msgstr "Start Copilot"
 msgid "Start date"
 msgstr "Start date"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:412
+#: src/components/account/system-diagnoses.tsx:107
+#: src/components/diagnose/diagnosis-action-buttons.tsx:165
+msgid "Start new conversation"
+msgstr "Start new conversation"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:426
 msgid "Start new conversation · {effectiveTitle}"
 msgstr "Start new conversation · {effectiveTitle}"
 
@@ -10906,7 +10924,7 @@ msgstr "Suggest a prompt for the other user to approve"
 msgid "Suggest prompt"
 msgstr "Suggest prompt"
 
-#: src/components/account/system-diagnoses.tsx:264
+#: src/components/account/system-diagnoses.tsx:294
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx:122
 #: src/pages/live-status/LiveStatus.tsx:204
 msgid "Summary"
@@ -10998,8 +11016,8 @@ msgstr "Synthesize event"
 msgid "system"
 msgstr "system"
 
-#: src/components/account/system-diagnoses.tsx:241
-#: src/components/account/system-diagnoses.tsx:247
+#: src/components/account/system-diagnoses.tsx:271
+#: src/components/account/system-diagnoses.tsx:277
 msgid "System Diagnoses"
 msgstr "System Diagnoses"
 
@@ -11191,6 +11209,10 @@ msgstr "The requested agent could not be found."
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
 msgstr "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
 
+#: src/components/diagnose/open-in-terminal-button.tsx:91
+msgid "The selected project has no folder on this machine."
+msgstr "The selected project has no folder on this machine."
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx:112
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
 msgstr "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
@@ -11356,9 +11378,9 @@ msgstr "Tip: connect GitHub to clone private repos."
 msgid "Tip: Press Ctrl+Enter to save"
 msgstr "Tip: Press Ctrl+Enter to save"
 
-#: src/components/account/system-diagnoses.tsx:262
+#: src/components/account/system-diagnoses.tsx:292
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx:154
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:318
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:329
 #: src/components/task-bar/SharedTaskView.tsx:128
 #: src/components/tasks-viewer/TasksViewer.tsx:160
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx:177
@@ -11366,7 +11388,7 @@ msgstr "Tip: Press Ctrl+Enter to save"
 msgid "Title"
 msgstr "Title"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:294
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:304
 msgid "To"
 msgstr "To"
 
@@ -11638,7 +11660,7 @@ msgstr "Unable to fetch branches. Please check your repository permissions."
 msgid "Unavailable"
 msgstr "Unavailable"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:565
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:567
 msgid "Unavailable feed item"
 msgstr "Unavailable feed item"
 
@@ -11919,7 +11941,7 @@ msgstr "Version-bump + commit the asset"
 msgid "Version:"
 msgstr "Version:"
 
-#: src/components/account/system-diagnoses.tsx:152
+#: src/components/account/system-diagnoses.tsx:174
 #: src/components/conversation/ConversationContextPanel.tsx:507
 #: src/components/conversation/ConversationContextPanel.tsx:595
 #: src/components/conversation/ConversationContextPanel.tsx:1065
@@ -11946,8 +11968,8 @@ msgstr "View Claude Code settings across user, project, and local scopes"
 msgid "View Context Details"
 msgstr "View Context Details"
 
-#: src/components/account/system-diagnoses.tsx:152
-#: src/components/version-popover/diagnose-modal.tsx:282
+#: src/components/account/system-diagnoses.tsx:174
+#: src/components/version-popover/diagnose-modal.tsx:284
 msgid "View diagnosis"
 msgstr "View diagnosis"
 
@@ -12084,7 +12106,7 @@ msgstr "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingS
 msgid "What can flowpad do for you ?"
 msgstr "What can flowpad do for you ?"
 
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx:323
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx:334
 msgid "What do you need help with?"
 msgstr "What do you need help with?"
 
@@ -12202,7 +12224,7 @@ msgstr "xterm memory: <0>{0}</0> chunks ({1})"
 msgid "yanked"
 msgstr "yanked"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:534
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:536
 msgid "Yesterday"
 msgstr "Yesterday"
 
