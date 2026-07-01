@@ -1,9 +1,10 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
+import { ForwardDiagnosisShareDialog } from '@src/components/diagnose/forward-diagnosis-share-dialog';
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { EyeOff, Forward } from 'lucide-react';
+import { EyeOff, Forward, MessageSquarePlus } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 interface DiagnosisActionButtonsProps {
@@ -22,6 +23,15 @@ interface DiagnosisActionButtonsProps {
   canReport?: boolean;
   /** "Forward" — post the formatted report into the chosen conversation. */
   onForward: (conversationId: string) => void;
+  /** The FlowpadDiagnosis entity id. When set, the Forward list gains a "Start
+   *  new conversation" row that forwards into a brand-new conversation (with a
+   *  recipient picker), not only an existing one. */
+  diagnosisId?: string;
+  /** Diagnosis display title — labels the new-conversation share source. */
+  diagnosisTitle?: string;
+  /** Called after a successful forward into a *new* conversation — lets the
+   *  caller dismiss its own surface (the navigation is handled internally). */
+  onForwardedNew?: (conversationId: string) => void;
   /** Extra control rendered right-most on the button row (e.g. the feed's View button). */
   trailing?: ReactNode;
 }
@@ -42,10 +52,14 @@ export function DiagnosisActionButtons({
   onReportIssue,
   canReport = true,
   onForward,
+  diagnosisId,
+  diagnosisTitle,
+  onForwardedNew,
   trailing,
 }: DiagnosisActionButtonsProps) {
   const { t } = useLingui();
   const [forwardOpen, setForwardOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   // Forward target list: most recent conversations, fetched only while open. The
   // suggested support conversation is excluded — "Report issue" already targets it.
   const conversations = useRecentConversations(forwardOpen, {
@@ -106,7 +120,7 @@ export function DiagnosisActionButtons({
           className="mt-2 flex min-h-0 max-h-48 flex-col gap-1 overflow-y-auto overscroll-contain"
           data-testid="feed-forward-conversations"
         >
-          {conversations.length === 0 ? (
+          {conversations.length === 0 && !diagnosisId ? (
             <li className="px-2 py-1 text-xs text-muted-foreground"><Trans>No conversations yet.</Trans></li>
           ) : (
             conversations.map((conv) => (
@@ -130,10 +144,39 @@ export function DiagnosisActionButtons({
               </li>
             ))
           )}
+          {/* "Start new conversation" — opens the share dialog (recipient picker)
+              so the diagnosis can be forwarded into a brand-new conversation. */}
+          {diagnosisId && (
+            <li className={conversations.length > 0 ? 'mt-1 border-t border-border/60 pt-1' : undefined}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setShareOpen(true)}
+                className="flex w-full items-center gap-2 rounded-md border border-dashed border-input bg-background px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
+                data-testid="feed-forward-conv-new"
+              >
+                <MessageSquarePlus className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="flex-1 truncate"><Trans>Start new conversation</Trans></span>
+              </button>
+            </li>
+          )}
         </ul>
       )}
 
       {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+
+      {diagnosisId && (
+        <ForwardDiagnosisShareDialog
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          diagnosisId={diagnosisId}
+          diagnosisTitle={diagnosisTitle}
+          onForwarded={(conversationId) => {
+            setForwardOpen(false);
+            onForwardedNew?.(conversationId);
+          }}
+        />
+      )}
     </>
   );
 }
