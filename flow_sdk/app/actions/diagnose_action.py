@@ -45,6 +45,9 @@ async def diagnose() -> StreamingResponse:
     request_info = get_current_request_info()
     body = await request_info.get_post_data() if request_info else None
     message = (body.get("message") or "").strip() if isinstance(body, dict) else ""
+    # The active project the user was in when they triggered the diagnosis — stamped
+    # onto the record as its origin project so "Open in terminal" can reopen there.
+    project_id = (body.get("project_id") or None) if isinstance(body, dict) else None
 
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -56,7 +59,7 @@ async def diagnose() -> StreamingResponse:
         try:
             # Every completed run posts its own Home-Feed card (issue card or no-issue
             # summary card) — same as the CLI — so the result always reaches the feed.
-            await _run_diagnose(message, DEFAULT_TRANSCRIPT_TIMEOUT_S, emit=emit)
+            await _run_diagnose(message, DEFAULT_TRANSCRIPT_TIMEOUT_S, emit=emit, project_id=project_id)
         except Exception as e:  # surface the failure into the stream, never 500 silently
             emit({"type": "error", "text": f"diagnose error: {e}"})
             emit({

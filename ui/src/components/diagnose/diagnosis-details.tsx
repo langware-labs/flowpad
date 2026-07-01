@@ -193,6 +193,7 @@ export function DiagnosisDetails({
         canReport={!!diagnosisId}
         diagnosisId={diagnosisId}
         diagnosisTitle={diag.title || diag.name || undefined}
+        showOpenInTerminal
         onDismiss={() => onActionDone?.()}
         onReportIssue={() => void handleReportIssue()}
         onForward={(targetConversationId) => void handleForward(targetConversationId)}

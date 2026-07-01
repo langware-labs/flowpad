@@ -2,6 +2,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { ForwardDiagnosisShareDialog } from '@src/components/diagnose/forward-diagnosis-share-dialog';
+import { OpenInTerminalButton } from '@src/components/diagnose/open-in-terminal-button';
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { EyeOff, Forward, MessageSquarePlus } from 'lucide-react';
@@ -32,6 +33,9 @@ interface DiagnosisActionButtonsProps {
   /** Called after a successful forward into a *new* conversation — lets the
    *  caller dismiss its own surface (the navigation is handled internally). */
   onForwardedNew?: (conversationId: string) => void;
+  /** Show the "Open in terminal" action. Only the diagnosis viewer sets this —
+   *  the Feed card routes through its "View" button to the viewer instead. */
+  showOpenInTerminal?: boolean;
   /** Extra control rendered right-most on the button row (e.g. the feed's View button). */
   trailing?: ReactNode;
 }
@@ -55,6 +59,7 @@ export function DiagnosisActionButtons({
   diagnosisId,
   diagnosisTitle,
   onForwardedNew,
+  showOpenInTerminal,
   trailing,
 }: DiagnosisActionButtonsProps) {
   const { t } = useLingui();
@@ -76,7 +81,7 @@ export function DiagnosisActionButtons({
 
   return (
     <>
-      <div className="mt-2 flex shrink-0 items-center gap-2">
+      <div className="mt-2 flex shrink-0 flex-wrap items-center gap-2">
         {showDismiss && (
           <button
             type="button"
@@ -111,6 +116,7 @@ export function DiagnosisActionButtons({
           <Forward className="h-3.5 w-3.5" />
           <Trans>Forward</Trans>
         </Button>
+        {showOpenInTerminal && diagnosisId && <OpenInTerminalButton diagnosisId={diagnosisId} />}
         {trailing && <div className="ml-auto flex items-center">{trailing}</div>}
       </div>
 

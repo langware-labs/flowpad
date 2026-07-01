@@ -236,6 +236,7 @@ async def _run_diagnose(
     transcript_timeout: float,
     *,
     emit=None,
+    project_id: str | None = None,
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
 
@@ -453,6 +454,26 @@ async def _run_diagnose(
                     rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
                     if rec is not None:
                         rec.save_metadata_field("user_report", message)
+                        rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
+                        if rec is not None:
+                            await rec.sync_to_db()
+
+            # Stamp the origin project — the project the user was in when they ran
+            # the diagnosis. Resolved from the id the UI passed (the CLI has no
+            # active project, so this is skipped there). The name travels with the
+            # record so a helper on another machine can see where it happened.
+            if did and project_id:
+                with contextlib.suppress(Exception):
+                    from flow_sdk.builtin.project import Project
+                    from flow_sdk.fs_store.fs_record import FSRecord
+
+                    origin_project = await Project.get_one({"id": project_id})
+                    origin_name = getattr(origin_project, "name", None) if origin_project else None
+                    rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
+                    if rec is not None:
+                        rec.save_metadata_field("origin_project_id", project_id)
+                        if origin_name:
+                            rec.save_metadata_field("origin_project_name", origin_name)
                         rec = FSRecord.load_or_none(EntityType.FLOWPAD_DIAGNOSIS.value, did)
                         if rec is not None:
                             await rec.sync_to_db()
