@@ -49,12 +49,12 @@ class WorkerStatus(StrEnum):
     PENDING_USER = "pending_user"
 
     # Active — transcript-derivable
-    WAITING      = "waiting"      # user message received, Claude has not yet responded
+    WORKING      = "working"      # input received, Claude is producing a reply (pre-first-token lull through streaming)
     THINKING     = "thinking"     # assistant streaming / generating text
     TOOL_CALL    = "tool_call"    # Claude finished its turn and dispatched tool(s)
     TOOL_RUNNING = "tool_running" # tool is actively executing (progress events)
     API_ERROR    = "api_error"    # Anthropic API returned an error (e.g. 529); Claude is retrying — mid-turn
-    API_TIMEOUT  = "api_timeout"  # JSONL stalled in WAITING state — connection hang / model slow to start
+    API_TIMEOUT  = "api_timeout"  # JSONL stalled in WORKING state — connection hang / model slow to start
 
     # Parse fallback — the last JSONL entry did not match any known pattern. Surfaces
     # bugs (new Claude event types, malformed writes) instead of hiding them as "RUNNING".
@@ -70,7 +70,7 @@ class WorkerStatus(StrEnum):
 # ---------------------------------------------------------------------------
 
 _RUNNING_STATUSES: frozenset[WorkerStatus] = frozenset({
-    WorkerStatus.WAITING,
+    WorkerStatus.WORKING,
     WorkerStatus.THINKING,
     WorkerStatus.TOOL_CALL,
     WorkerStatus.TOOL_RUNNING,
@@ -144,12 +144,12 @@ def classify_execution_mode(
 
 
 def is_running(status: WorkerStatus) -> bool:
-    """True while the worker is mid-turn (WAITING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR)."""
+    """True while the worker is mid-turn (WORKING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR)."""
     return status in _RUNNING_STATUSES
 
 
 def is_busy(status: WorkerStatus) -> bool:
-    """True when actively processing (THINKING/TOOL_CALL/TOOL_RUNNING). Excludes WAITING/API_ERROR."""
+    """True when actively processing (THINKING/TOOL_CALL/TOOL_RUNNING). Excludes WORKING/API_ERROR."""
     return status in _BUSY_STATUSES
 
 
@@ -204,7 +204,7 @@ _IGNORED_TYPES: frozenset[str] = frozenset({
 # Tools whose ``tool_use`` block BLOCKS on a human response. While one is pending
 # (its ``tool_result`` — keyed by ``tool_use_id`` — hasn't landed yet) the worker
 # has handed control back to the user and is idle awaiting them, NOT executing a
-# tool. Surfacing that as PENDING_USER ("Waiting for you", no spinner) instead of
+# tool. Surfacing that as PENDING_USER ("Idle", no spinner) instead of
 # TOOL_CALL/TOOL_RUNNING is the whole point of ``_pending_user_input_tool``.
 _USER_INPUT_TOOLS: frozenset[str] = frozenset({
     "AskUserQuestion",
@@ -345,7 +345,7 @@ def _last_user_is_tool_result(chunk: str) -> bool:
     """True when the most recent ``user`` entry carries a ``tool_result`` block.
 
     Distinguishes "user just sent a fresh prompt" (the worker is genuinely
-    WAITING for assistant output) from "user is the tool runtime returning a
+    WORKING on a reply) from "user is the tool runtime returning a
     tool_result" (the worker just finished its side effects). The latter is
     safe to treat as terminal once no other tool_use remains pending.
     """
@@ -461,7 +461,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
          that new / malformed event types are visible.
 
     Returns one of: INITIALIZING, COMPLETE, ERROR, INTERRUPTED, INACTIVE,
-                    WAITING, THINKING, TOOL_CALL, TOOL_RUNNING, API_ERROR,
+                    WORKING, THINKING, TOOL_CALL, TOOL_RUNNING, API_ERROR,
                     API_TIMEOUT, UNKNOWN.
     (IDLE is a workflow state set externally, not transcript-derivable.)
     """
@@ -484,11 +484,11 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     #
     # ALSO widen when the tail ends in a ``last-prompt`` idle marker but the
     # window doesn't yet contain a completed assistant turn: the ``last-prompt``
-    # branch below classifies COMPLETE vs WAITING from the ``end_turn`` of the
+    # branch below classifies COMPLETE vs WORKING from the ``end_turn`` of the
     # last assistant entry, and a single oversized tool_use line just ahead of
     # the trailing ``last-prompt``/``system``/envelope run can strand that
     # ``end_turn`` past the 4 KB window — making ``_has_completed_assistant``
-    # falsely return False and pinning a genuinely-finished worker at WAITING
+    # falsely return False and pinning a genuinely-finished worker at WORKING
     # forever (never projected to PENDING_USER). Widen until the assistant turn
     # is in-window (or we hit the file start / ``_TAIL_MAX_BYTES``).
     last_type: str | None = None
@@ -542,7 +542,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         # only then starts thinking. Don't declare COMPLETE until there's at
         # least one assistant entry AND no pending tool execution.
         if not _has_completed_assistant(chunk):
-            return WorkerStatus.WAITING
+            return WorkerStatus.WORKING
         if _has_pending_tool_use(chunk):
             return WorkerStatus.TOOL_RUNNING
         # ``last-prompt`` also rides in as an idle ack *between* tool calls:
@@ -553,10 +553,10 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         # cuts ``stream_transcript`` off during a long inter-tool pause (Opus can
         # take 20-40 s), so the diagnose runner never scrapes the final report
         # and falsely reports "not recorded". Only a genuine ``end_turn`` is
-        # terminal; otherwise stay WAITING and keep reading. (Mirrors the
+        # terminal; otherwise stay WORKING and keep reading. (Mirrors the
         # ``stop_reason=="end_turn"`` guard on the ``_post_tool_idle`` path.)
         if _last_assistant_stop_reason(chunk) != "end_turn":
-            return WorkerStatus.WAITING
+            return WorkerStatus.WORKING
         return WorkerStatus.COMPLETE
     if last_type == "user" and "interrupted" in _last_user_text(chunk).lower():
         return WorkerStatus.INTERRUPTED
@@ -593,7 +593,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     if last_type == "user":
         if last_user_ts and (_time.time() - last_user_ts) > 90:
             return WorkerStatus.API_TIMEOUT
-        return WorkerStatus.WAITING
+        return WorkerStatus.WORKING
 
     # Unrecognised entry type — surface as UNKNOWN so new Claude event types or
     # malformed writes are visible, rather than silently masked as "running".

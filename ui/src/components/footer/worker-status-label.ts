@@ -14,8 +14,8 @@ const STATUS_LABEL: Record<WorkerStatus, string> = {
   [WorkerStatus.ERROR]: 'Error',
   [WorkerStatus.INTERRUPTED]: 'Interrupted',
   [WorkerStatus.INACTIVE]: 'Inactive',
-  [WorkerStatus.PENDING_USER]: 'Waiting for you',
-  [WorkerStatus.WAITING]: 'Waiting for response',
+  [WorkerStatus.PENDING_USER]: 'Idle',
+  [WorkerStatus.WORKING]: 'Working',
   [WorkerStatus.THINKING]: 'Thinking',
   [WorkerStatus.TOOL_CALL]: 'Calling tool',
   [WorkerStatus.TOOL_RUNNING]: 'Running tool',
@@ -28,14 +28,14 @@ const STATUS_LABEL: Record<WorkerStatus, string> = {
  * @param raw the lowercase string form of WorkerStatus, as stored on the
  *            tracker / entity (`'thinking'`, `'tool_call'`, …).
  * @param pending if the process is in the pending-input window, override
- *                with the "Waiting for you" label regardless of underlying
+ *                with the "Idle" label regardless of underlying
  *                worker_status — this is how the user reads the row.
  */
 export function workerStatusLabel(
   raw: string | undefined,
   pending: boolean,
 ): string {
-  if (pending) return 'Waiting for you';
+  if (pending) return 'Idle';
   if (!raw) return 'Working';
   return STATUS_LABEL[raw as WorkerStatus] ?? 'Working';
 }

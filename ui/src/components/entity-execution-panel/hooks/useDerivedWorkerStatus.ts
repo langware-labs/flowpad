@@ -20,7 +20,7 @@ function deriveFromItem(item: FlowData | undefined, prev: WorkerStatus): WorkerS
   const stopReason = attrs.stop_reason as string | undefined;
 
   if (et === 'user-message' || (et === 'chat' && role === 'user')) {
-    return WorkerStatus.WAITING;
+    return WorkerStatus.WORKING;
   }
   if (et === 'tool-call') {
     return WorkerStatus.TOOL_CALL;
@@ -29,10 +29,10 @@ function deriveFromItem(item: FlowData | undefined, prev: WorkerStatus): WorkerS
     return WorkerStatus.TOOL_RUNNING;
   }
   // Claude Code writes the tool result as a user-role record; _tail_status
-  // returns WAITING on that, and the next event is almost always the
+  // returns WORKING on that, and the next event is almost always the
   // assistant's continuation (THINKING).
   if (et === 'tool-result') {
-    return WorkerStatus.WAITING;
+    return WorkerStatus.WORKING;
   }
   if (et === 'chat' && role === 'assistant') {
     if (stopReason === 'end_turn') return WorkerStatus.COMPLETE;

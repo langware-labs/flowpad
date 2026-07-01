@@ -113,7 +113,7 @@ describe('per-mode counts + view-mode gating', () => {
   it('counts by mode and hides error from the standard supported set', () => {
     const err = uid();
     emit(uid(), { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, visible: true });
-    emit(uid(), { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.WAITING, visible: false });
+    emit(uid(), { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.WORKING, visible: false });
     emit(err, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.INACTIVE, visible: false });
 
     const adv = renderHook(() => useWorkerCountsByMode(ADVANCED));

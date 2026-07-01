@@ -12,7 +12,7 @@ PRE_PROMPT_WORKER_STATUSES = {
     "initializing",
     "init",
     "empty",
-    "waiting",
+    "working",
 }
 
 TRANSCRIPT_DERIVED_WORKER_STATUSES = (

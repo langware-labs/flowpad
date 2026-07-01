@@ -139,7 +139,7 @@ EXPECTED_WORKER_VALUES = {
     "error",
     "interrupted",
     "inactive",
-    "waiting",
+    "working",
     "thinking",
     "tool_call",
     "tool_running",
@@ -230,7 +230,7 @@ def test_tail_status_tool_call(tmp_path: Path):
 
 def test_tail_status_pending_user_question_is_pending_user(tmp_path: Path):
     """An unanswered blocking user-input tool (AskUserQuestion / ExitPlanMode)
-    is PENDING_USER ("Waiting for you"), NOT TOOL_CALL — Claude has yielded to
+    is PENDING_USER ("Idle"), NOT TOOL_CALL — Claude has yielded to
     the user and is idle awaiting their answer, so the spinner must not spin.
     """
     f = tmp_path / "session.jsonl"
@@ -308,12 +308,12 @@ def test_tail_status_last_prompt_after_end_turn_is_complete(tmp_path: Path):
 def test_tail_status_last_prompt_with_end_turn_past_tail_window_is_complete(tmp_path: Path):
     """``end_turn`` stranded past the 4 KB tail window must still read COMPLETE.
 
-    Regression for the "pinned at WAITING / never PENDING_USER" bug: the turn
+    Regression for the "pinned at WORKING / never PENDING_USER" bug: the turn
     genuinely ended (``stop_reason=end_turn``) and Claude appended trailing
     ``last-prompt`` / ``system`` / envelope markers, but a large preceding
     ``tool_use`` line pushed the ``end_turn`` entry just past the 4 KB
     (``_TAIL_BYTES``) tail read. The ``last-prompt`` branch then saw no completed
-    assistant in-window and fell through to WAITING — leaving a finished, idle
+    assistant in-window and fell through to WORKING — leaving a finished, idle
     worker stuck on the animated "Waiting" pill (``ready_for_input=False``,
     never projected to PENDING_USER). The tail read must widen until the
     completing assistant turn is in-window.
@@ -322,7 +322,7 @@ def test_tail_status_last_prompt_with_end_turn_past_tail_window_is_complete(tmp_
     # A large final assistant turn (a long summary message is routine), so the
     # ``end_turn`` line's START lands > 4096 bytes from EOF once the trailing
     # ack/envelope run is appended — exactly the on-disk shape that pinned a
-    # finished worker at WAITING.
+    # finished worker at WORKING.
     big_blob = "x" * 6000
     _write_jsonl(f, [
         {"type": "user", "message": {"role": "user"}},
@@ -353,7 +353,7 @@ def test_tail_status_last_prompt_between_tool_calls_is_not_complete(tmp_path: Pa
     during that pause. Before the fix this was read as COMPLETE, cutting
     ``stream_transcript`` off mid-turn so ``flow diagnose`` falsely reported the
     result "not recorded". Only a real ``end_turn`` is terminal → here it stays
-    WAITING so the stream keeps reading.
+    WORKING so the stream keeps reading.
     """
     f = tmp_path / "session.jsonl"
     _write_jsonl(f, [
@@ -369,18 +369,18 @@ def test_tail_status_last_prompt_between_tool_calls_is_not_complete(tmp_path: Pa
         {"type": "last-prompt"},
     ])
     os.utime(f, None)
-    assert _tail_status(f) == WorkerStatus.WAITING
+    assert _tail_status(f) == WorkerStatus.WORKING
 
 
 def test_tail_status_waiting(tmp_path: Path):
-    """Active file + last entry is a fresh user message (<90s) → WAITING."""
+    """Active file + last entry is a fresh user message (<90s) → WORKING."""
     f = tmp_path / "session.jsonl"
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
     _write_jsonl(f, [
         {"type": "user", "timestamp": now_iso, "message": {"role": "user"}},
     ])
     os.utime(f, None)
-    assert _tail_status(f) == WorkerStatus.WAITING
+    assert _tail_status(f) == WorkerStatus.WORKING
 
 
 def test_tail_status_api_error(tmp_path: Path):
@@ -509,7 +509,7 @@ class _FakeProcess:
         (ProcessStatus.RUNNING, WorkerStatus.INTERRUPTED, True),
         # Not ready while worker is mid-turn
         (ProcessStatus.RUNNING, WorkerStatus.THINKING, False),
-        (ProcessStatus.RUNNING, WorkerStatus.WAITING, False),
+        (ProcessStatus.RUNNING, WorkerStatus.WORKING, False),
         (ProcessStatus.RUNNING, WorkerStatus.TOOL_CALL, False),
         (ProcessStatus.RUNNING, WorkerStatus.TOOL_RUNNING, False),
         (ProcessStatus.RUNNING, WorkerStatus.API_ERROR, False),
