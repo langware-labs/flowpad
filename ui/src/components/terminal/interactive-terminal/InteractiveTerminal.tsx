@@ -1405,9 +1405,39 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     });
   }, [active, terminalReady, sessionId, handlePtyResize, targetTimestamp]);
 
+  // Re-assert this view's geometry to the backend PTY. Needed because the same
+  // PTY can be attached in another tab with a different container size; whoever
+  // resized last wins, leaving this xterm's cols/rows stale on the backend until
+  // an input event happens to re-fit. On focus we re-fit and re-send our size —
+  // even when it's unchanged locally, it differs from the backend's current
+  // (other tab's) shape, so it triggers a SIGWINCH and repaints to our width.
+  const reassertGeometry = useCallback(() => {
+    const term = terminalRef.current;
+    const fit = fitAddonRef.current;
+    if (!term || !fit) return;
+    if (isTransitioningRef.current) return;
+    try {
+      fit.fit();
+      handlePtyResize(term.cols, term.rows);
+    } catch (e) {
+      console.warn('[InteractiveTerminal] reassertGeometry failed:', e);
+    }
+  }, [handlePtyResize]);
+
   const handleContainerClick = () => {
     terminalRef.current?.focus();
   };
+
+  // Re-sync width whenever the terminal gains focus (click, tab, or programmatic).
+  // xterm routes focus into a hidden <textarea> inside the container, so focusin
+  // (which bubbles) captures every focus path.
+  useEffect(() => {
+    if (!terminalReady) return;
+    const container = xtermContainerRef.current;
+    if (!container) return;
+    container.addEventListener('focusin', reassertGeometry);
+    return () => container.removeEventListener('focusin', reassertGeometry);
+  }, [terminalReady, reassertGeometry]);
 
   const handleFileDrop = useCallback(
     async (e: React.DragEvent) => {
