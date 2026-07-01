@@ -214,6 +214,10 @@ class BlobManager {
     const exe = this._flowBin || this.getInstalledFlowBin();
     if (!exe) throw new Error('[blob] no installed backend to start');
     this.isShuttingDown = false;
+    // Ensure the cwd exists — when running the BUNDLED blob in place we never
+    // create this.root via an install, so a fresh machine has no ~/.flow/backend
+    // and spawn() would throw ENOENT on the missing cwd.
+    fs.mkdirSync(this.root, { recursive: true });
     const env = await this._buildEnv();
     this.log.info('[blob] starting backend via frozen exe: <exe> start');
     const child = spawn(exe, ['start'], {
