@@ -1470,6 +1470,11 @@ class AgenticProcess(Entity):
         # malformed shell_id must skip the chip during serialization, not raise.
         if is_valid_entity_id(self.shell_id):
             refs.append(TypeId(type=BuiltinEntityType.SHELL.value, id=self.shell_id))
+        # collaboration_room_id → room chip: a process executed in a shared
+        # collaboration room carries the room as a lineage chip, so an executed
+        # prompt surfaces an openable "room" chip on its run.
+        if is_valid_entity_id(self.collaboration_room_id):
+            refs.append(TypeId(type=BuiltinEntityType.COLLABORATION_ROOM.value, id=self.collaboration_room_id))
         return refs
 
     @action.post(action_name="recover-project")

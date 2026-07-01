@@ -494,16 +494,18 @@ export class DockPointer implements IDockPointer {
    *   /dock/project/<projectId>
    *   /dock/project/<projectId>/collaboration_room/<roomId>
    *   /dock/project/<projectId>/collaboration_room/<roomId>/tab/<typeid>
+   *   /dock/project/<projectId>/collaboration_room/<roomId>/session/<sessionId>
    *   /dock/project/<projectId>/conversation/<conversationId>
    *
    * `typeid` is the standard TypeId string (e.g. "agentic_process-<uuid>").
    *
    * Precedence: when both `roomId` and `conversationId` are passed, `conversationId`
-   * wins — the room shape is dropped to keep the URL unambiguous.
+   * wins — the room shape is dropped to keep the URL unambiguous. Within a room,
+   * `sessionId` (the active shared session) takes precedence over `tab`.
    */
   static forProject(
     projectId?: string,
-    sub?: { roomId?: string | null; tab?: TypeId | null; conversationId?: string | null },
+    sub?: { roomId?: string | null; tab?: TypeId | null; conversationId?: string | null; sessionId?: string | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     if (!projectId) return new DockPointer(ViewType.PROJECT, undefined, undefined, layout);
@@ -512,7 +514,9 @@ export class DockPointer implements IDockPointer {
       segments.push('conversation', sub.conversationId);
     } else if (sub?.roomId) {
       segments.push('collaboration_room', sub.roomId);
-      if (sub.tab) {
+      if (sub.sessionId) {
+        segments.push('session', sub.sessionId);
+      } else if (sub.tab) {
         segments.push('tab', sub.tab.toString());
       }
     }
@@ -526,14 +530,15 @@ export class DockPointer implements IDockPointer {
    *   <projectId>
    *   <projectId>/collaboration_room/<roomId>
    *   <projectId>/collaboration_room/<roomId>/tab/<type>-<id>
+   *   <projectId>/collaboration_room/<roomId>/session/<sessionId>
    *   <projectId>/conversation/<conversationId>
    *
    * Returns nulls for segments that aren't present or the input is malformed.
    */
   static parseProjectPointer(
     pointer: string | undefined | null,
-  ): { projectTypeId: TypeId | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
-    if (!pointer) return { projectTypeId: null, roomId: null, tabTypeId: null, conversationId: null };
+  ): { projectTypeId: TypeId | null; roomId: string | null; tabTypeId: TypeId | null; sessionId: string | null; conversationId: string | null } {
+    if (!pointer) return { projectTypeId: null, roomId: null, tabTypeId: null, sessionId: null, conversationId: null };
     const parts = pointer.split('/').filter(Boolean);
     // parts[0] identifies the project. It may arrive bare (`<id>`) or as a
     // serialized `<type>-<id>` typeid — route it through TypeId so the type
@@ -542,12 +547,15 @@ export class DockPointer implements IDockPointer {
     const projectTypeId = parts[0] ? DockPointer.projectSegmentToTypeId(parts[0]) : null;
     let roomId: string | null = null;
     let tabTypeId: TypeId | null = null;
+    let sessionId: string | null = null;
     let conversationId: string | null = null;
     if (parts[1] === 'conversation' && parts[2]) {
       conversationId = parts[2];
     } else if (parts[1] === 'collaboration_room' && parts[2]) {
       roomId = parts[2];
-      if (parts[3] === 'tab' && parts[4]) {
+      if (parts[3] === 'session' && parts[4]) {
+        sessionId = parts[4];
+      } else if (parts[3] === 'tab' && parts[4]) {
         try {
           tabTypeId = new TypeId(parts[4]);
         } catch {
@@ -555,7 +563,7 @@ export class DockPointer implements IDockPointer {
         }
       }
     }
-    return { projectTypeId, roomId, tabTypeId, conversationId };
+    return { projectTypeId, roomId, tabTypeId, sessionId, conversationId };
   }
 
   /**
