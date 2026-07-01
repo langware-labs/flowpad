@@ -234,6 +234,14 @@ export function useTabProjectBuckets(): UseTabProjectBucketsResult {
     for (const tab of allTabs) {
       const pid = tab.project_id ?? null;
       if (!pid) continue;
+      // Skip a project's OWN landing/brief host tab (target === the project
+      // itself): `DockPointer.forProject` — where last-tab-close navigates —
+      // materializes a visible `project`-target Tab, but that is the empty-state
+      // host, not a real open tab. Counting it left the chip advertising "1 tab"
+      // for a project the brief correctly showed as empty. Membership in this
+      // chip means ≥1 real (content/terminal) tab; a project re-earns its slot
+      // when an actual session/content tab opens.
+      if (tab.target_type === Project.type) continue;
       counts.set(pid, (counts.get(pid) ?? 0) + 1);
     }
     return Array.from(counts.entries());
