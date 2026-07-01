@@ -1,6 +1,8 @@
 import { AgenticProcess } from '@sdk';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
+import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatActivityLine';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
+import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
 import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { cn } from '@src/lib/utils';
@@ -39,11 +41,12 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
 
   const items = useAgenticProcessStream(process);
   const turnGroups = useMemo(() => groupTurnEvents(items), [items]);
+  const activity = useTurnActivity(process);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
     scrollRef.current?.scrollToBottom();
-  }, [turnGroups.length]);
+  }, [turnGroups.length, activity.active]);
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="simple-chat-pane">
@@ -61,6 +64,12 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
         ) : (
           <div className="w-full px-4 py-3">
             <TurnGroupsList groups={turnGroups} worker={process.worker_type ?? undefined} />
+            <ChatActivityLine
+              process={process}
+              active={activity.active}
+              startedAt={activity.startedAt}
+              status={activity.status}
+            />
           </div>
         )}
       </AutoScrollContainer>

@@ -1217,6 +1217,25 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   private _pendingPtyMode?: boolean;
   private _pendingVisible?: boolean;
 
+  /**
+   * Count of in-flight streaming `prompt()` calls. A definitive, delivery-
+   * agnostic "a turn is running" signal for the chat: it brackets the actual
+   * request lifecycle, so it's reliable even when the transcript arrives in a
+   * post-hoc WS batch (where deriving status from stream deltas would miss the
+   * in-flight window). Emits `'prompting-change'` on every transition.
+   */
+  private _promptingCount = 0;
+
+  /** True while at least one streaming `prompt()` is in flight (turn running). */
+  get isPrompting(): boolean {
+    return this._promptingCount > 0;
+  }
+
+  private _setPromptingDelta(delta: number): void {
+    this._promptingCount = Math.max(0, this._promptingCount + delta);
+    this.emit('prompting-change', this.isPrompting);
+  }
+
   constructor(entity: Partial<IAgenticProcess> = {}) {
     super(entity);
     this.instruction_content = entity.instruction_content;
@@ -1817,41 +1836,49 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     const ctrl = abortController ?? new AbortController();
 
-    // Optimistic echo of the user turn into the stream.
-    this.appendUserMessage(text);
+    // Bracket the whole turn as "prompting" (the reliable in-flight signal the
+    // chat activity indicator watches) — set optimistically before the request
+    // and cleared when the stream ends or errors.
+    this._setPromptingDelta(1);
+    try {
+      // Optimistic echo of the user turn into the stream.
+      this.appendUserMessage(text);
 
-    const actionInfo = new ActionInfo(
-      'prompt',
-      AgenticProcess.type,
-      this.id,
-      'POST',
-      false,
-      true, // streaming
-      ctrl.signal,
-    );
-    actionInfo.bodyParameters = {
-      message: text,
-      ...(opts?.permissionMode ? { permission_mode: opts.permissionMode } : {}),
-    };
+      const actionInfo = new ActionInfo(
+        'prompt',
+        AgenticProcess.type,
+        this.id,
+        'POST',
+        false,
+        true, // streaming
+        ctrl.signal,
+      );
+      actionInfo.bodyParameters = {
+        message: text,
+        ...(opts?.permissionMode ? { permission_mode: opts.permissionMode } : {}),
+      };
 
-    const response = await dataManager.callAction<unknown, Response>(actionInfo);
-    if (!response || !response.body) {
-      throw new Error('[AgenticProcess.prompt] no streaming response body');
-    }
-
-    const processor = new FlowStreamProcessor();
-    processor.on(FlowEvents.DATA, (fd: FlowData) => {
-      try {
-        this.flowDataStream.ingest(fd);
-      } catch (err) {
-        console.error('[AgenticProcess.prompt] ingest error', err);
+      const response = await dataManager.callAction<unknown, Response>(actionInfo);
+      if (!response || !response.body) {
+        throw new Error('[AgenticProcess.prompt] no streaming response body');
       }
-    });
-    processor.on(FlowEvents.ERROR, (err) => {
-      console.error('[AgenticProcess.prompt] processor error', err);
-    });
 
-    await processor.ingestStream(response.body.getReader(), ctrl);
+      const processor = new FlowStreamProcessor();
+      processor.on(FlowEvents.DATA, (fd: FlowData) => {
+        try {
+          this.flowDataStream.ingest(fd);
+        } catch (err) {
+          console.error('[AgenticProcess.prompt] ingest error', err);
+        }
+      });
+      processor.on(FlowEvents.ERROR, (err) => {
+        console.error('[AgenticProcess.prompt] processor error', err);
+      });
+
+      await processor.ingestStream(response.body.getReader(), ctrl);
+    } finally {
+      this._setPromptingDelta(-1);
+    }
   }
 
   /**
