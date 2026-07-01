@@ -21,7 +21,7 @@
  * Assumes the backend + frontend are already running (see playwright.config.ts).
  */
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, activePanel, startClaudeSession } from './helpers';
+import { dismissSetupModal, activePanel, ensureAdvancedView, skipIfPtyExhausted, startClaudeSession } from './helpers';
 
 let cachedAgenticUrl: string | null = null;
 
@@ -48,15 +48,23 @@ async function gotoAgenticProcess(page: Page): Promise<string> {
   await page.goto('/dock/shell/new_terminal');
   const skip = page.getByRole('button', { name: 'Skip' });
   if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
-  await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
+  try {
+    await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
 
-  if (!page.url().includes('agentic_process-')) {
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
-    await startClaudeSession(page);
-    await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
+    if (!page.url().includes('agentic_process-')) {
+      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
+      await startClaudeSession(page);
+      await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
+    }
+
+    // The Dir side window is a ribbon panel — Advanced-view only; the backend
+    // pref now wins over the localStorage seed, so flip to Advanced at runtime.
+    await ensureAdvancedView(page);
+    await expect(activePanel(page).locator('.border-t .ml-auto')).toBeVisible({ timeout: 60_000 });
+  } catch (e) {
+    await skipIfPtyExhausted(page);
+    throw e;
   }
-
-  await expect(activePanel(page).locator('.border-t .ml-auto')).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(3_000);
   cachedAgenticUrl = page.url().split('?')[0];
   return cachedAgenticUrl;
