@@ -27,7 +27,7 @@ import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import type { ProcessKind } from './process-types';
-import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isAwaitingUserInput, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
   TranscriptSource as TranscriptSourceType,
@@ -1203,6 +1203,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   private _userInitiatedStop: boolean = false;
 
+  /**
+   * Desired-value latch for the transport/visibility fields the client sets
+   * optimistically (`switchMode`/`setVisible`). The backend is the authoritative
+   * writer of `pty_mode`/`visible`, but an in-flight entity broadcast can carry
+   * the PRE-switch value and (via `deepAssign`) clobber the optimistic one — and
+   * such a stale broadcast can arrive even AFTER an agreeing one. So once set,
+   * `onEntityUpdate` HOLDS the latch (stripping any disagreeing wire value) until
+   * the NEXT `switchMode`/`setVisible` overwrites it — these are the only ways
+   * `pty_mode`/`visible` change, so a disagreeing wire value is always stale.
+   * `undefined` = no switch yet on this client, trust the wire.
+   */
+  private _pendingPtyMode?: boolean;
+  private _pendingVisible?: boolean;
+
   constructor(entity: Partial<IAgenticProcess> = {}) {
     super(entity);
     this.instruction_content = entity.instruction_content;
@@ -1513,6 +1527,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           return;
         }
 
+        // A forced reload REPLACES the stream with the on-disk transcript (not
+        // append): clear here so the dedup below starts from empty and re-ingests
+        // the authoritative history. Callers therefore never need a separate
+        // `flowDataStream.clear()` before `loadHistory({ force: true })` — clearing
+        // without also forcing would leave `_historyLoaded` set and no-op the load,
+        // a footgun this removes. Cleared only after a successful fetch so an error
+        // doesn't flash the view empty.
+        if (force) this.flowDataStream.clear();
+
         // Update session info
         this.session_id = response.session_id;
         this.use_worker_history = response.use_worker_history;
@@ -1598,6 +1621,42 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   get historyLoaded(): boolean {
     return this._historyLoaded;
+  }
+
+  /**
+   * Resolve once the process is READY for the next turn/submit — the canonical
+   * "can I send now" gate, so callers never hand-roll status/mode checks. Keyed
+   * on the LIVE transport (headless: idle/stopped; live PTY: RUNNING + awaiting),
+   * reading the watch-updated `status`/`workerStatus`. Requires a live (watched)
+   * process; throws if not ready within `timeout`.
+   *
+   * @example
+   *   await ap.switchMode(WorkerMode.Interactive);
+   *   await ap.waitForReady();     // PTY resumed + at its prompt
+   *   await ap.submit('do the thing');
+   */
+  async waitForReady(options: { timeout?: number; interval?: number } = {}): Promise<void> {
+    const { timeout = 60_000, interval = 300 } = options;
+    // Transport-aware readiness:
+    //  - live PTY: RUNNING and the worker awaiting input (idle/complete/
+    //    interrupted/pending_user — the same `isAwaitingUserInput` gate the UI
+    //    toggle uses, so it can't 409). Requiring RUNNING also ignores the STALE
+    //    pre-switch state right after switchMode — the resume hasn't booted yet.
+    //  - headless: no persistent worker, so a submit always enqueues / boots a
+    //    per-turn worker — it's always ready to accept the next turn.
+    const ready = () =>
+      !this.pty_mode || (this.status === ProcessStatus.RUNNING && isAwaitingUserInput(this.workerStatus));
+    const deadline = Date.now() + timeout;
+    for (;;) {
+      if (ready()) return;
+      if (Date.now() > deadline) {
+        throw new Error(
+          `waitForReady: not ready within ${timeout}ms ` +
+            `(status=${this.status} worker=${this.workerStatus} pty=${this.pty_mode})`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, interval));
+    }
   }
 
   /**
@@ -1807,6 +1866,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     actionInfo.bodyParameters = { visible };
     await dataManager.callAction(actionInfo);
     this.visible = visible; // optimistic; the broadcast confirms it
+    this._pendingVisible = visible; // latch until the wire agrees (see onEntityUpdate)
   }
 
   /**
@@ -2260,6 +2320,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
     if (mode === WorkerMode.Interactive) {
       this.pty_mode = true;
+      this._pendingPtyMode = true;
+      this._pendingVisible = true;
       await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
       this.emit('restarted', { process: this });
       return;
@@ -2278,6 +2340,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
     this.visible = false;
     this.pty_mode = false;
+    this._pendingVisible = false;
+    this._pendingPtyMode = false;
   }
 
   /**
@@ -2485,6 +2549,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const q = data.queue;
       this.queue = q ? { enabled: !!q.enabled, entries: [...(q.entries ?? [])] } : null;
       delete data.queue;
+    }
+    // Desired-value latch: once the client optimistically sets the transport /
+    // visibility (`switchMode`/`setVisible`), HOLD that value against every
+    // broadcast until the NEXT client switch overwrites the latch. `pty_mode` /
+    // `visible` only ever change via those client actions, so a wire value that
+    // disagrees is always stale (a pre-switch broadcast, which can arrive even
+    // AFTER an agreeing one) — strip it so the optimistic value survives
+    // `deepAssign`. Do NOT clear on first match: an early agreeing broadcast
+    // followed by a delayed stale one is exactly the desync this guards against.
+    // Same "remove from payload before deepAssign" shape as the `queue` guard.
+    if (this._pendingPtyMode !== undefined && 'pty_mode' in data && data.pty_mode !== this._pendingPtyMode) {
+      delete data.pty_mode;
+    }
+    if (this._pendingVisible !== undefined && 'visible' in data && data.visible !== this._pendingVisible) {
+      delete data.visible;
     }
     // Skip no-op transitions: castAndDeepAssign() runs this hook for every
     // WS entity-op AND for every REST-response write-through, so the same

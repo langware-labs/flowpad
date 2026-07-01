@@ -1,4 +1,4 @@
-import { APIEntity, createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User } from '@sdk';
+import { APIEntity, createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User, type AgenticProcess, type WorkerStatus } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -9,6 +9,7 @@ import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-
 import { AlertCircle, Download, File, FileText, Loader2, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { MessageContextButton } from './MessageContextButton';
+import { MessageRunStatus } from './MessageRunStatus';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, iconForEntity } from './EntityChip';
@@ -108,6 +109,13 @@ interface FlowMessageBubbleProps {
   timestamp: string;
   task?: ITask | null;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
+  /** The conversation's headless run + its live status, resolved once by the
+   *  parent and shared across bubbles. Drive the per-message run-status
+   *  one-liner that replaces "Execute" once the prompt is executed. */
+  run?: AgenticProcess | null;
+  runStatus?: WorkerStatus | null;
+  /** Open this message's executed run in the conversation drawer's Runs tab. */
+  onOpenRun?: (processId: string) => void;
   /** Per-message Implement Plan handler. The bubble itself decides whether to
    *  render the chip (spec present + recipient role) — pass the raw messageId
    *  callback and the bubble binds it. */
@@ -167,6 +175,9 @@ export function FlowMessageBubble({
   timestamp,
   task,
   onApproveAndExecute,
+  run,
+  runStatus,
+  onOpenRun,
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
@@ -563,6 +574,7 @@ export function FlowMessageBubble({
   const footer = (
     <>
       {attachmentFooter}
+      <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
       <MessageContextButton fm={fm} projectId={attachmentProjectId} />
     </>
   );

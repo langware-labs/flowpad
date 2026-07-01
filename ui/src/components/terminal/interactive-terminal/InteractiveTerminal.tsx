@@ -1274,8 +1274,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       // attachPty({ force: true }) resets attach state, then re-attaches
       // and re-subscribes the output handler once the attach completes.
+      // The re-attach races the restart's PTY lifecycle (the old PTY is killed
+      // and the new one is still spawning), so a transient "PTY not found"
+      // rejection is expected and recoverable — the subsequent attach (on the
+      // settled session) reconnects. Swallow it so it doesn't surface as an
+      // uncaught page error; a real, persistent failure shows as a blank
+      // terminal the user can click to reattach (TerminalRuntimeErrorBanner).
       const shell = shellRef.current;
-      void shell?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true });
+      void shell
+        ?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true })
+        .catch((err) => console.debug('[InteractiveTerminal] restart re-attach deferred:', err));
 
       // Re-fit after a frame so xterm recalculates row/col geometry
       requestAnimationFrame(() => {
@@ -1464,19 +1472,26 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         await process.switchMode(WorkerMode.Interactive, dims);
         setChatUiOverride('terminal');
       }
-      // Reconcile: pull in turns the other mode produced. clear() alone leaves
-      // `_historyLoaded` set, so force the reload.
-      process.flowDataStream.clear();
-      await process.loadHistory({ force: true });
     } catch (err) {
       console.error('[InteractiveTerminal] mode switch failed', err);
       notify.error({
         title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
         message: err instanceof Error ? err.message : String(err),
       });
-    } finally {
       setSwitching(false);
+      return;
     }
+    // The TRANSPORT switch is done — re-enable the toggle now. The transcript
+    // reconcile (pull in turns the other mode produced) is a VIEW concern and is
+    // slow on a large session (the backend transcript parse), so DON'T hold the
+    // toggle disabled behind it — that wedged rapid switching. Reconcile in the
+    // background; the chat pane fills in when it resolves (and the live WS stream
+    // keeps it current meanwhile). `loadHistory({ force: true })` REPLACES the
+    // stream with the transcript (clears internally) — no separate clear needed.
+    setSwitching(false);
+    void process
+      .loadHistory({ force: true })
+      .catch((err) => console.debug('[InteractiveTerminal] post-switch reconcile deferred:', err));
   }, [process, switching, showSimpleChat, awaitingUserInput]);
 
   // Compute synthetic shell-pane active state for the ribbon

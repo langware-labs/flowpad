@@ -52,6 +52,13 @@ export function firstUnapprovedPromptIdx(fm: FlowMessage | null | undefined): nu
   return (fm?.attachment ?? []).findIndex((a) => isPromptAttachment(a) && !a.approved_by);
 }
 
+/** True when the message carried a prompt and every prompt attachment is now
+ *  approved — i.e. it has been executed, so the "Execute" CTA (gated on the
+ *  inverse `firstUnapprovedPromptIdx >= 0`) has self-hidden. */
+export function isPromptExecuted(fm: FlowMessage | null | undefined): boolean {
+  return promptAttachmentsOf(fm).length > 0 && firstUnapprovedPromptIdx(fm) < 0;
+}
+
 /** TypeId of the first prompt-entity attachment, or null. */
 export function flowMessagePromptEntityTypeId(fm: FlowMessage | null | undefined): TypeId | null {
   for (const att of fm?.attachment ?? []) {

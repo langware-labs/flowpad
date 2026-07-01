@@ -554,6 +554,14 @@ class Shell(Entity):
         await self._wait_for_shell_ready()
         await pty_handle.write(f"{text}\r".encode())
 
+    async def wait_for_input_ready(self, timeout: float = 5.0) -> None:
+        """Public gate: block until the PTY is at its prompt (readline initialised)
+        so an injected write lands. ``write``/``write_then_submit`` gate on this
+        internally; a raw ``write_raw`` (e.g. ``AgenticProcess.input``) must call
+        this FIRST, or a freshly-(re)booted TUI silently drops the keystrokes.
+        """
+        await self._wait_for_shell_ready(timeout=timeout)
+
     async def write_raw(self, data: bytes) -> None:
         """Send raw bytes verbatim to PTY stdin (no \\r, no bracketed paste).
 

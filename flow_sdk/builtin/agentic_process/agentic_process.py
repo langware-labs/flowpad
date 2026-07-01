@@ -1844,6 +1844,14 @@ class AgenticProcess(Entity):
         """
         options = options or {}
         if await self._is_live_pty():
+            # A raw PTY write bypasses shell.write()'s readiness gate, so a
+            # freshly-(re)booted TUI (e.g. right after switch→Interactive resumes
+            # the session) would DROP these keystrokes. Wait for the prompt to be
+            # ready HERE so callers — and submit(instruction), which types via
+            # input() — never have to settle the PTY themselves.
+            shell = await self.shell()
+            if shell:
+                await shell.wait_for_input_ready()
             await self.send(text.encode())  # raw bytes ⇒ no submit
             return ApiSuccessResponse(data={"status": "typed", "staged": False})
         # ``queue.enqueue`` persists the entry to its own file — durable without a
