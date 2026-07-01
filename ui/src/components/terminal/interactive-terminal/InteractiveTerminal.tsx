@@ -1486,9 +1486,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     // slow on a large session (the backend transcript parse), so DON'T hold the
     // toggle disabled behind it — that wedged rapid switching. Reconcile in the
     // background; the chat pane fills in when it resolves (and the live WS stream
-    // keeps it current meanwhile). clear() leaves `_historyLoaded` set, so force.
+    // keeps it current meanwhile). `loadHistory({ force: true })` REPLACES the
+    // stream with the transcript (clears internally) — no separate clear needed.
     setSwitching(false);
-    process.flowDataStream.clear();
     void process
       .loadHistory({ force: true })
       .catch((err) => console.debug('[InteractiveTerminal] post-switch reconcile deferred:', err));

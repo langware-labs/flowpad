@@ -27,7 +27,7 @@ import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import type { ProcessKind } from './process-types';
-import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isAwaitingUserInput, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
   TranscriptSource as TranscriptSourceType,
@@ -1527,6 +1527,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           return;
         }
 
+        // A forced reload REPLACES the stream with the on-disk transcript (not
+        // append): clear here so the dedup below starts from empty and re-ingests
+        // the authoritative history. Callers therefore never need a separate
+        // `flowDataStream.clear()` before `loadHistory({ force: true })` — clearing
+        // without also forcing would leave `_historyLoaded` set and no-op the load,
+        // a footgun this removes. Cleared only after a successful fetch so an error
+        // doesn't flash the view empty.
+        if (force) this.flowDataStream.clear();
+
         // Update session info
         this.session_id = response.session_id;
         this.use_worker_history = response.use_worker_history;
@@ -1612,6 +1621,42 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   get historyLoaded(): boolean {
     return this._historyLoaded;
+  }
+
+  /**
+   * Resolve once the process is READY for the next turn/submit — the canonical
+   * "can I send now" gate, so callers never hand-roll status/mode checks. Keyed
+   * on the LIVE transport (headless: idle/stopped; live PTY: RUNNING + awaiting),
+   * reading the watch-updated `status`/`workerStatus`. Requires a live (watched)
+   * process; throws if not ready within `timeout`.
+   *
+   * @example
+   *   await ap.switchMode(WorkerMode.Interactive);
+   *   await ap.waitForReady();     // PTY resumed + at its prompt
+   *   await ap.submit('do the thing');
+   */
+  async waitForReady(options: { timeout?: number; interval?: number } = {}): Promise<void> {
+    const { timeout = 60_000, interval = 300 } = options;
+    // Transport-aware readiness:
+    //  - live PTY: RUNNING and the worker awaiting input (idle/complete/
+    //    interrupted/pending_user — the same `isAwaitingUserInput` gate the UI
+    //    toggle uses, so it can't 409). Requiring RUNNING also ignores the STALE
+    //    pre-switch state right after switchMode — the resume hasn't booted yet.
+    //  - headless: no persistent worker, so a submit always enqueues / boots a
+    //    per-turn worker — it's always ready to accept the next turn.
+    const ready = () =>
+      !this.pty_mode || (this.status === ProcessStatus.RUNNING && isAwaitingUserInput(this.workerStatus));
+    const deadline = Date.now() + timeout;
+    for (;;) {
+      if (ready()) return;
+      if (Date.now() > deadline) {
+        throw new Error(
+          `waitForReady: not ready within ${timeout}ms ` +
+            `(status=${this.status} worker=${this.workerStatus} pty=${this.pty_mode})`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, interval));
+    }
   }
 
   /**
