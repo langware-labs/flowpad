@@ -264,7 +264,19 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   };
   const listChildren = async (): Promise<Browseable[]> => {
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
-    return results.map((r) => assetChild(type.type_name, type.icon, r, !!type.folder_backed, rootId, onAfterDelete));
+    // A tree node's identity is its asset path (`asset:<type>:<path>`), so the
+    // same file surfaced by more than one search result (e.g. discovered under
+    // multiple scopes, or duplicate DB records for one on-disk asset) must
+    // collapse to a single row — otherwise two children share a React key.
+    const seen = new Set<string>();
+    const children: Browseable[] = [];
+    for (const r of results) {
+      const child = assetChild(type.type_name, type.icon, r, !!type.folder_backed, rootId, onAfterDelete);
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
+      children.push(child);
+    }
+    return children;
   };
 
   const root: BrowseableRoot = {
