@@ -1,4 +1,6 @@
 import { ViewMode, setViewMode, useViewMode } from '@src/contexts/view-mode-context';
+import { useCurrentDock } from '@src/navigation';
+import { ViewType } from '@src/types/ViewType';
 
 const LABELS: Record<ViewMode, string> = {
   [ViewMode.Vibe]: 'Vibe',
@@ -9,7 +11,9 @@ const LABELS: Record<ViewMode, string> = {
 
 // Ordered cycles. Normal users wrap at Advanced; developers (already in Dev) also
 // reach Dev before wrapping. One ordered list per ring — next = the entry after
-// `mode`, wrapping to the start (and from any off-ring mode back to Vibe).
+// `mode`, wrapping to the start (and from any off-ring mode back to the first entry).
+// Vibe leads each ring; it's dropped from the offered cycle off the agentic-process
+// view (see `ring` below).
 const RING_NORMAL: readonly ViewMode[] = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced];
 const RING_DEV: readonly ViewMode[] = [...RING_NORMAL, ViewMode.Dev];
 
@@ -17,13 +21,21 @@ const RING_DEV: readonly ViewMode[] = [...RING_NORMAL, ViewMode.Dev];
  * Footer text-pill toggle for the global view mode (Vibe / Standard / Advanced / Dev).
  * Normal users cycle Vibe → Standard → Advanced → Vibe.
  * Developers in Dev mode also reach Dev (Vibe → Standard → Advanced → Dev → Vibe).
+ * Vibe is not *offered* off the agentic-process view (it's the creator skin that
+ * surface is built for), so the cycle collapses to Standard → Advanced (→ Dev) elsewhere.
  * Behaves like the theme toggle: flips a persisted, app-wide flag. Lives at the far left.
  */
 export function ViewToggle() {
   const mode = useViewMode();
+  const currentDock = useCurrentDock();
+  const onAgenticProcess = currentDock?.viewType === ViewType.AGENTIC_PROCESS;
   // Include Dev in the cycle only when already in Dev mode (developers know they're there)
   const isDev = mode === ViewMode.Dev;
-  const ring = isDev ? RING_DEV : RING_NORMAL;
+  const baseRing = isDev ? RING_DEV : RING_NORMAL;
+  // Don't offer Vibe as a pick off the agentic-process view. When the persisted mode is
+  // Vibe but we're off that view, `indexOf` returns -1 and `next` lands on the first ring
+  // entry (Standard), lifting the user back out on click.
+  const ring = onAgenticProcess ? baseRing : baseRing.filter((m) => m !== ViewMode.Vibe);
   const next = ring[(ring.indexOf(mode) + 1) % ring.length];
 
   return (

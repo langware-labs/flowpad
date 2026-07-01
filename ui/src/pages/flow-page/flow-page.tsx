@@ -1,5 +1,5 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { CollapsedSidebar } from '@src/components/collapsed-sidebar';
+import { CollapsedSidebar, RAIL_WIDTH_CLASS } from '@src/components/collapsed-sidebar';
 import { Footer } from '@src/components/footer';
 import { EnvVar, useEnvVarsStore } from '@src/hooks/use-env-vars-store';
 import { EnvVarType } from '@src/types/envVarTypes';
@@ -44,10 +44,18 @@ export default function FlowPage() {
     currentDock?.viewType === ViewType.SHELL && !!currentDock?.pointer?.includes('agentic_process');
 
   // Vibe mode: no left rail (the chat panel owns the chrome), Lovable-style.
+  // We still RESERVE the rail's footprint with an invisible spacer that mirrors
+  // CollapsedSidebar's box (RAIL_WIDTH_CLASS + 1px right border) so the content
+  // column — and the footer buttons inside it — sit at the exact same x-offset as
+  // in Standard/Advanced. Without it, dropping the rail shifts everything left and
+  // the footer controls jump when the view mode changes.
   if (isVibe) {
     return (
       <SidebarProvider defaultOpen={false} className="h-full !min-h-0">
         <div data-testid="flow-page" className="flex h-full w-full overflow-hidden bg-background">
+          {/* Rail-width spacer (invisible border keeps the same footprint) */}
+          <div aria-hidden className={`${RAIL_WIDTH_CLASS} shrink-0 border-r border-transparent`} />
+
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex-1 overflow-hidden">{inVibeSession ? <VibeWorkspace /> : <ContentPanel />}</div>
             <Footer />

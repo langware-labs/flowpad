@@ -46,13 +46,17 @@ export interface UseDockNavigationReturn {
  * }
  * ```
  */
-export function useDockNavigation(): UseDockNavigationReturn {
-  const navigate = useNavigate();
+/**
+ * Read-only selector for the current dock pointer parsed from the URL. Prefer this
+ * over the full {@link useDockNavigation} when a component only needs to know *what*
+ * is shown (e.g. which view type) and never navigates — it skips building a
+ * NavigationActions instance and rewriting the `navigation` global on every URL change.
+ */
+export function useCurrentDock(): DockPointer | null {
   const location = useLocation();
-  const params = useParams<{ agentId: string; processId: string; viewType?: string; pointer?: string; '*'?: string }>();
+  const params = useParams<{ viewType?: string }>();
 
-  // Parse current dock state from URL
-  const currentDock = useMemo(() => {
+  return useMemo(() => {
     if (params.viewType) {
       try {
         return DockPointer.fromUrl(`${location.pathname}${location.search}`);
@@ -64,6 +68,12 @@ export function useDockNavigation(): UseDockNavigationReturn {
     }
     return null;
   }, [location.pathname, location.search, params.viewType]);
+}
+
+export function useDockNavigation(): UseDockNavigationReturn {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentDock = useCurrentDock();
 
   // Create navigation instance with currentDock so openDock() can deduplicate
   const navigation = useMemo(() => {
