@@ -150,11 +150,20 @@ def test_toggling_flowpad_assistant_changes_restart_snapshot(worker_type):
     assert on._restart_snapshot() != off._restart_snapshot()
 
 
-def test_visible_changes_codex_launch_shape_but_not_claude_launch_shape():
+def test_pty_mode_changes_codex_launch_shape_but_visible_does_not():
+    # New contract (commit 624ddb89): the worker argv keys on the *transport intent*
+    # (``pty_mode``), NOT on tab ``visible``. Codex's interactive PTY shape differs
+    # from its ``codex exec --json`` headless shape, so pty_mode flips the launch
+    # snapshot; toggling tab visibility alone never restarts the worker. Claude's
+    # launch shape is unaffected by either flag.
+    codex_headless = AgenticProcess(worker_type="codex", pty_mode=False)
+    codex_pty = AgenticProcess(worker_type="codex", pty_mode=True)
+    assert codex_headless._restart_snapshot() != codex_pty._restart_snapshot()
+
     codex_hidden = AgenticProcess(worker_type="codex", visible=False)
     codex_visible = AgenticProcess(worker_type="codex", visible=True)
-    claude_hidden = AgenticProcess(worker_type="claude_code", visible=False)
-    claude_visible = AgenticProcess(worker_type="claude_code", visible=True)
+    assert codex_hidden._restart_snapshot() == codex_visible._restart_snapshot()
 
-    assert codex_hidden._restart_snapshot() != codex_visible._restart_snapshot()
-    assert claude_hidden._restart_snapshot() == claude_visible._restart_snapshot()
+    claude_headless = AgenticProcess(worker_type="claude_code", pty_mode=False)
+    claude_pty = AgenticProcess(worker_type="claude_code", pty_mode=True)
+    assert claude_headless._restart_snapshot() == claude_pty._restart_snapshot()

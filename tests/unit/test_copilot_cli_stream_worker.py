@@ -26,8 +26,12 @@ def _fake_copilot_argv(lines: list[dict], delay_ms: int = 5) -> list[str]:
 
 
 def _patch_spawn(worker: CopilotCLIStreamWorker, argv: list[str], env: dict | None = None) -> None:
-    def _stub(context: AgenticContext):
-        return argv, (env or {})
+    # ``_build_spawn`` now takes ``(context, prompt)`` and returns a 3-tuple
+    # ``(argv, env, stdin)`` — the prompt is delivered via the child's stdin
+    # body, not argv (commit 85ec7bb6, unified WorkerCLIOptions). The stub mirrors
+    # that shape, echoing the prompt back as the stdin body.
+    def _stub(context: AgenticContext, prompt: str):
+        return argv, (env or {}), prompt
 
     worker._build_spawn = _stub  # type: ignore[assignment]
 

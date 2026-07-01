@@ -117,9 +117,17 @@ def test_codex_visible_discovers_rollout_by_cwd_and_launch_time(isolated_codex_h
     assert descriptor.session_id == thread_id
 
 
-def test_codex_headless_prefers_process_local_stream(isolated_codex_home, isolated_records_root):
+def test_codex_headless_prefers_rollout_over_process_local_stream(
+    isolated_codex_home, isolated_records_root
+):
+    # New contract (commit 624ddb89): the rollout is the canonical record for BOTH
+    # transports — headless no longer prefers the process-local stdout tee (that tee
+    # carries assistant output only, no user-message entry, so transcript/prompts
+    # came back empty for headless). With a rollout present, even a headless
+    # (visible=False) process resolves to it; the stdout tee is only the fallback
+    # before codex mints/captures its rollout id.
     thread_id = "019dfe96-cc36-7d80-a907-de19575a6ea4"
-    _write_rollout(isolated_codex_home.codex_sessions_dir, thread_id=thread_id, cwd="/repo")
+    rollout = _write_rollout(isolated_codex_home.codex_sessions_dir, thread_id=thread_id, cwd="/repo")
     proc = _process(visible=False, session_id=thread_id)
     local = codex_transcript_path_for_process(proc.id)
     local.write_text(
@@ -131,9 +139,9 @@ def test_codex_headless_prefers_process_local_stream(isolated_codex_home, isolat
     descriptor = proc.driver.transcript_descriptor(proc)
 
     assert descriptor is not None
-    assert descriptor.path == local
-    assert descriptor.format is TranscriptFormat.CODEX_STREAM
-    assert descriptor.source is TranscriptSource.PROCESS_LOCAL
+    assert descriptor.path == rollout
+    assert descriptor.format is TranscriptFormat.CODEX_ROLLOUT
+    assert descriptor.source is TranscriptSource.WORKER_SESSION
 
 
 @pytest.mark.asyncio

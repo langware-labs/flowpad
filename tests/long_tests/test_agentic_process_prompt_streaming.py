@@ -78,6 +78,12 @@ async def _create_print_mode_process(hub_client, compute_node_id: str, workdir: 
             "permission_mode": "bypassPermissions",
         },
         "visible": False,
+        # pty_mode is the durable transport selector (defaults to True since the
+        # commit-624ddb89 routing refactor decoupled transport from `visible`).
+        # Print-mode streaming (the flow-status/flow-chat/flow-end worker frames
+        # this test asserts) is reached only when pty_mode is False; visible=False
+        # alone now yields the PTY transcript-entry stream.
+        "pty_mode": False,
     }
     r = await hub_client.post(
         f"/api/v1/graph/compute_node/{compute_node_id}/createProcess",

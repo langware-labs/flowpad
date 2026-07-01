@@ -170,6 +170,9 @@ cd ui && npm run test:vitest:headless
 ## Phase 10 — vitest hub tests (hub + dev-1/dev-2 required)
 
 1. **Hub preflight**: same as Phase 9 (reuse its result if the hub is already up and healthy).
+
+   > **The hub tests run ENTIRELY on cycle-owned instances — never on the user's main dev backend (`localhost:9008` / `FLOW_INSTANCE=oss`), and NEVER by editing the repo's `.env.local`.** Every hub test (both the `getInstance('dev-1'/'dev-2')` two-client files AND the single-backend `setupLiveBackend`/`SHARE_INST_*` files like `asset_share_index_matrix`) resolves its backend per-realm from `.env.<name>.local` and overrides `__FLOWPAD_API_URL__` at import — so the hub `vitest.config`'s `LOCAL_SERVER_PORT` (9008) fallback is a **red herring that is immediately overridden** and is not actually used. If a hub test is failing, do NOT diagnose it as "9008/alice is logged out" and do NOT restart or reconfigure the user's backend or uncomment `FLOWPAD_HUB_URL` in the repo `.env.local` to "fix" it — that is the wrong layer and touches the user's environment. Create whatever you need as your OWN `dev-1`/`dev-2` instances instead.
+
 2. **Instances**: the suite expects the fixed names **dev-1** and **dev-2** (`ui/tests/hub/_instances.ts`). Check first, reuse if already UP — launch only what's missing (`launch` restarts an existing instance, so don't run it against a healthy one):
    ```bash
    scripts/instance_ctl.sh status            # see what's already UP
@@ -177,11 +180,22 @@ cd ui && npm run test:vitest:headless
    scripts/instance_ctl.sh launch dev-2      # only if dev-2 is not UP
    scripts/instance_ctl.sh status            # wait until both report UP
    ```
-3. **Run**:
+   **UP is not enough — verify both are cloud-LOGGED-IN to the local hub before trusting any verdict.** A launched-but-logged-out instance makes the share/poll tests hang to timeout (they wait forever for a hub WS delivery that never comes). `instance_ctl` auto-logs-in on `launch`, but an instance that was already UP may have dropped its session. Check each:
    ```bash
-   cd ui && npm run test:vitest:hub
+   for p in dev-1 dev-2; do
+     port=$(grep LOCAL_SERVER_PORT "$(git rev-parse --show-toplevel)/.env.$p.local" | cut -d= -f2)
+     curl -s "http://localhost:$port/api/v1/cloud/status" \
+       | python3 -c "import sys,json;d=json.load(sys.stdin).get('data',{});print('$p',d.get('login',{}).get('status'),'hub_ws=',d.get('hub_ws_connected'),d.get('cloud_url'))"
+   done
+   # Require: status=logged_in, hub_ws=True, cloud_url=http://localhost:8093/api/v1 for BOTH.
    ```
-4. **On failure**: Debug Mode flow (see `modes/debug.md`). Restart instances between re-runs as needed (`kill` + `launch`). The suite's 30s test timeouts are a hard cap — never raise them. Unresolvable → `flagged`.
+   If either is `logged_out` or points at a non-local `cloud_url`, `kill` + `launch` it (which re-triggers hub signup + cloud login) — do NOT reach for the user's backend.
+3. **Run — always the FULL project, never per-file for the verdict.** Several hub files are **paired sender/receiver tests** (`matrix.alice`/`matrix.bob`, `conversation_messages.test`/`conversation_messages.bob.test`): the two halves run CONCURRENTLY in the same project run and rendezvous over the hub. Running one paired file in isolation **hangs or fails-fast waiting for a counterpart that never runs** — that is a harness artifact, not a real failure. Use the whole-project run for the machine verdict:
+   ```bash
+   cd ui && FLOWPAD_HUB_URL=http://localhost:8093 npm run test:vitest:hub
+   ```
+   Per-file runs are only for RCA of a NON-paired file already known to fail in the full run.
+4. **On failure**: Debug Mode flow (see `modes/debug.md`). First rule out the two artifacts above (logged-out instance; a paired file isolated). Restart instances between re-runs as needed (`kill` + `launch`). The suite's 30s test timeouts are a hard cap — never raise them. A genuine hang/failure with both instances logged-in and the full project running is a REAL bug to RCA. Unresolvable → `flagged`.
 5. **Cleanup (always, even when flagging)**: kill only the instances THIS phase launched:
    ```bash
    scripts/instance_ctl.sh kill dev-1   # only if Phase 10 launched it
@@ -195,6 +209,17 @@ cd ui && npm run test:vitest:headless
 A closed-loop gate over every `.md.ts` Playwright test. **The cycle cannot pass this phase until every `.md.ts` exits 0 under the manager's own re-run.** The machine verdict — the Playwright exit code / JSON report — is the sole source of truth; **no agent's self-report ever greens a file.** This is the phase that catches real regressions, so it must block, not merely record: a prior regression "had a test but still escaped" precisely because this phase used to be advisory.
 
 **Before launching the sweep, verify system load is low.** Check `uptime` and examine the 1-minute load average. If it exceeds approximately the machine's core count, defer the sweep (run lower-load work or wait) and re-check — timeout-bound Playwright verdicts collected on a saturated host are noise that will require re-running anyway, and raising timeouts is not permitted. A clean run under normal load is far more valuable than a timeout-saturated run under pressure.
+
+**Preflight: force the instance to `view_mode=standard` (NON-OBVIOUS, blocks the whole sweep otherwise).** `instance_ctl` creates a brand-NEW hub account, and a new account is seeded `preferences.ui.view_mode=vibe`. Vibe renders the "Build something amazing" creator homepage — which has NONE of the standard `HomeLanding` surfaces the manual-regression suite asserts (`/dock/home` "Hey <name>" greeting, `[data-testid="recent-conversations-strip"]`, current-activity). On a Vibe-defaulted instance the `general` category fails ~8/13 and many category tests fail systematically — looking like a mass regression when it is purely the view-mode default. The suite targets the STANDARD surface, so set it once before the sweep (preferences.json is separate from the graph DB, so it survives the per-category DB clears):
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home() / ".flow/instances/<INSTANCE>/preferences.json"
+d = json.loads(p.read_text()); d["preferences.ui.view_mode"] = "standard"
+p.write_text(json.dumps(d, indent=2)); print("view_mode -> standard")
+PY
+```
+The frontend reads `preferences.json` fresh via its VFS path at each app boot, so no backend restart is needed. Verified: `general` goes 8-fail → 13/13 pass with this one change. (If a NEW category still fails wholesale on homepage/greeting locators, re-check this pref first — a later DB restore or instance relaunch can reset it.)
 
 **Write integrity while the sweep runs:** The sweep clears the DB and mutates instances repeatedly across 18 categories in the background. While the sweep is running, those instances are exclusively owned by the sweep — **record no other verdicts against them, run no other suites, clear no DBs, restart nothing on them.** A verdict collected while another actor mutates the environment is not a verdict (reference SKILL.md "One writer per instance"); concurrent writes manufacture false failures. Schedule verification work that needs the same instances before the sweep starts or after it completes. The background sweep provides load isolation automatically — do serial verification work on a separate instance or interval, never during.
 

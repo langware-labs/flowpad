@@ -67,8 +67,19 @@ export class InstancePreferences extends EventEmitter {
     // may call loadJson() during first paint (before bootstrap wired the node) — that
     // early call is a retryable no-op; this reaction is the load that actually reads
     // preferences.json, so no caller has to know prefMan's load ordering.
-    dataContext.on(ContextEventType.CONTEXT_CHANGED, () => {
-      if (!this._loaded && this.computeNodeTypeId && this.preferencesPath) void this.loadJson();
+    //
+    // Attach AFTER the current module-evaluation tick. `dataContext` and this
+    // singleton live in the same services graph; under some import orders (notably
+    // certain test entrypoints) `dataContext` is still mid-initialization when this
+    // constructor runs at module load, so touching it synchronously throws
+    // ("Cannot read properties of undefined (reading 'on')"). Deferring to a
+    // microtask lets the module graph settle first — by then `dataContext` is
+    // defined. CONTEXT_CHANGED fires far later (async bootstrap), so nothing is
+    // missed in the one-microtask gap.
+    queueMicrotask(() => {
+      dataContext?.on(ContextEventType.CONTEXT_CHANGED, () => {
+        if (!this._loaded && this.computeNodeTypeId && this.preferencesPath) void this.loadJson();
+      });
     });
   }
 
