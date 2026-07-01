@@ -3721,7 +3721,6 @@ class AgenticProcess(Entity):
         d["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
         ready = is_ready_for_input(self, computed)
         d["ready_for_input"] = ready
-        d["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         d["queue"] = self._queue_state()
         d["supports_plan_mode"] = self._supports_plan_mode()
         return d
@@ -3737,7 +3736,6 @@ class AgenticProcess(Entity):
         data["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
         ready = is_ready_for_input(self, computed)
         data["ready_for_input"] = ready
-        data["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
         # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
@@ -3845,10 +3843,9 @@ class AgenticProcess(Entity):
             return WorkerStatus.INACTIVE
 
         # Project terminal underlying status to PENDING_USER (recent) or
-        # INACTIVE (aged > 5min) based on ``terminal_at``. The 5-minute window
-        # used to be FE-derived from ``ready_for_input_since``; this brings
-        # the decision backend-side so every consumer (serializer, get_status,
-        # is_ready_for_input) sees the same projected value.
+        # INACTIVE (aged > 5min) based on ``terminal_at``, backend-side, so every
+        # consumer (serializer, get_status, is_ready_for_input) sees the same
+        # projected value.
         if derived in _PROJECTABLE_TERMINAL and self.terminal_at is not None:
             age = (datetime.now(timezone.utc) - self.terminal_at).total_seconds()
             return WorkerStatus.PENDING_USER if age < 300 else WorkerStatus.INACTIVE
@@ -3863,29 +3860,7 @@ class AgenticProcess(Entity):
             "status": self.status,
             "worker_status": str(worker_status) if worker_status else WorkerStatus.IDLE.value,
             "ready_for_input": ready,
-            "ready_for_input_since": self._ready_for_input_since() if ready else None,
         })
-
-    def _ready_for_input_since(self) -> float | None:
-        """Epoch-ms timestamp approximating when the worker became ready-for-input.
-
-        Derived from the transcript file's mtime: the worker writes the
-        completion / interrupt / idle entry that puts it into a ready state,
-        and then stops writing — so mtime is stable at "became ready at" for
-        as long as the worker stays ready. None when the transcript is
-        unavailable (pre-prompt worker, missing path).
-
-        Used by the UI pending-action store to keep glow state idempotent
-        across page refreshes: refresh sees the same timestamp, so already-
-        acknowledged transitions don't re-arm.
-        """
-        try:
-            path = self.driver.transcript_path(self)
-            if path is None or not path.exists():
-                return None
-            return path.stat().st_mtime * 1000.0
-        except Exception:
-            return None
 
     @property
     def is_idle(self) -> bool:
