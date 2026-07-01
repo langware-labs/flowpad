@@ -87,6 +87,8 @@ interface EntityExecutionPanelProps {
   emptyStateText?: string;
   /** Optional header label rendered above the panel (e.g. "Agent execution"). Hidden when omitted. */
   headerLabel?: string;
+  /** Optional node rendered on the LEFT of the header action row (e.g. a title / home button). */
+  leadingSlot?: React.ReactNode;
   /** Placeholder for the composer textbox. Defaults to "Ask about this doc…". */
   placeholder?: string;
   /**
@@ -155,6 +157,7 @@ export function EntityExecutionPanel({
   noPastSessionsLabel = 'No past executions',
   emptyStateText = 'Ask about this document. The conversation will persist.',
   headerLabel,
+  leadingSlot,
   placeholder,
   dense = false,
   defaultProjectId,
@@ -507,6 +510,7 @@ export function EntityExecutionPanel({
         onDeleteSession={handleDeleteOne}
         onClearAll={handleClearAll}
         cursorLine={cursorLine ?? null}
+        leadingSlot={leadingSlot}
         newSessionLabel={newSessionLabel}
         historyLabel={historyLabel}
         pastSessionsLabel={pastSessionsLabel}
@@ -589,6 +593,7 @@ function ExecutionHistoryHeader({
   onClearAll,
   cursorLine,
   settingsSlot,
+  leadingSlot,
   newSessionLabel,
   historyLabel,
   pastSessionsLabel,
@@ -603,6 +608,8 @@ function ExecutionHistoryHeader({
   onClearAll: () => void;
   cursorLine: number | null;
   settingsSlot?: React.ReactNode;
+  /** Optional node rendered on the LEFT of the header row (e.g. a title / home button). */
+  leadingSlot?: React.ReactNode;
   newSessionLabel: string;
   historyLabel: string;
   pastSessionsLabel: string;
@@ -613,9 +620,16 @@ function ExecutionHistoryHeader({
     'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
   return (
     <div
-      className="flex flex-shrink-0 items-center gap-0.5 border-b px-2 py-1"
+      className={cn(
+        'flex flex-shrink-0 items-center gap-0.5 border-b px-2',
+        // A leadingSlot (e.g. Vibe's "New" button) gets a fixed 36px header so it
+        // aligns with the display pane's toolbar and gives the pill vertical room;
+        // every other consumer keeps the content-sized header.
+        leadingSlot ? 'h-9' : 'py-1',
+      )}
       data-testid="entity-execution-header"
     >
+      {leadingSlot}
       {cursorLine != null && (
         <span
           className="text-[11px] tabular-nums text-muted-foreground"

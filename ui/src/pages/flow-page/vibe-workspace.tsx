@@ -103,11 +103,14 @@ export function VibeWorkspace() {
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full w-full">
       <ResizablePanel defaultSize={36} minSize={24} maxSize={55}>
-        <div className="flex h-full flex-col border-r border-border">
-          {/* Slim top bar — Vibe has no left rail, so this is the way back to
-              VibeHome to start a fresh build. */}
-          <div className="flex h-9 shrink-0 items-center justify-between px-3">
-            <span className="text-xs font-medium text-muted-foreground">{t`Build`}</span>
+        <EntityExecutionPanel
+          target={target}
+          processType={ProcessKind.Chat}
+          className="h-full border-r border-border"
+          dense
+          // "New project" (back to VibeHome) sits on the LEFT of the same header
+          // row as the session buttons — Vibe has no left rail.
+          leadingSlot={
             <button
               type="button"
               onClick={() => navigation.openHome()}
@@ -117,23 +120,17 @@ export function VibeWorkspace() {
               <Plus className="h-3 w-3" />
               {t`New`}
             </button>
-          </div>
-          <EntityExecutionPanel
-            target={target}
-            processType={ProcessKind.Chat}
-            className="min-h-0 flex-1"
-            dense
-            placeholder={t`Describe what to build or change…`}
-            emptyStateText={t`Tell the assistant what to build.`}
-            newSessionLabel={t`New build`}
-            historyLabel={t`Build history`}
-            pastSessionsLabel={t`Past builds`}
-            noPastSessionsLabel={t`No past builds`}
-            defaultProjectId={project?.id ?? null}
-            defaultWorkdir={project?.fs_storage_mount_path ?? null}
-            onProcessCreated={(p) => p.enableAssistant()}
-          />
-        </div>
+          }
+          placeholder={t`Describe what to build or change…`}
+          emptyStateText={t`Tell the assistant what to build.`}
+          newSessionLabel={t`New build`}
+          historyLabel={t`Build history`}
+          pastSessionsLabel={t`Past builds`}
+          noPastSessionsLabel={t`No past builds`}
+          defaultProjectId={project?.id ?? null}
+          defaultWorkdir={project?.fs_storage_mount_path ?? null}
+          onProcessCreated={(p) => p.enableAssistant()}
+        />
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={64} minSize={45}>
