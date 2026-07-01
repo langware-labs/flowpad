@@ -4751,9 +4751,15 @@ class AgenticProcess(Entity):
         ``progress_report`` flow_data envelope, both only when it actually
         changed. Watcher-scoped via ``emit_flow_data`` (only clients watching
         this process), not the global scan-pill ``broadcast_progress``.
+
+        The whole-file parse is offloaded off the event loop (same pattern the
+        streamer uses for ``parse_delta``) so N active workers folding once per
+        debounce second don't serialize their parses on the loop. A fresh
+        transcript object is parsed here (not the streamer's live one) to avoid
+        racing its concurrent ``parse_delta`` mutation.
         """
         try:
-            transcript = self._load_transcript()
+            transcript = await asyncio.to_thread(self._load_transcript)
             if transcript is None:
                 return
             from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
