@@ -1447,6 +1447,26 @@ async def _download_and_unpack_bundle(
         try:
             refreshed = await FlowMessage.get_one({"id": fm_id})
             if refreshed:
+                # Hub-authoritative body_status. The row was just materialized
+                # from the BUNDLE header, whose body_status is the sender's value
+                # AT PACK TIME — still UPLOADING, because ``upload_body`` packs the
+                # .flowmsg BEFORE flipping READY (and ``merge_hub_payload`` treats
+                # body_status as local-only state, so the hub's READY never lands
+                # via the metadata sync). We only reach this success path when the
+                # hub advertised body_status=READY (the gate above) and the body is
+                # now on disk — so the row IS downloadable. Stamp READY so the
+                # receiver reflects that instead of the stale pack-time UPLOADING.
+                target_bs = (
+                    body_status.value if isinstance(body_status, BodyStatus) else body_status
+                ) or BodyStatus.READY.value
+                current_bs = (
+                    refreshed.body_status.value
+                    if isinstance(refreshed.body_status, BodyStatus)
+                    else refreshed.body_status
+                )
+                if current_bs != target_bs:
+                    refreshed.body_status = BodyStatus(target_bs)
+                    await refreshed.save(notify=False)
                 await refreshed.notify_updated()
         except Exception as nerr:
             logger.warning("[bundle] post-unpack notify failed fm=%s: %s", fm_id, nerr)

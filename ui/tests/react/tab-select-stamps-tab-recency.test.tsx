@@ -32,6 +32,8 @@ import {
   ComputeNode,
   ComputeProviderType,
   connectionManager,
+  ContextEntitiesEnum,
+  dataContext,
   dataManager,
   Project,
   Shell,
@@ -47,9 +49,9 @@ import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const COMPUTE_NODE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const NEW_PROCESS_ID = '22222222-2222-4222-8222-222222222222';
-const NEW_SHELL_ID = '33333333-3333-4333-8333-333333333333';
-const NEW_PROCESS_TAB_ID = '40000000-0000-4000-8000-000000000003';
+const NEW_PROCESS_ID = '2a2a2a2a-2a2a-4a2a-8a2a-2a2a2a2a2a2a';
+const NEW_SHELL_ID = '3a3a3a3a-3a3a-4a3a-8a3a-3a3a3a3a3a3a';
+const NEW_PROCESS_TAB_ID = '4a000000-0000-4a00-8a00-00000000000a';
 
 let TabbedTerminalComponent: typeof import('@src/components/terminal/TabbedTerminal').default;
 let UnifiedTabStripComponent: typeof import('@src/pages/flow-page/content-panel/unified-tab-strip').UnifiedTabStrip;
@@ -298,12 +300,20 @@ describe('selecting a tab stamps recency on the Tab entity', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
     applyAllTabs([]);
     resetTabLifecycleForTests();
     (capabilityManager as unknown as { capabilities: Capability[] }).capabilities = [];
     (connectionManager as unknown as { socket: unknown }).socket = null;
+    // Reset the shared dataContext the loader mutated (active shell/target +
+    // current project) so a following loader-integration test in the SAME worker
+    // doesn't inherit this test's active terminal target — cross-test
+    // contamination that makes the second-to-run test fail in the full suite even
+    // though each passes in isolation.
+    dataContext.setActiveShellId('');
+    dataContext.setActiveTerminalTargetTypeId(null);
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   });
 
   it('stamps last_active_at on the process Tab when it is selected', async () => {

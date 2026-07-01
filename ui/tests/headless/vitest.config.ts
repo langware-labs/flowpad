@@ -36,7 +36,16 @@ export default mergeConfig(
       // reactSetup gives the jsdom DOM shims (matchMedia / ResizeObserver / …);
       // _setup adds the few extra browser primitives a FULL app boot touches
       // (WebSocket binding, IntersectionObserver, canvas) and resets the realm.
-      setupFiles: [path.resolve(__dirname, '../react/reactSetup.ts'), path.resolve(__dirname, './_setup.ts')],
+      // `_lingui-mock` MUST be first: it activates the source locale (imports
+      // `@src/i18n-init`) so module-level `t`…`` macro calls (e.g. the
+      // STATUS_CONFIG const in ClaudeTasksViewer) don't throw `I18n.t` at import
+      // time when the full app's module graph is evaluated — matching the react
+      // tier's setup order.
+      setupFiles: [
+        path.resolve(__dirname, '../_lingui-mock.ts'),
+        path.resolve(__dirname, '../react/reactSetup.ts'),
+        path.resolve(__dirname, './_setup.ts'),
+      ],
       exclude: ['**/node_modules/**'],
       globals: true,
       css: false,

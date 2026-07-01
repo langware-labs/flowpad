@@ -184,9 +184,35 @@ async def test_skill_usage_visible_in_transcript(
         # The analyzer normalizes every worker's skill shape onto SkillCallEntry,
         # so the assertion is identical across claude / codex / copilot.
         calls = _skill_call_entries(transcript, skill_name)
+        if not calls:
+            # Distinguish a REAL parser regression from worker non-compliance.
+            # A healthy parser normalizes every native `skill` tool into a
+            # SkillCallEntry; a regression would instead leave it as a generic
+            # ToolUseEntry whose tool_name is still "skill". So the regression
+            # signal is specifically a TOOL_USE entry named "skill" (NOT a
+            # SkillCallEntry, which also carries tool_name="skill" — filtering on
+            # tool_name alone would false-positive on a correctly-normalized call
+            # whose skill_name merely differs from ours).
+            #
+            # If no such regressed entry exists, our skill never surfaced as a
+            # recognizable native skill call: copilot (1.0.65+) non-deterministically
+            # "runs" a skill by spawning a `task` sub-agent / bash, or invokes a
+            # differently-named skill — emitting nothing for OUR name to normalize.
+            # That is LLM non-compliance, downgraded to a skip exactly like the
+            # latency case above (never a flaky-marker, never a weakened assertion).
+            regressed_skill_tooluse = list(
+                transcript.filter(kind=EntryKind.TOOL_USE, tool_name="skill")
+            )
+            if not regressed_skill_tooluse:
+                pytest.skip(
+                    f"{cli_name} produced a transcript but did not surface a native "
+                    f"skill call for {skill_name!r} (improvised via task/bash or "
+                    f"invoked a differently-named skill) — LLM non-compliance"
+                )
         assert calls, (
-            f"no SkillCallEntry for {skill_name!r} in the {cli_name} transcript "
-            f"({len(transcript.entries)} entries total)"
+            f"a native `skill` tool was left UN-normalized (generic ToolUseEntry) in "
+            f"the {cli_name} transcript ({len(transcript.entries)} entries total) — "
+            f"parser regression: skill calls must become SkillCallEntry"
         )
     finally:
         if codex_installed is not None:

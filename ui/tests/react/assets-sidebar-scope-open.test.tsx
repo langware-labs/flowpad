@@ -1,10 +1,11 @@
 /**
- * React render of the side-menu entry: clicking the Assets icon opens the
- * scope-keyed assets tab — the current project's scope when a project is active
- * (tab `assets|0:<id>`), else global (`assets|all`). Renders the REAL
- * CollapsedSidebar; only the navigation hook (capture `openDock`) and the heavy
- * presentational leaves are stubbed. The current project is the REAL
- * `dataContext` the handler reads.
+ * React render of the side-menu entry: clicking the Assets icon opens the assets
+ * dock via `navigation.openDock`, delegating the project-scope-keying to
+ * NavigationActions.openDock (which seeds the active project's scope for
+ * scope-aware views). Renders the REAL CollapsedSidebar in Advanced view (Assets
+ * is Advanced/Dev-only); only the navigation hook (capture `openDock`) and the
+ * heavy presentational leaves are stubbed. The scope-seeding itself is verified
+ * where openDock is real (assets scope-contract / scope-hash unit tests).
  */
 import { render, fireEvent } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +13,7 @@ import React from 'react';
 import { MemoryRouter } from 'react-router';
 import { ContextEntitiesEnum, dataContext, dataManager, TypeId } from '@sdk';
 import { SidebarProvider } from '@src/components/ui/sidebar';
+import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 
 const nav = vi.hoisted(() => ({ openDock: vi.fn(), openTab: vi.fn() }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -61,24 +63,38 @@ function clickAssets(): void {
   fireEvent.click(btn!);
 }
 
+beforeEach(() => {
+  // The Assets nav item is now Advanced/Dev-visible only (Standard hides it —
+  // collapsed-sidebar navItems `vis`). Render in Advanced so the item — and its
+  // BookOpen icon the test clicks — is present.
+  setViewMode(ViewMode.Advanced);
+});
+
 afterEach(() => {
   nav.openDock.mockClear();
   nav.openTab.mockClear();
+  setViewMode(ViewMode.Standard);
 });
 
-describe('side-menu Assets opens the scope-keyed tab', () => {
+describe('side-menu Assets delegates scope-keying to openDock', () => {
   it.each([
-    { label: 'project A active', projectId: PROJECT_A, hash: `assets|0:${PROJECT_A}` },
-    { label: 'project B active', projectId: PROJECT_B, hash: `assets|0:${PROJECT_B}` },
-    { label: 'no project', projectId: null, hash: 'assets|all' },
-  ])('$label → $hash', async ({ projectId, hash }) => {
+    { label: 'project A active', projectId: PROJECT_A },
+    { label: 'project B active', projectId: PROJECT_B },
+    { label: 'no project', projectId: null },
+  ])('$label → opens a scope-less assets dock (openDock seeds the scope)', async ({ projectId }) => {
     await setProject(projectId);
     clickAssets();
 
-    expect(nav.openTab).not.toHaveBeenCalled(); // assets routes via openDock, scoped
+    expect(nav.openTab).not.toHaveBeenCalled(); // assets routes via openDock
     expect(nav.openDock).toHaveBeenCalledTimes(1);
     const dock = nav.openDock.mock.calls[0][0];
-    expect(dock.tabHash).toBe(hash);
-    if (projectId) expect(dock.scopeFilter).toEqual({ user: false, projects: [projectId] });
+    // The sidebar now always opens the SCOPE-LESS assets dock; the active
+    // project's scope is seeded CENTRALLY by NavigationActions.openDock for
+    // scope-aware views (SCOPE_SEEDED_VIEWS). That seeding is covered by the
+    // assets scope-contract / scope-hash unit tests where openDock is real — here
+    // openDock is mocked, so we assert only that the component delegates a
+    // scope-less pointer regardless of the active project.
+    expect(dock.tabHash).toBe('assets|all');
+    expect(dock.scopeFilter ?? null).toBeNull();
   });
 });
