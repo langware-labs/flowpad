@@ -1,7 +1,10 @@
 import {
+  ActionInfo,
   AgenticProcess,
   ComputeNode,
+  dataManager,
   FlowElementTypes,
+  fsStore,
   isBusy,
   isWorkerRunning,
   ProcessKind,
@@ -10,6 +13,7 @@ import {
   type FlowData,
   WorkerStatus,
 } from '@sdk';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 import { useEntity } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
@@ -247,6 +251,28 @@ export function EntityExecutionPanel({
   // Stream ingestion — FlowStreamProcessor (inside AgenticProcess.prompt) appends
   // to flowDataStream; our local hook subscribes to its 'data' event.
   const items = useAgenticProcessStream(activeProcess);
+
+  // Image paste — upload pasted screenshots to the process's input dir and return
+  // one reference line per file (inserted at the caret, ridden along on the next
+  // send). Same behaviour as the interactive terminal's chat composer. The input
+  // dir is resolved lazily on paste (not on mount) so this shared chat surface
+  // doesn't fire a per-mount GET for a rarely-used feature.
+  const handlePasteImages = useCallback(
+    async (incoming: File[]): Promise<string[]> => {
+      const procId = activeProcess?.id;
+      if (!procId || !incoming.length) return [];
+      const files = await annotateImageFiles(incoming);
+      if (!files.length) return [];
+      const dir = await dataManager.callAction<null, { abs_path: string; compute_node_id: string }>(
+        new ActionInfo('input-dir', 'agentic_process', procId, 'GET'),
+      );
+      if (!dir?.abs_path || !dir?.compute_node_id) return [];
+      const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, files);
+      await Promise.all(uploads.map((u) => u.waitForCompletion()));
+      return files.map((file) => `File ${file.name} is available here: ${dir.abs_path}/${file.name}`);
+    },
+    [activeProcess],
+  );
   const messages = useMemo(() => {
     return items.filter((d) => {
       const t: string = d.elementType;
@@ -556,7 +582,7 @@ export function EntityExecutionPanel({
               />
             ))}
       </AutoScrollContainer>
-      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} running={busy} onStop={handleStop} statusSlot={statusSlot} placeholder={placeholder} />
+      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} running={busy} onStop={handleStop} statusSlot={statusSlot} placeholder={placeholder} onPasteImages={handlePasteImages} />
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
