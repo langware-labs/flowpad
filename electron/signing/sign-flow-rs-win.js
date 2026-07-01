@@ -49,7 +49,18 @@ exports.default = async function signWinExtras(context) {
 
   // Single-quote PS string literals; double any embedded apostrophe.
   const ps = (s) => `'${String(s).replace(/'/g, "''")}'`;
-  const fileList = files.map(ps).join(", ");   // Invoke-TrustedSigning -Files takes an array
+  // Invoke-TrustedSigning's -Files takes a single String, not an array — sign
+  // each file with its own call.
+  const signOne = (f) => [
+    "Invoke-TrustedSigning",
+    `-Endpoint ${ps(endpoint)}`,
+    `-CodeSigningAccountName ${ps(account)}`,
+    `-CertificateProfileName ${ps(profile)}`,
+    `-Files ${ps(f)}`,
+    "-FileDigest SHA256",
+    "-TimestampRfc3161 'http://timestamp.acs.microsoft.com'",
+    "-TimestampDigest SHA256",
+  ].join(" ");
   const script = [
     "$ErrorActionPreference = 'Stop'",
     // electron-builder installs this module for its own signing, but afterPack runs
@@ -58,16 +69,7 @@ exports.default = async function signWinExtras(context) {
     "  Install-Module -Name TrustedSigning -Force -Scope CurrentUser -AllowClobber | Out-Null",
     "}",
     "Import-Module TrustedSigning",
-    [
-      "Invoke-TrustedSigning",
-      `-Endpoint ${ps(endpoint)}`,
-      `-CodeSigningAccountName ${ps(account)}`,
-      `-CertificateProfileName ${ps(profile)}`,
-      `-Files ${fileList}`,
-      "-FileDigest SHA256",
-      "-TimestampRfc3161 'http://timestamp.acs.microsoft.com'",
-      "-TimestampDigest SHA256",
-    ].join(" "),
+    ...files.map(signOne),
   ].join("\n");
 
   console.log(`[sign-win-extras] signing ${files.length} file(s) via Azure Trusted Signing (${account}/${profile})`);
