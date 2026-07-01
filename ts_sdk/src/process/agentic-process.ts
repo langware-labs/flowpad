@@ -26,6 +26,7 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
+import { PROCESS_STATUS_KIND, ProcessStatusReport, parseStatusReport } from './process-status-report';
 import type { ProcessKind } from './process-types';
 import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isAwaitingUserInput, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
@@ -258,6 +259,12 @@ export interface IAgenticProcess extends IEntity {
    * docs are excluded server-side. Persists across reloads.
    */
   markdown_docs?: MarkdownDoc[];
+  /**
+   * Latest ProcessStatusReport snapshot (counters + focused asset + statuses),
+   * backend-computed and persisted. Mirrored on reload and refreshed live via
+   * the `progress_report` flow_data envelope. Wire shape is a plain object.
+   */
+  status_report?: Record<string, unknown> | null;
   /**
    * Reflected prompt-queue state. Computed server-side from the on-disk
    * `prompt_queue.json` and pushed via `data_op`; never persisted on the
@@ -1272,6 +1279,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
     this.plan_path = entity.plan_path ?? null;
     this.markdown_docs = entity.markdown_docs ?? [];
+    // Persisted snapshot mirror — only overwrite when the field is present so a
+    // partial `data_op` (which omits it) doesn't wipe the live-pushed value.
+    if ('status_report' in entity) {
+      this.statusReport = parseStatusReport(entity.status_report) ?? null;
+    }
     this.queue = entity.queue ?? null;
   }
 
@@ -1291,6 +1303,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * the rest when there is more than one. Backend-owned (persisted field).
    */
   markdown_docs: MarkdownDoc[] = [];
+
+  /**
+   * Latest agent-progress snapshot (counters + focused asset + statuses).
+   * Backend-owned projection: mirrored from the persisted `status_report` field
+   * on reload and refreshed live by `handleFlowData` when a `progress_report`
+   * envelope arrives. Null until the first report. Read by the counters
+   * one-liner and the focused-asset chip; never written from the frontend.
+   */
+  statusReport: ProcessStatusReport | null = null;
 
   /**
    * Reflected prompt-queue state (backend-owned). Populated by `deepAssign`
@@ -2387,6 +2408,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (event === 'worker.restarted') {
       this.emit('restarted', { process: this, payload });
     }
+  }
+
+  /**
+   * Intercept the live agent-progress push before it enters the flow stream.
+   *
+   * The backend reuses the `progress_report` envelope (attributes.kind ===
+   * 'process_status') to push the ProcessStatusReport on every debounce flush.
+   * It's control-plane, not renderable content, so we update `statusReport`,
+   * emit a `status_report` event for subscribers, and return WITHOUT ingesting
+   * it into `flowDataStream` (keeps it out of history/output). All other
+   * FlowData falls through to the base handler unchanged.
+   */
+  handleFlowData(flowData: FlowData): void {
+    if (
+      flowData.elementType === FlowElementTypes.PROGRESS_REPORT &&
+      flowData.attributes?.kind === PROCESS_STATUS_KIND
+    ) {
+      const report = parseStatusReport(flowData.rawData);
+      if (report) {
+        this.statusReport = report;
+        this.emit('status_report', report);
+      }
+      return;
+    }
+    super.handleFlowData(flowData);
   }
 
   /**
