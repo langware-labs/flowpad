@@ -344,6 +344,8 @@ function MessageSuggestFeedEntryCard({
               error={error}
               showDismiss={false}
               canReport={!!suggest.diagnosis_id}
+              diagnosisId={suggest.diagnosis_id ?? undefined}
+              diagnosisTitle={title}
               onDismiss={() => onDismiss(entry)}
               onReportIssue={() => onReportIssue(entry, suggest)}
               onForward={(conversationId) => onForward(entry, suggest, conversationId)}
