@@ -27,7 +27,20 @@ async function openFirstMarkdownDoc(page: Page) {
   }
   await expect(leaf).toBeVisible({ timeout: 15_000 });
   await leaf.click();
-  await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 20_000 });
+  // "Doc opened" = the MarkdownEditor header mounted. Do NOT wait on `.ProseMirror`
+  // here: the chosen editor mode is persisted across docs (PrefKey.EDITOR_MODE), so a
+  // doc can restore in Review mode (ReviewSurface, no `.ProseMirror`) — the view chip
+  // is rendered in every mode, making it a mode-agnostic open signal. Each test then
+  // drives setMode() to the mode it needs.
+  await expect(page.locator('[data-testid="editor-mode-chip-view"]')).toBeVisible({ timeout: 20_000 });
+  // The review/markdown mode chips are Advanced-only surfaces. View mode is now a
+  // prefMan-owned pref (`preferences.ui.view_mode`) whose backend value wins over the
+  // legacy localStorage `viewMode` seed, so setting localStorage alone no longer
+  // enters Advanced. Flip it through the live app API the way the footer view pill
+  // does (window.setView, exposed by view-mode-context), then wait for the
+  // Advanced-only review chip to render.
+  await page.evaluate(() => window.setView('advanced'));
+  await expect(page.locator('[data-testid="editor-mode-chip-review"]')).toBeVisible({ timeout: 10_000 });
 }
 
 async function setMode(page: Page, mode: 'view' | 'review' | 'editor' | 'markdown') {
@@ -141,12 +154,17 @@ test.describe('Milkdown selection toolbar', () => {
     await toolbar.locator('button[title="Bold"]').dispatchEvent('mousedown');
     await page.waitForTimeout(200);
 
-    // The selected substring is now wrapped in <strong>.
+    // The selected substring is now wrapped in <strong>. A markdown strong mark
+    // cannot include leading/trailing whitespace (`**Agent **` is not valid emphasis),
+    // so when the 6-char selection ends in a space ("Agent ") ProseMirror applies the
+    // mark to the trimmed run and pushes the space outside — the resulting
+    // <strong> textContent is the selection with boundary whitespace removed.
+    const expectedBold = selected.trim();
     const strongHasText = await page.evaluate((sub) => {
       const strongs = Array.from(document.querySelectorAll('.ProseMirror strong'));
       return strongs.some((s) => (s.textContent || '') === sub);
-    }, selected);
-    expect(strongHasText, `No <strong> wrapping the selected text "${selected}"`).toBe(true);
+    }, expectedBold);
+    expect(strongHasText, `No <strong> wrapping the selected text "${expectedBold}"`).toBe(true);
 
     // The toolbar is still visible (selection has not collapsed).
     await expect(toolbar).toBeVisible();

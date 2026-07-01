@@ -7,7 +7,12 @@ import * as path from 'path';
 import { apiBase } from '../_shared/api';
 
 const API = apiBase();
-const DB = path.join(os.homedir(), '.flow/instances/qa-1/flowpad.db');
+// Per-instance DB (see the .md: `~/.flow/instances/<instance>/flowpad.db`). The
+// instance under test is whichever backend the run targets — FLOW_INSTANCE — not
+// a hardcoded one; a stale hardcoded instance would query a different (or long-
+// dead) DB than the one the API just wrote the whiteboard into.
+const FLOW_INSTANCE = process.env.FLOW_INSTANCE || process.env.QA_FLOW_INSTANCE || 'qa-1';
+const DB = path.join(os.homedir(), '.flow/instances', FLOW_INSTANCE, 'flowpad.db');
 
 async function materialize(page: Page, id: string, assetRef: string) {
   await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);

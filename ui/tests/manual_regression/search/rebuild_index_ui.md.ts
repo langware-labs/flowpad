@@ -45,6 +45,15 @@ async function openSearch(page: Page) {
   });
   await page.goto('/dock/search');
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+  // View mode is now a backend-owned preference (`preferences.ui.view_mode`);
+  // the legacy `viewMode` localStorage key above is only adopted when the backend
+  // file doesn't already provide a value, so it is overridden the moment bootstrap
+  // reconciles an explicit backend value (e.g. Standard). Force Advanced through
+  // the live setter AFTER bootstrap so it wins, then wait for the DOM to reflect it.
+  await page.evaluate(() => {
+    (window as unknown as { setView?: (v: string) => void }).setView?.('advanced');
+  });
+  await page.locator('html[data-view="advanced"]').waitFor({ timeout: 10_000 });
   for (const n of ['Skip for now', 'Not Now', 'Not now']) {
     const b = page.getByRole('button', { name: n });
     if (await b.isVisible({ timeout: 2_000 }).catch(() => false)) {
