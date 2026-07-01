@@ -69,10 +69,20 @@ class BlobManager {
   }
 
   getInstalledFlowBin() {
+    // A downloaded/upgraded version (versions/ + current pointer) wins.
     const v = this.currentVersion();
-    if (!v) return null;
-    const exe = this._exeFor(v);
-    if (fs.existsSync(exe)) { this._flowBin = exe; return exe; }
+    if (v) {
+      const exe = this._exeFor(v);
+      if (fs.existsSync(exe)) { this._flowBin = exe; return exe; }
+    }
+    // Else, if the installer bundled a blob, run it IN PLACE — no copy. This
+    // avoids a whole class of stale-cache bugs (a cached copy never refreshing)
+    // and keeps the backend in lockstep with the installed app version.
+    const bundled = BlobManager.bundledBlobPath();
+    if (bundled) {
+      const exe = path.join(bundled, EXE_NAME);
+      if (fs.existsSync(exe)) { this._flowBin = exe; return exe; }
+    }
     return null;
   }
 
@@ -97,9 +107,13 @@ class BlobManager {
     // from an arbitrary host (S3/gist/file-share/ngrok) — both skip the GitHub
     // API and let you run the REAL download+install flow off any private URL,
     // no publishing required. Removable: unset the env and GitHub is used.
-    if (process.env.FLOWPAD_BLOB_LOCAL || process.env.FLOWPAD_BLOB_URL || BlobManager.bundledBlobPath()) {
+    if (process.env.FLOWPAD_BLOB_LOCAL || process.env.FLOWPAD_BLOB_URL) {
       return process.env.FLOWPAD_BLOB_VERSION || '0.0.0-local';
     }
+    // Bundled-in-installer: the engine ships WITH the desktop app and runs in
+    // place, so engine updates ride the desktop app update (electron-updater) —
+    // there's no separate blob "latest" to poll here.
+    if (BlobManager.bundledBlobPath()) return null;
     try {
       const j = await this._getJson(`https://api.github.com/repos/${RELEASE_REPO}/releases/latest`);
       return (j.tag_name || '').replace(/^v/, '') || null;
