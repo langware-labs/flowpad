@@ -57,12 +57,17 @@ export class Project extends APIEntity<Project> {
   session_code: string | null = null;
   host_member_id: string | null = null;
   members: ProjectMember[] = [];
+  /** Context folders: extra directories auto-added to every agentic worker's
+   *  --add-dir set and browseable in the Explorer as their own root. Mirrors
+   *  the backend Project.include_dirs. */
+  include_dirs: string[] = [];
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
     this.members = (entity.members as ProjectMember[] | undefined) ?? [];
+    this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
   }
 
   // Land on the project's collaboration/home view at /dock/project/<id>
@@ -108,6 +113,26 @@ export class Project extends APIEntity<Project> {
     const computeNode = dataManager.updateEntityFromJson<ComputeNode>(responseComputeNode.compute_node);
     this.computeNode = computeNode;
     return computeNode;
+  }
+
+  /** Add a context folder to this project's `include_dirs` (auto-added to every
+   *  agentic worker's --add-dir set). Idempotent; the backend canonicalizes the
+   *  path and kicks a one-shot index so the folder's assets become discoverable. */
+  async addContextDir(path: string): Promise<void> {
+    const actionInfo = new ActionInfo('add-context-dir', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    await dataManager.callAction(actionInfo);
+    if (!(this.include_dirs ?? []).includes(path)) {
+      this.include_dirs = [...(this.include_dirs ?? []), path];
+    }
+  }
+
+  /** Remove a context folder from `include_dirs`. No-op if not present. */
+  async removeContextDir(path: string): Promise<void> {
+    const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    await dataManager.callAction(actionInfo);
+    this.include_dirs = (this.include_dirs ?? []).filter((d) => d !== path);
   }
 
   async setupComputeNode(options?: { gitRemoteRepoUrl?: string; gitBranch?: string }): Promise<ComputeNode | null> {

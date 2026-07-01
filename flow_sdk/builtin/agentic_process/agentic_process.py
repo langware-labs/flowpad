@@ -100,6 +100,7 @@ class AssetSource(str, Enum):
     USER_DIR = "user_dir"              # under user_home
     WORKDIR = "workdir"                # process workdir if distinct from project/user
     ADDITIONAL_DIR = "additional_dir"  # additional_dirs entries (excl. auto-appended assets dir)
+    CONTEXT_DIR = "context_dir"        # project.include_dirs (context folders)
 
 
 # Sources whose underlying file/state lives outside this AgenticProcess —
@@ -111,6 +112,7 @@ READONLY_ASSET_SOURCES: frozenset[AssetSource] = frozenset({
     AssetSource.USER_DIR,
     AssetSource.WORKDIR,
     AssetSource.ADDITIONAL_DIR,
+    AssetSource.CONTEXT_DIR,
 })
 
 
@@ -2217,6 +2219,16 @@ class AgenticProcess(Entity):
             except Exception:
                 logger.warning("prompt: preassigned session_id save failed", exc_info=True)
 
+        # Resolve the owning project and stamp its context folders onto the
+        # transient cache so ``resolved_add_dirs`` (sync) mounts them for this
+        # print-mode turn. The PTY / restart path does this at open time
+        # (line ~1034); the drivers' headless_prompt does it too — this covers
+        # the inline print-mode turn built below.
+        try:
+            await self.get_project()
+        except Exception:
+            logger.debug("prompt: get_project failed", exc_info=True)
+
         try:
             env_vars = dict(self.driver.cli_options(self).env_vars)
         except Exception:
@@ -3285,14 +3297,23 @@ class AgenticProcess(Entity):
         _add(get_instance_settings().user_home, AssetSource.USER_DIR)
 
         project_dir: str | None = None
+        project_include_dirs: list[str] = []
         if self.project_id:
             try:
                 from flow_sdk.builtin.project import Project
                 proj = await Project.get_by_id(self.project_id)
-                project_dir = getattr(proj, "fs_storage_mount_path", None) if proj else None
+                if proj:
+                    project_dir = getattr(proj, "fs_storage_mount_path", None)
+                    project_include_dirs = list(getattr(proj, "include_dirs", []) or [])
             except Exception:
                 project_dir = None
         _add(project_dir, AssetSource.PROJECT_DIR)
+
+        # CONTEXT_DIR — the project's context folders (include_dirs). Deduped on
+        # canonical path via _add, so a folder that is also the project/user/
+        # workdir root won't double-count.
+        for d in project_include_dirs:
+            _add(d, AssetSource.CONTEXT_DIR)
 
         # WORKDIR — only if outside the previously-added paths.
         wd = getattr(self, "workdir", None)
@@ -3964,12 +3985,24 @@ class AgenticProcess(Entity):
     def resolved_add_dirs(self) -> list[str]:
         """The ``--add-dir`` set the driver should mount for this process.
 
-        ``additional_dirs`` plus the Flowpad Assistant project root prepended
-        when :attr:`assistant_enabled` (de-duped so an explicit copy in
-        ``additional_dirs`` doesn't double it). Both the PTY and print-mode
-        driver paths read this so they mount the same surface.
+        ``additional_dirs`` plus the owning project's ``include_dirs`` (context
+        folders) plus the Flowpad Assistant project root prepended when
+        :attr:`assistant_enabled` (all de-duped so a dir listed twice doesn't
+        double). Both the PTY and print-mode driver paths read this so they
+        mount the same surface.
+
+        The project's context folders are read from the ``_project_context_dirs``
+        cache stamped by :meth:`get_project` (this property is sync and cannot
+        await a project fetch). Launch paths call ``get_project`` first, so the
+        cache is fresh as of launch.
         """
-        dirs = list(self.additional_dirs or [])
+        additional = list(self.additional_dirs or [])
+        context = [
+            d
+            for d in (self.__dict__.get("_project_context_dirs") or [])
+            if d not in additional
+        ]
+        dirs = additional + context
         if not self.assistant_enabled:
             return dirs
         from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
@@ -4410,10 +4443,19 @@ class AgenticProcess(Entity):
                 )
             self._bind_project_id(local_project.id)
 
-        if self.project_id and not self.workdir:
+        # Single fetch of the owning project: derive workdir (when unset) and
+        # cache its context folders (``include_dirs``) so the sync
+        # ``resolved_add_dirs`` can fold them into the worker's --add-dir set
+        # without an async fetch. Refreshed every call, so later edits to
+        # ``project.include_dirs`` take effect on the next launch.
+        context_dirs: list[str] = []
+        if self.project_id:
             project = await Project.get_by_id(self.project_id)
-            if project and project.fs_storage_mount_path:
-                self.workdir = str(project.fs_storage_mount_path)
+            if project:
+                if not self.workdir and project.fs_storage_mount_path:
+                    self.workdir = str(project.fs_storage_mount_path)
+                context_dirs = list(getattr(project, "include_dirs", []) or [])
+        object.__setattr__(self, "_project_context_dirs", context_dirs)
 
     @action.get(action_name="input-dir")
     async def get_input_dir(self):
