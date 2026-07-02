@@ -30,7 +30,7 @@ msgstr "— before"
 msgid "— current"
 msgstr "— current"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:474
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:487
 msgid "— open, peek, or get highlighted here"
 msgstr "— open, peek, or get highlighted here"
 
@@ -2064,7 +2064,7 @@ msgstr "Codex session"
 
 #: src/components/browseable-tree/BrowseableTree.tsx:312
 #: src/components/browseable-tree/BrowseableTree.tsx:313
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:262
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:275
 msgid "Collapse"
 msgstr "Collapse"
 
@@ -3951,7 +3951,7 @@ msgstr "Exit select mode"
 #: src/components/browseable-tree/BrowseableTree.tsx:313
 #: src/components/claude-terminal/claude-terminal.tsx:49
 #: src/components/conversation/AttachmentChip.tsx:425
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:286
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:299
 msgid "Expand"
 msgstr "Expand"
 
@@ -5663,7 +5663,7 @@ msgid "last {0}"
 msgstr "last {0}"
 
 #. placeholder {0}: report.period_kind
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:522
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:535
 msgid "Last {0}"
 msgstr "Last {0}"
 
@@ -6427,7 +6427,7 @@ msgstr "Models Used"
 msgid "Modified"
 msgstr "Modified"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:307
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:320
 msgid "more"
 msgstr "more"
 
@@ -7695,7 +7695,7 @@ msgstr "open"
 #: src/components/simple-file-manager/SimpleFileManager.tsx:957
 #: src/components/tasks-viewer/TasksViewer.tsx:183
 #: src/components/workers/WorkerToolbar.tsx:92
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:418
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:431
 msgid "Open"
 msgstr "Open"
 
@@ -10131,7 +10131,7 @@ msgstr "Self-Summary"
 #: src/components/conversation/MessageComposer.tsx:460
 #: src/components/conversation/PromptComposerDialog.tsx:86
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx:155
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:408
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:421
 msgid "Send"
 msgstr "Send"
 
@@ -10554,11 +10554,11 @@ msgstr "skill"
 msgid "Skill"
 msgstr "Skill"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:500
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:513
 msgid "Skill analysis"
 msgstr "Skill analysis"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:503
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:516
 msgid "Skill analysis ready for review and improvements"
 msgstr "Skill analysis ready for review and improvements"
 
@@ -11664,7 +11664,7 @@ msgstr "Unable to fetch branches. Please check your repository permissions."
 msgid "Unavailable"
 msgstr "Unavailable"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:554
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:567
 msgid "Unavailable feed item"
 msgstr "Unavailable feed item"
 
@@ -11952,7 +11952,7 @@ msgstr "Version:"
 #: src/components/conversation/ConversationContextPanel.tsx:1111
 #: src/components/entity-context/EntityContextPanel.tsx:428
 #: src/components/lens-viewer/LlmIndexersViewer.tsx:278
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:248
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:252
 msgid "View"
 msgstr "View"
 
@@ -12228,7 +12228,7 @@ msgstr "xterm memory: <0>{0}</0> chunks ({1})"
 msgid "yanked"
 msgstr "yanked"
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:522
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:535
 msgid "Yesterday"
 msgstr "Yesterday"
 

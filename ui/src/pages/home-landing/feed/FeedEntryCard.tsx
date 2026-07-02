@@ -233,6 +233,10 @@ function MessageSuggestFeedEntryCard({
   const body = suggest.message_text ?? '';
   const expandable = body.length > 80 || body.includes('\n');
   const isDiagnosis = suggest.kind !== 'draft_reply';
+  // Clean sweep — the diagnosis found nothing wrong. The runner only creates the
+  // support conversation when there IS an issue, so "no conversation" is the flag
+  // (see diagnose_cmd._post_home_feed_entry). Render the title green.
+  const allClear = isDiagnosis && !!suggest.diagnosis_id && !suggest.conversation_id;
 
   const viewButton =
     isDiagnosis && suggest.diagnosis_id ? (
@@ -251,7 +255,16 @@ function MessageSuggestFeedEntryCard({
 
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
-      {title && <p className="min-w-0 shrink-0 text-xs font-medium leading-snug text-foreground">{title}</p>}
+      {title && (
+        <p
+          className={cn(
+            'min-w-0 shrink-0 text-xs font-medium leading-snug text-foreground',
+            allClear && 'text-green-600 dark:text-green-500',
+          )}
+        >
+          {title}
+        </p>
+      )}
 
       {body &&
         (expanded ? (
