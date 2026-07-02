@@ -8,6 +8,15 @@ id: f167e843-4f52-5252-8a2c-fae98ce44479
 
 The terminal system provides interactive PTY (pseudo-terminal) sessions in the browser via xterm.js. It spans four layers: **PTY process** (OS-level), **backend session management** (Python/FastAPI), **WebSocket transport**, and **frontend rendering** (React/xterm.js). Sessions survive page refreshes via **attach-time history replay**: the backend records a framed stream (output + resize events) per session; on reattach the client replays it through a headless xterm at the recorded sizes, restores the serialized result, and the attach repaint refreshes the live frame (see §13).
 
+> **Two renderers, one session.** An interactive agent tab has **two independent
+> views** of the same agentic session: the raw **xterm terminal** (this document's
+> primary subject) and a structured **chat UI** overlay. They render from
+> *different data sources* — xterm from the PTY byte stream, the chat UI from the
+> worker's transcript-derived `FlowData` stream — and the chat UI never parses the
+> PTY. Which one you see is a view-mode/skin decision. See **§14** for the full
+> rendering-layer reference; **§13.6** and `docs/viewmodes.md` for adjacent
+> mechanisms.
+
 ---
 
 ## 1. End-to-End Data Flow
@@ -909,4 +918,106 @@ content written at width A and reflowed to B equals content written at B.
 | Live process | untouched | restarted |
 | Depth | 10MB rolling window | full conversation re-render |
 | Use | every reattach, automatic | deep fallback (stream truncated/lost, legacy v0 session) |
+
+---
+
+## 14. Rendering Layers — xterm terminal vs Chat UI
+
+An interactive agent tab (`InteractiveTerminal.tsx`) can present the *same*
+agentic session two ways. This section is the consolidated reference for the two
+renderers, their transports, and how each derives its content. **Mode switching
+UX (the toggle control, View mode) is owned by `docs/viewmodes.md`; the
+headless/PTY session concept is owned by the headless⇄PTY mode docs — this
+section only covers what each renderer draws and from where.**
+
+### 14.1 The two renderers
+
+| | **xterm terminal** | **Chat UI** (`SimpleChatPane`) |
+|---|---|---|
+| Component | xterm.js instance in `InteractiveTerminal.tsx` (§6.2) | `SimpleChatPane.tsx` → `TurnGroupsList` (dense message + tool-chip rows) |
+| Data source | **PTY byte stream** (`pty_output_msg` over WS + attach replay, §1/§13) | **`AgenticProcess.flowDataStream`** — transcript-derived `FlowData` items |
+| Transport that feeds it | PTY only | Transport-independent (see §14.3) |
+| Availability | **PTY mode only** — needs a live PTY/shell | **Both** PTY-mode and headless processes |
+| DOM | `xtermContainerRef` div, always mounted in PTY mode | absolute `z-[60]` overlay *above* the xterm (`InteractiveTerminal.tsx:1760`) |
+
+The chat UI is an **opaque overlay** painted over the xterm, not a replacement:
+in PTY mode the xterm stays mounted and fitted underneath (comment at
+`InteractiveTerminal.tsx:1756-1759`), so toggling chat⇄terminal is instant and
+never resets the PTY.
+
+### 14.2 Which renderer shows — selection logic
+
+All in `InteractiveTerminal.tsx:159-168`:
+
+```
+isAdvanced   = useIsAdvanced()                    // View mode (Standard ⊂ Advanced ⊂ Dev)
+chatOverride = useChatUiOverride()                // 'chat' | 'terminal' | null (bottom-ribbon toggle)
+wantChat     = chatOverride != null ? chatOverride === 'chat' : !isAdvanced
+isHeadless   = !embedded && process.pty_mode === false
+showSimpleChat = isHeadless || (wantChat && !embedded && process)
+canToggleView  = !embedded && process
+```
+
+- **Default skin** (no override): Standard ⇒ chat UI, Advanced/Dev ⇒ xterm.
+- **Override** (`preferences.ui.chat_ui_mode`, a boot pref; `chat-ui-mode-context.tsx`)
+  takes priority over View mode until cleared. Console/global helpers
+  `window.setChatUi('chat'|'terminal'|null)` / `getChatUi()`.
+- **Embedded** terminals (chat side panel) and **shell-only** tabs (no
+  `AgenticProcess`) always keep the xterm — `showSimpleChat` requires `process`
+  and `!embedded`.
+- **Headless** (`pty_mode === false`): the chat pane is forced on **and the xterm
+  container is not rendered at all** (`InteractiveTerminal.tsx:1685`, `!isHeadless
+  && <div ref={xtermContainerRef}>`). The mount effect early-returns on the
+  missing ref, so no `PtySync` attach is attempted for a process that has no
+  shell.
+
+### 14.3 Where the chat UI's content comes from (NOT the PTY)
+
+The chat UI reads `AgenticProcess.flowDataStream` (`use-agentic-process-stream.ts`
+via `useSyncExternalStore`; `use-flow-data-trace.ts` for the gutter). That stream
+is populated from three sources, **none of which parse xterm/PTY bytes**
+(`FlowDataSource`):
+
+1. **History** (`source=history`) — one-shot `AgenticProcess.loadHistory()`
+   (`ts_sdk .../agentic-process.ts:1540`) calls the backend `get-history` action
+   (`flow_sdk/builtin/agentic_process/agentic_process.py:3557`), which is
+   **driver-supplied and stateless**: `driver.load_history(process)` *"Replay
+   transcript as FlowData"* (`cli_worker_base_driver.py:589`). Source of truth is
+   the worker's own transcript (Claude/Codex `~/.../*.jsonl`), not the PTY.
+2. **Live stream** (`source=stream`) — worker drivers + `listen.py` fan-out ingest
+   `FlowData` over the WebSocket as the turn runs.
+3. **Sniffer** (`source=sniffer`) — forwarded agent-hook events
+   (`snifferManager.ts`), opt-in/default-off.
+
+`flowDataStream.ingest`/`ingestBatch` merge and dedup across all three. The
+consequence for the hypothesis below: in PTY mode the chat UI is **not** a parse
+of what the xterm shows — it is an independent transcript-backed render that
+happens to sit over the xterm.
+
+### 14.4 Hypothesis check
+
+> *"The chat UI can overlay BOTH transports (PTY and JSON stream); the xterm view
+> is available ONLY in PTY mode."*
+
+**Confirmed**, with one clarification on *how*:
+
+- ✅ **xterm is PTY-only.** Headless processes render no xterm
+  (`InteractiveTerminal.tsx:1685`); the xterm's only data source is the PTY byte
+  stream.
+- ✅ **Chat UI works over both.** In headless mode it is the sole view; in PTY mode
+  it overlays the live xterm.
+- ⚠️ **Clarification:** the chat UI does **not** render *over the raw PTY* in the
+  sense of interpreting PTY bytes. Both PTY-mode and headless chat UIs render the
+  **same transcript-derived `FlowData` stream** (§14.3). The PTY and the
+  transcript are two parallel products of one worker; xterm consumes the former,
+  chat consumes the latter. So "overlay both transports" is accurate at the UI
+  level (the chat pane is available in both modes) but the chat pane's *bytes*
+  never come from the PTY transport in either mode.
+
+### 14.5 Shared composer
+
+Both views share one bottom ribbon (`TerminalBottomRibbon` → `ChatComposerBar`)
+so the composer is identical whether the chat overlay or the xterm is on top;
+`SimpleChatPane` deliberately does not carry its own composer (comment at
+`SimpleChatPane.tsx:20-33`).
 

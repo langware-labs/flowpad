@@ -12,9 +12,12 @@ persistent **side chat next to a live "display"** — a web browser showing the 
 the agent builds.
 
 Vibe is deliberately built as a **pure overlay / lens** over the existing app,
-not a fork. Turning Vibe on changes only **theme + layout + chrome**; turning it
-off leaves no special machinery behind. It reuses the existing chat, viewer, and
-navigation primitives wholesale.
+not a fork. Turning Vibe on changes only **theme + layout + chrome + which types
+the Assets browser offers** (see [What Vibe changes](#what-vibe-changes)); turning
+it off leaves no special machinery behind. It reuses the existing chat, viewer,
+and navigation primitives wholesale, and — critically — changes **nothing** below
+the UI layer: the agentic-process / PTY / session lifecycle is byte-for-byte
+identical to Standard (see [Process semantics are unchanged](#process-semantics-are-unchanged-verified)).
 
 > **Read the non-negotiable architecture below before touching Vibe.** The whole
 > point is that Vibe drags no baggage into the shared surfaces.
@@ -35,6 +38,28 @@ navigation primitives wholesale.
 4. **Skin-layer rule** (from [View Modes](../viewmodes.md)): Vibe only changes
    *where/whether* things render + the theme — never data, hooks, or entity
    behavior. Layout differences use `VibeSwap` (slot-builder + two arrangements).
+
+## What Vibe changes
+
+Everything Vibe touches lives in the UI layer. Concretely:
+
+1. **Theme** — the `[data-view='vibe']` token block in `index.css` (hub palette,
+   blue accent, hero glow, Plus Jakarta Sans). Zero component edits.
+2. **Layout / chrome** — no left rail (`flow-page.tsx`), a centered VibeHome empty
+   state, and the chat↔display split (`VibeWorkspace`) on an active process. Layout
+   forks go through `VibeSwap`, never through data/hooks.
+3. **Chrome-less creator surfaces** — on the curated `VIBE_CREATOR_SURFACES`
+   ViewTypes (`content-panel.tsx`), Vibe strips the tab strip + navigator. Any
+   *other* surface keeps normal Standard chrome even in Vibe.
+4. **Assets-browser type subset** — Vibe is rank `0`, below every backend
+   `browseable_by` tier (which the backend only ever emits as `standard`/`advanced`/
+   `dev` — see `flow_sdk/schema/view_mode.py`, which has **no** `vibe` member). So
+   `isBrowseableIn(required, 'vibe')` (`ts_sdk/src/FlowSync/schema.ts:28`) is
+   `false` for every type: the browse tree is effectively empty in Vibe. This is a
+   pure client-side ranking decision — `vibe` exists only as a *current* mode, never
+   as a type's minimum tier.
+
+That is the whole surface area. See below for what it explicitly does not touch.
 
 ## Entering Vibe
 
@@ -118,6 +143,33 @@ Lovable:
 Vibe-tier analog of `ViewSwap`/`AdvancedOnly`), the `get-host` action, and the
 `ViewToggle`. Image paste is wired at the `EntityExecutionPanel` layer, so it
 works in the Vibe chat and every other `EntityExecutionPanel` consumer.
+
+## Process semantics are unchanged (verified)
+
+Vibe does **not** leak below the UI layer. The build session VibeHome seeds is an
+ordinary headless chat process:
+
+- `handleVibeSubmit` (`HomeLanding.tsx`) calls the **standard**
+  `ComputeNode.createProcess({ processType: Chat, loadFlowpadAssistant: true,
+  outputFormat: 'stream-json', targetVfsPath: project-<id> })`. Every argument is a
+  general `createProcess` option used elsewhere in the app — none is Vibe-specific,
+  and none is read off the view mode. It then sends the message verbatim and
+  navigates via the shared `navigation.openShellProcess(id)`.
+- The backend has **no** concept of Vibe. A repo-wide search finds exactly one
+  backend mention of "Vibe": a comment on the `get-host` action in
+  `flow_sdk/builtin/agentic_process/agentic_process.py:3933` explaining that the
+  in-app preview / Vibe display consumes it. No spawn path, default, or lifecycle
+  branch keys off view mode; the backend `ViewMode` enum doesn't even contain
+  `vibe`.
+- Headless↔PTY toggling, resume, session history, and process lifecycle are the
+  shared `EntityExecutionPanel` / agentic-process machinery, identical to Standard.
+  The **only** Vibe-specific wiring is `useVibeFocus` reading the agent's `focus`
+  stream to pick which *viewer* the display shows — and that never touches the URL
+  or the process (principle #2).
+
+**Conclusion:** the "pure overlay" hypothesis holds. Vibe changes theme, layout,
+chrome, and the Assets-browser type subset — and nothing about process/session
+behavior.
 
 ## What Vibe deliberately does NOT do (scoped-out / follow-ups)
 

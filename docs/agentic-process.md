@@ -18,16 +18,87 @@ Current implementation:
 
 ## Two Modes
 
-The process supports two modes, derived from `visible`.
+The process has two independent axes, and it is important not to conflate them:
 
-| Mode | `visible` | Runtime | User surface |
-|------|-----------|---------|--------------|
-| **PTY mode** | `true` | Linked `Shell` starts a real OS PTY and runs the worker CLI interactively. | Terminal tab with xterm.js. |
-| **CLI mode** | `false` | Driver runs a headless print/prompt turn and streams structured output. | SDK/programmatic flows and non-terminal UI. |
+| Axis | Field | Question it answers | Consumers |
+|------|-------|---------------------|-----------|
+| **Transport** | `pty_mode` | How does a turn execute — interactive OS PTY, or headless `-p`/stream-json? | prompt routing, queue drain cold-start, dead-worker detection, the route loader's PTY attach |
+| **Visibility** | `visible` | Is this process shown as a terminal tab? | tab-strip membership, footer worker chip, restart-recovery, the transcript-vs-terminal open path |
 
-Both modes share the same `session_id` where the worker supports history. For
-Claude, that session ID maps to the JSONL transcript in
-`~/.claude/projects/<encoded-project>/<session_id>.jsonl`.
+These were historically the same flag (`headless == !visible`), and the
+chat⇄terminal toggle (`switch-mode`) still flips them **together** so the
+shorthand usually holds. But they are now separate `APIField`s with separate
+setters (`set-visible` vs the transport-carrying open/prompt paths), so code
+must route on the correct axis:
+
+- **Execution transport is `pty_mode`, never `visible`.** `prompt()`, the queue
+  drain's cold-start gate, and dead-PTY detection all key on `pty_mode`
+  (`agentic_process.py` ~2199, ~1652, ~3843). A comment or helper that says the
+  turn path is "derived from `visible`" is describing the pre-decoupling model.
+- **Tab visibility is `visible`, never the transport.** `set-visible`
+  (`agentic_process.py:1783`) changes only whether a tab is shown; it must not
+  kill the worker or reroute a turn.
+
+| Transport (`pty_mode`) | Runtime | Default surface |
+|------------------------|---------|-----------------|
+| **PTY** (`true`) | Linked `Shell` starts a real OS PTY and runs the worker CLI interactively. | Terminal tab with xterm.js. |
+| **Headless** (`false`) | Driver runs a headless print/prompt turn (`claude -p` stream-json) and streams structured `FlowData`. | SDK/programmatic flows, the headless chat surface, footer background chip. |
+
+Both transports share the same `session_id` where the worker supports history.
+For Claude, that session ID maps to the JSONL transcript in
+`~/.claude/projects/<encoded-project>/<session_id>.jsonl`, so a session can be
+switched between PTY and headless and resume in place.
+
+> **Note on `WorkerMode` / `ExecutionMode`.** `status_predicates.get_worker_mode`
+> and `worker_status.classify_execution_mode` still derive their result from
+> `visible` (INTERACTIVE vs CLI / BACKGROUND). This is only correct while the two
+> axes are in lock-step. `get_worker_mode` is consumed just by `switch-mode`'s
+> label parsing; `classify_execution_mode` feeds the footer chip. Neither should
+> be used to pick an execution path — see the "architectural concerns" note at
+> the end of this file.
+
+## Headless vs Non-headless: every behavioral divergence
+
+The maintainer hypothesis is "the only difference is that a non-headless process
+generates a tab." Tab generation is the most visible difference, but it is **not
+the only one**. Tracing spawn → run → history → lifecycle, the divergences are:
+
+1. **Tab strip vs footer chip.** A visible process is a terminal tab (its Tab
+   entity is materialized through the terminal-strip path, not the generic
+   `setupTab` — `shouldMaterializeDock` returns `false` for `AGENTIC_PROCESS`,
+   `tab-lifecycle.ts:116`; see `docs/tab-management.md`). A headless process is
+   not placed in the strip; it surfaces as a `BACKGROUND` chip in the footer
+   worker list (`worker_status.classify_execution_mode`, `ExecutionMode.BACKGROUND`).
+2. **Route-loader runtime phase.** `load-process.ts` (~199) attaches a PTY and
+   resolves a `Shell` only when `pty_mode !== false`. Headless skips the PTY
+   attach and the Shell entirely; there is no `shell_id`, and the chat streams
+   over `flowDataStream`.
+3. **Open / click behavior.** `openAgenticProcess` (`agentic-process-open.ts`)
+   opens a live terminal for a visible worker but opens the **read-only
+   transcript lens** for a headless one (`openLens('claude', 'transcript', …)`).
+   A headless run is *viewed*, not attached.
+4. **Restart recovery.** On backend restart, visible/watched PTYs are respawned
+   with `--resume` (`run_pty_recovery`), while headless (`visible=false`) RUNNING/
+   STARTING workers are **stamped `STOPPED`** by `reconcile_orphaned_workers`
+   (`pty_recovery.py:126`) because a headless worker is not resumable in place.
+   Note this recovery split keys on `visible`, not `pty_mode`.
+5. **Cold-start via the prompt queue.** The queue drain will cold-boot a
+   **headless** process for its first prompt (`_queue_ready`, gated on
+   `not self.pty_mode`, `agentic_process.py:1652`). A PTY process is withheld
+   from drain cold-start — its dock loader's `start()` owns the boot — to avoid
+   racing the loader and losing the popped first prompt.
+6. **Prompt transport.** `prompt()` routes on `pty_mode`
+   (`agentic_process.py` ~2210): PTY → write to PTY stdin (or relaunch);
+   headless → `driver.headless_prompt(...)`. A visible live-PTY process 409s the
+   streaming CLI prompt path.
+7. **Dead-worker detection.** Liveness keys on the transport: a headless worker
+   has no persistent PID, so dead-PTY detection only applies when `pty_mode`
+   (`agentic_process.py` ~3840). Headless "readiness" instead uses the
+   `_turn_in_flight` flag.
+
+Everything else — the durable entity, `session_id`/transcript, `WorkerStatus`
+derivation, `cli_config`, history loading through the driver, `ready_for_input`
+— is identical across the two.
 
 ## Backend Entity
 
@@ -39,7 +110,8 @@ The backend entity stores the durable state:
 | `status` | Stored lifecycle: `new`, `starting`, `running`, `stopping`, `stopped`, `failed`. |
 | `worker_status` | Computed field exposed on serialization from worker transcript/history. |
 | `ready_for_input` | Computed send-prompt predicate. |
-| `visible` | Selects PTY mode (`true`) or CLI mode (`false`). |
+| `visible` | Tab visibility only — whether the process is shown as a terminal tab. **Not** the transport selector (that is `pty_mode`). Set on open (`true`) / close (`false`); also settable in isolation via `set-visible`. |
+| `pty_mode` | Durable transport intent: `true` → interactive PTY, `false` → headless JSON-stream. This is the routing key for `prompt`, queue cold-start, and the loader's PTY attach. Seeds `visible` at launch; the chat⇄terminal toggle keeps the two in lock-step. |
 | `shell_id` | Linked `Shell` entity when a terminal runtime exists. |
 | `cli_config` | Serialized CLI options, including model, permissions, chrome/debug/worktree, resume/fork metadata, add-dir, and agents. |
 | `workdir` | Worker working directory. |
@@ -81,16 +153,17 @@ that describe `AgenticProcess.pty_pid` are describing a stale model.
 
 ## CLI Mode Runtime
 
-CLI mode is the headless path. It is used when `visible=false`, especially from
-`prompt()` or programmatic `executeInstruction()` calls that expect structured
-`FlowData` instead of terminal bytes.
+CLI mode is the headless path. It runs when `pty_mode=false` (transport intent),
+especially from `prompt()` or programmatic `executeInstruction()` calls that
+expect structured `FlowData` instead of terminal bytes. Note the routing key is
+`pty_mode`, not `visible` — `visible` only decides whether a tab is shown.
 
 Flow:
 
 ```text
 frontend prompt/executeInstruction
   -> backend AgenticProcess.prompt()
-  -> if visible=false: driver.headless_prompt(...)
+  -> if pty_mode=false: driver.headless_prompt(...)
   -> stream FlowData through the HTTP response/websocket processing path
   -> update transcript/history through the worker driver
 ```
@@ -198,3 +271,31 @@ The terminal UI is mounted from:
 The route loader opens the process in PTY mode before rendering the terminal.
 The terminal then attaches to the linked shell, replays existing chunks, and
 sends keyboard input through the shell's `PtyConnection`.
+
+## Architectural concerns (transport vs visibility)
+
+The `visible`/`pty_mode` decoupling is real in the data model and the hot paths,
+but the derived helpers have not fully caught up, which leaves two mixed-axis
+seams worth tracking:
+
+- **`WorkerMode` / `get_worker_mode` still derive from `visible`**
+  (`status_predicates.py:60`) even though the transport is `pty_mode`. Today this
+  is only used by `switch-mode` label parsing, where `visible` and `pty_mode`
+  move together, so it is correct by coincidence. If a caller ever sets
+  `visible` in isolation via `set-visible` (a supported action) and then reads
+  `get_worker_mode`, it will report the wrong transport. The safe fix is to
+  derive it from `pty_mode`.
+- **Restart recovery keys on `visible`, not `pty_mode`**
+  (`reconcile_orphaned_workers`, `pty_recovery.py:157`; `run_pty_recovery`
+  respawns visible PTYs). A process that is `pty_mode=true` but `visible=false`
+  (a live PTY whose tab was hidden via `set-visible`) would be treated as a
+  headless orphan and stamped `STOPPED` on restart rather than respawned. Whether
+  that state is reachable in practice depends on whether any UI path hides a PTY
+  tab without also flipping `pty_mode` — worth an explicit check.
+- **`ExecutionMode.classify_execution_mode` labels the footer chip from
+  `visible`.** A hidden-but-PTY process would be miscategorized as `BACKGROUND`.
+
+None of these are bugs today (the toggle keeps the axes in lock-step), but they
+are latent: every one assumes `visible == pty_mode`, which the decoupling
+explicitly no longer guarantees. Consolidating all transport-derived helpers onto
+`pty_mode` would remove the class of bug.
