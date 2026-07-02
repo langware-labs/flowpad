@@ -21,10 +21,19 @@ def health_check():
 
 @health_router.get("/version")
 def health_version():
-    """Return app version info."""
+    """Return app version info.
+
+    ``version`` must be the REAL installed package version: the Electron shell
+    compares it against the on-disk install to decide whether an
+    already-running backend can be adopted (reused) instead of killed and
+    rebooted. A wrong value here forces a needless ~13s reboot on every
+    launch after a crash/force-quit — or worse, adopts a stale backend.
+    """
+    from flow_sdk._version import __version__
+
     version_info = {
         "app": "flow-cli",
-        "version": "0.28.0",
+        "version": __version__,
         "python": sys.version,
         "platform": platform.platform(),
         "architecture": platform.machine(),

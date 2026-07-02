@@ -204,11 +204,27 @@ async def _on_server_startup():
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
     await _start_inbox_catchup()
+    # Trigger seeding → jobstore prune → FSOp watcher run as ONE chained
+    # background task: their relative ORDER matters (the prune only trusts
+    # the jobstore after the current triggers are seeded; the watcher's
+    # catch-up walk must see the seeded triggers), but none of them serves
+    # the UI's first render — the ~1.2s of builtin-trigger upserts was
+    # blocking /health/status for nothing. Chaining inside one task keeps
+    # the ordering guarantee that separate create_task calls would lose.
+    _asyncio.create_task(_seed_prune_then_watch(), name="trigger-seed-chain")
+    await _start_transcript_streamer()
+    await _start_system_content_index()
+
+
+async def _seed_prune_then_watch() -> None:
+    """Background chain: seed builtin triggers, prune orphan scheduler jobs,
+    then start the FSOp watcher — in that order (each step depends on the
+    previous one's writes; see the call site in ``_on_server_startup``).
+    Each step already swallows and logs its own failures, so one failing
+    step never prevents the next from running."""
     await _seed_service_triggers()
     await _prune_orphan_scheduler_jobs()
     await _start_fsop_watcher()
-    await _start_transcript_streamer()
-    await _start_system_content_index()
 
 
 async def _start_system_content_index() -> None:

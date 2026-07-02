@@ -451,6 +451,50 @@ async function waitForBackend({ maxChecks = MAX_HEALTH_CHECKS } = {}) {
   return false;
 }
 
+/**
+ * Adopt an already-running backend instead of killing and rebooting it.
+ *
+ * After a crash / force-quit (or a manual `flow start`), a perfectly healthy
+ * backend is often still listening on 9007 — and a full kill+reboot costs
+ * ~13s. Reuse it ONLY when it is (a) healthy and (b) reports EXACTLY the
+ * installed package version. Anything else — no response, unhealthy, version
+ * mismatch (e.g. an upgrade was just installed), or an old backend that
+ * predates the real /health/version — returns false and the normal
+ * stop+start path runs unchanged. The pre-start update check has already run
+ * by the time this is called, so a pending upgrade always changes the
+ * installed version and forces the reboot path; adoption can never mask it.
+ *
+ * The 1.5s probe bounds are NOT a tuning knob for slow backends: a hung
+ * backend must fall through to the kill+reboot path, and a dead port fails
+ * instantly anyway.
+ */
+async function tryAdoptRunningBackend(installedVersion) {
+  if (!installedVersion) return false;
+  try {
+    const health = await fetch(`${BACKEND_URL}/health/status`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!health.ok) return false;
+    const verRes = await fetch(`${BACKEND_URL}/health/version`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!verRes.ok) return false;
+    const body = await verRes.json();
+    const running = body && body.data && body.data.version;
+    if (running === installedVersion) {
+      log.info(`[adopt] Healthy backend v${running} already on ${BACKEND_URL} — reusing it (skip stop+boot)`);
+      return true;
+    }
+    log.info(
+      `[adopt] Running backend v${running || 'unknown'} != installed v${installedVersion} — restarting it`
+    );
+    return false;
+  } catch {
+    // Nothing listening (the common case) or probe failed — normal boot.
+    return false;
+  }
+}
+
 function sendStatus(message) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('startup-status', message);
@@ -594,24 +638,36 @@ async function startApp() {
 
         const version = uvManager.getInstalledVersionSync(activeBin);
         const versionSuffix = version ? ` v${version}` : '';
-        sendStatus(`Starting flowpad${versionSuffix}`);
-        try {
-          await uvManager.startWithBin(activeBin);
-        } catch (startErr) {
-          // A shim exists on disk (so we took the fast path), but its env can't
-          // import flow_sdk — a corrupt/half-finished install. Without this the
-          // app would crash on the same broken shim every launch and never
-          // self-heal (a --force reinstall only runs in the first-time branch).
-          // Repair once and retry; if it still fails, fall through to the dialog.
-          if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
-          log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
-          sendStatus('Repairing Flowpad installation');
-          await uvManager.ensureUv();
-          await uvManager.reinstall();
-          backendJustUpgraded = true;
-          const repairedVersion = uvManager.getInstalledVersionSync();
-          sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
-          await uvManager.start();
+
+        // ADOPT-IF-HEALTHY: after a crash/force-quit a healthy backend of this
+        // exact version is often still running — reuse it instead of paying
+        // the full kill+reboot (~13s). Guarded: never after an upgrade (the
+        // fresh install must boot), and only on an exact version match.
+        const adopted =
+          !backendJustUpgraded && (await tryAdoptRunningBackend(version));
+        if (adopted) {
+          uvManager._flowBin = activeBin;
+          sendStatus(`Reconnecting to flowpad${versionSuffix}`);
+        } else {
+          sendStatus(`Starting flowpad${versionSuffix}`);
+          try {
+            await uvManager.startWithBin(activeBin);
+          } catch (startErr) {
+            // A shim exists on disk (so we took the fast path), but its env can't
+            // import flow_sdk — a corrupt/half-finished install. Without this the
+            // app would crash on the same broken shim every launch and never
+            // self-heal (a --force reinstall only runs in the first-time branch).
+            // Repair once and retry; if it still fails, fall through to the dialog.
+            if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
+            log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
+            sendStatus('Repairing Flowpad installation');
+            await uvManager.ensureUv();
+            await uvManager.reinstall();
+            backendJustUpgraded = true;
+            const repairedVersion = uvManager.getInstalledVersionSync();
+            sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
+            await uvManager.start();
+          }
         }
       } else {
         // FIRST-TIME SETUP: uv tool install flowpad (latest)
@@ -960,7 +1016,7 @@ ipcMain.handle('upgrade-flowpad', async () => {
     }
 
     sendStatus('Stopping server');
-    await uvManager._flowStop();
+    await uvManager._stopViaServerJson();
     await uvManager._killPort(9007);
     uvManager.isShuttingDown = false;
     uvManager._backendProcess = null;

@@ -93,6 +93,13 @@ const UpdateStatus = Object.freeze({
   NOT_REQUIRED: 'not_required',
 });
 
+// Signature of a Windows Device Guard / WDAC execution block. Matched against
+// the stderr of a FAILED `flow start` spawn (see start()): the block rejects
+// CreateProcess instantly, so the real spawn fails immediately and we can
+// fall back to `uv tool run` — no need for a speculative pre-flight probe
+// (the old `flow --help` probe paid a full ~1.7s Python import every launch).
+const DEVICE_GUARD_BLOCK_RE = /Device Guard|Application Control|blocked by your organization/i;
+
 class UvManager {
   constructor(log) {
     this.log = log;
@@ -103,7 +110,6 @@ class UvManager {
     // `uv tool run --from flowpad flow ...` instead, which doesn't go
     // through the unsigned shim.
     this._useUvToolRun = false;
-    this._probedShim = false;
   }
 
   /**
@@ -119,35 +125,16 @@ class UvManager {
   }
 
   /**
-   * Probe the flow shim once. On Windows machines with Device Guard / WDAC,
-   * `uv tool install` writes an unsigned shim that's blocked from executing.
-   * If we detect that here, swap to the `uv tool run` fallback for the rest
-   * of this session. No-op on non-Windows.
-   *
-   * Timeout is deliberately SHORT: a Device Guard / WDAC block fails the
-   * process launch *instantly* (the OS rejects CreateProcess), so the only
-   * thing we're waiting for is that fast rejection. A shim that's merely slow
-   * to print `--help` (cold Python import on first run after install/AV scan)
-   * tells us nothing — it works — so there's no reason to wait it out. On
-   * timeout we fall through and let the real `flow start` proceed normally.
-   * Do NOT widen this to "give --help time to finish": that just re-adds the
-   * old multi-second tax to every cold launch for zero detection benefit.
+   * True when a failed `flow start` spawn was rejected by Windows Device
+   * Guard / WDAC (uv's shim is unsigned and some org policies block it).
+   * Detection lives on the FAILURE path of the real spawn — a block rejects
+   * CreateProcess instantly, so the real `flow start` surfaces it just as
+   * fast as the old speculative `flow --help` pre-flight probe did, without
+   * charging every healthy launch the probe's full Python-import cost.
    */
-  async _probeFlowBinOnce() {
-    if (this._probedShim || !IS_WIN || !this._flowBin) return;
-    this._probedShim = true;
-    try {
-      await this._run(this._flowBin, ['--help'], { timeout: 2000 });
-    } catch (err) {
-      const stderr = (err.stderr || err.message || '').toString();
-      if (/Device Guard|Application Control|blocked by your organization/i.test(stderr)) {
-        this.log.warn(
-          '[uv] flow shim blocked by Windows Device Guard — falling back to `uv tool run`'
-        );
-        this._useUvToolRun = true;
-      }
-      // Other failures will surface naturally on the real call below.
-    }
+  _isDeviceGuardBlockError(error) {
+    const text = `${error?.message || ''}\n${error?.stderr || ''}\n${error?.stdout || ''}`;
+    return DEVICE_GUARD_BLOCK_RE.test(text);
   }
 
   // ---------------------------------------------------------------------------
@@ -692,10 +679,6 @@ class UvManager {
       this.isShuttingDown = false;
       this.log.info('[uv] Starting backend via flow start...');
 
-      // On Windows, probe whether the uv shim is blocked by Device Guard.
-      // If so, _useUvToolRun gets set and _flowCmd() routes around it.
-      await this._probeFlowBinOnce();
-
       // Ensure port 9007 is free before starting
       await this.ensurePortFree(9007);
 
@@ -781,43 +764,60 @@ class UvManager {
       });
 
       // Wait for the process to exit or give it a short window to fail
-      await new Promise((resolve, reject) => {
-        let settled = false;
+      try {
+        await new Promise((resolve, reject) => {
+          let settled = false;
 
-        const timer = setTimeout(() => {
-          settled = true;
-          resolve();
-        }, 3000);
-
-        child.once('exit', (code, signal) => {
-          if (settled) return;
-          clearTimeout(timer);
-          settled = true;
-
-          if (code === 0) {
-            // flow start completed successfully (spawned monitor and exited)
+          const timer = setTimeout(() => {
+            settled = true;
             resolve();
-          } else {
-            reject(new Error(
-              `flow start exited with code ${code}, signal ${signal}\n` +
-              `stdout:\n${stdout.slice(-1000)}\n\nstderr:\n${stderr.slice(-1000)}`
-            ));
-          }
-        });
+          }, 3000);
 
-        child.once('error', (err) => {
-          if (settled) return;
-          clearTimeout(timer);
-          settled = true;
-          reject(err);
+          child.once('exit', (code, signal) => {
+            if (settled) return;
+            clearTimeout(timer);
+            settled = true;
+
+            if (code === 0) {
+              // flow start completed successfully (spawned monitor and exited)
+              resolve();
+            } else {
+              reject(new Error(
+                `flow start exited with code ${code}, signal ${signal}\n` +
+                `stdout:\n${stdout.slice(-1000)}\n\nstderr:\n${stderr.slice(-1000)}`
+              ));
+            }
+          });
+
+          child.once('error', (err) => {
+            if (settled) return;
+            clearTimeout(timer);
+            settled = true;
+            reject(err);
+          });
         });
-      });
+      } catch (spawnErr) {
+        // Device Guard / WDAC blocks the unsigned uv shim from executing at
+        // all. Detect it here — on the real spawn's instant failure — and
+        // retry once through `uv tool run`, which launches the venv's signed
+        // python directly. (Detection used to be a speculative `flow --help`
+        // pre-flight that cost every healthy launch a full Python import.)
+        if (IS_WIN && !this._useUvToolRun && this._isDeviceGuardBlockError(spawnErr)) {
+          this.log.warn(
+            '[uv] flow shim blocked by Windows Device Guard — retrying via `uv tool run`'
+          );
+          this._useUvToolRun = true;
+          return this.start();
+        }
+        throw spawnErr;
+      }
 
       this.log.info('[uv] flow start launched successfully');
     }
 
   /**
-   * Stop the backend: flow stop, then kill all processes on port 9007.
+   * Stop the backend: kill monitor+server by PID, then kill all processes
+   * on port 9007.
    */
     async stop() {
       if (this.isShuttingDown) return;
@@ -834,8 +834,8 @@ class UvManager {
         }
       }
 
-      // 1. Run flow stop
-      await this._flowStop();
+      // 1. Kill monitor + server directly by PID (fast `flow stop` equivalent)
+      await this._stopViaServerJson();
 
       // 2. Kill any remaining processes on port 9007
       await this._killPort(9007);
@@ -844,23 +844,122 @@ class UvManager {
     }
 
   /**
-   * Run `flow stop`. Swallows errors.
+   * Path of the backend's server.json (written by flow_sdk.config
+   * save_server_info). Electron always drives the default `prod` instance;
+   * the legacy pre-instances location is kept as a fallback for installs
+   * that haven't migrated yet.
    */
-  async _flowStop() {
-    const { cmd, args } = this._flowBin
-      ? this._flowCmd(['stop'])
-      : { cmd: 'flow', args: ['stop'] };
+  _serverJsonCandidates() {
+    const home = os.homedir();
+    return [
+      path.join(home, '.flow', 'instances', 'prod', 'server.json'),
+      path.join(home, '.flow', 'server.json'),
+    ];
+  }
+
+  /**
+   * Resolve the command lines of the given PIDs. Returns Map<pid, cmdline>
+   * (missing/exited PIDs are simply absent). One subprocess call total.
+   */
+  async _pidCommandLines(pids) {
+    const result = new Map();
+    if (!pids.length) return result;
     try {
-      await this._run(cmd, args, { timeout: 10000 });
-      this.log.info('[uv] flow stop completed');
-    } catch (error) {
-      this.log.warn(`[uv] flow stop failed: ${error.message}`);
+      if (IS_WIN) {
+        const filter = pids.map((p) => `ProcessId=${p}`).join(' OR ');
+        const { stdout } = await execFileAsync('powershell.exe', [
+          '-NoProfile', '-Command',
+          `Get-CimInstance Win32_Process -Filter "${filter}" | ` +
+          'ForEach-Object { "$($_.ProcessId)|$($_.CommandLine)" }',
+        ], { timeout: 8000, windowsHide: true });
+        for (const line of stdout.split(/\r?\n/)) {
+          const idx = line.indexOf('|');
+          if (idx < 1) continue;
+          const pid = parseInt(line.slice(0, idx), 10);
+          if (pid > 0) result.set(pid, line.slice(idx + 1));
+        }
+      } else {
+        const { stdout } = await execFileAsync(
+          'ps', ['-p', pids.join(','), '-o', 'pid=,args='], { timeout: 8000 }
+        );
+        for (const line of stdout.split('\n')) {
+          const m = line.trim().match(/^(\d+)\s+(.*)$/);
+          if (m) result.set(parseInt(m[1], 10), m[2]);
+        }
+      }
+    } catch { /* ps/PowerShell failure or all PIDs gone — treat as none alive */ }
+    return result;
+  }
+
+  /**
+   * Direct-PID equivalent of `flow stop` (launch.py stop_all): read
+   * monitor_pid/server_pid from server.json, verify each PID's command line
+   * still matches our process markers (guards against recycled PIDs — same
+   * check launch.py's is_process_alive does), kill the MONITOR FIRST (else
+   * its watchdog can respawn the server), then the server, then clear the
+   * PID fields like clear_server_info().
+   *
+   * Replaces spawning `flow stop`, which paid a full ~1.5s Python import to
+   * do exactly this. No graceful-shutdown loss on Windows: Python's
+   * kill_process ends in TerminateProcess there anyway.
+   */
+  async _stopViaServerJson() {
+    let info = null;
+    let jsonPath = null;
+    for (const candidate of this._serverJsonCandidates()) {
+      try {
+        info = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+        jsonPath = candidate;
+        break;
+      } catch { /* missing/corrupt — try next */ }
+    }
+    if (!info) {
+      this.log.info('[uv] No server.json found — nothing to stop by PID');
+      return;
+    }
+
+    // Kill order matters: monitor first (marker matches launch.py's
+    // _MONITOR_CMD_MARKER / _SERVER_CMD_MARKER).
+    const targets = [
+      { pid: info.monitor_pid, marker: 'flow_sdk.server.launch', label: 'monitor' },
+      { pid: info.server_pid, marker: 'flow_sdk.server', label: 'server' },
+    ].filter((t) => Number.isInteger(t.pid) && t.pid > 0);
+
+    const cmdlines = await this._pidCommandLines(targets.map((t) => t.pid));
+    for (const { pid, marker, label } of targets) {
+      const cmdline = cmdlines.get(pid);
+      if (!cmdline) continue; // already exited
+      if (!cmdline.includes(marker)) {
+        this.log.info(`[uv] PID ${pid} (${label}) recycled to another process — skipping kill`);
+        continue;
+      }
+      try {
+        if (IS_WIN) {
+          await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 });
+        } else {
+          process.kill(pid, 'SIGTERM');
+        }
+        this.log.info(`[uv] Killed ${label} PID ${pid}`);
+      } catch (e) {
+        this.log.warn(`[uv] Failed to kill ${label} PID ${pid}: ${e.message}`);
+      }
+    }
+
+    // Mirror clear_server_info(): drop the sentinel keys so CLI/status tools
+    // don't see a stale "running" record.
+    try {
+      delete info.server_pid;
+      delete info.monitor_pid;
+      delete info.launch_iso_time;
+      fs.writeFileSync(jsonPath, JSON.stringify(info, null, 2));
+    } catch (e) {
+      this.log.warn(`[uv] Could not clear PIDs from ${jsonPath}: ${e.message}`);
     }
   }
 
   /**
-   * Check if port 9007 is in use, and if so run flow stop + kill the port.
-   * Called before starting the backend.
+   * Check if port 9007 is in use, and if so kill the backend by PID + free
+   * the port. Called before starting the backend.
    */
   async ensurePortFree(port = 9007) {
     const inUse = await this._isPortInUse(port);
@@ -871,8 +970,8 @@ class UvManager {
 
     this.log.info(`[uv] Port ${port} is in use, cleaning up...`);
 
-    // 1. Run flow stop
-    await this._flowStop();
+    // 1. Kill monitor + server directly by PID (fast `flow stop` equivalent)
+    await this._stopViaServerJson();
 
     // 2. Kill any remaining processes on the port
     await this._killPort(port);
