@@ -5,7 +5,7 @@ import { ForwardDiagnosisShareDialog } from '@src/components/diagnose/forward-di
 import { OpenInTerminalButton } from '@src/components/diagnose/open-in-terminal-button';
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { EyeOff, Forward, MessageSquarePlus } from 'lucide-react';
+import { Check, EyeOff, Forward, MessageSquarePlus } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 interface DiagnosisActionButtonsProps {
@@ -22,6 +22,9 @@ interface DiagnosisActionButtonsProps {
   onReportIssue: () => void;
   /** Whether reporting is available (a diagnosis id is known). Defaults to true. */
   canReport?: boolean;
+  /** The report was already sent — render "✓ Reported" disabled so the user
+   *  sees it succeeded and can't email the team a duplicate. */
+  reported?: boolean;
   /** "Forward" — post the formatted report into the chosen conversation. */
   onForward: (conversationId: string) => void;
   /** The FlowpadDiagnosis entity id. When set, the Forward list gains a "Start
@@ -55,6 +58,7 @@ export function DiagnosisActionButtons({
   onDismiss,
   onReportIssue,
   canReport = true,
+  reported,
   onForward,
   diagnosisId,
   diagnosisTitle,
@@ -94,15 +98,22 @@ export function DiagnosisActionButtons({
             <EyeOff className="h-3.5 w-3.5" />
           </button>
         )}
-        <Button
-          type="button"
-          size="sm"
-          disabled={busy || !canReport}
-          onClick={onReportIssue}
-          className="h-6 px-2 text-xs"
-        >
-          <Trans>Report issue</Trans>
-        </Button>
+        {reported ? (
+          <Button type="button" size="sm" variant="outline" disabled className="h-6 gap-1 px-2 text-xs">
+            <Check className="h-3.5 w-3.5" />
+            <Trans>Reported</Trans>
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy || !canReport}
+            onClick={onReportIssue}
+            className="h-6 px-2 text-xs"
+          >
+            <Trans>Report issue</Trans>
+          </Button>
+        )}
         <Button
           type="button"
           size="sm"
@@ -123,11 +134,13 @@ export function DiagnosisActionButtons({
       {forwardOpen && (
         <ul
           ref={listRef}
-          className="mt-2 flex min-h-0 max-h-48 flex-col gap-1 overflow-y-auto overscroll-contain"
+          className="mt-2 flex max-h-48 min-h-0 flex-col gap-1 overflow-y-auto overscroll-contain"
           data-testid="feed-forward-conversations"
         >
           {conversations.length === 0 && !diagnosisId ? (
-            <li className="px-2 py-1 text-xs text-muted-foreground"><Trans>No conversations yet.</Trans></li>
+            <li className="px-2 py-1 text-xs text-muted-foreground">
+              <Trans>No conversations yet.</Trans>
+            </li>
           ) : (
             conversations.map((conv) => (
               <li key={conv.id}>
@@ -138,13 +151,9 @@ export function DiagnosisActionButtons({
                   className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
                   data-testid={`feed-forward-conv-${conv.id}`}
                 >
-                  <span className="flex-1 truncate text-foreground">
-                    {deriveConversationTitle(conv)}
-                  </span>
+                  <span className="flex-1 truncate text-foreground">{deriveConversationTitle(conv)}</span>
                   <span className="shrink-0 text-[10px] text-muted-foreground">
-                    {formatTimeAgo(
-                      conv.updated_date ? new Date(conv.updated_date).toISOString() : null,
-                    ) ?? ''}
+                    {formatTimeAgo(conv.updated_date ? new Date(conv.updated_date).toISOString() : null) ?? ''}
                   </span>
                 </button>
               </li>
@@ -162,7 +171,9 @@ export function DiagnosisActionButtons({
                 data-testid="feed-forward-conv-new"
               >
                 <MessageSquarePlus className="h-3.5 w-3.5 shrink-0 text-primary" />
-                <span className="flex-1 truncate"><Trans>Start new conversation</Trans></span>
+                <span className="flex-1 truncate">
+                  <Trans>Start new conversation</Trans>
+                </span>
               </button>
             </li>
           )}
