@@ -552,7 +552,7 @@ The current files are under `ts_sdk/src/process/`, not `ts_sdk/src/agentic_proce
 | `ready_for_input`                                              | Server-computed readiness flag.                |
 | `session_id`                                                   | Persistent worker session ID.                  |
 | `shell_id`                                                     | Linked `Shell` for PTY mode.                   |
-| `visible`                                                      | Mode selector.                                 |
+| `visible`                                                      | Tab visibility only (transport is `pty_mode`). |
 | `cli_config`                                                   | Serialized worker CLI options.                 |
 | `context_data`                                                 | Persisted extra context.                       |
 | `workdir`                                                      | Worker working directory.                      |

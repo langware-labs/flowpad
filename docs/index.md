@@ -86,4 +86,6 @@ subfolder_count: '2'
 
 * [agent-management/](agent-management/index.md) — Subtree under agent-management/ — see drilled-down index for details.
 
+* [interface/](interface/README.md) — Complete interface reference for the agentic-process stack: Python objects & APIs, backend actions → Python mapping, TS objects, rules & invariants, test-derived flows.
+
 * [data-management/](data-management/index.md) — Subtree under data-management/ — see drilled-down index for details.
