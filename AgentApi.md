@@ -5,6 +5,10 @@ version: 2
 
 # AgentApi.md — Agent Execution API Specification
 
+> **HISTORICAL** — this design spec predates the two-axis (`pty_mode`/`visible`)
+> model. The maintained interface reference is [docs/interface/](docs/interface/README.md);
+> the three-layer diagram below remains the canonical framing.
+
 > Design and implementation guide for the three-layer agent execution stack.
 > Last updated: 2026-04-04
 
