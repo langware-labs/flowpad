@@ -30,7 +30,7 @@ msgstr ""
 msgid "— current"
 msgstr ""
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:487
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:490
 msgid "— open, peek, or get highlighted here"
 msgstr ""
 
@@ -2064,7 +2064,7 @@ msgstr ""
 
 #: src/components/browseable-tree/BrowseableTree.tsx:312
 #: src/components/browseable-tree/BrowseableTree.tsx:313
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:275
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:278
 msgid "Collapse"
 msgstr ""
 
@@ -3948,7 +3948,7 @@ msgstr ""
 #: src/components/browseable-tree/BrowseableTree.tsx:313
 #: src/components/claude-terminal/claude-terminal.tsx:49
 #: src/components/conversation/AttachmentChip.tsx:425
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:299
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:302
 msgid "Expand"
 msgstr ""
 
@@ -5660,7 +5660,7 @@ msgid "last {0}"
 msgstr ""
 
 #. placeholder {0}: report.period_kind
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:535
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:538
 msgid "Last {0}"
 msgstr ""
 
@@ -6424,7 +6424,7 @@ msgstr ""
 msgid "Modified"
 msgstr ""
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:320
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:323
 msgid "more"
 msgstr ""
 
@@ -7692,7 +7692,7 @@ msgstr ""
 #: src/components/simple-file-manager/SimpleFileManager.tsx:957
 #: src/components/tasks-viewer/TasksViewer.tsx:183
 #: src/components/workers/WorkerToolbar.tsx:92
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:431
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:434
 msgid "Open"
 msgstr ""
 
@@ -10124,7 +10124,7 @@ msgstr ""
 #: src/components/conversation/MessageComposer.tsx:460
 #: src/components/conversation/PromptComposerDialog.tsx:86
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx:155
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:421
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:424
 msgid "Send"
 msgstr ""
 
@@ -10545,11 +10545,11 @@ msgstr ""
 msgid "Skill"
 msgstr ""
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:513
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:516
 msgid "Skill analysis"
 msgstr ""
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:516
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:519
 msgid "Skill analysis ready for review and improvements"
 msgstr ""
 
@@ -11655,7 +11655,7 @@ msgstr ""
 msgid "Unavailable"
 msgstr ""
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:567
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:570
 msgid "Unavailable feed item"
 msgstr ""
 
@@ -11943,7 +11943,8 @@ msgstr ""
 #: src/components/conversation/ConversationContextPanel.tsx:1111
 #: src/components/entity-context/EntityContextPanel.tsx:428
 #: src/components/lens-viewer/LlmIndexersViewer.tsx:278
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:252
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:250
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:251
 msgid "View"
 msgstr ""
 
@@ -12219,7 +12220,7 @@ msgstr ""
 msgid "yanked"
 msgstr ""
 
-#: src/pages/home-landing/feed/FeedEntryCard.tsx:535
+#: src/pages/home-landing/feed/FeedEntryCard.tsx:538
 msgid "Yesterday"
 msgstr ""
 

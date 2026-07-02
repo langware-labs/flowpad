@@ -238,6 +238,8 @@ function MessageSuggestFeedEntryCard({
   // (see diagnose_cmd._post_home_feed_entry). Render the title green.
   const allClear = isDiagnosis && !!suggest.diagnosis_id && !suggest.conversation_id;
 
+  // Icon-only with a tooltip — the narrow feed column can't fit three labeled
+  // buttons (Report issue / Forward / View) on one row.
   const viewButton =
     isDiagnosis && suggest.diagnosis_id ? (
       <Button
@@ -245,11 +247,12 @@ function MessageSuggestFeedEntryCard({
         size="sm"
         variant="outline"
         disabled={busy}
+        aria-label={t`View`}
+        title={t`View`}
         onClick={() => setViewOpen(true)}
-        className="h-6 gap-1 px-2 text-xs"
+        className="h-6 w-6 p-0"
       >
         <Eye className="h-3.5 w-3.5" />
-        <Trans>View</Trans>
       </Button>
     ) : null;
 
