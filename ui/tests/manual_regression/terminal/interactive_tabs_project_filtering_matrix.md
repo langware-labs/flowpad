@@ -11,7 +11,7 @@ Users have reported tab close, restore, and project-filter regressions. This fil
 | Element | Selector |
 |---|---|
 | Tab bar | `[data-testid="terminal-tab-bar"]` |
-| Tab strip scroller | `[data-testid="terminal-tabs-scroll-container"]` |
+| Tab strip row | `[data-testid="terminal-tabs-row"]` |
 | Single tab | `[data-testid^="tab-shell-"]` (id form: `tab-shell-shell-<uuid>` or `tab-shell-agentic_process-<uuid>`) |
 | Close-all button | `[data-testid="close-all-tabs-button"]` |
 | Projects chip | `[data-testid="projects-counter-chip"]` |

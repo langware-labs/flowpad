@@ -201,8 +201,13 @@ export function ContentPanel() {
   // tabbed workspace), in the win/ focus layout, or a Vibe creator surface.
   // `chrome` (the registry "takeover" bit) is separate from
   // `DockPointer.tabHash` (chip-or-not).
-  const hideChrome =
-    windowMode || vibeMinimalChrome || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
+  // The tab strip is persistent fixture chrome: it stays mounted on fullbleed
+  // surfaces (Home) so open tabs never vanish; only win/ mode and Vibe creator
+  // surfaces hide it. `hideChrome` (strip conditions + fullbleed) governs the
+  // navigator/border framing — derived from `showTabStrip` so the shared
+  // conditions exist exactly once.
+  const showTabStrip = !windowMode && !vibeMinimalChrome;
+  const hideChrome = !showTabStrip || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
 
   // File manager filters
   const [enabledFilters, setEnabledFilters] = useState<FilterName[]>([FilterName.HIDDEN]);
@@ -387,9 +392,11 @@ export function ContentPanel() {
         </div>
       )}
 
-      {/* Unified tab strip — hidden in the win/ focus layout and on the Home
-          landing (full-bleed). The body below renders the URL-derived view. */}
-      {!hideChrome && <UnifiedTabStrip />}
+      {/* Unified tab strip — persistent fixture chrome: visible on every
+          surface (including Home/fullbleed, where no chip is active but the
+          open tabs + openers stay reachable). Only the win/ focus layout and
+          Vibe creator surfaces are deliberately chrome-less. */}
+      {showTabStrip && <UnifiedTabStrip />}
 
       {/* Zone B — shared left-menu slot, now nested UNDER the tab strip so the
           active view's navigator (assets tree / workflows / docs / triggers /
@@ -398,13 +405,15 @@ export function ContentPanel() {
           body's top edge; the active chip's `-mb-px border-b-transparent`
           opens its bottom over this line, so the menu + body read as one panel
           hanging from the current tab (the folder-tab continuum). */}
-      <div className={`flex min-h-0 flex-1 overflow-hidden ${!hideChrome ? 'border-t border-border' : ''}`}>
+      <div className={`flex min-h-0 flex-1 overflow-hidden ${showTabStrip ? 'border-t border-border' : ''}`}>
         {!vibeMinimalChrome && <NavigatorSlot />}
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {/* Matches the proven per-viewType slot layout (plain h-full, no flex-col)
-              so xterm fits on first paint — a flex-col parent broke its initial sizing. */}
-          <div className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg">
+              so xterm fits on first paint — a flex-col parent broke its initial sizing.
+              No entrance animation: a tab switch must be visually instant (a fade
+              reads as page navigation, not a tab switch). */}
+          <div className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">
             {renderBody(bodyViewType)}
           </div>
         </div>
