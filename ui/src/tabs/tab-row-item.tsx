@@ -21,11 +21,6 @@ import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
-const TAB_LABEL_MAX = 30;
-
-function clip(name: string): string {
-  return name.length > TAB_LABEL_MAX ? name.slice(0, TAB_LABEL_MAX).trimEnd() + '…' : name;
-}
 
 function lifecycleStatus(lifecycle: TabLifecycleEntry | null): {
   hasError: boolean;
@@ -50,7 +45,9 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
   // DockPointer from the stored JSON pointer; key is the tabHash.
   const dock = tab.dockPointer;
   const key = dock?.tabHash ?? tab.id;
-  const label = clip(tab.name ?? '');
+  // No char-level clipping: CSS truncation in the strip owns visible clipping
+  // at every chip width, and tooltips need the full name.
+  const label = tab.name ?? '';
   const viewType = dock?.viewType || '';
   const lifecycleOverlay = lifecycleStatus(lifecycle);
   const isDisabled = lifecycleOverlay.isClosing || tab.is_disabled;
@@ -168,7 +165,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
         const item = tabItem(t, lifecycles.get(key) ?? null);
         // `focusType` is only set on an assets dock, so it implies viewType==='assets'.
         if (key === currentDock?.tabHash && focusType && focusEditable) {
-          if (activeAssetTitle) item.title = clip(activeAssetTitle);
+          if (activeAssetTitle) item.title = activeAssetTitle;
           const Icon = iconForType(focusType);
           item.icon = (
             <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={`${focusType} tab`} />

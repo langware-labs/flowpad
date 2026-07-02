@@ -278,23 +278,12 @@ export async function startClaudeSession(page: Page) {
  * Get the name of the currently active terminal tab.
  */
 export async function getActiveTabName(page: Page): Promise<string> {
-  // Active tab has the border-primary class applied to the tab div itself
-  const activeTab = page.locator('[data-testid^="tab-"].border-primary span').first();
+  // Active tab carries data-active="true" on the chip div itself (explicit
+  // test contract — never sniff styling classes).
+  const activeTab = page.locator('[data-testid^="tab-"][data-active="true"] span').first();
   if (await activeTab.isVisible({ timeout: 2_000 }).catch(() => false)) {
     const text = await activeTab.textContent();
     return text?.trim() || '';
-  }
-
-  // Fallback: look for the tab div that contains border-primary in its class
-  const allTabs = page.locator('[data-testid^="tab-"]');
-  const count = await allTabs.count();
-  for (let i = 0; i < count; i++) {
-    const tab = allTabs.nth(i);
-    const cls = await tab.getAttribute('class');
-    if (cls?.includes('border-primary')) {
-      const text = await tab.locator('span').first().textContent();
-      return text?.trim() || '';
-    }
   }
   return '';
 }
