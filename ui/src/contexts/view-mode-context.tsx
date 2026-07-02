@@ -22,9 +22,11 @@ export enum ViewMode {
 // View mode is a *user* preference, now owned by prefMan (`preferences.ui.view_mode`,
 // a boot key mirrored to localStorage for instant first paint). It is reflected as a
 // `data-view` attribute on the document root so CSS / other surfaces can react app-wide.
-// Default Vibe for new accounts (super-simple, Lovable-style creator UI); Standard is
-// the calm/minimal app; opt up to Advanced; Dev for developers. Toggle with
-// window.setView() or the footer pill.
+// Default is Standard (the calm/minimal app); Vibe (super-simple, Lovable-style
+// creator UI) is opt-in via the footer View toggle; opt up to Advanced; Dev for
+// developers. The default lives in `preferences.ui.view_mode` (prefRegistry.ts,
+// defaultValue 'standard') — `toViewMode` below falls back to Standard for any
+// unset/unknown value. Toggle with window.setView() or the footer pill.
 
 function toViewMode(v: unknown): ViewMode {
   return v === ViewMode.Advanced || v === ViewMode.Dev || v === ViewMode.Vibe

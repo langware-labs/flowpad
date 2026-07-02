@@ -8,12 +8,27 @@ id: 9c2406fc-f5c9-5f32-8932-f6d36f8fa3f9
 
 The current implementation is not an `AgenticProcessor` child model. Processes are created from a `ComputeNode` action or directly as entities, and worker-specific behavior is delegated to `WorkerDriver` implementations under `flow_sdk/builtin/agentic_process/cli_drivers/`.
 
-There are two runtime modes:
+### Two independent axes: transport vs visibility
 
-| Mode                           | Selector            | Worker shape                                   | UI shape                               |
-| ------------------------------ | ------------------- | ---------------------------------------------- | -------------------------------------- |
-| CLI / headless print mode      | `visible === false` | One subprocess per prompt turn, no `Shell`/PTY | FlowData stream and transcript history |
-| PTY / visible interactive mode | `visible === true`  | Long-lived worker in a `Shell`-owned PTY       | xterm terminal tab                     |
+A process is described by **two orthogonal booleans**, not one mode selector. Older text in this file (and some field docstrings) treated `visible` as *the* mode selector and said "routing stays `headless == !visible`" — that is stale. The **transport** the worker runs over is chosen by `pty_mode`; `visible` only answers "is this shown as a terminal tab." Every execution router in the code keys on `pty_mode`, never on `visible` (`agentic_process.py:1824`, `:2210`, `:1843`, `:3843`; `load-process.ts:199`; `InteractiveTerminal.tsx:166`).
+
+| Axis                     | Field       | `true`                                                     | `false`                                                                 |
+| ------------------------ | ----------- | ---------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Transport** (worker)   | `pty_mode`  | Interactive PTY: long-lived worker in a `Shell`-owned PTY  | Headless JSON-stream: `-p --output-format stream-json`, one subprocess per turn, no `Shell`/PTY |
+| **Visibility** (UI)      | `visible`   | Shown as a terminal tab / loader attaches an xterm         | Not attached as a terminal tab (chat surface, or backgrounded)         |
+
+In this codebase **"headless" is a synonym for `pty_mode === false`** (the JSON-stream transport). It is *not* a separate axis from `pty_mode` — it is the name for one pole of it. The genuine orthogonality is `pty_mode` (transport) ⟂ `visible` (tab shown), enforced deliberately: `set-visible` (`agentic_process.py:1783`) flips the tab without ever touching transport, and `prompt()`'s docstring is explicit that routing is "on the transport intent `pty_mode` (NOT tab-visibility)".
+
+**Reachable quadrants** (the two axes are seeded in lock-step at launch, so the diagonal is the common case, but they can be pulled apart):
+
+| `visible` | `pty_mode` | State                                                                                       |
+| --------- | ---------- | ------------------------------------------------------------------------------------------- |
+| `true`    | `true`     | Interactive PTY terminal tab (normal terminal).                                             |
+| `false`   | `true`     | Backgrounded/hidden PTY — worker still alive, no tab. Dead-PTY detection still applies (`agentic_process.py:3840`). |
+| `false`   | `false`    | Headless JSON-stream (server-side automation, or a chat tab whose strip membership is the `Tab` entity). |
+| `true`    | `false`    | Not produced by any launch path — `_perform_open` forces `pty_mode=True` whenever `visible=True` (`agentic_process.py:991`). Only constructible by calling `set-visible` on an already-headless process. |
+
+The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you cannot show an interactive terminal with no PTY), but `visible=False` does **not** imply headless (a PTY session can be hidden). Note also that `visible` is no longer the tab-strip membership flag — the `Tab` entity owns that (see `docs/tab-management.md`); `visible` now only gates the PTY/xterm runtime.
 
 `session_id` is the persistent conversation/session identifier. `status` is the stored process lifecycle. `worker_status` is a computed projection from the worker transcript.
 
@@ -22,13 +37,19 @@ There are two runtime modes:
 ## Table of Contents
 
 1. [Current Entity Model](#current-entity-model)
-2. [Two Modes](#two-modes)
+2. [The Two Transports](#the-two-transports)
 3. [Lifecycle and Status](#lifecycle-and-status)
 4. [Configuration](#configuration)
 5. [Backend API](#backend-api)
 6. [TypeScript API](#typescript-api)
 7. [Stale Names](#stale-names)
 8. [Key Files Reference](#key-files-reference)
+
+> **Related docs (owned elsewhere — cross-referenced, not duplicated here):**
+> `visible` / tab-strip membership and the `Tab` entity → `docs/tab-management.md`.
+> PTY lifecycle, replay buffer, and attach → `docs/pty-terminal-spec.md`, `docs/agent-management/pty-websocket.md`.
+> The chat⇄terminal mode-switch UX → `switch-mode` action below and `docs/agent-management/claude-session-manager.md`.
+> This doc is the reference for the **transport axis (`pty_mode`) and its relation to `visible`/headless**.
 
 ***
 
@@ -44,7 +65,8 @@ There are two runtime modes:
 | `worker_status`                                                | `WorkerStatus` string  | Computed on serialization from the worker transcript; not stored as an entity field.                                         |
 | `ready_for_input`                                              | `bool`                 | Computed on serialization by `is_ready_for_input()`.                                                                         |
 | `session_id`                                                   | `str \| None`          | Persistent worker session/conversation ID. For Claude this is the Claude session UUID and JSONL transcript ID.               |
-| `visible`                                                      | `bool`                 | Mode selector. `false` means CLI/headless print mode; `true` means PTY/interactive mode.                                     |
+| `pty_mode`                                                     | `bool`                 | **Transport intent** (persisted, default `true`). `true` → interactive PTY; `false` → headless JSON-stream. This — not `visible` — is what every execution router keys on. Seeds `visible` at launch and is kept durable across reload so a chat vs terminal choice survives. |
+| `visible`                                                      | `bool`                 | **Tab-visibility only** (default `false`). Whether the loader attaches a PTY/xterm. Decoupled from transport via `set-visible`; does not route prompts. No longer the tab-strip membership flag (that is the `Tab` entity).                        |
 | `shell_id`                                                     | `str \| None`          | Linked `Shell` entity ID for visible PTY mode. `None` in headless print mode.                                                |
 | `sidecar_shell_id`                                             | `str \| None`          | Optional sidecar shell link; cleared on process exit/close paths.                                                            |
 | `cli_config`                                                   | `dict`                 | Serialized worker CLI options. Built by the frontend or `ComputeNode.createProcess`; deserialized through the driver.        |
@@ -104,11 +126,13 @@ Current drivers:
 
 ***
 
-## Two Modes
+## The Two Transports
 
-### CLI / Headless Print Mode
+The rest of this section describes the two ends of the `pty_mode` axis. Where the columns below say a transport is "selected by `visible=…`" that is shorthand for the common lock-stepped case — the authoritative selector is `pty_mode`.
 
-Headless print mode is selected by `visible=false`.
+### CLI / Headless Print Mode (`pty_mode=false`)
+
+Headless print mode is selected by `pty_mode=false` (in the default lock-stepped launch it coincides with `visible=false`).
 
 Characteristics:
 
@@ -128,7 +152,7 @@ Backend routing:
 POST /api/v1/graph/agentic_process/<id>/execute
   -> AgenticProcess._http_execute()
   -> AgenticProcess.prompt()
-  -> visible is false
+  -> pty_mode is false        # NOT `visible` — see prompt() docstring, agentic_process.py:1806
   -> process.driver.headless_prompt(process, instruction)
 ```
 
@@ -137,7 +161,7 @@ There is also a streaming HTTP prompt action:
 ```text
 POST /api/v1/graph/agentic_process/<id>/prompt
   body: { "message": "..." }
-  -> allowed only when visible=false
+  -> print-mode path routes on pty_mode=false (agentic_process.py:2210)
   -> streams FlowData XML over text/event-stream
 ```
 
@@ -177,9 +201,9 @@ Codex print mode uses `CodexCLIStreamWorker`:
 codex exec --json --ephemeral --skip-git-repo-check ...
 ```
 
-### PTY / Visible Interactive Mode
+### PTY Interactive Mode (`pty_mode=true`)
 
-Interactive mode is selected by `visible=true` and opened through `AgenticProcess.start()` / the backend `open` action.
+Interactive mode is the `pty_mode=true` transport, opened through `AgenticProcess.start()` / the backend `open` action. Opening a PTY sets `visible=true`, and `_perform_open` then forces `pty_mode=true` in the same tail (`agentic_process.py:991`) — this is the one enforced coupling between the axes (`visible=true ⟹ pty_mode=true`). A `pty_mode=true` process can still be hidden (`visible=false`) via `set-visible`; its worker stays alive and dead-PTY detection still runs.
 For UI terminal tabs, callers should set `visible=true`; `start()` is the PTY-open action and can also accept a `visible` override in the backend `open` body.
 
 Characteristics:
@@ -308,12 +332,14 @@ If no worker status can be discovered and `session_id` is empty, the process is 
 
 ### WorkerMode
 
-`WorkerMode` is not stored. It is derived from `visible`:
+`WorkerMode` is not stored. `get_worker_mode()` derives it from **`visible`** (`status_predicates.py:60`):
 
 ```text
-visible=true  -> interactive PTY mode
-visible=false -> CLI/headless print mode
+visible=true  -> INTERACTIVE
+visible=false -> CLI
 ```
+
+> ⚠️ **`WorkerMode` is a display projection, not the transport.** It is derived from `visible`, whereas the actual execution transport is `pty_mode`. In the lock-stepped common case they agree, but in the decoupled quadrants they can disagree — e.g. a hidden PTY session (`visible=false`, `pty_mode=true`) reports `WorkerMode.CLI` while its worker is still a live PTY. Never route execution on `WorkerMode`; route on `pty_mode`. This visible-vs-pty_mode split is a candidate for consolidation (see the arch note in the return report).
 
 Python: `flow_sdk/builtin/agentic_process/status_predicates.py`
 TypeScript: `ts_sdk/src/process/agentic-types.ts`
@@ -467,8 +493,8 @@ POST /api/v1/graph/compute_node/<id>/upsertSessionProcess
 | `restart`               | `POST`     | `exit()` then `start()`.                                                          |
 | `close`                 | `POST`     | Permanent teardown: close/delete linked `Shell`, clear shell links, stop process. |
 | `fork`                  | `POST`     | Create a sibling process that forks from this process's `session_id`.             |
-| `execute`               | `POST`     | Execute an instruction through `prompt()`; routes by `visible`.                   |
-| `prompt`                | `POST`     | Print-mode streaming HTTP prompt; rejects visible PTY processes.                  |
+| `execute`               | `POST`     | Execute an instruction through `prompt()`; routes by `pty_mode`.                  |
+| `prompt`                | `POST`     | Print-mode streaming HTTP prompt; the print-mode branch is taken when `pty_mode=false`. |
 | `cancel-prompt`         | `POST`     | Cancel an in-flight print-mode worker.                                            |
 | `execute-plan`          | `POST`     | Inject a plan execution prompt into an active PTY session.                        |
 | `update-plan`           | `POST`     | Inject a plan-update prompt into an active PTY session.                           |
@@ -574,7 +600,7 @@ Convenience getters:
 | `fork(visible?)`                            | PTY  | Create and open a forked sibling process.                                                                                            |
 | `prompt(text, abortController?)`            | CLI  | Streaming print-mode prompt over HTTP.                                                                                               |
 | `cancelPrompt()`                            | CLI  | Cancel the active print-mode subprocess.                                                                                             |
-| `executeInstruction(instruction, options?)` | Both | Calls backend `execute`; backend routes by `visible`.                                                                                |
+| `executeInstruction(instruction, options?)` | Both | Calls backend `execute`; backend routes by `pty_mode`.                                                                                |
 | `wait()`                                    | Both | Wait for terminal `workerStatus`/failed lifecycle.                                                                                   |
 | `output()`                                  | Both | Async iterator over collected and live `FlowData`.                                                                                   |
 | `getOutputs()`                              | Both | Synchronous access to collected `FlowData`.                                                                                          |
@@ -609,6 +635,8 @@ The following names appear in older docs or compatibility shims but are not the 
 | `startPty()`, `resumePty()`, `killPty()` | Use `start()`/`open`, `restart()` or `start()` after stale shell, `exit()`/`close()`.                                                |
 | `state.status`                           | Use stored `status` plus computed `worker_status`; there is no persisted `ProcessorState` status source on current `AgenticProcess`. |
 | AMD processor/debug run loop             | Not part of the current `AgenticProcess` backend file. Current execution is worker CLI prompt/PTY plus FlowData history.             |
+| `visible` as the mode selector           | `visible` is tab-visibility only. The transport selector is `pty_mode`. All execution routers key on `pty_mode`, never `visible`.    |
+| "Routing stays `headless == !visible`"   | Stale phrasing still present in `agentic_process.py:461` and `agentic-process.ts:174`. Routing is `!pty_mode`; `visible` and `pty_mode` are only lock-stepped at launch, and `set-visible` can decouple them. |
 
 ***
 
