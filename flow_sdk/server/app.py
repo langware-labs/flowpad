@@ -255,12 +255,26 @@ async def _seed_service_triggers() -> None:
 
 
 async def _start_fsop_watcher() -> None:
-    """Start the FSOp watcher: catch up, then spawn one awatch task per trigger."""
+    """Start the FSOp watcher in the BACKGROUND so it never gates server
+    readiness.
+
+    ``fsop_watcher.start()`` runs a per-trigger "catch up on changes missed
+    while the server was down" walk before spawning each trigger's live
+    awatch. With many FSOp triggers that walk can add seconds to boot. We
+    schedule the whole start() as a background task (mirroring the transcript
+    streamer, which backgrounds its catch-up for the same reason) so the server
+    reaches the listen phase immediately. start()'s internal order is
+    preserved — each trigger still catches up BEFORE its own awatch is spawned —
+    so the missed-while-down → live ordering is intact; we simply don't block
+    the lifespan on it. Runs after ``_seed_service_triggers()`` (awaited above),
+    so the triggers it reads are already seeded."""
     try:
+        import asyncio as _asyncio
+
         from flow_sdk.server.fsop_watcher import fsop_watcher
 
-        await fsop_watcher.start()
-        print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
+        _asyncio.create_task(fsop_watcher.start(), name="fsop-watcher-start")
+        print("  FSOp watcher: scheduled (background)")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
 

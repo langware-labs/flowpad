@@ -6,6 +6,8 @@ integration is out of scope.
 """
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from flow_sdk.server.fsop_watcher import FSOpWatcher, fsop_watcher
@@ -21,7 +23,12 @@ async def test_fsop_watcher_module_singleton_exposed():
 
 
 async def test_start_helper_invokes_watcher_start(monkeypatch):
-    """_start_fsop_watcher must call fsop_watcher.start()."""
+    """_start_fsop_watcher must call fsop_watcher.start().
+
+    start() is now scheduled as a background task (so its catch-up walk never
+    blocks server readiness), so yield the loop once to let it run before
+    asserting.
+    """
     from flow_sdk.server import app
     from flow_sdk.server import fsop_watcher as fw_mod
 
@@ -33,6 +40,7 @@ async def test_start_helper_invokes_watcher_start(monkeypatch):
     monkeypatch.setattr(fw_mod.fsop_watcher, "start", _spy_start)
 
     await app._start_fsop_watcher()
+    await asyncio.sleep(0)  # let the backgrounded start() task run
     assert called["start"] is True
 
 
