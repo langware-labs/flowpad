@@ -96,6 +96,10 @@ export async function loadAgentApp(args: LoaderArgs) {
   // no per-step attribution. Stamping here makes every loader run self-timing.
   markPerfT0();
   const t = new TimeIt(`loadAgentApp(${params['*'] || params.viewType || '/'})`);
+  const wasColdInit = typeof window !== 'undefined' && !window.appReady;
+  // Cold SDK bootstrap includes schema/context setup; warm route loads keep the
+  // tighter guard so real navigation regressions still surface.
+  const slowThresholdSeconds = wasColdInit ? 5 : 1.2;
   perfLog(`loadAgentApp start (${params['*'] || params.viewType || '?'})`);
 
   // React Router 6.4 runs root and child route loaders **in parallel** by
@@ -164,7 +168,7 @@ export async function loadAgentApp(args: LoaderArgs) {
     await ensureComputeNodeLoaded();
     if (dockForSetup) await setupTabAndAdopt(dockForSetup);
     t.time('ensureComputeNode');
-    t.done(1.2);
+    t.done(slowThresholdSeconds);
     return;
   }
 
@@ -194,22 +198,22 @@ export async function loadAgentApp(args: LoaderArgs) {
       await setupTabAndAdopt(dockForSetup);
     }
 
-    t.done(1.2);
+    t.done(slowThresholdSeconds);
     return;
   }
 
   const dockViewType = getDockViewType(args);
   if (!dockViewType) {
-    t.done(1.2);
+    t.done(slowThresholdSeconds);
     return loadFlowFromParams(args);
   }
   if (!isValidViewType(args)) {
     const brokenViewUrl = getBrokenViewUrl(args);
     console.error(`[LOADER] Invalid view type(${dockViewType}). Redirecting to default view URL:`, brokenViewUrl);
-    t.done(1.2);
+    t.done(slowThresholdSeconds);
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(brokenViewUrl);
   }
-  t.done(1.2);
+  t.done(slowThresholdSeconds);
   return loadFlowFromParams(args);
 }

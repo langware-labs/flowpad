@@ -264,13 +264,13 @@ export function HomeLanding() {
              hero CTA. Side columns, search, feed, usage and notifications are
              dropped (still mounted in the fallback). Reuses SessionInput; submit
              goes to handleVibeSubmit (seeds a headless build session). */
-          <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4">
+          <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-4">
             <div
               aria-hidden
               className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3"
             />
             <div className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-6 text-center">
-              <h1 className="text-5xl font-bold tracking-tight">
+              <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
                 <Trans>
                   Build something <span className="vibe-gradient-text">amazing</span>
                 </Trans>
@@ -292,12 +292,12 @@ export function HomeLanding() {
         fallback={
           <>
       {/* Top row: UsageBar + Search */}
-      <div className="flex shrink-0 items-center gap-2 p-4">
-        <AdvancedOnly className="w-72 shrink-0">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 p-3 sm:flex-nowrap sm:p-4">
+        <AdvancedOnly className="hidden w-72 shrink-0 md:block">
           <UsageBar />
         </AdvancedOnly>
-        <div className="flex-1" />
-        <div className="relative w-72 shrink-0">
+        <div className="hidden flex-1 sm:block" />
+        <div className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
           <RecordSearchBar
             query={searchQuery}
             filters={searchFilters}
@@ -308,7 +308,7 @@ export function HomeLanding() {
             placeholder={t`Search...`}
           />
           {searchQuery.trim().length >= 2 && (
-            <div className="absolute right-0 top-full z-50 w-[600px] pt-1">
+            <div className="absolute right-0 top-full z-50 w-[calc(100vw-2rem)] max-w-[600px] pt-1">
               <InlineSearchResults
                 query={searchQuery}
                 filters={searchFilters}
@@ -325,9 +325,9 @@ export function HomeLanding() {
       </div>
 
       {/* Main row: Sidebar + Content */}
-      <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
+      <div className="flex min-h-0 flex-1 gap-4 px-3 pb-3 lg:gap-6 lg:px-4 lg:pb-4">
         {/* Left column: Inbox */}
-        <div className="w-72 shrink-0 flex flex-col gap-2">
+        <div className="hidden w-72 shrink-0 flex-col gap-2 lg:flex">
           {/* Invisible spacer mirroring the right Feed column so Inbox aligns with Feed */}
           <div aria-hidden className="h-9 shrink-0" />
           <RecentConversationsStrip />
@@ -335,16 +335,16 @@ export function HomeLanding() {
 
         {/* Middle column: Main content + Quick Access. The column itself never
             scrolls; side panels own their own scrolling. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden sm:gap-6">
           {/* Hero — fixed at the top, never scrolls */}
           <div className="flex shrink-0 flex-col items-center gap-6 text-center">
-            <h1 className="text-4xl font-bold tracking-tight">
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
               <Trans>
                 Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
               </Trans>
             </h1>
 
-            <div className="w-full max-w-3xl flex flex-col items-end gap-2">
+            <div className="flex w-full max-w-3xl flex-col items-end gap-2">
               <SessionInput
                 placeholder={t`What would you like to work on?`}
                 value={draftPrompt}
@@ -414,7 +414,9 @@ export function HomeLanding() {
           </AdvancedOnly>
         </div>
 
-        <HomeFeedColumn />
+        <div className="hidden lg:block">
+          <HomeFeedColumn />
+        </div>
 
       </div>
           </>

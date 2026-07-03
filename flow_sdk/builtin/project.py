@@ -4,30 +4,26 @@ import random
 import string
 import sys
 from datetime import datetime, timezone
-from typing import Any, ClassVar, List, Optional
-
-from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
+from typing import Any, List, Optional
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
-from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
-from flow_sdk.fs_store.path_utils import canonical_posix_path
-from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.flowpad_types.enums import AuthRole
+from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
+from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, QueryFilter, action
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.request_context.methods import (
     get_current_request_info,
-    get_current_service,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -206,6 +202,7 @@ class Project(Entity):
         if not path:
             return None
         import uuid
+
         from flow_sdk.fs_store.path_utils import canonical_posix_path
         return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(path)}"))
 
@@ -225,6 +222,7 @@ class Project(Entity):
           3. Random uuid4 fallback.
         """
         import uuid
+
         from flow_sdk.fs_store.identifier import is_valid_uuid
         mount_path = data.get("fs_storage_mount_path") or data.get("cwd") or data.get("real_path")
         if not mount_path:
@@ -380,6 +378,7 @@ class Project(Entity):
         if not self.fs_storage_mount_path:
             return None
         from pathlib import Path
+
         from flow_sdk.fs_store.fs_ref import FSRef
         return FSRef(Path(self.fs_storage_mount_path))
 
