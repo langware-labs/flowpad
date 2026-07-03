@@ -64,7 +64,8 @@ def _process(worker_type: WorkerType, **kwargs) -> AgenticProcess:
 # ── has_resumable_session: Claude ─────────────────────────────────────────────
 
 
-def _write_claude_session(projects_dir: Path, session_id: str, cwd: str = "/repo") -> Path:
+def _write_claude_session(projects_dir: Path, session_id: str) -> Path:
+    cwd = "/repo"
     encoded = cwd.replace("/", "-")
     path = projects_dir / encoded / f"{session_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -105,14 +106,14 @@ def test_claude_has_resumable_false_without_session_id(isolated_homes):
 # ── has_resumable_session: Codex ──────────────────────────────────────────────
 
 
-def _write_codex_rollout(sessions_root: Path, thread_id: str, cwd: str = "/repo") -> Path:
+def _write_codex_rollout(sessions_root: Path, thread_id: str) -> Path:
     path = sessions_root / "2026" / "05" / "06" / f"rollout-2026-05-06T21-39-48-{thread_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps({
             "timestamp": "2026-05-06T21:39:48.000Z",
             "type": "session_meta",
-            "payload": {"id": thread_id, "cwd": cwd},
+            "payload": {"id": thread_id, "cwd": "/repo"},
         }) + "\n",
         encoding="utf-8",
     )

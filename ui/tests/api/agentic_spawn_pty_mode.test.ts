@@ -14,24 +14,13 @@
  * Fails pre-fix: the create payload omitted `pty_mode`, so the reloaded row read
  * back the field default (`true`).
  */
-import { AgenticProcess, apiClient, GRAPH_API_PREFIX } from '@sdk';
-import { afterEach, describe, expect, it } from 'vitest';
-import { apiTestSetup } from '../utils/test-utils';
+import { AgenticProcess } from '@sdk';
+import { describe, expect, it } from 'vitest';
+import { apiTestSetup, trackCreatedRows } from '../utils/test-utils';
 
-const created: string[] = [];
-
-async function fetchRow(id: string): Promise<any> {
-  return apiClient.get<any>(`${GRAPH_API_PREFIX}/${AgenticProcess.type}/${id}`);
-}
+const { created, fetchRow } = trackCreatedRows(AgenticProcess.type);
 
 describe('AgenticProcess.spawn headless → pty_mode=false', () => {
-  afterEach(async () => {
-    while (created.length) {
-      const id = created.pop()!;
-      await apiClient.delete(`${GRAPH_API_PREFIX}/${AgenticProcess.type}/${id}`).catch(() => {});
-    }
-  });
-
   it('headless spawn persists pty_mode=false on the reloaded entity', async () => {
     await apiTestSetup();
 
