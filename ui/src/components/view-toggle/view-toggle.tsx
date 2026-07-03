@@ -1,5 +1,5 @@
 import { ViewMode, setViewMode, useViewMode } from '@src/contexts/view-mode-context';
-import { useCurrentDock } from '@src/navigation';
+import { useDockNavigation } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
 
 const LABELS: Record<ViewMode, string> = {
@@ -27,7 +27,7 @@ const RING_DEV: readonly ViewMode[] = [...RING_NORMAL, ViewMode.Dev];
  */
 export function ViewToggle() {
   const mode = useViewMode();
-  const currentDock = useCurrentDock();
+  const { currentDock, navigation } = useDockNavigation();
   const onAgenticProcess = currentDock?.viewType === ViewType.AGENTIC_PROCESS;
   // Include Dev in the cycle only when already in Dev mode (developers know they're there)
   const isDev = mode === ViewMode.Dev;
@@ -42,7 +42,13 @@ export function ViewToggle() {
     <button
       type="button"
       data-testid="view-toggle"
-      onClick={() => setViewMode(next)}
+      onClick={() => {
+        if (currentDock?.viewMode) {
+          navigation.openDock(currentDock.withViewMode(next));
+        } else {
+          setViewMode(next);
+        }
+      }}
       className="flex h-6 min-w-[88px] items-center justify-center rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       title={`View: ${LABELS[mode]} — click for ${LABELS[next]}`}
       aria-label={`View mode: ${LABELS[mode]}`}

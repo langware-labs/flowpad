@@ -1,6 +1,8 @@
 import { instancePreferences, onPreferenceChange, PrefKey } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
+import { useEffect, useSyncExternalStore } from 'react';
+import { useCurrentDock } from '@src/navigation/useDockNavigation';
 
 declare global {
   interface Window {
@@ -34,6 +36,23 @@ function toViewMode(v: unknown): ViewMode {
     : ViewMode.Standard;
 }
 
+const viewModeOverrideListeners = new Set<() => void>();
+let dockViewModeOverride: ViewMode | null = null;
+let flickerTimer: number | undefined;
+
+function subscribeViewModeOverride(listener: () => void): () => void {
+  viewModeOverrideListeners.add(listener);
+  return () => viewModeOverrideListeners.delete(listener);
+}
+
+function getViewModeOverrideSnapshot(): ViewMode | null {
+  return dockViewModeOverride;
+}
+
+function getEffectiveViewMode(): ViewMode {
+  return dockViewModeOverride ?? getViewMode();
+}
+
 // Vibe's display font (Plus Jakarta Sans) is loaded lazily — and only the first
 // time Vibe is actually active — so Standard/Advanced/Dev users (the majority,
 // who never see it) don't pay a render-blocking cross-origin font fetch on boot.
@@ -50,13 +69,35 @@ function ensureVibeFont(): void {
   document.head.appendChild(link);
 }
 
-function applyAttribute(val: ViewMode): void {
+function applyAttribute(val: ViewMode, animate = true): void {
   if (val === ViewMode.Vibe) ensureVibeFont();
+  const prev = document.documentElement.getAttribute('data-view');
   // Guard: prefMan fires on EVERY pref change, but only a view-mode change need
   // touch the DOM. Skip the write when the attribute already matches.
-  if (document.documentElement.getAttribute('data-view') !== val) {
+  if (prev !== val) {
     document.documentElement.setAttribute('data-view', val);
+    if (animate && prev != null) {
+      document.documentElement.classList.remove('view-mode-glow-flicker');
+      // Restart the CSS animation even when changes happen in quick succession.
+      void document.documentElement.offsetWidth;
+      document.documentElement.classList.add('view-mode-glow-flicker');
+      if (flickerTimer !== undefined) window.clearTimeout(flickerTimer);
+      flickerTimer = window.setTimeout(() => {
+        document.documentElement.classList.remove('view-mode-glow-flicker');
+        flickerTimer = undefined;
+      }, 700);
+    }
   }
+}
+
+function setDockViewModeOverride(val: ViewMode | null): void {
+  if (dockViewModeOverride === val) {
+    applyAttribute(getEffectiveViewMode(), false);
+    return;
+  }
+  dockViewModeOverride = val;
+  applyAttribute(getEffectiveViewMode());
+  viewModeOverrideListeners.forEach((listener) => listener());
 }
 
 // One-time migration of the legacy separate `devMode` boolean → viewMode=dev.
@@ -71,13 +112,13 @@ export function getViewMode(): ViewMode {
 
 export function setViewMode(val: ViewMode): void {
   instancePreferences.set(PrefKey.VIEW_MODE, val);
-  applyAttribute(val);
+  applyAttribute(getEffectiveViewMode());
 }
 
 // Keep `data-view` in sync with prefMan: on import (first paint) and on every change,
 // including a cross-device backend value reconciled in on load.
-applyAttribute(getViewMode());
-onPreferenceChange(() => applyAttribute(getViewMode()));
+applyAttribute(getViewMode(), false);
+onPreferenceChange(() => applyAttribute(getEffectiveViewMode()));
 
 defineGlobal('setView', setViewMode);
 defineGlobal('getView', getViewMode);
@@ -104,7 +145,26 @@ defineGlobal('getDev', getDev);
 
 export function useViewMode(): ViewMode {
   const [value] = usePreference<string>(PrefKey.VIEW_MODE);
-  return toViewMode(value);
+  const override = useSyncExternalStore(
+    subscribeViewModeOverride,
+    getViewModeOverrideSnapshot,
+    getViewModeOverrideSnapshot,
+  );
+  const mode = override ?? toViewMode(value);
+  useEffect(() => applyAttribute(mode), [mode]);
+  return mode;
+}
+
+/** Sync the current DockPointer's page-local viewMode override into useViewMode(). */
+export function useDockViewModeOverrideSync(): void {
+  const currentDock = useCurrentDock();
+  const override = currentDock?.viewMode ?? null;
+
+  useEffect(() => {
+    setDockViewModeOverride(override);
+  }, [override]);
+
+  useEffect(() => () => setDockViewModeOverride(null), []);
 }
 
 /** Semantic boolean accessor — true if Advanced or Dev (hierarchy). */
