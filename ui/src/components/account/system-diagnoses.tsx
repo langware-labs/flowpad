@@ -25,6 +25,7 @@ import {
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { diagnosisToText } from '@src/components/diagnose/diagnosis-details';
+import { useDiagnosisReportAvailability } from '@src/components/diagnose/use-diagnosis-report-availability';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -112,8 +113,10 @@ function DiagnosisRowActions({
   onForwarded: (conversationId: string) => void;
 }) {
   const { t } = useLingui();
+  const reportAvailability = useDiagnosisReportAvailability();
   // "Report issue" — email the diagnosis to the Flowpad team (no conversation).
   const handleReport = useCallback(async () => {
+    if (!reportAvailability.canReport) return;
     try {
       await sendDiagnosisEmailReport(diag.id);
       notify.success({ title: t`Diagnosis reported to the Flowpad team` });
@@ -123,7 +126,7 @@ function DiagnosisRowActions({
         message: e instanceof Error ? e.message : t`Report failed.`,
       });
     }
-  }, [diag, t]);
+  }, [diag, reportAvailability.canReport, t]);
 
   // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
@@ -157,7 +160,8 @@ function DiagnosisRowActions({
         variant="ghost"
         className="h-7 w-7 p-0"
         aria-label={t`Report issue`}
-        title={t`Report issue`}
+        title={reportAvailability.disabledReason ?? t`Report issue`}
+        disabled={!reportAvailability.canReport}
         onClick={() => void handleReport()}
       >
         <Flag className="h-4 w-4" />
