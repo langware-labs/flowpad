@@ -44,6 +44,23 @@ import type {
 /**
  * Result returned by AgenticProcess.spawn().
  */
+/**
+ * Resolved `flow show` display target — the payload of the `on_show` entity
+ * event, produced by the backend's `resolve_display_target`
+ * (flow_sdk/core/display_target.py). Discriminated by `kind`.
+ */
+export interface ShowTarget {
+  kind?: 'entity' | 'vfs' | 'webapp' | string;
+  /** entity: canonical `<type>-<id>` string. */
+  typeid?: string;
+  type?: string;
+  id?: string;
+  /** entity (when shown by path) | vfs: the resolved absolute path. */
+  path?: string;
+  /** webapp: the dev-server port. */
+  port?: number | string;
+}
+
 export interface SpawnResult {
   process: AgenticProcess;
   /** Set in PTY mode */
@@ -2453,11 +2470,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /**
    * Subscribe to agent-declared display focus (`flow show`). The payload is
-   * the resolved show target from the backend action:
-   *   {kind:'entity', typeid, type, id, path?} | {kind:'vfs', path} | {kind:'webapp', port}
-   * Returns the unsubscribe function.
+   * the resolved show target from the backend action (see
+   * `flow_sdk/core/display_target.py`). Returns the unsubscribe function.
    */
-  onShow(handler: (payload: Record<string, unknown>) => void): () => void {
+  onShow(handler: (payload: ShowTarget) => void): () => void {
     return this.on('show', handler);
   }
 

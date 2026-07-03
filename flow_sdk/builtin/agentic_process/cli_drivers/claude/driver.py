@@ -26,6 +26,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     WorkerCLIOptions,
+    apply_worker_env,
     restart_payload_from_cli_options,
 )
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
@@ -150,11 +151,7 @@ class ClaudeDriver:
         # Mirror PTY path's FLOWPAD_EXECUTION_SCOPE injection
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow workflow report``) back to this process.
-        env_vars = dict(cli_cfg.get("env_vars") or {})
-        env_vars.setdefault(
-            "FLOWPAD_EXECUTION_SCOPE",
-            json.dumps([{"type": process.get_type(), "id": process.id}]),
-        )
+        env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
 
         context = AgenticContext(
             workdir=process.workdir,

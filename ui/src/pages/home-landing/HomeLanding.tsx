@@ -10,7 +10,7 @@ import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
 import { useProjects } from '@src/hooks/use-projects';
-import { claudeSessionManager, ComputeNode, dataContext, PrefKey, ProcessKind, Project, TypeId } from '@sdk';
+import { apiClient, claudeSessionManager, ComputeNode, dataContext, PrefKey, ProcessKind, Project, TypeId } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -29,6 +29,20 @@ import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
+
+// The vibe agent's asset_ref is stable for the app's lifetime — resolve once,
+// reuse across builds. Raw graph route (not useEntitiesQuery) because system
+// (SDK-shipped) agents only surface with include_system=true. Failed lookups
+// are NOT cached so a late-indexed agent is picked up on the next submit.
+let vibeAgentRefCache: string | null = null;
+async function resolveVibeAgentRef(): Promise<string | null> {
+  if (vibeAgentRefCache) return vibeAgentRefCache;
+  const rows = await apiClient.get<{ name?: string; asset_ref?: string }[]>(
+    '/graph/agent?include_system=true',
+  );
+  vibeAgentRefCache = (rows ?? []).find((r) => r.name === 'vibe')?.asset_ref ?? null;
+  return vibeAgentRefCache;
+}
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -181,6 +195,12 @@ export function HomeLanding() {
   // mounted so the web-app-builder skill is discoverable. Navigating to the
   // process's SHELL/agentic_process dock activates it (loader sets the active
   // process) and flow-page renders the chat↔display split.
+  //
+  // The session is bound to the SDK-shipped `vibe` agent (single embedded
+  // agent ⇒ the driver's persona directive on every turn) — the agent body
+  // carries the creator routing + the `flow show` presentation contract that
+  // drives the vibe display. Best-effort: an un-indexed agent just means a
+  // plain assistant session.
   const handleVibeSubmit = (message: string) => {
     if (!currentProject?.id) {
       notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
@@ -197,19 +217,33 @@ export function HomeLanding() {
       try {
         const computeNode = await ComputeNode.getById('@local');
         if (!computeNode) throw new Error('No local compute node');
-        const proc = await computeNode.createProcess({
-          workdir: workdir ?? undefined,
-          projectId,
-          targetVfsPath: target,
-          processType: ProcessKind.Chat,
-          loadFlowpadAssistant: true,
-          outputFormat: 'stream-json',
-        });
-        // Send the message verbatim — it's a chat. "hi" → the agent says hi; the
-        // web-app-builder skill (mounted via loadFlowpadAssistant) triggers on its
-        // own when the user actually asks to build something.
-        await proc.prompt(message);
+        const proc = await computeNode.createProcess(
+          {
+            workdir: workdir ?? undefined,
+            projectId,
+            targetVfsPath: target,
+            processType: ProcessKind.Chat,
+            loadFlowpadAssistant: true,
+            outputFormat: 'stream-json',
+          },
+          // Headless JSON-stream transport — the vibe chat is a side panel, not
+          // a terminal; PTY transport would pre-fill (not run) the first prompt.
+          { pty_mode: false },
+        );
+        // Embed the vibe agent (persona) before the first turn.
+        try {
+          const vibeRef = await resolveVibeAgentRef();
+          if (vibeRef) await proc.loadEmbeddedAgent(vibeRef);
+          else console.warn('[Vibe] vibe agent not indexed; continuing without persona');
+        } catch (e) {
+          console.warn('[Vibe] failed to embed vibe agent; continuing without persona', e);
+        }
+        // Open the workspace FIRST — a headless prompt() resolves only when the
+        // whole turn finishes, and the display must be mounted to catch the
+        // agent's live `flow show` (on_show). Then fire the message verbatim —
+        // it's a chat; the vibe persona routes building on its own.
         void navigation.openShellProcess(proc.id);
+        proc.prompt(message).catch((e) => console.error('[Vibe] prompt failed', e));
       } catch (error) {
         console.error('[HomeLanding] Failed to start vibe session:', error);
         notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });

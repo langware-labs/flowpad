@@ -1,4 +1,4 @@
-import { AssetEditor, ConnectionManager, DockPointerData, dataManager, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
+import { editorForPath, ConnectionManager, DockPointerData, dataManager, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
 import { useEffect } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
@@ -74,8 +74,7 @@ export function useUiCommandListener(): void {
         console.warn('[ui_command] navigate_vfs missing path', msg);
         return;
       }
-      const ext = msg.path.split('.').pop()?.toLowerCase();
-      const editor = ext === 'md' || ext === 'markdown' ? AssetEditor.MARKDOWN : AssetEditor.CODE;
+      const editor = editorForPath(msg.path);
       navigateTo(AssetDocPointer.forVfs(editor, msg.path).toDockPointer());
     };
 
