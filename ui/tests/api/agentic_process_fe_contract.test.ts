@@ -17,16 +17,12 @@
  * are covered in the pytest api / long tiers — a JS-tier fake would need a real
  * `claude` binary, which the no-flaky / no-mask rules forbid substituting for.
  */
-import { AgenticProcess, apiClient, dataContext, GRAPH_API_PREFIX, WorkerStatus } from '@sdk';
-import { afterEach, describe, expect, it } from 'vitest';
-import { apiTestSetup } from '../utils/test-utils';
+import { AgenticProcess, dataContext, WorkerStatus } from '@sdk';
+import { describe, expect, it } from 'vitest';
+import { apiTestSetup, trackCreatedRows } from '../utils/test-utils';
 import { trackForCleanup } from '../_cleanup';
 
-const created: string[] = [];
-
-async function fetchRow(id: string): Promise<any> {
-  return apiClient.get<any>(`${GRAPH_API_PREFIX}/${AgenticProcess.type}/${id}`);
-}
+const { created, fetchRow } = trackCreatedRows(AgenticProcess.type);
 
 async function makeHeadless(): Promise<AgenticProcess> {
   // No instruction ⇒ create + watch only (no worker launch): stays fast + driver-free.
@@ -38,13 +34,6 @@ async function makeHeadless(): Promise<AgenticProcess> {
   trackForCleanup(process);
   return process;
 }
-
-afterEach(async () => {
-  while (created.length) {
-    const id = created.pop()!;
-    await apiClient.delete(`${GRAPH_API_PREFIX}/${AgenticProcess.type}/${id}`).catch(() => {});
-  }
-});
 
 describe('AgenticProcess.setVisible — flips visible only, never pty_mode', () => {
   it('shows then hides the tab; pty_mode stays false throughout', async () => {

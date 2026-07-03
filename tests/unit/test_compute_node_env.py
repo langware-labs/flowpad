@@ -11,30 +11,11 @@ The `set_env` tests redirect `$HOME` to a tmp dir so they never touch the real
 `~/.bashrc`. No mocks — real subprocesses via the real provider.
 """
 
-import shlex
-import sys
-
 import pytest
 
-from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
 from flow_sdk.core.flow.models.execution.env_context import FlowEnv
-from flow_sdk.flowpad_types import RuntimeEnvironment
 
-
-@pytest.fixture
-async def node():
-    """A started local compute node; provider + node id yielded."""
-    provider = LocalComputeProvider()
-    node_id = await provider.create_node("env-test-node", RuntimeEnvironment(name="env-test"))
-    await provider.startup(node_id)
-    try:
-        yield provider, node_id
-    finally:
-        await provider.shutdown(node_id)
-
-
-def _py(script: str) -> str:
-    return f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
+from tests.unit.conftest import node, py_command as _py  # noqa: F401
 
 
 @pytest.mark.asyncio

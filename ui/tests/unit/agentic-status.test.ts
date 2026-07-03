@@ -207,23 +207,17 @@ describe('classifyExecutionMode', () => {
     },
   );
 
-  it.each([WorkerStatus.ERROR, WorkerStatus.API_TIMEOUT, WorkerStatus.INACTIVE])(
-    'error worker_status=%s wins over visible (PTY)',
-    (w) => {
-      expect(
-        classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: true, workerStatus: w }),
-      ).toBe(ExecutionMode.Error);
-    },
-  );
-
-  it.each([WorkerStatus.ERROR, WorkerStatus.API_TIMEOUT, WorkerStatus.INACTIVE])(
-    'CLI error via worker_status=%s (no PID needed)',
-    (w) => {
-      expect(
-        classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: false, workerStatus: w }),
-      ).toBe(ExecutionMode.Error);
-    },
-  );
+  // An error worker_status classifies as Error regardless of visible — over PTY
+  // (visible=true) AND CLI (visible=false, no PID needed).
+  it.each(
+    [WorkerStatus.ERROR, WorkerStatus.API_TIMEOUT, WorkerStatus.INACTIVE].flatMap((w) =>
+      [true, false].map((visible) => [w, visible] as const),
+    ),
+  )('error worker_status=%s wins over visible=%s → Error', (w, visible) => {
+    expect(
+      classifyExecutionMode({ status: ProcessStatus.RUNNING, visible, workerStatus: w }),
+    ).toBe(ExecutionMode.Error);
+  });
 
   it('PTY with dead PID → Error', () => {
     expect(

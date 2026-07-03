@@ -16,31 +16,16 @@ each test finishes well under the 30s unit cap.
 """
 
 import asyncio
-import shlex
-import sys
 import time
 
 import pytest
 
-from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
-from flow_sdk.flowpad_types import RuntimeEnvironment
-
-
-@pytest.fixture
-async def node():
-    """A started local compute node; provider node id is yielded."""
-    provider = LocalComputeProvider()
-    node_id = await provider.create_node("stream-test-node", RuntimeEnvironment(name="stream-test"))
-    await provider.startup(node_id)
-    try:
-        yield provider, node_id
-    finally:
-        await provider.shutdown(node_id)
+from tests.unit.conftest import node, py_command  # noqa: F401
 
 
 def _py(script: str) -> str:
-    """A shell command that runs `script` under this interpreter."""
-    return f"{shlex.quote(sys.executable)} -u -c {shlex.quote(script)}"
+    """A shell command that runs `script` under this interpreter (unbuffered)."""
+    return py_command(script, unbuffered=True)
 
 
 async def _collect_with_times(stream) -> list[tuple[float, str]]:

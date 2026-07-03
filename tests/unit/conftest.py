@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shlex
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -11,6 +13,8 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.shell import Shell
+from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
+from flow_sdk.flowpad_types import RuntimeEnvironment
 from flow_sdk.fs_store.indexer.functions import claude_sessions as _claude_sessions
 from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
@@ -20,6 +24,30 @@ from flow_sdk.fs_store.record_paths import (
 )
 
 CLAUDE_SID = "11111111-1111-4111-8111-111111111111"
+
+
+# ---------------------------------------------------------------------------
+# Shared LocalComputeProvider helpers (compute streaming + env tests)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def node():
+    """A started local compute node; yields ``(provider, node_id)``."""
+    provider = LocalComputeProvider()
+    node_id = await provider.create_node("unit-test-node", RuntimeEnvironment(name="unit-test"))
+    await provider.startup(node_id)
+    try:
+        yield provider, node_id
+    finally:
+        await provider.shutdown(node_id)
+
+
+def py_command(script: str, *, unbuffered: bool = False) -> str:
+    """A shell command that runs ``script`` under this interpreter. Pass
+    ``unbuffered=True`` for line-timely streaming (``python -u``)."""
+    flag = " -u" if unbuffered else ""
+    return f"{shlex.quote(sys.executable)}{flag} -c {shlex.quote(script)}"
 
 
 # ---------------------------------------------------------------------------

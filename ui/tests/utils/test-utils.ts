@@ -13,10 +13,12 @@ import {
   dataManager,
   dataContext,
   instancePreferences,
+  GRAPH_API_PREFIX,
 } from '@sdk';
 import { v4 as uuidv4 } from 'uuid';
 import type { AgenticContext, PermissionMode } from '@sdk';
 import { Blob } from 'fetch-blob';
+import { afterEach } from 'vitest';
 
 /**
  * Stubs for cloud auth helpers. Minihub uses zero-auth so these are no-ops,
@@ -124,6 +126,30 @@ export function noop(...args: any[]) {
 
 // Re-export stub utilities for convenience
 export { getStubLabels, waitForLabels } from './stub_utils';
+
+/** GET one graph row (unwrapped) by entity ``type`` + id. */
+export async function fetchRow(type: string, id: string): Promise<any> {
+  return apiClient.get<any>(`${GRAPH_API_PREFIX}/${type}/${id}`);
+}
+
+/**
+ * Track created rows of ``type`` and drain-delete them in an ``afterEach``.
+ * Call at module (or describe) scope; push new ids onto the returned ``created``
+ * array and use ``fetchRow(id)`` to read one back.
+ */
+export function trackCreatedRows(type: string): {
+  created: string[];
+  fetchRow: (id: string) => Promise<any>;
+} {
+  const created: string[] = [];
+  afterEach(async () => {
+    while (created.length) {
+      const id = created.pop()!;
+      await apiClient.delete(`${GRAPH_API_PREFIX}/${type}/${id}`).catch(() => {});
+    }
+  });
+  return { created, fetchRow: (id: string) => fetchRow(type, id) };
+}
 
 /**
  * Get a standardized agent configuration for execution tests
