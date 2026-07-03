@@ -1,45 +1,65 @@
 /**
  * Shared status and UI types for AgenticProcess.
  *
- * ## Two-axis status model
+ * ## Two-axis status model (all logic backend-side; the frontend is read-only)
  *
- * ``ProcessStatus`` — **app/user-level lifecycle** of the process container.
- * Backend-owned FSM. Stored. Transitions are explicit (writers in
- * ``flow_sdk/builtin/agentic_process/agentic_process.py``):
- *     NEW → STARTING → RUNNING → STOPPING → STOPPED,  any → FAILED.
+ * ``ProcessStatus`` — the **logical "what it means"** status, shared identically
+ * across every worker vendor. The backend stores a small FSM
+ * (NEW → STARTING → RUNNING → STOPPING → STOPPED, any → FAILED) but never
+ * serializes ``RUNNING`` directly: it projects it to ``READY`` (the worker can
+ * take the next prompt) or ``BUSY`` (a turn is in flight) on every serialize.
+ * The wire therefore carries NEW / STARTING / READY / BUSY / STOPPING /
+ * STOPPED / FAILED. ``READY``/``BUSY`` are the single boolean the UI gates input
+ * and the pty-mode (xterm ⇄ chat) switch on — see ``isBusy``.
  *
- * ``WorkerStatus`` — **expert-level state of the worker** running inside the
- * process (Claude Code session). Derived from the JSONL transcript on every
- * serialize via ``_tail_status`` in ``flow_sdk/fs_records/agent_status.py``;
- * never stored. Only meaningful when ``ProcessStatus ∈ {RUNNING, STOPPING,
- * STOPPED}`` — in any other lifecycle state, treat as undefined.
+ * ``WorkerStatus`` — the raw **"what we found"** state of the worker, in worker
+ * lingo. Derived from the vendor transcript tail on every serialize; never
+ * stored; nullable on the wire when nothing was found. Only meaningful when the
+ * process is live. Used for the fine-grained activity indicator, never to gate
+ * input (that is ``ProcessStatus``'s job).
  *
  * ## Invariants
  *
- * - ``_RUNNING_STATUSES`` (Python) and ``WORKER_RUNNING_STATUSES`` (here) are
- *   byte-for-byte identical, verified by a contract test against
+ * - ``WORKER_RUNNING_STATUSES`` / ``WORKER_BUSY_STATUSES`` (here) are byte-for-byte
+ *   identical to their Python counterparts, verified by a contract test against
  *   ``test_fixtures/status_sets.json``.
- * - ``isReadyForInput(process)`` is the single canonical "can the user send now?"
- *   predicate. There is no stored ``waiting_for_prompt`` or ``is_active`` field.
+ * - ``isBusy(process)`` ⇔ ``status === 'busy'`` is the single canonical "the user
+ *   must wait" predicate. Its inverse ``isReadyForInput`` ⇔ ``status === 'ready'``.
+ *   There is no stored ``waiting_for_prompt`` or ``is_active`` field, and no
+ *   worker-status-derived gating in the frontend.
  */
 
 /**
- * App/user-level lifecycle of the AgenticProcess container.
+ * Logical "what it means" status of the AgenticProcess. Backend-owned.
  *
- * Backend-owned. Stored. Transitions are explicit (no derivation).
+ * The stored FSM value RUNNING is never serialized directly — the backend
+ * projects it to READY / BUSY (``status_predicates.wire_status``). RUNNING is
+ * kept in this enum only to tolerate legacy persisted payloads (old
+ * ``status_report`` dicts, cached rows); live wire traffic uses READY / BUSY.
  */
 export enum ProcessStatus {
   NEW = 'new',
   STARTING = 'starting',
+  /** @deprecated Wire value is READY / BUSY. Stored-only; kept to tolerate legacy payloads. */
   RUNNING = 'running',
+  /** Live and idle — the worker can take the next user prompt (¬busy). */
+  READY = 'ready',
+  /** Live with a turn in flight — the user must wait; the pty-mode switch is 409'd. */
+  BUSY = 'busy',
   STOPPING = 'stopping',
   STOPPED = 'stopped',
   FAILED = 'failed',
 }
 
+/**
+ * Live process states on the wire — the RUNNING projection (READY/BUSY) plus the
+ * stored RUNNING (legacy) and the STARTING/STOPPING bookends.
+ */
 const RUNNING_PROCESS_STATUSES = new Set<ProcessStatus>([
   ProcessStatus.STARTING,
   ProcessStatus.RUNNING,
+  ProcessStatus.READY,
+  ProcessStatus.BUSY,
   ProcessStatus.STOPPING,
 ]);
 
@@ -49,7 +69,7 @@ const STARTABLE_PROCESS_STATUSES = new Set<ProcessStatus>([
   ProcessStatus.FAILED,
 ]);
 
-/** True while the process container is running (STARTING/RUNNING/STOPPING). */
+/** True while the process container is live (STARTING/RUNNING/READY/BUSY/STOPPING). */
 export function isProcessRunning(status: ProcessStatus): boolean {
   return RUNNING_PROCESS_STATUSES.has(status);
 }
@@ -118,6 +138,23 @@ const WORKER_RUNNING_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.API_ERROR,
 ]);
 
+/**
+ * Raw worker statuses that mean "the worker is mid-turn and the user must wait".
+ * Byte-for-byte equal to the Python ``_BUSY_WORKER_STATUSES`` in
+ * ``status_predicates.py`` via ``status_sets.json`` (key ``worker_busy``).
+ * NOTE api_error is NOT here — an API error is re-promptable, so the backend maps
+ * it to a *ready* process status; while a turn genuinely retries the prompt lock
+ * keeps the process busy. This set is the backend's; the frontend gates on the
+ * projected ``status`` (busy/ready), never on this set directly.
+ */
+export const WORKER_BUSY_STATUSES = new Set<WorkerStatus>([
+  WorkerStatus.INITIALIZING,
+  WorkerStatus.WORKING,
+  WorkerStatus.THINKING,
+  WorkerStatus.TOOL_CALL,
+  WorkerStatus.TOOL_RUNNING,
+]);
+
 const WORKER_TERMINAL_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.COMPLETE,
   WorkerStatus.ERROR,
@@ -125,35 +162,6 @@ const WORKER_TERMINAL_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.INACTIVE,
   WorkerStatus.API_TIMEOUT,
 ]);
-
-const READY_WORKER_STATUSES = new Set<WorkerStatus>([
-  WorkerStatus.IDLE,
-  WorkerStatus.COMPLETE,
-  WorkerStatus.INTERRUPTED,
-]);
-
-/**
- * Statuses in which the worker has yielded the floor and is waiting for the
- * user's next message — i.e. "your turn". Superset of READY_WORKER_STATUSES
- * with PENDING_USER (the explicit "turn ended, waiting for next user message"
- * state, surfaced to the user as "Idle").
- *
- * This is the gate for the chat⇄terminal view toggle: switching mode is only
- * sensible (and only accepted by the backend — a mid-turn switchMode is 409'd)
- * when no turn is in flight. The set is deliberately a strict complement of the
- * mid-turn states, so enabling the toggle on this set never triggers a 409.
- */
-const AWAITING_USER_INPUT_STATUSES = new Set<WorkerStatus>([
-  WorkerStatus.IDLE,
-  WorkerStatus.COMPLETE,
-  WorkerStatus.INTERRUPTED,
-  WorkerStatus.PENDING_USER,
-]);
-
-/** True when the worker is idle between turns, waiting for the user's input. */
-export function isAwaitingUserInput(status: WorkerStatus | undefined): boolean {
-  return status !== undefined && AWAITING_USER_INPUT_STATUSES.has(status);
-}
 
 /** True while the worker is mid-turn (WORKING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR). */
 export function isWorkerRunning(status: WorkerStatus): boolean {
@@ -342,7 +350,9 @@ export function classifyExecutionMode(
   p: StatusBearingProcess & { pidAlive?: boolean },
 ): ExecutionMode | null {
   const status = resolveStatus(p);
-  if (status !== ProcessStatus.RUNNING && status !== ProcessStatus.STARTING) return null;
+  // Live for execution-mode = running EXCEPT the terminal-bound STOPPING (a
+  // stopping worker is not "executing"). Reuses isProcessRunning's wire set.
+  if (status === undefined || !isProcessRunning(status) || status === ProcessStatus.STOPPING) return null;
   const worker = resolveWorkerStatus(p);
   if (worker !== undefined && ERROR_WORKER_STATUSES.has(worker)) return ExecutionMode.Error;
   const isPty = isPtyTransport(p);
@@ -360,33 +370,30 @@ function resolveWorkerStatus(p: StatusBearingProcess): WorkerStatus | undefined 
 }
 
 /**
- * Single canonical "can the caller send a new user prompt?" predicate.
+ * The single canonical "the user must wait" predicate — the ONE boolean the UI
+ * gates input and the pty-mode (xterm ⇄ chat) switch on. All the logic is
+ * backend-side: ``busy`` ⇔ the projected process ``status === 'busy'`` (the
+ * backend derived it from the prompt lock + ``_turn_in_flight`` + worker
+ * activity in ``status_predicates.is_turn_busy``). The frontend just reads it.
  *
- * Contract (mirrored by the Python ``is_ready_for_input`` in
- * ``flow_sdk/builtin/agentic_process/status_predicates.py``):
- *
- *     status == RUNNING  AND  workerStatus ∈ {IDLE, COMPLETE, INTERRUPTED}
- *
- * Special case: if ``workerStatus`` is missing and ``session_id`` is falsy,
- * treat as ready (process is live but never been prompted).
+ * A non-live process (NEW / STARTING / STOPPING / STOPPED / FAILED) is not
+ * ``busy`` — it is simply not READY, so callers that need "can send now" should
+ * use ``isReadyForInput``, and callers gating a spinner / the switch toggle on
+ * "a turn is running" should use ``isBusy``.
  */
-export function isReadyForInput(p: StatusBearingProcess): boolean {
-  if (resolveStatus(p) !== ProcessStatus.RUNNING) return false;
-  const worker = resolveWorkerStatus(p);
-  if (worker === undefined) return !p.session_id;
-  return READY_WORKER_STATUSES.has(worker);
+export function isBusy(p: StatusBearingProcess): boolean {
+  return resolveStatus(p) === ProcessStatus.BUSY;
 }
 
 /**
- * UX-level "cannot accept input right now" flag — the negation of
- * ``isReadyForInput``. Surfaces that need a single boolean to gate input
- * fields, show a busy spinner, or drive a shortcut condition should use this.
- *
- * Covers every non-ready state: worker mid-turn (THINKING / TOOL_* / …),
- * process not yet RUNNING (NEW / STARTING), STOPPING, terminal, or errored.
+ * "Can the caller send a new user prompt / switch transport now?" — ⇔ the
+ * projected process ``status === 'ready'`` (live and no turn in flight). Mirror
+ * of the Python ``is_ready_for_input`` (``wire_status(p) == READY``). The
+ * chat⇄terminal toggle gates on this: READY and BUSY are disjoint, so enabling
+ * the toggle on READY can never hit the backend's busy 409.
  */
-export function isBusy(p: StatusBearingProcess): boolean {
-  return !isReadyForInput(p);
+export function isReadyForInput(p: StatusBearingProcess): boolean {
+  return resolveStatus(p) === ProcessStatus.READY;
 }
 
 /**

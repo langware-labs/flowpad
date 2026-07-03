@@ -37,8 +37,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     apply_worker_env,
     get_driver,
 )
-from flow_sdk.builtin.agentic_process.heartbeat_tasks import _PENDING_USER_TTL_SECONDS
-from flow_sdk.builtin.agentic_process.status_predicates import WorkerMode, is_process_startable, is_ready_for_input
+from flow_sdk.builtin.agentic_process.status_predicates import (
+    WorkerMode,
+    is_process_startable,
+    is_ready_for_input,
+    is_turn_busy,
+    wire_status,
+)
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
@@ -155,6 +160,17 @@ EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "agent"]
 _PROMPT_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 _PROMPT_WORKERS: dict[str, Any] = {}
 
+
+def prompt_lock_locked(process_id: str) -> bool:
+    """True when a prompt turn holds the per-process lock.
+
+    The runtime source of truth for "a headless / chat-over-PTY turn is in
+    flight". Exposed as a module function so ``status_predicates.is_turn_busy``
+    can consult it without importing this module at load time (which would
+    cycle — ``agentic_process`` imports ``status_predicates``).
+    """
+    return _PROMPT_LOCKS[process_id].locked()
+
 # Accepted per-turn ``permission_mode`` overrides (e.g. chat plan mode). Mirrors
 # the values ``ClaudeCliOptions`` knows how to translate to a CLI flag; gates
 # client input so an arbitrary string can't reach the spawn args.
@@ -169,72 +185,6 @@ _OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 # Per-process serialization for prompt-queue drains so two ready edges can't
 # pop+inject the same head twice.
 _QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
-
-
-# Worker statuses for which an OS-pid liveness reconciliation is meaningful.
-# Terminal statuses (COMPLETE, ERROR, INTERRUPTED, INACTIVE) already encode the
-# answer; ``None``/``IDLE`` mean "no work in flight" and shouldn't be flipped.
-_NON_TERMINAL_WORKER_STATUSES = frozenset({
-    WorkerStatus.INITIALIZING,
-    WorkerStatus.WORKING,
-    WorkerStatus.THINKING,
-    WorkerStatus.TOOL_RUNNING,
-    WorkerStatus.TOOL_CALL,
-    WorkerStatus.UNKNOWN,
-})
-
-# Underlying terminal statuses eligible for the PENDING_USER / INACTIVE
-# projection in ``_discover_status_from_transcript``. INACTIVE / API_TIMEOUT
-# are excluded — they're already terminal-with-cause and don't get the
-# user-facing 5-min grace window.
-_PROJECTABLE_TERMINAL = frozenset({
-    WorkerStatus.COMPLETE,
-    WorkerStatus.ERROR,
-    WorkerStatus.INTERRUPTED,
-})
-
-
-def _shell_worker_pid_alive(shell_id: str) -> bool:
-    """Sync OS-pid liveness check for a shell's last-launched worker process.
-
-    Reads ``<records_root>/shell/shell-@<id>/state.json`` directly so the
-    sync ``_discover_status_from_transcript`` path doesn't need to ``await``
-    a record fetch. Conservative on error — returns ``True`` (assume alive)
-    so transient I/O issues don't flip a healthy worker to ``INACTIVE``.
-    """
-    try:
-        import json as _json
-
-        import psutil as _psutil
-
-        from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem
-
-        path = (
-            get_default_records_data_root()
-            / "shell"
-            / record_stem("shell", shell_id)
-            / "state.json"
-        )
-        if not path.exists():
-            return True
-        meta = (_json.loads(path.read_text()) or {}).get("meta") or {}
-        pid_raw = meta.get("worker_pid") or meta.get("process_id")
-        if pid_raw is None:
-            return True
-        try:
-            pid = int(pid_raw)
-        except (TypeError, ValueError):
-            return True
-        if not _psutil.pid_exists(pid):
-            return False
-        try:
-            if _psutil.Process(pid).status() == _psutil.STATUS_ZOMBIE:
-                return False
-        except (_psutil.NoSuchProcess, _psutil.AccessDenied):
-            return False
-        return True
-    except Exception:
-        return True
 
 
 async def _read_json_body() -> dict | ApiFailResponse:
@@ -432,12 +382,13 @@ class AgenticProcess(Entity):
         default=True,
         persist=Persist.TRUE,
         description=(
-            "Transport intent for this session. True → interactive PTY "
-            "(``visible`` drives a live terminal, today's behaviour). False → "
-            "headless JSON-stream (``-p``/stream-json, no PTY, no xterm); the "
-            "loader skips the PTY attach so the choice is durable across reload. "
-            "Routing stays ``headless == !visible``; ``pty_mode`` seeds ``visible`` "
-            "at launch and the chat⇄terminal toggle keeps the two in lock-step."
+            "Transport intent for this session and the SOLE routing key. True → "
+            "interactive PTY (live xterm terminal). False → headless JSON-stream "
+            "(``-p``/stream-json, no PTY, no xterm); the loader skips the PTY "
+            "attach so the choice is durable across reload. Every execution router "
+            "keys on ``pty_mode``, never on ``visible`` (which is tab chrome only). "
+            "``pty_mode`` seeds ``visible`` at launch and the chat⇄terminal toggle "
+            "keeps the two in lock-step."
         ),
     )
     # last_active_at moved to base Entity (epoch-ms, tab-management.md Part 3).
@@ -541,16 +492,6 @@ class AgenticProcess(Entity):
             "one-liner survives a reload."
         ),
     )
-    terminal_at: datetime | None = APIField(
-        default=None,
-        description=(
-            "Timestamp at which worker_status first entered a terminal state "
-            "(COMPLETE/ERROR/INTERRUPTED). Used by the serializer to project to "
-            "WorkerStatus.PENDING_USER for the first 5 minutes and INACTIVE after. "
-            "Cleared when the worker resumes (next non-terminal underlying status)."
-        ),
-    )
-
     def tooltip_summary(self) -> dict[str, str | None]:
         # cli_config.last_prompt is the eventual home for the most recent prompt,
         # but nothing writes it today — fall back to instruction_content (the
@@ -1292,15 +1233,19 @@ class AgenticProcess(Entity):
         )
 
     def _reject_if_turn_in_flight(self) -> ApiFailResponse | None:
-        """409 when a prompt turn holds the per-process lock, else ``None``.
+        """409 when a turn is in flight (``is_turn_busy``), else ``None``.
 
         Spawning or tearing down a worker mid-turn would put two workers on one
         transcript (or drop the in-flight turn), so ``switch-mode`` (both
-        directions) and ``restart`` reject while the lock is held.
+        directions) and ``restart`` reject while busy. Keys on the SAME
+        :func:`is_turn_busy` predicate the frontend toggle gate and the wire
+        ``busy`` status derive from — so the 409 and the toggle can never
+        disagree (the old lock-only check missed a native-xterm turn, which
+        holds no lock, letting a mid-turn switch through).
         """
-        if _PROMPT_LOCKS[self.id].locked():
+        if is_turn_busy(self):
             return ApiFailResponse(
-                message="a prompt turn is in flight",
+                message="a turn is in flight",
                 status_code=409,
             )
         return None
@@ -1815,7 +1760,16 @@ class AgenticProcess(Entity):
         entity event to whoever watches this process (the vibe display pane,
         the standard-mode viewer). Nothing watching → a silent context change;
         that is the intended semantics, not a failure.
+
+        The payload is also persisted as ``context_data.last_shown`` so a
+        display that mounts LATER (page reload, late-opened tab) restores the
+        pin — the entity event alone has no replay.
         """
+        self.context_data = {**(self.context_data or {}), "last_shown": payload}
+        try:
+            await self.save()
+        except Exception:
+            logger.warning("on_show: last_shown persist failed", exc_info=True)
         await self.emit_entity_event("on_show", payload)
 
     @action.post(action_name="show")
@@ -3780,10 +3734,19 @@ class AgenticProcess(Entity):
             return data
         if data is None:
             return None
+        # Two-axis status projection (wire-only — persistence took the
+        # skip_api_serializer early-return above, so stored ``status`` stays the
+        # FSM value ``running``):
+        #   - ``worker_status``: the raw "what we found" state, nullable when the
+        #     transcript yields nothing (never coerced to a placeholder).
+        #   - ``status``: the stored FSM with ``running`` projected to the logical
+        #     ``ready`` / ``busy`` via ``wire_status`` — the single boolean the
+        #     frontend gates input and the pty-mode switch on.
         computed = self.fetch_worker_status()
-        data["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
-        ready = is_ready_for_input(self, computed)
-        data["ready_for_input"] = ready
+        data["worker_status"] = str(computed) if computed else None
+        wire = wire_status(self, computed)
+        data["status"] = wire
+        data["ready_for_input"] = wire == ProcessStatus.READY.value
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
         # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
@@ -3829,109 +3792,58 @@ class AgenticProcess(Entity):
         return self._discover_status_from_transcript()
 
     def _discover_status_from_transcript(self) -> WorkerStatus | None:
-        """Derive status from the worker's session transcript via the driver.
+        """Derive the RAW worker status from the worker's transcript via the driver.
 
-        Internal projection — do NOT call directly from outside this class;
-        use :meth:`fetch_worker_status`. (Tests monkeypatch THIS method as the
-        single implementation point; the public accessor delegates here.)
+        "What we found" — the raw vendor state, in worker lingo, with NO logical
+        projection. The logical process status (``ready``/``busy``) and the dead-PTY
+        / aged-terminal meanings are derived elsewhere: ``status_predicates`` for
+        busy/ready, the OS-liveness axis (``pty_recovery`` + ``_on_pty_exit``) for
+        dead PTYs. This method must never synthesize a status the transcript didn't
+        show.
 
-        If ``stream_transcript`` exited via the post-tool-idle settle (worker
-        finished its tool work but hasn't emitted its terminal marker yet),
-        ``self._post_tool_idle_complete`` is set so subsequent status reads
-        agree with the early exit — without that flag, ``is_ready_for_input``
-        would still see ``WORKING`` and the test's ``assert is_ready_for_input
-        is True`` would fail despite all artifacts being on disk.
+        Internal — do NOT call directly from outside this class; use
+        :meth:`fetch_worker_status`. (Tests monkeypatch THIS method as the single
+        implementation point; the public accessor delegates here.)
 
-        For visible/PTY processes, falls back to a synchronous OS pid liveness
-        check when the transcript yields a non-terminal status. Codex's TUI
-        doesn't write the standard JSONL transcript, so without this
-        reconciliation ``worker_status`` would stay ``initializing`` forever
-        after the OS process dies (e.g. user kills the codex tab from outside).
+        The one reconciliation kept is ``_post_tool_idle_complete``: when
+        ``stream_transcript`` exited via the post-tool-idle settle (the worker
+        finished its tool work but hasn't written its terminal marker yet), the
+        transcript *will* show COMPLETE — this just agrees with the early settle
+        rather than briefly reporting a stale WORKING. It is transcript-consistency,
+        not a projection.
+
+        Returns ``None`` when there is no transcript to read (nothing found); the
+        busy predicate keys on the prompt lock / ``_turn_in_flight`` for the
+        spin-up gap, so a null worker status does not mask an in-flight turn.
         """
         if getattr(self, "_post_tool_idle_complete", False):
             return WorkerStatus.COMPLETE
-        # Headless multi-turn: the JSONL tail keeps reporting the prior
-        # turn's ``end_turn`` (→ COMPLETE) until the new turn's worker
-        # writes its own ``end_turn``. ``headless_prompt`` sets
-        # ``_turn_in_flight`` while the worker spins up so the projection
-        # reports INITIALIZING — otherwise the end-of-turn broadcast
-        # carries COMPLETE → COMPLETE and the SDK mirror sees no edge.
-        # INITIALIZING is semantically correct: worker spawned, transcript
-        # not yet materialised.
-        if getattr(self, "_turn_in_flight", False):
-            return WorkerStatus.INITIALIZING
         path = self.driver.transcript_path(self)
         if path is None:
-            # No transcript on disk yet, and the ``_turn_in_flight`` short-circuit
-            # above already ruled out a turn spinning up. So STARTING is the real
-            # lifecycle boot (INITIALIZING), while RUNNING with no in-flight turn
-            # is a spawned-and-idle worker waiting for its first prompt (IDLE) —
-            # reporting INITIALIZING there is what pinned never-prompted sessions
-            # on the spinner forever.
+            # No transcript on disk yet. Report the raw boot state (INITIALIZING)
+            # only while the lifecycle is STARTING; a RUNNING worker with no
+            # transcript is spawned-and-idle (nothing found → None, which the
+            # serializer surfaces as a null worker_status and the wire status
+            # resolves to ``ready`` unless a turn is in flight).
             if not (self.session_id or self.shell_id):
                 return None
             if self.status == ProcessStatus.STARTING.value:
-                derived: WorkerStatus | None = WorkerStatus.INITIALIZING
-            elif self.status == ProcessStatus.RUNNING.value:
-                derived = WorkerStatus.IDLE
-            else:
-                return None
-        else:
-            derived = self.driver.tail_status(path)
-
-        # Dead-PTY detection keys on the transport (``pty_mode``), not tab
-        # visibility: a hidden-but-PTY session still has a worker that can die.
-        if (
-            self.pty_mode
-            and self.shell_id
-            and self.status == ProcessStatus.RUNNING.value
-            and derived in _NON_TERMINAL_WORKER_STATUSES
-            and not _shell_worker_pid_alive(self.shell_id)
-        ):
-            return WorkerStatus.INACTIVE
-
-        # Project terminal underlying status to PENDING_USER (recent) or
-        # INACTIVE (aged > 5min), backend-side, so every consumer (serializer,
-        # get_status, is_ready_for_input) sees the same projected value.
-        #
-        # ``terminal_at`` is the authoritative terminal instant, but it is only
-        # stamped reactively inside ``_flush_transcript_change`` when a flush
-        # happens to observe a CLEAN_TERMINAL status. If the final transcript
-        # write (the turn's ``end_turn``) races the flush debounce — or no
-        # transcript watcher ever fired for this session (e.g. a PTY worker whose
-        # file-watch never attached) — no flush observes COMPLETE, so
-        # ``terminal_at`` stays ``None`` forever and the process is pinned on the
-        # raw terminal status (COMPLETE / stale→INACTIVE) and never surfaces the
-        # user-facing PENDING_USER ("Idle") window. Fall back to the transcript's
-        # last-write time as the terminal instant so the projection is
-        # self-sufficient and doesn't depend on the reactive stamp having run.
-        if derived in _PROJECTABLE_TERMINAL:
-            # ``path`` is guaranteed non-None here: the only branch that leaves it
-            # None (above) assigns a non-terminal ``derived``, so we never reach
-            # this projection with a missing transcript path.
-            terminal_ref = self.terminal_at
-            if terminal_ref is None:
-                try:
-                    terminal_ref = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-                except OSError:
-                    pass
-            if terminal_ref is not None:
-                age = (datetime.now(timezone.utc) - terminal_ref).total_seconds()
-                return (
-                    WorkerStatus.PENDING_USER if age < _PENDING_USER_TTL_SECONDS
-                    else WorkerStatus.INACTIVE
-                )
-        return derived
+                return WorkerStatus.INITIALIZING
+            return None
+        return self.driver.tail_status(path)
 
     @action.all(action_name="status")
     async def get_status(self):
-        """Return current app status and computed worker_status from transcript."""
+        """Return the wire status axes: logical ``status`` (ready/busy projection),
+        raw ``worker_status`` (nullable), and the derived ``ready_for_input``.
+        Same projection the serializer applies, so an on-demand poll and a
+        broadcast can never disagree."""
         worker_status = self.fetch_worker_status()
-        ready = is_ready_for_input(self, worker_status)
+        wire = wire_status(self, worker_status)
         return ApiSuccessResponse(data={
-            "status": self.status,
-            "worker_status": str(worker_status) if worker_status else WorkerStatus.IDLE.value,
-            "ready_for_input": ready,
+            "status": wire,
+            "worker_status": str(worker_status) if worker_status else None,
+            "ready_for_input": wire == ProcessStatus.READY.value,
         })
 
     @property
@@ -3991,6 +3903,64 @@ class AgenticProcess(Entity):
         if not redirect:
             return ApiSuccessResponse(data={"url": host, "port": int_port})
         return RedirectResponse(url=host)
+
+    @action.all(action_name="app-proxy")
+    async def app_proxy(self, port: int, path: str = "/"):
+        """Reverse-proxy a dev-server ``port`` on this process's compute node,
+        injecting the element-selection bridge into HTML responses.
+
+        Unlike ``get-host`` (a redirect to ``localhost:<port>``, which makes the
+        Vibe display iframe CROSS-origin so its DOM is unreachable), this serves
+        the app THROUGH the backend origin and rewrites HTML to add
+        ``<script src="/sdk/flowpad-select-bridge.js">``. The injected bridge is
+        then same-origin with the served page (can read its DOM) and posts the
+        clicked element to the Vibe display via ``postMessage``.
+
+        v1 handles the static single-file preview (the ``python3 -m http.server``
+        recipe); relative-asset rewrite and dev-server HMR websocket passthrough
+        are follow-ups.
+        """
+        from fastapi.responses import Response
+
+        int_port = int(port)
+        if not 1024 <= int_port <= 65535:
+            return ApiFailResponse(message="Invalid port")
+
+        compute_node = await self.get_compute_node()
+        if compute_node is None:
+            compute_node = await self._get_local_compute_node()
+        if not compute_node:
+            return ApiFailResponse(message="app-proxy: No compute node found")
+
+        base = compute_node.get_host(int_port).rstrip("/")
+        sub = path if path.startswith("/") else f"/{path}"
+        url = f"{base}{sub}"
+
+        import httpx  # noqa: PLC0415
+
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+                upstream = await client.get(url)
+        except httpx.HTTPError as e:
+            return ApiFailResponse(message=f"app-proxy: cannot reach {url}: {e}")
+
+        content_type = upstream.headers.get("content-type", "")
+        body = upstream.content
+
+        if "text/html" in content_type.lower():
+            tag = b'<script src="/sdk/flowpad-select-bridge.js"></script>'
+            html = body
+            lower = html.lower()
+            idx = lower.rfind(b"</head>")
+            if idx == -1:
+                idx = lower.rfind(b"</body>")
+            html = html[:idx] + tag + html[idx:] if idx != -1 else html + tag
+            body = html
+
+        # Strip hop-by-hop / framing headers so the response renders inline.
+        drop = {"content-length", "content-encoding", "transfer-encoding", "connection", "x-frame-options"}
+        headers = {k: v for k, v in upstream.headers.items() if k.lower() not in drop}
+        return Response(content=body, status_code=upstream.status_code, media_type=content_type or None, headers=headers)
 
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start_pty()."""
@@ -4687,45 +4657,31 @@ class AgenticProcess(Entity):
             object.__setattr__(self, "_pending_entries", [])
             await self._process_transcript_entries(entries)
 
-            # Single source of truth: same helper the serializer/get_status use.
+            # Raw worker status ("what we found") — same helper the serializer
+            # and get_status use, so the broadcast can never disagree with what
+            # consumers compute on demand.
             current = self.fetch_worker_status()
-            previous = getattr(self, "_last_broadcast_status", None)
+            # Logical wire status (ready/busy) — the axis the frontend gates on.
+            # The broadcast key is the PAIR (wire_status, worker_status): a busy⇄ready
+            # flip must broadcast even when the raw worker_status is unchanged (the
+            # prompt lock is acquired/released before the JSONL tail moves — this is
+            # what lets a HEADLESS turn broadcast its start/end edges), and a raw
+            # worker move (thinking→tool_call) must broadcast even while wire stays
+            # busy so the mid-turn indicator advances.
+            current_wire = wire_status(self, current)
+            worker_key = str(current) if current is not None else None
+            key = (current_wire, worker_key)
+            previous = getattr(self, "_last_broadcast_key", None)
+            prev_wire = previous[0] if previous else None
 
             # Generic agent-progress projection. Runs every flush (counters move
             # without a status transition), so it precedes the transition
             # early-return below. Change-gated internally.
-            await self._emit_status_report(current)
+            await self._emit_status_report(current, current_wire)
 
-            # Maintain terminal_at: set on transition INTO a clean terminal
-            # (COMPLETE/ERROR/INTERRUPTED), clear on transition OUT. Used by
-            # the projection layer to surface PENDING_USER for 5 min before
-            # collapsing to INACTIVE. Not set for INACTIVE/API_TIMEOUT — those
-            # are stuck / already-aged states, not the "session just finished"
-            # case the user-facing PendingUser window is meant for.
-            _CLEAN_TERMINAL = {
-                WorkerStatus.COMPLETE, WorkerStatus.ERROR, WorkerStatus.INTERRUPTED,
-            }
-            if current in _CLEAN_TERMINAL and self.terminal_at is None:
-                self.terminal_at = datetime.now(timezone.utc)
-                try:
-                    await self.save()
-                except Exception:
-                    logger.debug(
-                        "AgenticProcess %s: terminal_at save failed", self.id, exc_info=True,
-                    )
-            elif current not in _CLEAN_TERMINAL and current != WorkerStatus.PENDING_USER \
-                    and self.terminal_at is not None:
-                self.terminal_at = None
-                try:
-                    await self.save()
-                except Exception:
-                    logger.debug(
-                        "AgenticProcess %s: terminal_at clear failed", self.id, exc_info=True,
-                    )
-
-            if current == previous:
+            if key == previous:
                 return
-            object.__setattr__(self, "_last_broadcast_status", current)
+            object.__setattr__(self, "_last_broadcast_key", key)
 
             if current == WorkerStatus.API_TIMEOUT:
                 try:
@@ -4737,10 +4693,14 @@ class AgenticProcess(Entity):
 
             await self.notify_updated()
 
-            # Drain the prompt queue on a transition INTO a ready state. This is
-            # the single AP-level seam for both PTY *and* headless turns (both
-            # write the transcript that lands here), so no driver coupling.
-            if current in (WorkerStatus.IDLE, WorkerStatus.COMPLETE, WorkerStatus.INTERRUPTED):
+            # Drain the prompt queue on a transition INTO the ready wire status
+            # (busy→ready edge). Single AP-level seam for both PTY *and* headless
+            # turns (both write the transcript that lands here), so no driver
+            # coupling.
+            if (
+                current_wire == ProcessStatus.READY.value
+                and prev_wire != ProcessStatus.READY.value
+            ):
                 self._schedule_queue_drain("ready")
         except asyncio.CancelledError:
             raise
@@ -4847,8 +4807,11 @@ class AgenticProcess(Entity):
                     )
         return None
 
-    async def _emit_status_report(self, current) -> None:
+    async def _emit_status_report(self, current, current_wire: str) -> None:
         """Recompute the ProcessStatusReport and push it (change-gated).
+
+        ``current_wire`` is the already-projected wire status from the caller, so
+        the report doesn't recompute ``wire_status`` (and its lock probe) again.
 
         Runs on every debounce flush — counters change without a worker-status
         transition — so it sits BEFORE the transition early-return. The snapshot
@@ -4881,7 +4844,7 @@ class AgenticProcess(Entity):
             report = ProcessStatusReport.from_transcript(
                 transcript,
                 worker_status=(current.value if current is not None else ""),
-                process_status=self.status,
+                process_status=current_wire,
                 focused_asset=self._derive_focused_asset(transcript),
             )
             report_dict = report.model_dump()

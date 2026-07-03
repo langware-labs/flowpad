@@ -1,7 +1,6 @@
-import { AgenticProcess, TypeId, WorkerStatus, isWorkerRunning, type FlowData } from '@sdk';
+import { AgenticProcess, TypeId, WorkerStatus, isBusy, type FlowData } from '@sdk';
 import { useEffect, useMemo, useState } from 'react';
 import { useEntity } from '@src/hooks/entity-hooks';
-import { useDerivedWorkerStatus } from './useDerivedWorkerStatus';
 
 // Keep the "working" state up through brief WS lulls / a mistimed idle read so
 // the indicator doesn't blink between, say, a tool result and the next token.
@@ -46,29 +45,25 @@ export interface TurnActivity {
  *  1. `process.isPrompting` — a streaming `prompt()` is in flight. Brackets the
  *     actual request lifecycle, so it's correct even when the transcript arrives
  *     as a post-hoc WS batch (no live deltas to derive from).
- *  2. stream-derived worker status ({@link useDerivedWorkerStatus}) — stays in a
- *     running state across the whole turn (thinking → each tool → the WORKING
- *     lulls between tools) for a LIVE-streaming headless turn.
- *  3. the CANONICAL watched entity's `worker_status` — the loader-prop process
- *     and the entity-cache instance are different objects (InteractiveTerminal:
- *     `propProcess` vs `useEntity`), and only the cached one gets WS broadcasts;
- *     for a visible/PTY chat the backend re-serializes `worker_status` mid-turn,
- *     so reflecting the watched entity catches those turns.
+ *  2. the CANONICAL watched entity's logical `busy` status — the loader-prop
+ *     process and the entity-cache instance are different objects
+ *     (InteractiveTerminal: `propProcess` vs `useEntity`), and only the cached
+ *     one gets WS broadcasts. Both headless AND PTY turns now broadcast their
+ *     status live (the backend removed the INITIALIZING pin), so the reactive
+ *     entity's `status === 'busy'` is the single running signal — no
+ *     flowDataStream derivation needed.
  *
  * A short trailing hold ({@link HOLD_MS}) smooths transient gaps so the indicator
  * doesn't blink off between phases.
  */
 export function useTurnActivity(process: AgenticProcess | null): TurnActivity {
-  // (3) Canonical watched instance — WS keeps its worker_status live.
+  // (2) Canonical watched instance — WS keeps its status/worker_status live.
   const typeId = useMemo(
     () => (process ? new TypeId(AgenticProcess.type, process.id) : null),
     [process?.id],
   );
   const { data: live } = useEntity<AgenticProcess>(typeId, { watch: true });
   const reflected = live ?? process;
-
-  // (2) Live stream-derived status (also drives the phase label).
-  const derived = useDerivedWorkerStatus(process);
 
   // (1) prompt() in-flight latch (fires on the acting/prop instance).
   const [prompting, setPrompting] = useState(() => process?.isPrompting ?? false);
@@ -86,11 +81,8 @@ export function useTurnActivity(process: AgenticProcess | null): TurnActivity {
   }, [process]);
 
   const reflectedStatus = reflected?.workerStatus as WorkerStatus | undefined;
-  const status = derived ?? reflectedStatus ?? null;
-  const running =
-    prompting ||
-    (!!derived && isWorkerRunning(derived)) ||
-    (!!reflectedStatus && isWorkerRunning(reflectedStatus));
+  const status = reflectedStatus ?? null;
+  const running = prompting || (!!reflected && isBusy(reflected));
 
   const [active, setActive] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);

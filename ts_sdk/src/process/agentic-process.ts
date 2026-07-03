@@ -28,7 +28,7 @@ import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import { PROCESS_STATUS_KIND, ProcessStatusReport, parseStatusReport } from './process-status-report';
 import type { ProcessKind } from './process-types';
-import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isAwaitingUserInput, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isProcessRunning, isReadyForInput, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
   TranscriptSource as TranscriptSourceType,
@@ -1137,7 +1137,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const validate = options.validate ?? false;
 
     const check = async (): Promise<void> => {
-      if (this.status !== ProcessStatus.RUNNING) return;
+      if (!isProcessRunning(this.status)) return;
       const md = await this.getPlan();
       if (validate) {
         handler(md as unknown as T);
@@ -1647,9 +1647,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
             }
           }
           // Mark as ready (historical items are complete) and tag as History
-          // so downstream consumers (e.g. useDerivedWorkerStatus) can distinguish
-          // replayed events from live stream deltas and avoid mis-transitioning
-          // the worker indicator back into THINKING on refresh.
+          // so downstream stream consumers can distinguish replayed events from
+          // live stream deltas.
           flowData.markReady();
           flowData.source = FlowDataSource.History;
           historyItems.push(flowData);
@@ -1675,9 +1674,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         }
         // Coalesce per-item `'data'` emissions into a single one so React
         // consumers (`useSyncExternalStore` via `useAgenticProcessStream` /
-        // `useDerivedWorkerStatus` / `useEntityData`) re-render once per
-        // loadHistory call instead of once per item — prevents 700+
-        // notifications from blowing past React's nested-update budget.
+        // `useEntityData`) re-render once per loadHistory call instead of once
+        // per item — prevents 700+ notifications from blowing past React's
+        // nested-update budget.
         this.flowDataStream.ingestBatch(newItems);
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
@@ -1729,14 +1728,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async waitForReady(options: { timeout?: number; interval?: number } = {}): Promise<void> {
     const { timeout = 60_000, interval = 300 } = options;
     // Transport-aware readiness:
-    //  - live PTY: RUNNING and the worker awaiting input (idle/complete/
-    //    interrupted/pending_user — the same `isAwaitingUserInput` gate the UI
-    //    toggle uses, so it can't 409). Requiring RUNNING also ignores the STALE
-    //    pre-switch state right after switchMode — the resume hasn't booted yet.
+    //  - live PTY: the wire status is READY (live and no turn in flight — the
+    //    same `isReadyForInput` gate the UI toggle uses, so it can't 409). READY
+    //    also ignores the STALE pre-switch BUSY/terminal state right after
+    //    switchMode — the resume hasn't booted yet.
     //  - headless: no persistent worker, so a submit always enqueues / boots a
     //    per-turn worker — it's always ready to accept the next turn.
-    const ready = () =>
-      !this.pty_mode || (this.status === ProcessStatus.RUNNING && isAwaitingUserInput(this.workerStatus));
+    const ready = () => !this.pty_mode || isReadyForInput(this);
     const deadline = Date.now() + timeout;
     for (;;) {
       if (ready()) return;

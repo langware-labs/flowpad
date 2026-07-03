@@ -313,10 +313,10 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
         const domSession = await activePanel.getAttribute('data-worker-session-id').catch(() => null);
         if (domSession) expect(domSession, 'DOM worker-session matches backend').toBe(sessionId);
 
-        // 3) STATUS INDICATOR is idle. Backend worker_status is the authoritative
-        //    cross-transport signal; when the chat SKIN happens to be showing, its
-        //    label must agree.
-        const statusIdle = inst!.sdk.isAwaitingUserInput(proc.workerStatus);
+        // 3) STATUS INDICATOR is idle. The logical wire `status` (ready ⇔ the
+        //    worker is awaiting the user) is the authoritative cross-transport
+        //    signal; when the chat SKIN happens to be showing, its label must agree.
+        const statusIdle = inst!.sdk.isReadyForInput(proc);
         if ((await readToggle().catch(() => null))?.chatActive) {
           const statusText = (await p.getByTestId('simple-chat-status').textContent().catch(() => '')) ?? '';
           expect(IDLE_STATUS.has(statusText.trim()), `chat status idle at count ${count} (was "${statusText}")`).toBe(true);

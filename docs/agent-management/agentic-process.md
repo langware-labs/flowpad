@@ -301,7 +301,8 @@ enum WorkerStatus {
   ERROR = 'error',
   INTERRUPTED = 'interrupted',
   INACTIVE = 'inactive',
-  WAITING = 'waiting',
+  PENDING_USER = 'pending_user',
+  WORKING = 'working',
   THINKING = 'thinking',
   TOOL_CALL = 'tool_call',
   TOOL_RUNNING = 'tool_running',
@@ -311,13 +312,17 @@ enum WorkerStatus {
 }
 ```
 
+> The old `WAITING = 'waiting'` value never existed in code — the mid-turn "user
+> message received" state is `working`. See
+> [docs/agent/agentic_process_statuses.md](../agent/agentic_process_statuses.md).
+
 Worker status sets are mirrored between Python and TypeScript:
 
 | Helper                | Values                                                          |
 | --------------------- | --------------------------------------------------------------- |
-| `isWorkerRunning()`   | `waiting`, `thinking`, `tool_call`, `tool_running`, `api_error` |
+| `isWorkerRunning()`   | `working`, `thinking`, `tool_call`, `tool_running`, `api_error` |
 | `isWorkerTerminal()`  | `complete`, `error`, `interrupted`, `inactive`, `api_timeout`   |
-| Ready worker statuses | `idle`, `complete`, `interrupted`                               |
+| Busy worker statuses  | `initializing`, `working`, `thinking`, `tool_call`, `tool_running` (`worker_busy`) |
 
 ### Ready For Input
 

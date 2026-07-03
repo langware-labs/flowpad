@@ -8,9 +8,9 @@ import {
   dataContext,
   FlowDataSource,
   fsStore,
-  isAwaitingUserInput,
+  isProcessRunning,
+  isReadyForInput,
   PrefKey,
-  ProcessStatus,
   Shell,
   WorkerMode,
   type AgenticProcess,
@@ -200,7 +200,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [shellReady, setShellReady] = useState(false);
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
-  const processIsActive = process?.status === ProcessStatus.RUNNING;
+  const processIsActive = process?.status ? isProcessRunning(process.status) : false;
 
   // Live failed-to-start latch → banner. The loader only classifies a latched
   // process on navigation; when the worker dies instantly while this tab is
@@ -209,15 +209,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // not reactive, so subscribe via useEntity and surface the banner here.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const liveStartFailure = liveProcess?.start_failure ?? null;
-  // The chat⇄terminal toggle is only enabled while the agent is awaiting the
-  // user's input (IDLE/COMPLETE/INTERRUPTED/PENDING_USER). A mode switch
-  // mid-turn is 409'd by the backend, so gating on the (reactive) worker status
-  // keeps the toggle in lock-step with the AP and never lands on a 409 hole.
-  // `liveProcess` is the reactive entity; the loader `process` is the fallback
-  // for the first render before the subscription resolves.
-  const awaitingUserInput = isAwaitingUserInput(
-    liveProcess?.workerStatus ?? process?.workerStatus,
-  );
+  // The chat⇄terminal toggle is only enabled while the process is READY (live
+  // and no turn in flight). A mode switch mid-turn is 409'd by the backend on
+  // the SAME `is_turn_busy` predicate that produces the wire `busy` status, so
+  // gating on the (reactive) `status === 'ready'` keeps the toggle in lock-step
+  // with the AP and can never land on a 409 hole. `liveProcess` is the reactive
+  // entity; the loader `process` is the fallback for the first render before the
+  // subscription resolves.
+  const awaitingUserInput = isReadyForInput(liveProcess ?? process ?? {});
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({

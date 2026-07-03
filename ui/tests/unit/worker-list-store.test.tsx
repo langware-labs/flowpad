@@ -129,16 +129,16 @@ describe('per-mode counts + view-mode gating', () => {
   });
 });
 
-describe('glow (transition-driven, PENDING_USER/IDLE only)', () => {
-  it('arms glow on a transition INTO pending_user, and ack clears it', () => {
+describe('glow (transition-driven, arms on the wire READY status)', () => {
+  it('arms glow on a busy → ready transition ("your turn"), and ack clears it', () => {
     const id = uid();
-    // First observation is mid-turn (not a glow status) → no glow armed.
-    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, visible: true });
+    // First observation is BUSY (mid-turn) → no glow armed.
+    emit(id, { status: ProcessStatus.BUSY, worker_status: WorkerStatus.THINKING, visible: true });
     const initial = renderHook(() => useWorkerList(ADVANCED));
     expect(initial.result.current.find((e) => e.processId === id)?.pending).toBe(false);
 
-    // Live transition into a glow status arms the glow.
-    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.PENDING_USER, visible: true });
+    // Live transition into READY (turn finished) arms the glow.
+    emit(id, { status: ProcessStatus.READY, worker_status: WorkerStatus.COMPLETE, visible: true });
     const armed = renderHook(() => useWorkerList(ADVANCED));
     expect(armed.result.current.find((e) => e.processId === id)?.pending).toBe(true);
 
@@ -151,28 +151,29 @@ describe('glow (transition-driven, PENDING_USER/IDLE only)', () => {
     expect(row?.pending).toBe(false);
   });
 
-  it('arms glow on a transition INTO idle', () => {
+  it('arms glow on a busy → ready transition for a headless worker too', () => {
     const id = uid();
-    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, visible: false });
-    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.IDLE, visible: false });
+    emit(id, { status: ProcessStatus.BUSY, worker_status: WorkerStatus.THINKING, visible: false });
+    emit(id, { status: ProcessStatus.READY, worker_status: WorkerStatus.IDLE, visible: false });
     const { result } = renderHook(() => useWorkerList(ADVANCED));
     expect(result.current.find((e) => e.processId === id)?.pending).toBe(true);
   });
 
-  it('does NOT glow a process first observed already in a glow status (no re-arm on seed/refresh)', () => {
+  it('does NOT glow a process first observed already READY (no re-arm on seed/refresh)', () => {
     const id = uid();
-    // First-ever observation is already pending_user (cache seed / reload).
-    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.PENDING_USER, visible: true });
+    // First-ever observation is already ready (cache seed / reload).
+    emit(id, { status: ProcessStatus.READY, worker_status: WorkerStatus.COMPLETE, visible: true });
     const { result } = renderHook(() => useWorkerList(ADVANCED));
     const row = result.current.find((e) => e.processId === id);
     expect(row).toBeDefined();
     expect(row?.pending).toBe(false);
   });
 
-  it('does NOT glow on a transition into COMPLETE/INTERRUPTED (dropped from the glow set)', () => {
+  it('does NOT glow on a transition INTO busy (mid-turn is not "your turn")', () => {
     const id = uid();
-    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, visible: true });
-    emit(id, { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.COMPLETE, visible: true });
+    // Seed ready (no arm on first observation), then go busy.
+    emit(id, { status: ProcessStatus.READY, worker_status: WorkerStatus.IDLE, visible: true });
+    emit(id, { status: ProcessStatus.BUSY, worker_status: WorkerStatus.THINKING, visible: true });
     const { result } = renderHook(() => useWorkerList(ADVANCED));
     expect(result.current.find((e) => e.processId === id)?.pending).toBe(false);
   });

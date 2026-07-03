@@ -6,12 +6,10 @@ import {
   FlowElementTypes,
   fsStore,
   isBusy,
-  isWorkerRunning,
   ProcessKind,
   type StatusBearingProcess,
   TypeId,
   type FlowData,
-  WorkerStatus,
 } from '@sdk';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 import { useEntity } from '@sdk/react/hooks';
@@ -44,7 +42,6 @@ import {
   WorkerIcon as HistoryWorkerIcon,
 } from './history-row';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
-import { useDerivedWorkerStatus } from './hooks/useDerivedWorkerStatus';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 
@@ -132,6 +129,21 @@ interface EntityExecutionPanelProps {
    * process per run, so each run is its own history entry.
    */
   autoPrompt?: { text: string; nonce: number; newSession?: boolean } | null;
+  /**
+   * Extra context prepended to the NEXT user prompt (e.g. an element the user
+   * selected on a previewed web app). Rendered as a dismissible chip above the
+   * composer; `text` is prepended to whatever the user types, then
+   * `onPromptContextConsumed` fires so the host can clear it. Null = none.
+   */
+  promptContext?: { label: string; text: string } | null;
+  onPromptContextConsumed?: () => void;
+  /**
+   * Seed the picker to a SPECIFIC process instead of the "latest-wins" default.
+   * Used when the panel must stay bound to one session across target-URL changes
+   * (the vibe workspace: the side chat keeps the parent process while the user
+   * navigates its child tabs). The picker stays fully functional afterward.
+   */
+  initialProcessId?: string | null;
 }
 
 /**
@@ -168,6 +180,9 @@ export function EntityExecutionPanel({
   defaultWorkdir,
   transport = 'print',
   autoPrompt,
+  promptContext,
+  onPromptContextConsumed,
+  initialProcessId,
 }: EntityExecutionPanelProps) {
   const { t } = useLingui();
   const targetStr = target ?? '';
@@ -197,14 +212,16 @@ export function EntityExecutionPanel({
 
   // 2. User-selected process overrides the default "latest-wins" pick. `null` means auto-latest
   //    or, when combined with startNewSession(), a fresh one on the next send.
-  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
+  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(initialProcessId ?? null);
   const [forceNew, setForceNew] = useState(false);
 
-  // When target changes (navigating between files), reset picker state.
+  // When target changes (navigating between files), reset picker state — but
+  // seed back to `initialProcessId` when the host pins a session (vibe keeps the
+  // parent process bound while the user browses its child tabs).
   useEffect(() => {
-    setSelectedProcessId(null);
+    setSelectedProcessId(initialProcessId ?? null);
     setForceNew(false);
-  }, [targetStr]);
+  }, [targetStr, initialProcessId]);
 
   const pickedProcess: AgenticProcess | null = useMemo(() => {
     if (forceNew) return null;
@@ -383,16 +400,20 @@ export function EntityExecutionPanel({
 
       if (!proc) throw new Error('process creation failed');
 
+      // Prepend host-supplied context (e.g. a selected web-app element) to this
+      // turn, then consume it so it doesn't leak into later prompts.
+      const composed = promptContext ? `${promptContext.text}\n\n${text}` : text;
       // One method, both transports: the backend's prompt action routes by the
       // process's `visible` flag (PTY-transcript poll vs print-mode stream).
-      await proc.prompt(text);
+      await proc.prompt(composed);
+      if (promptContext) onPromptContextConsumed?.();
     } catch (err) {
       console.error('[EntityExecutionPanel] prompt failed', err);
       notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed]);
 
   const handleStop = useCallback(async () => {
     if (!activeProcess) return;
@@ -469,34 +490,18 @@ export function EntityExecutionPanel({
     }
   }, [pendingDelete, sortedProcesses, selectedProcessId, localProcess?.id]);
 
-  // CLI-mode processes don't get entity patches mid-turn, so fall back to a
-  // derivation over flowDataStream events. See useDerivedWorkerStatus.
-  const derivedWorkerStatus = useDerivedWorkerStatus(activeProcess);
-  const indicatorProcess: StatusBearingProcess | null = activeProcess
-    ? {
-        status: activeProcess.status,
-        workerStatus: derivedWorkerStatus ?? activeProcess.workerStatus,
-        session_id: activeProcess.session_id,
-      }
-    : null;
+  // Headless AND PTY turns now broadcast their worker-status transitions
+  // mid-turn (the backend removed the INITIALIZING pin), so the reactive
+  // `activeProcess` entity carries live status — no flowDataStream derivation
+  // needed. `activeProcess` is a `StatusBearingProcess` (status + workerStatus).
+  const indicatorProcess: StatusBearingProcess | null = activeProcess;
 
-  // EXPERIMENT(pty-poll): a PTY chat session must stay sendable when its
-  // worker is dead (backend restart, worker exit) — the prompt turn relaunches
-  // it with --resume. `isBusy` would lock the composer forever (it requires
-  // status=RUNNING), so the pty arm skips the status gate and blocks only on
-  // the gold mid-turn predicate — mirroring the backend prompt action's own
-  // admission, which rejects only STOPPING/FAILED.
-  // PENDING_USER: the turn finished cleanly and the worker is waiting at its
-  // prompt for the next message — exactly when the user should be able to type.
-  // `isBusy` returns true for PENDING_USER (it isn't in READY_WORKER_STATUSES,
-  // mirroring Python's `is_ready_for_input`) but the drain-local superset and
-  // the prompt action both admit it. Carve it out so the textarea stays enabled.
-  const indicatorWorkerStatus = indicatorProcess?.workerStatus as WorkerStatus | undefined;
-  const busy = !!indicatorProcess && (
-    transport === 'pty-poll'
-      ? isWorkerRunning(indicatorWorkerStatus as WorkerStatus)
-      : isBusy(indicatorProcess) && indicatorWorkerStatus !== WorkerStatus.PENDING_USER
-  );
+  // One boolean gates the composer: the backend's logical `busy` (the projected
+  // `status === 'busy'`). A dead/complete PTY, a PENDING_USER worker (asked a
+  // question), and a headless worker between turns all read as ¬busy, so the
+  // textarea stays sendable exactly when the backend prompt action would admit
+  // the turn — no transport special-casing and no PENDING_USER carve-out needed.
+  const busy = !!indicatorProcess && isBusy(indicatorProcess);
   const sendDisabled = !targetStr || sending || busy;
 
   const statusSlot = indicatorProcess ? (
@@ -582,6 +587,21 @@ export function EntityExecutionPanel({
               />
             ))}
       </AutoScrollContainer>
+      {promptContext && (
+        <div className="flex items-center gap-2 px-3 pt-2" data-testid="prompt-context-chip">
+          <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs text-primary">
+            <span className="truncate">{promptContext.label}</span>
+            <button
+              type="button"
+              aria-label={t`Clear selection`}
+              className="shrink-0 rounded-full px-0.5 hover:bg-primary/20"
+              onClick={() => onPromptContextConsumed?.()}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        </div>
+      )}
       <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} running={busy} onStop={handleStop} statusSlot={statusSlot} placeholder={placeholder} onPasteImages={handlePasteImages} />
       <ConfirmDialog
         open={!!pendingDelete}

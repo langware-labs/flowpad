@@ -9,7 +9,7 @@
  */
 
 import { AgenticProcess, copyToClipboard, dataContext, dataManager, openTerminalFromComputeNode, Shell } from '@sdk';
-import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agentic-types.js';
+import { hasWorkerStarted, isProcessRunning, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
@@ -65,22 +65,27 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
   const [showCommandStatus, setShowCommandStatus] = useState(false);
 
-  // Force re-render whenever any field on the process entity changes. Backend
+  // Force re-render whenever any field this toolbar reads changes. Backend
   // mutates the entity in place via castAndDeepAssign, so without an explicit
-  // subscription React stays unaware of fields like `restart_required` that
-  // aren't already shadowed by local component state. Use dataManager.subscribe
-  // directly with initialFetch=false — APIEntity.subscribe() forces initialFetch
-  // which would re-invoke the snapshot during subscription and cause an update loop.
+  // subscription React stays unaware of fields not already shadowed by local
+  // component state. The snapshot is a composite of every entity field rendered
+  // here — restart_required, the wire `status` (ready/busy), and `workerStatus`
+  // — so a mid-turn status broadcast re-renders the toolbar (this is what fixes
+  // the old headless-staleness: the snapshot used to read restart_required only,
+  // so status/worker moves never re-rendered). Use dataManager.subscribe with
+  // initialFetch=false — APIEntity.subscribe() forces initialFetch which would
+  // re-invoke the snapshot during subscription and cause an update loop.
+  const snapshot = () => `${process.restart_required}|${process.status}|${process.workerStatus}`;
   useSyncExternalStore(
     useCallback((cb) => dataManager.subscribe(process.typeId, cb, false), [process]),
-    () => process.restart_required,
-    () => process.restart_required,
+    snapshot,
+    snapshot,
   );
 
   const hasSession = !!process.session_id;
   const workerStatus = process.workerStatus;
-  // started: PTY is alive RIGHT NOW (gates Restart, CLI flag toggles, Apply)
-  const started = process.status === ProcessStatus.RUNNING;
+  // started: process is live RIGHT NOW (gates Restart, CLI flag toggles, Apply)
+  const started = isProcessRunning(process.status);
   // hasTranscript: at least one real assistant turn happened (gates Fork, Open Transcript)
   const hasTranscript = hasSession
     && hasWorkerStarted(workerStatus)

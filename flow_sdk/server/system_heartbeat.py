@@ -41,7 +41,7 @@ def register_heartbeat_task(name: str) -> Callable[[HeartbeatTask], HeartbeatTas
 
     Usage::
 
-        @register_heartbeat_task("pending_user_to_inactive")
+        @register_heartbeat_task("orphan_sweep")
         async def _cleanup() -> None:
             ...
 

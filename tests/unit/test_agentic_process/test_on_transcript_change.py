@@ -72,9 +72,10 @@ async def test_buffer_extends_and_arms_debounce(initialize_test_db, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_flush_broadcasts_on_status_transition(initialize_test_db, monkeypatch) -> None:
-    """A status change from THINKING → COMPLETE triggers notify_updated once."""
+    """A change from (busy, thinking) → (ready, complete) triggers notify_updated
+    once. The broadcast key is the PAIR (wire_status, worker_status)."""
     ap = await _make_ap(WorkerStatus.COMPLETE, monkeypatch)
-    object.__setattr__(ap, "_last_broadcast_status", WorkerStatus.THINKING)
+    object.__setattr__(ap, "_last_broadcast_key", ("busy", "thinking"))
 
     notify_calls: list[None] = []
 
@@ -87,14 +88,40 @@ async def test_flush_broadcasts_on_status_transition(initialize_test_db, monkeyp
     await ap._debounce_task
 
     assert notify_calls == [None]
-    assert ap._last_broadcast_status == WorkerStatus.COMPLETE
+    # COMPLETE is ¬busy → wire status ready.
+    assert ap._last_broadcast_key == ("ready", "complete")
+
+
+@pytest.mark.asyncio
+async def test_flush_broadcasts_on_wire_flip_same_worker(initialize_test_db, monkeypatch) -> None:
+    """A busy→ready wire flip with an UNCHANGED worker status still broadcasts —
+    the pair key catches it (e.g. the prompt lock releases before the tail moves).
+    Here the worker reads COMPLETE both before and after, but the wire flips."""
+    ap = await _make_ap(WorkerStatus.COMPLETE, monkeypatch)
+    # Prior broadcast: same worker (complete) but wire was busy (a turn had been
+    # in flight). Now no turn in flight → wire ready → must broadcast.
+    object.__setattr__(ap, "_last_broadcast_key", ("busy", "complete"))
+
+    notify_calls: list[None] = []
+
+    async def _fake_notify():
+        notify_calls.append(None)
+
+    monkeypatch.setattr(type(ap), "notify_updated", lambda self: _fake_notify(), raising=False)
+
+    await ap.on_transcript_change(Path("/tmp/x.jsonl"), [])
+    await ap._debounce_task
+
+    assert notify_calls == [None]
+    assert ap._last_broadcast_key == ("ready", "complete")
 
 
 @pytest.mark.asyncio
 async def test_flush_skips_broadcast_when_status_unchanged(initialize_test_db, monkeypatch) -> None:
-    """No transition → no notify_updated. Prevents broadcast spam."""
+    """No transition in the (wire, worker) pair → no notify_updated."""
     ap = await _make_ap(WorkerStatus.THINKING, monkeypatch)
-    object.__setattr__(ap, "_last_broadcast_status", WorkerStatus.THINKING)
+    # THINKING is busy → wire busy. Same pair already broadcast.
+    object.__setattr__(ap, "_last_broadcast_key", ("busy", "thinking"))
 
     notify_calls: list[None] = []
 
@@ -113,7 +140,7 @@ async def test_flush_skips_broadcast_when_status_unchanged(initialize_test_db, m
 async def test_flush_short_circuits_when_not_running(initialize_test_db, monkeypatch) -> None:
     """Lifecycle flipped to STOPPED during the debounce window → no broadcast."""
     ap = await _make_ap(WorkerStatus.COMPLETE, monkeypatch)
-    object.__setattr__(ap, "_last_broadcast_status", None)
+    object.__setattr__(ap, "_last_broadcast_key", None)
 
     notify_calls: list[None] = []
 
@@ -134,7 +161,7 @@ async def test_flush_invokes_on_timeout_for_api_timeout(initialize_test_db, monk
     """API_TIMEOUT triggers _on_timeout — migrated responsibility from
     the deleted _poll_for_completion."""
     ap = await _make_ap(WorkerStatus.API_TIMEOUT, monkeypatch)
-    object.__setattr__(ap, "_last_broadcast_status", WorkerStatus.WORKING)
+    object.__setattr__(ap, "_last_broadcast_key", ("busy", "working"))
 
     timeout_calls: list[None] = []
     notify_calls: list[None] = []

@@ -1,3 +1,7 @@
+---
+id: 1471a0c6-8bd1-5013-a890-cf33bee47f97
+---
+
 # Mode Switching (Chat/Headless ⇄ Interactive PTY)
 
 An `AgenticProcess` runs a single logical CLI session — one `session_id`, one
@@ -25,10 +29,11 @@ same session. This is not just a view flip; it is a real lifecycle action.
 | `pty_mode` | **Durable transport intent.** The single field that decides PTY vs headless routing and survives reload. | `switch-mode`, `_enter_cli_mode`, the PTY open tail |
 | `visible` | **Tab visibility only** — whether the process shows as a terminal tab. Does *not* pick the transport. | `set-visible`, and seeded alongside `pty_mode` on a PTY open |
 
-`AgenticProcess` field defs: `flow_sdk/builtin/agentic_process/agentic_process.py:445`
-(`visible`) and `:453` (`pty_mode`). Note the docstring at `:453`: routing stays
-`headless == !visible` in *today's* behaviour, but the durable key the loader
-and `prompt()` read is `pty_mode`.
+`AgenticProcess` field defs are in
+`flow_sdk/builtin/agentic_process/agentic_process.py` (`visible`, then `pty_mode`).
+Routing keys on `pty_mode` everywhere — the stale `headless == !visible` phrasing has
+been removed from the `pty_mode` docstring. `visible` is tab chrome only. See
+[docs/agent/agentic_process_statuses.md](../agent/agentic_process_statuses.md).
 
 The historical project note "visible IS the mode key (not pty_mode)" is **stale**.
 The current code routes on `pty_mode`:
@@ -174,11 +179,12 @@ so no PtySync attach is attempted for a shell-less process.
 
 ## Known gaps / robustness concerns (for arch review)
 
-1. **Asymmetric mid-turn guard.** The 409 lives only in `_enter_cli_mode`. The
-   →Interactive branch (`switch_mode` → `_perform_open`) has no explicit prompt-lock
-   check and depends entirely on the UI `awaitingUserInput` gate. A non-UI or racing
-   caller could open a PTY mid-headless-turn. Consider hoisting the prompt-lock check
-   into `switch_mode` for both directions.
+1. **~~Asymmetric mid-turn guard.~~ FIXED.** The mid-turn guard
+   (`_reject_if_turn_in_flight`) now runs in `switch_mode` for **both** directions and
+   keys on `status_predicates.is_turn_busy` — the same predicate that produces the
+   wire `busy` status and the frontend toggle gate. It catches a native-xterm turn
+   (which holds no prompt lock) via the worker status, so the 409 and the toggle can
+   never disagree. See [docs/agent/agentic_process_statuses.md](../agent/agentic_process_statuses.md).
 2. **Optimistic FE state before backend confirm.** `switchMode` sets
    `pty_mode`/`visible` locally before/around the round-trip and relies on
    `_pendingPtyMode`/`_pendingVisible` latches + `onEntityUpdate` to reconcile a

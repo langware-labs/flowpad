@@ -1,12 +1,18 @@
-"""WorkerStatus — expert-level state of the worker running inside an AgenticProcess.
+"""WorkerStatus — raw "what we found" state of the worker inside an AgenticProcess.
 
-Derived from the Claude transcript JSONL on every serialize (via ``_tail_status``);
-never stored. Only meaningful when the containing ``ProcessStatus`` is one of
-``RUNNING``, ``STOPPING``, or ``STOPPED`` — in any other lifecycle state, consumers
-should treat the worker status as undefined.
+The values are worker lingo: the union of the granular states the various worker
+vendors (claude / codex / copilot) can evidence in their transcripts. Derived
+from the vendor transcript tail on every serialize (via ``_tail_status`` and the
+per-vendor ``status.py`` maps); never stored. Only meaningful when the containing
+``ProcessStatus`` is one of ``RUNNING``, ``STOPPING``, or ``STOPPED``.
 
-See ``agentic_process_lifecycle.py`` for the companion ``ProcessStatus`` enum and
-the two-axis model overview.
+This is the "what we found" axis. The companion "what does it mean" axis is the
+logical process status (``ready``/``busy``) — see ``process_lifecycle.py`` and
+``status_predicates.wire_status``. Worker statuses are never projected or
+synthesized here; the logical mapping lives entirely in ``status_predicates``.
+
+See ``process_lifecycle.py`` for the companion ``ProcessStatus`` enum and
+``docs/agent/agentic_process_statuses.md`` for the two-axis model overview.
 
 Neutral module with no intra-package imports. Both ClaudeSessionRecord and
 AgenticProcessRecord import from here; this breaks the circular dependency that
@@ -29,23 +35,22 @@ class WorkerStatus(StrEnum):
     # both meant "worker exists but has no parseable content yet", which is one state.
     INITIALIZING = "initializing"
 
-    # Workflow default — no Claude session linked yet. Also the "ready for input" state
-    # used by the ``isReadyForInput`` predicate (together with COMPLETE, INTERRUPTED).
+    # No worker session linked / at the prompt. Raw-derivable from a ``system:init``
+    # tail (worker booted and is sitting at the prompt) and the default for a
+    # spawned-but-never-prompted worker.
     IDLE = "idle"
 
     # Terminal — session ended, cannot resume
     COMPLETE     = "complete"     # finished cleanly (end_turn / last-prompt)
     ERROR        = "error"        # abnormal end (stop_sequence / crash)
     INTERRUPTED  = "interrupted"  # user interrupted (Escape / Ctrl-C)
-    INACTIVE     = "inactive"     # stale file >5 min with no terminal signal,
-                                  # OR terminal+aged >5 min since terminal_at
-                                  # (drop-from-active-list semantics — single
-                                  # value regardless of cause)
+    INACTIVE     = "inactive"     # raw: stale file >5 min with no terminal signal
 
-    # Backend-derived from terminal + ``AgenticProcess.terminal_at`` age. The
-    # 5-minute window after a session completes during which the UI keeps the
-    # session visible in the active list. After 5 min the projection layer in
-    # ``_discover_status_from_transcript`` flips it to INACTIVE.
+    # Raw: an unresolved user-input tool (AskUserQuestion / ExitPlanMode) sits at
+    # the tail — the worker asked and handed control back to the user. Surfaced as
+    # "Idle" to the user. (This is NOT a backend projection: it is read directly
+    # from the transcript by ``_tail_status``; the logical process status maps it
+    # to ``ready``.)
     PENDING_USER = "pending_user"
 
     # Active — transcript-derivable
@@ -77,12 +82,6 @@ _RUNNING_STATUSES: frozenset[WorkerStatus] = frozenset({
     WorkerStatus.API_ERROR,  # mid-turn retry — still running from the user's POV
 })
 
-_BUSY_STATUSES: frozenset[WorkerStatus] = frozenset({
-    WorkerStatus.THINKING,
-    WorkerStatus.TOOL_CALL,
-    WorkerStatus.TOOL_RUNNING,
-})
-
 _TERMINAL_STATUSES: frozenset[WorkerStatus] = frozenset({
     WorkerStatus.COMPLETE,
     WorkerStatus.ERROR,
@@ -99,8 +98,11 @@ _ERROR_STATUSES: frozenset[WorkerStatus] = frozenset({
 })
 
 # Live process-lifecycle states. String literals (not ProcessStatus) keep this a
-# true leaf module — they mirror ``ProcessStatus.RUNNING`` / ``STARTING``.
-_LIVE_PROCESS_STATUSES: frozenset[str] = frozenset({"running", "starting"})
+# true leaf module. Includes both the stored ``running`` and its wire projections
+# ``ready`` / ``busy`` so this classifier works on serialized payloads too.
+_LIVE_PROCESS_STATUSES: frozenset[str] = frozenset(
+    {"running", "ready", "busy", "starting"}
+)
 
 
 class ExecutionMode(StrEnum):
@@ -150,11 +152,6 @@ def classify_execution_mode(
 def is_running(status: WorkerStatus) -> bool:
     """True while the worker is mid-turn (WORKING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR)."""
     return status in _RUNNING_STATUSES
-
-
-def is_busy(status: WorkerStatus) -> bool:
-    """True when actively processing (THINKING/TOOL_CALL/TOOL_RUNNING). Excludes WORKING/API_ERROR."""
-    return status in _BUSY_STATUSES
 
 
 def is_idle(status: WorkerStatus) -> bool:
@@ -464,10 +461,11 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
          when the file is still active. Fallback is UNKNOWN (not RUNNING) so
          that new / malformed event types are visible.
 
-    Returns one of: INITIALIZING, COMPLETE, ERROR, INTERRUPTED, INACTIVE,
-                    WORKING, THINKING, TOOL_CALL, TOOL_RUNNING, API_ERROR,
-                    API_TIMEOUT, UNKNOWN.
-    (IDLE is a workflow state set externally, not transcript-derivable.)
+    Returns one of: INITIALIZING, IDLE, PENDING_USER, COMPLETE, ERROR,
+                    INTERRUPTED, INACTIVE, WORKING, THINKING, TOOL_CALL,
+                    TOOL_RUNNING, API_ERROR, API_TIMEOUT, UNKNOWN.
+    (IDLE is derivable — a ``system:init`` tail means the worker booted and is
+    sitting at the prompt.)
     """
     p = _Path(path)
     try:
