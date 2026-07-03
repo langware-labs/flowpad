@@ -1,14 +1,17 @@
-import { AgenticProcess, classifyExecutionMode, dataManager, ExecutionMode, isWorkerRunning, ProcessStatus, WorkerStatus } from '@sdk';
+import { AgenticProcess, classifyExecutionMode, dataManager, ExecutionMode, isBusy, isReadyForInput } from '@sdk';
 import { subscribeToEntityOps } from '@sdk/react/hooks';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 /**
  * Pending Actions store.
  *
- * "Pending action" (glow) semantics: an AgenticProcess whose worker has just
- * *transitioned into* a glow status — RUNNING and worker_status ∈
- * {PENDING_USER, IDLE} — within the last `PENDING_DURATION_MS` (300s) and that
- * the user has not yet acknowledged (clicked) this session.
+ * "Pending action" (glow) semantics: an AgenticProcess that has just
+ * *transitioned into* the logical ``ready`` status (a turn finished; the worker
+ * is now awaiting the user — "something is waiting for you now") within the last
+ * `PENDING_DURATION_MS` (300s) and that the user has not yet acknowledged
+ * (clicked) this session. Keying on the single ``status === 'ready'`` wire value
+ * (rather than the old RUNNING + worker_status ∈ {PENDING_USER, IDLE}) is the
+ * client-side replacement for the removed backend PENDING_USER projection.
  *
  * The glow is **transition-driven and client-stamped**: it arms only on an
  * observed live status change into a glow status, and `readyAt` is the client
@@ -48,17 +51,12 @@ export interface ProcessTracker {
 const PENDING_DURATION_MS = 300_000;
 const TIMER_TICK_MS = 1_000;
 
-/** Worker statuses that arm the footer glow (RUNNING processes only). */
-const GLOW_WORKER_STATUSES = new Set<WorkerStatus>([
-  WorkerStatus.PENDING_USER,
-  WorkerStatus.IDLE,
-]);
-
-/** True when the process is RUNNING and its worker sits in a glow status. */
-function isGlowStatus(status: string | undefined, workerStatus: string | undefined): boolean {
-  if (status !== ProcessStatus.RUNNING) return false;
-  if (workerStatus === undefined) return false;
-  return GLOW_WORKER_STATUSES.has(workerStatus as WorkerStatus);
+/** True when the process is live and awaiting the user (wire status ``ready``).
+ *  The glow arms on the transition INTO this status (see the arm/disarm logic in
+ *  `handleDataOp`); a process already ready on first observation never arms.
+ *  Uses the SDK's `isReadyForInput` so "awaiting the user" is defined in one place. */
+function isGlowStatus(status: string | undefined): boolean {
+  return isReadyForInput({ status });
 }
 
 const trackers = new Map<string, ProcessTracker>();
@@ -178,7 +176,7 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
     project_id: obj.project_id ?? cached?.project_id ?? null,
     visible: obj.visible ?? cached?.visible,
   };
-  const glowing = isGlowStatus(merged.status, merged.worker_status);
+  const glowing = isGlowStatus(merged.status);
   const newStatus = merged.status;
   const newWorkerStatus = merged.worker_status;
   const newVisible = merged.visible;
@@ -359,11 +357,10 @@ export interface ActiveProcessEntry {
 }
 
 function isBurningTracker(t: ProcessTracker): boolean {
-  if (!t.workerStatus) return false;
-  // workerStatus is the lowercase string form of the enum (see
-  // ts_sdk/src/process/agentic-types.ts). isWorkerRunning takes the
-  // enum type; the values match the strings sent on the wire.
-  return isWorkerRunning(t.workerStatus as WorkerStatus);
+  // "Burning" = a turn is in flight. Uses the SDK's `isBusy` (the single logical
+  // ``busy`` wire status) so the per-row "working" indicator matches the
+  // composer/toggle gate exactly.
+  return isBusy(t);
 }
 
 /**

@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { isAwaitingUserInput, WorkerStatus } from '@sdk';
+import { isReadyForInput, ProcessStatus } from '@sdk';
 import { TerminalBottomRibbon } from '@src/components/terminal/interactive-terminal/TerminalBottomRibbon';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,38 +25,28 @@ const baseProps = {
 afterEach(() => cleanup());
 
 // The chat⇄terminal toggle may only be used while the agent is awaiting the
-// user's input — a mid-turn switchMode is 409'd by the backend, so the button is
-// gated on the AP worker status. These tests pin both the predicate that decides
-// the set and the ribbon wiring that disables the button + explains why.
+// user's input — a mid-turn switchMode is 409'd by the backend. The gate is the
+// single logical wire status: the toggle is enabled ⇔ the process is READY
+// (¬busy). READY and BUSY are disjoint, so enabling on READY can never hit the
+// backend's busy 409. These tests pin the predicate and the ribbon wiring.
 
-describe('isAwaitingUserInput — the "your turn" gate', () => {
-  it('is true exactly for the idle-between-turns states', () => {
-    for (const s of [
-      WorkerStatus.IDLE,
-      WorkerStatus.COMPLETE,
-      WorkerStatus.INTERRUPTED,
-      WorkerStatus.PENDING_USER,
-    ]) {
-      expect(isAwaitingUserInput(s)).toBe(true);
-    }
+describe('isReadyForInput — the "your turn" toggle gate', () => {
+  it('is true exactly for the READY wire status', () => {
+    expect(isReadyForInput({ status: ProcessStatus.READY })).toBe(true);
   });
 
-  it('is false for mid-turn / not-started / degenerate states (no 409 hole)', () => {
+  it('is false for BUSY and every non-live / terminal status (no 409 hole)', () => {
     for (const s of [
-      WorkerStatus.INITIALIZING,
-      WorkerStatus.WORKING,
-      WorkerStatus.THINKING,
-      WorkerStatus.TOOL_CALL,
-      WorkerStatus.TOOL_RUNNING,
-      WorkerStatus.API_ERROR,
-      WorkerStatus.API_TIMEOUT,
-      WorkerStatus.ERROR,
-      WorkerStatus.INACTIVE,
-      WorkerStatus.UNKNOWN,
+      ProcessStatus.BUSY,
+      ProcessStatus.NEW,
+      ProcessStatus.STARTING,
+      ProcessStatus.STOPPING,
+      ProcessStatus.STOPPED,
+      ProcessStatus.FAILED,
     ]) {
-      expect(isAwaitingUserInput(s)).toBe(false);
+      expect(isReadyForInput({ status: s })).toBe(false);
     }
-    expect(isAwaitingUserInput(undefined)).toBe(false);
+    expect(isReadyForInput({})).toBe(false);
   });
 });
 

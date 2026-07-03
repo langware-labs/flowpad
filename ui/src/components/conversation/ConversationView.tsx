@@ -28,7 +28,6 @@ import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
-import { useDerivedWorkerStatus } from '@src/components/entity-execution-panel/hooks/useDerivedWorkerStatus';
 import { mostRecentProcess } from '@src/utils/process-recency';
 
 // Cap the initial messages window so long conversations don't fetch + watch
@@ -82,7 +81,9 @@ export function ConversationView({
   // the Runs tab, so the two subscriptions dedup.
   const { processes: convRuns } = useProcessesForTarget(conversationTypeId.toString());
   const convRun = useMemo(() => mostRecentProcess(convRuns), [convRuns]);
-  const convRunStatus = useDerivedWorkerStatus(convRun);
+  // The run entity carries live worker status now (headless turns broadcast
+  // mid-turn), so read it directly instead of deriving over the stream.
+  const convRunStatus = convRun?.workerStatus ?? null;
 
   // Member roster used to resolve a message's hub-authoritative sender_id to
   // a display name. Precedence is `conversation.participants` (entity-cache,

@@ -6,6 +6,7 @@ import {
   ExecutionMode,
   getDisplayStatus,
   hasWorkerStarted,
+  isBusy,
   isProcessActive,
   isProcessRunning,
   isProcessStartable,
@@ -14,6 +15,7 @@ import {
   isWorkerTerminal,
   ProcessStatus,
   supportedExecutionModes,
+  WORKER_BUSY_STATUSES,
   WorkerStatus,
 } from '@sdk';
 
@@ -23,23 +25,24 @@ import {
  * These tests validate the two-axis status model surfaced by
  * ``ts_sdk/src/process/agentic-types.ts``:
  *
- *   ProcessStatus — app/user-level lifecycle (6 values, stored, explicit writers)
- *   WorkerStatus  — expert-level worker state (12 values, derived, not stored)
+ *   ProcessStatus — logical "what it means" status. Stored FSM projected on the
+ *                   wire to ready/busy (8 enum members incl. legacy RUNNING).
+ *   WorkerStatus  — raw "what we found" worker state (14 values, derived, nullable)
  *
- * Set parity (WORKER_RUNNING_STATUSES / WORKER_TERMINAL_STATUSES) is enforced
+ * Set parity (WORKER_RUNNING_STATUSES / WORKER_BUSY_STATUSES / …) is enforced
  * against the shared fixture ``test_fixtures/status_sets.json`` — the same file
- * the Python ``test_running_set_matches_spec`` test loads. Editing one side
- * without updating the other breaks both tests.
+ * the Python contract tests load. Editing one side without the other breaks both.
  */
 
 // ─── Shared fixture ──────────────────────────────────────────────────────────
 
 interface StatusSetsFixture {
   worker_running: string[];
+  worker_busy: string[];
   worker_terminal: string[];
-  worker_ready_for_input: string[];
   worker_execution_error: string[];
-  process_running: string[];
+  process_stored_running: string[];
+  process_running_wire: string[];
   process_startable: string[];
 }
 
@@ -49,13 +52,15 @@ const fixture: StatusSetsFixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8'
 // ─── ProcessStatus wire values ───────────────────────────────────────────────
 
 describe('ProcessStatus', () => {
-  it('has exactly 6 canonical values', () => {
+  it('has exactly 8 canonical values (6 stored + ready/busy wire projections)', () => {
     expect(Object.values(ProcessStatus).sort()).toEqual(
-      ['failed', 'new', 'running', 'starting', 'stopped', 'stopping'].sort(),
+      ['busy', 'failed', 'new', 'ready', 'running', 'starting', 'stopped', 'stopping'].sort(),
     );
   });
 
-  it('wire value for RUNNING is "running" (renamed from "live")', () => {
+  it('exposes the ready/busy wire projections and keeps legacy RUNNING', () => {
+    expect(ProcessStatus.READY).toBe('ready');
+    expect(ProcessStatus.BUSY).toBe('busy');
     expect(ProcessStatus.RUNNING).toBe('running');
     expect((ProcessStatus as Record<string, unknown>).LIVE).toBeUndefined();
   });
@@ -63,6 +68,8 @@ describe('ProcessStatus', () => {
   it.each([
     [ProcessStatus.STARTING, true],
     [ProcessStatus.RUNNING, true],
+    [ProcessStatus.READY, true],
+    [ProcessStatus.BUSY, true],
     [ProcessStatus.STOPPING, true],
     [ProcessStatus.NEW, false],
     [ProcessStatus.STOPPED, false],
@@ -144,9 +151,9 @@ describe('set parity (vs test_fixtures/status_sets.json)', () => {
     expect(new Set(actual)).toEqual(new Set(fixture.worker_terminal));
   });
 
-  it('process_running fixture matches isProcessRunning', () => {
+  it('process_running_wire fixture matches isProcessRunning', () => {
     const actual = Object.values(ProcessStatus).filter((s) => isProcessRunning(s as ProcessStatus));
-    expect(new Set(actual)).toEqual(new Set(fixture.process_running));
+    expect(new Set(actual)).toEqual(new Set(fixture.process_running_wire));
   });
 
   it('process_startable fixture matches isProcessStartable', () => {
@@ -154,16 +161,10 @@ describe('set parity (vs test_fixtures/status_sets.json)', () => {
     expect(new Set(actual)).toEqual(new Set(fixture.process_startable));
   });
 
-  it('READY_WORKER_STATUSES matches fixture worker_ready_for_input', () => {
-    // Re-derive via isReadyForInput (the module-private READY_WORKER_STATUSES is
-    // not exported): every WorkerStatus that reads ready on a RUNNING process is
-    // exactly the fixture set. Pins the send-prompt gate to the same
-    // {idle, complete, interrupted} literal the Python
-    // test_ready_for_input_set_matches_spec asserts against _READY_WORKER_STATES.
-    const actual = Object.values(WorkerStatus).filter((s) =>
-      isReadyForInput({ status: ProcessStatus.RUNNING, workerStatus: s as WorkerStatus }),
-    );
-    expect(new Set(actual)).toEqual(new Set(fixture.worker_ready_for_input));
+  it('WORKER_BUSY_STATUSES matches fixture worker_busy byte-for-byte', () => {
+    // The raw worker states that make a turn busy — the same literal the Python
+    // _BUSY_WORKER_STATUSES asserts against (api_error excluded; it maps to ready).
+    expect(new Set(WORKER_BUSY_STATUSES)).toEqual(new Set(fixture.worker_busy));
   });
 
   it('ERROR_WORKER_STATUSES matches fixture worker_execution_error', () => {
@@ -299,63 +300,64 @@ describe('supportedExecutionModes', () => {
   });
 });
 
-// ─── isReadyForInput truth table ─────────────────────────────────────────────
+// ─── isReadyForInput / isBusy — the ONE gate, keyed on the wire status ───────
+//
+// Realigned: both predicates read the projected process ``status`` directly (the
+// backend already folded lock + turn-in-flight + worker activity into it). They
+// do NOT re-derive from workerStatus. READY and BUSY are disjoint.
 
 describe('isReadyForInput', () => {
-  const readyWorkers: WorkerStatus[] = [
-    WorkerStatus.IDLE,
-    WorkerStatus.COMPLETE,
-    WorkerStatus.INTERRUPTED,
-  ];
-  const notReadyWorkers: WorkerStatus[] = [
-    WorkerStatus.INITIALIZING,
-    WorkerStatus.WORKING,
-    WorkerStatus.THINKING,
-    WorkerStatus.TOOL_CALL,
-    WorkerStatus.TOOL_RUNNING,
-    WorkerStatus.ERROR,
-    WorkerStatus.INACTIVE,
-    WorkerStatus.API_ERROR,
-    WorkerStatus.API_TIMEOUT,
-    WorkerStatus.UNKNOWN,
-  ];
-
-  it.each(readyWorkers)('returns true when status=RUNNING and workerStatus=%s', (w) => {
-    expect(isReadyForInput({ status: ProcessStatus.RUNNING, workerStatus: w })).toBe(true);
-  });
-
-  it.each(notReadyWorkers)('returns false when status=RUNNING and workerStatus=%s', (w) => {
-    expect(isReadyForInput({ status: ProcessStatus.RUNNING, workerStatus: w })).toBe(false);
+  it('is true exactly for the READY wire status', () => {
+    expect(isReadyForInput({ status: ProcessStatus.READY })).toBe(true);
   });
 
   it.each([
+    ProcessStatus.BUSY,
+    ProcessStatus.RUNNING, // stored value never on the wire, but not "ready"
     ProcessStatus.NEW,
     ProcessStatus.STARTING,
     ProcessStatus.STOPPING,
     ProcessStatus.STOPPED,
     ProcessStatus.FAILED,
-  ])('returns false for non-RUNNING lifecycle status %s regardless of worker status', (s) => {
-    for (const w of [...readyWorkers, ...notReadyWorkers]) {
-      expect(isReadyForInput({ status: s, workerStatus: w })).toBe(false);
-    }
+  ])('is false for %s', (s) => {
+    expect(isReadyForInput({ status: s })).toBe(false);
   });
 
-  it('treats missing workerStatus + no session as ready (never prompted)', () => {
-    expect(isReadyForInput({ status: ProcessStatus.RUNNING, session_id: null })).toBe(true);
-    expect(isReadyForInput({ status: ProcessStatus.RUNNING })).toBe(true);
-  });
-
-  it('treats missing workerStatus + session set as busy (just launched)', () => {
-    expect(isReadyForInput({ status: ProcessStatus.RUNNING, session_id: 'sess-1' })).toBe(false);
-  });
-
-  it('reads worker_status (snake_case) on wire payloads', () => {
+  it('ignores workerStatus and session_id — status is the single source', () => {
+    // A ready process stays ready whatever the raw worker label says.
     expect(
-      isReadyForInput({
-        status: ProcessStatus.RUNNING,
-        worker_status: WorkerStatus.IDLE,
-      }),
+      isReadyForInput({ status: ProcessStatus.READY, workerStatus: WorkerStatus.THINKING }),
     ).toBe(true);
+    // A busy process is not ready even if the worker label looks idle.
+    expect(
+      isReadyForInput({ status: ProcessStatus.BUSY, workerStatus: WorkerStatus.IDLE, session_id: 's' }),
+    ).toBe(false);
+  });
+
+  it('is false when there is no status at all', () => {
+    expect(isReadyForInput({})).toBe(false);
+  });
+});
+
+describe('isBusy', () => {
+  it('is true exactly for the BUSY wire status', () => {
+    expect(isBusy({ status: ProcessStatus.BUSY })).toBe(true);
+  });
+
+  it.each([
+    ProcessStatus.READY,
+    ProcessStatus.NEW,
+    ProcessStatus.STARTING,
+    ProcessStatus.STOPPING,
+    ProcessStatus.STOPPED,
+    ProcessStatus.FAILED,
+  ])('is false for %s (a non-live process is not busy, just not ready)', (s) => {
+    expect(isBusy({ status: s })).toBe(false);
+  });
+
+  it('is the disjoint complement of isReadyForInput on the live statuses', () => {
+    expect(isBusy({ status: ProcessStatus.READY })).toBe(false);
+    expect(isReadyForInput({ status: ProcessStatus.BUSY })).toBe(false);
   });
 });
 

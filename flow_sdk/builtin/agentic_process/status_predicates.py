@@ -1,12 +1,21 @@
 """Predicates over the two-axis (ProcessStatus, WorkerStatus) model, plus the
 derived ``WorkerMode`` (Interactive / CLI).
 
-Central place for questions like "can the user send now?" and "which worker
-flavour is running?" — so callers never have to recombine lifecycle + worker
-state (or re-derive the mode from ``visible``) by hand.
+Central place for the two questions the whole system gates on:
 
-See ``agentic_process_lifecycle.py`` (ProcessStatus) and ``agent_status.py``
-(WorkerStatus) for the canonical definitions.
+  - **"is a turn in flight?"** → :func:`is_turn_busy`. The single source of truth
+    for the ``busy`` boolean. It feeds the wire ``status`` projection
+    (:func:`wire_status`), the ``switch-mode`` / ``restart`` 409 guard, and — via
+    the serialized ``status`` field — every frontend input/toggle gate.
+  - **"which worker flavour is running?"** → :func:`get_worker_mode`.
+
+``busy`` is a function of process state (lock + in-flight + worker activity),
+NOT of any single stored field, so callers never recombine lifecycle + worker
+state by hand.
+
+See ``process_lifecycle.py`` (ProcessStatus) and ``worker_status.py``
+(WorkerStatus) for the canonical enum definitions, and
+``docs/agent/agentic_process_statuses.md`` for the model overview.
 """
 
 from __future__ import annotations
@@ -30,6 +39,8 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "is_turn_busy",
+    "wire_status",
     "is_ready_for_input",
     "is_process_running",
     "is_process_startable",
@@ -63,11 +74,80 @@ def get_worker_mode(process: "AgenticProcess") -> WorkerMode:
     return WorkerMode.INTERACTIVE if process.pty_mode else WorkerMode.CLI
 
 
-_READY_WORKER_STATES: frozenset[WorkerStatus] = frozenset({
-    WorkerStatus.IDLE,
-    WorkerStatus.COMPLETE,
-    WorkerStatus.INTERRUPTED,
+# ---------------------------------------------------------------------------
+# The busy predicate — single source of truth for "is a turn in flight?"
+#
+# Mirrored byte-for-byte in TS by the ``worker_busy`` set in
+# ``test_fixtures/status_sets.json`` (consumed by ``isBusy`` / the wire
+# projection on both sides).
+# ---------------------------------------------------------------------------
+
+# Raw worker statuses that mean "the worker is mid-turn and the user must wait".
+# NOTE api_error is deliberately NOT here: an API error is something the user can
+# just re-prompt past, so it maps to a *ready* process status. While a turn is
+# genuinely retrying the prompt lock (or ``_turn_in_flight``) is held, which
+# keeps the process ``busy`` regardless of this set.
+_BUSY_WORKER_STATUSES: frozenset[WorkerStatus] = frozenset({
+    WorkerStatus.INITIALIZING,
+    WorkerStatus.WORKING,
+    WorkerStatus.THINKING,
+    WorkerStatus.TOOL_CALL,
+    WorkerStatus.TOOL_RUNNING,
 })
+
+
+def is_turn_busy(
+    process: "AgenticProcess",
+    worker_status: WorkerStatus | None = None,
+) -> bool:
+    """True when a turn is in flight — the single ``busy`` boolean.
+
+    ``busy`` is a function of process state, resolved from three signals (any
+    one → busy):
+
+      1. the per-process prompt lock is held (headless / chat-over-PTY turn), OR
+      2. ``_turn_in_flight`` is set (a worker spinning up before its transcript
+         lands), OR
+      3. the raw ``worker_status`` is a mid-turn activity state
+         (``_BUSY_WORKER_STATUSES``).
+
+    A native-xterm turn holds no lock and sets no ``_turn_in_flight`` flag, so
+    (3) is the only signal that keeps it ``busy`` — that is why the ``switch-mode``
+    409 must key on this predicate, not the lock alone.
+
+    ``worker_status`` is optional — if the caller already resolved it (e.g. the
+    serializer), pass it to avoid a second transcript tail-read.
+    """
+    # Lazy import breaks the cycle: agentic_process imports this leaf module at
+    # load time. ``_PROMPT_LOCKS`` is the single runtime source; both headless
+    # (``prompt``) and chat-over-PTY turns hold it for the turn's duration.
+    try:
+        from flow_sdk.builtin.agentic_process.agentic_process import prompt_lock_locked
+    except Exception:
+        prompt_lock_locked = None
+    if prompt_lock_locked is not None and prompt_lock_locked(process.id):
+        return True
+    if getattr(process, "_turn_in_flight", False):
+        return True
+    resolved = worker_status if worker_status is not None else process.fetch_worker_status()
+    return resolved in _BUSY_WORKER_STATUSES
+
+
+def wire_status(
+    process: "AgenticProcess",
+    worker_status: WorkerStatus | None = None,
+) -> str:
+    """Project the stored ``process.status`` to its wire value.
+
+    Stored ``RUNNING`` becomes the logical ``BUSY`` (a turn is in flight) or
+    ``READY`` (the worker can take the next prompt). Every other stored value
+    passes through unchanged. ``READY``/``BUSY`` are never persisted — this
+    function is the only place stored ``running`` turns into them.
+    """
+    if process.status != ProcessStatus.RUNNING.value:
+        return process.status
+    busy = is_turn_busy(process, worker_status)
+    return (ProcessStatus.BUSY if busy else ProcessStatus.READY).value
 
 
 def is_ready_for_input(
@@ -78,30 +158,10 @@ def is_ready_for_input(
 
     Contract (also enforced by the vitest / pytest truth-table tests):
 
-        is_ready_for_input(p)  ⇔
-            p.status == ProcessStatus.RUNNING
-            AND  worker_status ∈ {IDLE, COMPLETE, INTERRUPTED}
+        is_ready_for_input(p)  ⇔  wire_status(p) == ProcessStatus.READY
 
-    Special case: ``worker_status is None`` means the transcript hasn't been
-    discovered yet. The worker is busy only when a turn is actually in flight
-    (the headless drivers set ``_turn_in_flight`` for the duration of a turn);
-    otherwise a RUNNING process with no derivable status is spawned-and-idle,
-    ready for its first prompt. (Previously gated on ``session_id`` presence,
-    which mis-read every freshly-spawned session as busy because the Claude
-    driver mints a ``session_id`` eagerly, before any turn runs.)
-
-    The ``worker_status`` argument is optional — if the caller has already
-    resolved it (e.g. inside a serializer), pass it to avoid a second tail-read.
+    i.e. the process is stored-RUNNING and no turn is in flight. Equivalent to
+    ``not busy`` while live. The ``worker_status`` argument is optional — pass a
+    pre-resolved value to avoid a second tail-read.
     """
-    if process.status != ProcessStatus.RUNNING.value:
-        return False
-    if worker_status is None:
-        # Don't trigger a transcript read on every call; only resolve if the
-        # caller didn't pre-compute it. Callers that do serve hot paths should
-        # pass ``worker_status`` explicitly.
-        resolved = process.fetch_worker_status()
-    else:
-        resolved = worker_status
-    if resolved is None:
-        return not getattr(process, "_turn_in_flight", False)
-    return resolved in _READY_WORKER_STATES
+    return wire_status(process, worker_status) == ProcessStatus.READY.value

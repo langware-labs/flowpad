@@ -1,19 +1,23 @@
-"""Regression: a spawned-but-never-prompted worker must read IDLE/ready, not
-pin "Initializing" forever.
+"""Regression: a spawned-but-never-prompted worker must read ready, not pin
+"Initializing" forever.
 
 Opening a fresh agentic_process dock starts the worker (``status → RUNNING``)
-before any prompt is sent, so no transcript JSONL exists yet. The projection
-used to label that state ``INITIALIZING`` whenever a ``session_id``/``shell_id``
-was present — and since a never-prompted session never writes a transcript, the
-status pill stayed on the spinner forever. The correct reading is:
+before any prompt is sent, so no transcript JSONL exists yet. Under the realigned
+model ``_discover_status_from_transcript`` returns the RAW state only — no
+synthesis — so with no transcript it returns:
 
-  * a turn genuinely spinning up (``_turn_in_flight``)            → INITIALIZING
-  * the process lifecycle still coming up (``STARTING``)          → INITIALIZING
-  * RUNNING with no in-flight turn and no transcript yet          → IDLE (ready)
+  * ``STARTING`` lifecycle boot                          → INITIALIZING (raw boot)
+  * ``RUNNING`` with no transcript                       → None ("nothing found")
 
-This file locks all three branches plus the two supporting predicates
-(``_tail_status`` honouring Claude's ``system:init`` line, and
-``is_ready_for_input`` gating on ``_turn_in_flight`` rather than ``session_id``).
+The ready/busy meaning is then derived by ``is_turn_busy`` / ``wire_status``, NOT
+by the worker status:
+
+  * RUNNING, no turn in flight, no transcript            → ready  (wire ``ready``)
+  * RUNNING, a turn spinning up (``_turn_in_flight``)    → busy   (wire ``busy``)
+
+This file locks those branches plus the supporting predicates (``_tail_status``
+honouring Claude's ``system:init`` line, and ``is_ready_for_input`` gating on
+``_turn_in_flight`` rather than ``session_id``).
 """
 from __future__ import annotations
 
@@ -24,7 +28,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
+from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input, is_turn_busy
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums import WorkerType
@@ -68,18 +72,24 @@ def _make_ap(
 
 # ── projection (_discover_status_from_transcript) ────────────────────────────
 
-def test_running_no_transcript_no_turn_is_idle(monkeypatch) -> None:
-    """THE REGRESSION: a never-prompted RUNNING worker is idle/ready, not
-    initialising."""
+def test_running_no_transcript_no_turn_is_none_and_ready(monkeypatch) -> None:
+    """THE REGRESSION: a never-prompted RUNNING worker has no derivable raw
+    status (None), and is READY (not busy) — the serializer surfaces a null
+    worker_status and a ``ready`` wire status."""
     ap = _make_ap(monkeypatch, status=ProcessStatus.RUNNING, turn_in_flight=False)
-    assert ap._discover_status_from_transcript() == WorkerStatus.IDLE
+    assert ap._discover_status_from_transcript() is None
+    assert is_turn_busy(ap) is False
+    assert is_ready_for_input(ap) is True
 
 
-def test_running_no_transcript_turn_in_flight_is_initializing(monkeypatch) -> None:
-    """A genuine turn spinning up still reads INITIALIZING — no flicker on a
-    real prompt (this is the behaviour the old eager-session_id hack protected)."""
+def test_running_no_transcript_turn_in_flight_is_busy(monkeypatch) -> None:
+    """A genuine turn spinning up has no raw status yet (None) but IS busy via
+    ``_turn_in_flight`` — no flicker on a real prompt. The busy-ness comes from
+    the turn signal, not a synthesized INITIALIZING worker status."""
     ap = _make_ap(monkeypatch, status=ProcessStatus.RUNNING, turn_in_flight=True)
-    assert ap._discover_status_from_transcript() == WorkerStatus.INITIALIZING
+    assert ap._discover_status_from_transcript() is None
+    assert is_turn_busy(ap) is True
+    assert is_ready_for_input(ap) is False
 
 
 def test_starting_no_transcript_is_initializing(monkeypatch) -> None:

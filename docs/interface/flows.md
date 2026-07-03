@@ -1,4 +1,15 @@
+---
+id: d8d149e9-2f0b-5f37-90ed-8a8eefe83212
+---
+
 # Agentic-process flows (test-derived)
+
+> **Status model superseded.** This doc still says `headless == !visible` and
+> describes a `running` wire status. Both are stale: transport routing keys on
+> `pty_mode` (never `visible`), and the wire `status` is the logical `ready`/`busy`
+> projection of stored `running`. See
+> [docs/agent/agentic_process_statuses.md](../agent/agentic_process_statuses.md)
+> for the current three-axis model.
 
 The canonical end-to-end flows of the agentic-process stack, reconstructed from the
 reference tests that exercise each one. Every step names the **actual** API call at

@@ -18,7 +18,6 @@ export {
   isProcessStartable,
   isWorkerRunning,
   isWorkerTerminal,
-  isAwaitingUserInput,
   hasWorkerStarted,
   isReadyForInput,
   isBusy,
@@ -26,10 +25,12 @@ export {
   getWorkerMode,
   ExecutionMode,
   ERROR_WORKER_STATUSES,
+  WORKER_BUSY_STATUSES,
   classifyExecutionMode,
   supportedExecutionModes,
 } from './agentic-types';
 export type { ParsedUIUri, ProcessIconKey, UIComponentPayload, StatusBearingProcess } from './agentic-types';
+export { WORKER_STATUS_LABEL, PROCESS_STATUS_LABEL } from './status-labels';
 
 export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
 export type {
