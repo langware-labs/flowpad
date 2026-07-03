@@ -396,7 +396,7 @@ export class NavigationActions {
 
   async openShellProcess(
     agenticProcessId: string,
-    options?: { t?: string; windows?: string; activeWindow?: string },
+    options?: { t?: string; windows?: string; activeWindow?: string; viewMode?: string },
   ): Promise<AgenticProcess | null> {
     const extraOptions = toStringRecord(options);
     const process =
