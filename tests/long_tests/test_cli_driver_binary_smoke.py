@@ -122,13 +122,25 @@ def _run_turn_and_parse(worker: str, options, tmp_path: Path, *, success_types: 
     )
 
 
-# ── Codex ─────────────────────────────────────────────────────────────────────
+# Per-binary: (worker, options_cls, success terminal-event types). Each carries a
+# ``shutil.which`` skip so an uninstalled binary is skipped, not failed — this
+# stacks on the module-level DEEP_TESTING gate.
+_codex = pytest.param(
+    "codex", CodexCliOptions, {"turn.completed"},
+    marks=pytest.mark.skipif(shutil.which("codex") is None, reason="codex CLI not installed"),
+    id="codex",
+)
+_copilot = pytest.param(
+    "copilot", CopilotCliOptions, {"result"},
+    marks=pytest.mark.skipif(shutil.which("copilot") is None, reason="copilot CLI not installed"),
+    id="copilot",
+)
 
 
-@pytest.mark.skipif(shutil.which("codex") is None, reason="codex CLI not installed")
+@pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot])
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_codex_version_smoke():
-    binary = shutil.which("codex")
+def test_version_smoke(worker, options_cls, success_types):
+    binary = shutil.which(worker)
     result = subprocess.run(
         [binary, "--version"], capture_output=True, text=True, timeout=_TURN_GUARD_SECONDS
     )
@@ -136,37 +148,12 @@ def test_codex_version_smoke():
     assert any(ch.isdigit() for ch in result.stdout)
 
 
-@pytest.mark.skipif(shutil.which("codex") is None, reason="codex CLI not installed")
+@pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot])
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_codex_headless_turn_parses(tmp_path: Path):
+def test_headless_turn_parses(worker, options_cls, success_types, tmp_path: Path):
     _run_turn_and_parse(
-        "codex",
-        CodexCliOptions(workdir=str(tmp_path / "work")),
+        worker,
+        options_cls(workdir=str(tmp_path / "work")),
         tmp_path,
-        success_types={"turn.completed"},
-    )
-
-
-# ── Copilot ───────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.skipif(shutil.which("copilot") is None, reason="copilot CLI not installed")
-@pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_copilot_version_smoke():
-    binary = shutil.which("copilot")
-    result = subprocess.run(
-        [binary, "--version"], capture_output=True, text=True, timeout=_TURN_GUARD_SECONDS
-    )
-    assert result.returncode == 0
-    assert any(ch.isdigit() for ch in result.stdout)
-
-
-@pytest.mark.skipif(shutil.which("copilot") is None, reason="copilot CLI not installed")
-@pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_copilot_headless_turn_parses(tmp_path: Path):
-    _run_turn_and_parse(
-        "copilot",
-        CopilotCliOptions(workdir=str(tmp_path / "work")),
-        tmp_path,
-        success_types={"result"},
+        success_types=success_types,
     )

@@ -36,92 +36,68 @@ def _proc(**kwargs) -> AgenticProcess:
 
 
 @pytest.mark.asyncio
-async def test_reconcile_stops_orphaned_headless_running():
-    """A RUNNING headless worker (pty_mode=False) is stamped STOPPED."""
-    proc = _proc(status=ProcessStatus.RUNNING.value, visible=False, pty_mode=False)
+@pytest.mark.parametrize(
+    "status, visible, pty_mode, expected",
+    [
+        # Orphaned headless workers (pty_mode=False) are stamped STOPPED …
+        (ProcessStatus.RUNNING, False, False, ProcessStatus.STOPPED),
+        (ProcessStatus.STARTING, False, False, ProcessStatus.STOPPED),
+        # … PTY-transport workers belong to run_pty_recovery — left untouched.
+        # (visible PTY, and the hidden-live PTY that pre-fix was wrongly killed)
+        (ProcessStatus.RUNNING, True, True, ProcessStatus.RUNNING),
+        (ProcessStatus.RUNNING, False, True, ProcessStatus.RUNNING),
+        # Already-terminal headless row is idempotent.
+        (ProcessStatus.STOPPED, False, False, ProcessStatus.STOPPED),
+    ],
+    ids=[
+        "headless-running->stopped",
+        "headless-starting->stopped",
+        "visible-pty-untouched",
+        "hidden-live-pty-untouched",
+        "already-terminal-idempotent",
+    ],
+)
+async def test_reconcile_orphaned_workers_keys_on_pty_mode(status, visible, pty_mode, expected):
+    """The startup sweep stamps orphaned *headless* workers STOPPED and leaves
+    *PTY-transport* workers (``pty_mode=True``, any ``visible``) for
+    ``run_pty_recovery``. The split MUST key on ``pty_mode``, not ``visible`` —
+    the hidden-live-PTY case fails pre-fix (the sweep keyed on ``visible`` and
+    killed a recoverable session)."""
+    proc = _proc(status=status.value, visible=visible, pty_mode=pty_mode)
     await proc.save()
 
     await reconcile_orphaned_workers()
 
     reloaded = await AgenticProcess.get_by_id(proc.id)
     assert reloaded is not None
-    assert reloaded.status == ProcessStatus.STOPPED.value
+    assert reloaded.status == expected.value
 
 
 @pytest.mark.asyncio
-async def test_reconcile_stops_orphaned_headless_starting():
-    """A STARTING headless worker (pty_mode=False) is also a dead orphan → STOPPED."""
-    proc = _proc(status=ProcessStatus.STARTING.value, visible=False, pty_mode=False)
-    await proc.save()
+@pytest.mark.parametrize(
+    "pty_mode, should_respawn",
+    [(True, True), (False, False)],
+    ids=["hidden-live-pty-respawned", "headless-skipped"],
+)
+async def test_run_pty_recovery_keys_on_pty_mode(pty_mode, should_respawn, monkeypatch):
+    """run_pty_recovery respawns a watched dead PTY keyed on ``pty_mode=True`` even
+    when ``visible=False`` (hidden live PTY), and never respawns a headless worker
+    (``pty_mode=False``, owned by reconcile). Pre-fix it gated on ``visible`` and
+    skipped the hidden live PTY.
 
-    await reconcile_orphaned_workers()
-
-    reloaded = await AgenticProcess.get_by_id(proc.id)
-    assert reloaded is not None
-    assert reloaded.status == ProcessStatus.STOPPED.value
-
-
-@pytest.mark.asyncio
-async def test_reconcile_leaves_visible_pty_running():
-    """Visible PTYs belong to run_pty_recovery (respawn) — the sweep must not touch them."""
-    proc = _proc(status=ProcessStatus.RUNNING.value, visible=True, pty_mode=True)
-    await proc.save()
-
-    await reconcile_orphaned_workers()
-
-    reloaded = await AgenticProcess.get_by_id(proc.id)
-    assert reloaded is not None
-    assert reloaded.status == ProcessStatus.RUNNING.value
-
-
-@pytest.mark.asyncio
-async def test_reconcile_leaves_hidden_live_pty_running():
-    """A hidden live PTY (visible=False, pty_mode=True) is a PTY-transport worker —
-    reconcile must NOT stamp it STOPPED; run_pty_recovery owns its respawn.
-
-    Fails pre-fix: the sweep keyed on ``visible`` and stamped this recoverable
-    session STOPPED (killing it)."""
-    proc = _proc(status=ProcessStatus.RUNNING.value, visible=False, pty_mode=True)
-    await proc.save()
-
-    await reconcile_orphaned_workers()
-
-    reloaded = await AgenticProcess.get_by_id(proc.id)
-    assert reloaded is not None
-    assert reloaded.status == ProcessStatus.RUNNING.value
-
-
-@pytest.mark.asyncio
-async def test_reconcile_leaves_already_terminal_untouched():
-    """An already-STOPPED headless row is left exactly as-is (idempotent)."""
-    proc = _proc(status=ProcessStatus.STOPPED.value, visible=False, pty_mode=False)
-    await proc.save()
-
-    await reconcile_orphaned_workers()
-
-    reloaded = await AgenticProcess.get_by_id(proc.id)
-    assert reloaded is not None
-    assert reloaded.status == ProcessStatus.STOPPED.value
-
-
-@pytest.mark.asyncio
-async def test_run_pty_recovery_respawns_watched_hidden_live_pty(monkeypatch):
-    """run_pty_recovery must respawn a watched dead PTY keyed on pty_mode=True even
-    when visible=False (hidden live PTY). Pre-fix it gated on ``visible`` and
-    skipped it, leaving the session dead.
-
-    Uses a real watched entity + real DB; ``start_pty`` (which would spawn a real
-    worker) is the single stubbed seam so the test stays fast and driver-free — the
-    assertion is purely that recovery reaches the respawn owner for this row."""
+    Real watched entity + real DB; ``start_pty`` (which would spawn a real worker)
+    is the single stubbed seam so the assertion is purely that recovery reaches
+    the respawn owner for this row."""
     proc = _proc(
         status=ProcessStatus.RUNNING.value,
         visible=False,
-        pty_mode=True,
+        pty_mode=pty_mode,
         shell_id=str(uuid.uuid4()),
     )
     await proc.save()
     watch_key = f"agentic_process:{proc.id}"
-    add_watch("conn-recovery-test", watch_key)
+    watcher = f"conn-recovery-test:{proc.id}"
+    add_watch(watcher, watch_key)
 
     respawned: list[str] = []
 
@@ -134,36 +110,6 @@ async def test_run_pty_recovery_respawns_watched_hidden_live_pty(monkeypatch):
     try:
         await run_pty_recovery()
     finally:
-        remove_watch("conn-recovery-test", watch_key)
+        remove_watch(watcher, watch_key)
 
-    assert proc.id in respawned, "hidden live PTY (pty_mode=True) must be eligible for respawn"
-
-
-@pytest.mark.asyncio
-async def test_run_pty_recovery_skips_headless(monkeypatch):
-    """A headless worker (pty_mode=False) is never respawned by run_pty_recovery —
-    it is owned by reconcile_orphaned_workers."""
-    proc = _proc(
-        status=ProcessStatus.RUNNING.value,
-        visible=False,
-        pty_mode=False,
-        shell_id=str(uuid.uuid4()),
-    )
-    await proc.save()
-    watch_key = f"agentic_process:{proc.id}"
-    add_watch("conn-recovery-test-2", watch_key)
-
-    respawned: list[str] = []
-
-    async def fake_start_pty(self, *args, **kwargs):
-        respawned.append(self.id)
-        return ApiSuccessResponse(data={"id": self.id})
-
-    monkeypatch.setattr(AgenticProcess, "start_pty", fake_start_pty)
-
-    try:
-        await run_pty_recovery()
-    finally:
-        remove_watch("conn-recovery-test-2", watch_key)
-
-    assert proc.id not in respawned, "headless worker must not be PTY-respawned"
+    assert (proc.id in respawned) is should_respawn

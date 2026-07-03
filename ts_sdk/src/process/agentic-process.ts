@@ -526,6 +526,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Build (but do not save) a headless AgenticProcess — the single chokepoint
+   * for the "print_mode + stream-json, no PTY" triplet used by background
+   * runs (workflow runner, index rebuild, …). The caller supplies the
+   * entity-specific fields (context_data, workdir, target_typeid_str,
+   * process_type) and owns the `.save([typeId])` linkage.
+   *
+   * All routing/classification keys on `pty_mode`, never `visible` — so the
+   * transport is pinned CLI (`pty_mode=false`) here, independent of `visible`.
+   */
+  static newHeadless(fields: Partial<IAgenticProcess> = {}): AgenticProcess {
+    const cliOptions = new ClaudeCliOptions({
+      permission_mode: 'bypassPermissions',
+      print_mode: true,
+      output_format: 'stream-json',
+      verbose: true,
+    });
+    return new AgenticProcess({
+      cli_config: cliOptions.toJson(),
+      visible: false,
+      pty_mode: false,
+      ...fields,
+    });
+  }
+
+  /**
    * Get a process by ID with history auto-loaded.
    *
    * Unlike the base getById, this method automatically loads the process
@@ -923,6 +948,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async setGraphContext(graphContextId: string): Promise<void> {
     const actionInfo = new ActionInfo('set-graph-context', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { graph_context_id: graphContextId };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /**
+   * Declare a display-focus target for this process's watchers — the backend
+   * `show` action (same channel as the worker-side `flow show` CLI). The
+   * resolved payload comes back to subscribers via {@link onShow}.
+   */
+  async show(target: { typeid?: string; path?: string; port?: number }): Promise<void> {
+    const actionInfo = new ActionInfo('show', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = target;
     await dataManager.callAction(actionInfo);
   }
 
@@ -2406,6 +2442,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (event === 'worker.restarted') {
       this.emit('restarted', { process: this, payload });
     }
+    // Mirror of Python `AgenticProcess.on_show` (the `flow show` verb): the
+    // agent declared a display-focus target. Re-emit as the typed 'show'
+    // event so display surfaces subscribe via `proc.onShow(...)` without
+    // string-matching the generic entity_event channel.
+    if (event === 'on_show') {
+      this.emit('show', payload);
+    }
+  }
+
+  /**
+   * Subscribe to agent-declared display focus (`flow show`). The payload is
+   * the resolved show target from the backend action:
+   *   {kind:'entity', typeid, type, id, path?} | {kind:'vfs', path} | {kind:'webapp', port}
+   * Returns the unsubscribe function.
+   */
+  onShow(handler: (payload: Record<string, unknown>) => void): () => void {
+    return this.on('show', handler);
   }
 
   /**

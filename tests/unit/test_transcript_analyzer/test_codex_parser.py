@@ -7,7 +7,6 @@ import warnings
 from flow_sdk.transcript_analyzer import (
     AgentTranscriptFile,
     AssistantMessageEntry,
-    EntryKind,
     MetaEntry,
     SystemEntry,
     ToolResultEntry,
@@ -313,9 +312,8 @@ def _token_count_line(ts, *, in_t, cached, out_t, tot_in, tot_cached, tot_out):
 
 
 def _write_jsonl(tmp_path, name, lines):
-    import json as _json
     path = tmp_path / name
-    path.write_text("\n".join(_json.dumps(l) for l in lines) + "\n", encoding="utf-8")
+    path.write_text("\n".join(json.dumps(l) for l in lines) + "\n", encoding="utf-8")
     return path
 
 

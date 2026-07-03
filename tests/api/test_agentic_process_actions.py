@@ -23,8 +23,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import shlex
 import time
 import uuid
 from pathlib import Path
@@ -37,33 +35,15 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 )
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
 
+from tests.api.conftest import (
+    create_agentic_process,
+    default_compute_node_id,
+    get_agentic_process,
+)
+from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
+
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-async def _create(client, **fields) -> str:
-    body = {"worker_type": "claude_code", **fields}
-    resp = await client.post("/api/v1/graph/agentic_process", json=body)
-    assert resp.status_code == 200, resp.text
-    return ApiResponse(**resp.json()).data["id"]
-
-
-async def _get(client, pid: str) -> dict:
-    resp = await client.get(f"/api/v1/graph/agentic_process/{pid}")
-    assert resp.status_code == 200, resp.text
-    return ApiResponse(**resp.json()).data
-
-
-def _fake_noop_build_spawn(self, prompt, context):  # noqa: ANN001
-    """Cheap CLI seam: emit a terminal ``result`` line then exit (no real claude)."""
-    line = json.dumps({"type": "result", "subtype": "success", "is_error": False,
-                       "session_id": context.session_id or "fake-sid"})
-    return ["bash", "-c", f"printf '%s\\n' {shlex.quote(line)}"], dict(os.environ)
 
 
 # ---------------------------------------------------------------------------
@@ -75,21 +55,21 @@ def _fake_noop_build_spawn(self, prompt, context):  # noqa: ANN001
 async def test_set_visible_flips_visible_only_both_directions(bootstrapped_client, user):
     """``set-visible`` mutates ``visible`` and NEVER ``pty_mode`` — both ways."""
     # Start headless-and-hidden: visible=False, pty_mode=False.
-    pid = await _create(bootstrapped_client, visible=False, pty_mode=False)
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
     base = f"/api/v1/graph/agentic_process/{pid}"
 
     # Show the tab. visible → True, pty_mode stays False (transport untouched).
     resp = await bootstrapped_client.post(f"{base}/set-visible", json={"visible": True})
     assert resp.status_code == 200, resp.text
     assert ApiResponse(**resp.json()).data == {"id": pid, "visible": True}
-    row = await _get(bootstrapped_client, pid)
+    row = await get_agentic_process(bootstrapped_client, pid)
     assert row["visible"] is True
     assert row["pty_mode"] is False, "set-visible must not touch pty_mode"
 
     # Hide it again. visible → False, pty_mode STILL False.
     resp = await bootstrapped_client.post(f"{base}/set-visible", json={"visible": False})
     assert resp.status_code == 200, resp.text
-    row = await _get(bootstrapped_client, pid)
+    row = await get_agentic_process(bootstrapped_client, pid)
     assert row["visible"] is False
     assert row["pty_mode"] is False
 
@@ -97,11 +77,11 @@ async def test_set_visible_flips_visible_only_both_directions(bootstrapped_clien
 @pytest.mark.asyncio
 async def test_set_visible_does_not_touch_pty_mode_true(bootstrapped_client, user):
     """The other quadrant: a PTY-transport process hidden then shown keeps pty_mode=True."""
-    pid = await _create(bootstrapped_client, visible=True, pty_mode=True)
+    pid = await create_agentic_process(bootstrapped_client, visible=True, pty_mode=True)
     base = f"/api/v1/graph/agentic_process/{pid}"
 
     await bootstrapped_client.post(f"{base}/set-visible", json={"visible": False})
-    row = await _get(bootstrapped_client, pid)
+    row = await get_agentic_process(bootstrapped_client, pid)
     assert row["visible"] is False
     assert row["pty_mode"] is True, "set-visible must not touch pty_mode"
 
@@ -113,7 +93,7 @@ async def test_set_visible_does_not_touch_pty_mode_true(bootstrapped_client, use
 
 @pytest.mark.asyncio
 async def test_queue_enqueue_dequeue_clear_and_enabled(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client, pty_mode=False)
+    pid = await create_agentic_process(bootstrapped_client, pty_mode=False)
     base = f"/api/v1/graph/agentic_process/{pid}"
 
     # Disable the queue up front so the auto-drain (scheduled by enqueue) can't
@@ -159,7 +139,7 @@ async def test_queue_enqueue_dequeue_clear_and_enabled(bootstrapped_client, user
 @pytest.mark.asyncio
 async def test_input_stages_onto_queue_headless(bootstrapped_client, user):
     """``input`` on a cold/headless process stages onto the PERSISTED queue."""
-    pid = await _create(bootstrapped_client, pty_mode=False)
+    pid = await create_agentic_process(bootstrapped_client, pty_mode=False)
     base = f"/api/v1/graph/agentic_process/{pid}"
 
     resp = await bootstrapped_client.post(f"{base}/input", json={"text": "staged line"})
@@ -177,7 +157,7 @@ async def test_input_stages_onto_queue_headless(bootstrapped_client, user):
 @pytest.mark.asyncio
 async def test_submit_nothing_staged_headless_fails(bootstrapped_client, user):
     """``submit`` on a headless process with an empty queue is a documented error."""
-    pid = await _create(bootstrapped_client, pty_mode=False)
+    pid = await create_agentic_process(bootstrapped_client, pty_mode=False)
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/agentic_process/{pid}/submit", json={}
     )
@@ -191,10 +171,15 @@ async def test_submit_with_staged_head_schedules_drain(
     bootstrapped_client, user, tmp_path, monkeypatch
 ):
     """``submit`` with a staged head commits the turn (schedules the drain)."""
-    monkeypatch.setattr(
-        ClaudeCLIStreamWorker, "_build_spawn", _fake_noop_build_spawn, raising=True
+    # Cheap CLI seam: emit a terminal ``result`` line then exit (no real claude).
+    patch_build_spawn(
+        monkeypatch,
+        ClaudeCLIStreamWorker,
+        fake_stream_argv(
+            [{"type": "result", "subtype": "success", "is_error": False, "session_id": "fake-sid"}]
+        ),
     )
-    pid = await _create(bootstrapped_client, pty_mode=False, workdir=str(tmp_path))
+    pid = await create_agentic_process(bootstrapped_client, pty_mode=False, workdir=str(tmp_path))
     base = f"/api/v1/graph/agentic_process/{pid}"
 
     await bootstrapped_client.post(f"{base}/input", json={"text": "go"})
@@ -213,7 +198,7 @@ async def test_fork_creates_sibling_with_new_id_and_fork_source(bootstrapped_cli
     """``fork`` mints a NEW process id, bakes ``fork_session_id=<parent>`` into
     cli_config, and inherits the parent's workdir (README fork contract)."""
     parent_sid = str(uuid.uuid4())
-    parent_id = await _create(
+    parent_id = await create_agentic_process(
         bootstrapped_client,
         session_id=parent_sid,
         workdir=str(tmp_path),
@@ -228,7 +213,7 @@ async def test_fork_creates_sibling_with_new_id_and_fork_source(bootstrapped_cli
     assert child_id != parent_id, "fork must mint a new entity id"
     assert child_ref["type"] == "agentic_process"
 
-    child = await _get(bootstrapped_client, child_id)
+    child = await get_agentic_process(bootstrapped_client, child_id)
     assert child["workdir"] == str(tmp_path), "fork inherits the parent workdir"
     assert child["session_id"] != parent_sid, "fork gets its own fresh session id"
     cli = child["cli_config"] or {}
@@ -266,12 +251,11 @@ def _make_fake_claude_jsonl(session_id: str) -> Path:
 
 @pytest.mark.asyncio
 async def test_self_restart_schedules_and_emits_worker_restarted(
-    bootstrapped_client, user, monkeypatch
+    bootstrapped_client, user, bootstrap_payload, monkeypatch
 ):
     """``self-restart`` returns ``{scheduled:true}`` immediately and, once the
     detached restart completes, emits a ``worker.restarted`` entity event."""
-    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-    cn_id = bootstrap.json()["data"]["default_compute_node"]["id"]
+    cn_id = default_compute_node_id(bootstrap_payload)
     session_id = str(uuid.uuid4())
     jsonl = _make_fake_claude_jsonl(session_id)
 
@@ -298,7 +282,7 @@ async def test_self_restart_schedules_and_emits_worker_restarted(
             },
         )
         shell_id = ApiResponse(**shell_resp.json()).data["id"]
-        pid = await _create(
+        pid = await create_agentic_process(
             bootstrapped_client,
             shell_id=shell_id,
             session_id=session_id,
@@ -331,7 +315,7 @@ async def test_self_restart_schedules_and_emits_worker_restarted(
 
 @pytest.mark.asyncio
 async def test_get_host_resolves_local_port(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     # POST with a real JSON bool for ``redirect`` (a "false" query string coerces
     # truthy and would yield a RedirectResponse instead of the JSON envelope).
     resp = await bootstrapped_client.post(
@@ -346,7 +330,7 @@ async def test_get_host_resolves_local_port(bootstrapped_client, user):
 
 @pytest.mark.asyncio
 async def test_get_host_rejects_out_of_range_port(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/agentic_process/{pid}/get-host?port=80&redirect=false"
     )
@@ -356,7 +340,7 @@ async def test_get_host_rejects_out_of_range_port(bootstrapped_client, user):
 
 @pytest.mark.asyncio
 async def test_input_dir_returns_abs_path_and_compute_node(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/agentic_process/{pid}/input-dir"
     )
@@ -368,7 +352,7 @@ async def test_input_dir_returns_abs_path_and_compute_node(bootstrapped_client, 
 
 @pytest.mark.asyncio
 async def test_os_status_headline_ready_false_no_shell(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/agentic_process/{pid}/os-status"
     )
@@ -381,7 +365,7 @@ async def test_os_status_headline_ready_false_no_shell(bootstrapped_client, user
 
 @pytest.mark.asyncio
 async def test_list_embedded_assets_empty(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/agentic_process/{pid}/list-embedded-assets"
     )
@@ -393,7 +377,7 @@ async def test_list_embedded_assets_empty(bootstrapped_client, user):
 async def test_transcript_prompts_full_and_plan_no_session(bootstrapped_client, user):
     """With no session/transcript the three transcript sub-paths return their
     documented empty envelopes (never a 404)."""
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     base = f"/api/v1/graph/agentic_process/{pid}"
 
     rp = await bootstrapped_client.post(f"{base}/transcript/prompts")
@@ -414,7 +398,7 @@ async def test_transcript_prompts_full_and_plan_no_session(bootstrapped_client, 
 
 @pytest.mark.asyncio
 async def test_transcript_unknown_subpath_fails(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/agentic_process/{pid}/transcript/bogus"
     )
@@ -423,7 +407,7 @@ async def test_transcript_unknown_subpath_fails(bootstrapped_client, user):
 
 @pytest.mark.asyncio
 async def test_get_plan_alias_no_session(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/agentic_process/{pid}/get-plan"
     )
@@ -433,7 +417,7 @@ async def test_get_plan_alias_no_session(bootstrapped_client, user):
 
 @pytest.mark.asyncio
 async def test_get_history_empty_is_success(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/agentic_process/{pid}/get-history"
     )
@@ -446,7 +430,7 @@ async def test_get_history_empty_is_success(bootstrapped_client, user):
 
 @pytest.mark.asyncio
 async def test_restart_info_no_baseline(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/agentic_process/{pid}/restart-info"
     )
@@ -461,7 +445,7 @@ async def test_restart_info_no_baseline(bootstrapped_client, user):
 
 @pytest.mark.asyncio
 async def test_cmd_line_action_returns_key(bootstrapped_client, user):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/agentic_process/{pid}/cmd-line"
     )
@@ -472,14 +456,14 @@ async def test_cmd_line_action_returns_key(bootstrapped_client, user):
 
 @pytest.mark.asyncio
 async def test_add_dir_then_remove_dir(bootstrapped_client, user, tmp_path):
-    pid = await _create(bootstrapped_client)
+    pid = await create_agentic_process(bootstrapped_client)
     base = f"/api/v1/graph/agentic_process/{pid}"
     extra = str(tmp_path)
 
     ra = await bootstrapped_client.post(f"{base}/add-dir", json={"path": extra})
     assert ra.status_code == 200, ra.text
-    assert extra in (await _get(bootstrapped_client, pid))["additional_dirs"]
+    assert extra in (await get_agentic_process(bootstrapped_client, pid))["additional_dirs"]
 
     rr = await bootstrapped_client.post(f"{base}/remove-dir", json={"path": extra})
     assert rr.status_code == 200, rr.text
-    assert extra not in ((await _get(bootstrapped_client, pid))["additional_dirs"] or [])
+    assert extra not in ((await get_agentic_process(bootstrapped_client, pid))["additional_dirs"] or [])

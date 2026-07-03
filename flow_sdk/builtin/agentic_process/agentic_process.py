@@ -10,6 +10,7 @@ implementing the ``WorkerDriver`` Protocol and registering with ``get_driver``.
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import logging
 import time
@@ -150,7 +151,7 @@ EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "agent"]
 # ── prompt-action transient state (per-process locks + live workers) ─────────
 # Keyed by agentic_process.id. Lost on hub restart — acceptable, callers retry.
 # Drivers register their in-flight worker here so cancel-prompt can find it.
-_PROMPT_LOCKS: dict[str, asyncio.Lock] = {}
+_PROMPT_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 _PROMPT_WORKERS: dict[str, Any] = {}
 
 # Accepted per-turn ``permission_mode`` overrides (e.g. chat plan mode). Mirrors
@@ -162,11 +163,11 @@ _VALID_PERMISSION_MODES = frozenset(
 
 # Per-process serialization for the ``open``/``start`` lifecycle so two
 # concurrent refresh-driven calls can't both run recovery on the same process.
-_OPEN_LOCKS: dict[str, asyncio.Lock] = {}
+_OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
 # Per-process serialization for prompt-queue drains so two ready edges can't
 # pop+inject the same head twice.
-_QUEUE_LOCKS: dict[str, asyncio.Lock] = {}
+_QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
 
 # Worker statuses for which an OS-pid liveness reconciliation is meaningful.
@@ -233,30 +234,6 @@ def _shell_worker_pid_alive(shell_id: str) -> bool:
         return True
     except Exception:
         return True
-
-
-def _get_prompt_lock(process_id: str) -> asyncio.Lock:
-    lock = _PROMPT_LOCKS.get(process_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _PROMPT_LOCKS[process_id] = lock
-    return lock
-
-
-def _get_open_lock(process_id: str) -> asyncio.Lock:
-    lock = _OPEN_LOCKS.get(process_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _OPEN_LOCKS[process_id] = lock
-    return lock
-
-
-def _get_queue_lock(process_id: str) -> asyncio.Lock:
-    lock = _QUEUE_LOCKS.get(process_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _QUEUE_LOCKS[process_id] = lock
-    return lock
 
 
 async def _read_json_body() -> dict | ApiFailResponse:
@@ -894,7 +871,7 @@ class AgenticProcess(Entity):
         (e.g. two browser tabs) can't both run recovery from stale process
         snapshots and double-spawn Claude.
         """
-        async with _get_open_lock(self.id):
+        async with _OPEN_LOCKS[self.id]:
             fresh = await AgenticProcess.get_by_id(self.id)
             if fresh is None and not self.exist_in_db:
                 await self.save()
@@ -1087,7 +1064,7 @@ class AgenticProcess(Entity):
             # the enqueue drain from cold-starting visible processes, so nothing
             # competes for the head.
             if instruction is None:
-                async with _get_queue_lock(self.id):
+                async with _QUEUE_LOCKS[self.id]:
                     q = self.queue
                     state = q.read()
                     if state.get("enabled", True) and state.get("entries"):
@@ -1308,6 +1285,20 @@ class AgenticProcess(Entity):
             }
         )
 
+    def _reject_if_turn_in_flight(self) -> ApiFailResponse | None:
+        """409 when a prompt turn holds the per-process lock, else ``None``.
+
+        Spawning or tearing down a worker mid-turn would put two workers on one
+        transcript (or drop the in-flight turn), so ``switch-mode`` (both
+        directions) and ``restart`` reject while the lock is held.
+        """
+        if _PROMPT_LOCKS[self.id].locked():
+            return ApiFailResponse(
+                message="a prompt turn is in flight",
+                status_code=409,
+            )
+        return None
+
     @action.post(action_name="switch-mode")
     async def switch_mode(self) -> ApiSuccessResponse | ApiFailResponse:
         """Standardized transport switch — the single backend seam the frontend
@@ -1336,11 +1327,8 @@ class AgenticProcess(Entity):
         # Mid-turn guard for BOTH directions (hoisted from _enter_cli_mode): a
         # switch that spawns/kills a worker while a prompt turn is in flight would
         # put two workers on one transcript.
-        if _get_prompt_lock(self.id).locked():
-            return ApiFailResponse(
-                message="a prompt turn is in flight; cannot switch mode",
-                status_code=409,
-            )
+        if (resp := self._reject_if_turn_in_flight()) is not None:
+            return resp
         if mode is WorkerMode.CLI:
             return await self._enter_cli_mode()
         # INTERACTIVE (PTY): the canonical open path — spawns the PTY and sets
@@ -1356,11 +1344,8 @@ class AgenticProcess(Entity):
         mid-turn (409): tearing the worker down while a prompt turn is in flight
         would drop the in-flight turn.
         """
-        if _get_prompt_lock(self.id).locked():
-            return ApiFailResponse(
-                message="a prompt turn is in flight; cannot restart",
-                status_code=409,
-            )
+        if (resp := self._reject_if_turn_in_flight()) is not None:
+            return resp
         exit_result = await self.exit()
         if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
             return exit_result
@@ -1702,7 +1687,7 @@ class AgenticProcess(Entity):
         ready edge can never re-inject it. Runs under a per-process lock.
         """
         q = self.queue
-        async with _get_queue_lock(self.id):
+        async with _QUEUE_LOCKS[self.id]:
             state = q.read()
             if not state.get("enabled", True) or not state.get("entries"):
                 q.log("drain_check", source, reason="empty_or_disabled")
@@ -1813,6 +1798,82 @@ class AgenticProcess(Entity):
             await self.save()
             await self.notify_updated()
         return ApiSuccessResponse(data={"id": self.id, "visible": self.visible})
+
+    # ── Show (display focus) ──────────────────────────────────────────────────
+
+    async def on_show(self, payload: dict) -> None:
+        """Present *payload* to this process's watchers — the ``flow show`` verb.
+
+        Unlike ``flow navigate`` (which steers the browser tab's URL via a
+        ``ui_command``), show is declarative display focus: an ``on_show``
+        entity event to whoever watches this process (the vibe display pane,
+        the standard-mode viewer). Nothing watching → a silent context change;
+        that is the intended semantics, not a failure.
+        """
+        await self.emit_entity_event("on_show", payload)
+
+    @action.post(action_name="show")
+    async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Resolve a show target — ``{typeid}`` | ``{path}`` | ``{port}`` — and emit it.
+
+        Resolution mirrors ``/agent/navigate/file``: a path that is an indexed
+        asset resolves to its entity (stable editor view); an unknown path
+        falls back to a raw vfs pointer; a port is a webapp preview.
+        """
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+
+        typeid_raw = str(body.get("typeid") or "").strip()
+        path_raw = str(body.get("path") or "").strip()
+        port = body.get("port")
+
+        if typeid_raw:
+            try:
+                tid = TypeId(typeid_raw)
+            except (ValueError, IndexError) as e:
+                return ApiFailResponse(message=f"Invalid typeid '{typeid_raw}': {e}", status_code=400)
+            try:
+                entity = await Entity.get_by_typeid(tid)
+            except ValueError:
+                entity = None  # unknown type collapses to "not found", like navigate
+            if entity is None:
+                return ApiFailResponse(message=f"Entity not found: {typeid_raw}", status_code=404)
+            payload = {
+                "kind": "entity",
+                "typeid": f"{entity.get_type()}-{entity.id}",
+                "type": entity.get_type(),
+                "id": entity.id,
+            }
+        elif path_raw:
+            import os  # noqa: PLC0415
+
+            from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+            path = canonical_posix_path(os.path.abspath(os.path.expanduser(path_raw)))
+            entity = await Entity.get_by_asset_ref(path)
+            if entity is not None and getattr(entity, "id", None):
+                payload = {
+                    "kind": "entity",
+                    "typeid": f"{entity.get_type()}-{entity.id}",
+                    "type": entity.get_type(),
+                    "id": entity.id,
+                    "path": path,
+                }
+            else:
+                payload = {"kind": "vfs", "path": path}
+        elif port is not None:
+            try:
+                payload = {"kind": "webapp", "port": int(port)}
+            except (TypeError, ValueError):
+                return ApiFailResponse(message=f"Invalid port: {port!r}", status_code=400)
+        else:
+            return ApiFailResponse(
+                message="Body must include one of: typeid, path, port", status_code=400
+            )
+
+        await self.on_show(payload)
+        return ApiSuccessResponse(data=payload)
 
     # ── Execution ─────────────────────────────────────────────────────────────
 
@@ -2201,7 +2262,7 @@ class AgenticProcess(Entity):
                 status_code=409,
             )
 
-        lock = _get_prompt_lock(self.id)
+        lock = _PROMPT_LOCKS[self.id]
         if lock.locked():
             return ApiFailResponse(
                 message="another prompt turn is already in flight for this process",
@@ -2267,10 +2328,9 @@ class AgenticProcess(Entity):
             add_dirs=list(self.resolved_add_dirs or []),
             session_id=self.session_id if (self.session_id and not resumable) else None,
             resume_session_id=self.session_id if resumable else None,
-            # ContextProcess §2.4: fold the bound context summary into the
-            # worker's system prompt (maps to system_prompt.append). Resolved
-            # from the saved GraphContext; "" when no context is bound.
-            instructions=(await self.resolve_context_summary()) or None,
+            # System-prompt append: caller instructions (context_data) merged
+            # with the bound GraphContext summary. None when both are empty.
+            instructions=await self.resolve_system_instructions(),
         )
 
         # Inline embedded-agent definitions (and persona directive when a single
@@ -2395,7 +2455,7 @@ class AgenticProcess(Entity):
         from flow_sdk.transcript_analyzer.entry import EntryKind
 
         poll_interval = 0.3
-        lock = _get_prompt_lock(self.id)
+        lock = _PROMPT_LOCKS[self.id]
         worker_type = self.driver.name
 
         # ── Transcript resolution + parsing strategy ────────────────────────
@@ -4076,6 +4136,20 @@ class AgenticProcess(Entity):
             except Exception:  # noqa: BLE001 — skip malformed entries, never block the bind
                 continue
         return self
+
+    async def resolve_system_instructions(self) -> str | None:
+        """The worker's full system-prompt append.
+
+        Merges the caller's standing directions (``context_data.instructions``,
+        set at create time by the SDK) with the bound-context summary
+        (:meth:`resolve_context_summary`). Either part may be empty; ``None``
+        when both are. This is the single source both turn paths (headless
+        driver + inline print-mode) must use — passing only the context
+        summary silently drops caller instructions.
+        """
+        explicit = str((self.context_data or {}).get("instructions") or "").strip()
+        summary = (await self.resolve_context_summary()) or ""
+        return "\n\n".join(p for p in (explicit, summary) if p) or None
 
     async def resolve_context_summary(self) -> str:
         """The bound context as a system-prompt block — resolved at launch.

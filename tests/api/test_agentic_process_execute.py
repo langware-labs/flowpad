@@ -24,9 +24,7 @@ Invariants pinned (README.md Rules):
 from __future__ import annotations
 
 import asyncio
-import json
 import os
-import shlex
 import time
 
 import pytest
@@ -37,6 +35,9 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 )
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
 
+from tests.api.conftest import create_agentic_process, get_agentic_process
+from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
+
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
 
@@ -44,41 +45,18 @@ pytestmark = pytest.mark.timeout(30)
 _FAKE_SID = "fake-session-id"
 
 
-def _fake_stream_build_spawn(lines: list[dict]):
-    """Return a ``_build_spawn`` stub emitting *lines* as stream-json then exit 0."""
-
-    def _stub(self, prompt, context):  # noqa: ANN001 — matches the real signature
-        pieces = []
-        body = context.session_id or context.resume_session_id or _FAKE_SID
-        for obj in lines:
-            payload = dict(obj)
-            payload.setdefault("session_id", body)
-            pieces.append(f"printf '%s\\n' {shlex.quote(json.dumps(payload))}")
-        script = "; ".join(pieces)
-        return ["bash", "-c", script], dict(os.environ)
-
-    return _stub
-
-
-def _fake_hang_build_spawn(seconds: float = 30.0):
-    """Return a ``_build_spawn`` stub whose subprocess just sleeps (in-flight turn)."""
-
-    def _stub(self, prompt, context):  # noqa: ANN001
-        return ["bash", "-c", f"sleep {seconds}"], dict(os.environ)
-
-    return _stub
+def _fake_stream_lines(lines: list[dict]) -> list[dict]:
+    """Stamp the fake session id onto each stream-json line (the worker captures
+    it from the stream) — the headless process is created with no preassigned
+    session id, so this stands in for the fallback the real worker would emit."""
+    return [{**obj, "session_id": _FAKE_SID} for obj in lines]
 
 
 async def _create_headless_process(client, workdir: str) -> str:
-    resp = await client.post(
-        "/api/v1/graph/agentic_process",
-        json={"worker_type": "claude_code", "pty_mode": False, "workdir": workdir},
-    )
-    assert resp.status_code == 200, resp.text
-    data = ApiResponse(**resp.json()).data
+    pid = await create_agentic_process(client, pty_mode=False, workdir=workdir)
     # pty_mode must persist as the transport intent (Rule 1).
-    assert data["pty_mode"] is False, data
-    return data["id"]
+    assert (await get_agentic_process(client, pid))["pty_mode"] is False
+    return pid
 
 
 @pytest.mark.asyncio
@@ -87,16 +65,18 @@ async def test_execute_headless_round_trip_captures_session_id(
 ):
     """``execute`` on a headless process runs a print-mode turn and persists the
     session id the worker reported."""
-    monkeypatch.setattr(
+    patch_build_spawn(
+        monkeypatch,
         ClaudeCLIStreamWorker,
-        "_build_spawn",
-        _fake_stream_build_spawn(
-            [
-                {"type": "system", "subtype": "init"},
-                {"type": "result", "subtype": "success", "is_error": False, "result": "ok"},
-            ]
+        fake_stream_argv(
+            _fake_stream_lines(
+                [
+                    {"type": "system", "subtype": "init"},
+                    {"type": "result", "subtype": "success", "is_error": False, "result": "ok"},
+                ]
+            )
         ),
-        raising=True,
+        env=dict(os.environ),
     )
 
     pid = await _create_headless_process(bootstrapped_client, str(tmp_path))
@@ -137,16 +117,18 @@ async def test_prompt_headless_streams_flowdata_and_end(
 ):
     """The ``prompt`` action streams FlowData chunks for a headless turn and the
     reported session id is persisted onto the entity."""
-    monkeypatch.setattr(
+    patch_build_spawn(
+        monkeypatch,
         ClaudeCLIStreamWorker,
-        "_build_spawn",
-        _fake_stream_build_spawn(
-            [
-                {"type": "system", "subtype": "init"},
-                {"type": "result", "subtype": "success", "is_error": False, "result": "done"},
-            ]
+        fake_stream_argv(
+            _fake_stream_lines(
+                [
+                    {"type": "system", "subtype": "init"},
+                    {"type": "result", "subtype": "success", "is_error": False, "result": "done"},
+                ]
+            )
         ),
-        raising=True,
+        env=dict(os.environ),
     )
 
     pid = await _create_headless_process(bootstrapped_client, str(tmp_path))
@@ -188,8 +170,8 @@ async def test_cancel_prompt_terminates_in_flight_turn(
     bootstrapped_client, user, tmp_path, monkeypatch
 ):
     """``cancel-prompt`` SIGTERMs the in-flight print-mode worker."""
-    monkeypatch.setattr(
-        ClaudeCLIStreamWorker, "_build_spawn", _fake_hang_build_spawn(30.0), raising=True
+    patch_build_spawn(
+        monkeypatch, ClaudeCLIStreamWorker, ["bash", "-c", "sleep 30"], env=dict(os.environ)
     )
 
     pid = await _create_headless_process(bootstrapped_client, str(tmp_path))
