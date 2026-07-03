@@ -9,8 +9,9 @@ import { MiniDesktop } from '@src/components/quick-create';
 import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { useProjects } from '@src/hooks/use-projects';
-import { apiClient, claudeSessionManager, ComputeNode, dataContext, PrefKey, ProcessKind, Project, TypeId } from '@sdk';
+import { apiClient, ComputeNode, dataContext, PrefKey, ProcessKind, Project, TypeId } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -172,29 +173,13 @@ export function HomeLanding() {
   // Get paths from desktop_info
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
 
-  const handleSessionSubmit = (message: string) => {
-    if (!currentProject?.typeId) {
-      notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
-      return;
-    }
-
-    const workdir = currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
-
-    void (async () => {
-      try {
-        const agenticProcess = await claudeSessionManager.createAndStartSession({ workdir }, { instruction: message });
-        void navigation.openShellProcess(agenticProcess.id);
-      } catch (error) {
-        console.error('[HomeLanding] Failed to create session:', error);
-      }
-    })();
-  };
-
-  // Vibe submit — seed a HEADLESS chat process that the VibeWorkspace's side
+  // Home submit — seed a HEADLESS chat process that the VibeWorkspace's side
   // chat attaches to (by the project-TypeId target), with the Flowpad Assistant
-  // mounted so the web-app-builder skill is discoverable. Navigating to the
-  // process's SHELL/agentic_process dock activates it (loader sets the active
-  // process) and flow-page renders the chat↔display split.
+  // mounted so the web-app-builder skill is discoverable. The process dock is
+  // opened with a PAGE-LOCAL `?viewMode=vibe` override (DockPointer viewMode),
+  // so every home-launched session gets the vibe chat↔display workspace BY
+  // DEFAULT — regardless of the user's persisted view mode, and without
+  // touching it: leave the dock and the app is back in the user's own mode.
   //
   // The session is bound to the SDK-shipped `vibe` agent (single embedded
   // agent ⇒ the driver's persona directive on every turn) — the agent body
@@ -242,7 +227,7 @@ export function HomeLanding() {
         // whole turn finishes, and the display must be mounted to catch the
         // agent's live `flow show` (on_show). Then fire the message verbatim —
         // it's a chat; the vibe persona routes building on its own.
-        void navigation.openShellProcess(proc.id);
+        void navigation.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
         proc.prompt(message).catch((e) => console.error('[Vibe] prompt failed', e));
       } catch (error) {
         console.error('[HomeLanding] Failed to start vibe session:', error);
@@ -344,7 +329,7 @@ export function HomeLanding() {
                 placeholder={t`What would you like to work on?`}
                 value={draftPrompt}
                 onChange={setDraftPrompt}
-                onSubmit={(msg) => void handleSessionSubmit(msg)}
+                onSubmit={(msg) => void handleVibeSubmit(msg)}
               />
             </div>
           </div>
