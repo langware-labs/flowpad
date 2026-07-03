@@ -67,9 +67,26 @@ async def resolve_display_target(
 
     if path:
         resolved = canonical_posix_path(os.path.abspath(os.path.expanduser(path)))
-        entity = await Entity.get_by_asset_ref(resolved)
-        if entity is not None and getattr(entity, "id", None):
-            return {**_entity_payload(entity), "path": resolved}
+        for lookup in _asset_lookup_paths(resolved):
+            entity = await Entity.get_by_asset_ref(lookup)
+            if entity is not None and getattr(entity, "id", None):
+                return {**_entity_payload(entity), "path": resolved}
+        rec_type, rec_path = _typed_asset_shape(resolved)
+        if rec_type:
+            # Fresh asset (created seconds ago, not yet indexed): recover it
+            # with the targeted single-file discovery — no tree walks — so the
+            # bespoke editor renders instead of a raw file view.
+            from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
+
+            rec = await discover_record_by_path(rec_type, rec_path)
+            if rec is not None and getattr(rec, "id", None):
+                return {
+                    "kind": DisplayTargetKind.ENTITY,
+                    "typeid": f"{rec_type}-{rec.id}",
+                    "type": rec_type,
+                    "id": str(rec.id),
+                    "path": resolved,
+                }
         return {"kind": DisplayTargetKind.VFS, "path": resolved}
 
     if port is not None:
@@ -79,6 +96,84 @@ async def resolve_display_target(
             raise InvalidDisplayTarget(f"Invalid port: {port!r}") from e
 
     raise InvalidDisplayTarget("Must include one of: typeid, path, port")
+
+
+def _folder_main_files() -> dict[str, str]:
+    """Main-file name → record type, for folder-layout types.
+
+    Derived from the type registry (``TypeInfo.main_layout == "folder"`` +
+    ``main_file``, e.g. skill→SKILL.md, whiteboard→WHITE_BOARD.md) so a new
+    folder-asset type resolves here without touching the display layer.
+    Recomputed per call — 75-type walk is trivial and stays correct across
+    late registrations.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    out: dict[str, str] = {}
+    for type_name in SchemaRegistry.get_all_types():
+        ti = SchemaRegistry.get(type_name)
+        main_file = getattr(ti, "main_file", None)
+        if getattr(ti, "main_layout", None) == "folder" and main_file:
+            out[main_file] = type_name
+    return out
+
+
+def _claude_subdir_file_types() -> dict[str, str]:
+    """``.claude/<subdir>`` → record type, for file-layout types (e.g. agent).
+
+    Constrained to ``.claude/``-rooted subdirs on purpose: broader
+    ``main_subdir`` values (``docs`` etc.) are not unambiguous type claims.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    out: dict[str, str] = {}
+    for type_name in SchemaRegistry.get_all_types():
+        ti = SchemaRegistry.get(type_name)
+        subdir = getattr(ti, "main_subdir", None) or ""
+        if getattr(ti, "main_layout", None) != "folder" and subdir.startswith(".claude/"):
+            out[subdir] = type_name
+    return out
+
+
+def _asset_lookup_paths(resolved: str) -> list[str]:
+    """Paths to try against ``asset_ref``, in order.
+
+    Folder-asset awareness: a folder-layout entity's ``asset_ref`` is its
+    FOLDER, so showing the main file (``SKILL.md`` / ``WHITE_BOARD.md`` / …)
+    must also try the parent directory.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    p = Path(resolved)
+    if p.name in _folder_main_files():
+        return [resolved, str(p.parent)]
+    return [resolved]
+
+
+def _typed_asset_shape(resolved: str) -> tuple[str | None, str]:
+    """Infer (record_type, discovery_path) from a path's shape, or (None, path).
+
+    Only shapes the type registry declares unambiguously are inferred — these
+    drive the targeted fresh-asset discovery above: a folder type's main file
+    (or a dir containing one), and ``.md`` files under a ``.claude/<subdir>``
+    a file type claims (e.g. ``.claude/agents``).
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    p = Path(resolved)
+    folder_mains = _folder_main_files()
+    if p.name in folder_mains:
+        return folder_mains[p.name], str(p.parent)
+    if p.is_dir():
+        for main_file, type_name in folder_mains.items():
+            if (p / main_file).exists():
+                return type_name, resolved
+    if p.suffix == ".md":
+        parent = str(p.parent).replace("\\", "/")
+        for subdir, type_name in _claude_subdir_file_types().items():
+            if parent.endswith("/" + subdir):
+                return type_name, resolved
+    return None, resolved
 
 
 def _entity_payload(entity: Entity) -> dict:

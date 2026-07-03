@@ -71,6 +71,52 @@ class AgenticProcessContextKey(StrEnum):
     WORKER_STARTED_AT = "_worker_started_at"
 
 
+def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
+    """Stamp the standard worker environment — the ONE chokepoint every spawn
+    path (PTY, driver headless, inline print-mode turn) calls.
+
+    * ``FLOWPAD_EXECUTION_SCOPE`` — process identity, so worker `flow`
+      commands (show/record/context/…) resolve their calling process.
+    * ``PATH`` — pinned to this backend's `flow` CLI (version-skew guard,
+      see :func:`flow_cli_env_path`).
+
+    ``setdefault`` semantics for the scope (an explicit override wins);
+    mutates and returns ``env``.
+    """
+    import json as _json  # noqa: PLC0415
+
+    env.setdefault(
+        "FLOWPAD_EXECUTION_SCOPE",
+        _json.dumps([{"type": process.get_type(), "id": process.id}]),
+    )
+    pinned = flow_cli_env_path(env.get("PATH"))
+    if pinned:
+        env["PATH"] = pinned
+    return env
+
+
+def flow_cli_env_path(existing_path: str | None = None) -> str | None:
+    """PATH value that pins the worker's ``flow`` CLI to THIS backend's install.
+
+    Workers shell out to ``flow`` (navigate/show/record/…). Resolved from the
+    inherited PATH, that is typically the globally installed release
+    (``~/.local/bin/flow``), which may predate CLI verbs this backend serves —
+    version skew that silently breaks worker↔backend contracts. The backend's
+    own venv bin dir (``sys.executable``'s directory) carries the matching
+    ``flow``; prepend it so the worker always runs the same CLI version as the
+    backend that spawned it. Returns None when no ``flow`` sits next to the
+    interpreter (e.g. system python) — callers skip the override then.
+    """
+    bin_dir = Path(sys.executable).parent
+    exe = "flow.exe" if sys.platform == "win32" else "flow"
+    if not (bin_dir / exe).exists():
+        return None
+    base = existing_path if existing_path is not None else os.environ.get("PATH", "")
+    if str(bin_dir) == (base.split(os.pathsep, 1)[0] if base else ""):
+        return base  # already first — idempotent across restarts
+    return f"{bin_dir}{os.pathsep}{base}" if base else str(bin_dir)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # AgenticContext — execution context handed to workers
 # ─────────────────────────────────────────────────────────────────────────────

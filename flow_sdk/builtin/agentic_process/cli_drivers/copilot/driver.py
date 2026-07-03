@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    apply_worker_env,
     AgenticContext,
     AgenticProcessContextKey,
     WorkerCLIOptions,
@@ -108,7 +109,7 @@ class CopilotDriver:
         cli_cfg = process.cli_config or {}
         context = AgenticContext(
             workdir=process.workdir,
-            env_vars=dict(cli_cfg.get("env_vars") or {}),
+            env_vars=apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process),
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
             effort=cli_cfg.get("effort"),

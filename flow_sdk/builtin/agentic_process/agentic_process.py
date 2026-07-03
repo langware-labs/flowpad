@@ -34,6 +34,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticProcessContextKey,
     WorkerCLIOptions,
     WorkerDriver,
+    apply_worker_env,
     get_driver,
 )
 from flow_sdk.builtin.agentic_process.heartbeat_tasks import _PENDING_USER_TTL_SECONDS
@@ -1039,11 +1040,9 @@ class AgenticProcess(Entity):
                         cmd.env_vars["CLAUDE_PROJECT_DIR"] = session_rec.cwd
                         cmd.workdir = session_rec.cwd
 
-            # Runtime env injection (process identity for hook routing)
-            cmd.add_env(
-                "FLOWPAD_EXECUTION_SCOPE",
-                json.dumps([{"type": self.get_type(), "id": self.id}]),
-            )
+            # Runtime env injection: process identity + backend-pinned `flow`
+            # CLI — the shared chokepoint all spawn paths use.
+            apply_worker_env(cmd.env_vars, self)
             # Inject the WebSocket connection ID so the worker can navigate its own tab explicitly
             if self.connection_id:
                 cmd.add_env("FLOWPAD_CONNECTION_ID", self.connection_id)
@@ -2289,6 +2288,9 @@ class AgenticProcess(Entity):
             env_vars = dict(self.driver.cli_options(self).env_vars)
         except Exception:
             env_vars = dict((self.cli_config or {}).get("env_vars") or {})
+        # Process identity + backend-pinned `flow` CLI — the shared spawn-env
+        # chokepoint (without it, worker `flow show` fails with NO_PROCESS).
+        apply_worker_env(env_vars, self)
 
         # Context for the worker, reconstructed from the AgenticProcess entity.
         # Non-resumable sessions start fresh WITH the id (workers that accept a

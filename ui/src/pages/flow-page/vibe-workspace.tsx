@@ -2,20 +2,30 @@ import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
+import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { useViewerStore } from '@src/hooks/flow-hooks';
-import { AgenticProcess, dataContext, FlowData, ProcessKind, Project, TypeId, ViewType } from '@sdk';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { editorForPath, editorForType } from '@src/navigation/asset-doc-types';
+import { AgenticProcess, dataContext, FlowData, ProcessKind, Project, TypeId, ViewType, type ShowTarget } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
 interface VibeFocus {
   viewType: ViewType | null;
   path?: string;
   port?: string;
+}
+
+/** Mount the right asset editor for a raw path — shared extension rule
+ *  (`editorForPath`, same as the `navigate_vfs` ui_command handler). */
+function vfsEditorEl(absPath: string, refreshKey?: number) {
+  const pointer = AssetDocPointer.forVfs(editorForPath(absPath), absPath).toPointer();
+  return <AssetEditorRouter key={`${pointer}:${refreshKey ?? 0}`} pointer={pointer} />;
 }
 
 /**
@@ -73,22 +83,77 @@ export function VibeWorkspace() {
   const streamItems = useAgenticProcessStream(activeProcess);
   const focus = useVibeFocus(streamItems);
 
-  // Feed the focused dev-server port into the viewer store — the exact channel
-  // WebappViewer reads (`currentContext.viewerOptions.port`). EDITOR/DIFF get
-  // their data via props (below), so only the port needs the store. This is
-  // store state, not URL state.
+  // Agent-declared display focus (`flow show` → on_show entity event). The
+  // last shown target PINS the display: it outranks the involuntary per-file
+  // write focus noise from the stream. A new show replaces the pin; switching
+  // to another process clears it.
+  const [shown, setShown] = useState<ShowTarget | null>(null);
   useEffect(() => {
+    setShown(null);
+    if (!activeProcess) return;
+    return activeProcess.onShow((payload) => setShown(payload as ShowTarget));
+  }, [activeProcess]);
+
+  // Feed the dev-server port into the viewer store — the exact channel
+  // WebappViewer reads (`currentContext.viewerOptions.port`). A shown webapp
+  // wins over stream focus. This is store state, not URL state.
+  useEffect(() => {
+    if (shown?.kind === 'webapp' && shown.port != null) {
+      setCurrentContext({ viewerOptions: { port: String(shown.port) } });
+      return;
+    }
     if (!focus.viewType) return;
     setCurrentContext({ viewerOptions: focus.port ? { port: focus.port } : {} });
-  }, [focus.viewType, focus.port, setCurrentContext]);
+  }, [shown, focus.viewType, focus.port, setCurrentContext]);
 
   const onRetry = useCallback((msg: string) => void dataContext.agenticProcess?.prompt(msg), []);
 
-  // Preview-first: default to the web app; switch to code/diff when the agent
-  // focuses them. Each viewer self-resolves its data (WebappViewer from the
-  // store/artifacts, CodeEditor from the path).
+  // Display precedence: explicit `flow show` target first (agent-intentional),
+  // then stream focus (write/diff noise), then the webapp preview. Each viewer
+  // self-resolves its data (WebappViewer from the store, AssetEditorRouter
+  // from the pointer, CodeEditor from the path).
+  // Live refresh: remount the shown editor when the agent's turn ends — every
+  // edit happens inside a turn, and the CLI-worker chat stream carries no
+  // per-file write items, so the turn edge is the refresh signal. Chat turns
+  // end at `pending_user` (not COMPLETE — that's the one-shot execute path),
+  // so listen on the workerStatus EDGE into any idle state rather than the
+  // 'complete' event. Tradeoff (accepted): a remount drops unsaved in-editor
+  // user edits; the editors autosave within ~2s, so the window is small.
+  const [refreshStamp, setRefreshStamp] = useState(0);
+  useEffect(() => {
+    setRefreshStamp(0);
+    if (!activeProcess) return;
+    return activeProcess.on('state_change', (change: { field?: string; newValue?: string }) => {
+      if (change?.field !== 'workerStatus') return;
+      if (change.newValue === 'pending_user' || change.newValue === 'complete') {
+        setRefreshStamp((s) => s + 1);
+      }
+    });
+  }, [activeProcess]);
+
   const displayEl = useMemo(() => {
     const preview = <WebappViewer onWebappErrorRetry={onRetry} />;
+
+    if (shown) {
+      switch (shown.kind) {
+        case 'webapp':
+          return preview;
+        case 'entity': {
+          const editor = shown.type ? editorForType(shown.type) : undefined;
+          if (editor && shown.typeid) {
+            const pointer = AssetDocPointer.forTypeId(editor, new TypeId(shown.typeid)).toPointer();
+            return <AssetEditorRouter key={`${pointer}:${refreshStamp}`} pointer={pointer} />;
+          }
+          // Type without a bespoke editor — fall back to the raw file view.
+          if (shown.path) return vfsEditorEl(shown.path, refreshStamp);
+          break;
+        }
+        case 'vfs':
+          if (shown.path) return vfsEditorEl(shown.path, refreshStamp);
+          break;
+      }
+    }
+
     switch (focus.viewType) {
       case ViewType.EDITOR:
         return <CodeEditor activePath={focus.path} readOnly />;
@@ -98,7 +163,7 @@ export function VibeWorkspace() {
       default:
         return preview;
     }
-  }, [focus.viewType, focus.path, onRetry]);
+  }, [shown, refreshStamp, focus.viewType, focus.path, onRetry]);
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full w-full">
