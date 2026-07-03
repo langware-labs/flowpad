@@ -96,6 +96,11 @@ export function VibeWorkspace() {
   // write focus noise from the stream. A new show replaces the pin; switching
   // to another process clears it.
   const [shown, setShown] = useState<ShowTarget | null>(null);
+  // Bumped on every `flow show` — even for the SAME webapp port. The iframe
+  // registry keys by src (get-host?port=N), so a same-port re-show reuses the
+  // cached iframe and shows stale content after a rebuild; feeding this as the
+  // frame's cacheKey forces a reload on each show.
+  const [showNonce, setShowNonce] = useState(0);
   useEffect(() => {
     if (!activeProcess) {
       setShown(null);
@@ -107,7 +112,10 @@ export function VibeWorkspace() {
     const lastShown = (activeProcess.context_data as { last_shown?: ShowTarget } | undefined)
       ?.last_shown;
     setShown(lastShown ?? null);
-    return activeProcess.onShow((payload) => setShown(payload as ShowTarget));
+    return activeProcess.onShow((payload) => {
+      setShown(payload as ShowTarget);
+      setShowNonce((n) => n + 1);
+    });
   }, [activeProcess]);
 
   // Feed the dev-server port into the viewer store — the exact channel
@@ -188,7 +196,10 @@ export function VibeWorkspace() {
               <PersistentIframe
                 ref={webappFrameRef}
                 src={webAppConfig.host}
-                cacheKey={webAppConfig.cacheKey}
+                // Reload on each re-show (same-port stale guard) AND on the
+                // agent's turn-end (rebuild picked up) — the registry keys the
+                // iframe by src, so a changing cacheKey is what forces a reload.
+                cacheKey={showNonce + refreshStamp}
                 onErrorRetry={() => onRetry(t`The web app is not working, please try to fix it.`)}
               />
             </DisplayToolbar>
@@ -230,7 +241,7 @@ export function VibeWorkspace() {
       default:
         return preview;
     }
-  }, [shown, refreshStamp, focus.viewType, focus.path, onRetry, webAppConfig, webappPort, t]);
+  }, [shown, showNonce, refreshStamp, focus.viewType, focus.path, onRetry, webAppConfig, webappPort, t]);
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full w-full">
