@@ -3,17 +3,25 @@ import { WebappViewer } from '@src/components/webapp-viewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
+import PersistentIframe, { PersistentIframeHandle } from '@src/components/persistent-iframe';
+import { DisplayToolbar, WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
-import { useViewerStore } from '@src/hooks/flow-hooks';
+import { useViewerStore, useProcessWebApp } from '@src/hooks/flow-hooks';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath, editorForType } from '@src/navigation/asset-doc-types';
 import { AgenticProcess, dataContext, FlowData, ProcessKind, Project, TypeId, ViewType, type ShowTarget } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
+
+/** Standalone URL for an asset/file pointer — opens the thing in its own dock
+ *  in a new browser tab (the generic "open externally" for non-webapp items). */
+function assetExternalUrl(ptr: AssetDocPointer): string {
+  return window.location.origin + ptr.toDockPointer().toUrl();
+}
 
 interface VibeFocus {
   viewType: ViewType | null;
@@ -89,8 +97,16 @@ export function VibeWorkspace() {
   // to another process clears it.
   const [shown, setShown] = useState<ShowTarget | null>(null);
   useEffect(() => {
-    setShown(null);
-    if (!activeProcess) return;
+    if (!activeProcess) {
+      setShown(null);
+      return;
+    }
+    // Restore the persisted pin (context_data.last_shown) so a display mounted
+    // AFTER the agent's `flow show` (page reload, late-opened tab) still lands
+    // on the deliverable — the on_show entity event has no replay.
+    const lastShown = (activeProcess.context_data as { last_shown?: ShowTarget } | undefined)
+      ?.last_shown;
+    setShown(lastShown ?? null);
     return activeProcess.onShow((payload) => setShown(payload as ShowTarget));
   }, [activeProcess]);
 
@@ -107,6 +123,16 @@ export function VibeWorkspace() {
   }, [shown, focus.viewType, focus.port, setCurrentContext]);
 
   const onRetry = useCallback((msg: string) => void dataContext.agenticProcess?.prompt(msg), []);
+
+  // Webapp host — resolved from the shown port (no artifact needed) so the
+  // display can mount a BARE iframe under the two-tier toolbar instead of the
+  // artifact-driven WebappViewer. Hooks run unconditionally; null port → ''.
+  const webappPort = useMemo(
+    () => (shown?.kind === 'webapp' && shown.port != null ? String(shown.port) : null),
+    [shown],
+  );
+  const webAppConfig = useProcessWebApp(activeProcess, webappPort);
+  const webappFrameRef = useRef<PersistentIframeHandle>(null);
 
   // Display precedence: explicit `flow show` target first (agent-intentional),
   // then stream focus (write/diff noise), then the webapp preview. Each viewer
@@ -132,38 +158,79 @@ export function VibeWorkspace() {
   }, [activeProcess]);
 
   const displayEl = useMemo(() => {
+    // Fallback (nothing explicitly shown): the artifact-driven WebappViewer,
+    // which carries its own chrome — left unwrapped.
     const preview = <WebappViewer onWebappErrorRetry={onRetry} />;
+
+    // A shown viewer under the two-tier toolbar: per-type toolbar (left) +
+    // generic "open externally" (right).
+    const wrapAsset = (path: string, node: React.ReactNode) => (
+      <DisplayToolbar externalUrl={assetExternalUrl(AssetDocPointer.forVfs(editorForPath(path), path))}>
+        {node}
+      </DisplayToolbar>
+    );
 
     if (shown) {
       switch (shown.kind) {
         case 'webapp':
-          return preview;
+          if (!webAppConfig.host) return preview;
+          return (
+            <DisplayToolbar
+              externalUrl={webAppConfig.host}
+              perType={
+                <WebappDisplayToolbar
+                  host={webAppConfig.host}
+                  port={webappPort ?? ''}
+                  onRefresh={() => webappFrameRef.current?.refresh()}
+                />
+              }
+            >
+              <PersistentIframe
+                ref={webappFrameRef}
+                src={webAppConfig.host}
+                cacheKey={webAppConfig.cacheKey}
+                onErrorRetry={() => onRetry(t`The web app is not working, please try to fix it.`)}
+              />
+            </DisplayToolbar>
+          );
         case 'entity': {
           const editor = shown.type ? editorForType(shown.type) : undefined;
           if (editor && shown.typeid) {
-            const pointer = AssetDocPointer.forTypeId(editor, new TypeId(shown.typeid)).toPointer();
-            return <AssetEditorRouter key={`${pointer}:${refreshStamp}`} pointer={pointer} />;
+            const ptr = AssetDocPointer.forTypeId(editor, new TypeId(shown.typeid));
+            return (
+              <DisplayToolbar externalUrl={assetExternalUrl(ptr)}>
+                <AssetEditorRouter key={`${ptr.toPointer()}:${refreshStamp}`} pointer={ptr.toPointer()} />
+              </DisplayToolbar>
+            );
           }
           // Type without a bespoke editor — fall back to the raw file view.
-          if (shown.path) return vfsEditorEl(shown.path, refreshStamp);
+          if (shown.path) return wrapAsset(shown.path, vfsEditorEl(shown.path, refreshStamp));
           break;
         }
         case 'vfs':
-          if (shown.path) return vfsEditorEl(shown.path, refreshStamp);
+          if (shown.path) return wrapAsset(shown.path, vfsEditorEl(shown.path, refreshStamp));
           break;
       }
     }
 
     switch (focus.viewType) {
       case ViewType.EDITOR:
-        return <CodeEditor activePath={focus.path} readOnly />;
+        return focus.path
+          ? wrapAsset(focus.path, <CodeEditor activePath={focus.path} readOnly />)
+          : preview;
       case ViewType.DIFF:
-        return focus.path ? <DiffViewer checkpoint_hash={focus.path} /> : preview;
+        return focus.path ? (
+          <DisplayToolbar>
+            <DiffViewer checkpoint_hash={focus.path} />
+          </DisplayToolbar>
+        ) : (
+          preview
+        );
       case ViewType.WEB_APP:
       default:
         return preview;
     }
-  }, [shown, refreshStamp, focus.viewType, focus.path, onRetry]);
+  }, [shown, refreshStamp, focus.viewType, focus.path, onRetry, webAppConfig, webappPort, t]);
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full w-full">
