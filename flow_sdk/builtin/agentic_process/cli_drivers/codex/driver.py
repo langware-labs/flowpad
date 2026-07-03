@@ -134,7 +134,7 @@ class CodexDriver:
             resume_session_id=process.session_id if self.has_resumable_session(process) else None,
             # ContextProcess §2.4: fold the bound context summary into the system
             # prompt. Generic across vendors; "" when no context is bound.
-            instructions=(await process.resolve_context_summary()) or None,
+            instructions=await process.resolve_system_instructions(),
         )
 
         worker = CodexCLIStreamWorker.for_process(process.id)

@@ -965,6 +965,9 @@ app.add_typer(compute_app, name="compute")
 from flow_sdk.cli.commands.navigate_cmd import navigate_app
 app.add_typer(navigate_app, name="navigate")
 
+from flow_sdk.cli.commands.show_cmd import show_app
+app.add_typer(show_app, name="show")
+
 from flow_sdk.cli.commands.context_cmd import context_app
 app.add_typer(context_app, name="context")
 

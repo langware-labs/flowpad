@@ -117,7 +117,7 @@ class CopilotDriver:
             resume_session_id=process.session_id if resumable else None,
             # ContextProcess §2.4: fold the bound context summary into the system
             # prompt. Generic across vendors; "" when no context is bound.
-            instructions=(await process.resolve_context_summary()) or None,
+            instructions=await process.resolve_system_instructions(),
         )
 
         worker = CopilotCLIStreamWorker.for_process(process.id)

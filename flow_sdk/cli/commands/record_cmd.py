@@ -24,6 +24,7 @@ from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
     fail as _fail,
     ok as _ok,
+    post_graph_json as _post_graph_json,
 )
 
 
@@ -317,30 +318,21 @@ def _post_json(
 ) -> dict:
     """POST JSON to a graph endpoint and return its ``data`` envelope.
 
-    Any transport / parse / non-SUCCESS response routes through ``_fail`` (which
-    exits). Pass ``not_found_hint`` to map a 404 to ``EXIT_NOT_FOUND`` with that
-    message; omit it to let a 404 fall through to the generic action-failed path.
+    Transport/parse handling is the shared ``post_graph_json``; this wrapper
+    only supplies record's exit contract. Pass ``not_found_hint`` to map a 404
+    to ``EXIT_NOT_FOUND`` with that message; omit it to let a 404 fall through
+    to the generic action-failed path.
     """
-    try:
-        resp = requests.post(url, json=payload or {}, timeout=timeout)
-    except requests.exceptions.RequestException as e:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
-        raise  # unreachable
-    try:
-        body = resp.json()
-    except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
-        raise  # unreachable
-
-    if resp.status_code == 404 and not_found_hint is not None:
-        _fail(EXIT_NOT_FOUND, "NOT_FOUND", not_found_hint)
-    if resp.status_code != 200 or body.get("status") != "SUCCESS":
+    def _on_error(status_code: int, body: dict) -> None:
+        if status_code == 404 and not_found_hint is not None:
+            _fail(EXIT_NOT_FOUND, "NOT_FOUND", not_found_hint)
         _fail(
             EXIT_ACTION_FAILED,
             str(body.get("error_code") or "ACTION_FAILED"),
-            str(body.get("message") or body.get("error") or f"HTTP {resp.status_code}"),
+            str(body.get("message") or body.get("error") or f"HTTP {status_code}"),
         )
-    return body.get("data") or {}
+
+    return _post_graph_json(url, payload, timeout=timeout, on_error=_on_error)
 
 
 def _post_action(action_name: str, typeid_raw: str, payload: Optional[dict] = None) -> dict:
