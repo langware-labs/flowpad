@@ -18,6 +18,7 @@ import {
   withSideWindowsOptions,
   type SideWindowsState,
 } from '@src/lib/side-windows';
+import type { ViewMode } from '@src/contexts/view-mode-context';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -28,6 +29,11 @@ import {
  * which is not a dock URL).
  */
 export const HIGHLIGHT_PARAM = 'highlight';
+export const VIEW_MODE_PARAM = 'viewMode';
+
+function isViewMode(value: string | undefined): value is ViewMode {
+  return value === 'vibe' || value === 'standard' || value === 'advanced' || value === 'dev';
+}
 
 /**
  * Lens pointer structure for sub-routing within lens viewer
@@ -168,6 +174,24 @@ export class DockPointer implements IDockPointer {
       { ...this.options, [HIGHLIGHT_PARAM]: wikiword },
       this.layout,
     );
+  }
+
+  /**
+   * Page-local view-mode override carried by the URL. This never represents the
+   * user's persisted default; consumers combine it with PrefKey.VIEW_MODE in the
+   * view-mode context.
+   */
+  get viewMode(): ViewMode | null {
+    const value = this.options?.[VIEW_MODE_PARAM];
+    return isViewMode(value) ? value : null;
+  }
+
+  /** Clone this dock with a page-local view-mode override, or remove it with null. */
+  withViewMode(mode: ViewMode | null): DockPointer {
+    const nextOptions = { ...(this.options ?? {}) };
+    if (mode) nextOptions[VIEW_MODE_PARAM] = mode;
+    else delete nextOptions[VIEW_MODE_PARAM];
+    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout);
   }
 
   /**
