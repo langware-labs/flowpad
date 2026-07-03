@@ -11,7 +11,7 @@ import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useProjects } from '@src/hooks/use-projects';
-import { apiClient, claudeSessionManager, ComputeNode, dataContext, PrefKey, ProcessKind, Project, TypeId } from '@sdk';
+import { apiClient, ComputeNode, dataContext, PrefKey, ProcessKind, Project, TypeId } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -173,27 +173,12 @@ export function HomeLanding() {
   // Get paths from desktop_info
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
 
-  const handleSessionSubmit = (message: string) => {
-    if (!currentProject?.typeId) {
-      notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
-      return;
-    }
-
-    const workdir = currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
-
-    void (async () => {
-      try {
-        const agenticProcess = await claudeSessionManager.createAndStartSession({ workdir }, { instruction: message });
-        // Open the process dock with the PAGE-LOCAL `?viewMode=vibe` override
-        // (DockPointer viewMode): the home-launched session presents in the
-        // vibe workspace by default without touching the user's persisted
-        // view mode — leaving the dock returns to it.
-        void navigation.openShellProcess(agenticProcess.id, { viewMode: ViewMode.Vibe });
-      } catch (error) {
-        console.error('[HomeLanding] Failed to create session:', error);
-      }
-    })();
-  };
+  // Home submit opens its session in the vibe workspace (see the viewMode flag
+  // on openShellProcess below), which hosts a HEADLESS project-Chat process —
+  // not a PTY terminal. So the home session must BE that process model, else
+  // the vibe chat can't attach to it and the prompt never runs. Delegate to
+  // the vibe seed rather than the old PTY `createAndStartSession` path.
+  const handleSessionSubmit = (message: string) => handleVibeSubmit(message);
 
   // Vibe submit — seed a HEADLESS chat process that the VibeWorkspace's side
   // chat attaches to (by the project-TypeId target), with the Flowpad Assistant
