@@ -7,9 +7,8 @@ import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-
 import { sdkConfig } from '@sdk/config/index';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
-import { useCloudStatus, useContext } from '@sdk/react/hooks';
+import { useContext } from '@sdk/react/hooks';
 import { useMinimizeOnClose } from '@src/hooks/use-minimize-on-close';
-import { isHubConnected } from '@sdk/services/cloud_status';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Check,
@@ -285,12 +284,6 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const isDev = useIsDev();
   const context = useContext();
   const instanceName = context?.instanceName;
-
-  // Diagnosis runs a headless AI agent that needs an internet connection; gate the
-  // trigger on cloud reachability (a good proxy for "online") so a click while
-  // offline can't fail with a misleading "no transcript" error.
-  const { connection } = useCloudStatus();
-  const online = isHubConnected(connection.status);
 
   const electronApi = getElectronApi();
   const mode: 'Desktop' | 'Browser' = electronApi ? 'Desktop' : 'Browser';
@@ -705,12 +698,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               type="button"
               size="sm"
               className="w-full"
-              disabled={!online}
               onClick={() => {
                 setOpen(false);
                 setDiagnoseOpen(true);
               }}
-              title={online ? t`Diagnose a Flowpad issue` : t`Diagnosis needs an internet connection — you appear to be offline`}
+              title={t`Diagnose a Flowpad issue`}
             >
               <Stethoscope />
               <span><Trans>Diagnose</Trans></span>
