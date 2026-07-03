@@ -80,36 +80,36 @@ export function Footer({ className = '' }: FooterProps) {
     <footer
       data-testid="footer"
       data-minimize-anchor="footer"
-      className={`relative z-10 w-full border-t bg-background/95 px-6 py-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60 ${className}`}
+      className={`relative z-10 w-full overflow-hidden border-t bg-background/95 px-3 py-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60 sm:px-6 ${className}`}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap sm:justify-between">
         {/* View toggle + Data-privacy mode + Warnings icons on the left */}
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <ViewToggle />
           <PrivacyModePopover />
           <WarningsPopover />
         </div>
 
         {/* Status bar with project name */}
-        <StatusBar className="ml-4" />
+        <StatusBar className="min-w-0 flex-1 sm:ml-4" />
 
         {/* Repo info centered in the available space */}
-        <div className="flex-1 text-center">
+        <div className="hidden min-w-0 flex-1 text-center md:block">
           {isLoadingArtifacts ? (
             <FusionSpinner size="xs" />
           ) : repoInfo?.noRepo ? (
-            <div className="font-mono text-[10px] text-muted-foreground">
+            <div className="truncate font-mono text-[10px] text-muted-foreground">
               <Trans>(no git repo)</Trans>
             </div>
           ) : repoInfo ? (
-            <div className="font-mono text-[10px] text-muted-foreground">
+            <div className="truncate font-mono text-[10px] text-muted-foreground">
               {repoInfo.isZip ? repoInfo.url : `${repoInfo.url}:${repoInfo.branch}`}
             </div>
           ) : null}
         </div>
 
         {/* Version + Powered by on the right */}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex w-full min-w-0 items-center justify-end gap-1 overflow-hidden sm:ml-auto sm:w-auto sm:flex-none sm:gap-2">
           <PendingActionsChip />
           <AdvancedOnly reserve={false}>
             <IndexerStatusPill />
@@ -117,25 +117,25 @@ export function Footer({ className = '' }: FooterProps) {
           <button
             type="button"
             onClick={() => navigation.openDock(DockPointer.forProject(`@${FLOWPAD_ASSISTANT_PROJECT_UNAME}`))}
-            className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             title={t`Open Flowpad docs`}
             aria-label={t`Flowpad docs`}
           >
             <BookOpen className="h-3.5 w-3.5" />
-            <span><Trans>Flowpad docs</Trans></span>
+            <span className="hidden md:inline"><Trans>Flowpad docs</Trans></span>
           </button>
           <button
             type="button"
             onClick={() => setShowCommunityAssistance(true)}
-            className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-violet-600 transition-colors hover:bg-accent hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
+            className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] text-violet-600 transition-colors hover:bg-accent hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
             title={t`Community assistance`}
             aria-label={t`Community assistance`}
           >
             <Users className="h-3.5 w-3.5" />
-            <span><Trans>Community assistance</Trans></span>
+            <span className="hidden lg:inline"><Trans>Community assistance</Trans></span>
           </button>
           {version && <VersionPopover currentVersion={version} />}
-          <PoweredBy />
+          <PoweredBy className="hidden lg:flex" />
           <LanguageSelector />
         </div>
       </div>

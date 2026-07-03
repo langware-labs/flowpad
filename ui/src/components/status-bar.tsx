@@ -78,7 +78,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
   if (!project) {
     return (
       <>
-        <div className={`flex items-center gap-2 ${className}`}>
+        <div className={`flex min-w-0 items-center gap-2 ${className}`}>
           <button
             type="button"
             onClick={openProjectModal}
@@ -107,19 +107,19 @@ export function StatusBar({ className = '' }: StatusBarProps) {
   return (
     <>
       {isRoot && <style>{ROOT_GLOW_STYLE}</style>}
-      <div className={`flex items-center gap-2 ${className}`}>
+      <div className={`flex min-w-0 items-center gap-2 ${className}`}>
         <button
           onClick={openProjectModal}
-          className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] transition-colors hover:bg-accent hover:text-foreground"
+          className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] transition-colors hover:bg-accent hover:text-foreground"
           style={isRoot ? { ...glowStyle, color: undefined } : { color: 'var(--muted-foreground)' }}
           title={isRoot ? rootTooltip : t`Switch project`}
         >
           <ArrowLeftRight className="h-3 w-3 shrink-0" />
-          <span style={glowStyle}><Trans>Switch Project</Trans></span>
+          <span className="hidden sm:inline" style={glowStyle}><Trans>Switch Project</Trans></span>
         </button>
         <button
           onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
-          className="text-xs font-medium transition-colors hover:underline"
+          className="min-w-0 max-w-[10rem] truncate text-xs font-medium transition-colors hover:underline sm:max-w-[16rem]"
           style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
           title={isRoot ? rootTooltip : projectPath ? t`Open project view — ${projectPath}` : t`Open project view`}
         >
