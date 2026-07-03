@@ -996,7 +996,8 @@ class LocalComputeProvider(ComputeProvider):
             data: Bytes to send to the PTY
             cols: Number of columns for the PTY
             rows: Number of rows for the PTY
-            _retry_count: Internal retry count for handling dead processes
+            _retry_count: Legacy parameter, retained for signature stability. A
+                dead PTY is surfaced (raise), never retried/respawned here.
         """
         pty_key = (provider_node_id, session_id)
         if pty_key not in self._pty_processes:
@@ -1004,23 +1005,16 @@ class LocalComputeProvider(ComputeProvider):
 
         pty_info = self._pty_processes[pty_key]
         process = pty_info["process"]  # type: ignore[assignment]
-        on_output = pty_info.get("on_output")
 
-        # Validate process is still alive
+        # Validate process is still alive. A dead PTY is surfaced (raise), NOT
+        # respawned here: recreating via get_or_create_pty_session would spawn a
+        # default $SHELL WITHOUT the worker's spawn_args (a bare shell over the
+        # agent's session). Respawn is owned solely by _perform_open / start_pty /
+        # pty_recovery (interface invariant #7) — they hold spawn_args + the
+        # per-shell open lock.
         if not process.isalive():
-            logger.info(f"[LOCAL] PTY process died (PID {process.pid}), cleaning up and restarting: {session_id}")
-
-            # Store the on_output callback before cleanup
+            logger.info(f"[LOCAL] PTY process died (PID {process.pid}), cleaning up: {session_id}")
             await self._cleanup_dead_pty_session(pty_key, "process died before sending input")
-
-            # Retry once by creating a new PTY session
-            if _retry_count < 1 and on_output is not None:
-                logger.info(f"[LOCAL] Restarting PTY session and retrying input: {session_id}")
-                # Recreate the PTY session with the same callback
-                await self.get_or_create_pty_session(provider_node_id, session_id, on_output, rows, cols)
-                # Retry the input operation
-                return await self.send_pty_input(provider_node_id, session_id, data, cols, rows, _retry_count + 1)
-
             raise RuntimeError(
                 f"PTY process died (PID {process.pid}). Session cleaned up: {provider_node_id}:{session_id}"
             )
@@ -1041,18 +1035,10 @@ class LocalComputeProvider(ComputeProvider):
                 else:
                     process.write(data)
         except Exception as e:
-            # Process or FD became invalid
+            # Process or FD became invalid — surface it (see the isalive() note
+            # above); respawn is not this method's job.
             logger.warning(f"[LOCAL] Write to PTY failed: {str(e)}")
             await self._cleanup_dead_pty_session(pty_key, f"write failed: {str(e)}")
-
-            # Retry once
-            if _retry_count < 1 and on_output is not None:
-                logger.info(f"[LOCAL] Restarting PTY after write failure and retrying: {session_id}")
-                # Recreate the PTY session
-                await self.get_or_create_pty_session(provider_node_id, session_id, on_output, rows, cols)
-                # Retry the operation
-                return await self.send_pty_input(provider_node_id, session_id, data, cols, rows, _retry_count + 1)
-
             raise RuntimeError(f"Failed to write to PTY (process may have died): {str(e)}") from e
 
     async def resize_pty(
@@ -1065,7 +1051,8 @@ class LocalComputeProvider(ComputeProvider):
             session_id: The session ID for the PTY
             cols: Number of columns
             rows: Number of rows
-            _retry_count: Internal retry counter (max 1 retry)
+            _retry_count: Legacy parameter, retained for signature stability. A
+                dead PTY is surfaced (raise), never retried/respawned here.
         """
         pty_key = (provider_node_id, session_id)
         if pty_key not in self._pty_processes:
@@ -1073,22 +1060,13 @@ class LocalComputeProvider(ComputeProvider):
 
         pty_info = self._pty_processes[pty_key]
         process = pty_info["process"]  # type: ignore[assignment]
-        on_output = pty_info.get("on_output")
 
-        # Validate process is still alive
+        # Validate process is still alive. Dead PTY surfaces (raise), never a bare
+        # respawn here — see the note in send_pty_input; respawn is owned by
+        # _perform_open / start_pty / pty_recovery (interface invariant #7).
         if not process.isalive():
-            logger.info(f"[LOCAL] PTY process died (PID {process.pid}), cleaning up and restarting: {session_id}")
-
+            logger.info(f"[LOCAL] PTY process died (PID {process.pid}), cleaning up: {session_id}")
             await self._cleanup_dead_pty_session(pty_key, "process died before resize")
-
-            # Retry once by creating a new PTY session
-            if _retry_count < 1 and on_output is not None:
-                logger.info(f"[LOCAL] Restarting PTY session and retrying resize: {session_id}")
-                # Recreate the PTY session with the same callback
-                await self.get_or_create_pty_session(provider_node_id, session_id, on_output, rows, cols)
-                # Retry the resize operation
-                return await self.resize_pty(provider_node_id, session_id, cols, rows, _retry_count + 1)
-
             raise RuntimeError(
                 f"PTY process died (PID {process.pid}). Session cleaned up: {provider_node_id}:{session_id}"
             )
@@ -1097,18 +1075,9 @@ class LocalComputeProvider(ComputeProvider):
         try:
             process.setwinsize(rows, cols)
         except Exception as e:
-            # FD became invalid
+            # FD became invalid — surface it; respawn is not this method's job.
             logger.warning(f"[LOCAL] Resize PTY failed: {str(e)}")
             await self._cleanup_dead_pty_session(pty_key, f"resize failed: {str(e)}")
-
-            # Retry once
-            if _retry_count < 1 and on_output is not None:
-                logger.info(f"[LOCAL] Restarting PTY after resize failure and retrying: {session_id}")
-                # Recreate the PTY session
-                await self.get_or_create_pty_session(provider_node_id, session_id, on_output, rows, cols)
-                # Retry the operation
-                return await self.resize_pty(provider_node_id, session_id, cols, rows, _retry_count + 1)
-
             raise RuntimeError(f"Failed to resize PTY (process may have died): {str(e)}") from e
 
     def is_pty_alive(self, provider_node_id: str, session_id: str) -> bool:

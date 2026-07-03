@@ -48,6 +48,9 @@ export function useSpawnRunner(): UseSpawnRunnerResult {
       context_data: { project_id: dataContext.project?.id },
       workdir,
       visible: false,
+      // Headless run (print_mode + stream-json): the transport is CLI, so pin
+      // pty_mode=false. All routing/classification keys on pty_mode, not visible.
+      pty_mode: false,
       target_typeid_str: workflow.typeId.toString(),
       process_type: ProcessKind.Execution,
     }).save([workflow.typeId]);

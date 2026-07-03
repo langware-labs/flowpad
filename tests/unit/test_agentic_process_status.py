@@ -68,6 +68,63 @@ def test_error_set_matches_spec(status_fixture):
     assert _ERROR_STATUSES == expected
 
 
+def test_ready_for_input_set_matches_spec(status_fixture):
+    """Python ``_READY_WORKER_STATES`` (the set ``is_ready_for_input`` gates on)
+    must equal the shared fixture ``worker_ready_for_input`` literal — the same
+    key the TS ``agentic-status`` parity describe asserts against
+    ``READY_WORKER_STATUSES``. Pins both sides of the send-prompt gate to one
+    source of truth: ``{idle, complete, interrupted}``."""
+    from flow_sdk.builtin.agentic_process.status_predicates import _READY_WORKER_STATES
+
+    expected = {WorkerStatus(v) for v in status_fixture["worker_ready_for_input"]}
+    assert _READY_WORKER_STATES == expected
+
+
+def test_process_running_set_matches_spec(status_fixture):
+    """``process_lifecycle.is_running`` must accept exactly the fixture
+    ``process_running`` literal (``{starting, running, stopping}``) — the py side
+    of the TS ``process_running fixture matches isProcessRunning`` parity test."""
+    from flow_sdk.builtin.process_lifecycle import is_running as is_process_running
+
+    expected = {ProcessStatus(v) for v in status_fixture["process_running"]}
+    actual = {s for s in ProcessStatus if is_process_running(s)}
+    assert actual == expected
+
+
+def test_process_startable_set_matches_spec(status_fixture):
+    """``process_lifecycle.is_startable`` must accept exactly the fixture
+    ``process_startable`` literal (``{new, stopped, failed}``) — the py side of
+    the TS ``process_startable fixture matches isProcessStartable`` parity test."""
+    from flow_sdk.builtin.process_lifecycle import is_startable as is_process_startable
+
+    expected = {ProcessStatus(v) for v in status_fixture["process_startable"]}
+    actual = {s for s in ProcessStatus if is_process_startable(s)}
+    assert actual == expected
+
+
+def test_busy_set_matches_literal():
+    """Pin the backend ``_BUSY_STATUSES`` = ``{thinking, tool_call, tool_running}``
+    (what ``worker_status.is_busy(status)`` gates on).
+
+    NOTE — deliberate NAME COLLISION, NOT a backend↔frontend pair: the TS
+    ``isBusy(process)`` (agentic-types.ts) is ``!isReadyForInput`` over a whole
+    *process* (every non-ready state), whereas the backend ``is_busy(status)``
+    takes a *WorkerStatus* and is the strict "actively processing" subset —
+    excludes ``working`` and ``api_error``. Do not treat the two as equivalent;
+    there is no fixture key linking them. See docs/interface/status-model.md
+    ("Can't accept input" row)."""
+    from flow_sdk.builtin.worker_status import _BUSY_STATUSES, is_busy
+
+    expected = {WorkerStatus.THINKING, WorkerStatus.TOOL_CALL, WorkerStatus.TOOL_RUNNING}
+    assert _BUSY_STATUSES == expected
+    # is_busy is the membership predicate over exactly that set.
+    assert {s for s in WorkerStatus if is_busy(s)} == expected
+    # And it is a strict subset of the mid-turn running set (excludes WORKING/API_ERROR).
+    assert _BUSY_STATUSES < _RUNNING_STATUSES
+    assert WorkerStatus.WORKING not in _BUSY_STATUSES
+    assert WorkerStatus.API_ERROR not in _BUSY_STATUSES
+
+
 # ── classify_execution_mode truth table ──────────────────────────────────────
 
 
@@ -76,38 +133,55 @@ def test_classify_execution_mode_truth_table():
 
     # Not live → None.
     for s in ("new", "stopping", "stopped", "failed"):
-        assert classify_execution_mode(status=s, worker_status=None, visible=True) is None
+        assert classify_execution_mode(status=s, worker_status=None, pty_mode=True) is None
 
-    # Live PTY / CLI split.
+    # Live PTY / CLI split — keyed on the transport ``pty_mode``, not ``visible``.
     for s in ("running", "starting"):
         assert (
-            classify_execution_mode(status=s, worker_status=None, visible=True)
+            classify_execution_mode(status=s, worker_status=None, pty_mode=True)
             == ExecutionMode.INTERACTIVE
         )
         assert (
-            classify_execution_mode(status=s, worker_status=None, visible=False)
+            classify_execution_mode(status=s, worker_status=None, pty_mode=False)
             == ExecutionMode.BACKGROUND
         )
 
-    # Error worker_status wins over visible, for both PTY and CLI.
+    # Error worker_status wins over transport, for both PTY and CLI.
     for w in ("error", "api_timeout", "inactive"):
         assert (
-            classify_execution_mode(status="running", worker_status=w, visible=True)
+            classify_execution_mode(status="running", worker_status=w, pty_mode=True)
             == ExecutionMode.ERROR
         )
         assert (
-            classify_execution_mode(status="running", worker_status=w, visible=False)
+            classify_execution_mode(status="running", worker_status=w, pty_mode=False)
             == ExecutionMode.ERROR
         )
 
     # Dead PTY pid → Error; CLI without pid liveness stays Background.
     assert (
-        classify_execution_mode(status="running", worker_status=None, visible=True, pid_alive=False)
+        classify_execution_mode(status="running", worker_status=None, pty_mode=True, pid_alive=False)
         == ExecutionMode.ERROR
     )
     assert (
-        classify_execution_mode(status="running", worker_status=None, visible=False)
+        classify_execution_mode(status="running", worker_status=None, pty_mode=False)
         == ExecutionMode.BACKGROUND
+    )
+
+
+def test_classify_execution_mode_hidden_live_pty_is_interactive():
+    """A hidden live PTY (visible=False but pty_mode=True) is a PTY worker →
+    INTERACTIVE, NOT the headless BACKGROUND bucket. Pins the transport-keyed
+    contract that the old ``visible``-keyed classifier got wrong."""
+    from flow_sdk.builtin.worker_status import ExecutionMode, classify_execution_mode
+
+    assert (
+        classify_execution_mode(status="running", worker_status=None, pty_mode=True)
+        == ExecutionMode.INTERACTIVE
+    )
+    # And a dead-PID hidden PTY still surfaces as Error (rule 2 keys on pty_mode).
+    assert (
+        classify_execution_mode(status="running", worker_status=None, pty_mode=True, pid_alive=False)
+        == ExecutionMode.ERROR
     )
 
 
@@ -558,19 +632,21 @@ def test_worker_mode_enum_values():
 
 
 class _ModeProc:
-    def __init__(self, visible: bool):
-        self.visible = visible
+    def __init__(self, pty_mode: bool):
+        self.pty_mode = pty_mode
 
 
 @pytest.mark.parametrize(
-    "visible,expected",
+    "pty_mode,expected",
     [
         (True, WorkerMode.INTERACTIVE),
         (False, WorkerMode.CLI),
     ],
 )
-def test_get_worker_mode_derivation(visible, expected):
-    assert get_worker_mode(_ModeProc(visible)) is expected
+def test_get_worker_mode_derivation(pty_mode, expected):
+    """WorkerMode keys on the transport ``pty_mode`` — a hidden live PTY
+    (pty_mode=True) is INTERACTIVE regardless of tab visibility."""
+    assert get_worker_mode(_ModeProc(pty_mode)) is expected
 
 
 # ── Field-removal regression guards ──────────────────────────────────────────
@@ -610,3 +686,69 @@ def test_process_failed_terminal_state():
     proc = AgenticProcess()
     proc.status = ProcessStatus.FAILED.value
     assert proc.is_idle  # FAILED is one of the idle-lifecycle states
+
+
+# ── Serializer injection branch (worker_status / ready_for_input) ─────────────
+#
+# ``worker_status`` and ``ready_for_input`` are NOT stored — they are projected
+# onto the wire payload each serialize by ``api_json_serializer`` (the live
+# ``model_dump`` path). The projection is: ``worker_status`` = the computed
+# WorkerStatus (or ``"idle"`` when the transcript hasn't been discovered), and
+# ``ready_for_input`` = ``is_ready_for_input(self, computed)``. These tests pin
+# that branch directly, driven only by a monkeypatched ``fetch_worker_status``
+# (no server, no transcript) so the projection is asserted independently.
+
+
+@pytest.mark.parametrize(
+    "computed,exp_worker_status,exp_ready",
+    [
+        # Terminal-but-ready → surfaced verbatim, ready_for_input True.
+        (WorkerStatus.COMPLETE, "complete", True),
+        (WorkerStatus.IDLE, "idle", True),
+        (WorkerStatus.INTERRUPTED, "interrupted", True),
+        # Mid-turn → surfaced verbatim, not ready.
+        (WorkerStatus.THINKING, "thinking", False),
+        (WorkerStatus.TOOL_RUNNING, "tool_running", False),
+        (WorkerStatus.ERROR, "error", False),
+        # Undiscovered transcript → defaults to "idle"; ready falls back to
+        # (not _turn_in_flight) == True on a freshly-built process.
+        (None, "idle", True),
+    ],
+)
+def test_api_json_serializer_injects_worker_status_and_ready(
+    monkeypatch, computed, exp_worker_status, exp_ready
+):
+    """The live serializer injects the computed ``worker_status`` + the matching
+    ``is_ready_for_input`` result onto the RUNNING process payload."""
+    proc = AgenticProcess()
+    proc.status = ProcessStatus.RUNNING.value
+    monkeypatch.setattr(AgenticProcess, "fetch_worker_status", lambda self: computed)
+
+    payload = proc.model_dump(mode="json")
+    assert payload["worker_status"] == exp_worker_status
+    assert payload["ready_for_input"] is exp_ready
+
+
+def test_api_json_serializer_ready_false_when_not_running(monkeypatch):
+    """A COMPLETE worker on a non-RUNNING container is never ready — the
+    lifecycle axis gates the projection even though the worker looks terminal."""
+    proc = AgenticProcess()
+    proc.status = ProcessStatus.STOPPED.value
+    monkeypatch.setattr(AgenticProcess, "fetch_worker_status", lambda self: WorkerStatus.COMPLETE)
+
+    payload = proc.model_dump(mode="json")
+    assert payload["worker_status"] == "complete"
+    assert payload["ready_for_input"] is False
+
+
+def test_api_json_serializer_skip_context_suppresses_injection(monkeypatch):
+    """The ``skip_api_serializer`` context short-circuits the projection — the
+    computed fields are NOT injected (used by the internal persistence dump that
+    must not pay the tail-read cost)."""
+    proc = AgenticProcess()
+    proc.status = ProcessStatus.RUNNING.value
+    monkeypatch.setattr(AgenticProcess, "fetch_worker_status", lambda self: WorkerStatus.COMPLETE)
+
+    payload = proc.model_dump(mode="json", context={"skip_api_serializer": True})
+    assert "worker_status" not in payload
+    assert "ready_for_input" not in payload

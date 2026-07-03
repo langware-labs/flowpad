@@ -183,21 +183,29 @@ export interface StatusBearingProcess {
   workerStatus?: WorkerStatus | string;
   worker_status?: WorkerStatus | string;
   session_id?: string | null;
-  /** Router for ``WorkerMode`` — true when the process has an attached PTY. */
+  /** Tab visibility only — NOT the transport router (see ``pty_mode``). */
   visible?: boolean;
+  /**
+   * Transport intent and the routing key for ``WorkerMode`` /
+   * ``ExecutionMode``: ``true`` = PTY worker, ``false`` = headless CLI. A hidden
+   * live PTY carries ``pty_mode=true`` with ``visible=false``. When absent, the
+   * classifiers fall back to ``visible`` (``visible=true ⟹ pty_mode=true``).
+   */
+  pty_mode?: boolean;
+  ptyMode?: boolean;
 }
 
 /**
  * Which mode the worker is currently running in.
  *
- * Derived from ``visible``; not stored as its own field. The routing is:
- * - ``visible === true``  → ``Interactive`` (PTY worker, xterm in the dock)
- * - ``visible === false`` → ``CLI`` (headless ``claude -p`` subprocess per turn)
+ * Derived from the *transport* ``pty_mode`` (NOT tab ``visible``):
+ * - ``pty_mode === true``  → ``Interactive`` (PTY worker, xterm in the dock)
+ * - ``pty_mode === false`` → ``CLI`` (headless ``claude -p`` subprocess per turn)
  *
+ * A hidden live PTY (``visible=false`` but ``pty_mode=true``) is Interactive.
  * ``session_id`` survives both directions — both modes write the same
- * ``~/.claude/projects/<encoded-cwd>/<sid>.jsonl``. Switching is therefore
- * two-way: opening a shell tab flips ``visible=true`` (via ``/open``);
- * closing the tab flips it back (via ``/close``).
+ * ``~/.claude/projects/<encoded-cwd>/<sid>.jsonl``. Switching is two-way via the
+ * ``switch-mode`` action.
  */
 export enum WorkerMode {
   Interactive = 'interactive',
@@ -241,9 +249,19 @@ export type ProcessIconKey =
   | 'generic'
   | 'generic-restore';
 
-/** Derive the worker mode from the process' ``visible`` field. */
+/**
+ * True when the process runs on the PTY transport. Keys on ``pty_mode`` (the
+ * transport axis); falls back to ``visible`` when ``pty_mode`` isn't carried on
+ * the payload (``visible=true ⟹ pty_mode=true``, so the fallback is safe — it can
+ * only miss the hidden-live-PTY case, which then reads as non-PTY as before).
+ */
+function isPtyTransport(p: StatusBearingProcess): boolean {
+  return (p.pty_mode ?? p.ptyMode ?? p.visible) === true;
+}
+
+/** Derive the worker mode from the process' transport intent (``pty_mode``). */
 export function getWorkerMode(p: StatusBearingProcess): WorkerMode {
-  return p.visible ? WorkerMode.Interactive : WorkerMode.CLI;
+  return isPtyTransport(p) ? WorkerMode.Interactive : WorkerMode.CLI;
 }
 
 /**
@@ -307,17 +325,18 @@ export function supportedExecutionModes(isAdvanced: boolean): readonly Execution
  * listed. ``External`` is never returned here; external workers come only from
  * the ``/workers`` backend snapshot.
  *
- * Truth table (first match wins):
- *   1. worker_status ∈ ERROR_WORKER_STATUSES        → Error
- *   2. visible===true && pidAlive===false (dead PTY) → Error
- *   3. visible===true                                → Interactive
- *   4. visible===false                               → Background
+ * Keyed on the *transport* ``pty_mode`` (NOT tab ``visible``). Truth table
+ * (first match wins):
+ *   1. worker_status ∈ ERROR_WORKER_STATUSES         → Error
+ *   2. pty (transport) && pidAlive===false (dead PTY) → Error
+ *   3. pty (transport)                                → Interactive
+ *   4. headless (no PTY transport)                    → Background
  *
- * ``pidAlive`` is only meaningful for PTY (``visible===true``); CLI workers have
- * no PID, so dead-PID→error never applies to them — CLI error relies solely on
- * rule 1. When ``pidAlive`` is undefined (the live WS payload has no PID
- * liveness) rule 2 never fires; dead-PTY→error is then authoritative only via
- * ``/workers``.
+ * A hidden live PTY (``visible=false`` but ``pty_mode=true``) is Interactive.
+ * ``pidAlive`` is only meaningful for PTY; CLI workers have no PID, so
+ * dead-PID→error never applies to them — CLI error relies solely on rule 1. When
+ * ``pidAlive`` is undefined (the live WS payload has no PID liveness) rule 2 never
+ * fires; dead-PTY→error is then authoritative only via ``/workers``.
  */
 export function classifyExecutionMode(
   p: StatusBearingProcess & { pidAlive?: boolean },
@@ -326,8 +345,9 @@ export function classifyExecutionMode(
   if (status !== ProcessStatus.RUNNING && status !== ProcessStatus.STARTING) return null;
   const worker = resolveWorkerStatus(p);
   if (worker !== undefined && ERROR_WORKER_STATUSES.has(worker)) return ExecutionMode.Error;
-  if (p.visible === true && p.pidAlive === false) return ExecutionMode.Error;
-  return p.visible === true ? ExecutionMode.Interactive : ExecutionMode.Background;
+  const isPty = isPtyTransport(p);
+  if (isPty && p.pidAlive === false) return ExecutionMode.Error;
+  return isPty ? ExecutionMode.Interactive : ExecutionMode.Background;
 }
 
 function resolveStatus(p: StatusBearingProcess): ProcessStatus | undefined {

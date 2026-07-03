@@ -49,8 +49,14 @@ Three distinct fields, only the first is stored:
 | Field | Stored? | Who computes | Where |
 | --- | --- | --- | --- |
 | `status` | **yes** | explicit FSM transitions | `agentic_process.py` writers |
-| `worker_status` | no (computed each serialize) | `fetch_worker_status()` → `_discover_status_from_transcript()` → driver tail | `agentic_process.py:3776` / injected in `to_dict` (`:3726`) + `api_json_serializer` (`:3741`) |
-| `ready_for_input` | no (computed each serialize) | `is_ready_for_input(self, computed)` | `agentic_process.py:3728` / `:3743` |
+| `worker_status` | no (computed each serialize) | `fetch_worker_status()` → `_discover_status_from_transcript()` → driver tail | injected in `api_json_serializer` (`agentic_process.py` ~:3746) |
+| `ready_for_input` | no (computed each serialize) | `is_ready_for_input(self, computed)` | injected in `api_json_serializer` (~:3748) |
+
+**`api_json_serializer` is the only live projection surface.** There is no `to_dict` injection site — an earlier `AgenticProcess.to_dict` override was dead code (its `super().to_dict()` raised `AttributeError`; no ancestor defines `to_dict`) and was removed 2026-07-02. Every wire form (persistence, query-filter, WS broadcast, REST response) goes through the pydantic `model_serializer`, i.e. `api_json_serializer`.
+
+**Two wire-masked fallback divergences** (B6): the wire values agree, but the py/TS *fallbacks* used when a field is absent do not, so a consumer that recomputes locally can diverge from a consumer that reads the wire.
+- **`isReadyForInput` None-worker gating.** BE `is_ready_for_input` falls back to `not _turn_in_flight` when `worker_status is None`; the TS `isReadyForInput` has no transcript to consult and simply treats an absent/`unknown` worker status as not-ready. The BE always ships a resolved `worker_status`/`ready_for_input` on the wire, so this only bites a TS caller that recomputes from a partial (`StatusBearingProcess`) shape.
+- **`pty_mode`-absent fallbacks.** When `pty_mode` is missing from the row, the BE projection reconciles via live shell pid liveness (`classify_execution_mode` keys on `visible`+`pid_alive`); the TS mirror has no pid to probe and falls back on `visible` alone. Same wire, different local recompute.
 
 `fetch_worker_status()` is the supported accessor; `_discover_status_from_transcript()` is the internal projection (tests monkeypatch it). The projection layer does more than `_tail_status`: it short-circuits to `INITIALIZING` while `_turn_in_flight`, reconciles dead PTYs (`pty_mode` + dead shell pid → `INACTIVE`), and **projects clean terminals to `PENDING_USER`** (recent) or `INACTIVE` (aged > 5 min via `terminal_at`) so every consumer — serializer, `get_status`, `is_ready_for_input` — sees the same projected value.
 
@@ -80,7 +86,7 @@ One row per concept. TS symbols live in `ts_sdk/src/process/agentic-types.ts` un
 | Has worker started | *(none)* | `hasWorkerStarted` (`:173`) | TS-only; `status !== initializing` |
 | Display status pick | *(none)* | `getDisplayStatus` (`:380`) | TS-only; running→`workerStatus` (unless `unknown`), else coarse `status` |
 | Supported exec modes per view | *(none)* | `supportedExecutionModes` (`:300`) | TS-only; Standard hides `error`/`external` |
-| `ready_for_input` field | `is_ready_for_input` injected in serializers (`agentic_process.py:3728`,`:3743`) | consumed off the wire via `StatusBearingProcess` | computed each serialize, not stored |
+| `ready_for_input` field | `is_ready_for_input` injected in `api_json_serializer` (`agentic_process.py` ~:3748) | consumed off the wire via `StatusBearingProcess` | computed each serialize, not stored |
 | Status report / counters | `ProcessCounters`, `ProcessStatusReport`, `PROCESS_STATUS_KIND` (`transcript_analyzer/counters.py`) | `ProcessCounters`, `ProcessStatusReport`, `parseStatusReport`, `PROCESS_STATUS_KIND` (`process-status-report.ts`) | wire kind `"process_status"` ✓; `ProcessCounters` is a class both sides for the "extend later" seam |
 
 ## Frontend TS interface

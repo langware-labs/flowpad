@@ -195,3 +195,40 @@ async def test_shell_survives_kill_and_reopen():
         pty = shell.compute_node.get_pty(shell.id)
         if pty:
             await pty.kill()
+
+
+# ---------------------------------------------------------------------------
+# Shell.start_pty concurrency (per-shell lock)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_concurrent_start_pty_on_dead_shell_creates_exactly_one_pty():
+    """Two concurrent start_pty() on a shell whose PTY is dead must create EXACTLY
+    ONE PTY — the per-shell lock serializes the watchdog recovery tick vs a
+    concurrent client open. Without it both calls slip past the liveness check and
+    each create_pty(), leaking a second OS PTY.
+
+    ``start_pty`` returns True iff it spawned a fresh PTY, so exactly one True is
+    the direct "one PTY created" signal. Pre-fix both race to True.
+    """
+    shell = _shell()
+    await shell.start()
+
+    # Crash the PTY but leave the row RUNNING — the post-restart / dead-worker
+    # state both recovery entry points contend on.
+    pty = shell.compute_node.get_pty(shell.id)
+    await pty.kill()
+    assert not shell.is_alive
+    assert shell.status == "running"
+
+    try:
+        results = await asyncio.gather(shell.start_pty(), shell.start_pty())
+        assert results.count(True) == 1, (
+            f"expected exactly one start_pty() to spawn a PTY, got {results}"
+        )
+        assert shell.is_alive
+    finally:
+        pty = shell.compute_node.get_pty(shell.id)
+        if pty:
+            await pty.kill()

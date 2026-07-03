@@ -110,8 +110,8 @@ class ExecutionMode(StrEnum):
     Derived, never stored. ``EXTERNAL`` is server-only (OS-scanned).
     """
 
-    INTERACTIVE = "interactive"   # PTY worker (visible=true)
-    BACKGROUND = "background"     # headless CLI worker (visible=false)
+    INTERACTIVE = "interactive"   # PTY worker (pty_mode=true)
+    BACKGROUND = "background"     # headless CLI worker (pty_mode=false)
     ERROR = "error"              # error/dead state
     EXTERNAL = "external"        # running outside the app (OS-scanned)
 
@@ -120,27 +120,31 @@ def classify_execution_mode(
     *,
     status: str | None,
     worker_status: str | None,
-    visible: bool | None,
+    pty_mode: bool | None,
     pid_alive: bool | None = None,
 ) -> ExecutionMode | None:
     """Classify a *live* worker into an ``ExecutionMode`` (or ``None`` when the
-    process is not live). Mirrors the TS ``classifyExecutionMode`` truth table:
+    process is not live). Keyed on the *transport* ``pty_mode`` (NOT tab
+    ``visible``), mirroring the TS ``classifyExecutionMode`` truth table:
 
-      1. worker_status ∈ _ERROR_STATUSES               → ERROR
-      2. visible is True and pid_alive is False (dead PTY) → ERROR
-      3. visible is True                                → INTERACTIVE
-      4. visible is False                               → BACKGROUND
+      1. worker_status ∈ _ERROR_STATUSES                 → ERROR
+      2. pty_mode is not False and pid_alive is False     → ERROR (dead PTY)
+      3. pty_mode is not False                            → INTERACTIVE
+      4. pty_mode is False                                → BACKGROUND
 
-    ``EXTERNAL`` is never returned here. ``pid_alive`` only matters for PTY;
-    CLI workers have no PID so rule 2 never applies to them.
+    A hidden live PTY (``visible=False`` but ``pty_mode=True``) classifies as
+    INTERACTIVE — it is a PTY worker, just not shown as a tab. ``EXTERNAL`` is
+    never returned here. ``pid_alive`` only matters for PTY (rule 2); headless CLI
+    workers have no PID, so rule 2 never applies to them.
     """
     if status not in _LIVE_PROCESS_STATUSES:
         return None
     if worker_status is not None and worker_status in _ERROR_STATUSES:
         return ExecutionMode.ERROR
-    if visible is True and pid_alive is False:
+    is_pty = pty_mode is not False
+    if is_pty and pid_alive is False:
         return ExecutionMode.ERROR
-    return ExecutionMode.INTERACTIVE if visible else ExecutionMode.BACKGROUND
+    return ExecutionMode.INTERACTIVE if is_pty else ExecutionMode.BACKGROUND
 
 
 def is_running(status: WorkerStatus) -> bool:
