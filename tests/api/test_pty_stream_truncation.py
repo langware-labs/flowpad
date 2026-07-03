@@ -21,6 +21,7 @@ framed v1 with a real winsize, and output-frame seqs stay monotonic.
 
 import asyncio
 import base64
+import functools
 import uuid
 
 import pytest
@@ -30,6 +31,8 @@ from flow_sdk.compute.providers.desktop import pty_stream_file as psf_module
 from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
 
+from tests.api.conftest import default_compute_node_id
+
 # Small cap so a short burst overflows it and front-truncation runs.
 _TEST_CAP = 16 * 1024
 
@@ -38,16 +41,10 @@ _TEST_CAP = 16 * 1024
 _PAD = "A" * 200
 _N_LINES = 300
 
-
-class _CappedStreamFile(PtyStreamFile):
-    """PtyStreamFile with the rolling cap forced small (size seam only)."""
-
-    def __init__(self, path, cols: int = 80, rows: int = 24, max_size_bytes: int = _TEST_CAP):
-        super().__init__(path, cols=cols, rows=rows, max_size_bytes=_TEST_CAP)
-
-
-def _compute_node_id(bootstrap_resp) -> str:
-    return bootstrap_resp.json()["data"]["default_compute_node"]["id"]
+# PtyStreamFile with the rolling cap forced small (size seam only). The creation
+# site passes ``path``/``cols``/``rows`` and never ``max_size_bytes``, so the
+# partial supplies it without conflict.
+_CappedStreamFile = functools.partial(PtyStreamFile, max_size_bytes=_TEST_CAP)
 
 
 def _joined_output(events) -> bytes:
@@ -66,15 +63,15 @@ async def _wait_for_marker(stream_file: PtyStreamFile, marker: bytes, budget: fl
 
 
 @pytest.mark.asyncio
-async def test_pty_stream_front_truncates_but_replays_tail(bootstrapped_client, monkeypatch):
+async def test_pty_stream_front_truncates_but_replays_tail(
+    bootstrapped_client, bootstrap_payload, monkeypatch
+):
     # Force the reduced cap at the creation site inside start_machine_pty_session
     # (it does a local ``from ...pty_stream_file import PtyStreamFile`` per call).
     monkeypatch.setattr(psf_module, "PtyStreamFile", _CappedStreamFile)
 
     client = bootstrapped_client
-    bootstrap = await client.get("/api/v1/graph/bootstrap")
-    assert bootstrap.status_code == 200
-    cn_id = _compute_node_id(bootstrap)
+    cn_id = default_compute_node_id(bootstrap_payload)
 
     shell = Shell(id=str(uuid.uuid4()), name="trunc-test", compute_node_id=cn_id, status="idle")
     await shell.save()

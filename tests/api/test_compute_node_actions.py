@@ -23,15 +23,7 @@ import pytest
 import flow_sdk.builtin.faas.analytics.claude_context as claude_context_mod
 from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
 
-
-def _node_id(bootstrap_payload: dict) -> str:
-    return bootstrap_payload["data"]["default_compute_node"]["id"]
-
-
-async def _get_node_id(client) -> str:
-    resp = await client.get("/api/v1/graph/bootstrap")
-    assert resp.status_code == 200, resp.text
-    return _node_id(resp.json())
+from tests.api.conftest import default_compute_node_id
 
 
 def _py(script: str) -> str:
@@ -45,9 +37,9 @@ def _py(script: str) -> str:
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_get_host_redirects_to_localhost_port(bootstrapped_client):
+async def test_get_host_redirects_to_localhost_port(bootstrapped_client, bootstrap_payload):
     """get-host with a provider set returns a redirect to http://localhost:<port>."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
 
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/compute_node/{node_id}/get-host?port=8080",
@@ -59,9 +51,9 @@ async def test_get_host_redirects_to_localhost_port(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_get_host_rejects_out_of_range_port(bootstrapped_client):
+async def test_get_host_rejects_out_of_range_port(bootstrapped_client, bootstrap_payload):
     """A port outside 1024-65535 is a guarded failure, not a redirect."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/compute_node/{node_id}/get-host?port=80",
         follow_redirects=False,
@@ -71,9 +63,9 @@ async def test_get_host_rejects_out_of_range_port(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_get_machine_status_envelope(bootstrapped_client):
+async def test_get_machine_status_envelope(bootstrapped_client, bootstrap_payload):
     """get-machine-status returns a MachineStatus-shaped payload."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.get(f"/api/v1/graph/compute_node/{node_id}/get-machine-status")
     assert resp.status_code == 200, resp.text
     payload = resp.json()
@@ -87,9 +79,9 @@ async def test_get_machine_status_envelope(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_get_system_profile_envelope(bootstrapped_client):
+async def test_get_system_profile_envelope(bootstrapped_client, bootstrap_payload):
     """get-system-profile returns a SystemProfile with machine + generated set."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.get(f"/api/v1/graph/compute_node/{node_id}/get-system-profile")
     assert resp.status_code == 200, resp.text
     payload = resp.json()
@@ -100,9 +92,9 @@ async def test_get_system_profile_envelope(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_json_file_round_trip(bootstrapped_client, tmp_path):
+async def test_json_file_round_trip(bootstrapped_client, bootstrap_payload, tmp_path):
     """save-json-file then get-json-file returns the same object."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     target = str(tmp_path / "round_trip.json")
     body = {"path": target, "data": {"alpha": 1, "beta": ["x", "y"]}}
 
@@ -123,16 +115,16 @@ async def test_json_file_round_trip(bootstrapped_client, tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_get_json_file_missing_path_param(bootstrapped_client):
+async def test_get_json_file_missing_path_param(bootstrapped_client, bootstrap_payload):
     """get-json-file without a path param is a guarded failure."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.get(f"/api/v1/graph/compute_node/{node_id}/get-json-file")
     assert resp.json()["status"] == "FAIL", resp.text
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_pick_folder_route_guarded(bootstrapped_client, monkeypatch):
+async def test_pick_folder_route_guarded(bootstrapped_client, bootstrap_payload, monkeypatch):
     """pick-folder is wired and returns {path: ...} without opening a real dialog.
 
     The native OS dialog is stubbed (simulating a cancel) so the test never
@@ -143,7 +135,7 @@ async def test_pick_folder_route_guarded(bootstrapped_client, monkeypatch):
 
     monkeypatch.setattr(LocalComputeProvider, "pick_folder", _fake_pick_folder)
 
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{node_id}/pick-folder", json={}
     )
@@ -155,7 +147,7 @@ async def test_pick_folder_route_guarded(bootstrapped_client, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_open_terminal_route_guarded(bootstrapped_client, monkeypatch):
+async def test_open_terminal_route_guarded(bootstrapped_client, bootstrap_payload, monkeypatch):
     """open-terminal is wired; the spawn is captured so no real terminal opens."""
     captured = {}
 
@@ -169,7 +161,7 @@ async def test_open_terminal_route_guarded(bootstrapped_client, monkeypatch):
 
     monkeypatch.setattr("subprocess.Popen", _fake_popen)
 
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{node_id}/open-terminal",
         json={"command": "echo hi"},
@@ -181,9 +173,9 @@ async def test_open_terminal_route_guarded(bootstrapped_client, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_open_terminal_requires_command(bootstrapped_client):
+async def test_open_terminal_requires_command(bootstrapped_client, bootstrap_payload):
     """open-terminal without a command is a guarded failure (no spawn)."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{node_id}/open-terminal", json={}
     )
@@ -192,9 +184,9 @@ async def test_open_terminal_requires_command(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_open_external_missing_path_guarded(bootstrapped_client):
+async def test_open_external_missing_path_guarded(bootstrapped_client, bootstrap_payload):
     """open-external on a non-existent path fails cleanly without opening anything."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{node_id}/open-external",
         json={"path": "/no/such/path/nowhere-xyz-123"},
@@ -204,9 +196,9 @@ async def test_open_external_missing_path_guarded(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_generate_amd_plan_envelope(bootstrapped_client):
+async def test_generate_amd_plan_envelope(bootstrapped_client, bootstrap_payload):
     """generate-amd-plan is wired and returns an envelope (desktop stub → FAIL)."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{node_id}/generate-amd-plan",
         json={"content": "build me a todo app"},
@@ -224,9 +216,9 @@ async def test_generate_amd_plan_envelope(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_get_cost_overview_shape(bootstrapped_client):
+async def test_get_cost_overview_shape(bootstrapped_client, bootstrap_payload):
     """get-cost-overview returns the documented overview shape."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/compute_node/{node_id}/get-cost-overview?limit=5"
     )
@@ -241,7 +233,7 @@ async def test_get_cost_overview_shape(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_get_claude_context_envelope(bootstrapped_client, monkeypatch):
+async def test_get_claude_context_envelope(bootstrapped_client, bootstrap_payload, monkeypatch):
     """get-claude-context wraps the /context probe result in the envelope.
 
     The `claude -p /context` CLI subprocess is stubbed so the test is
@@ -255,7 +247,7 @@ async def test_get_claude_context_envelope(bootstrapped_client, monkeypatch):
     # so patch it at the source (not on the actions module).
     monkeypatch.setattr(claude_context_mod, "get_claude_context_sync", _fake_context)
 
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/compute_node/{node_id}/get-claude-context"
     )
@@ -273,7 +265,7 @@ async def test_get_claude_context_envelope(bootstrapped_client, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_worker_history_limit(bootstrapped_client):
+async def test_worker_history_limit(bootstrapped_client, bootstrap_payload):
     """worker-history applies limit as a per-project cap, not a global top-N.
 
     Each project_id bucket keeps at most ``limit`` rows (the documented
@@ -281,7 +273,7 @@ async def test_worker_history_limit(bootstrapped_client):
     no single bucket may.
     """
     limit = 2
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/compute_node/{node_id}/worker-history?limit={limit}"
     )
@@ -298,13 +290,13 @@ async def test_worker_history_limit(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_worker_history_project_scoped(bootstrapped_client):
+async def test_worker_history_project_scoped(bootstrapped_client, bootstrap_payload):
     """worker-history with a project_ids scope returns a (possibly empty) list.
 
     A project id with no sessions yields an empty scoped list — the per-project
     branch is exercised without depending on machine session history.
     """
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.get(
         f"/api/v1/graph/compute_node/{node_id}/worker-history"
         "?limit=5&project_ids=project-does-not-exist-xyz"
@@ -322,9 +314,9 @@ async def test_worker_history_project_scoped(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_ops_command_buffered(bootstrapped_client):
+async def test_ops_command_buffered(bootstrapped_client, bootstrap_payload):
     """ops/command (stream=false) runs a real command and returns stdout + exit-code."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
 
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{node_id}/ops/command",
@@ -340,9 +332,9 @@ async def test_ops_command_buffered(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_ops_command_missing_command_guarded(bootstrapped_client):
+async def test_ops_command_missing_command_guarded(bootstrapped_client, bootstrap_payload):
     """ops/command with no command is a guarded failure."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{node_id}/ops/command",
         json={"stream": False},
@@ -352,9 +344,9 @@ async def test_ops_command_missing_command_guarded(bootstrapped_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_ops_command_streaming(bootstrapped_client):
+async def test_ops_command_streaming(bootstrapped_client, bootstrap_payload):
     """ops/command (stream=true) streams stdout chunks and a final exit-code chunk."""
-    node_id = await _get_node_id(bootstrapped_client)
+    node_id = default_compute_node_id(bootstrap_payload)
 
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{node_id}/ops/command",

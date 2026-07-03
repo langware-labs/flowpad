@@ -11,6 +11,7 @@ TypeId format: ``shell-<uuid>``.
 from __future__ import annotations
 
 import asyncio
+import collections
 import logging
 import os
 from datetime import datetime, timezone
@@ -42,15 +43,7 @@ logger = logging.getLogger(__name__)
 # would leak a second OS PTY over the same shell. Mirrors ``_OPEN_LOCKS`` in
 # agentic_process.py. Process-local (PTYs are process-local), so no cross-process
 # coordination is needed.
-_START_PTY_LOCKS: dict[str, asyncio.Lock] = {}
-
-
-def _get_start_pty_lock(shell_id: str) -> asyncio.Lock:
-    lock = _START_PTY_LOCKS.get(shell_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _START_PTY_LOCKS[shell_id] = lock
-    return lock
+_START_PTY_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
 
 class ShellStatus(StrEnum):
@@ -426,7 +419,7 @@ class Shell(Entity):
         if not await self.ensure_live_compute_node_binding():
             raise RuntimeError(f"Compute node not found for shell session ({self._compute_node_lookup_hint()})")
 
-        async with _get_start_pty_lock(self.id):
+        async with _START_PTY_LOCKS[self.id]:
             cn = self.compute_node
             existing = cn.get_pty(self.id)
 

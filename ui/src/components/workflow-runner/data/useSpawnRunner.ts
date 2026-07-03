@@ -17,7 +17,6 @@ import {
   Workflow,
   dataContext,
 } from '@sdk';
-import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 
 interface SpawnInput {
   workflow: Workflow;
@@ -37,20 +36,9 @@ export function useSpawnRunner(): UseSpawnRunnerResult {
     const instruction = `Run workflow at /${workflow.asset_ref} using the flow skill located at: ${flowSkillPath}`;
     const workdir = dataContext.project?.fs_storage_mount_path;
 
-    const cliOptions = new ClaudeCliOptions({
-      permission_mode: 'bypassPermissions',
-      print_mode: true,
-      output_format: 'stream-json',
-      verbose: true,
-    });
-    const process = await new AgenticProcess({
-      cli_config: cliOptions.toJson(),
+    const process = await AgenticProcess.newHeadless({
       context_data: { project_id: dataContext.project?.id },
       workdir,
-      visible: false,
-      // Headless run (print_mode + stream-json): the transport is CLI, so pin
-      // pty_mode=false. All routing/classification keys on pty_mode, not visible.
-      pty_mode: false,
       target_typeid_str: workflow.typeId.toString(),
       process_type: ProcessKind.Execution,
     }).save([workflow.typeId]);

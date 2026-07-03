@@ -27,40 +27,14 @@ import pytest
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
 from flow_sdk.builtin.shell import Shell
 from flow_sdk.compute.providers.desktop.pty_session_manager import PtyState, pty_registry
-from flow_sdk.fs_store.record_paths import (
-    get_default_records_data_root,
-    get_default_records_root,
-    set_default_records_data_root,
-    set_default_records_root,
-)
+
+from tests.unit.conftest import kill_pty, make_shell, poll_read, tmp_records_root  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
-def use_tmp_records_root(tmp_path, monkeypatch):
-    """Redirect the records root at every binding site (see the sibling
-    ``test_shell_proc_interface.py`` for why the monkeypatch is needed)."""
-    orig_root = get_default_records_root()
-    orig_data_root = get_default_records_data_root()
-    set_default_records_root(tmp_path)
-    set_default_records_data_root(tmp_path)
-    import flow_sdk.builtin.shell as _shell_mod
-    monkeypatch.setattr(
-        _shell_mod, "get_default_records_data_root", lambda: tmp_path,
-        raising=False,
-    )
-    yield tmp_path
-    set_default_records_root(orig_root)
-    set_default_records_data_root(orig_data_root)
-
-
-def _shell(**kwargs) -> Shell:
-    return Shell(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()), **kwargs)
-
-
-async def _kill_pty(shell: Shell) -> None:
-    pty = shell.compute_node.get_pty(shell.id) if shell.compute_node_id else None
-    if pty:
-        await pty.kill()
+def _use_tmp_records_root(tmp_records_root):
+    """Opt this module into the shared records-root redirect (see conftest)."""
+    return tmp_records_root
 
 
 async def _seed_ready(shell: Shell, seq: int = 5):
@@ -115,7 +89,7 @@ async def test_write_then_submit_sends_two_distinct_ordered_writes(monkeypatch):
     shell), which every wrapper for this session funnels through."""
     import flow_sdk.compute.providers.desktop.local_pty_session as _lps
 
-    shell = _shell()
+    shell = make_shell()
     await shell.start()
     key, _created = await _seed_ready(shell)
 
@@ -138,29 +112,23 @@ async def test_write_then_submit_sends_two_distinct_ordered_writes(monkeypatch):
     finally:
         if _created:
             pty_registry.states.pop(key, None)
-        await _kill_pty(shell)
+        await kill_pty(shell)
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_write_then_submit_actually_submits_to_shell():
     """Behavioural check: the discrete Enter submits, so the echoed command runs."""
-    shell = _shell()
+    shell = make_shell()
     await shell.start()
     key, _created = await _seed_ready(shell)
     try:
         await shell.write_then_submit("echo wts_marker")
-        import time
-        deadline = time.monotonic() + 10.0
-        while time.monotonic() < deadline:
-            if b"wts_marker" in await shell.read():
-                break
-            await asyncio.sleep(0.1)
-        assert b"wts_marker" in await shell.read()
+        assert b"wts_marker" in await poll_read(shell, b"wts_marker")
     finally:
         if _created:
             pty_registry.states.pop(key, None)
-        await _kill_pty(shell)
+        await kill_pty(shell)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +141,7 @@ async def test_write_then_submit_actually_submits_to_shell():
 async def test_wait_for_input_ready_returns_when_prompt_idle():
     """Once output has gone idle (stable seq > 0) the gate returns promptly,
     well before its timeout."""
-    shell = _shell()
+    shell = make_shell()
     key, _created = await _seed_ready(shell, seq=7)
     try:
         import time
@@ -192,7 +160,7 @@ async def test_wait_for_input_ready_times_out_when_never_ready():
     """With no session state the readiness signal never arrives; the gate must
     fall through to its deadline and return (never raise). The 1.0s here is the
     METHOD's own gate budget being exercised, not a test timeout."""
-    shell = _shell()
+    shell = make_shell()
     await shell.ensure_live_compute_node_binding()
     provider_id = shell.compute_node.node_provider_id
     key = (shell.compute_node_id, provider_id, shell.id)
@@ -213,7 +181,7 @@ async def test_wait_for_input_ready_times_out_when_never_ready():
 @pytest.mark.asyncio
 @pytest.mark.timeout(5)  # do not increase timeout without approval
 async def test_worker_alive_false_without_worker_pid():
-    shell = _shell()
+    shell = make_shell()
     assert await shell.worker_alive() is False
 
 
@@ -221,7 +189,7 @@ async def test_worker_alive_false_without_worker_pid():
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_worker_alive_false_when_pid_gone():
     """A worker_pid that no longer exists → False (no PTY started, so no raise)."""
-    shell = _shell(worker_pid=2_000_000_000, worker_name="claude")
+    shell = make_shell(worker_pid=2_000_000_000, worker_name="claude")
     assert not psutil.pid_exists(shell.worker_pid)
     assert await shell.worker_alive() is False
 
@@ -231,7 +199,7 @@ async def test_worker_alive_false_when_pid_gone():
 async def test_worker_alive_raises_when_pty_dead():
     """A dead PTY under a shell that still has a worker_pid is a hard error —
     worker_alive raises rather than silently reporting a liveness answer."""
-    shell = _shell()
+    shell = make_shell()
     await shell.start()
     shell.worker_pid = os.getpid()  # a definitely-live pid; the raise precedes the pid check
     shell.worker_name = os.path.basename(sys.executable)
@@ -249,14 +217,14 @@ async def test_worker_alive_raises_when_pty_dead():
         with pytest.raises(RuntimeError, match="PTY session is not alive"):
             await shell.worker_alive()
     finally:
-        await _kill_pty(shell)
+        await kill_pty(shell)
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_worker_alive_true_when_cmdline_matches():
     """Live PTY + a live worker_pid whose cmdline basename matches worker_name."""
-    shell = _shell()
+    shell = make_shell()
     await shell.start()
     proc = await asyncio.create_subprocess_exec(sys.executable, "-c", "import time; time.sleep(30)")
     try:
@@ -266,7 +234,7 @@ async def test_worker_alive_true_when_cmdline_matches():
     finally:
         proc.terminate()
         await proc.wait()
-        await _kill_pty(shell)
+        await kill_pty(shell)
 
 
 @pytest.mark.asyncio
@@ -274,7 +242,7 @@ async def test_worker_alive_true_when_cmdline_matches():
 async def test_worker_alive_false_when_cmdline_mismatches():
     """Live PTY + a live worker_pid whose cmdline does NOT match worker_name →
     False (the process is alive but is not our worker)."""
-    shell = _shell()
+    shell = make_shell()
     await shell.start()
     proc = await asyncio.create_subprocess_exec(sys.executable, "-c", "import time; time.sleep(30)")
     try:
@@ -284,7 +252,7 @@ async def test_worker_alive_false_when_cmdline_mismatches():
     finally:
         proc.terminate()
         await proc.wait()
-        await _kill_pty(shell)
+        await kill_pty(shell)
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +265,7 @@ async def test_worker_alive_false_when_cmdline_mismatches():
 async def test_set_worker_pid_direct_reads_pty_pid_immediately():
     """Direct-spawn path: the PTY PID *is* the worker PID, read straight from the
     provider (no child polling). worker_pid/worker_name/last_launch_cmd persist."""
-    shell = _shell()
+    shell = make_shell()
     await shell.start()
     try:
         cmd = _FakeCLIOptions()
@@ -314,7 +282,7 @@ async def test_set_worker_pid_direct_reads_pty_pid_immediately():
         assert shell.worker_name == "sleep"
         assert shell.last_launch_cmd == cmd.to_json()
     finally:
-        await _kill_pty(shell)
+        await kill_pty(shell)
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +296,7 @@ async def test_launch_discovers_worker_child_and_persists_cmd():
     """shell-mode: the command is TYPED into the shell, and the worker child is
     discovered by walking the shell's process tree. worker_pid/name/last_launch_cmd
     are stamped on the entity."""
-    shell = _shell()
+    shell = make_shell()
     await shell.start()
     key, _created = await _seed_ready(shell)
     try:
@@ -345,12 +313,12 @@ async def test_launch_discovers_worker_child_and_persists_cmd():
         if _created:
             pty_registry.states.pop(key, None)
         await shell.terminate_worker()
-        await _kill_pty(shell)
+        await kill_pty(shell)
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(5)  # do not increase timeout without approval
 async def test_poll_for_worker_pid_none_when_no_shell_pid():
     """No shell PID to walk → no child to find, returns None (no polling)."""
-    shell = _shell()
+    shell = make_shell()
     assert await shell._poll_for_worker_pid(None, "claude") is None

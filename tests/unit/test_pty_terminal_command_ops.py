@@ -15,6 +15,7 @@ mocked-provider tier as ``test_pty_api.py``. No real OS PTY is spawned:
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -42,6 +43,51 @@ def _request_info(message_id: str = "msg-1") -> MagicMock:
     return info
 
 
+@contextmanager
+def _patch_request_info(info):
+    """Patch the mixin's ``get_current_request_info`` for the block. Pass a
+    ``_request_info()`` for a normal caller or ``None`` for the no-context case."""
+    with patch(
+        "flow_sdk.builtin.faas.pty_actions.get_current_request_info", return_value=info
+    ):
+        yield
+
+
+class _StopBeforeSpawn(Exception):
+    """Sentinel: abort start_machine_pty_session right after eviction so the
+    DB/disk tail never runs — we only assert the eviction decision here."""
+
+
+@pytest.fixture
+def eviction_registry(monkeypatch):
+    """Lower the FIFO cap to a deterministic 4/evict-2, stub the registry seams so
+    no OS PTY spawns, and snapshot/restore the shared ``pty_registry.states``.
+
+    Returns a namespace with ``evicted`` (keys passed to ``close_session``); the
+    test populates ``pty_registry.states`` itself, then asserts against it."""
+    monkeypatch.setattr(pty_actions, "_PTY_CAP", 4)
+    monkeypatch.setattr(pty_actions, "_PTY_EVICT_COUNT", 2)
+
+    original_states = pty_registry.states
+    evicted: list = []
+
+    async def _fake_close(key):
+        evicted.append(key)
+        pty_registry.states.pop(key, None)
+
+    async def _fake_generate(*_args, **_kwargs):
+        # Reached only after eviction ran — stop here so no DB/disk work fires.
+        raise _StopBeforeSpawn
+
+    monkeypatch.setattr(pty_registry, "close_session", _fake_close)
+    monkeypatch.setattr(pty_registry, "get_session", AsyncMock(return_value=None))
+    monkeypatch.setattr(pty_registry, "generate_session", _fake_generate)
+    try:
+        yield SimpleNamespace(evicted=evicted)
+    finally:
+        pty_registry.states = original_states
+
+
 # ---------------------------------------------------------------------------
 # list — active sessions enriched with agentic_process_id
 # ---------------------------------------------------------------------------
@@ -60,10 +106,9 @@ async def test_list_enriches_with_agentic_process_id():
     procs = [SimpleNamespace(pty_pid="s1", id="proc-1"), SimpleNamespace(pty_pid=None, id="proc-x")]
     from flow_sdk.builtin.agentic_process import AgenticProcess
 
-    with patch(
-        "flow_sdk.builtin.faas.pty_actions.get_current_request_info",
-        return_value=_request_info(),
-    ), patch.object(AgenticProcess, "get_all", AsyncMock(return_value=procs)):
+    with _patch_request_info(_request_info()), patch.object(
+        AgenticProcess, "get_all", AsyncMock(return_value=procs)
+    ):
         result = await node._list_pty_sessions()
 
     assert result.status == "SUCCESS"
@@ -77,10 +122,7 @@ async def test_list_enriches_with_agentic_process_id():
 async def test_list_requires_request_context():
     """No request context (REST caller with no message id) → FAIL, not a crash."""
     node = _Node(MagicMock())
-    with patch(
-        "flow_sdk.builtin.faas.pty_actions.get_current_request_info",
-        return_value=None,
-    ):
+    with _patch_request_info(None):
         result = await node._list_pty_sessions()
     assert result.status == "FAIL"
 
@@ -90,10 +132,7 @@ async def test_list_fails_without_provider_node_id():
     """A node with no provider id cannot list — guarded FAIL."""
     node = _Node(MagicMock())
     node.node_provider_id = None
-    with patch(
-        "flow_sdk.builtin.faas.pty_actions.get_current_request_info",
-        return_value=_request_info(),
-    ):
+    with _patch_request_info(_request_info()):
         result = await node._list_pty_sessions()
     assert result.status == "FAIL"
 
@@ -111,10 +150,7 @@ async def test_rename_sets_handle_name():
     provider.get_pty_session = MagicMock(return_value=pty)
     node = _Node(provider)
 
-    with patch(
-        "flow_sdk.builtin.faas.pty_actions.get_current_request_info",
-        return_value=_request_info(),
-    ):
+    with _patch_request_info(_request_info()):
         result = await node._rename_pty_session({"shell_id": "s1", "name": "renamed"})
 
     assert result.status == "SUCCESS"
@@ -126,10 +162,7 @@ async def test_rename_sets_handle_name():
 async def test_rename_missing_name_fails():
     """rename without a name is rejected before touching any handle."""
     node = _Node(MagicMock())
-    with patch(
-        "flow_sdk.builtin.faas.pty_actions.get_current_request_info",
-        return_value=_request_info(),
-    ):
+    with _patch_request_info(_request_info()):
         result = await node._rename_pty_session({"shell_id": "s1"})
     assert result.status == "FAIL"
 
@@ -140,10 +173,7 @@ async def test_rename_unknown_session_fails():
     provider = MagicMock()
     provider.get_pty_session = MagicMock(return_value=None)
     node = _Node(provider)
-    with patch(
-        "flow_sdk.builtin.faas.pty_actions.get_current_request_info",
-        return_value=_request_info(),
-    ):
+    with _patch_request_info(_request_info()):
         result = await node._rename_pty_session({"shell_id": "ghost", "name": "x"})
     assert result.status == "FAIL"
 
@@ -153,24 +183,15 @@ async def test_rename_unknown_session_fails():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_ping_alive_true():
+@pytest.mark.parametrize("alive", [True, False], ids=["alive", "dead"])
+async def test_ping_reports_is_pty_alive(alive):
     provider = MagicMock()
-    provider.is_pty_alive = MagicMock(return_value=True)
+    provider.is_pty_alive = MagicMock(return_value=alive)
     node = _Node(provider)
     result = await node._ping_pty_session({"shell_id": "s1"})
     assert result.status == "SUCCESS"
-    assert result.data == {"alive": True}
+    assert result.data == {"alive": alive}
     provider.is_pty_alive.assert_called_once_with("pn-1", "s1")
-
-
-@pytest.mark.asyncio
-async def test_ping_alive_false():
-    provider = MagicMock()
-    provider.is_pty_alive = MagicMock(return_value=False)
-    node = _Node(provider)
-    result = await node._ping_pty_session({"shell_id": "s1"})
-    assert result.status == "SUCCESS"
-    assert result.data == {"alive": False}
 
 
 @pytest.mark.asyncio
@@ -184,101 +205,54 @@ async def test_ping_missing_shell_id_fails():
 # _PTY_CAP FIFO eviction
 # ---------------------------------------------------------------------------
 
-class _StopBeforeSpawn(Exception):
-    """Sentinel: abort start_machine_pty_session right after eviction so the
-    DB/disk tail never runs — we only assert the eviction decision here."""
+
+def _seed_node_states(node, n: int) -> list:
+    """Populate ``pty_registry.states`` with *n* states for *node* (insertion
+    order = age, oldest first). Returns the node keys in order."""
+    node_keys = [(node.id, node.node_provider_id, f"shell-{i}") for i in range(n)]
+    for k in node_keys:
+        pty_registry.states[k] = PtyState(pty_key=k, cols=80, rows=24)
+    return node_keys
 
 
 @pytest.mark.asyncio
-async def test_pty_cap_evicts_oldest_first(monkeypatch):
+async def test_pty_cap_evicts_oldest_first(eviction_registry):
     """When the per-node session count reaches ``_PTY_CAP``, opening one more
     closes exactly the oldest ``_PTY_EVICT_COUNT`` states for THIS node —
     other nodes' states are untouched and newer states survive.
-
-    The cap is lowered via the module constants (a test seam, not a real 70)
-    and no OS PTY is spawned: the provider spawn is mocked and the call is
-    aborted immediately after eviction.
     """
-    # Small, deterministic cap so we don't create 70 states.
-    monkeypatch.setattr(pty_actions, "_PTY_CAP", 4)
-    monkeypatch.setattr(pty_actions, "_PTY_EVICT_COUNT", 2)
-
     node = _Node(MagicMock())
-
-    # Snapshot + isolate the shared singleton's state dict.
-    original_states = pty_registry.states
-    fresh: dict = {}
-    # Four states for this node (insertion order = age, oldest first) …
-    node_keys = [(node.id, node.node_provider_id, f"shell-{i}") for i in range(4)]
-    for k in node_keys:
-        fresh[k] = PtyState(pty_key=k, cols=80, rows=24)
+    pty_registry.states = {}
+    # Four states for this node (oldest first) …
+    node_keys = _seed_node_states(node, 4)
     # … plus one for a DIFFERENT node that must never be evicted.
     other_key = ("cn-OTHER", "pn-9", "shell-other")
-    fresh[other_key] = PtyState(pty_key=other_key, cols=80, rows=24)
-    pty_registry.states = fresh
-
-    evicted: list = []
-
-    async def _fake_close(key):
-        evicted.append(key)
-        pty_registry.states.pop(key, None)
-
-    async def _fake_generate(*_args, **_kwargs):
-        # Reached only after eviction ran — stop here so no DB/disk work fires.
-        raise _StopBeforeSpawn
+    pty_registry.states[other_key] = PtyState(pty_key=other_key, cols=80, rows=24)
 
     node.compute_provider.get_or_create_pty_session = AsyncMock(return_value={"pid": 1})
 
-    monkeypatch.setattr(pty_registry, "close_session", _fake_close)
-    monkeypatch.setattr(pty_registry, "get_session", AsyncMock(return_value=None))
-    monkeypatch.setattr(pty_registry, "generate_session", _fake_generate)
+    with pytest.raises(_StopBeforeSpawn):
+        await node.start_machine_pty_session(shell_id="shell-new", connection_id="conn-1")
 
-    try:
-        with pytest.raises(_StopBeforeSpawn):
-            await node.start_machine_pty_session(shell_id="shell-new", connection_id="conn-1")
-
-        # Exactly the two oldest THIS-node keys were closed, oldest first.
-        assert evicted == node_keys[:2]
-        # They are gone; the two newer node states and the other node survive.
-        assert node_keys[0] not in pty_registry.states
-        assert node_keys[1] not in pty_registry.states
-        assert node_keys[2] in pty_registry.states
-        assert node_keys[3] in pty_registry.states
-        assert other_key in pty_registry.states
-    finally:
-        pty_registry.states = original_states
+    # Exactly the two oldest THIS-node keys were closed, oldest first.
+    assert eviction_registry.evicted == node_keys[:2]
+    # They are gone; the two newer node states and the other node survive.
+    assert node_keys[0] not in pty_registry.states
+    assert node_keys[1] not in pty_registry.states
+    assert node_keys[2] in pty_registry.states
+    assert node_keys[3] in pty_registry.states
+    assert other_key in pty_registry.states
 
 
 @pytest.mark.asyncio
-async def test_pty_cap_no_eviction_below_cap(monkeypatch):
+async def test_pty_cap_no_eviction_below_cap(eviction_registry):
     """Below the cap, opening a session evicts nothing."""
-    monkeypatch.setattr(pty_actions, "_PTY_CAP", 4)
-    monkeypatch.setattr(pty_actions, "_PTY_EVICT_COUNT", 2)
-
     node = _Node(MagicMock())
-    original_states = pty_registry.states
-    fresh: dict = {}
-    for i in range(3):  # three < cap of four
-        k = (node.id, node.node_provider_id, f"shell-{i}")
-        fresh[k] = PtyState(pty_key=k, cols=80, rows=24)
-    pty_registry.states = fresh
-
-    evicted: list = []
-
-    async def _fake_close(key):
-        evicted.append(key)
-
-    async def _fake_generate(*_args, **_kwargs):
-        raise _StopBeforeSpawn
+    pty_registry.states = {}
+    _seed_node_states(node, 3)  # three < cap of four
 
     node.compute_provider.get_or_create_pty_session = AsyncMock(return_value={"pid": 1})
-    monkeypatch.setattr(pty_registry, "close_session", _fake_close)
-    monkeypatch.setattr(pty_registry, "get_session", AsyncMock(return_value=None))
-    monkeypatch.setattr(pty_registry, "generate_session", _fake_generate)
 
-    try:
-        with pytest.raises(_StopBeforeSpawn):
-            await node.start_machine_pty_session(shell_id="shell-new", connection_id="conn-1")
-        assert evicted == []
-    finally:
-        pty_registry.states = original_states
+    with pytest.raises(_StopBeforeSpawn):
+        await node.start_machine_pty_session(shell_id="shell-new", connection_id="conn-1")
+    assert eviction_registry.evicted == []

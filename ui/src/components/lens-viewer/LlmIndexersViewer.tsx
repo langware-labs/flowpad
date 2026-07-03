@@ -19,7 +19,6 @@ import {
   QueryRequest,
   dataContext,
 } from '@sdk';
-import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -110,24 +109,13 @@ export function LlmIndexersViewer() {
         `Follow the markdown_index skill protocol: run plan.py, summarise stale files, assemble stale folders post-order.`,
       ].join('\n');
       const workdir = index.vault_root;
-      const cliOptions = new ClaudeCliOptions({
-        permission_mode: 'bypassPermissions',
-        print_mode: true,
-        output_format: 'stream-json',
-        verbose: true,
-      });
-      const process = await new AgenticProcess({
-        cli_config: cliOptions.toJson(),
+      const process = await AgenticProcess.newHeadless({
         context_data: {
           project_id: dataContext.project?.id,
           kind: 'markdown_index_rebuild',
           markdown_index_id: index.id,
         },
         workdir,
-        visible: false,
-        // Headless rebuild (stream-json, submit()): transport is CLI, so pin
-        // pty_mode=false — routing/classification keys on pty_mode, not visible.
-        pty_mode: false,
         target_typeid_str: index.typeId.toString(),
         process_type: ProcessKind.Execution,
       }).save([index.typeId]);

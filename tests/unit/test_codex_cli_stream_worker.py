@@ -21,7 +21,6 @@ Two behaviours specific to codex are pinned here:
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -33,24 +32,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex import (
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
 
-
-def _fake_codex_argv(lines: list[dict], delay_ms: int = 2) -> list[str]:
-    pieces: list[str] = []
-    for obj in lines:
-        pieces.append(f"printf '%s\\n' {json.dumps(json.dumps(obj))}")
-        if delay_ms > 0:
-            pieces.append(f"sleep {delay_ms / 1000:.3f}")
-    return ["bash", "-c", "; ".join(pieces)]
+from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
 
 
-def _patch_spawn(worker: CodexCLIStreamWorker, argv: list[str], env: dict | None = None) -> None:
-    # ``_build_spawn`` takes ``(context, prompt)`` and returns a 3-tuple
-    # ``(argv, env, stdin)`` — codex delivers the prompt over the child's
-    # stdin (PROMPT_CHANNEL="stdin"). The stub echoes the prompt back as stdin.
-    def _stub(context: AgenticContext, prompt: str):
-        return argv, (env or {}), prompt
-
-    worker._build_spawn = _stub  # type: ignore[assignment]
+# ``_build_spawn`` takes ``(context, prompt)`` and returns a 3-tuple
+# ``(argv, env, stdin)`` — codex delivers the prompt over the child's stdin
+# (PROMPT_CHANNEL="stdin"). ``patch_build_spawn(..., stdin="")`` reproduces that
+# 3-tuple shape; the stdin body is ignored by the bash fake.
 
 
 async def _collect(worker: CodexCLIStreamWorker, context: AgenticContext) -> list:
@@ -70,9 +58,9 @@ TURN_COMPLETED = {
 
 
 @pytest.mark.asyncio
-async def test_session_id_captured_from_thread_started(tmp_path: Path):
+async def test_session_id_captured_from_thread_started(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
-    _patch_spawn(worker, _fake_codex_argv([THREAD_STARTED, TURN_COMPLETED]))
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, TURN_COMPLETED], delay_ms=2), stdin="")
 
     await _collect(worker, AgenticContext(workdir=str(tmp_path)))
 
@@ -80,7 +68,7 @@ async def test_session_id_captured_from_thread_started(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_first_thread_started_wins_within_a_stream(tmp_path: Path):
+async def test_first_thread_started_wins_within_a_stream(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # The ``self._session_id is None`` guard means only the FIRST thread.started
     # sets the id; a later one in the same stream is ignored.
     second = {
@@ -89,7 +77,7 @@ async def test_first_thread_started_wins_within_a_stream(tmp_path: Path):
         "timestamp": "2026-05-06T21:39:49.000Z",
     }
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
-    _patch_spawn(worker, _fake_codex_argv([THREAD_STARTED, second, TURN_COMPLETED]))
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, second, TURN_COMPLETED], delay_ms=2), stdin="")
 
     await _collect(worker, AgenticContext(workdir=str(tmp_path)))
 
@@ -97,7 +85,7 @@ async def test_first_thread_started_wins_within_a_stream(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_fresh_id_every_turn_hazard(tmp_path: Path):
+async def test_fresh_id_every_turn_hazard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Documented hazard: with no persisted rollout, the driver builds a fresh
     # worker per turn and each turn captures whatever id its own thread.started
     # carries. Two fresh workers fed different ``thread.started`` events capture
@@ -107,11 +95,11 @@ async def test_fresh_id_every_turn_hazard(tmp_path: Path):
     turn2_id = "bbbbbbbb-0000-7000-9000-000000000003"
 
     w1 = CodexCLIStreamWorker(transcript_path=tmp_path / "t1.jsonl")
-    _patch_spawn(w1, _fake_codex_argv([{**THREAD_STARTED, "thread_id": turn1_id}, TURN_COMPLETED]))
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([{**THREAD_STARTED, "thread_id": turn1_id}, TURN_COMPLETED], delay_ms=2), stdin="")
     await _collect(w1, AgenticContext(workdir=str(tmp_path)))
 
     w2 = CodexCLIStreamWorker(transcript_path=tmp_path / "t2.jsonl")
-    _patch_spawn(w2, _fake_codex_argv([{**THREAD_STARTED, "thread_id": turn2_id}, TURN_COMPLETED]))
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([{**THREAD_STARTED, "thread_id": turn2_id}, TURN_COMPLETED], delay_ms=2), stdin="")
     await _collect(w2, AgenticContext(workdir=str(tmp_path)))
 
     assert w1.get_session_id() == turn1_id
@@ -120,9 +108,9 @@ async def test_fresh_id_every_turn_hazard(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_turn_completed_yields_result_and_end(tmp_path: Path):
+async def test_turn_completed_yields_result_and_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
-    _patch_spawn(worker, _fake_codex_argv([THREAD_STARTED, TURN_COMPLETED]))
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, TURN_COMPLETED], delay_ms=2), stdin="")
 
     out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
     types = [fd.attributes["element-type"] for fd in out]
@@ -132,10 +120,10 @@ async def test_turn_completed_yields_result_and_end(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_stream_is_teed_to_transcript(tmp_path: Path):
+async def test_stream_is_teed_to_transcript(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     transcript = tmp_path / "codex.jsonl"
     worker = CodexCLIStreamWorker(transcript_path=transcript)
-    _patch_spawn(worker, _fake_codex_argv([THREAD_STARTED, TURN_COMPLETED]))
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, TURN_COMPLETED], delay_ms=2), stdin="")
 
     await _collect(worker, AgenticContext(workdir=str(tmp_path)))
 
@@ -165,9 +153,9 @@ async def test_missing_binary_yields_single_error_no_end(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_nonzero_exit_yields_status_and_end(tmp_path: Path):
+async def test_nonzero_exit_yields_status_and_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
-    _patch_spawn(worker, ["bash", "-c", "printf 'boom\\n' >&2; exit 3"])
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, ["bash", "-c", "printf 'boom\\n' >&2; exit 3"], stdin="")
 
     out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
 
@@ -176,9 +164,9 @@ async def test_nonzero_exit_yields_status_and_end(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_close_session_terminates_running_worker(tmp_path: Path):
+async def test_close_session_terminates_running_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
-    _patch_spawn(worker, ["bash", "-c", "sleep 60"])
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, ["bash", "-c", "sleep 60"], stdin="")
     ctx = AgenticContext(workdir=str(tmp_path))
 
     async def _run():
