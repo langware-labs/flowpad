@@ -229,6 +229,10 @@ class WorkerCLIOptions:
         # ``hasattr`` guard. Only claude's ``to_json`` serializes it, so the wire
         # shape (and restart hash) of codex/copilot is unaffected.
         self.fork_session_id: str | None = None
+        # Launch-time system-prompt append (``resolve_system_instructions()``),
+        # set by the launcher; derived state — not a ctor param, not serialized,
+        # so restart hashing is unaffected.
+        self.system_prompt_append: str | None = None
 
     @property
     def model(self) -> str | None:
@@ -245,6 +249,10 @@ class WorkerCLIOptions:
 
     def add_env(self, key: str, value: str) -> None:
         self.env_vars[key] = value
+
+    def _system_prompt(self, override: str | None) -> str | None:
+        """Explicit per-call value wins; else the launch-derived field."""
+        return override if override is not None else self.system_prompt_append
 
     # ── Unified arg construction (argv is canonical; shell is derived) ───────
 
@@ -267,8 +275,9 @@ class WorkerCLIOptions:
         """Canonical argv. The single source of truth; the shell string and the
         spawn tuple both derive from this."""
         argv: list[str] = [*self._resolve_binary(), *self._emit_flags()]
-        if system_prompt_append and self.SYSTEM_PROMPT_FLAG:
-            argv.extend([self.SYSTEM_PROMPT_FLAG, system_prompt_append])
+        spa = self._system_prompt(system_prompt_append)
+        if spa and self.SYSTEM_PROMPT_FLAG:
+            argv.extend([self.SYSTEM_PROMPT_FLAG, spa])
         if self.PROMPT_CHANNEL == "argv" and instruction:
             argv.extend(["--", instruction])
         return argv
@@ -282,8 +291,9 @@ class WorkerCLIOptions:
         if self.PROMPT_CHANNEL != "stdin":
             return None
         body = instruction or ""
-        if system_prompt_append and not self.SYSTEM_PROMPT_FLAG:
-            body = f"{system_prompt_append}\n\n{body}".strip() if body else system_prompt_append
+        spa = self._system_prompt(system_prompt_append)
+        if spa and not self.SYSTEM_PROMPT_FLAG:
+            body = f"{spa}\n\n{body}".strip() if body else spa
         return body
 
     def to_spawn(

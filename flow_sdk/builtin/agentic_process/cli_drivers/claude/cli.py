@@ -179,6 +179,11 @@ class ClaudeCliOptions(WorkerCLIOptions):
                 rest.append(flags[i])
                 i += 1
 
+        # Launch-derived instructions ride the shell form too — the PTY spawn
+        # is exactly this string, and the interactive CLI accepts the flag.
+        if self.system_prompt_append and self.SYSTEM_PROMPT_FLAG:
+            rest.extend([self.SYSTEM_PROMPT_FLAG, self.system_prompt_append])
+
         def q(xs: list[str]) -> list[str]:
             return [shlex.quote(x) for x in xs]
 

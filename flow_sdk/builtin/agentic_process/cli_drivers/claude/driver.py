@@ -166,9 +166,9 @@ class ClaudeDriver:
             session_id=process.session_id if fork_source else (None if is_resume else process.session_id),
             fork_session=bool(fork_source),
             add_dirs=process.resolved_add_dirs,
-            # ContextProcess §2.4: fold the bound context summary into the system
-            # prompt (maps to system_prompt.append). "" when no context is bound.
-            instructions=(await process.resolve_context_summary()) or None,
+            # System-prompt append: caller instructions (context_data) merged
+            # with the bound GraphContext summary. None when both are empty.
+            instructions=await process.resolve_system_instructions(),
         )
 
         # Lifecycle: flip to RUNNING before launching the worker.

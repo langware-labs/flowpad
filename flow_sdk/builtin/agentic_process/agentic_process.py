@@ -1015,6 +1015,13 @@ class AgenticProcess(Entity):
 
             cmd = self._finalized_restart_cli_options()
 
+            # System-prompt append (caller instructions + bound context) —
+            # launch-time only, set AFTER the restart snapshot above so the
+            # restart hash never sees it. This is what makes
+            # ``context_data.instructions`` reach PTY workers, not just the
+            # headless paths (which thread the same value via AgenticContext).
+            cmd.system_prompt_append = await self.resolve_system_instructions()
+
             # Fork & CLAUDE_PROJECT_DIR resume-cwd pinning are Claude-only —
             # Codex/Copilot mint their own session and use ``-C <cwd>``, not
             # ``CLAUDE_PROJECT_DIR``. Gated on the driver trait, not the options
@@ -1816,61 +1823,30 @@ class AgenticProcess(Entity):
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:
         """Resolve a show target — ``{typeid}`` | ``{path}`` | ``{port}`` — and emit it.
 
-        Resolution mirrors ``/agent/navigate/file``: a path that is an indexed
-        asset resolves to its entity (stable editor view); an unknown path
-        falls back to a raw vfs pointer; a port is a webapp preview.
+        Resolution is the shared ``resolve_display_target`` policy (same as
+        ``flow navigate file``): indexed asset → its entity; unknown path →
+        raw vfs pointer; port → webapp preview.
         """
+        from flow_sdk.core.display_target import (  # noqa: PLC0415
+            DisplayTargetNotFound,
+            InvalidDisplayTarget,
+            resolve_display_target,
+        )
+
         body = await _read_json_body()
         if isinstance(body, ApiFailResponse):
             return body
 
-        typeid_raw = str(body.get("typeid") or "").strip()
-        path_raw = str(body.get("path") or "").strip()
-        port = body.get("port")
-
-        if typeid_raw:
-            try:
-                tid = TypeId(typeid_raw)
-            except (ValueError, IndexError) as e:
-                return ApiFailResponse(message=f"Invalid typeid '{typeid_raw}': {e}", status_code=400)
-            try:
-                entity = await Entity.get_by_typeid(tid)
-            except ValueError:
-                entity = None  # unknown type collapses to "not found", like navigate
-            if entity is None:
-                return ApiFailResponse(message=f"Entity not found: {typeid_raw}", status_code=404)
-            payload = {
-                "kind": "entity",
-                "typeid": f"{entity.get_type()}-{entity.id}",
-                "type": entity.get_type(),
-                "id": entity.id,
-            }
-        elif path_raw:
-            import os  # noqa: PLC0415
-
-            from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
-
-            path = canonical_posix_path(os.path.abspath(os.path.expanduser(path_raw)))
-            entity = await Entity.get_by_asset_ref(path)
-            if entity is not None and getattr(entity, "id", None):
-                payload = {
-                    "kind": "entity",
-                    "typeid": f"{entity.get_type()}-{entity.id}",
-                    "type": entity.get_type(),
-                    "id": entity.id,
-                    "path": path,
-                }
-            else:
-                payload = {"kind": "vfs", "path": path}
-        elif port is not None:
-            try:
-                payload = {"kind": "webapp", "port": int(port)}
-            except (TypeError, ValueError):
-                return ApiFailResponse(message=f"Invalid port: {port!r}", status_code=400)
-        else:
-            return ApiFailResponse(
-                message="Body must include one of: typeid, path, port", status_code=400
+        try:
+            payload = await resolve_display_target(
+                typeid=str(body.get("typeid") or "").strip() or None,
+                path=str(body.get("path") or "").strip() or None,
+                port=body.get("port"),
             )
+        except InvalidDisplayTarget as e:
+            return ApiFailResponse(message=str(e), status_code=400)
+        except DisplayTargetNotFound as e:
+            return ApiFailResponse(message=str(e), status_code=404)
 
         await self.on_show(payload)
         return ApiSuccessResponse(data=payload)
@@ -4174,14 +4150,16 @@ class AgenticProcess(Entity):
         gc = await GraphContext.get_one({"id": gc_id})
         if gc is None:
             return ""
-        resolved: list = []
-        for raw in (gc.context_typeids or []):
+        async def _load(raw) -> "Entity | None":
             try:
-                ent = await _Entity.get_by_typeid(TypeId(str(raw)))
-                if ent is not None:
-                    resolved.append(ent)
+                return await _Entity.get_by_typeid(TypeId(str(raw)))
             except Exception:  # noqa: BLE001 — a missing entity just drops from the summary
-                continue
+                return None
+
+        # Concurrent loads — this runs on the launch path (PTY open + headless
+        # turn), where N serial round-trips would add directly to spawn latency.
+        loaded = await asyncio.gather(*(_load(raw) for raw in (gc.context_typeids or [])))
+        resolved = [ent for ent in loaded if ent is not None]
         summary = self._render_context_summary(resolved)
         self.context_data = {**data, "context_summary": summary}
         return summary
