@@ -43,14 +43,15 @@ __all__ = [
 class WorkerMode(StrEnum):
     """Which mode the worker is currently running in.
 
-    Derived from ``visible``; not stored as its own field. The routing is:
-      - ``visible is True``  → ``INTERACTIVE`` (PTY worker, xterm in the dock)
-      - ``visible is False`` → ``CLI`` (headless ``claude -p`` subprocess per turn)
+    Derived from the *transport* ``pty_mode``, not tab ``visible``:
+      - ``pty_mode is True``  → ``INTERACTIVE`` (PTY worker, xterm in the dock)
+      - ``pty_mode is False`` → ``CLI`` (headless ``claude -p`` subprocess per turn)
 
-    ``session_id`` survives both directions — both modes write the same
-    ``~/.claude/projects/<encoded-cwd>/<sid>.jsonl``. Switching is therefore
-    two-way: opening a shell tab flips ``visible=True`` (via the ``open``
-    action); closing the tab flips it back to ``False`` (via ``close``).
+    A hidden live PTY (``visible=False`` but ``pty_mode=True``) is still an
+    INTERACTIVE worker — visibility is only tab chrome. ``session_id`` survives
+    both directions (both modes write the same
+    ``~/.claude/projects/<encoded-cwd>/<sid>.jsonl``), so switching is two-way via
+    the ``switch-mode`` action.
     """
 
     INTERACTIVE = "interactive"
@@ -58,8 +59,8 @@ class WorkerMode(StrEnum):
 
 
 def get_worker_mode(process: "AgenticProcess") -> WorkerMode:
-    """Derive ``WorkerMode`` from ``process.visible``."""
-    return WorkerMode.INTERACTIVE if process.visible else WorkerMode.CLI
+    """Derive ``WorkerMode`` from the transport intent ``process.pty_mode``."""
+    return WorkerMode.INTERACTIVE if process.pty_mode else WorkerMode.CLI
 
 
 _READY_WORKER_STATES: frozenset[WorkerStatus] = frozenset({

@@ -154,6 +154,18 @@ describe('set parity (vs test_fixtures/status_sets.json)', () => {
     expect(new Set(actual)).toEqual(new Set(fixture.process_startable));
   });
 
+  it('READY_WORKER_STATUSES matches fixture worker_ready_for_input', () => {
+    // Re-derive via isReadyForInput (the module-private READY_WORKER_STATUSES is
+    // not exported): every WorkerStatus that reads ready on a RUNNING process is
+    // exactly the fixture set. Pins the send-prompt gate to the same
+    // {idle, complete, interrupted} literal the Python
+    // test_ready_for_input_set_matches_spec asserts against _READY_WORKER_STATES.
+    const actual = Object.values(WorkerStatus).filter((s) =>
+      isReadyForInput({ status: ProcessStatus.RUNNING, workerStatus: s as WorkerStatus }),
+    );
+    expect(new Set(actual)).toEqual(new Set(fixture.worker_ready_for_input));
+  });
+
   it('ERROR_WORKER_STATUSES matches fixture worker_execution_error', () => {
     // Re-derive via classifyExecutionMode rather than importing the private set:
     // any RUNNING worker whose status classifies as Error must be in the fixture.
@@ -226,10 +238,50 @@ describe('classifyExecutionMode', () => {
     ).toBe(ExecutionMode.Background);
   });
 
-  it('reflects a visible flip Interactive↔Background', () => {
+  it('reflects a visible flip Interactive↔Background (fallback when pty_mode absent)', () => {
     const base = { status: ProcessStatus.RUNNING, workerStatus: WorkerStatus.THINKING };
     expect(classifyExecutionMode({ ...base, visible: true })).toBe(ExecutionMode.Interactive);
     expect(classifyExecutionMode({ ...base, visible: false })).toBe(ExecutionMode.Background);
+  });
+
+  // ── transport-keyed (pty_mode) rows — the new contract ──
+  it.each([ProcessStatus.RUNNING, ProcessStatus.STARTING])(
+    'live %s + pty_mode=true → Interactive',
+    (s) => {
+      expect(classifyExecutionMode({ status: s, pty_mode: true })).toBe(ExecutionMode.Interactive);
+    },
+  );
+
+  it.each([ProcessStatus.RUNNING, ProcessStatus.STARTING])(
+    'live %s + pty_mode=false → Background',
+    (s) => {
+      expect(classifyExecutionMode({ status: s, pty_mode: false })).toBe(ExecutionMode.Background);
+    },
+  );
+
+  it('hidden live PTY (visible=false, pty_mode=true) → Interactive, NOT Background', () => {
+    // Transport wins over tab visibility — the row the old visible-keyed
+    // classifier bucketed as a headless Background worker.
+    expect(
+      classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: false, pty_mode: true }),
+    ).toBe(ExecutionMode.Interactive);
+  });
+
+  it('hidden live PTY with dead PID → Error (rule 2 keys on pty_mode)', () => {
+    expect(
+      classifyExecutionMode({
+        status: ProcessStatus.RUNNING,
+        visible: false,
+        pty_mode: true,
+        pidAlive: false,
+      }),
+    ).toBe(ExecutionMode.Error);
+  });
+
+  it('shown headless worker (visible=true, pty_mode=false) → Background', () => {
+    expect(
+      classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: true, pty_mode: false }),
+    ).toBe(ExecutionMode.Background);
   });
 });
 

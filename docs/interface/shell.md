@@ -85,6 +85,9 @@ membership is the `Tab` entity, see [docs/tab-management.md](../tab-management.m
 | `worker_alive()` | async | True if `worker_pid` runs and its cmdline matches `worker_name` (+ session id). Raises if the PTY itself is dead |
 | `evict_pty_handle()` | async | Kill the in-memory PTY handle if present (no-op otherwise); does not touch worker or `.pty` file |
 | `compute_node` | property | Real bound `ComputeNode` (cached), else a synthetic local stub |
+
+> **`compute_node.get_pty(shell_id)` returns a new wrapper per call, not a stable handle.** It delegates to `compute_provider.get_pty_session`, which constructs a fresh `LocalPtySession(cn_id, connection_id, shell_id, …)` each call — the durable PTY state lives in `pty_registry`, and the returned object is a thin per-call view over it. Don't cache the returned handle expecting identity, and don't compare two `get_pty` results with `is`; re-fetch when you need current state.
+
 | `ensure_live_compute_node_binding()` | async | Repair stale binding by uname → id → local; caches the real CN |
 
 **Worker tracking**

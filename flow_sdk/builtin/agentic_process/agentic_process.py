@@ -1275,13 +1275,9 @@ class AgenticProcess(Entity):
         runs headless and resumes the very same session, and a reload stays
         headless. ``exit()`` alone can't reset ``visible`` — a plain ``restart``
         (exit+start) must keep it True — so the reset lives here, the explicit
-        mode-switch. Rejected mid-turn so two workers never share the transcript.
+        mode-switch. The mid-turn guard is enforced by the caller
+        (:meth:`switch_mode`) so two workers never share the transcript.
         """
-        if _get_prompt_lock(self.id).locked():
-            return ApiFailResponse(
-                message="a prompt turn is in flight; cannot switch mode",
-                status_code=409,
-            )
         if self.shell_id and await self.is_running():
             try:
                 exit_result = await self.exit()
@@ -1323,7 +1319,9 @@ class AgenticProcess(Entity):
           - ``interactive`` → PTY terminal (spawn PTY, visible=True, pty_mode=True)
 
         Both are the SAME logical session (one ``session_id``/transcript); routing
-        stays ``headless == !visible``. Rejected mid-turn (409).
+        keys on the transport intent ``pty_mode`` (``interactive`` ⇒ ``pty_mode=True``,
+        ``cli`` ⇒ ``pty_mode=False``), independent of tab ``visible``. Rejected
+        mid-turn in BOTH directions (409) so two workers never share the transcript.
         """
         body = await _read_json_body()
         if isinstance(body, ApiFailResponse):
@@ -1334,6 +1332,14 @@ class AgenticProcess(Entity):
         except ValueError:
             return ApiFailResponse(
                 message=f"unknown mode {raw!r} (expected {WorkerMode.INTERACTIVE!r} or {WorkerMode.CLI!r})"
+            )
+        # Mid-turn guard for BOTH directions (hoisted from _enter_cli_mode): a
+        # switch that spawns/kills a worker while a prompt turn is in flight would
+        # put two workers on one transcript.
+        if _get_prompt_lock(self.id).locked():
+            return ApiFailResponse(
+                message="a prompt turn is in flight; cannot switch mode",
+                status_code=409,
             )
         if mode is WorkerMode.CLI:
             return await self._enter_cli_mode()
@@ -1346,8 +1352,15 @@ class AgenticProcess(Entity):
         """exit() + start_pty(). Shell entity is preserved and reused.
 
         Restart is always an explicit user/worker request, so it carries
-        ``retry=True`` — a ``start_failure`` latch never blocks it.
+        ``retry=True`` — a ``start_failure`` latch never blocks it. Rejected
+        mid-turn (409): tearing the worker down while a prompt turn is in flight
+        would drop the in-flight turn.
         """
+        if _get_prompt_lock(self.id).locked():
+            return ApiFailResponse(
+                message="a prompt turn is in flight; cannot restart",
+                status_code=409,
+            )
         exit_result = await self.exit()
         if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
             return exit_result
@@ -3527,17 +3540,18 @@ class AgenticProcess(Entity):
         during ``start_pty()`` itself (intermediate saves there are bookkeeping,
         not config drift) — see ``_set_start_lifecycle``.
 
-        External callers can still set ``restart_required`` directly; the
-        hook only flips it ON, never explicitly clears it (clearing happens
-        only on successful ``start_pty()``).
+        The flag tracks the snapshot-hash contract symmetrically: it flips ON
+        when the live config drifts from ``last_started_hash`` and clears again
+        when the config is reverted back to the running worker's hash (so a
+        change-then-undo doesn't leave a phantom "restart needed" glow). A
+        successful ``start_pty()`` also clears it by re-capturing the hash.
         """
         if (
             not self._is_in_start_lifecycle()
             and self.status == ProcessStatus.RUNNING.value
             and self.last_started_hash
-            and self._restart_snapshot() != self.last_started_hash
         ):
-            self.restart_required = True
+            self.restart_required = self._restart_snapshot() != self.last_started_hash
         return await super().save(owner=owner, notify=notify)
 
     @action.get(action_name="get-assets")
@@ -3720,16 +3734,6 @@ class AgenticProcess(Entity):
     def cmd_line(self) -> str:
         """Return the full CLI command string that would be used to launch this process."""
         return self.cli_options.to_shell_string()
-
-    def to_dict(self) -> dict:
-        d = super().to_dict()
-        computed = self.fetch_worker_status()
-        d["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
-        ready = is_ready_for_input(self, computed)
-        d["ready_for_input"] = ready
-        d["queue"] = self._queue_state()
-        d["supports_plan_mode"] = self._supports_plan_mode()
-        return d
 
     @model_serializer(mode="wrap")
     def api_json_serializer(self, nxt, info: SerializationInfo):

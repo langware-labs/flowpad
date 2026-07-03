@@ -125,6 +125,9 @@ export function LlmIndexersViewer() {
         },
         workdir,
         visible: false,
+        // Headless rebuild (stream-json, submit()): transport is CLI, so pin
+        // pty_mode=false — routing/classification keys on pty_mode, not visible.
+        pty_mode: false,
         target_typeid_str: index.typeId.toString(),
         process_type: ProcessKind.Execution,
       }).save([index.typeId]);

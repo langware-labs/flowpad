@@ -55,8 +55,9 @@ Underlying wire flow, from the streaming test: `createProcess` with
 - `tests/long_tests/test_agentic_process_prompt_streaming.py` — asserts the
   `flow-status`/`flow-chat`/`flow-end` frame contract on the streaming `prompt` body
   (lines 100-122).
-- `tests/api/test_agentic_process_execute.py` — **empty file (0 bytes).** There is no
-  Python API-level coverage of the headless execute path; see [Findings](#findings).
+- `tests/api/test_agentic_process_execute.py` — headless `execute` / `prompt` /
+  `cancel-prompt` round-trips via HTTP (session-id capture, streamed FlowData+end,
+  in-flight cancel). (Was a 0-byte stub before the 2026-07-02 coverage expansion.)
 
 **Slickness:** Clean on the TS side — `save → watch → executeInstruction → output()` reads
 like an obvious four-step API. The rough edge is that the caller must know the
@@ -460,18 +461,27 @@ avoid a second transcript tail-read. This predicate powers [#prompt-queue](#prom
 readiness check (`test_prompt_queue_integration.py:70` asserts `is_ready_for_input(process) is True`
 after the injected turn) and [#headless-execute](#headless-execute)'s turn boundaries.
 
+**Which FE surface consumes it** (B1, verified 2026-07-02): `isReadyForInput` is consumed by
+`process-status-line.tsx` (`:110`), which enables/disables the inline status affordance. It is **not**
+what gates the chat input box — the composer (`ChatComposerBar.tsx:83`) gates on
+`isWorkerRunning(workerStatus)` (busy while the worker is mid-turn), a coarser worker-running check.
+Don't conflate the two: a process can be `!isWorkerRunning` yet `!isReadyForInput` (e.g. not RUNNING),
+so the composer and the status line disable on different conditions.
+
 <a id="worker-status-serialize"></a>
 ### #worker-status-serialize — stored vs computed status on the wire
 
 Worker status is **computed, not stored** — it's derived from the transcript tail and stamped onto
-every serialized payload. Two seams, both in
+every serialized payload. There is exactly one live seam, in
 `flow_sdk/builtin/agentic_process/agentic_process.py`:
 
-- `to_dict()` (line 3724) and `api_json_serializer()` (the `model_serializer(mode="wrap")` at line
-  3734) each call `fetch_worker_status()` (line 3776, delegating to
-  `_discover_status_from_transcript`), then set `data["worker_status"] = str(computed) or IDLE`,
+- `api_json_serializer()` (the `model_serializer(mode="wrap")`, ~line 3739) calls
+  `fetch_worker_status()` (delegating to `_discover_status_from_transcript`), then sets
+  `data["worker_status"] = str(computed) or IDLE`,
   `data["ready_for_input"] = is_ready_for_input(self, computed)`, plus `queue` and
-  `supports_plan_mode`.
+  `supports_plan_mode`. (An earlier `to_dict()` override that looked like a second seam was dead code
+  — its `super().to_dict()` raised `AttributeError`, no caller invoked it — and was removed
+  2026-07-02.)
 - Deliberately **not** computed in the serializer: `cmd_line` — resolving it walks
   `cli_options → transcript_descriptor → get_claude_session`, i.e. live disk I/O, which must never
   run inside a `model_dump()` (the currency for persistence, query filters, WS broadcast, and REST

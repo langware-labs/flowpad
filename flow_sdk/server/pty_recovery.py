@@ -124,22 +124,27 @@ async def maybe_emit_recovered_on_watch(connection_id: str, entity_type: str, en
 
 
 async def reconcile_orphaned_workers() -> None:
-    """Stamp dead headless (``visible=false``) RUNNING/STARTING workers to STOPPED.
+    """Stamp dead headless (``pty_mode=false``) RUNNING/STARTING workers to STOPPED.
 
     On restart the previous backend's child workers die (SIGHUP) and the new
     process starts with an empty in-memory PTY registry. ``run_pty_recovery``
-    respawns the *visible*, *watched* PTYs (with ``--resume``); a *headless* worker
-    (``visible=false``, ``worker_pid``/``worker_status`` already gone) is not
-    resumable in place, so its record would otherwise linger forever as a phantom
-    "Background" agent in the footer chip (whose count keys on
+    respawns the *PTY-transport*, *watched* workers (with ``--resume``); a
+    *headless* worker (``pty_mode=false``, ``worker_pid``/``worker_status`` already
+    gone) is not resumable in place, so its record would otherwise linger forever
+    as a phantom "Background" agent in the footer chip (whose count keys on
     ``ProcessStatus ∈ {RUNNING, STARTING}``). The restart took the worker down —
     a clean stop, not a worker crash — so we stamp ``STOPPED`` (which is
     ``isProcessStartable``, letting the user relaunch).
 
+    The split keys on the *transport* (``pty_mode``), NOT tab visibility: a hidden
+    live PTY (``visible=false`` but ``pty_mode=true``) is still a resumable PTY
+    worker owned by ``run_pty_recovery``, so stamping it STOPPED here would kill a
+    recoverable session.
+
     Pure DB writes — no subprocess spawn — so this is awaited at startup *before*
     serving, leaving the first bootstrap clean. ``save()`` emits the data_op, so
-    already-connected clients also correct reactively. Visible PTYs are untouched
-    here: they belong to ``run_pty_recovery`` (respawn) / ``_on_pty_exit``
+    already-connected clients also correct reactively. PTY-transport workers are
+    untouched here: they belong to ``run_pty_recovery`` (respawn) / ``_on_pty_exit``
     (FAILED), and stamping them at startup would race the respawn.
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess
@@ -154,8 +159,8 @@ async def reconcile_orphaned_workers() -> None:
 
     for proc in procs:
         try:
-            if proc.visible:
-                continue  # owned by run_pty_recovery (respawn) / _on_pty_exit
+            if proc.pty_mode:
+                continue  # PTY transport → run_pty_recovery (respawn) / _on_pty_exit
             if proc.status not in live:
                 continue
             proc.status = ProcessStatus.STOPPED.value
@@ -206,8 +211,8 @@ async def run_pty_recovery() -> None:
 
     for proc in procs:
         try:
-            if not proc.visible:
-                continue
+            if not proc.pty_mode:
+                continue  # headless transport → reconcile_orphaned_workers owns it
             if proc.status not in (ProcessStatus.RUNNING.value, ProcessStatus.STARTING.value):
                 continue
             if not proc.shell_id:

@@ -21,6 +21,7 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
+from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
 
 
@@ -167,3 +168,33 @@ def test_pty_mode_changes_codex_launch_shape_but_visible_does_not():
     claude_headless = AgenticProcess(worker_type="claude_code", pty_mode=False)
     claude_pty = AgenticProcess(worker_type="claude_code", pty_mode=True)
     assert claude_headless._restart_snapshot() == claude_pty._restart_snapshot()
+
+
+@pytest.mark.asyncio
+async def test_restart_required_flips_on_config_change_and_clears_on_revert():
+    """The save-hook maintains ``restart_required`` symmetrically against the
+    snapshot-hash contract: a worker-relevant config change while RUNNING flips it
+    ON, and reverting that change back to the running worker's hash clears it.
+
+    Fails pre-fix: the hook only flipped the flag ON — a change-then-undo left a
+    phantom "restart needed" glow that only a real restart could clear.
+    """
+    p = AgenticProcess(
+        worker_type="claude_code",
+        status=ProcessStatus.RUNNING.value,
+        workdir="/repo/original",
+    )
+    # Pin the baseline exactly as a successful start_pty() would.
+    p.last_started_hash = p._restart_snapshot()
+    await p.save()
+    assert p.restart_required is False
+
+    # A worker-relevant config change (workdir is in the generic snapshot) → drift → flag ON.
+    p.workdir = "/repo/moved"
+    await p.save()
+    assert p.restart_required is True
+
+    # Revert it → snapshot matches the running worker's hash again → flag clears.
+    p.workdir = "/repo/original"
+    await p.save()
+    assert p.restart_required is False

@@ -169,9 +169,11 @@ export interface IAgenticProcess extends IEntity {
   shell_id?: string | null;
   /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
   visible?: boolean;
-  /** Transport intent: true → interactive PTY (default, today's behaviour);
-   *  false → headless JSON-stream (no PTY/xterm). Seeds `visible` at launch and
-   *  is kept durable across reload by the loader. Routing stays headless==!visible. */
+  /** Transport intent and the routing key: true → interactive PTY (default,
+   *  today's behaviour); false → headless JSON-stream (no PTY/xterm). Seeds
+   *  `visible` at launch and is kept durable across reload by the loader. All
+   *  routing keys on `pty_mode`, never `visible` (a hidden live PTY is
+   *  visible=false + pty_mode=true). */
   pty_mode?: boolean;
   /** Backend-computed driver capability: this worker supports CLI plan mode
    *  (`--permission-mode plan`). Drives the headless-chat plan toggle. */
@@ -497,6 +499,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       },
       workdir: options.workdir,
       visible: workerOptions?.visible,
+      // Transport intent (the routing axis): headless → no PTY (one subprocess
+      // per turn); otherwise a long-lived PTY worker. Independent of ``visible``
+      // so a headless spawn stays headless even if a tab later shows it.
+      pty_mode: !workerOptions?.headless,
       shell_mode: options.shellMode,
       ...(options.targetVfsPath ? { target_typeid_str: options.targetVfsPath } : {}),
     }).save(options.scope ?? []);
