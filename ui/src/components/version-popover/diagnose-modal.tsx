@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { Textarea } from '@src/components/ui/textarea';
 import { forwardDiagnosis, sendDiagnosisEmailReport } from '@sdk';
 import { streamDiagnose, type DiagnoseEvent } from '@src/components/diagnose/diagnose-stream';
+import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CheckCircle2, Info, Loader2, Stethoscope, XCircle } from 'lucide-react';
@@ -39,6 +40,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   const [reportError, setReportError] = useState<string | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const { navigation } = useDockNavigation();
 
   // Reset everything whenever the modal is (re)opened.
@@ -107,9 +109,13 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   }, [message, handleEvent]);
 
   const handleClose = useCallback(() => {
+    // Closing mid-run: the diagnosis keeps going in the background, so fly the
+    // window into the footer's active-process chip — that's where the user can
+    // find it later.
+    if (running) animateMinimizeToProcessChip(contentRef.current);
     abortRef.current?.abort();
     onClose();
-  }, [onClose]);
+  }, [onClose, running]);
 
   // "Report issue" / "Forward" from the finished-diagnose popup: send the full
   // formatted diagnostic report into the chosen conversation (the same send path
@@ -152,7 +158,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent ref={contentRef} className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Stethoscope className="h-4 w-4" />
