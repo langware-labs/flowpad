@@ -1,3 +1,7 @@
+---
+id: 2aa28fd4-4cb7-59c8-b554-dbd96bb5acdb
+---
+
 # Test coverage — the agentic-process stack, per topic × per front
 
 Audited 2026-07-02 against the interface surfaces in this folder. Each cell was

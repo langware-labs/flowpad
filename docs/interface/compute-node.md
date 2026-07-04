@@ -1,3 +1,7 @@
+---
+id: b0f2f3f8-0b53-5da5-a753-7328bbfdafaf
+---
+
 # ComputeNode — interface
 
 `ComputeNode` is the entity that represents an execution environment — "this machine"

@@ -835,10 +835,10 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     test.skip(true, 'platform: OS file manager opens outside the browser; cannot verify headlessly. skip_challenge_required.');
   });
 
-  test('test 32: Footer repo/branch reflects active project Git artifact [skip:scope-infra]', async () => {
+  test('test 32: Footer repo/branch Git artifact [skip:removed]', async () => {
     test.skip(
       true,
-      'rabbit-hole: a GIT_REPO Artifact created via REST with project_id + scope:"project" (correct CodeRef shape: name/ref_type/path) is accepted, but the footer (footer.tsx useCurrentArtifacts, QueryRequest scope=[project.typeId]) does not return it for the navigated project, so repoInfo never renders metadata.branch. Verified the artifact persists with the right project_id; the gap is in the project-scoped artifact QUERY matching (entity scope-query infra), a deep investigation orthogonal to the tab/strip matrix. skip_challenge_required.',
+      'removed: project Git artifacts and footer repo/branch rendering were removed; git share provenance is represented by GitOrigin bundle metadata. skip_challenge_required.',
     );
   });
 

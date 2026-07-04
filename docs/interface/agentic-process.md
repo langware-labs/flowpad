@@ -1,3 +1,7 @@
+---
+id: 357acf1f-609c-5d7f-8d4a-e165c15c42f2
+---
+
 # AgenticProcess — interface
 
 Complete interface reference for the `AgenticProcess` entity — the backend Python object, its HTTP `@action` surface, and the frontend TypeScript class.

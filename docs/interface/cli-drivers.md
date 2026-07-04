@@ -1,3 +1,7 @@
+---
+id: f14e2703-bbc5-59d7-bc30-e1ef10b01354
+---
+
 # CLI drivers — interface
 
 The **CLI driver layer** is how `AgenticProcess` talks to a coding-agent CLI (Claude

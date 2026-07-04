@@ -1,3 +1,7 @@
+---
+id: 9aa192ca-c374-5028-96cf-4f460d9efaf2
+---
+
 # Shell — interface
 
 The **Shell** is the DB-backed metadata layer for a PTY session (one terminal tab). The

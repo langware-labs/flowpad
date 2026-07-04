@@ -1,3 +1,7 @@
+---
+id: 221bb786-dc59-5fa6-bf9b-97884c9e4bee
+---
+
 # AgenticProcess statuses — the canonical model
 
 This is the single authoritative reference for how an AgenticProcess's status is
