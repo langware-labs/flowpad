@@ -90,7 +90,12 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
   ViewType.SPEC,
 ]);
 
-export function ContentPanel() {
+/** ``minimalChrome`` forces the chrome-less arrangement (no tab strip / navigator
+ *  / border framing) regardless of view mode — used when ContentPanel is embedded
+ *  inside a host layout that owns its own chrome (the vibe workspace mounts it as
+ *  the display for a child tab). Generalizes the vibe-creator-surface suppression
+ *  to any embedded host (future: the win/ layout). */
+export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolean } = {}) {
   // Get navigation instance for URL-first architecture
   const { navigation, currentDock, isDockUrl, windowMode } = useDockNavigation();
   const activeLifecycle = useTabLifecycle(currentDock?.tabHash);
@@ -194,8 +199,10 @@ export function ContentPanel() {
   // Lovable-style chrome-less canvas. Every OTHER surface (assets, graph,
   // triggers, settings…) falls back to the normal Standard chrome so navigation
   // still works. Skin-layer rule: arrangement/visibility only — never data.
+  // Chrome-less either because the host asked (embedded, e.g. the vibe display
+  // pane) or a Vibe creator surface. No longer vibe-only — hence `suppressChrome`.
   const isVibe = useIsVibe();
-  const vibeMinimalChrome = isVibe && VIBE_CREATOR_SURFACES.has(bodyViewType);
+  const suppressChrome = minimalChrome || (isVibe && VIBE_CREATOR_SURFACES.has(bodyViewType));
 
   // Chrome-less when the surface is full-bleed (Home — a welcome landing, not a
   // tabbed workspace), in the win/ focus layout, or a Vibe creator surface.
@@ -206,7 +213,7 @@ export function ContentPanel() {
   // surfaces hide it. `hideChrome` (strip conditions + fullbleed) governs the
   // navigator/border framing — derived from `showTabStrip` so the shared
   // conditions exist exactly once.
-  const showTabStrip = !windowMode && !vibeMinimalChrome;
+  const showTabStrip = !windowMode && !suppressChrome;
   const hideChrome = !showTabStrip || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
 
   // File manager filters
@@ -406,7 +413,7 @@ export function ContentPanel() {
           opens its bottom over this line, so the menu + body read as one panel
           hanging from the current tab (the folder-tab continuum). */}
       <div className={`flex min-h-0 flex-1 overflow-hidden ${showTabStrip ? 'border-t border-border' : ''}`}>
-        {!vibeMinimalChrome && <NavigatorSlot />}
+        {!suppressChrome && <NavigatorSlot />}
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {/* Matches the proven per-viewType slot layout (plain h-full, no flex-col)

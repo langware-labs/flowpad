@@ -3,6 +3,7 @@ import { WebappViewer } from '@src/components/webapp-viewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
+import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import PersistentIframe, { PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { DisplayToolbar, WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
@@ -13,15 +14,14 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath, editorForType } from '@src/navigation/asset-doc-types';
 import { AgenticProcess, dataContext, FlowData, ProcessKind, Project, TypeId, ViewType, type ShowTarget } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { setActiveTabParent } from '@src/tabs/tab-parent-context';
+import { WorkspaceChildStrip } from './workspace-child-strip';
+import { ContentPanel } from './content-panel/content-panel';
+import type { VibeWorkspaceSession } from './use-vibe-workspace-session';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
-/** Standalone URL for an asset/file pointer — opens the thing in its own dock
- *  in a new browser tab (the generic "open externally" for non-webapp items). */
-function assetExternalUrl(ptr: AssetDocPointer): string {
-  return window.location.origin + ptr.toDockPointer().toUrl();
-}
 
 interface VibeFocus {
   viewType: ViewType | null;
@@ -30,8 +30,14 @@ interface VibeFocus {
 }
 
 /** Mount the right asset editor for a raw path — shared extension rule
- *  (`editorForPath`, same as the `navigate_vfs` ui_command handler). */
+ *  (`editorForPath`, same as the `navigate_vfs` ui_command handler). One vibe
+ *  addition: a shown ``.html`` file is a DELIVERABLE (chart/diagram/one-file
+ *  app), so it renders in the sandboxed HtmlPreview instead of the code
+ *  editor's source view. */
 function vfsEditorEl(absPath: string, refreshKey?: number) {
+  if (/\.html?$/i.test(absPath)) {
+    return <HtmlPreview key={`${absPath}:${refreshKey ?? 0}`} path={absPath} />;
+  }
   const pointer = AssetDocPointer.forVfs(editorForPath(absPath), absPath).toPointer();
   return <AssetEditorRouter key={`${pointer}:${refreshKey ?? 0}`} pointer={pointer} />;
 }
@@ -72,13 +78,26 @@ function useVibeFocus(items: FlowData[]): VibeFocus {
  *   normal `ContentPanel`/`WebappViewer` already read (no port sniffing, no
  *   override prop). The viewer selection never changes the URL.
  */
-export function VibeWorkspace() {
+interface VibeWorkspaceProps {
+  /** The resolved workspace session (display URL vs a child URL of it). */
+  session: VibeWorkspaceSession;
+}
+
+export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const { t } = useLingui();
   const { project, flow } = useAgentContext();
   const { navigation } = useDockNavigation();
   // Select only the stable setter — subscribing to the whole store would
   // re-render this component on its own `currentContext` writes (it never reads it).
   const setCurrentContext = useViewerStore((s) => s.setCurrentContext);
+
+  // Register this workspace's display tab as the parent for any tab materialized
+  // while we're mounted (the open button, links inside child content). This is
+  // the ONLY child-tab grouping seam — consumed at the tab chokepoint.
+  useEffect(() => {
+    setActiveTabParent(session.displayTab?.id ?? null);
+    return () => setActiveTabParent(null);
+  }, [session.displayTab?.id]);
 
   // id-based TypeId (NOT project.typeId, which is the uname form `project-@local`) —
   // must match the target HomeLanding.handleVibeSubmit created the process with.
@@ -87,7 +106,12 @@ export function VibeWorkspace() {
     [project?.id],
   );
 
-  const activeProcess = flow instanceof AgenticProcess ? flow : null;
+  // The display's process. On the display URL `flow` IS the process; on a child
+  // URL `flow` is the child's entity, so the agent-driven display machinery
+  // (onShow/webapp/focus) goes inert — correct, since a child URL renders the
+  // ContentPanel override instead of the pin.
+  const activeProcess =
+    flow instanceof AgenticProcess && flow.id === session.processId ? flow : null;
   const streamItems = useAgenticProcessStream(activeProcess);
   const focus = useVibeFocus(streamItems);
 
@@ -142,6 +166,53 @@ export function VibeWorkspace() {
   const webAppConfig = useProcessWebApp(activeProcess, webappPort);
   const webappFrameRef = useRef<PersistentIframeHandle>(null);
 
+  // Element selection (via the injected bridge). `selectActive` arms the mode;
+  // `selection` holds the picked element until the user's next prompt consumes it.
+  const [selectActive, setSelectActive] = useState(false);
+  const [selection, setSelection] = useState<{
+    tag?: string; selector?: string; text?: string; html?: string;
+  } | null>(null);
+
+  const toggleSelect = useCallback(() => {
+    const next = !selectActive;
+    setSelectActive(next);
+    webappFrameRef.current?.postToGuest({ source: 'flowpad', type: 'select-mode', on: next });
+  }, [selectActive]);
+
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const d = e.data as { source?: string; type?: string; payload?: unknown } | undefined;
+      if (!d || d.source !== 'flowpad') return;
+      if (d.type === 'selected') {
+        setSelection(d.payload as typeof selection);
+        setSelectActive(false);
+      } else if (d.type === 'select-mode-ended') {
+        setSelectActive(false);
+      }
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  // Clear selection + disarm when the shown target changes (new app/asset).
+  useEffect(() => {
+    setSelection(null);
+    setSelectActive(false);
+  }, [shown]);
+
+  // The picked element as a prompt-context block the agent can describe.
+  const promptContext = useMemo(() => {
+    if (!selection) return null;
+    const label = `Selected: <${selection.tag ?? 'element'}>`;
+    const text =
+      'The user selected this element on the previewed web page:\n' +
+      `- tag: ${selection.tag ?? ''}\n` +
+      `- selector: ${selection.selector ?? ''}\n` +
+      `- text: ${selection.text ?? ''}\n` +
+      `- html: ${selection.html ?? ''}`;
+    return { label, text };
+  }, [selection]);
+
   // Display precedence: explicit `flow show` target first (agent-intentional),
   // then stream focus (write/diff noise), then the webapp preview. Each viewer
   // self-resolves its data (WebappViewer from the store, AssetEditorRouter
@@ -171,9 +242,12 @@ export function VibeWorkspace() {
     const preview = <WebappViewer onWebappErrorRetry={onRetry} />;
 
     // A shown viewer under the two-tier toolbar: per-type toolbar (left) +
-    // generic "open externally" (right).
+    // the generic action (right). For entities/files that action is "open in
+    // a new tab" — IN-APP dock navigation (promotes the item to a full
+    // Flowpad content tab), NOT a browser tab; only webapps open externally.
+    const openPtrInTab = (ptr: AssetDocPointer) => () => navigation.openDock(ptr.toDockPointer());
     const wrapAsset = (path: string, node: React.ReactNode) => (
-      <DisplayToolbar externalUrl={assetExternalUrl(AssetDocPointer.forVfs(editorForPath(path), path))}>
+      <DisplayToolbar onOpenInTab={openPtrInTab(AssetDocPointer.forVfs(editorForPath(path), path))}>
         {node}
       </DisplayToolbar>
     );
@@ -190,12 +264,16 @@ export function VibeWorkspace() {
                   host={webAppConfig.host}
                   port={webappPort ?? ''}
                   onRefresh={() => webappFrameRef.current?.refresh()}
+                  selectActive={selectActive}
+                  onToggleSelect={toggleSelect}
                 />
               }
             >
               <PersistentIframe
                 ref={webappFrameRef}
-                src={webAppConfig.host}
+                // Proxy URL (bridge injected) — NOT get-host — so element
+                // selection works; falls back to get-host if proxy unresolved.
+                src={webAppConfig.proxyHost || webAppConfig.host}
                 // Reload on each re-show (same-port stale guard) AND on the
                 // agent's turn-end (rebuild picked up) — the registry keys the
                 // iframe by src, so a changing cacheKey is what forces a reload.
@@ -209,7 +287,7 @@ export function VibeWorkspace() {
           if (editor && shown.typeid) {
             const ptr = AssetDocPointer.forTypeId(editor, new TypeId(shown.typeid));
             return (
-              <DisplayToolbar externalUrl={assetExternalUrl(ptr)}>
+              <DisplayToolbar onOpenInTab={openPtrInTab(ptr)}>
                 <AssetEditorRouter key={`${ptr.toPointer()}:${refreshStamp}`} pointer={ptr.toPointer()} />
               </DisplayToolbar>
             );
@@ -241,7 +319,7 @@ export function VibeWorkspace() {
       default:
         return preview;
     }
-  }, [shown, showNonce, refreshStamp, focus.viewType, focus.path, onRetry, webAppConfig, webappPort, t]);
+  }, [shown, showNonce, refreshStamp, focus.viewType, focus.path, onRetry, webAppConfig, webappPort, selectActive, toggleSelect, t, navigation]);
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full w-full">
@@ -251,6 +329,8 @@ export function VibeWorkspace() {
           processType={ProcessKind.Chat}
           className="h-full border-r border-border"
           dense
+          promptContext={promptContext}
+          onPromptContextConsumed={() => setSelection(null)}
           // "New project" (back to VibeHome) sits on the LEFT of the same header
           // row as the session buttons — Vibe has no left rail.
           leadingSlot={
@@ -272,12 +352,23 @@ export function VibeWorkspace() {
           noPastSessionsLabel={t`No past builds`}
           defaultProjectId={project?.id ?? null}
           defaultWorkdir={project?.fs_storage_mount_path ?? null}
+          // Keep the chat bound to the workspace's process as the user browses
+          // its child tabs (on a child URL `target`'s latest-wins pick could
+          // otherwise drift to another session).
+          initialProcessId={session.processId}
           onProcessCreated={(p) => p.enableAssistant()}
         />
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={64} minSize={45}>
-        {displayEl}
+        <div className="flex h-full flex-col">
+          <WorkspaceChildStrip displayTab={session.displayTab} displayDock={session.displayDock} />
+          <div className="min-h-0 flex-1">
+            {/* On the display URL: the agent-driven pin. On a child URL: the
+                child's ContentPanel (chrome-less). */}
+            {session.onDisplayUrl ? displayEl : <ContentPanel minimalChrome />}
+          </div>
+        </div>
       </ResizablePanel>
     </ResizablePanelGroup>
   );
