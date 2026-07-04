@@ -51,11 +51,11 @@ _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "shared_process_id",
                 "shared_context_entities",
                 "active_form", "analysis_json_path", "analysis_path", "artifacts",
-                "branch", "classification_category", "classification_command",
+                "git_origin", "classification_category", "classification_command",
                 "classification_path", "classification_title", "command",
                 "completed_at", "error_fingerprint", "folder_name", "output_dir",
-                "process_id", "project_name", "project_url",
-                "recipient_email", "repo_id", "result_uname", "sender_email",
+                "process_id", "project_name",
+                "recipient_email", "result_uname", "sender_email",
                 "sender_name", "session_id", "skill_name", "skill_path",
                 "skill_scope", "task_type_label", "team_space_id",
                 "worker_session_id"}
@@ -201,33 +201,6 @@ async def _pack_claude_session_attachment(entry_id: str, attachment_dir: Path) -
     )
 
 
-async def _pack_git_branch_attachment(entry_id: str, attachment_dir: Path) -> None:
-    """Write ``attachment/git_branch-@<id>/header.json`` (whitelisted GitBranch
-    fields). The snapshot is self-sufficient: provider/owner/name ride as plain
-    fields so the receiver re-mints its local deterministic GitRemote parent —
-    the GitRemote row itself is deliberately never packed."""
-    from flow_sdk.builtin.git_branch import GitBranch
-
-    branch = await GitBranch.get_one({"id": entry_id})
-    if not branch:
-        return
-    branch_dir = attachment_dir / f"{EntityType.GIT_BRANCH.value}-@{entry_id}"
-    branch_dir.mkdir(parents=True, exist_ok=True)
-    # parent_type_id is deliberately NOT packed — the receiver re-mints it
-    # from provider/owner/name and never trusts a wire parent anyway.
-    branch_data = branch.model_dump(
-        mode="python",
-        include={
-            "id", "type", "name", "branch", "head_commit", "taken_at",
-            "provider", "owner",
-        },
-        context={"skip_api_serializer": True},
-    )
-    (branch_dir / "header.json").write_text(
-        json.dumps(branch_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
-
-
 async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path) -> None:
     """Write ``attachment/flowpad_diagnosis-@<id>/header.json`` (the recorded
     diagnosis fields).
@@ -318,11 +291,11 @@ async def _pack_attachment_entry(
     Three families, not per-type instances:
       - native file (FILE/PROMPT bytes) → ``_pack_file_attachment``.
       - DB-record (no on-disk asset_ref: task/conversation/flow_message/
-        claude_session/git_branch/flowpad_diagnosis) → their header.json serializers.
+        claude_session/flowpad_diagnosis) → their header.json serializers.
       - file-backed asset (``TypeInfo.main_subdir is not None``: skill, agent,
         workflow, whiteboard, spec, prompt, markdown, plan, command, rule) →
         the ONE generic ``_pack_file_backed_attachment``.
-    Repo/URL attachments have no bytes to bundle — silently skipped.
+    URL attachments have no bytes to bundle — silently skipped.
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
@@ -343,8 +316,6 @@ async def _pack_attachment_entry(
         await _pack_flow_message_entry(entry_id, attachment_dir)
     elif entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
         await _pack_claude_session_attachment(entry_id, attachment_dir)
-    elif entry_type == EntityType.GIT_BRANCH.value:
-        await _pack_git_branch_attachment(entry_id, attachment_dir)
     elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
         await _pack_flowpad_diagnosis_attachment(entry_id, attachment_dir)
     else:
@@ -1132,7 +1103,6 @@ async def unpack_bundle(
             EntityType.PROMPT.value: 0,
             BuiltinEntityType.SPEC.value: 0,
             BuiltinEntityType.TASK.value: 1,
-            EntityType.GIT_BRANCH.value: 1,
             BuiltinEntityType.CONVERSATION.value: 2,
             BuiltinEntityType.FLOW_MESSAGE.value: 3,
         }
@@ -1276,26 +1246,6 @@ async def unpack_bundle(
                             await sess.save(owner_typeid)
                         elif _fill_merge_entity(existing_sess, sess_payload, ("id", "type")):
                             await existing_sess.save(owner_typeid)
-
-                elif entry_type == EntityType.GIT_BRANCH.value:
-                    # Shared git location snapshot: materialize the deterministic
-                    # GitRemote parent FIRST (re-minted from the header's plain
-                    # provider/owner/name — the parent never rides as a blob),
-                    # then create-or-fill-merge the GitBranch row itself.
-                    branch_data = _read_entity_header(entry_dir)
-                    if branch_data is not None:
-                        from flow_sdk.builtin.git_branch import GitBranch  # noqa: PLC0415
-                        branch_id = branch_data.get("id") or entry_id
-                        pid = await GitBranch.materialize_share_parent(branch_data, owner_typeid)
-                        branch_payload = {**branch_data, "id": branch_id, "remote": False}
-                        if pid:
-                            branch_payload["parent_type_id"] = pid
-                        existing_branch = await GitBranch.get_one({"id": branch_id})
-                        if existing_branch is None or overwrite:
-                            branch = GitBranch.model_validate(branch_payload)
-                            await branch.save(owner_typeid)
-                        elif _fill_merge_entity(existing_branch, branch_payload, ("id", "type")):
-                            await existing_branch.save(owner_typeid)
 
                 elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
                     # Metadata-only diagnosis: materialize the entity row from the

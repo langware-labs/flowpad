@@ -31,10 +31,8 @@ class ArtifactType(str, Enum):
     FUNCTION = "FUNCTION"
     APP_SERVICE = "APP_SERVICE"
     CLOUD_SERVICE = "CLOUD_SERVICE"
-    REPORT = "REPORT"
     FILE = "FILE"
     DATA = "DATA"
-    GIT_REPO = "GIT_REPO"  # Added for repository connections
     TEXT_FILE = "TEXT_FILE"
     WEBAPP = "WEBAPP"  # Web application running on a port
 
@@ -71,15 +69,8 @@ artifact_descriptors: List[ArtifactDescriptor] = [
     ArtifactDescriptor(
         artifact_type=ArtifactType.CLOUD_SERVICE, description="A cloud-hosted service or infrastructure component"
     ),
-    ArtifactDescriptor(
-        artifact_type=ArtifactType.REPORT,
-        description="A generated markdown report or document containing analysis or data",
-    ),
     ArtifactDescriptor(artifact_type=ArtifactType.FILE, description="A general file or document in the filesystem"),
     ArtifactDescriptor(artifact_type=ArtifactType.DATA, description="Raw data, dataset, or structured data output"),
-    ArtifactDescriptor(
-        artifact_type=ArtifactType.GIT_REPO, description="A Git repository containing version-controlled code"
-    ),
     ArtifactDescriptor(
         artifact_type=ArtifactType.TEXT_FILE,
         description="Any file containing text, maybe with .txt extension or no extension at all",

@@ -1,5 +1,5 @@
 import { ArtifactType, CodebaseReferenceType } from '@sdk';
-import { Cloud, Code, Database, FileCode, FileText, GitBranch, Globe, LayoutDashboard, LucideIcon } from 'lucide-react';
+import { Cloud, Code, Database, FileText, Globe, LayoutDashboard, LucideIcon } from 'lucide-react';
 
 /**
  * Metadata field definition for artifact forms
@@ -204,44 +204,6 @@ export const ARTIFACT_TYPE_CONFIGS: Record<ArtifactType, ArtifactTypeConfig> = {
           { value: 'parquet', label: 'Parquet' },
           { value: 'other', label: 'Other' },
         ],
-      },
-    ],
-  },
-  [ArtifactType.REPORT]: {
-    type: ArtifactType.REPORT,
-    label: 'Report',
-    description: 'A generated report or document',
-    icon: FileCode,
-    color: 'text-pink-500',
-    defaultRefType: CodebaseReferenceType.FILE,
-    metadataFields: [
-      {
-        key: 'report_type',
-        label: 'Report Type',
-        type: 'text',
-        placeholder: 'Analysis, Summary, etc.',
-      },
-    ],
-  },
-  [ArtifactType.GIT_REPO]: {
-    type: ArtifactType.GIT_REPO,
-    label: 'Git Repository',
-    description: 'A Git repository with version-controlled code',
-    icon: GitBranch,
-    color: 'text-gray-500',
-    defaultRefType: CodebaseReferenceType.FOLDER,
-    metadataFields: [
-      {
-        key: 'remote_url',
-        label: 'Remote URL',
-        type: 'text',
-        placeholder: 'https://github.com/user/repo.git',
-      },
-      {
-        key: 'branch',
-        label: 'Branch',
-        type: 'text',
-        placeholder: 'main',
       },
     ],
   },

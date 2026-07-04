@@ -846,29 +846,32 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @action.post(action_name="create-project-from-git")
     async def _create_project_from_git(self) -> ApiResponse:
-        """Clone a git URL into the desktop workspace and materialize a Project.
+        """Clone a GitOrigin into the desktop workspace and materialize a Project.
 
         Body:
-            { "project_url": "<url>",
-              "target_name": "<optional override>",
-              "branch":      "<optional ref to check out at clone time>" }
+            { "git_origin": {...},
+              "target_name": "<optional override>" }
 
         Collision policy: if the derived (or supplied) folder name already
         exists under AGENT_MOUNT_FOLDER, refuse and return the next-free
         suggestion in ``data.suggested_name``. The caller re-submits with
         ``target_name`` set to accept the suggestion.
         """
+        from flow_sdk.builtin.git_origin import GitOrigin
         from flow_sdk.builtin.project import Project
         from flow_sdk.config import AGENT_MOUNT_FOLDER
         from flow_sdk.utils.git import derive_repo_leaf_from_url, git_clone
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
-        project_url = (body or {}).get("project_url")
+        raw_origin = (body or {}).get("git_origin")
         target_name = (body or {}).get("target_name")
-        branch = (body or {}).get("branch") or None
-        if not isinstance(project_url, str) or not project_url.strip():
-            return ApiFailResponse(message="project_url (str) is required", status_code=400)
+        try:
+            git_origin = GitOrigin.model_validate(raw_origin)
+        except Exception:
+            return ApiFailResponse(message="git_origin is required", status_code=400)
+        clone_url = git_origin.clone_url()
+        branch = git_origin.branch or None
         # A branch ref is passed straight into git's argv as the value of `--branch`.
         # The subprocess call is argv-style (no shell), so this is structurally
         # safe against command injection — but a malformed ref still produces a
@@ -882,10 +885,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                     status_code=400,
                 )
 
-        leaf = (target_name or derive_repo_leaf_from_url(project_url)).strip()
+        leaf = (target_name or derive_repo_leaf_from_url(clone_url)).strip()
         if not leaf:
             return ApiFailResponse(
-                message=f"Could not derive a folder name from URL: {project_url}",
+                message=f"Could not derive a folder name from URL: {clone_url}",
                 status_code=400,
             )
 
@@ -904,7 +907,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 status_code=409,
             )
 
-        ok, msg = await git_clone(project_url, target_dir, branch=branch)
+        ok, msg = await git_clone(clone_url, target_dir, branch=branch)
         if not ok:
             return ApiFailResponse(message=msg, status_code=400)
 
@@ -916,21 +919,23 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @action.post(action_name="find-local-repo")
     async def _find_local_repo(self) -> ApiResponse:
-        """Locate a local clone whose ``origin`` matches a git URL.
+        """Locate a local clone whose ``origin`` matches a GitOrigin.
 
-        Body: ``{ "project_url": "<url>" }``. Returns
+        Body: ``{ "git_origin": {...} }``. Returns
         ``{ found: bool, local_path: str | null }``. The url-only counterpart of
         the task-scoped ``find-project`` endpoint — lets the receiver of a shared
         repo attach to a clone they already have instead of re-cloning it.
         """
+        from flow_sdk.builtin.git_origin import GitOrigin
         from flow_sdk.utils.git import find_local_repo_for_url
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
-        project_url = (body or {}).get("project_url")
-        if not isinstance(project_url, str) or not project_url.strip():
-            return ApiFailResponse(message="project_url (str) is required", status_code=400)
-        local_path = find_local_repo_for_url(project_url.strip())
+        try:
+            git_origin = GitOrigin.model_validate((body or {}).get("git_origin"))
+        except Exception:
+            return ApiFailResponse(message="git_origin is required", status_code=400)
+        local_path = find_local_repo_for_url(git_origin.clone_url())
         return ApiSuccessResponse(data={"found": bool(local_path), "local_path": local_path})
 
     @action.get(action_name="session-transcript")

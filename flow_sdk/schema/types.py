@@ -165,9 +165,6 @@ class EntityType(StrEnum):
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
     RUN = "run"
-    # Git identity split (see builtin/git_remote.py / builtin/git_branch.py).
-    GIT_REMOTE = "git_remote"
-    GIT_BRANCH = "git_branch"
     # A file on disk outside the record store (DB-only; SemanticLock targets).
     FILE = "file"
     # A content-panel tab — DB-only placement record keyed by a DockPointer

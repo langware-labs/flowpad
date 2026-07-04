@@ -11,6 +11,7 @@ Instead of pulling silently, this redirects to the HomeLanding page with URL
 parameters so the dialog-driven flow can guide the user through pulling/cloning.
 """
 
+import json
 import logging
 from urllib.parse import urlencode
 
@@ -56,9 +57,7 @@ async def handle_notification_deep_link(
     fm_id: str,
     conversation_id: str = "",
     task_id: str = "",
-    project_url: str = "",
-    branch: str = "",
-    repo_id: str = "",
+    git_origin: dict | str | None = None,
     sender_name: str = "",
     title: str = "",
 ) -> HTMLResponse:
@@ -69,8 +68,8 @@ async def handle_notification_deep_link(
     passes them in directly, so the UI can navigate without a separate
     lookup. ``fm`` is included for traceability / fallback.
 
-    ``project_url`` (when present) is a REPO-attachment URL that triggers the
-    git pull/clone dialog before navigating into the conversation.
+    ``git_origin`` (when present) triggers the git pull/clone dialog before
+    navigating into the conversation.
     ``sender_name`` / ``title`` are cosmetic — shown in the brief loading
     state.
     """
@@ -83,12 +82,8 @@ async def handle_notification_deep_link(
         params["conversation_id"] = conversation_id
     if task_id:
         params["task_id"] = task_id
-    if project_url:
-        params["project_url"] = project_url
-    if branch:
-        params["branch"] = branch
-    if repo_id:
-        params["repo_id"] = repo_id
+    if git_origin:
+        params["git_origin"] = git_origin if isinstance(git_origin, str) else json.dumps(git_origin)
     if sender_name:
         params["sender_name"] = sender_name
     if title:

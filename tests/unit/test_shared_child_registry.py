@@ -16,7 +16,7 @@ def setup_function() -> None:
 def test_comment_is_flagged_shared_child():
     assert SchemaRegistry.get("comment").shared_child is True
     # A non-child api_visible type is not enrolled.
-    assert SchemaRegistry.get("git_remote").shared_child is False
+    assert SchemaRegistry.get("project").shared_child is False
 
 
 def test_get_shared_child_types_includes_comment():
@@ -34,12 +34,12 @@ def test_new_shared_child_type_enrolls_without_touching_catchup():
     """A second type enrolls for free by flipping its registry flag — the catch-up
     code (``get_shared_child_types``) reads the flag dynamically, so no sync-code
     edit is needed to onboard a new shareable child type."""
-    info = SchemaRegistry.get("git_remote")  # any api_visible entity type, not a shared_child
+    info = SchemaRegistry.get("project")  # any api_visible entity type, not a shared_child
     assert info.entity_cls is not None
-    assert "git_remote" not in SchemaRegistry.get_shared_child_types()
+    assert "project" not in SchemaRegistry.get_shared_child_types()
     info.shared_child = True
     try:
-        assert "git_remote" in SchemaRegistry.get_shared_child_types()
+        assert "project" in SchemaRegistry.get_shared_child_types()
     finally:
         info.shared_child = False  # restore the shared singleton state
-    assert "git_remote" not in SchemaRegistry.get_shared_child_types()
+    assert "project" not in SchemaRegistry.get_shared_child_types()

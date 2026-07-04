@@ -60,8 +60,8 @@ class TypeMetadata:
     # (``parent_type_id``) in the outgoing ``shared_context_entities``, and the
     # receive path materializes the parent first (see
     # ``Entity.materialize_share_parent``). Only safe when the parent type is
-    # deterministic/field-frozen (e.g. ``git_remote``) — a mutable parent would
-    # reintroduce cross-sender ownership conflicts.
+    # deterministic/field-frozen; a mutable parent would reintroduce cross-sender
+    # ownership conflicts.
     parent_share_on_default: bool = False
     # True ⇒ this hub-hosted ``is_child`` type is pulled during the shared-context
     # catch-up sync (the live bridge already materializes any child generically via

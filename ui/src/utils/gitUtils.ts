@@ -5,7 +5,7 @@
  * exposing tokens in the frontend and to handle rate limits properly.
  */
 
-import { ActionInfo, dataContext, dataManager } from '@sdk';
+import { ActionInfo, dataContext, dataManager, gitOriginFromUrl } from '@sdk';
 
 /**
  * Response structure from the proxy action
@@ -144,6 +144,8 @@ interface GitHubBranch {
  */
 export const fetchGitHubBranches = async (gitUrl: string): Promise<GitHubBranch[]> => {
   if (!gitUrl) return [];
+  const gitOrigin = gitOriginFromUrl(gitUrl);
+  if (!gitOrigin) return [];
 
   try {
     // The user typeid must be passed so the backend's _get_github_token can
@@ -158,7 +160,7 @@ export const fetchGitHubBranches = async (gitUrl: string): Promise<GitHubBranch[
     );
     actionInfo.subpath = 'branches';
     actionInfo.bodyParameters = {
-      repo_url: gitUrl,
+      git_origin: gitOrigin,
     };
 
     const result = await dataManager.callAction(actionInfo);

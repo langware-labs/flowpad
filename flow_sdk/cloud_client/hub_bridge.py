@@ -32,9 +32,6 @@ logger = logging.getLogger(__name__)
 # media-only FMs (FILE attachments stay manual).
 _ASSET_TYPEID_TYPES: frozenset[str] = frozenset({
     "skill", "agent", "markdown", "spec", "workflow", "whiteboard",
-    # Not file-backed, but the chip resolves a real name only after the bundle's
-    # git_branch header materializes the row (+ its re-minted git_remote parent).
-    "git_branch",
 })
 
 

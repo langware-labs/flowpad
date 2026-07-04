@@ -264,10 +264,11 @@ checks for a materialized record folder
 
 - **Structural / row-only types always count as present**
   (`_NON_MATERIALIZING_TYPE_IDS`, `flow_sdk/builtin/flow_message.py:149`):
-  `conversation`, `flow_message`, `task`, `claude_session`, `git_branch`,
-  `git_remote`. These never create a standard records folder (conversation
-  plumbing, or an indexer/row-only unpack), so gating on a folder would strand
-  the message behind Download forever.
+  `conversation`, `flow_message`, `task`, `claude_session`. These never create
+  a standard records folder (conversation plumbing, or an indexer/row-only
+  unpack), so gating on a folder would strand the message behind Download
+  forever. Git provenance is carried as `GitOrigin` bundle metadata, not as a
+  `TYPE_ID` attachment.
 - **Body-bearing types additionally require their source file**
   (`_BODY_BEARING_TYPE_IDS = {spec, markdown, plan}`,
   `flow_sdk/builtin/flow_message.py:161`): a record folder with only

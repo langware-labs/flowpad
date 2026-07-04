@@ -89,7 +89,7 @@ results xml:
 <flow-result name="Auth Service" path="auth/auth_service.py" type="function" description="Complete authentication system with login, registration, and JWT token management"/>
 <flow-result name="User Model" path="models/user.py" type="function" description="User data model with password hashing and validation"/>
 <flow-result name="Auth Middleware" path="middleware/auth.py" type="function" description="JWT token validation middleware for protected routes"/>
-<flow-result name="API Documentation" path="docs/auth_api.md" type="report" description="Authentication API documentation with endpoint examples and usage guidelines"/>
+<flow-result name="API Documentation" path="docs/auth_api.md" type="text_file" description="Authentication API documentation with endpoint examples and usage guidelines"/>
 
 **Example 3: Cloud Infrastructure Deployment**
 user asked: "Deploy my application to AWS with infrastructure as code."
@@ -97,7 +97,7 @@ results xml:
 <flow-result name="Terraform Config" path="infrastructure/main.tf" type="cloud_service" description="Complete AWS infrastructure setup with EC2, RDS, and VPC configuration"/>
 <flow-result name="Deployment Script" path="scripts/deploy.sh" type="file" description="Automated deployment script for AWS environment setup"/>
 <flow-result name="Lambda Function" path="lambda/api_handler.py" type="cloud_service" start-cmd="sam local start-api" health="/health" description="AWS Lambda function for serverless API handling"/>
-<flow-result name="Deployment Guide" path="docs/deployment.md" type="report" description="Step-by-step deployment guide with AWS setup instructions"/>
+<flow-result name="Deployment Guide" path="docs/deployment.md" type="text_file" description="Step-by-step deployment guide with AWS setup instructions"/>
 
 **Example 4: Data Analysis Project**
 user asked: "Analyze this dataset and create visualizations."
@@ -105,12 +105,12 @@ results xml:
 <flow-result name="Data Analysis" path="analysis/data_report.py" type="function" description="Complete data analysis script with statistical calculations and insights"/>
 <flow-result name="Visualization Dashboard" port="8501" path="dashboard" type="webapp" start-cmd="cd dashboard && streamlit run app.py --server.port 8501" health="/" description="Interactive dashboard with charts and data visualizations" focus="web-app"/>
 <flow-result name="Processed Dataset" path="data/processed_data.csv" type="data" description="Cleaned and processed dataset ready for analysis"/>
-<flow-result name="Analysis Report" path="reports/insights.md" type="report" description="Comprehensive analysis report with findings and recommendations"/>
+<flow-result name="Analysis Report" path="reports/insights.md" type="text_file" description="Comprehensive analysis report with findings and recommendations"/>
 
 **Example 5: Git Repository and Documentation**
 user asked: "Set up a Git repository with best practices and documentation."
 results xml:
-<flow-result name="Git Repository" path=".git" type="git_repo" description="Initialized Git repository with version control configuration"/>
+<flow-result name="Repository Setup Notes" path="docs/git_setup.md" type="text_file" description="Git initialization notes and branch policy"/>
 <flow-result name="README" path="README.md" type="text_file" description="Project documentation with setup instructions and usage guidelines"/>
 <flow-result name="Todo List" path="TODO.txt" type="text_file" description="Simple text file listing pending tasks and improvements"/>
 <flow-result name="Notes" path="notes/project_notes.txt" type="text_file" description="Development notes and decisions log"/>

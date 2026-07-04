@@ -69,10 +69,10 @@ EXPECTED = {
     "AGENT_HOOK": "agent_hook", "TRIGGER": "trigger", "PROCESS_RESULT": "process_result",
     "CRON_EVENT": "cron_event", "FLOW_MESSAGE": "flow_message", "TEAM_SPACE": "team_space",
     "NOTIFICATION": "notification", "RUN": "run",
-    # Git identity split + SemanticLock file targets (5a19f9e6) — additions
-    # recorded after the fact; the commit that added them missed this freeze.
-    # (Legacy GIT_REPO share-chip removed; GitRemote/GitBranch are the path.)
-    "GIT_REMOTE": "git_remote", "GIT_BRANCH": "git_branch", "FILE": "file",
+    "PROMPT_RESULT": "prompt_result", "REMOTE_WORKER_SESSION": "remote_worker_session",
+    # SemanticLock file targets (5a19f9e6) — additive member; the commit that
+    # added it missed this freeze.
+    "FILE": "file",
     "ARTIFACT_RELATION": "artifact_relation", "FS_ITEM": "fs_item",
     "KNOWLEDGE_BASE": "knowledge_base",
     "SKILLIT_SESSION": "skillit_session", "SKILLIT_CONFIG": "skillit_config",

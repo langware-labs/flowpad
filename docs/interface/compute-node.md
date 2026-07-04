@@ -143,8 +143,8 @@ Verb legend: `@action.all` registers the handler for every method (GET/POST/PUT/
 | --- | --- | --- | --- |
 | `tabs` | POST | `_terminal_close` | Compat router for `tabs/close` — batch terminal teardown (shell + agentic_process). |
 | `recover-orphaned-project` | POST | `_recover_orphaned_project` | `{dangling_id}` — resurrect a deleted Project from a dependent's `workdir`; rebind `project_id`s. |
-| `create-project-from-git` | POST | `_create_project_from_git` | `{project_url, target_name?, branch?}` — clone into workspace + materialize a Project; 409 with `suggested_name` on collision. |
-| `find-local-repo` | POST | `_find_local_repo` | `{project_url}` → `{found, local_path}` — locate an existing clone by `origin`. |
+| `create-project-from-git` | POST | `_create_project_from_git` | `{git_origin, target_name?}` — clone into workspace + materialize a Project; 409 with `suggested_name` on collision. |
+| `find-local-repo` | POST | `_find_local_repo` | `{git_origin}` → `{found, local_path}` — locate an existing clone by `origin`. |
 | `os-status-batch` | POST | `_os_status_batch` | `{process_ids}` — batched os-status snapshot for many AgenticProcesses (collapses N GETs). |
 | `clear-debug-errors` | POST | `clear_debug_errors_action` | Delete all Claude debug logs + error records. |
 | `search-cloud-errors` | POST | `search_cloud_errors_action` | `{fingerprints}` — proxy error-fingerprint search to Flowpad cloud, apply results locally. |
