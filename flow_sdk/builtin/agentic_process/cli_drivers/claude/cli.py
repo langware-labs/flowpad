@@ -48,6 +48,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
     EXECUTABLE = "claude"
     PROMPT_CHANNEL = "argv"  # claude takes the prompt as a `-- <text>` positional
     SYSTEM_PROMPT_FLAG = "--append-system-prompt"
+    SYSTEM_PROMPT_FILE_FLAG = "--append-system-prompt-file"
 
     def __init__(
         self,
@@ -181,6 +182,8 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
         # Launch-derived instructions ride the shell form too — the PTY spawn
         # is exactly this string, and the interactive CLI accepts the flag.
+        if self.system_prompt_file and self.SYSTEM_PROMPT_FILE_FLAG:
+            rest.extend([self.SYSTEM_PROMPT_FILE_FLAG, self.system_prompt_file])
         if self.system_prompt_append and self.SYSTEM_PROMPT_FLAG:
             rest.extend([self.SYSTEM_PROMPT_FLAG, self.system_prompt_append])
 

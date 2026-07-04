@@ -38,13 +38,16 @@ absolute minimum of LLM calls.
    # MARKDOWN_INDEX_TYPEID is "markdown_index-<uuid>" — strip the prefix.
    ENTITY_ID="${MARKDOWN_INDEX_TYPEID#markdown_index-}"
    SUMMARIES_DIR=$(python -c "
-   from flow_sdk.fs_records.markdown_index_record import file_summaries_dir
+   from flow_sdk.fs_store.operations.markdown_index import file_summaries_dir
    print(file_summaries_dir('$ENTITY_ID'))
    ")
    mkdir -p "$SUMMARIES_DIR"
    ```
 
-2. Run the planner to discover what's stale. The planner is pure Python — no LLM:
+2. Run the planner to discover what's stale. The planner is deterministic
+   Python over `flow_sdk.llm_index` — no LLM. Its walk honors `.gitignore`,
+   includes dot-dirs and `.claude/` (except `.claude/worktrees`), and always
+   skips generated/vendor dirs (`node_modules`, `.llm_index`, `.flowpad`, …):
 
    ```bash
    python "$SKILL_DIR/plan.py" build "$ROOT_PATH" --summaries-dir "$SUMMARIES_DIR" [--force]
@@ -81,7 +84,7 @@ absolute minimum of LLM calls.
      verbatim. Do NOT re-summarise the child; never parse the child's `.md`.
    - Render `prompts/folder_index.prompt.md` to produce a **single JSON object**
      conforming to `IndexMdJson` (schema in
-     `flow_sdk/fs_records/markdown_index_render.py`). Required fields:
+     `flow_sdk/fs_store/operations/markdown_index_render.py`). Required fields:
      `typeid`, `parent_ref`, `vault_root`, `folder_rel_path`, `folder_name`,
      `inputs_hash` (use the planner's value verbatim), `self_summary` (≤ 60 words),
      `files[]` (each with `name`, `rel_path`, `title`, `summary`, `content_hash`),
@@ -91,7 +94,7 @@ absolute minimum of LLM calls.
    - Run the deterministic renderer to materialize `<folder>/index.md`:
 
      ```bash
-     uv run python -m flow_sdk.fs_records.markdown_index_render \
+     uv run python -m flow_sdk.fs_store.operations.markdown_index_render \
        "<folder>/index.md.json" "<folder>/index.md"
      ```
 

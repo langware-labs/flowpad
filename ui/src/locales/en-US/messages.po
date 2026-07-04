@@ -105,8 +105,8 @@ msgid "(no file — inline persona)"
 msgstr "(no file — inline persona)"
 
 #: src/components/footer.tsx
-msgid "(no git repo)"
-msgstr "(no git repo)"
+#~ msgid "(no git repo)"
+#~ msgstr "(no git repo)"
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "(no subject)"
@@ -1565,10 +1565,15 @@ msgstr "Calls"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/wizard/WizardHost.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr "Cancel"
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Cancel select"
+msgstr "Cancel select"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -1685,6 +1690,10 @@ msgstr "Checking if you have a local clone of the repository."
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Checking service status..."
 msgstr "Checking service status..."
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "checking…"
+msgstr "checking…"
 
 #: src/components/chat-input.tsx
 msgid "Checking..."
@@ -1858,6 +1867,7 @@ msgid "Clear search index?"
 msgstr "Clear search index?"
 
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
@@ -3268,10 +3278,14 @@ msgstr "Diagnosis copied to clipboard"
 msgid "Diagnosis forwarded"
 msgstr "Diagnosis forwarded"
 
+#: src/components/diagnose/diagnosis-action-buttons.tsx
+msgid "Diagnosis is not available yet"
+msgstr "Diagnosis is not available yet"
+
 #: src/components/version-popover/version-popover.tsx
 #: src/notifications/diagnose/DiagnoseIconButton.tsx
-msgid "Diagnosis needs an internet connection — you appear to be offline"
-msgstr "Diagnosis needs an internet connection — you appear to be offline"
+#~ msgid "Diagnosis needs an internet connection — you appear to be offline"
+#~ msgstr "Diagnosis needs an internet connection — you appear to be offline"
 
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Diagnosis not found."
@@ -3411,6 +3425,10 @@ msgstr "Dismiss failed"
 msgid "Dismiss notification"
 msgstr "Dismiss notification"
 
+#: src/pages/flow-page/workspace-child-strip.tsx
+msgid "Display"
+msgstr "Display"
+
 #: src/components/ui/sidebar.tsx
 msgid "Displays the mobile sidebar."
 msgstr "Displays the mobile sidebar."
@@ -3443,6 +3461,7 @@ msgstr "done"
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/tasks-viewer/TasksViewer.tsx
 #: src/components/tools/ToolsPanel.tsx
+#: src/components/wizard/WizardHost.tsx
 msgid "Done"
 msgstr "Done"
 
@@ -7656,6 +7675,10 @@ msgstr "Not checked"
 msgid "Not configured"
 msgstr "Not configured"
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "not reachable"
+msgstr "not reachable"
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "not respected"
 msgstr "not respected"
@@ -7874,6 +7897,7 @@ msgid "Open Existing Project"
 msgstr "Open Existing Project"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
 msgid "Open externally"
 msgstr "Open externally"
 
@@ -7924,6 +7948,10 @@ msgstr "Open full search"
 #: src/components/task-bar/TaskDetailPanel.tsx
 msgid "Open full view"
 msgstr "Open full view"
+
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
+msgid "Open in a new tab"
+msgstr "Open in a new tab"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
@@ -8502,7 +8530,6 @@ msgid "Please select a parent folder"
 msgstr "Please select a parent folder"
 
 #: src/pages/home-landing/HomeLanding.tsx
-#: src/pages/home-landing/HomeLanding.tsx
 msgid "Please select or create a project first."
 msgstr "Please select or create a project first."
 
@@ -8556,8 +8583,8 @@ msgid "Preferences"
 msgstr "Preferences"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Preparing…"
-msgstr "Preparing…"
+#~ msgid "Preparing…"
+#~ msgstr "Preparing…"
 
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Press Enter to save, Esc to cancel"
@@ -8720,7 +8747,6 @@ msgstr "Project not found locally"
 msgid "Project renamed"
 msgstr "Project renamed"
 
-#: src/pages/home-landing/HomeLanding.tsx
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Project Required"
 msgstr "Project Required"
@@ -9074,6 +9100,7 @@ msgstr "referenced but not in entities table"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -9301,6 +9328,14 @@ msgstr "Report failed."
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 msgid "Report issue"
 msgstr "Report issue"
+
+#: src/components/diagnose/use-diagnosis-report-availability.ts
+msgid "Reporting is disabled in Local data privacy mode"
+msgstr "Reporting is disabled in Local data privacy mode"
+
+#: src/components/diagnose/use-diagnosis-report-availability.ts
+msgid "Reporting needs an internet connection"
+msgstr "Reporting needs an internet connection"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Repos"
@@ -9647,6 +9682,7 @@ msgstr "Run this prompt in the shared session now. Optionally let future prompts
 msgid "Run workflow"
 msgstr "Run workflow"
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/machine-overview/service-status-led.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
@@ -9888,12 +9924,12 @@ msgid "scope: user only"
 msgstr "scope: user only"
 
 #: src/components/tabs/TabStrip.tsx
-msgid "Scroll tabs left"
-msgstr "Scroll tabs left"
+#~ msgid "Scroll tabs left"
+#~ msgstr "Scroll tabs left"
 
 #: src/components/tabs/TabStrip.tsx
-msgid "Scroll tabs right"
-msgstr "Scroll tabs right"
+#~ msgid "Scroll tabs right"
+#~ msgstr "Scroll tabs right"
 
 #: src/components/AutoScrollContainer.tsx
 msgid "Scroll to bottom"
@@ -10192,6 +10228,10 @@ msgstr "Select an artifact type above to get type-specific metadata fields."
 msgid "Select an available harness, or install one from its homepage and re-check it."
 msgstr "Select an available harness, or install one from its homepage and re-check it."
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Select an element"
+msgstr "Select an element"
+
 #: src/components/artifacts/artifact-form.tsx
 msgid "Select artifact type"
 msgstr "Select artifact type"
@@ -10477,8 +10517,8 @@ msgid "Share this plan with someone"
 msgstr "Share this plan with someone"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Share this repo to a conversation"
-msgstr "Share this repo to a conversation"
+#~ msgid "Share this repo to a conversation"
+#~ msgstr "Share this repo to a conversation"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
@@ -10920,8 +10960,12 @@ msgid "Start a new conversation"
 msgstr "Start a new conversation"
 
 #: src/tabs/useTerminalStripController.tsx
-msgid "Start Claude ({modLabel}+C)"
-msgstr "Start Claude ({modLabel}+C)"
+msgid "Start Claude"
+msgstr "Start Claude"
+
+#: src/tabs/useTerminalStripController.tsx
+#~ msgid "Start Claude ({modLabel}+C)"
+#~ msgstr "Start Claude ({modLabel}+C)"
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "Start Codex"
@@ -11381,6 +11425,7 @@ msgid "The value is stored in your operating system keychain and never readable 
 msgstr "The value is stored in your operating system keychain and never readable from this UI."
 
 #: src/components/webapp-viewer.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "The web app is not working, please try to fix it."
 msgstr "The web app is not working, please try to fix it."
 
@@ -12247,6 +12292,10 @@ msgstr "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines ap
 msgid "We skipped {count} session{0} that couldn't be restored."
 msgstr "We skipped {count} session{0} that couldn't be restored."
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Web app status"
+msgstr "Web app status"
+
 #: src/components/tools/ToolsPanel.tsx
 msgid "Web Search"
 msgstr "Web Search"
@@ -12318,6 +12367,10 @@ msgstr "Whiteboard created"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
 msgstr "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
+
+#: src/components/wizard/WizardHost.tsx
+msgid "Wizard"
+msgstr "Wizard"
 
 #. placeholder {0}: data.worker_type ? ` (${data.worker_type})` : ''
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx

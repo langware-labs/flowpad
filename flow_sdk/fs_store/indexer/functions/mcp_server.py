@@ -43,10 +43,10 @@ try:
 except ImportError:
     import tomli as _tomllib  # type: ignore[import-not-found,no-redef]
 
-from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
-from flow_sdk.fs_store.fs_record import FSRecord
 import uuid
 
+from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
+from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -55,7 +55,6 @@ from flow_sdk.fs_store.source_file_records import (
     _escape_json_pointer,
     _unescape_json_pointer,
 )
-
 
 # ── Source mapping: every system's MCP config files ───────────────────────────
 #

@@ -192,11 +192,10 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # headless per-turn spawn is an intentionally different shape from the
         # general/PTY options ``cmd_line`` reports: it forces the sonnet parent
         # (opus's parent latency blows the long-test budget), ``--print``/
-        # stream-json transport, and OMITS ``--agents`` (claude headless flattens
-        # embedded agents into the prompt via ``compose_prompt`` instead). Codex's
-        # equivalent forces ``ephemeral=False`` so resume works. Do not "unify"
-        # these two construction points — you'd regress model latency, agent
-        # handling, and codex/copilot resume.
+        # stream-json transport, and relies on process instruction assets for
+        # embedded-agent/persona content. Codex's equivalent forces
+        # ``ephemeral=False`` so resume works. Do not "unify" these two
+        # construction points — you'd regress model latency and resume behavior.
         opts = ClaudeCliOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
@@ -212,8 +211,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             # verbose=True is auto-enabled by ClaudeCliOptions when
             # output_format == "stream-json".
         )
-        # ContextProcess: fold the bound context summary into the system prompt
-        # via the options' declared sink (claude → ``--append-system-prompt``).
+        opts.system_prompt_file = context.system_prompt_file
         argv = opts.cli_cmd(instruction=prompt, system_prompt_append=context.instructions)
         env_from_opts = dict(opts.env_vars)
 

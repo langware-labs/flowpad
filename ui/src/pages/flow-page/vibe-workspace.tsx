@@ -171,18 +171,12 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const webAppConfig = useProcessWebApp(activeProcess, webappPort);
   const webappFrameRef = useRef<PersistentIframeHandle>(null);
 
-  // Element selection (via the injected bridge). `selectActive` arms the mode;
-  // `selection` holds the picked element until the user's next prompt consumes it.
-  const [selectActive, setSelectActive] = useState(false);
+  // Element selection result. The old app-proxy bridge path is disabled; the
+  // replacement should inspect the direct iframe via CDP without changing src.
+  const [, setSelectActive] = useState(false);
   const [selection, setSelection] = useState<{
     tag?: string; selector?: string; text?: string; html?: string;
   } | null>(null);
-
-  const toggleSelect = useCallback(() => {
-    const next = !selectActive;
-    setSelectActive(next);
-    webappFrameRef.current?.postToGuest({ source: 'flowpad', type: 'select-mode', on: next });
-  }, [selectActive]);
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -269,16 +263,18 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
                   host={webAppConfig.host}
                   port={webappPort ?? ''}
                   onRefresh={() => webappFrameRef.current?.refresh()}
-                  selectActive={selectActive}
-                  onToggleSelect={toggleSelect}
+                  selectActive={false}
+                  onToggleSelect={undefined}
                 />
               }
             >
               <PersistentIframe
                 ref={webappFrameRef}
-                // Proxy URL (bridge injected) — NOT get-host — so element
-                // selection works; falls back to get-host if proxy unresolved.
-                src={webAppConfig.proxyHost || webAppConfig.host}
+                testId="vibe-webapp-frame"
+                // Keep the displayed app on the real dev-server URL. Element
+                // selection must not switch to app-proxy; that changes origin
+                // and can damage framework runtime state.
+                src={webAppConfig.host}
                 // Reload on each re-show (same-port stale guard) AND on the
                 // agent's turn-end (rebuild picked up) — the registry keys the
                 // iframe by src, so a changing cacheKey is what forces a reload.
@@ -349,7 +345,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
               {t`New`}
             </button>
           }
-          placeholder={t`Describe what to build or change…`}
           emptyStateText={t`Tell the assistant what to build.`}
           newSessionLabel={t`New build`}
           historyLabel={t`Build history`}

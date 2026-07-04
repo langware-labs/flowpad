@@ -9,14 +9,8 @@ import functools
 import os
 from pathlib import Path
 
+from flow_sdk.fs_store.indexer.gitignore import _WALK_IGNORED
 from flow_sdk.instance_settings import get_instance_settings
-
-
-_WALK_IGNORED: frozenset[str] = frozenset({
-    ".git", "node_modules", ".venv", "venv", "__pycache__",
-    ".tox", "dist", "build", ".eggs", ".mypy_cache", ".pytest_cache",
-    ".ruff_cache", ".next", ".nuxt", "coverage", ".cache",
-})
 
 _DOCS_WALK_MAX_DEPTH = 3
 
@@ -103,71 +97,31 @@ def doc_search_dirs() -> tuple[Path, ...]:
     return _doc_search_dirs_cached(_fingerprint())
 
 
-def _iter_dir_sorted(d: Path) -> list[Path]:
-    """Sorted entries of ``d``; empty on any I/O error. Symlinks NOT resolved."""
-    try:
-        return sorted(d.iterdir())
-    except (OSError, PermissionError):
-        return []
-
-
 def walk_markdown_files(root: Path) -> list[str]:
     """Recursively collect every ``.md`` file under ``root``, honoring ``.gitignore``.
 
     Walks the WHOLE subtree (not just ``docs/`` roots) so a project-root file
     like ``streams_sdk.md`` is found, returning sorted relative POSIX paths
-    from ``root``. Uses the same matcher as the indexer's project folder
-    walker (:mod:`flow_sdk.fs_store.indexer.gitignore`):
-
-      1. ``_WALK_IGNORED`` basename fast-path (``.git``, ``node_modules``, …).
-      2. ``.claude/`` force-include (skill/agent docs survive a gitignored
-         ``.claude``).
-      3. A nested ``.gitignore`` stack, pushed as the walk descends into a
-         directory that owns one and popped on backtrack. An ignore is
-         monotonic across nested files — a child ``!`` re-include of something
-         an ancestor ``.gitignore`` ignored is NOT honored (a limitation of the
-         shared ``is_ignored`` matcher); negation within a single file works.
-
-    Symlinked directories are not followed. Any unreadable directory is
-    skipped, never fatal.
+    from ``root``. Delegates to the shared :func:`gitignore_walk`
+    (:mod:`flow_sdk.fs_store.indexer.walk`): ``_WALK_IGNORED`` fast-path,
+    ``.claude/`` force-include, nested ``.gitignore`` stack (monotonic across
+    nested files — a child ``!`` re-include of something an ancestor
+    ``.gitignore`` ignored is NOT honored; negation within a single file
+    works). Symlinked directories are not followed; unreadable directories
+    are skipped, never fatal.
     """
-    from flow_sdk.fs_store.indexer.gitignore import (  # noqa: PLC0415
-        GitignoreStack,
-        is_ignored,
-        load_gitignore_stack,
-        push_gitignore,
-    )
+    from flow_sdk.fs_store.indexer.walk import gitignore_walk  # noqa: PLC0415
 
     try:
         root = root.resolve()
     except OSError:
         return []
-    if not root.is_dir():
-        return []
 
-    out: list[str] = []
-    stack: GitignoreStack = load_gitignore_stack(root)
-    # DFS frames: (dir, remaining-entries-to-pop, gitignore-entries-pushed-here).
-    frames: list[tuple[Path, list[Path], int]] = [(root, _iter_dir_sorted(root), 0)]
-    while frames:
-        _, remaining, pushed = frames[-1]
-        if not remaining:
-            if pushed:
-                del stack[-pushed:]
-            frames.pop()
-            continue
-        entry = remaining.pop()
-        try:
-            is_dir = entry.is_dir() and not entry.is_symlink()
-        except OSError:
-            continue
-        if is_ignored(entry, is_dir, stack, root):
-            continue
-        if is_dir:
-            pushed_here = push_gitignore(stack, entry)
-            frames.append((entry, _iter_dir_sorted(entry), pushed_here))
-        elif entry.name.lower().endswith(".md"):
-            out.append(entry.relative_to(root).as_posix())
-
+    out = [
+        f.relative_to(root).as_posix()
+        for _dir, _subdirs, files in gitignore_walk(root)
+        for f in files
+        if f.name.lower().endswith(".md")
+    ]
     out.sort()
     return out

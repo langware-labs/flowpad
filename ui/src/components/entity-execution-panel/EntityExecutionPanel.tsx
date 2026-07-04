@@ -590,7 +590,7 @@ export function EntityExecutionPanel({
             ))}
       </AutoScrollContainer>
       {promptContext && (
-        <div className="flex items-center gap-2 px-3 pt-2" data-testid="prompt-context-chip">
+        <div className="flex flex-shrink-0 items-center gap-2 px-3 pt-2" data-testid="prompt-context-chip">
           <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs text-primary">
             <span className="truncate">{promptContext.label}</span>
             <button

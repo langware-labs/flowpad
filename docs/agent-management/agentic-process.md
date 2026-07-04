@@ -84,8 +84,8 @@ The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you c
 | `collaboration_room_id`                                        | `str \| None`          | Collaboration room this process belongs to, if any.                                                                          |
 | `target_typeid_str`                                            | `str \| None`          | Serialized TypeId of the entity this process is attached to.                                                                 |
 | `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | `FSRef \| None`        | Per-process execution folders under the process record directory.                                                            |
-| `additional_dirs`                                              | `list[str]`            | Extra directories exposed to the worker, passed as `--add-dir` where supported.                                              |
-| `embedded_agent_ids`                                           | `list[str]`            | Names of embedded agents loaded into the process.                                                                            |
+| `additional_dirs`                                              | `list[str]`            | Extra directories exposed to the worker, passed as `--add-dir` where supported. The generated process assets dir is appended here when needed. |
+| `embedded_agent_ids`                                           | `list[str]`            | Names of embedded agents materialized into the process assets folder.                                                        |
 | `embedded_asset_refs`                                          | `list[TypeId]`         | Agent/skill refs materialized under the process assets folder.                                                               |
 | `worker_type`                                                  | `WorkerType \| None`   | Optional worker selector. `None` resolves via `FLOWPAD_DEFAULT_WORKER`, defaulting to `claude`.                              |
 
@@ -117,7 +117,7 @@ Drivers own:
 | `transcript_path(process)`                 | Locate this process's transcript/event log.         |
 | `tail_status(path)`                        | Map transcript tail to `WorkerStatus`.              |
 | `load_history(process)`                    | Convert transcript history into `FlowData`.         |
-| `compose_prompt(instruction, agents_json)` | Inline embedded agent specs when needed.            |
+| `compose_prompt(instruction, agents_json)` | Compatibility hook; current drivers pass prompts through because embedded-agent/persona instructions are asset-backed. |
 
 Current drivers:
 
@@ -507,15 +507,45 @@ For Claude, `ClaudeCliOptions` supports:
 | `fork_session_id`                     | `--resume <source> --fork-session --session-id <new>` |
 | `model`                               | `--model <model>`                                     |
 | `effort`                              | `--effort <effort>`                                   |
-| `agents_json`                         | `--agents '<json>'`                                   |
-| `additional_dirs` / `add_dirs`        | repeated `--add-dir <path>`                           |
+| `agents_json`                         | legacy Claude `--agents '<json>'` when present        |
+| `additional_dirs` / `add_dirs`        | repeated `--add-dir <path>`; includes generated assets dir when instructions/assets exist |
 | `print_mode`                          | `-p`                                                  |
 
 For Codex, `CodexCliOptions` builds `codex exec` arguments such as `--json`, `--ephemeral`, `-C <workdir>`, `-m <model>`, and `--dangerously-bypass-approvals-and-sandbox`.
 
 ### Embedded Assets
 
-Agents and skills can be materialized under the process's assets directory and exposed to the worker through `additional_dirs`.
+Agents, skills, and generated instruction files are materialized under the
+process's assets directory:
+
+```text
+<record_dir>/execution/assets/
+  CLAUDE.md
+  AGENTS.md
+  .agents
+  .github/instructions/flowpad.instructions.md
+  .claude/agents/<name>.md
+  .claude/skills/<name>/...
+```
+
+`AgenticProcess.embedded_assets` is `None` until needed. `ensure_embedded_assets()`
+creates an `AssetDir` for `<record_dir>/execution/assets`, and `AssetDir.load_asset()`
+loads generated content or source files under that root while rejecting absolute
+or escaping paths.
+
+At launch/turn time, `prepare_system_instruction_assets()` combines
+`context_data.instructions`, any bound GraphContext summary, and embedded-agent
+persona/body blocks, writes the files above, and appends the assets dir to
+`additional_dirs`. The generated instructions are delivered per worker:
+
+| Worker | Delivery |
+| ------ | -------- |
+| Claude | `--append-system-prompt-file <assets>/CLAUDE.md` |
+| Codex | `developer_instructions` config (`-c developer_instructions=...`) |
+| Copilot | `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets>` |
+
+This keeps the actual user prompt clean. `compose_prompt()` no longer carries
+embedded-agent bodies.
 
 Backend actions:
 
@@ -565,7 +595,7 @@ POST /api/v1/graph/compute_node/<id>/upsertSessionProcess
 | `execute-plan`          | `POST`     | Inject a plan execution prompt into an active PTY session.                        |
 | `update-plan`           | `POST`     | Inject a plan-update prompt into an active PTY session.                           |
 | `entity-event`          | `POST`     | Generic event ingress. Wizard completion posts `wizard.close` here, and the process emits `wizard.closed`. |
-| `load-embedded-agent`   | `POST`     | Merge an agent spec into `cli_config.agents_json`.                                |
+| `load-embedded-agent`   | `POST`     | Materialize agent markdown into `<assets>/.claude/agents/<name>.md`; generated instruction files include it. |
 | `attach-embedded-asset` | `POST`     | Materialize an agent/skill under the process assets dir.                          |
 | `detach-embedded-asset` | `POST`     | Remove a materialized embedded asset.                                             |
 | `list-embedded-assets`  | `GET`      | Return current embedded asset TypeIds.                                            |
@@ -628,7 +658,7 @@ The current files are under `ts_sdk/src/process/`, not `ts_sdk/src/agentic_proce
 | `context_data`                                                 | Persisted extra context.                       |
 | `workdir`                                                      | Worker working directory.                      |
 | `shell_mode`                                                   | Direct PTY spawn vs legacy shell intermediary. |
-| `additional_dirs`                                              | Extra `--add-dir` directories.                 |
+| `additional_dirs`                                              | Extra `--add-dir` directories, including generated process assets when present. |
 | `embedded_asset_refs`                                          | Embedded agent/skill refs.                     |
 | `project_id`, `project_encoded_name`                           | Project linkage.                               |
 | `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | Execution folder refs.                         |
@@ -637,7 +667,7 @@ Convenience getters:
 
 | Getter                                   | Description                                                                                                 |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `cliOptions`                             | Deserializes `cli_config` to `ClaudeCliOptions` and injects `session_id`, `workdir`, and `additional_dirs`. |
+| `cliOptions`                             | Deserializes `cli_config` through the active worker driver and injects `session_id`, `workdir`, and `additional_dirs`. |
 | `shellEntity`                            | Cached linked `Shell`, if available.                                                                        |
 | `compute_node_id` / `compute_node_uname` | Delegated from the linked shell.                                                                            |
 | `ptyConnection`                          | Delegated from the linked shell.                                                                            |

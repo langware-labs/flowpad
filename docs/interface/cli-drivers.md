@@ -48,7 +48,10 @@ The execution context handed to a worker for a single turn. camelCase aliases
 | Field | Type | Purpose |
 | --- | --- | --- |
 | `compute_node` / `compute_node_id` | `ComputeNode \| None` / `str \| None` | Where the worker runs |
-| `instructions` | `str \| None` | System-prompt addition (bound-context summary) |
+| `instructions` | `str \| None` | Legacy inline system-prompt addition; current process launches set this to `None` after materializing instruction assets |
+| `system_prompt_file` | `str \| None` | Path to generated `CLAUDE.md`; Claude receives it through `--append-system-prompt-file` |
+| `developer_instructions` | `str \| None` | Generated instruction text for Codex's `developer_instructions` config override |
+| `custom_instruction_dirs` | `list[str]` | Generated assets dirs for Copilot; exported as `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` |
 | `workdir` | `str \| None` | Launch cwd (defaults to `Path.cwd()`) |
 | `env_vars` | `dict[str,str]` | Extra env for the spawn |
 | `model` | `str \| None` | Concrete model or portable tier (`sm`/`md`/`lg`) |
@@ -95,8 +98,10 @@ Turns a structured config into an argv (canonical) and a shell string (derived) 
 injection or subprocess spawn. Subclasses declare a vendor spec and override `_emit_flags()`.
 
 - **Vendor spec knobs:** `EXECUTABLE`, `PROMPT_CHANNEL` (`"argv"` claude / `"stdin"`
-  codex+copilot), `SYSTEM_PROMPT_FLAG` (claude `--append-system-prompt`; `None` ⇒ prepend
-  into the prompt body), `MODEL_TIERS` (tier→model map; empty base = pass-through).
+  codex+copilot), `SYSTEM_PROMPT_FLAG` (legacy inline append, claude
+  `--append-system-prompt`; `None` ⇒ prepend into the prompt body),
+  `SYSTEM_PROMPT_FILE_FLAG` (claude `--append-system-prompt-file`), `MODEL_TIERS`
+  (tier→model map; empty base = pass-through).
 - **Model-tier resolution lives here, once:** the `model` setter runs the value through
   `MODEL_TIERS` via `resolve_model_tier`, so `sm`/`md`/`lg` become the concrete model the
   moment they're set, no matter which path built the options. A concrete name passes through.
@@ -165,7 +170,7 @@ a new vendor plugs in by implementing the Protocol, with no edits to `agentic_pr
 | Discovery | `has_resumable_session(process)` | True iff the vendor's own session store has a transcript to `--resume` for this `session_id` |
 | Discovery | `supports_plan_mode(process)` | True iff the vendor supports CLI plan mode in headless turns (claude only) |
 | History | `load_history(process)` | Replay transcript as `list[FlowData]` for the `get-history` action |
-| Prompt | `compose_prompt(instruction, agents_json)` | Inline embedded-agent definitions (or pass through) so the parent honours their side-effect instructions |
+| Prompt | `compose_prompt(instruction, agents_json)` | Compatibility hook; current drivers pass through unchanged because embedded-agent/persona instructions are delivered by process instruction assets |
 | Probe | `external_session_dirs()` | Snapshot of vendor-managed session-storage names — tests assert no leakage in ephemeral mode |
 
 > Structural, not exhaustive per class: `report_event` is implemented only on
@@ -195,7 +200,7 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | --- | --- | --- | --- |
 | Wire `name` | `claude` | `codex` | `copilot` |
 | Prompt channel | argv (`-- <text>`) | stdin (trailing `-`) | stdin |
-| System-prompt sink | `--append-system-prompt` | prepended into stdin | prepended into stdin |
+| System-instruction sink | generated `CLAUDE.md` passed with `--append-system-prompt-file` | `developer_instructions` config (`-c developer_instructions=...`) | `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets_dir>` with `.github/instructions/flowpad.instructions.md` |
 | Headless flags | `-p --output-format stream-json --verbose` | `exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low … -` | `--output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions` |
 | Bypass-permissions flag | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` | `--allow-all` (gated on `bypassPermissions`) |
 | Session-id semantics | Honours preassigned `--session-id`; `--resume <id>` on multi-turn | Mints its **own** rollout id; ignores a preassigned id — captured from stream, persisted back | Accepts caller `--session-id` on fresh start; `--resume=<id>` when a session file exists |
@@ -205,7 +210,7 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | `pty_submits_on_paste` | True | False | False |
 | `pins_resume_cwd` | True | False | False |
 | Skills root | `assets_dir/.claude/skills` (mounted via `--add-dir`) | `$CODEX_HOME/skills` (global, not per-process) | `assets_dir/.claude/skills` (mounted via `--add-dir`) |
-| Embedded agents | `--agents <json>` **and** inlined via `compose_prompt` | inlined only (no native `--agents`; names surfaced as `skill_names`) | inlined only (names surfaced as `skill_names`) |
+| Embedded agents | materialized under `assets/.claude/agents/`; legacy `--agents <json>` still emitted when `cli_config.agents_json` exists | materialized into process instruction assets; names surfaced as `skill_names` for command visibility | materialized into process instruction assets; names surfaced as `skill_names` for command visibility |
 | Transcript location | `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` | rollout `~/.codex/sessions/…rollout-*.jsonl`, else process-local stdout tee | session `~/.copilot/session-state/<id>/events.jsonl`, else process-local stdout tee |
 | Transcript format | `CLAUDE_JSONL` | `CODEX_ROLLOUT` (canonical) / `CODEX_STREAM` (tee) | `COPILOT_EVENTS` (canonical) / `COPILOT_STREAM` (tee) |
 | `external_session_dirs` probe | `~/.claude/projects/` entries containing `flow-records-agentic` | `~/.codex/sessions/**/rollout-*.jsonl` names | `~/.copilot/session-state/` dir names |

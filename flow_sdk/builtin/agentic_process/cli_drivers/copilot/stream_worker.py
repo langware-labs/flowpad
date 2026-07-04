@@ -198,9 +198,11 @@ class CopilotCLIStreamWorker(AgenticWorker):
             json_stream=True,
             no_ask_user=True,
             allow_all=True,
+            no_custom_instructions=not bool(context.custom_instruction_dirs),
+            custom_instruction_dirs=list(context.custom_instruction_dirs or []),
         )
-        # to_spawn routes the system-prompt addition through the options' sink
-        # (copilot: prepended into the stdin body — SYSTEM_PROMPT_FLAG is None).
+        # Asset-backed system instructions ride COPILOT_CUSTOM_INSTRUCTIONS_DIRS;
+        # the legacy system_prompt_append path remains unused for new launches.
         argv, env_from_opts, stdin = opts.to_spawn(
             instruction=prompt, system_prompt_append=context.instructions
         )

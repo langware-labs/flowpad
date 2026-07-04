@@ -48,6 +48,7 @@ _REAL_HOME_TEST_MODULES = frozenset({
     "test_debug_log_records",
     "test_skill_transcript_analysis",
     "test_context_process",
+    "test_system_prompt",
 })
 
 

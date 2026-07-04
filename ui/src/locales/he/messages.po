@@ -105,8 +105,8 @@ msgid "(no file — inline persona)"
 msgstr "(אין קובץ — אישיות מובטחת)"
 
 #: src/components/footer.tsx
-msgid "(no git repo)"
-msgstr "(אין מאגר git)"
+#~ msgid "(no git repo)"
+#~ msgstr "(אין מאגר git)"
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "(no subject)"
@@ -1565,10 +1565,15 @@ msgstr "קריאות"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 #: src/components/version-popover/version-popover.tsx
+#: src/components/wizard/WizardHost.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr "ביטול"
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Cancel select"
+msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -1685,6 +1690,10 @@ msgstr "בדיקה אם יש לך קלון מקומי של המאגר."
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Checking service status..."
 msgstr "בדיקת סטטוס השירות..."
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "checking…"
+msgstr ""
 
 #: src/components/chat-input.tsx
 msgid "Checking..."
@@ -1858,6 +1867,7 @@ msgid "Clear search index?"
 msgstr "נקה את אינדקס החיפוש?"
 
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
@@ -3268,10 +3278,14 @@ msgstr "דיאגנוזה הועתקה ללוח"
 msgid "Diagnosis forwarded"
 msgstr "דיאגנוזה הועברה בהצלחה"
 
+#: src/components/diagnose/diagnosis-action-buttons.tsx
+msgid "Diagnosis is not available yet"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 #: src/notifications/diagnose/DiagnoseIconButton.tsx
-msgid "Diagnosis needs an internet connection — you appear to be offline"
-msgstr ""
+#~ msgid "Diagnosis needs an internet connection — you appear to be offline"
+#~ msgstr ""
 
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Diagnosis not found."
@@ -3411,6 +3425,10 @@ msgstr "הסרה נכשלה"
 msgid "Dismiss notification"
 msgstr "דחיית התראה"
 
+#: src/pages/flow-page/workspace-child-strip.tsx
+msgid "Display"
+msgstr ""
+
 #: src/components/ui/sidebar.tsx
 msgid "Displays the mobile sidebar."
 msgstr "מציגה את סרגל הצד בנייד"
@@ -3443,6 +3461,7 @@ msgstr "הושלם"
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/tasks-viewer/TasksViewer.tsx
 #: src/components/tools/ToolsPanel.tsx
+#: src/components/wizard/WizardHost.tsx
 msgid "Done"
 msgstr "בוצע"
 
@@ -7656,6 +7675,10 @@ msgstr "לא בדוק"
 msgid "Not configured"
 msgstr "לא מוגדר"
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "not reachable"
+msgstr ""
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "not respected"
 msgstr "לא מוערך"
@@ -7874,6 +7897,7 @@ msgid "Open Existing Project"
 msgstr "פתח פרויקט קיים"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
 msgid "Open externally"
 msgstr "פתח חיצונית"
 
@@ -7924,6 +7948,10 @@ msgstr "פתח חיפוש מלא"
 #: src/components/task-bar/TaskDetailPanel.tsx
 msgid "Open full view"
 msgstr "פתח תצוגה מלאה"
+
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
+msgid "Open in a new tab"
+msgstr ""
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
@@ -8502,7 +8530,6 @@ msgid "Please select a parent folder"
 msgstr "אנא בחר תיקייה אב"
 
 #: src/pages/home-landing/HomeLanding.tsx
-#: src/pages/home-landing/HomeLanding.tsx
 msgid "Please select or create a project first."
 msgstr "אנא בחר או צור פרויקט תחילה."
 
@@ -8556,8 +8583,8 @@ msgid "Preferences"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Preparing…"
-msgstr "מתכונן…"
+#~ msgid "Preparing…"
+#~ msgstr "מתכונן…"
 
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Press Enter to save, Esc to cancel"
@@ -8720,7 +8747,6 @@ msgstr "הפרויקט לא נמצא באופן מקומי"
 msgid "Project renamed"
 msgstr "שם הפרויקט שונה"
 
-#: src/pages/home-landing/HomeLanding.tsx
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Project Required"
 msgstr "פרויקט נדרש"
@@ -9074,6 +9100,7 @@ msgstr "מרובט אך לא בטבלת הישויות"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -9301,6 +9328,14 @@ msgstr "הדוח נכשל."
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 msgid "Report issue"
 msgstr "דווח בעיה"
+
+#: src/components/diagnose/use-diagnosis-report-availability.ts
+msgid "Reporting is disabled in Local data privacy mode"
+msgstr ""
+
+#: src/components/diagnose/use-diagnosis-report-availability.ts
+msgid "Reporting needs an internet connection"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Repos"
@@ -9647,6 +9682,7 @@ msgstr "הפעל הצעה זו בהפגישה המשותפת עכשיו. בחר 
 msgid "Run workflow"
 msgstr "הפעל זרימת עבודה"
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/machine-overview/service-status-led.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
@@ -9888,12 +9924,12 @@ msgid "scope: user only"
 msgstr "scope: משתמש בלבד"
 
 #: src/components/tabs/TabStrip.tsx
-msgid "Scroll tabs left"
-msgstr "גלול כרטיסיות שמאלה"
+#~ msgid "Scroll tabs left"
+#~ msgstr "גלול כרטיסיות שמאלה"
 
 #: src/components/tabs/TabStrip.tsx
-msgid "Scroll tabs right"
-msgstr "גלול כרטיסיות ימינה"
+#~ msgid "Scroll tabs right"
+#~ msgstr "גלול כרטיסיות ימינה"
 
 #: src/components/AutoScrollContainer.tsx
 msgid "Scroll to bottom"
@@ -10192,6 +10228,10 @@ msgstr "בחר סוג אמנות למעלה כדי קבלת שדות מטא-דט
 msgid "Select an available harness, or install one from its homepage and re-check it."
 msgstr "בחר ב-Harness זמין, או התקן אחד מעמוד הבית שלו ובדוק שוב."
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Select an element"
+msgstr ""
+
 #: src/components/artifacts/artifact-form.tsx
 msgid "Select artifact type"
 msgstr "בחר סוג ארטיפקט"
@@ -10477,8 +10517,8 @@ msgid "Share this plan with someone"
 msgstr "שתף את התכנית עם מישהו"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Share this repo to a conversation"
-msgstr "שתף מאגר זה לשיחה"
+#~ msgid "Share this repo to a conversation"
+#~ msgstr "שתף מאגר זה לשיחה"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
@@ -10920,8 +10960,12 @@ msgid "Start a new conversation"
 msgstr "התחל שיחה חדשה"
 
 #: src/tabs/useTerminalStripController.tsx
-msgid "Start Claude ({modLabel}+C)"
-msgstr "התחל Claude (${modLabel}+C)"
+msgid "Start Claude"
+msgstr ""
+
+#: src/tabs/useTerminalStripController.tsx
+#~ msgid "Start Claude ({modLabel}+C)"
+#~ msgstr "התחל Claude (${modLabel}+C)"
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "Start Codex"
@@ -11381,6 +11425,7 @@ msgid "The value is stored in your operating system keychain and never readable 
 msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפעלה שלך ולעולם לא ניתן לקרוא אותו מהממשק זה."
 
 #: src/components/webapp-viewer.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "The web app is not working, please try to fix it."
 msgstr "האפליקציה לא עובדת, בבקשה נסה להתקן את זה."
 
@@ -12247,6 +12292,10 @@ msgstr "משקיפים רושמים דפוסים דרך <0>Shell.addTrigger</0>;
 msgid "We skipped {count} session{0} that couldn't be restored."
 msgstr "דילגנו על {count} סשן{0} שלא ניתן היה לשחזר."
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Web app status"
+msgstr ""
+
 #: src/components/tools/ToolsPanel.tsx
 msgid "Web Search"
 msgstr "חיפוש ברשת"
@@ -12318,6 +12367,10 @@ msgstr "Whiteboard נוצרה"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
 msgstr "מוחק שורות DB + רשומות FTS עבור כל סוג ניתן לאינדוקס. האינדקס יתרוקן עד שתמלא אותו מחדש. קבצים בדיסק <0>אינם</0> נגועים. לאחר ניקוי, לחץ <1>מהיר</1> לאינדוקס מחדש של ערכים שהשתנו, או <2>מלא</2> לאינדוקס מחדש של הכול."
+
+#: src/components/wizard/WizardHost.tsx
+msgid "Wizard"
+msgstr ""
 
 #. placeholder {0}: data.worker_type ? ` (${data.worker_type})` : ''
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx

@@ -28,15 +28,15 @@ The two transport/visibility axes are the load-bearing ones; the rest support li
 | --- | --- | --- |
 | `pty_mode` (:453) | `bool = True`, persisted | **Transport intent** and the routing key. `True` → interactive PTY (live terminal). `False` → headless JSON-stream (`-p`/stream-json, no PTY, no xterm; loader skips the PTY attach). Execution routes on `pty_mode`, not `visible`; `pty_mode` seeds `visible` at launch and the chat⇄terminal toggle keeps them in lock-step in the common case. |
 | `visible` (:445) | `bool = False` | **Tab visibility only** — "is this process shown as a terminal tab". Set `True` on open, `False` on close. NOT a transport selector and NOT a membership flag (the strip's membership is the `Tab` entity). |
-| `cli_config` | `dict` | Vendor CLI options (`ClaudeCliOptions`/`CodexCliOptions`/`CopilotCliOptions` serialized). Holds `agents_json`, `resume`, `session_id`, permission mode, etc. |
+| `cli_config` | `dict` | Vendor CLI options (`ClaudeCliOptions`/`CodexCliOptions`/`CopilotCliOptions` serialized). Holds `resume`, `session_id`, permission mode, etc. Legacy processes may still carry `agents_json`, but new embedded agents are materialized as process assets. |
 | `session_id` | `str \| None` | Vendor session/thread id. Once set, `project_id`+`workdir` are **frozen** (see `__setattr__` binding lock, :613) — rebinds to a different value are refused because the on-disk transcript is keyed to them. |
 | `shell_id` | `str \| None` | Linked `Shell` entity (the PTY host). Preserved across `exit()` for restart; `sidecar_shell_id` is the legacy zsh-intermediary companion. Reverse pointer is `Shell.agentic_process_id` (see note below). |
 | `shell_mode` | `bool = False` | AgenticProcess drives this choice. `False` = direct PTY spawn (default) — the worker PID is set via `shell.set_worker_pid_direct(cmd)` (`start_pty` path, :1144); `True` = legacy zsh intermediary. |
 | `restart_required` (:481) | `bool = False` | `True` iff a worker-relevant field drifted since the last successful `start_pty()` while `RUNNING`. Set by the save-hook (drift vs `last_started_hash`); surfaced as a UI "Restart" affordance. See claude-session-manager.md. |
 | `workdir` | `str \| None` | Worker cwd. Frozen once `session_id` is set; derived from the owning project when unset. |
-| `additional_dirs` | `list[str]` | Extra dirs passed to the worker via `--add-dir`. |
-| `embedded_asset_refs` | `list[TypeId]` | Entities materialized into `<record_dir>/assets/`, discovered via `--add-dir`. |
-| `embedded_agent_ids` | `list[str]` | Agent ids injected via `--agents` at launch. |
+| `additional_dirs` | `list[str]` | Extra dirs passed to the worker via `--add-dir`. When process instruction/assets are materialized, `<record_dir>/execution/assets` is appended here idempotently. |
+| `embedded_asset_refs` | `list[TypeId]` | Entities materialized into `<record_dir>/execution/assets/`, discovered via `--add-dir`. |
+| `embedded_agent_ids` | `list[str]` | Names of embedded agents materialized under `<assets>/.claude/agents/`. |
 | `project_id` | `str \| None` | Owning project. Frozen once `session_id` is set; resolved by `get_project()` from ancestry → workdir → `@local`. |
 | `status` | `str` | Lifecycle `ProcessStatus` (NEW / STARTING / RUNNING / STOPPING / STOPPED / FAILED). Distinct from the transcript-derived `worker_status`. |
 | `start_failure` (:489) | `str \| None` | Latches a process after an instant-death launch; blocks auto-respawn until an explicit `open(retry=true)`. |
@@ -80,7 +80,9 @@ Names + one-liners; no bodies.
 
 **Assets**
 - `load_skill(skill)` — make a skill folder discoverable (symlink into the worker's skills root).
-- `load_embedded_agent(agent)` — merge an agent spec into `cli_config.agents_json`.
+- `load_embedded_agent(agent)` — load an agent into the process asset directory so generated instruction files include its persona/body.
+- `embedded_assets` / `ensure_embedded_assets()` — dynamic process-local `AssetDir`; default is `None`, created on demand under `<record_dir>/execution/assets`.
+- `prepare_system_instruction_assets()` — materialize `context_data.instructions`, GraphContext summary, and embedded-agent instructions as `CLAUDE.md`, `AGENTS.md`, `.agents`, and Copilot `.github/instructions/flowpad.instructions.md`.
 - `get_asset_descriptors()` → `list[AssetDescriptor]` — unified read-only view (embedded + inline + path-scan).
 
 **Misc**
@@ -150,10 +152,40 @@ The `AgenticProcess` ⇄ `Shell` link (see `docs/interface/shell.md`):
 
 ### Helper types
 
-- `AgenticContext` — backend per-turn execution context (`cli_worker_base_driver.py:79`): `compute_node`, `instructions`, `workdir`, `env_vars`, `model`, `permission_mode`, `resume_session_id`, `fork_session`, `session_id`, `effort`, add-dirs, etc. (A second, prompt-layer `AgenticContext` lives in `_shared.py:19`.)
+- `AgenticContext` — backend per-turn execution context (`cli_worker_base_driver.py`): `compute_node`, legacy `instructions`, `system_prompt_file`, `developer_instructions`, `custom_instruction_dirs`, `workdir`, `env_vars`, `model`, `permission_mode`, `resume_session_id`, `fork_session`, `session_id`, `effort`, add-dirs, etc. (A second, prompt-layer `AgenticContext` lives in `_shared.py:19`.)
+- `AssetDir` — process-local asset loader (`asset_dir.py`) with `load_asset()` / `loadAsset()`; writes content or copies/symlinks sources under one root while rejecting absolute or escaping paths.
 - `AssetDescriptor` (dataclass, :132) — one asset row: `typeid`, `source: AssetSource`, `posix_path`, `source_dir`. `AssetSource` ∈ {EMBEDDED, INLINE, PROJECT_DIR, USER_DIR, WORKDIR, ADDITIONAL_DIR, CONTEXT_DIR}; the last five are read-only sources.
 - `TranscriptSubpath` (StrEnum, :120) — `plan` / `prompt` / `prompts` / `full`; routes the `transcript` action's sub-path.
 - `AgenticProcessEventName` (StrEnum, `events.py`) — client→worker events; currently just `FIRST_PROMPT = "first_prompt"`.
+
+### System Instruction Assets
+
+`AgenticProcess.instructions` is a convenience property over
+`context_data["instructions"]`. At launch/turn time,
+`prepare_system_instruction_assets()` combines those instructions with any bound
+GraphContext summary and embedded-agent persona/body blocks, then writes all
+process-local instruction files under:
+
+```text
+<record_dir>/execution/assets/
+  CLAUDE.md
+  AGENTS.md
+  .agents
+  .github/instructions/flowpad.instructions.md
+```
+
+The assets directory is appended to `additional_dirs` through the same generic
+add-dir mechanism used for user-supplied folders. Delivery then depends on the
+worker:
+
+| Worker | Delivery |
+| --- | --- |
+| Claude | `--append-system-prompt-file <assets>/CLAUDE.md` |
+| Codex | `-c developer_instructions=<generated text>` |
+| Copilot | `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets>` so Copilot discovers `.github/instructions/flowpad.instructions.md` |
+
+This keeps the user prompt unchanged; `compose_prompt()` remains a compatibility
+hook and current drivers pass it through.
 
 ---
 
@@ -183,7 +215,7 @@ The `AgenticProcess` ⇄ `Shell` link (see `docs/interface/shell.md`):
 | `update-plan` | POST | `update_plan` → `inject` | PTY | param `file_path` required. | Tell the worker to update the plan from `<plan-note>` annotations. |
 | `transcript` | POST | `transcript_action` → `_transcript_plan`/`_transcript_prompts`/`_transcript_full` | both | routes on URL sub-path (`plan`/`prompts`/`full`); unknown → fail. | Generic transcript surface; loads JSONL once, dispatches by sub-path. |
 | `get-plan` | POST | `get_plan` → `_transcript_plan` | both | — | Back-compat alias for `transcript/plan`. |
-| `load-embedded-agent` | POST | `load_embedded_agent_action` → merge `cli_config.agents_json` | both | param `asset_ref` required + file must exist. | Embed an agent from a VFS path into `cli_config` (durable). |
+| `load-embedded-agent` | POST | `load_embedded_agent_action` → `AssetDir.load_asset(".claude/agents/<name>.md")` | both | param `asset_ref` required + file must exist/parse as agent markdown. | Embed an agent from a VFS path into this process's asset dir; generated instruction files include the persona/body on the next launch/turn. |
 | `load-embedded-skill` | POST | `load_embedded_skill_action` → symlink into skills root | both | param `asset_ref` required; folder + `SKILL.md` must exist. | Make a skill folder discoverable to the worker (live symlink). |
 | `attach-embedded-asset` | POST | `attach_embedded_asset` → `_materialize_entity` | both | param `entity_ref` (TypeId) required. | Materialize an entity under assets dir + add to `--add-dir` + record in `embedded_asset_refs`. |
 | `detach-embedded-asset` | POST | `detach_embedded_asset` → `_unmaterialize_entity` | both | param `entity_ref` required. | Remove materialized files + drop from `embedded_asset_refs`. |

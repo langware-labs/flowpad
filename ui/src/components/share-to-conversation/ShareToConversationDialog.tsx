@@ -205,6 +205,7 @@ export function ShareToConversationDialog({
         files: prepared.files,
         assetReferences: prepared.assetReferences,
         sharedContextEntities: prepared.sharedContextEntities,
+        shareConfig: prepared.shareConfig ?? source.shareConfig,
       };
       const target: SendTarget = existingId
         ? { kind: 'existing', conversationId: existingId }

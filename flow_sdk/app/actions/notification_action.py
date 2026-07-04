@@ -273,6 +273,32 @@ def _parse_asset_references(raw: Any) -> list:
     return []
 
 
+def _parse_share_transfer_mode(body: dict) -> str:
+    """Read share_config.transfer_mode from JSON or multipart bodies."""
+    raw = (
+        body.get("share_config")
+        or body.get("shareConfig")
+        or {}
+    )
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    if isinstance(raw, str):
+        try:
+            raw = _json.loads(raw)
+        except Exception:
+            raw = {}
+    config = raw if isinstance(raw, dict) else {}
+    mode = (
+        config.get("transfer_mode")
+        or config.get("transferMode")
+        or body.get("transfer_mode")
+        or body.get("transferMode")
+        or "copy"
+    )
+    mode = str(mode).strip().lower()
+    return mode if mode in {"copy", "git"} else "copy"
+
+
 async def _attach_asset_references(reply_fm: "FlowMessage", asset_typeids: list) -> None:
     """Append TYPE_ID attachments for each asset typeid string on the FlowMessage.
 
@@ -477,7 +503,12 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
         return False
 
 
-async def _upload_body_and_finalize(reply_fm: "FlowMessage", conv_id: str) -> None:
+async def _upload_body_and_finalize(
+    reply_fm: "FlowMessage",
+    conv_id: str,
+    *,
+    transfer_mode: str = "copy",
+) -> None:
     """Pack + upload the FlowMessage body bundle in a background task.
 
     ``upload_body`` runs the hub PUT → fs/upload → set_body_status sequence,
@@ -492,6 +523,7 @@ async def _upload_body_and_finalize(reply_fm: "FlowMessage", conv_id: str) -> No
         )
         await reply_fm.upload_body(
             on_progress=make_flow_message_progress_emitter(reply_fm.id, "upload"),
+            transfer_mode=transfer_mode,
         )
         await reply_fm.save()
         _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
@@ -508,6 +540,7 @@ async def _finalize_message_dispatch(
     someone_typeid: str,
     *,
     is_remote_send: bool,
+    transfer_mode: str = "copy",
 ) -> "Conversation":
     """Shared post-save dispatch tail for an already-saved FlowMessage (a reply
     OR a forwarded clone): backlink the shared-context entities, append the
@@ -530,7 +563,7 @@ async def _finalize_message_dispatch(
         await _send_conversation_message_header(conv, fm)
         from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
         if fm.body_status == BodyStatus.UPLOADING:
-            asyncio.create_task(_upload_body_and_finalize(fm, conv.id))
+            asyncio.create_task(_upload_body_and_finalize(fm, conv.id, transfer_mode=transfer_mode))
     return conv
 
 
@@ -705,6 +738,7 @@ async def handle_add_message(
     if not isinstance(uploaded_files_preview, list):
         uploaded_files_preview = [uploaded_files_preview]
     asset_references = _parse_asset_references(body.get("asset_references"))
+    transfer_mode = _parse_share_transfer_mode(body)
     # Accept both the new ``shared_context_entities`` name and the legacy
     # ``context_entities`` body key during transition (frontend may not be
     # fully cut over yet). Treat both as wire-bound (shared).
@@ -869,7 +903,12 @@ async def handle_add_message(
         )
 
     conv = await _finalize_message_dispatch(
-        conv, reply_fm, context_typeids, someone_typeid, is_remote_send=is_remote_send,
+        conv,
+        reply_fm,
+        context_typeids,
+        someone_typeid,
+        is_remote_send=is_remote_send,
+        transfer_mode=transfer_mode,
     )
 
     return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))

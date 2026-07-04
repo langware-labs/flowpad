@@ -21,6 +21,7 @@ lines are easy to filter independently of the Claude CLI lines.
 from __future__ import annotations
 
 import logging
+import json
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
@@ -61,6 +62,7 @@ class CodexCliOptions(WorkerCLIOptions):
         self.add_dirs: list[str] = list(add_dirs or [])
         self.json_stream = json_stream
         self.ephemeral = ephemeral
+        self.developer_instructions: str | None = None
 
     # Default reasoning effort overridden in ``_emit_flags`` so user's global
     # ``model_reasoning_effort = "xhigh"`` from ~/.codex/config.toml doesn't make
@@ -85,6 +87,11 @@ class CodexCliOptions(WorkerCLIOptions):
             tail.extend(["resume", self.session_id])  # positional subcommand, not a flag
         return tail
 
+    def _developer_instruction_flags(self) -> list[str]:
+        if not self.developer_instructions:
+            return []
+        return ["-c", f"developer_instructions={json.dumps(self.developer_instructions)}"]
+
     def _emit_flags(self) -> list[str]:
         """argv after ``codex``. Two shapes keyed on ``json_stream``:
           * True (default) → ``exec … --json … -`` headless, prompt over stdin;
@@ -92,15 +99,16 @@ class CodexCliOptions(WorkerCLIOptions):
         Both end with the shared :meth:`_common_tail`.
         """
         bypass = ["--dangerously-bypass-approvals-and-sandbox"] if self.permission_mode == "bypassPermissions" else []
+        dev_flags = self._developer_instruction_flags()
         if not self.json_stream:
-            return bypass + self._common_tail()
+            return bypass + dev_flags + self._common_tail()
 
         head = ["exec", "--skip-git-repo-check", *bypass]
         if self.ephemeral:
             head.append("--ephemeral")
         head.append("--json")
         head.extend(["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"])
-        return head + self._common_tail() + ["-"]  # trailing "-" → codex reads prompt from stdin
+        return head + dev_flags + self._common_tail() + ["-"]  # trailing "-" → codex reads prompt from stdin
 
     def to_json(self) -> dict[str, Any]:
         d = super().to_json()

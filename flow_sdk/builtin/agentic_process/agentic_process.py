@@ -27,6 +27,7 @@ from pydantic import SerializationInfo, model_serializer, model_validator
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
 )
@@ -146,6 +147,13 @@ class AssetDescriptor:
     source: AssetSource
     posix_path: str | None    # canonical POSIX path; None for INLINE
     source_dir: str | None = None  # matched source dir (path-discovered only); None for EMBEDDED/INLINE
+
+
+@dataclass
+class SystemInstructionAssets:
+    assets_dir: Path
+    instructions: str
+    claude_file: Path
 
 
 # Types treated as executable agent inputs by the asset-management UI.
@@ -454,7 +462,7 @@ class AgenticProcess(Entity):
             "Resolve via the assistant_enabled property; the driver reads that."
         ),
     )
-    embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
+    embedded_agent_ids: list[str] = APIField(default_factory=list, description="Embedded agent names materialized into process instruction assets")
     embedded_asset_refs: list[TypeId] = APIField(
         default_factory=list,
         description=(
@@ -955,14 +963,9 @@ class AgenticProcess(Entity):
 
             await self.get_project()
 
+            instruction_assets = await self.prepare_system_instruction_assets()
             cmd = self._finalized_restart_cli_options()
-
-            # System-prompt append (caller instructions + bound context) —
-            # launch-time only, set AFTER the restart snapshot above so the
-            # restart hash never sees it. This is what makes
-            # ``context_data.instructions`` reach PTY workers, not just the
-            # headless paths (which thread the same value via AgenticContext).
-            cmd.system_prompt_append = await self.resolve_system_instructions()
+            self._apply_system_instruction_assets(cmd, instruction_assets)
 
             # Fork & CLAUDE_PROJECT_DIR resume-cwd pinning are Claude-only —
             # Codex/Copilot mint their own session and use ``-C <cwd>``, not
@@ -1750,7 +1753,155 @@ class AgenticProcess(Entity):
             await self.notify_updated()
         return ApiSuccessResponse(data={"id": self.id, "visible": self.visible})
 
-    # ── Show (display focus) ──────────────────────────────────────────────────
+    # ── Web app artifacts + Show (display focus) ─────────────────────────────
+
+    async def _resolve_webapp_project(self):
+        """Best-effort project for app artifacts owned by this process."""
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await Project.get_by_id(self.project_id) if self.project_id else None
+        if project is None:
+            project = await Project.get_ancestor(self.typeid)
+        if project is None and self.workdir:
+            project = await Project.recover_by_path(self.workdir)
+        if project is not None and self.project_id != project.id:
+            self._force_rebind_project_id(project.id)
+            await self.save()
+        return project
+
+    async def _get_project_webapp_artifacts(self) -> list:
+        from flow_sdk.builtin.artifact import Artifact, ArtifactType  # noqa: PLC0415
+        from flow_sdk.core import QueryFilter  # noqa: PLC0415
+
+        project = await self._resolve_webapp_project()
+        source = project.typeid if project is not None else None
+        artifacts = await Artifact.get_all(QueryFilter.by_type(Artifact.get_type()), source_entity=source)
+        webapps = [artifact for artifact in artifacts if artifact.artifact_type == ArtifactType.WEBAPP]
+        return sorted(webapps, key=lambda artifact: str(getattr(artifact, "created_date", "") or ""), reverse=True)
+
+    @action.post(action_name="webapp-artifacts")
+    async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Return project-scoped WEBAPP artifacts for app-open reuse."""
+        try:
+            artifacts = await self._get_project_webapp_artifacts()
+            return ApiSuccessResponse(data={"artifacts": [artifact.model_dump(mode="json") for artifact in artifacts]})
+        except Exception as e:
+            logger.exception("AgenticProcess %s webapp-artifacts error: %s", self.id, e)
+            return ApiFailResponse(message=str(e))
+
+    @action.post(action_name="register-webapp-artifact")
+    async def _http_register_webapp_artifact(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Create/update a WEBAPP artifact and optionally show its port."""
+        from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType  # noqa: PLC0415
+        from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+        from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+
+        raw_port = str(body.get("port") or "").strip()
+        try:
+            port = int(raw_port)
+        except ValueError:
+            return ApiFailResponse(message="port is required", status_code=400)
+        if port <= 0 or port > 65535:
+            return ApiFailResponse(message=f"Invalid port: {raw_port}", status_code=400)
+
+        raw_path = str(body.get("path") or "").strip()
+        if not raw_path:
+            return ApiFailResponse(message="path is required", status_code=400)
+        try:
+            artifact_path = canonical_posix_path(str(Path(raw_path).expanduser().resolve()))
+        except Exception:
+            artifact_path = raw_path
+
+        name = str(body.get("name") or "").strip() or Path(artifact_path).name or f"Web App {port}"
+        start_cmd = str(body.get("start_cmd") or "").strip()
+        health = str(body.get("health") or "/").strip() or "/"
+        description = str(body.get("description") or "").strip() or f"Web app at {artifact_path}"
+        metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
+        git_origin = None
+        try:
+            git_origin = await asyncio.to_thread(GitOrigin.for_asset_path, artifact_path)
+        except Exception:
+            logger.debug("register-webapp-artifact: could not derive git origin for %s", artifact_path, exc_info=True)
+        if git_origin is not None:
+            metadata = {**metadata, "git_origin": git_origin.model_dump(mode="json")}
+
+        project = await self._resolve_webapp_project()
+        artifacts = await self._get_project_webapp_artifacts()
+        artifact_id = str(body.get("artifact_id") or "").strip()
+        artifact = None
+        if artifact_id:
+            artifact = await Artifact.get_by_id(artifact_id)
+        if artifact is None:
+            for candidate in artifacts:
+                same_path = canonical_posix_path(str(candidate.path or "")) == artifact_path
+                same_port = str(candidate.port or (candidate.metadata or {}).get("port") or "") == str(port)
+                if same_path or same_port:
+                    artifact = candidate
+                    break
+
+        if artifact is None:
+            metadata = {
+                **metadata,
+                "port": str(port),
+                "start_cmd": start_cmd,
+                "health": health,
+            }
+            artifact = Artifact(
+                name=name,
+                artifact_type=ArtifactType.WEBAPP,
+                ref_type=ArtifactReferenceType.FOLDER,
+                path=artifact_path,
+                description=description,
+                metadata=metadata,
+                project_id=project.id if project is not None else self.project_id,
+                git_origin=git_origin,
+                port=str(port),
+                start_cmd=start_cmd,
+                health=health,
+            )
+        else:
+            metadata = {
+                **(artifact.metadata or {}),
+                **metadata,
+                "port": str(port),
+                "start_cmd": start_cmd,
+                "health": health,
+            }
+            artifact.name = name
+            artifact.artifact_type = ArtifactType.WEBAPP
+            artifact.ref_type = ArtifactReferenceType.FOLDER
+            artifact.path = artifact_path
+            artifact.description = description
+            artifact.metadata = metadata
+            if git_origin is not None:
+                artifact.git_origin = git_origin
+            artifact.port = str(port)
+            artifact.start_cmd = start_cmd
+            artifact.health = health
+            if project is not None:
+                artifact.project_id = project.id
+
+        await artifact.save()
+        if project is not None:
+            await project.attach_child(artifact)
+            if artifact.id not in (project.artifacts or []):
+                project.artifacts = list(project.artifacts or []) + [artifact.id]
+                await project.save()
+
+        shown = None
+        if bool(body.get("show", True)):
+            try:
+                shown = await resolve_display_target(port=port)
+            except InvalidDisplayTarget as e:
+                return ApiFailResponse(message=str(e), status_code=400)
+            await self.on_show(shown)
+
+        return ApiSuccessResponse(data={"artifact": artifact.model_dump(mode="json"), "shown": shown})
 
     async def on_show(self, payload: dict) -> None:
         """Present *payload* to this process's watchers — the ``flow show`` verb.
@@ -2262,6 +2413,8 @@ class AgenticProcess(Entity):
         except Exception:
             logger.debug("prompt: get_project failed", exc_info=True)
 
+        instruction_assets = await self.prepare_system_instruction_assets()
+
         try:
             env_vars = dict(self.driver.cli_options(self).env_vars)
         except Exception:
@@ -2284,16 +2437,11 @@ class AgenticProcess(Entity):
             add_dirs=list(self.resolved_add_dirs or []),
             session_id=self.session_id if (self.session_id and not resumable) else None,
             resume_session_id=self.session_id if resumable else None,
-            # System-prompt append: caller instructions (context_data) merged
-            # with the bound GraphContext summary. None when both are empty.
-            instructions=await self.resolve_system_instructions(),
+            **self._instruction_context_kwargs(instruction_assets),
         )
 
-        # Inline embedded-agent definitions (and persona directive when a single
-        # agent is loaded) into the prompt — same path the SDK ``prompt()`` API
-        # uses via ``driver.headless_prompt``. Without this, HTTP chat would
-        # see the agent only as a delegable Task sub-agent and never adopt
-        # the persona for free-form questions.
+        # Vendor hook retained for compatibility; embedded-agent/persona
+        # instructions are now materialized into process instruction assets.
         composed_prompt = self.driver.compose_prompt(message, self.get_agents_json())
 
         handler = StreamingResponseHandler()
@@ -2946,25 +3094,29 @@ class AgenticProcess(Entity):
     async def load_embedded_agent_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
         """Load an agent from a VFS path and embed it into this process.
 
-        Merges the agent spec into cli_config.agents_json so it survives across
-        HTTP requests without relying on in-memory state.
+        Materializes the agent markdown into the process asset directory so the
+        generated system-instruction files can include it on every launch.
         """
-        from flow_sdk.fs_store.operations.agent import agent_to_cli_json, extract_agent_from_path  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.agent import extract_agent_from_path, render_agent_markdown  # noqa: PLC0415
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
         abs_path = Path("/" + asset_ref.lstrip("/"))
         if not abs_path.exists():
             return ApiFailResponse(message=f"Agent file not found: {abs_path}")
         agent = extract_agent_from_path(abs_path)
-        agent_entry = agent_to_cli_json(agent)
-        # Merge into cli_config so the agent is durably stored on the entity.
-        # ``agents_json`` is a claude-only field, so this stays vendor-specific.
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions  # noqa: PLC0415
-        cli_opts = ClaudeCliOptions.from_json(self.cli_config or {})
-        cli_opts.agents_json = {**(cli_opts.agents_json or {}), **agent_entry}
-        self.cli_config = cli_opts.to_json()
+        if agent is None:
+            return ApiFailResponse(message=f"Could not parse agent file: {abs_path}")
+        assets = self.ensure_embedded_assets()
+        name = agent.name or abs_path.stem
+        assets.load_asset(
+            Path(".claude") / "agents" / f"{name}.md",
+            content=render_agent_markdown(agent),
+        )
+        self._ensure_assets_dir_in_add_dirs(assets.os_path)
+        if name not in (self.embedded_agent_ids or []):
+            self.embedded_agent_ids = list(self.embedded_agent_ids or []) + [name]
         await self.save()
-        return ApiSuccessResponse(data={"ok": True, "name": agent.name})
+        return ApiSuccessResponse(data={"ok": True, "name": name})
 
     @action.post(action_name="load-embedded-skill")
     async def load_embedded_skill_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
@@ -2986,8 +3138,8 @@ class AgenticProcess(Entity):
         if not (skill_dir / "SKILL.md").exists():
             return ApiFailResponse(message=f"SKILL.md missing in: {skill_dir}")
         try:
-            assets_dir = await self._assets_dir_path()
-            assets_dir.mkdir(parents=True, exist_ok=True)
+            assets = self.ensure_embedded_assets()
+            assets_dir = assets.os_path
             skills_root = self._skills_root(assets_dir)
             skills_root.mkdir(parents=True, exist_ok=True)
             link = skills_root / skill_dir.name
@@ -3052,18 +3204,19 @@ class AgenticProcess(Entity):
     def get_agents_json(self) -> "dict | None":
         """Return merged --agents JSON from all embedded agents, or None if none loaded.
 
-        Falls back to the persisted ``cli_config.agents_json`` when no in-memory
-        agents are loaded — required for HTTP-driven chat flows where
-        ``load_embedded_agent_action`` persists the agent spec on ``cli_config``
-        without rebuilding the in-memory list. Without this fallback,
-        ``compose_prompt`` sees ``None`` and skips the persona directive, so
-        the embedded agent only ever runs as a delegable Task sub-agent.
+        Falls back to the persisted ``cli_config.agents_json`` for legacy
+        processes created before embedded agents were materialized as assets.
         """
         _agents: list = object.__getattribute__(self, "__dict__").get("_embedded_agents", [])
         if _agents:
+            from flow_sdk.fs_store.operations.agent import agent_to_cli_json  # noqa: PLC0415
+
             result: dict = {}
             for rec in _agents:
-                result.update(rec.to_agents_cli_json())
+                if hasattr(rec, "to_agents_cli_json"):
+                    result.update(rec.to_agents_cli_json())
+                else:
+                    result.update(agent_to_cli_json(rec))
             if result:
                 return result
         persisted = (self.cli_config or {}).get("agents_json") or None
@@ -3074,14 +3227,38 @@ class AgenticProcess(Entity):
     # Materializes the entity's files under <record_dir>/assets/.claude/<type>/… so
     # Claude discovers them via `--add-dir <record_dir>/assets`.
 
+    @property
+    def embedded_assets(self) -> AssetDir | None:
+        return object.__getattribute__(self, "__dict__").get("_embedded_assets")
+
+    def ensure_embedded_assets(self) -> AssetDir:
+        asset_dir = self.embedded_assets
+        if asset_dir is None:
+            asset_dir = AssetDir(self._record_dir() / "execution" / "assets")
+            object.__getattribute__(self, "__dict__")["_embedded_assets"] = asset_dir
+        asset_dir.os_path.mkdir(parents=True, exist_ok=True)
+        return asset_dir
+
+    @property
+    def instructions(self) -> str | None:
+        value = (self.context_data or {}).get("instructions")
+        return str(value) if value is not None else None
+
+    @instructions.setter
+    def instructions(self, value: str | None) -> None:
+        context = dict(self.context_data or {})
+        if value is None:
+            context.pop("instructions", None)
+        else:
+            context["instructions"] = value
+        self.context_data = context
+
     async def _assets_dir_path(self) -> "Path":
         """The filesystem directory where embedded assets are materialized.
 
         ``<records_root>/agentic_process/agentic_process-@<id>/execution/assets``
         """
-        a = self._record_dir() / "execution" / "assets"
-        a.mkdir(parents=True, exist_ok=True)
-        return a
+        return self.ensure_embedded_assets().os_path
 
     def _ensure_assets_dir_in_add_dirs(self, assets_dir: "Path") -> None:
         """Idempotently append the assets dir to additional_dirs."""
@@ -3099,6 +3276,144 @@ class AgenticProcess(Entity):
         — the orchestrator never branches on the worker.
         """
         return self.driver.skills_root(self, assets_dir)
+
+    @staticmethod
+    def _render_agents_instruction_block(agents_json: dict | None) -> str:
+        agents_json = agents_json or {}
+        if not agents_json:
+            return ""
+
+        if len(agents_json) == 1:
+            name, entry = next(iter(agents_json.items()))
+            body = (entry or {}).get("prompt") or ""
+            desc = (entry or {}).get("description") or ""
+            sections: list[str] = [
+                f"# You are the '{name}' agent",
+                (
+                    "The user is chatting with you (this agent) directly. "
+                    "Adopt the persona and follow the instructions below for "
+                    "every reply, even when the user does not name the agent. "
+                    "Execute side-effect instructions literally (file writes, "
+                    "command outputs); do not paraphrase or summarise away "
+                    "required artifacts."
+                ),
+            ]
+            if desc:
+                sections.append(f"\n## Description\n{desc}")
+            if body:
+                sections.append(f"\n## Instructions\n{body}")
+            return "\n".join(sections)
+
+        sections = [
+            "# Embedded agent specs",
+            (
+                "Each ## block below is the canonical instruction body for a "
+                "named agent. When the user instruction names one of these "
+                "agents, do not delegate to a separate sub-agent. Execute the "
+                "agent instructions yourself in this same turn and follow "
+                "side-effect instructions literally."
+            ),
+        ]
+        for name, entry in agents_json.items():
+            body = (entry or {}).get("prompt") or ""
+            desc = (entry or {}).get("description") or ""
+            sections.append(f"\n## {name}")
+            if desc:
+                sections.append(desc)
+            if body:
+                sections.append(body)
+        return "\n".join(sections)
+
+    def _load_materialized_agents_json(self, assets_dir: "Path") -> dict:
+        agents: dict = {}
+        agents_dir = assets_dir / ".claude" / "agents"
+        if not agents_dir.is_dir():
+            return agents
+        from flow_sdk.fs_store.operations.agent import agent_to_cli_json, extract_agent_from_path  # noqa: PLC0415
+
+        for md in sorted(agents_dir.glob("*.md")):
+            try:
+                rec = extract_agent_from_path(md)
+                if rec is None:
+                    continue
+                agents.update(agent_to_cli_json(rec))
+            except Exception:
+                logger.debug("failed to parse embedded agent %s", md, exc_info=True)
+        return agents
+
+    async def prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
+        """Materialize process instructions into the process asset directory."""
+        explicit = await self.resolve_system_instructions()
+        legacy_agents = self.get_agents_json() or {}
+        has_existing_assets = self.embedded_assets is not None
+        if not explicit and not legacy_agents and not has_existing_assets:
+            return None
+
+        asset_dir = self.ensure_embedded_assets()
+        agents = {**legacy_agents, **self._load_materialized_agents_json(asset_dir.os_path)}
+        agent_block = self._render_agents_instruction_block(agents)
+        instructions = "\n\n".join(p for p in (explicit, agent_block) if p).strip()
+
+        self._ensure_assets_dir_in_add_dirs(asset_dir.os_path)
+        if not instructions:
+            return None
+
+        claude_file = asset_dir.load_asset("CLAUDE.md", content=instructions + "\n")
+        # AGENTS.md / .agents / copilot-instructions must exist on disk (agents discover
+        # them via --add-dir), but their paths aren't consumed — write without capturing.
+        asset_dir.load_asset("AGENTS.md", content=instructions + "\n")
+        asset_dir.load_asset(".agents", content=instructions + "\n")
+        copilot_body = (
+            "---\n"
+            'applyTo: "**"\n'
+            "description: Flowpad process system instructions\n"
+            "---\n\n"
+            f"{instructions}\n"
+        )
+        asset_dir.load_asset(
+            ".github/instructions/flowpad.instructions.md",
+            content=copilot_body,
+        )
+        return SystemInstructionAssets(
+            assets_dir=asset_dir.os_path,
+            instructions=instructions,
+            claude_file=claude_file,
+        )
+
+    @staticmethod
+    def _apply_system_instruction_assets(
+        cmd: WorkerCLIOptions,
+        assets: SystemInstructionAssets | None,
+    ) -> None:
+        if assets is None:
+            return
+        if hasattr(cmd, "add_dirs"):
+            add_dirs = list(getattr(cmd, "add_dirs", []) or [])
+            assets_path = str(assets.assets_dir)
+            if assets_path not in add_dirs:
+                add_dirs.append(assets_path)
+                cmd.add_dirs = add_dirs
+        cmd.system_prompt_append = None
+        cmd.system_prompt_file = str(assets.claude_file)
+        if hasattr(cmd, "developer_instructions"):
+            cmd.developer_instructions = assets.instructions
+        if hasattr(cmd, "custom_instruction_dirs"):
+            cmd.custom_instruction_dirs = [str(assets.assets_dir)]
+            if hasattr(cmd, "no_custom_instructions"):
+                cmd.no_custom_instructions = False
+
+    @staticmethod
+    def _instruction_context_kwargs(
+        assets: SystemInstructionAssets | None,
+    ) -> dict[str, Any]:
+        if assets is None:
+            return {}
+        return {
+            "instructions": None,
+            "system_prompt_file": str(assets.claude_file),
+            "developer_instructions": assets.instructions,
+            "custom_instruction_dirs": [str(assets.assets_dir)],
+        }
 
     async def _materialize_entity(self, ref: TypeId, assets_dir: "Path") -> str | None:
         """Copy the referenced entity's files under ``assets_dir/.claude/<type>/…``.
@@ -3123,8 +3438,10 @@ class AgenticProcess(Entity):
             src = agent.asset_ref._path if agent.asset_ref else None
             if src is None or not src.exists():
                 raise FileNotFoundError(f"Agent source missing: {ref.id}")
-            target = target_dir / f"{agent.name or ref.id}.md"
-            shutil.copyfile(src, target)
+            target = AssetDir(assets_dir).load_asset(
+                Path(".claude") / "agents" / f"{agent.name or ref.id}.md",
+                source=src,
+            )
             return agent.name or ref.id
 
         if ref.type == "skill":
@@ -3971,11 +4288,13 @@ class AgenticProcess(Entity):
         then same-origin with the served page (can read its DOM) and posts the
         clicked element to the Vibe display via ``postMessage``.
 
-        v1 handles the static single-file preview (the ``python3 -m http.server``
-        recipe); relative-asset rewrite and dev-server HMR websocket passthrough
-        are follow-ups.
+        Root-relative assets are rewritten back through this action so framework
+        dev servers such as Next/Vite can load their CSS/JS while the iframe is
+        same-origin with Flowpad for element selection.
         """
         from fastapi.responses import Response
+        from urllib.parse import quote, urljoin
+        import re  # noqa: PLC0415
 
         try:
             base = (await self._resolve_dev_host(port)).rstrip("/")
@@ -3994,12 +4313,71 @@ class AgenticProcess(Entity):
 
         content_type = upstream.headers.get("content-type", "")
         body = upstream.content
+        lower_content_type = content_type.lower()
+
+        proxy_action_path = f"/api/v1/graph/agentic_process/{self.id}/app-proxy"
+
+        def proxied_url(raw: str) -> str:
+            value = raw.strip()
+            if not value:
+                return raw
+            if value.startswith(proxy_action_path):
+                return value
+            if value.startswith(("#", "//", "http://", "https://", "data:", "blob:", "mailto:", "tel:")):
+                return value
+            # This script is served by Flowpad, not the guest app.
+            if value == "/sdk/flowpad-select-bridge.js":
+                return value
+            app_path = value if value.startswith("/") else urljoin(f"{sub.rsplit('/', 1)[0]}/", value)
+            return f"{proxy_action_path}?port={int(port)}&path={quote(app_path, safe='/%')}"
+
+        def rewrite_html(text: str) -> str:
+            def rewrite_html_fragment(fragment: str) -> str:
+                # HTML attributes and framework chunk tags.
+                fragment = re.sub(
+                    r'(?P<prefix>\b(?:src|href|action)=["\'])(?P<url>[^"\']+)(?P<suffix>["\'])',
+                    lambda m: f"{m.group('prefix')}{proxied_url(m.group('url'))}{m.group('suffix')}",
+                    fragment,
+                    flags=re.IGNORECASE,
+                )
+                # CSS url(...) values inside style tags/attributes.
+                fragment = rewrite_css(fragment)
+                # Root-relative framework URLs in non-script HTML data.
+                return re.sub(
+                    r'(?P<quote>["\'])(?P<url>/(?:_next|@vite|src|assets|static|favicon\.ico|manifest\.json|robots\.txt)[^"\']*)',
+                    lambda m: f"{m.group('quote')}{proxied_url(m.group('url'))}",
+                    fragment,
+                )
+
+            # Do not rewrite inside inline scripts. Next flight/bootstrap payloads
+            # contain escaped HTML/JS strings; treating them as normal markup can
+            # corrupt hydration code and leave the app in its SSR fallback state.
+            return "".join(
+                part if part.lower().startswith("<script") else rewrite_html_fragment(part)
+                for part in re.split(r"(<script\b[^>]*>.*?</script>)", text, flags=re.IGNORECASE | re.DOTALL)
+            )
+
+        def rewrite_css(text: str) -> str:
+            return re.sub(
+                r'url\((?P<quote>["\']?)(?P<url>/[^)"\']+)(?P=quote)\)',
+                lambda m: f"url({m.group('quote')}{proxied_url(m.group('url'))}{m.group('quote')})",
+                text,
+            )
 
         # A ``<script src>`` runs wherever it lands in the document, so appending
         # is equivalent to splicing before ``</head>`` — and avoids lowercasing a
         # full copy of the body just to find the insertion point.
-        if "text/html" in content_type.lower():
-            body = body + b'<script src="/sdk/flowpad-select-bridge.js"></script>'
+        if "text/html" in lower_content_type or "text/css" in lower_content_type:
+            encoding = upstream.encoding or "utf-8"
+            text = body.decode(encoding, errors="replace")
+            if "text/html" in lower_content_type:
+                text = rewrite_html(text)
+            else:
+                text = rewrite_css(text)
+            if "text/html" in lower_content_type:
+                bridge = '<script src="/sdk/flowpad-select-bridge.js"></script>'
+                text = re.sub(r"</body>", f"{bridge}</body>", text, count=1, flags=re.IGNORECASE) if "</body" in text.lower() else text + bridge
+            body = text.encode(encoding, errors="replace")
 
         # Strip hop-by-hop / framing headers so the response renders inline.
         drop = {"content-length", "content-encoding", "transfer-encoding", "connection", "x-frame-options"}

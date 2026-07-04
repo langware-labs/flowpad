@@ -12,6 +12,10 @@ export interface SendReplyExtras {
    *  context (deduped against the conversation TypeIds already stamped by
    *  the backend). The wire field is ``shared_context_entities``. */
   sharedContextEntities?: string[];
+  /** Transfer policy for body-bundle attachments. Defaults to copy. */
+  shareConfig?: {
+    transferMode?: 'copy' | 'git';
+  };
 }
 
 export interface SendReplyTarget {
@@ -52,6 +56,14 @@ export async function sendReply(
     if (hasAssetRefs) {
       form.append('asset_references', JSON.stringify(extras!.assetReferences));
     }
+    if (extras?.shareConfig) {
+      form.append(
+        'share_config',
+        JSON.stringify({
+          transfer_mode: extras.shareConfig.transferMode ?? 'copy',
+        }),
+      );
+    }
     for (const ce of sharedCtxEntities) {
       form.append('shared_context_entities', ce);
     }
@@ -62,6 +74,7 @@ export async function sendReply(
     const body: Record<string, unknown> = { message };
     if (extras?.promptText) body.prompt_text = extras.promptText;
     if (sharedCtxEntities.length > 0) body.shared_context_entities = sharedCtxEntities;
+    if (extras?.shareConfig) body.share_config = { transfer_mode: extras.shareConfig.transferMode ?? 'copy' };
     action.bodyParameters = body;
     // Text-only send: prefer the WebSocket hop when the socket is open
     // (skips an HTTP round-trip), fall back to REST otherwise.
@@ -74,4 +87,3 @@ export async function refreshNotifications(projectPath?: string): Promise<void> 
   action.bodyParameters = { project_path: projectPath ?? '' };
   await dataManager.callAction(action);
 }
-

@@ -3,8 +3,7 @@
 Concentrates everything previously expressed as ``if worker_type == CLAUDE_CODE``
 in ``AgenticProcess`` so the entity stays vendor-pure: cli_options building,
 headless print-mode turn execution (``claude -p stream-json``), transcript
-location, history loading, and prompt composition that inlines embedded
-agents.
+location, history loading, and the prompt-composition compatibility hook.
 """
 
 from __future__ import annotations
@@ -116,6 +115,7 @@ class ClaudeDriver:
             await process.get_project()
         except Exception:
             logger.debug("ClaudeDriver.headless_prompt: get_project failed", exc_info=True)
+        instruction_assets = await process.prepare_system_instruction_assets()
         if not process.workdir:
             return ApiFailResponse(message="claude print prompt: workdir is not set")
 
@@ -163,9 +163,7 @@ class ClaudeDriver:
             session_id=process.session_id if fork_source else (None if is_resume else process.session_id),
             fork_session=bool(fork_source),
             add_dirs=process.resolved_add_dirs,
-            # System-prompt append: caller instructions (context_data) merged
-            # with the bound GraphContext summary. None when both are empty.
-            instructions=await process.resolve_system_instructions(),
+            **process._instruction_context_kwargs(instruction_assets),
         )
 
         # Lifecycle: flip to RUNNING before launching the worker.
@@ -330,77 +328,7 @@ class ClaudeDriver:
         instruction: str,
         agents_json: dict | None,
     ) -> str:
-        """Inline embedded-agent definitions into the user prompt.
-
-        ``--agents`` already registers the agents with Claude (they remain
-        invokable via the ``Task`` tool), but in print mode we ask Claude to
-        execute the agent's body in-process rather than dispatching to a Task
-        sub-agent. Reasons:
-        - sub-agent dispatch adds 2–3 round-trips of latency, which pushes
-          analyze / fix-it past the 28-s test budget;
-        - the parent's Task call paraphrases the user request and routinely
-          drops side-effect instructions (file writes), causing tests like
-          ``test_clock_agent`` to fail intermittently.
-        Inlining keeps the full agent body in the parent's context and tells
-        it explicitly to follow those instructions itself.
-
-        Single-agent processes (the "chat with this agent doc" case) get a
-        stronger directive: the user is chatting WITH that agent, so adopt
-        its persona for every reply — even when the user does not name the
-        agent. The "execute literally on name match" semantics still apply,
-        so multi-turn instructions like "Use the clock agent to write
-        clock.txt" continue to work.
-        """
-        agents_json = agents_json or {}
-        if not agents_json:
-            return instruction
-
-        if len(agents_json) == 1:
-            name, entry = next(iter(agents_json.items()))
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections: list[str] = [
-                f"# You are the '{name}' agent",
-                (
-                    "The user is chatting with you (this agent) directly. "
-                    "Adopt the persona and follow the instructions below for "
-                    "every reply, even when the user does not name the agent. "
-                    "Execute side-effect instructions literally (file writes, "
-                    "command outputs); do not paraphrase or summarise away "
-                    "required artifacts."
-                ),
-            ]
-            if desc:
-                sections.append(f"\n## Description\n{desc}")
-            if body:
-                sections.append(f"\n## Instructions\n{body}")
-            sections.append("\n# User message")
-            sections.append(instruction)
-            return "\n".join(sections)
-
-        sections = [
-            "# Embedded agent specs",
-            (
-                "Each ## block below is the canonical instruction body for a "
-                "named agent. When the user instruction names one of these "
-                "agents (\"use the X agent\", \"have the X agent do Y\"), do "
-                "NOT delegate via the Task tool — execute the agent's "
-                "instructions yourself, in this same turn. Follow every "
-                "side-effect literally (file writes, command outputs); do "
-                "not paraphrase or summarise away required artifacts."
-            ),
-        ]
-        for name, entry in agents_json.items():
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections.append(f"\n## {name}")
-            if desc:
-                sections.append(desc)
-            if body:
-                sections.append(body)
-        sections.append("\n# User instruction")
-        sections.append(instruction)
-        return "\n".join(sections)
+        return instruction
 
     # ── External-session probe ───────────────────────────────────────────────
 

@@ -31,6 +31,14 @@ function stripGitSuffix(name: string): string {
   return name.endsWith('.git') ? name.slice(0, -4) : name;
 }
 
+function providerHost(provider: string): string {
+  const normalized = provider.trim().toLowerCase();
+  if (normalized === 'github') return 'github.com';
+  if (normalized === 'gitlab') return 'gitlab.com';
+  if (normalized === 'bitbucket') return 'bitbucket.org';
+  return provider.trim();
+}
+
 function hostOfGitUrl(url: string): string {
   const value = url.trim();
   if (value.includes('://')) {
@@ -76,6 +84,16 @@ export function formatGitOrigin(o: GitOrigin): string {
   const full = gitOriginRepoFullName(o);
   const head = o.branch ? `${full} · ${o.branch}` : full;
   return o.rel_path && o.rel_path !== '.' ? `${head} — ${o.rel_path}` : head;
+}
+
+/** Canonical clone URL for a GitOrigin. Mirrors backend GitOrigin.clone_url(). */
+export function gitOriginCloneUrl(o: GitOrigin): string {
+  if (o.provider.trim().toLowerCase() === 'file') {
+    const owner = o.owner.replace(/\/+$/, '');
+    const leaf = stripGitSuffix(o.name.trim());
+    return `file://${owner}/${leaf}.git`;
+  }
+  return `https://${providerHost(o.provider)}/${o.owner}/${stripGitSuffix(o.name)}.git`;
 }
 
 /**

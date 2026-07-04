@@ -142,9 +142,10 @@ set-env persist/remove/update/special-chars.
 | `load_history` / parsers (U) | ✅ + drift guards (ai-title) | ✅ static fixtures + naming-event-is-meta (test_codex_parser) | ✅ static fixtures + session-title-is-meta (test_copilot_parser) |
 | **`has_resumable_session`** | ✅ test_cli_driver_contract (jsonl present/absent/no-session-id) | ✅ test_cli_driver_contract (rollout present/absent/no-session-id) | ✅ test_cli_driver_contract (session-file / process-local tee / absent / no-session-id) |
 | plan mode | ✅ all four fronts | ✅ test_cli_driver_contract (does-not-support) | ✅ test_cli_driver_contract (does-not-support) |
-| `compose_prompt` (embedded agents) | ✅ test_cli_driver_contract (passthrough + inlines embedded agent) | — (shared) | — (shared) |
+| `compose_prompt` (embedded agents) | ✅ test_cli_driver_contract (passthrough) | — (shared) | — (shared) |
+| System instruction assets | ✅ test_system_instruction_assets + test_cli_options_system_prompt | ✅ same | ✅ same |
 
-Shared: `WorkerCLIOptions` round-trips ✅, system-prompt sink ✅, `build_env`
+Shared: `WorkerCLIOptions` round-trips ✅, system-instruction sink ✅, `build_env`
 pin ✅, restart-snapshot golden ✅ (+L restart_required); `restart_required`
 flip-on-config-change / clear-on-revert now unit-pinned
 (test_agentic_process_restart_snapshot). Also pinned in test_cli_driver_contract:

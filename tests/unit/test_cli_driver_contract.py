@@ -6,7 +6,8 @@ against tmp session stores — no HTTP, no real CLI binary:
 - ``has_resumable_session`` per driver (claude / codex / copilot), True + False
 - negatives: codex/copilot ``supports_plan_mode`` is False; the resume/cli-options
   path never emits ``--fork-session`` for them; ``pins_resume_cwd`` is False
-- ``compose_prompt`` embedded-agent inlining (codex/copilot — their only agents path)
+- ``compose_prompt`` stays a user-prompt passthrough; embedded-agent bodies are
+  delivered by generated process instruction assets instead
 - ``report_event`` claude stub contract (``handled: False``); codex/copilot omit it
 
 Session-store isolation:
@@ -242,32 +243,24 @@ def test_copilot_never_emits_fork_session_flag():
     assert "--fork-session" not in cmd.to_shell_string()
 
 
-# ── compose_prompt: embedded-agent inlining ───────────────────────────────────
+# ── compose_prompt: user-prompt passthrough ───────────────────────────────────
 
 _AGENTS = {
     "reviewer": {"prompt": "REVIEW THE DIFF", "description": "reviews code"},
 }
 
 
-@pytest.mark.parametrize("driver", [CodexDriver(), CopilotDriver()])
+@pytest.mark.parametrize("driver", [ClaudeDriver(), CodexDriver(), CopilotDriver()])
 def test_compose_prompt_passthrough_without_agents(driver):
     assert driver.compose_prompt("just do it", None) == "just do it"
     assert driver.compose_prompt("just do it", {}) == "just do it"
 
 
-@pytest.mark.parametrize("driver", [CodexDriver(), CopilotDriver()])
-def test_compose_prompt_inlines_embedded_agent(driver):
+@pytest.mark.parametrize("driver", [ClaudeDriver(), CodexDriver(), CopilotDriver()])
+def test_compose_prompt_passthrough_with_agents(driver):
     composed = driver.compose_prompt("use the reviewer agent", _AGENTS)
 
-    # Passthrough is broken open: the agent name, its body, and the original
-    # instruction all survive, and the result is no longer the bare prompt.
-    assert composed != "use the reviewer agent"
-    assert "reviewer" in composed
-    assert "REVIEW THE DIFF" in composed
-    assert "use the reviewer agent" in composed
-    # An explicit "don't delegate — follow it yourself" directive precedes the
-    # user instruction (codex/copilot have no native sub-agent dispatch).
-    assert "sub-agent" in composed.lower()
+    assert composed == "use the reviewer agent"
 
 
 # ── report_event: claude stub contract (codex/copilot omit it) ────────────────

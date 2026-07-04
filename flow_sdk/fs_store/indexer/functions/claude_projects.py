@@ -148,8 +148,8 @@ def _find_project_record_by_cwd(cwd: str) -> FSRecord | None:
         return None
     canonical = canonical_posix_path(cwd)
     from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
-        get_default_records_root,
         _NAME_SEP,
+        get_default_records_root,
     )
     _META_JSON = "metadata.json"
     type_dir = get_default_records_root() / RecordType.PROJECT

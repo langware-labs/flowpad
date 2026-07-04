@@ -15,7 +15,9 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { Browser } from 'playwright';
 import {
   existsSync,
   mkdtempSync,
@@ -34,6 +36,15 @@ import {
   readEnvFile,
   type ResolvedInstance,
 } from './_instances';
+import {
+  acceptInvitationInUI,
+  launchBrowser,
+  openConversation,
+  openInstancePage,
+  realConsoleErrors,
+  resetConsoleErrors,
+  type InstancePage,
+} from './_browser';
 
 const INST_1 = process.env.SHARE_INST_1 || 'dev-1';
 const INST_2 = process.env.SHARE_INST_2 || 'dev-2';
@@ -46,6 +57,7 @@ let alice: ResolvedInstance;
 let bob: ResolvedInstance;
 const tempRoots: string[] = [];
 const createdProjects: Array<{ apiUrl: string; id: string }> = [];
+const startedPids: number[] = [];
 
 function pythonBin(): string {
   const venvPython = path.join(WORKTREE_ROOT, '.venv', 'bin', 'python');
@@ -109,6 +121,18 @@ function makeGitFixture() {
   };
 }
 
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
 async function downloadHubBundle(fmId: string, zipPath: string): Promise<void> {
   const env = await readEnvFile(alice.name);
   const email = env.FLOWPAD_CLOUD_USER_EMAIL || alice.email;
@@ -120,6 +144,17 @@ async function downloadHubBundle(fmId: string, zipPath: string): Promise<void> {
   });
   if (!r.ok) throw new Error(`hub body download failed (${r.status}): ${await r.text()}`);
   writeFileSync(zipPath, Buffer.from(await r.arrayBuffer()));
+}
+
+async function waitForHubBundle(fmId: string, zipPath: string): Promise<void> {
+  await pollUntil(async () => {
+    try {
+      await downloadHubBundle(fmId, zipPath);
+      return true;
+    } catch {
+      return null;
+    }
+  }, 30_000, 'hub body bundle upload');
 }
 
 function inspectBundle(zipPath: string, metadataName: string): { names: string[]; metadata: any } {
@@ -137,9 +172,7 @@ function inspectBundle(zipPath: string, metadataName: string): { names: string[]
   }));
 }
 
-async function acceptAndFindReadyMessage(convId: string): Promise<string> {
-  const invitation = await pollUntil(() => findPendingInvitation(bob, convId), 20_000, 'pending invitation');
-  await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
+async function findReadyMessage(convId: string): Promise<string> {
   const fm = await pollUntil(async () => {
     await bob.sdk.fetchConversations();
     const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
@@ -153,6 +186,12 @@ async function acceptAndFindReadyMessage(convId: string): Promise<string> {
   return fm.id;
 }
 
+async function acceptAndFindReadyMessage(convId: string): Promise<string> {
+  const invitation = await pollUntil(() => findPendingInvitation(bob, convId), 20_000, 'pending invitation');
+  await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
+  return findReadyMessage(convId);
+}
+
 async function createBobProject(): Promise<{ id: string; dir: string }> {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'flowpad-bob-git-project-'));
   tempRoots.push(dir);
@@ -164,6 +203,22 @@ async function createBobProject(): Promise<{ id: string; dir: string }> {
   expect(id, 'bob project id').toBeTruthy();
   createdProjects.push({ apiUrl: bob.apiUrl, id });
   return { id, dir };
+}
+
+async function findGitSetupWizardProcessId(artifactId: string): Promise<string> {
+  const row = await pollUntil(async () => {
+    const r = await fetch(`${bob.apiUrl}/api/v1/graph/agentic_process?limit=100`)
+      .then((x) => x.json())
+      .catch(() => null);
+    const rows = (r?.data ?? []) as any[];
+    return rows.find((p) => {
+      const wizard = p?.context_data?.wizard;
+      return p?.process_type === 'wizard'
+        && wizard?.name === 'git-setup'
+        && wizard?.data?.payload?.artifactId === artifactId;
+    }) ?? null;
+  }, 15_000, 'git setup wizard process');
+  return row.id as string;
 }
 
 async function launchAndCloseGitWizard(localPath: string, projectId: string): Promise<void> {
@@ -206,6 +261,47 @@ async function launchAndCloseGitWizard(localPath: string, projectId: string): Pr
   });
 }
 
+async function closeUiGitWizard(processId: string, localPath: string, projectId: string): Promise<void> {
+  const envFile = await readEnvFile(bob.name);
+  const closePayload = JSON.stringify({
+    status: 'done',
+    data: { localPath, projectId },
+  });
+  const port = new URL(bob.apiUrl).port;
+  const stdout = execFileSync(
+    pythonBin(),
+    ['-m', 'flow_sdk.cli.flow_cli', 'wizard', `agentic_process-${processId}`, 'close', closePayload],
+    {
+      cwd: WORKTREE_ROOT,
+      env: {
+        ...process.env,
+        ...envFile,
+        FLOW_INSTANCE: bob.name,
+        LOCAL_SERVER_PORT: port,
+        PYTHONPATH: `${WORKTREE_ROOT}${path.delimiter}${process.env.PYTHONPATH ?? ''}`,
+      },
+      encoding: 'utf-8',
+    },
+  );
+  expect(JSON.parse(stdout).ok).toBe(true);
+}
+
+async function flowCliAsync(inst: ResolvedInstance, args: string[], cwd: string): Promise<string> {
+  const envFile = await readEnvFile(inst.name);
+  const port = new URL(inst.apiUrl).port;
+  return execFileSync(pythonBin(), ['-m', 'flow_sdk.cli.flow_cli', ...args], {
+    cwd,
+    env: {
+      ...process.env,
+      ...envFile,
+      FLOW_INSTANCE: inst.name,
+      LOCAL_SERVER_PORT: port,
+      PYTHONPATH: `${WORKTREE_ROOT}${path.delimiter}${process.env.PYTHONPATH ?? ''}`,
+    },
+    encoding: 'utf-8',
+  });
+}
+
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
@@ -225,6 +321,17 @@ beforeEach((context: any) => {
 });
 
 afterAll(async () => {
+  for (const pid of startedPids) {
+    try {
+      process.kill(-pid, 'SIGTERM');
+    } catch {
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch {
+        /* already exited */
+      }
+    }
+  }
   if (alice && bob) {
     for (const p of createdProjects) {
       await fetch(`${p.apiUrl}/api/v1/graph/project/${p.id}`, { method: 'DELETE' }).catch(() => undefined);
@@ -316,4 +423,114 @@ describe('hub: git-backed artifact share wizard', () => {
     const localPath = ready.body.data.localPath as string;
     expect(readFileSync(path.join(localPath, 'index.html'), 'utf-8')).toContain(fixture.token);
   }, 45_000);
+
+  it('Alice shares a git-backed app; Bob opens the artifact chip into Vibe and the app renders', async () => {
+    const fixture = makeGitFixture();
+    const artifactId = randomUUID();
+    const artifactName = `e2etest-git-vibe-webapp-${artifactId.slice(0, 8)}`;
+    const appPort = await freePort();
+    expect(appPort).toBeGreaterThan(0);
+    const artifactPayload = {
+      id: artifactId,
+      name: artifactName,
+      ref_type: 'FOLDER',
+      path: fixture.appDir,
+      artifact_type: 'WEBAPP',
+      port: String(appPort),
+      start_cmd: `python3 -m http.server ${appPort}`,
+      health: '/',
+      git_origin: fixture.gitOrigin,
+      metadata: {
+        port: String(appPort),
+        start_cmd: `python3 -m http.server ${appPort}`,
+        health: '/',
+        git_origin: fixture.gitOrigin,
+      },
+    };
+
+    const createdArtifact = await post(alice.apiUrl, '/graph/artifact', artifactPayload);
+    expect(createdArtifact.status, JSON.stringify(createdArtifact.body)).toBeLessThan(400);
+
+    const conv = new alice.sdk.Conversation({ title: `e2etest-git-vibe-${Date.now()}` });
+    await conv.save();
+    await conv.share([bob.email]);
+    expect(conv.remote).toBe(true);
+
+    const add = await post(alice.apiUrl, `/graph/conversation/${conv.id}/add_message`, {
+      message: 'open this git-backed app in vibe',
+      asset_references: [`artifact-${artifactId}`],
+      shared_context_entities: [`artifact-${artifactId}`],
+      share_config: { transfer_mode: 'git' },
+    });
+    const fmId = add.body?.data?.flow_message_id as string;
+    expect(fmId, JSON.stringify(add.body)).toBeTruthy();
+
+    const zipPath = path.join(fixture.root, 'hub-body-vibe.flowmsg');
+    await waitForHubBundle(fmId, zipPath);
+    const inspected = inspectBundle(zipPath, `metadata/artifact-@${artifactId}/metadata.json`);
+    expect(inspected.names).toContain('git_origins.json');
+    expect(inspected.names).toContain('git_transfers.json');
+    expect(inspected.names.some((name) => name.endsWith('/index.html'))).toBe(false);
+
+    let browser: Browser | null = null;
+    let bobPage: InstancePage | null = null;
+    try {
+      browser = await launchBrowser();
+      bobPage = await openInstancePage(browser, INST_2);
+
+      await acceptInvitationInUI(bobPage);
+      const bobFmId = await findReadyMessage(conv.id!);
+      const download = await post(bob.apiUrl, `/graph/flow_message/${bobFmId}/download_body`, {});
+      expect(download.status, JSON.stringify(download.body)).toBeLessThan(400);
+      await pollUntil(
+        () => backendGet(bob, 'artifact', artifactId),
+        10_000,
+        'git artifact materialized on Bob',
+      );
+
+      const project = await createBobProject();
+      const mapped = await put(bob.apiUrl, `/graph/conversation/${conv.id}`, { project_id: project.id });
+      expect(mapped.status, JSON.stringify(mapped.body)).toBeLessThan(400);
+
+      await openConversation(bobPage, conv.id!);
+      resetConsoleErrors(bobPage);
+      await bobPage.page.getByTestId(`entity-chip-artifact-${artifactId}`).click({ timeout: 20_000 });
+
+      const wizardId = await findGitSetupWizardProcessId(artifactId);
+      git(path.dirname(project.dir), 'clone', '-q', '--branch', BRANCH, fixture.remoteUri, project.dir);
+      await closeUiGitWizard(wizardId, project.dir, project.id);
+
+      const vibeProcess = await pollUntil(async () => {
+        const r = await fetch(`${bob.apiUrl}/api/v1/graph/agentic_process?limit=100`)
+          .then((x) => x.json())
+          .catch(() => null);
+        const rows = (r?.data ?? []) as any[];
+        return rows.find((p) => (
+          p?.process_type === 'chat'
+          && p?.context_data?.launched_from === 'git_artifact_share'
+          && p?.context_data?.source_artifact_id === artifactId
+        )) ?? null;
+      }, 20_000, 'Vibe app-open process');
+
+      await bobPage.page.waitForURL(/\/dock\/shell\/agentic_process-.*viewMode=vibe/, { timeout: 20_000 });
+      const appOpen = JSON.parse(await flowCliAsync(
+        bob,
+        ['app', 'open', artifactName, '--root', project.dir, '--process', `agentic_process-${vibeProcess.id}`, '--port', String(appPort), '--timeout', '25'],
+        project.dir,
+      ));
+      expect(appOpen.ok).toBe(true);
+      if (typeof appOpen.pid === 'number') startedPids.push(appOpen.pid);
+
+      const frame = bobPage.page.locator('iframe[data-testid="vibe-webapp-frame"]').first();
+      await frame.waitFor({ state: 'attached', timeout: 30_000 });
+      await expect.poll(async () => {
+        const handle = await frame.elementHandle();
+        const content = await handle?.contentFrame();
+        return await content?.locator('body').innerText({ timeout: 2_000 }).catch(() => '') ?? '';
+      }, { timeout: 30_000 }).toContain(fixture.token);
+      expect(realConsoleErrors(bobPage.consoleErrors)).toEqual([]);
+    } finally {
+      await browser?.close();
+    }
+  }, 90_000);
 });

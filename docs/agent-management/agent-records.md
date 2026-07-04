@@ -748,9 +748,11 @@ has a folder. Structured fields such as `description`, `tools`,
 `mcp_servers`, `hooks`, `memory`, `background`, and `isolation` are stored as
 record fields.
 
-`AgentRecord.load_agent(name, project_dir=None)` searches project, user, and
-system agent locations. `to_agents_cli_json()` returns the dict passed to
-Claude's `--agents` flag.
+`load_agent(name, project_dir=None)` searches project, user, and system agent
+locations. `agent_to_cli_json()` returns the legacy Claude `--agents` dict;
+current `AgenticProcess` launches materialize embedded agents into
+`<record_dir>/execution/assets/.claude/agents/` and deliver their instructions
+through generated process instruction assets.
 
 ***
 

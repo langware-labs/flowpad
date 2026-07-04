@@ -1,12 +1,14 @@
-import { Artifact, ArtifactType, dataContext, downloadFileFromUrl, formatGitOrigin, launchWizard } from '@sdk';
+import { Artifact, ArtifactType, downloadFileFromUrl } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation';
 import { useFS, useProject } from '@sdk/react/hooks';
-import { Download, ExternalLink, Trash2 } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import { Download, ExternalLink, Share2, Trash2 } from 'lucide-react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { getArtifactTypeConfig } from './artifact-type-config';
-import { notify } from '@src/notifications/notify';
+import { openArtifact } from './open-artifact';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { artifactShareSource } from '@src/hooks/share-sources';
 
 interface ArtifactCardProps {
   artifact: Artifact;
@@ -26,6 +28,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
   const { navigation } = useDockNavigation();
   const { project } = useProject();
   const fs = useFS(project?.typeId);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const typeConfig = useMemo(() => {
     return getArtifactTypeConfig(artifact.artifact_type || ArtifactType.FILE);
@@ -36,55 +39,11 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
   const isWebApp = artifact.artifact_type === ArtifactType.WEBAPP;
   const isAppService = artifact.artifact_type === ArtifactType.APP_SERVICE;
   const hasPort = !!(artifact.port || artifact.metadata?.port);
+  const shareSource = useMemo(() => artifactShareSource(artifact), [artifact]);
 
   const handleClick = useCallback(async () => {
-    if (isWebApp && hasPort) {
-      const port = artifact.port || (artifact.metadata?.port as string);
-      if (artifact.git_origin) {
-        const resolve = async () => artifact.resolveGitLocation({ currentProjectId: project?.id ?? dataContext.project?.id ?? null });
-        let result = await resolve();
-        if (result.kind === 'needs_wizard') {
-          const wizardResult = await launchWizard<{ projectId?: string; localPath?: string }>('git-setup', {
-            title: `Set up ${artifact.displayName}`,
-            targetTypeId: artifact.typeId.toString(),
-            payload: {
-              artifactId: artifact.id,
-              gitOrigin: result.gitOrigin,
-              reason: result.reason,
-            },
-            prompt: `Help me setup this git-backed webapp artifact.
-
-Repository: ${formatGitOrigin(result.gitOrigin)}
-Reason setup is needed: ${result.reason}
-
-After the repository is available locally and the artifact path can be opened, close the wizard as done.`,
-          });
-          if (wizardResult.status !== 'done') {
-            if (wizardResult.status === 'error') {
-              notify.error({ title: 'Git setup failed', message: wizardResult.errorStr ?? 'Wizard failed' });
-            }
-            return;
-          }
-          result = await artifact.resolveGitLocation({
-            currentProjectId: project?.id ?? dataContext.project?.id ?? null,
-            localPath: wizardResult.data?.localPath ?? null,
-            projectId: wizardResult.data?.projectId ?? null,
-          });
-        }
-        if (result.kind === 'error') {
-          notify.error({ title: 'Could not open app', message: result.message });
-          return;
-        }
-        if (result.kind === 'needs_wizard') {
-          notify.error({ title: 'Git setup incomplete', message: result.reason });
-          return;
-        }
-      }
-      navigation.openWebApp(port);
-    } else if (artifact.path) {
-      navigation.openFile(artifact.path);
-    }
-  }, [artifact, isWebApp, hasPort, navigation, project?.id]);
+    await openArtifact(artifact, { navigation, currentProjectId: project?.id ?? null });
+  }, [artifact, navigation, project?.id]);
 
   const handleDownload = useCallback(
     (e: React.MouseEvent) => {
@@ -105,6 +64,11 @@ After the repository is available locally and the artifact path can be opened, c
     },
     [artifact.id, onDelete],
   );
+
+  const handleShare = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShareOpen(true);
+  }, []);
 
   // Filter out internal metadata keys for display
   const displayMetadata = useMemo(() => {
@@ -146,6 +110,23 @@ After the repository is available locally and the artifact path can be opened, c
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Open</TooltipContent>
+            </Tooltip>
+          )}
+
+          {artifact.id && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={handleShare}
+                  data-testid={`artifact-share-${artifact.id}`}
+                >
+                  <Share2 className="h-3 w-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Share</TooltipContent>
             </Tooltip>
           )}
 
@@ -206,6 +187,13 @@ After the repository is available locally and the artifact path can be opened, c
             <span className="text-xs text-muted-foreground">+{displayMetadata.length - 3} more</span>
           )}
         </div>
+      )}
+      {shareOpen && (
+        <ShareToConversationDialog
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          source={shareSource}
+        />
       )}
     </div>
   );

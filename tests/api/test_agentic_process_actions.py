@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -33,6 +34,7 @@ from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
+from flow_sdk.builtin.project import Project
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
 
 from tests.api.conftest import (
@@ -109,6 +111,106 @@ async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, 
     row = await get_agentic_process(bootstrapped_client, pid)
     assert row["context_data"]["last_shown"] == shown
     assert row["status_report"] == stale.status_report
+
+
+@pytest.mark.asyncio
+async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapped_client, user, tmp_path):
+    project = Project(name="app-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "frontend"
+    app_dir.mkdir()
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(tmp_path),
+        project_id=project.id,
+    )
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={
+            "name": "Frontend",
+            "path": str(app_dir),
+            "port": "3300",
+            "start_cmd": "npm run dev",
+            "health": "/",
+            "show": True,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    data = ApiResponse(**resp.json()).data
+    artifact = data["artifact"]
+    assert artifact["artifact_type"] == "WEBAPP"
+    assert artifact["ref_type"] == "FOLDER"
+    assert artifact["path"] == str(app_dir)
+    assert artifact["port"] == "3300"
+    assert data["shown"] == {"kind": "webapp", "port": 3300}
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert row["context_data"]["last_shown"] == data["shown"]
+
+    listed = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})
+    listed_data = ApiResponse(**listed.json()).data
+    assert [item["id"] for item in listed_data["artifacts"]] == [artifact["id"]]
+
+    update = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={
+            "name": "Frontend",
+            "path": str(app_dir),
+            "port": "3301",
+            "start_cmd": "npm run dev -- --port 3301",
+            "show": False,
+        },
+    )
+    updated = ApiResponse(**update.json()).data["artifact"]
+    assert updated["id"] == artifact["id"]
+    assert updated["port"] == "3301"
+
+
+@pytest.mark.asyncio
+async def test_register_webapp_artifact_stamps_git_origin(bootstrapped_client, user, tmp_path):
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True, capture_output=True)
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "clone", "-q", remote.resolve().as_uri(), str(repo)], check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-q", "-b", "feature/webapp"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.test"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True)
+    app_dir = repo / "frontend"
+    app_dir.mkdir()
+    (app_dir / "index.html").write_text("hello from git webapp\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "webapp"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "push", "-q", "-u", "origin", "feature/webapp"], cwd=repo, check=True, capture_output=True)
+
+    project = Project(name="git-webapp", fs_storage_mount_path=str(repo))
+    await project.save()
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(repo),
+        project_id=project.id,
+    )
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+        json={
+            "name": "Git Frontend",
+            "path": str(app_dir),
+            "port": "3302",
+            "show": False,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    artifact = ApiResponse(**resp.json()).data["artifact"]
+    assert artifact["git_origin"]["provider"] == "file"
+    assert artifact["git_origin"]["branch"] == "feature/webapp"
+    assert artifact["git_origin"]["rel_path"] == "frontend"
+    assert artifact["metadata"]["git_origin"]["rel_path"] == "frontend"
 
 
 # ---------------------------------------------------------------------------

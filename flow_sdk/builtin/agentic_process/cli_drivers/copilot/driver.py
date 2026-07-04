@@ -88,6 +88,7 @@ class CopilotDriver:
             await process.get_project()
         except Exception:
             logger.debug("CopilotDriver.headless_prompt: get_project failed", exc_info=True)
+        instruction_assets = await process.prepare_system_instruction_assets()
         if not process.workdir:
             return ApiFailResponse(message="copilot prompt: workdir is not set")
 
@@ -116,9 +117,7 @@ class CopilotDriver:
             add_dirs=list(process.resolved_add_dirs or []),
             session_id=process.session_id if not resumable else None,
             resume_session_id=process.session_id if resumable else None,
-            # ContextProcess §2.4: fold the bound context summary into the system
-            # prompt. Generic across vendors; "" when no context is bound.
-            instructions=await process.resolve_system_instructions(),
+            **process._instruction_context_kwargs(instruction_assets),
         )
 
         worker = CopilotCLIStreamWorker.for_process(process.id)
@@ -264,28 +263,7 @@ class CopilotDriver:
         return _copilot_load_session_history(process.session_id or "", process_id=process.id)
 
     def compose_prompt(self, instruction: str, agents_json: dict | None) -> str:
-        agents_json = agents_json or {}
-        if not agents_json:
-            return instruction
-        sections = [
-            "# Inline sub-agent definitions",
-            (
-                "Each ## block below defines a named sub-agent. Do not spawn a "
-                "separate agent; follow the relevant agent instructions yourself "
-                "inside this Copilot CLI turn."
-            ),
-        ]
-        for name, entry in agents_json.items():
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections.append(f"\n## {name}")
-            if desc:
-                sections.append(desc)
-            if body:
-                sections.append(body)
-        sections.append("\n# User instruction")
-        sections.append(instruction)
-        return "\n".join(sections)
+        return instruction
 
     def external_session_dirs(self) -> set[str]:
         root = copilot_session_state_root()

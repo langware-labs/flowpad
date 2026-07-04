@@ -1,4 +1,9 @@
-"""Gitignore-aware walk helpers for the project folder walker.
+"""Gitignore-aware walk helpers — the shared matching engine for every tree
+walker in the codebase. The FSIndexer project folder walker, the asset-menu
+``walk_markdown_files``, and the llm_index Merkle scanner all consume it through
+the shared :mod:`flow_sdk.fs_store.indexer.walk`; the fsop watcher filter
+(:mod:`flow_sdk.server.fsop_filters`) reuses these matching primitives directly
+over its own bounded discovery walk.
 
 Two-stage matching:
 
@@ -24,7 +29,6 @@ from typing import Tuple
 
 from pathspec import GitIgnoreSpec
 
-
 # Hardcoded fast-path. Match by basename. Skipped without consulting any
 # .gitignore. Mirrors the older _WALK_IGNORED in markdown_record.py.
 _WALK_IGNORED: frozenset[str] = frozenset({
@@ -34,6 +38,9 @@ _WALK_IGNORED: frozenset[str] = frozenset({
     # macOS zip-extraction junk: __MACOSX holds only AppleDouble (._*)
     # resource-fork sidecars — binary, never real content.
     "__MACOSX",
+    # Flowpad-generated state dirs (llm_index summary caches, markdown-index
+    # sidecars, instance state). Never content — no walker should enter them.
+    ".flowpad", ".markdown_index", ".llm_index",
 })
 
 
@@ -58,6 +65,15 @@ def _is_claude_worktree(path: Path) -> bool:
 
 
 GitignoreStack = list[Tuple[Path, GitIgnoreSpec]]
+
+
+def is_denylisted(path: Path) -> bool:
+    """Hardcoded skip: ``_WALK_IGNORED`` basename or an agent worktree.
+
+    The gitignore-free fast-path — usable on its own by walkers that skip
+    generated/vendor dirs without honoring ``.gitignore``.
+    """
+    return path.name in _WALK_IGNORED or _is_claude_worktree(path)
 
 
 def _is_force_include(path: Path, root: Path) -> bool:
@@ -115,9 +131,7 @@ def is_ignored(
       3. If basename in ``_FORCE_INCLUDE`` ancestor chain → never ignored.
       4. Walk the gitignore stack outermost→innermost, last-match-wins.
     """
-    if path.name in _WALK_IGNORED:
-        return True
-    if _is_claude_worktree(path):
+    if is_denylisted(path):
         return True
     if _is_force_include(path, root):
         return False

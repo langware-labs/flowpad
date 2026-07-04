@@ -60,6 +60,8 @@ export function WebappDisplayToolbar({ host, port, onRefresh, selectActive, onTo
                 variant="ghost"
                 size="icon"
                 data-testid="display-select-element"
+                aria-label={selectActive ? t`Cancel element selection` : t`Select element`}
+                title={selectActive ? t`Cancel element selection` : t`Select element`}
                 className={`h-7 w-7 ${selectActive ? 'bg-primary/20 text-primary hover:bg-primary/30 hover:text-primary' : ''}`}
                 onClick={onToggleSelect}
               >
@@ -73,7 +75,14 @@ export function WebappDisplayToolbar({ host, port, onRefresh, selectActive, onTo
         )}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onRefresh}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t`Refresh`}
+              title={t`Refresh`}
+              className="h-7 w-7"
+              onClick={onRefresh}
+            >
               <RefreshCw className="h-4 w-4" />
             </Button>
           </TooltipTrigger>

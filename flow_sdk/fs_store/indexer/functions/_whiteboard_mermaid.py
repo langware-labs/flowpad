@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 _HEADER = "flowchart TD"
 _INDENT = "  "
 _ESCAPE_CHARS = set("[]{}()|<>\\")
