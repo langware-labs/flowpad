@@ -38,12 +38,13 @@ The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you c
 
 1. [Current Entity Model](#current-entity-model)
 2. [The Two Transports](#the-two-transports)
-3. [Lifecycle and Status](#lifecycle-and-status)
-4. [Configuration](#configuration)
-5. [Backend API](#backend-api)
-6. [TypeScript API](#typescript-api)
-7. [Stale Names](#stale-names)
-8. [Key Files Reference](#key-files-reference)
+3. [Wizard Runtime](#wizard-runtime)
+4. [Lifecycle and Status](#lifecycle-and-status)
+5. [Configuration](#configuration)
+6. [Backend API](#backend-api)
+7. [TypeScript API](#typescript-api)
+8. [Stale Names](#stale-names)
+9. [Key Files Reference](#key-files-reference)
 
 > **Related docs (owned elsewhere — cross-referenced, not duplicated here):**
 > `visible` / tab-strip membership and the `Tab` entity → `docs/tab-management.md`.
@@ -64,6 +65,7 @@ The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you c
 | `status`                                                       | `ProcessStatus` string | Stored container lifecycle: `new`, `starting`, `running`, `stopping`, `stopped`, `failed`.                                   |
 | `worker_status`                                                | `WorkerStatus` string  | Computed on serialization from the worker transcript; not stored as an entity field.                                         |
 | `ready_for_input`                                              | `bool`                 | Computed on serialization by `is_ready_for_input()`.                                                                         |
+| `process_type`                                                 | `ProcessKind \| None`  | Usage discriminator: `chat`, `execution`, `analysis`, `conversation`, or `wizard`. It does not choose the transport; `wizard` is a short-lived popup assistant completed by a typed result event. |
 | `session_id`                                                   | `str \| None`          | Persistent worker session/conversation ID. For Claude this is the Claude session UUID and JSONL transcript ID.               |
 | `pty_mode`                                                     | `bool`                 | **Transport intent** (persisted, default `true`). `true` → interactive PTY; `false` → headless JSON-stream. This — not `visible` — is what every execution router keys on. Seeds `visible` at launch and is kept durable across reload so a chat vs terminal choice survives. |
 | `visible`                                                      | `bool`                 | **Tab-visibility only** (default `false`). Whether the loader attaches a PTY/xterm. Decoupled from transport via `set-visible`; does not route prompts. No longer the tab-strip membership flag (that is the `Tab` entity).                        |
@@ -263,6 +265,63 @@ await process.close();      // permanent teardown: delete linked Shell
 
 ***
 
+## Wizard Runtime
+
+A wizard is a normal `AgenticProcess` with `process_type=wizard`. It is a
+short-lived interactive assistant shown in a popup and completed by a typed
+result. This is a usage kind, not a new worker runtime: execution still routes on
+`pty_mode`, history still flows through the driver, and UI output still uses the
+same `EntityExecutionPanel` chat surface.
+
+The generic flow is:
+
+```text
+caller awaits launchWizard(name, data)
+  -> WizardHost creates AgenticProcess(process_type=wizard)
+     visible=false, pty_mode=false, outputFormat=stream-json,
+     loadFlowpadAssistant=true, context_data.wizard={name,data}
+  -> WizardHost opens a popup around EntityExecutionPanel
+  -> the process receives an initial prompt with the wizard payload
+  -> the user and agent interact in the chat surface
+  -> completion posts entity-event "wizard.close"
+  -> AgenticProcess validates and re-emits "wizard.closed"
+  -> launchWizard resolves WizardProcessResult<T>
+```
+
+The typed boundary is intentionally small:
+
+```ts
+type WizardProcessResult<T> = {
+  status: 'done' | 'cancel' | 'error';
+  data: T | null;
+  errorStr?: string | null;
+};
+```
+
+There are two completion paths with the same backend contract. The popup footer
+calls `completeWizard(process, result)`. An agent running inside the wizard can
+close itself through the CLI:
+
+```bash
+flow wizard <agentic_process_id> close '{"status":"done","data":{}}'
+```
+
+Both paths post the generic `entity-event` action with event `wizard.close`.
+`AgenticProcess.on_wizard_close` normalizes the payload, emits `wizard.closed`,
+and the frontend promise registered by `awaitWizardResult` resolves. Domain
+flows should put their own setup data in `wizardData.payload` and return their
+own typed `data`; they should not create new process or popup protocols.
+
+The current git setup flow uses this mechanism for git-backed artifact/webapp
+shares. Opening a received artifact first asks the artifact entity to
+`resolve-git-location`; if the receiver already has a matching checkout, the
+artifact is marked ready. If the checkout is missing, the UI launches the git
+wizard with the `GitOrigin` details. The wizard returns a local path and/or
+project id, and the artifact resolver validates that checkout before trusting
+the path.
+
+***
+
 ## Lifecycle and Status
 
 ### ProcessStatus
@@ -407,6 +466,7 @@ interface AgenticContext {
   additionalDirs?: string[];
   targetTypeIdStr?: string;
   outputFormat?: string;
+  processType?: ProcessKind;
 }
 ```
 
@@ -424,6 +484,7 @@ Serialization mapping:
 | `additionalDirs`    | `additional_dirs`     |
 | `targetTypeIdStr`   | `target_typeid_str`   |
 | `outputFormat`      | `output_format`       |
+| `processType`       | `process_type`        |
 
 `ComputeNode.createProcess` receives this serialized context. Backend `scan_actions._scan_create_process()` stores process-level fields such as `workdir`, `project_id`, and `target_typeid_str`; moves CLI-related fields into `ClaudeCliOptions`/`cli_config`; and leaves remaining context in `context_data`.
 
@@ -503,6 +564,7 @@ POST /api/v1/graph/compute_node/<id>/upsertSessionProcess
 | `cancel-prompt`         | `POST`     | Cancel an in-flight print-mode worker.                                            |
 | `execute-plan`          | `POST`     | Inject a plan execution prompt into an active PTY session.                        |
 | `update-plan`           | `POST`     | Inject a plan-update prompt into an active PTY session.                           |
+| `entity-event`          | `POST`     | Generic event ingress. Wizard completion posts `wizard.close` here, and the process emits `wizard.closed`. |
 | `load-embedded-agent`   | `POST`     | Merge an agent spec into `cli_config.agents_json`.                                |
 | `attach-embedded-asset` | `POST`     | Materialize an agent/skill under the process assets dir.                          |
 | `detach-embedded-asset` | `POST`     | Remove a materialized embedded asset.                                             |
@@ -539,8 +601,11 @@ import {
   ProcessStatus,
   WorkerStatus,
   WorkerMode,
+  ProcessKind,
   isReadyForInput,
   getWorkerMode,
+  launchWizard,
+  completeWizard,
 } from '@sdk/process';
 ```
 
@@ -555,6 +620,7 @@ The current files are under `ts_sdk/src/process/`, not `ts_sdk/src/agentic_proce
 | `status`                                                       | Stored `ProcessStatus`.                        |
 | `worker_status` / `workerStatus`                               | Computed `WorkerStatus`.                       |
 | `ready_for_input`                                              | Server-computed readiness flag.                |
+| `process_type`                                                 | Usage discriminator such as `chat`, `conversation`, or `wizard`; not the transport selector. |
 | `session_id`                                                   | Persistent worker session ID.                  |
 | `shell_id`                                                     | Linked `Shell` for PTY mode.                   |
 | `visible`                                                      | Tab visibility only (transport is `pty_mode`). |
@@ -661,6 +727,7 @@ The following names appear in older docs or compatibility shims but are not the 
 | `flow_sdk/builtin/agentic_process/cli_drivers/codex/cli.py`              | Codex CLI option builder.                                                                    |
 | `flow_sdk/builtin/agentic_process/cli_drivers/codex/stream_worker.py`    | `codex exec --json --ephemeral` print-mode worker.                                           |
 | `flow_sdk/builtin/shell.py`                                              | Shell entity that owns PTY sessions and worker OS process metadata.                          |
+| `flow_sdk/cli/commands/wizard_cmd.py`                                     | `flow wizard <process> close <json>` command used by wizard agents.                          |
 | `flow_sdk/builtin/faas/scan_actions.py`                                  | `ComputeNode.createProcess` and `upsertSessionProcess` implementations.                      |
 | `flow_sdk/fs_records/agent_status.py`                                    | `WorkerStatus` and Claude transcript tail-status derivation.                                 |
 | `flow_sdk/fs_records/agentic_process_lifecycle.py`                       | `ProcessStatus` lifecycle enum and helpers.                                                  |
@@ -673,6 +740,8 @@ The following names appear in older docs or compatibility shims but are not the 
 | `ts_sdk/src/process/agentic-process.ts`            | `AgenticProcess` class, spawn/start/prompt/execute/history methods.       |
 | `ts_sdk/src/process/agentic-context.ts`            | `AgenticContext`, spawn options, context serialization.                   |
 | `ts_sdk/src/process/agentic-types.ts`              | `ProcessStatus`, `WorkerStatus`, `WorkerMode`, display/readiness helpers. |
+| `ts_sdk/src/process/process-types.ts`              | `ProcessKind` usage discriminator, including `wizard`.                    |
+| `ts_sdk/src/process/wizard.ts`                     | `launchWizard`, `completeWizard`, prompt builder, and typed result helpers. |
 | `ts_sdk/src/process/index.ts`                      | Process module exports.                                                   |
 | `ts_sdk/src/entities/compute-node/compute-node.ts` | Frontend `createProcess()` and `upsertSessionProcess()` calls.            |
 | `ts_sdk/src/entities/shell.ts`                     | Shell entity consumed by PTY mode.                                        |
@@ -685,3 +754,4 @@ The following names appear in older docs or compatibility shims but are not the 
 | -------------------------------------------------- | -------------------------------------------- |
 | `ui/src/components/terminal/interactive-terminal/` | Interactive terminal UI and process toolbar. |
 | `ui/src/components/terminal/TabbedTerminal.tsx`    | Multi-tab terminal orchestration.            |
+| `ui/src/components/wizard/WizardHost.tsx`          | Popup launcher/host for wizard processes.    |

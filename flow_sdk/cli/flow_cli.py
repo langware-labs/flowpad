@@ -986,6 +986,12 @@ app.add_typer(workflow_app, name="workflow")
 from flow_sdk.cli.commands.process_cmd import process_app
 app.add_typer(process_app, name="process")
 
+from flow_sdk.cli.commands.wizard_cmd import wizard_command
+app.command(
+    "wizard",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)(wizard_command)
+
 from flow_sdk.cli.commands.migrate_cmd import migrate_app
 app.add_typer(migrate_app, name="migrate")
 

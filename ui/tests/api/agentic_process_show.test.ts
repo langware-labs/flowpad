@@ -60,6 +60,20 @@ describe('agentic_process show action → onShow', () => {
     expect(String(payload.path)).toContain('hello.md');
   }, 30_000); // do not increase timeout without approval
 
+  it('show({path}) recovers a docs markdown file as an entity', async (ctx: any) => {
+    const payload = await showRoundTrip(ctx.task.name, (wd) => {
+      const docs = path.join(wd, 'docs');
+      fs.mkdirSync(docs, { recursive: true });
+      const file = path.join(docs, 'hello.md');
+      fs.writeFileSync(file, '# hello\n\nhello world\n');
+      return { path: file };
+    });
+    expect(payload.kind).toBe('entity');
+    expect(payload.type).toBe('markdown');
+    expect(String(payload.typeid)).toMatch(/^markdown-[0-9a-f-]{36}$/);
+    expect(String(payload.path)).toContain(path.join('docs', 'hello.md'));
+  }, 30_000); // do not increase timeout without approval
+
   it('show({port}) round-trips a webapp payload', async (ctx: any) => {
     const payload = await showRoundTrip(ctx.task.name, () => ({ port: 3000 }));
     expect(payload.kind).toBe('webapp');

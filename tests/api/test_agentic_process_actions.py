@@ -86,6 +86,31 @@ async def test_set_visible_does_not_touch_pty_mode_true(bootstrapped_client, use
     assert row["pty_mode"] is True, "set-visible must not touch pty_mode"
 
 
+@pytest.mark.asyncio
+async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, user):
+    """A transcript/status save from an older AP object must not wipe display focus."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+    stale = await AgenticProcess.get_by_id(pid)
+    assert stale is not None
+    assert "last_shown" not in (stale.context_data or {})
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"port": 3000})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data
+    assert shown["kind"] == "webapp"
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert row["context_data"]["last_shown"] == shown
+
+    stale.status_report = {"kind": "process_status", "status": "ready"}
+    await stale.save()
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert row["context_data"]["last_shown"] == shown
+    assert row["status_report"] == stale.status_report
+
+
 # ---------------------------------------------------------------------------
 # Prompt queue family
 # ---------------------------------------------------------------------------
@@ -306,6 +331,31 @@ async def test_self_restart_schedules_and_emits_worker_restarted(
         )
     finally:
         jsonl.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_wizard_close_entity_event_action_returns_typed_result(bootstrapped_client, user):
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        status="running",
+        visible=False,
+        pty_mode=False,
+    )
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/entity-event",
+        json={
+            "event": "wizard.close",
+            "payload": {"status": "done", "data": {"localPath": "/tmp/app"}},
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    data = ApiResponse(**resp.json()).data
+    assert data["status"] == "ok"
+    result = data["result"]
+    assert result["status"] == "done"
+    assert result["data"] == {"localPath": "/tmp/app"}
+    assert result["wizardId"] == pid
 
 
 # ---------------------------------------------------------------------------

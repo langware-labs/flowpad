@@ -11,12 +11,14 @@
  * - Conversation: the single live worker session that owns a Conversation; the
  *   conversation header's Open button targets it, and its absence is what
  *   surfaces the launch toolbar.
+ * - Wizard: short-lived popup assistant process that resolves a typed result.
  */
 export const ProcessKind = {
   Chat: 'chat',
   Execution: 'execution',
   Analysis: 'analysis',
   Conversation: 'conversation',
+  Wizard: 'wizard',
 } as const;
 
 export type ProcessKind = (typeof ProcessKind)[keyof typeof ProcessKind];

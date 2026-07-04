@@ -26,7 +26,7 @@ The two transport/visibility axes are the load-bearing ones; the rest support li
 
 | Field | Type | Semantics |
 | --- | --- | --- |
-| `pty_mode` (:453) | `bool = True`, persisted | **Transport intent** and the routing key. `True` → interactive PTY (live terminal). `False` → headless JSON-stream (`-p`/stream-json, no PTY, no xterm; loader skips the PTY attach). Routing is `headless == !visible`; `pty_mode` seeds `visible` at launch and the chat⇄terminal toggle keeps them in lock-step. |
+| `pty_mode` (:453) | `bool = True`, persisted | **Transport intent** and the routing key. `True` → interactive PTY (live terminal). `False` → headless JSON-stream (`-p`/stream-json, no PTY, no xterm; loader skips the PTY attach). Execution routes on `pty_mode`, not `visible`; `pty_mode` seeds `visible` at launch and the chat⇄terminal toggle keeps them in lock-step in the common case. |
 | `visible` (:445) | `bool = False` | **Tab visibility only** — "is this process shown as a terminal tab". Set `True` on open, `False` on close. NOT a transport selector and NOT a membership flag (the strip's membership is the `Tab` entity). |
 | `cli_config` | `dict` | Vendor CLI options (`ClaudeCliOptions`/`CodexCliOptions`/`CopilotCliOptions` serialized). Holds `agents_json`, `resume`, `session_id`, permission mode, etc. |
 | `session_id` | `str \| None` | Vendor session/thread id. Once set, `project_id`+`workdir` are **frozen** (see `__setattr__` binding lock, :613) — rebinds to a different value are refused because the on-disk transcript is keyed to them. |
@@ -41,7 +41,7 @@ The two transport/visibility axes are the load-bearing ones; the rest support li
 | `status` | `str` | Lifecycle `ProcessStatus` (NEW / STARTING / RUNNING / STOPPING / STOPPED / FAILED). Distinct from the transcript-derived `worker_status`. |
 | `start_failure` (:489) | `str \| None` | Latches a process after an instant-death launch; blocks auto-respawn until an explicit `open(retry=true)`. |
 | `last_started_hash` / `last_started_snapshot` | drift baseline | MD5 + structured `{generic, worker}` payload captured at last successful `start_pty()`; compared on each `save()` to set `restart_required`. |
-| `process_type` | `ProcessKind \| None` | CHAT (editor companion) vs EXECUTION (runs an embedded asset/workflow). |
+| `process_type` | `ProcessKind \| None` | Usage discriminator: CHAT, EXECUTION, ANALYSIS, CONVERSATION, or WIZARD. It does not choose transport; WIZARD is a popup assistant completed by a typed result event. |
 | `target_typeid_str` | `str \| None` | VFS path the process is keyed to — a serialized TypeId for entity-scoped chats, or `<typeid>/<sub_path>` for surface-scoped chats. |
 | `auto_rename` | `bool = True` | Allow PTY OSC title escapes to update `name`; cleared on first manual rename. |
 | `status_report` / `total_cost_usd` / `markdown_docs` / `plan_path` | projections | Backend-computed transcript projections (counters, USD cost, authored docs, latest plan), persisted so UI affordances survive reload. `total_cost_usd` is derived, not persisted. |
@@ -88,6 +88,57 @@ Names + one-liners; no bodies.
 - `fork(...)` *(see lifecycle)*; `close()` — permanent teardown (kill worker + delete shell entity, keep `shell_id`).
 - `rename(name)`; `teardown_for_tab()` — `Tab.close` dispatch hook → `close()`.
 - `get_by_session_id(session_id)` *(classmethod)* — resolve a process from a vendor session id.
+
+### Display target contract (`flow show`)
+
+`flow show` is the process-scoped display pin. It is intentionally different from
+`flow navigate`:
+
+- `flow navigate` steers the user's browser tab.
+- `flow show` resolves a display target and sends it to watchers through the
+  `on_show` entity event without changing the browser URL.
+
+Both verbs share `resolve_display_target` (`flow_sdk/core/display_target.py`) so
+typeids, file paths, and ports resolve consistently. The resolved payload is one
+of:
+
+| Kind | Input | Payload shape | Display meaning |
+| --- | --- | --- | --- |
+| `entity` | TypeId, or a path owned by an indexed asset | Entity metadata plus optional source path | Open the matching asset editor/viewer. |
+| `vfs` | Raw file path not owned by an indexed asset | `{ kind: "vfs", path }` | Open the raw file viewer/editor chosen by extension. |
+| `webapp` | Port | `{ kind: "webapp", port }` | Open a dev-server preview through the process compute node. |
+
+`AgenticProcess.show` also persists the payload into `context_data.last_shown`.
+That persistence is load-bearing for Vibe: a refreshed or late-opened process
+dock can restore the agent's last shown target even though the original
+`on_show` event has already passed. Vibe then chooses display state in this
+order: `last_shown` / fresh `on_show`, stream `FlowData.focus`, webapp fallback.
+
+MCP UI is a specialization of the raw VFS case: a shown path ending in
+`.mcp.html` is rendered by the MCP App preview host instead of the generic HTML
+preview.
+
+### Wizard result contract
+
+A wizard is an `AgenticProcess` with `process_type=WIZARD`, usually created by
+`launchWizard(name, data)` through the frontend `WizardHost`. It runs headless
+JSON-stream transport (`pty_mode=false`) inside the same chat UI and resolves a
+typed result:
+
+```ts
+{ status: 'done' | 'cancel' | 'error', data: T | null, errorStr?: string | null }
+```
+
+Completion uses the generic entity-event ingress, not a wizard-specific REST
+endpoint. The UI footer calls `completeWizard(process, result)`, and an agent can
+emit the same event through:
+
+```bash
+flow wizard <agentic_process_id> close '{"status":"done","data":{}}'
+```
+
+Both paths post `wizard.close`; the backend validates it and emits
+`wizard.closed` for the waiting `launchWizard` promise.
 
 ### Relationship to Shell
 
@@ -204,6 +255,8 @@ Local `EventEmitter` events (subscribe via `.on(name, fn)`):
 - `state_change` — status/lifecycle change (drives `wait()`).
 - `status` — `(newStatus, oldStatus)`; `status_report` — counters projection; `prompting-change`, `line`.
 - `restarted` — terminal should clear + re-attach the PTY. Emitted directly by `restart`/`switchMode(interactive)`, and bridged from the backend `worker.restarted` entity event via `onEntityEvent` (server-initiated `self-restart`).
+- `entity_event` — generic backend entity event bridge. Wizard callers wait for
+  `wizard.closed` on this channel.
 
 ### Spawn payload contract (`ts_sdk/src/process/agentic-context.ts`)
 - `AgenticContext` — the camelCase DTO (`workdir`, `model`, `permissionMode`, `projectId`, `resumeSessionId`, `forkSession`, `agentsJson`, `additionalDirs`, `loadFlowpadAssistant`, `sharedContextEntities`, `targetVfsPath`, `outputFormat`, `workerType`, `processType`, …). `compute_node_id` is deliberately NOT sent (backend-managed).

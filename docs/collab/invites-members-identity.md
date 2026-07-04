@@ -217,7 +217,9 @@ _download_and_unpack_bundle(...)  — pull embedded TYPE_ID attachments         
 the WS bridge is a no-op — the pull and the live stream converge safely. The
 bundle step (`:2555-2566`) is what makes shared Task/Spec/etc. entities
 materialize on the recipient; without it the recipient would see message text
-but miss the attached entities.
+but miss the attached entities. When the body was uploaded with git transfer
+mode, this same unpack step resolves the `GitOrigin` checkout and indexes from
+the receiver filesystem instead of copying git-backed bytes out of the bundle.
 
 ---
 

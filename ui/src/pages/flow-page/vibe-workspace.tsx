@@ -4,12 +4,14 @@ import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
 import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
+import { McpAppPreview } from '@src/components/mcp-app-preview/McpAppPreview';
 import PersistentIframe, { PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { DisplayToolbar, WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { useViewerStore, useProcessWebApp } from '@src/hooks/flow-hooks';
+import { isMcpAppPath } from '@src/lib/mcp-app-resources';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath, editorForType } from '@src/navigation/asset-doc-types';
 import { AgenticProcess, dataContext, FlowData, ProcessKind, Project, TypeId, ViewType, type ShowTarget } from '@sdk';
@@ -34,7 +36,10 @@ interface VibeFocus {
  *  addition: a shown ``.html`` file is a DELIVERABLE (chart/diagram/one-file
  *  app), so it renders in the sandboxed HtmlPreview instead of the code
  *  editor's source view. */
-function vfsEditorEl(absPath: string, refreshKey?: number) {
+function vfsEditorEl(absPath: string, refreshKey?: number, process?: AgenticProcess | null) {
+  if (isMcpAppPath(absPath)) {
+    return <McpAppPreview key={`${absPath}:${refreshKey ?? 0}`} path={absPath} process={process ?? null} refreshKey={refreshKey} />;
+  }
   if (/\.html?$/i.test(absPath)) {
     return <HtmlPreview key={`${absPath}:${refreshKey ?? 0}`} path={absPath} />;
   }
@@ -293,11 +298,11 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
             );
           }
           // Type without a bespoke editor — fall back to the raw file view.
-          if (shown.path) return wrapAsset(shown.path, vfsEditorEl(shown.path, refreshStamp));
+          if (shown.path) return wrapAsset(shown.path, vfsEditorEl(shown.path, refreshStamp, activeProcess));
           break;
         }
         case 'vfs':
-          if (shown.path) return wrapAsset(shown.path, vfsEditorEl(shown.path, refreshStamp));
+          if (shown.path) return wrapAsset(shown.path, vfsEditorEl(shown.path, refreshStamp, activeProcess));
           break;
       }
     }
@@ -319,7 +324,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       default:
         return preview;
     }
-  }, [shown, showNonce, refreshStamp, focus.viewType, focus.path, onRetry, webAppConfig, webappPort, selectActive, toggleSelect, t, navigation]);
+  }, [shown, showNonce, refreshStamp, focus.viewType, focus.path, onRetry, webAppConfig, webappPort, selectActive, toggleSelect, t, navigation, activeProcess]);
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full w-full">

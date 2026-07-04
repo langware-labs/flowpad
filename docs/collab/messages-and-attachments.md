@@ -20,9 +20,10 @@ The governing split is **header vs. body**:
 - The **header** is the cheap, always-synced part — text, sender, delivery
   status, the attachment list (descriptors only), inline previews. It rides the
   hub message frame and the entity sync.
-- The **body** is the expensive part — actual file bytes and serialized entity
-  records, packed into a `.flowmsg` zip and parked on the hub blob store. It is
-  uploaded once by the sender and pulled lazily by each receiver.
+- The **body** is the expensive part — actual file bytes, serialized entity
+  records, or metadata-only git transfer declarations, packed into a `.flowmsg`
+  zip and parked on the hub blob store. It is uploaded once by the sender and
+  pulled lazily by each receiver.
 
 Almost every invariant below exists to keep the header useful *before* the body
 arrives, and to keep local-only state (read/archive/download) from being
@@ -80,7 +81,8 @@ An `Attachment` (`flow_sdk/builtin/flow_message.py:202`) is a small BaseModel: a
 AttachmentType   data is interpreted as                              body?
 --------------   ---------------------------------------------       -----
 TYPE_ID          "type-id" — ref to a LOCAL entity; pack_bundle      yes
-                 serializes it into the bundle's attachment subtree
+                 serializes it into the bundle's attachment subtree,
+                 or records a git transfer declaration in git mode
 FILE             path relative to the .flowmsg VFS root              yes
                  (stored at data/<filename>, FILE_VFS_PREFIX)        (:124)
 REPO             full repo path; the uuid5 is derived from it        no
@@ -164,7 +166,7 @@ body itself is a single `.flowmsg` zip named `BODY_FILENAME = "body.flowmsg"`
 `upload_body()` (`flow_sdk/builtin/flow_message.py:572`) runs three steps:
 
 ```
-1. pack_bundle(self)  ->  temp .flowmsg zip          (to_file, :457)
+1. pack_bundle(self, transfer_mode) -> temp .flowmsg zip
 2. POST multipart  flow_message/<id>/fs/upload  with BODY_FILENAME
 3. action set_body_status { body_status: READY, attachment_filename }
 ```
@@ -180,6 +182,29 @@ notify the sender/owners and leave receivers stuck. On any step failure the
 hub-side status stays UPLOADING and the exception propagates for the caller to
 retry. An optional `on_progress(done, total)` drives the sender's progress bar.
 
+### Body transfer modes
+
+The body upload contract has two transfer modes:
+
+- **`copy`** (default) — file-backed TYPE_ID attachments copy their source file or
+  folder into the bundle. If the source lives in git, the bundle also records a
+  `GitOrigin` so the receiver can preserve repo-relative placement, but the bytes
+  still ride inside the `.flowmsg`.
+- **`git`** — git-backed attachments are metadata-only. The bundle carries
+  `git_origins.json`, `git_transfers.json`, and
+  `metadata/<type>-@<id>/metadata.json`; it does not carry the git-backed file
+  bytes. On receive, the unpacker resolves a matching local checkout, pulls the
+  branch when possible, or clones the remote, then indexes the entity from the
+  real filesystem location. Existing local entities still use the normal
+  collision rule: identical placement is idempotent; conflicting placement
+  raises unless the caller retries with overwrite.
+
+For file-backed records such as markdown, skill, workflow, spec, and plan, git
+mode means "restore the record from the checkout and sender metadata", not
+"copy a file out of the bundle." For graph artifacts, git mode carries only the
+artifact declaration and `GitOrigin`; the sender's absolute path is deliberately
+cleared on receive and resolved later when the receiver opens the artifact.
+
 ### Download (receiver)
 
 `download_body()` (`flow_sdk/builtin/flow_message.py:636`) **refuses with
@@ -188,7 +213,9 @@ retry. An optional `on_progress(done, total)` drives the sender's progress bar.
 first. It then reuses the standard `unpack_bundle` path, so every attachment kind
 (FILE, PROMPT-file, TYPE_ID, file-backed records) restores **identically** to the
 receive-on-inbox flow; file-backed assets land in the conversation's mapped
-project. It propagates `FlowMessageExistsError` (collision; re-invoke with
+project. In git mode this same path performs the git lifecycle first and then
+indexes from the checkout; there is no bundle-to-project copy phase for the
+git-backed bytes. It propagates `FlowMessageExistsError` (collision; re-invoke with
 `overwrite=True`) and `FlowMessageNoProjectError` (no mapped project) so the
 explicit download path can prompt — unlike the implicit sync callers, which
 log-and-drop.
@@ -306,6 +333,9 @@ the two in sync.
   `PENDING_SEND`/`CREATED`.
 - **Disk is the source of truth** for "is it downloaded?" — both probes read the
   filesystem, never trust a flag in isolation.
+- **Git mode still materializes from disk.** The transferred declaration is only
+  enough to locate the source; the entity row and FTS entry are rebuilt from the
+  receiver's checkout.
 
 See `./hub-fanout-and-loader.md` for the fan-out mechanics behind the
 `set_body_status` and `mark_received` UPDATEs, `./sharing-and-sync.md` for

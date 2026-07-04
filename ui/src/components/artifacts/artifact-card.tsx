@@ -1,4 +1,4 @@
-import { Artifact, ArtifactType, downloadFileFromUrl } from '@sdk';
+import { Artifact, ArtifactType, dataContext, downloadFileFromUrl, formatGitOrigin, launchWizard } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation';
@@ -6,6 +6,7 @@ import { useFS, useProject } from '@sdk/react/hooks';
 import { Download, ExternalLink, Trash2 } from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
 import { getArtifactTypeConfig } from './artifact-type-config';
+import { notify } from '@src/notifications/notify';
 
 interface ArtifactCardProps {
   artifact: Artifact;
@@ -36,14 +37,54 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
   const isAppService = artifact.artifact_type === ArtifactType.APP_SERVICE;
   const hasPort = !!(artifact.port || artifact.metadata?.port);
 
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback(async () => {
     if (isWebApp && hasPort) {
       const port = artifact.port || (artifact.metadata?.port as string);
+      if (artifact.git_origin) {
+        const resolve = async () => artifact.resolveGitLocation({ currentProjectId: project?.id ?? dataContext.project?.id ?? null });
+        let result = await resolve();
+        if (result.kind === 'needs_wizard') {
+          const wizardResult = await launchWizard<{ projectId?: string; localPath?: string }>('git-setup', {
+            title: `Set up ${artifact.displayName}`,
+            targetTypeId: artifact.typeId.toString(),
+            payload: {
+              artifactId: artifact.id,
+              gitOrigin: result.gitOrigin,
+              reason: result.reason,
+            },
+            prompt: `Help me setup this git-backed webapp artifact.
+
+Repository: ${formatGitOrigin(result.gitOrigin)}
+Reason setup is needed: ${result.reason}
+
+After the repository is available locally and the artifact path can be opened, close the wizard as done.`,
+          });
+          if (wizardResult.status !== 'done') {
+            if (wizardResult.status === 'error') {
+              notify.error({ title: 'Git setup failed', message: wizardResult.errorStr ?? 'Wizard failed' });
+            }
+            return;
+          }
+          result = await artifact.resolveGitLocation({
+            currentProjectId: project?.id ?? dataContext.project?.id ?? null,
+            localPath: wizardResult.data?.localPath ?? null,
+            projectId: wizardResult.data?.projectId ?? null,
+          });
+        }
+        if (result.kind === 'error') {
+          notify.error({ title: 'Could not open app', message: result.message });
+          return;
+        }
+        if (result.kind === 'needs_wizard') {
+          notify.error({ title: 'Git setup incomplete', message: result.reason });
+          return;
+        }
+      }
       navigation.openWebApp(port);
     } else if (artifact.path) {
       navigation.openFile(artifact.path);
     }
-  }, [artifact, isWebApp, hasPort, navigation]);
+  }, [artifact, isWebApp, hasPort, navigation, project?.id]);
 
   const handleDownload = useCallback(
     (e: React.MouseEvent) => {
