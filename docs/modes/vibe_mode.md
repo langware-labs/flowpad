@@ -27,15 +27,20 @@ identical to Standard (see [Process semantics are unchanged](#process-semantics-
 1. **The URL is the standard agentic-process dock URL + the view mode.** A Vibe
    session rides the normal `/dock/shell/agentic_process-<id>` URL with
    `data-view="vibe"` on `<html>`. Vibe invents no route, no loader, no URL grammar.
-2. **The viewer shown in the display NEVER touches the URL.** Which viewer the
-   display shows (web preview / code / diff) is driven by the agent's
-   `FlowData.focus` stream into the **viewer store** (`useViewerStore`), *not* by
-   `navigation.openDock`. So the URL is stable while the display switches viewers.
+2. **The viewer shown in the display NEVER touches the URL.** Display selection
+   is local workspace state: an explicit `flow show` target (`on_show`, restored
+   from `context_data.last_shown`) wins first, the agent's `FlowData.focus`
+   stream is second, and the webapp preview is the fallback. None of these call
+   `navigation.openDock`, so the URL is stable while the display switches viewers.
 3. **No baggage.** The display resolves its data through the **existing**
    structured channels — project-scoped artifacts + `focus.metadata.port` fed into
    `useViewerStore.currentContext` (the exact channel `WebappViewer` already
    reads). No prose port-sniffing, no viewer-specific override props.
-4. **Skin-layer rule** (from [View Modes](../viewmodes.md)): Vibe only changes
+4. **MCP UI is a shown file target, not a Vibe URL.** A `.mcp.html` file shown
+   with `flow show file` is restored from `context_data.last_shown`, rendered by
+   `McpAppPreview`, read through a `ui://flowpad-local/...` MCP resource URI, and
+   hosted in the backend sandbox proxy. See [MCP UI Architecture](../mcp-ui.md).
+5. **Skin-layer rule** (from [View Modes](../viewmodes.md)): Vibe only changes
    *where/whether* things render + the theme — never data, hooks, or entity
    behavior. Layout differences use `VibeSwap` (slot-builder + two arrangements).
 
@@ -99,14 +104,19 @@ That is the whole surface area. See below for what it explicitly does not touch.
   by the project TypeId `target` (so it attaches to the process the home submit
   created). The "New" button rides its header via the additive `leadingSlot` prop.
 - **Display** is a preview-first viewer switch that **reuses the existing viewer
-  components** (`WebappViewer` / `CodeEditor` / `DiffViewer`). It defaults to the
-  web preview and switches to code/diff when the agent focuses them.
+  components** (`WebappViewer` / `CodeEditor` / `DiffViewer`) plus the MCP App
+  preview host for `.mcp.html` files. It defaults to the web preview.
+- **Display selection:** explicit `flow show` targets pin the display and are
+  restored from `context_data.last_shown`; stream focus is only the secondary
+  signal for code/diff/write noise. The web preview is the fallback when neither
+  exists.
 - **Focus → display wiring:** `useVibeFocus` reads the most-recent `FlowData.focus`
   off the `AgenticProcess` stream (`focus` + `data.path` + `data.metadata.port` —
   the same fields the shared `useActiveViewer.focusFromStream` reads) and writes
-  the port into `useViewerStore.setCurrentContext({ viewerOptions: { port } })`.
-  `WebappViewer` reads that port (its existing `currentContext` priority), builds
-  the `get-host` iframe URL, and renders the running app. **No URL change.**
+  the port into `useViewerStore.setCurrentContext({ viewerOptions: { port } })`
+  when no shown webapp target overrides it. `WebappViewer` reads that port (its
+  existing `currentContext` priority), builds the `get-host` iframe URL, and
+  renders the running app. **No URL change.**
 
 ### The live preview plumbing (all pre-existing, reused)
 
@@ -119,6 +129,26 @@ That is the whole surface area. See below for what it explicitly does not touch.
   That action was ported to the `AgenticProcess` entity
   (`flow_sdk/builtin/agentic_process/agentic_process.py`) because the legacy `Flow`
   entity was removed — `useProcessWebApp` targets `AgenticProcess.type`.
+- When a WEBAPP artifact is received through a git-backed share, the artifact row
+  is a declaration plus `GitOrigin`, not a copied sender path. Opening it first
+  resolves the checkout via `resolve-git-location`; if the repo is missing, the
+  generic git setup wizard opens and returns the local checkout/project before
+  the preview proceeds.
+
+### MCP UI plumbing (shown `.mcp.html` files)
+
+MCP UI uses the same `flow show` pin as other display targets, but it renders
+through a dedicated MCP Apps host instead of the webapp preview:
+
+`flow show file <path.mcp.html> → context_data.last_shown → VibeWorkspace →
+McpAppPreview → @mcp-ui/client → backend sandbox proxy`
+
+The process dock URL stays the workspace URL. The shown file path becomes an
+internal `ui://flowpad-local/...` resource URI; that URI is resolved through
+`onReadResource` and `FSRef`, not through browser navigation. The iframe itself
+loads `/mcp-sandbox/sandbox_proxy.html` from the backend origin and receives the
+guest HTML through MCP Apps JSON-RPC. Submissions come back as `ui/message` and
+are delivered to the same `AgenticProcess` as a prompt once the process is idle.
 
 ## Theme (hub palette)
 
@@ -194,6 +224,8 @@ and pushing paste into `CompactExecutionInput` itself.
 | VibeHome + build submit | `ui/src/pages/home-landing/HomeLanding.tsx` |
 | Overlay shell (no rail, split vs home) | `ui/src/pages/flow-page/flow-page.tsx` |
 | The chat↔display split + focus reader | `ui/src/pages/flow-page/vibe-workspace.tsx` |
+| MCP UI host for `.mcp.html` display targets | `ui/src/components/mcp-app-preview/McpAppPreview.tsx` |
+| MCP UI resource and sandbox helpers | `ui/src/lib/mcp-app-resources.ts`, `ui/src/lib/mcp-sandbox.ts` |
 | Curated chrome-less surfaces | `ui/src/pages/flow-page/content-panel/content-panel.tsx` (`VIBE_CREATOR_SURFACES`) |
 | Chat (leadingSlot, image paste) | `ui/src/components/entity-execution-panel/EntityExecutionPanel.tsx` |
 | Display / web preview | `ui/src/components/webapp-viewer.tsx` |

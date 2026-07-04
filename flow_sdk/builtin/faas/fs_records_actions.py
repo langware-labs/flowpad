@@ -1164,6 +1164,50 @@ class FsRecordsActionsMixin:
         elif limit_types is not None:
             types_filter = list(INDEXABLE_TYPES)[:limit_types]
 
+        if index_path and filter_type and _p.is_file() and not rebuild and not force:
+            try:
+                found = await discover_record_by_path(filter_type, str(_p))
+            except Exception as e:
+                return ApiFailResponse(
+                    message=f"Failed to index {filter_type} at {index_path}: {e}",
+                    status_code=500,
+                )
+            indexed_typeid = f"{filter_type}-{found.id}" if found is not None and getattr(found, "id", None) else None
+            indexed_typeids = [indexed_typeid] if indexed_typeid else []
+            type_row = {
+                "type": filter_type,
+                "indexed": 1 if indexed_typeid else 0,
+                "new": 1 if indexed_typeid else 0,
+                "skipped": 0,
+                "errors": 0,
+                "duration_ms": 0.0,
+                "orphans_found": 0,
+                "orphans_db_removed": 0,
+                "orphans_disk_removed": 0,
+            }
+            SchemaRegistry.append_index(
+                trigger=trigger,
+                duration_ms=0.0,
+                total_indexed=1 if indexed_typeid else 0,
+                types=[],
+                type_name=filter_type,
+            )
+            return ApiSuccessResponse(
+                data={
+                    "type": filter_type,
+                    "indexed": type_row["indexed"],
+                    "errors": type_row["errors"],
+                    "orphans_found": 0,
+                    "orphans_db_removed": 0,
+                    "orphans_disk_removed": 0,
+                    "typeid": indexed_typeid,
+                    "typeids": indexed_typeids,
+                    "types": [type_row],
+                    "total_indexed": type_row["indexed"],
+                    "total_errors": 0,
+                }
+            )
+
         driver = get_db_driver()
 
         # Rebuild mode: clear DB + FTS + on-disk .hash sentinels for target
@@ -2099,11 +2143,12 @@ def _normalize_asset_path(p: str) -> str:
 async def discover_record_by_path(record_type: str, path: str):
     """Find-or-recover ONE record by absolute path — the interactive fast path.
 
-    Pass 1: look up the type's ``RecordList`` by asset_ref equivalence.
-    Pass 2: on miss, parse JUST this file/folder via the type's
-    ``from_disk_fn`` and ``sync_to_db``, then re-look. No tree walks — the
-    scoped re-index fallback stays in the ``/fs-records/{type}/discover``
-    route, which owns the heavy recovery.
+    If the source exists, parse JUST this file/folder via the type's
+    ``from_disk_fn`` and ``sync_to_db`` and return the parsed record directly.
+    Only fall back to the type's ``RecordList`` lookup when parsing cannot
+    produce a match or the source is missing. No tree walks — the scoped
+    re-index fallback stays in the ``/fs-records/{type}/discover`` route, which
+    owns the heavy recovery.
 
     Shared by that route and ``AgenticProcess.show`` (a `flow show file` on a
     just-created skill/agent must resolve the entity so the bespoke editor
@@ -2133,8 +2178,7 @@ async def discover_record_by_path(record_type: str, path: str):
                 return rec
         return None
 
-    found = _find()
-    if found is None and Path(expanded).exists():
+    if Path(expanded).exists():
         _from_disk = getattr(_SR.get(record_type), "from_disk_fn", None)
         if _from_disk is not None:
             try:
@@ -2147,11 +2191,18 @@ async def discover_record_by_path(record_type: str, path: str):
                 if _asyncio.iscoroutine(recs):
                     recs = await recs
                 for rec in (recs or []):
+                    ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
+                    ref_path = getattr(ref, "path", None) if ref is not None else None
+                    if ref_path is None:
+                        ref_path = str(ref) if ref else ""
+                    synced = False
                     try:
                         await rec.sync_to_db(notify=False)
+                        synced = True
                     except Exception as _se:
                         logging.debug(f"[fs-records] targeted sync skipped for {record_type}: {_se}")
-                found = _find()
+                    if synced and _normalize_asset_path(ref_path) == target_norm:
+                        return rec
             except Exception as e:
                 logging.debug(f"[fs-records] targeted parse failed for {record_type} @ {expanded}: {e}")
-    return found
+    return _find()

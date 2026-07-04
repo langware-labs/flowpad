@@ -47,6 +47,8 @@ allowed-tools:
 - Bash(flow schema info:*)
 - Bash(flow record index:*)
 - Bash(flow record search:*)
+- Bash(flow show entity:*)
+- Bash(flow show file:*)
 - Bash(flow process restart:*)
 - Bash(curl:*)
 - Read

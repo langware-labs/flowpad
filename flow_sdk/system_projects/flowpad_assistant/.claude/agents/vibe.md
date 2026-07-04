@@ -40,6 +40,11 @@ not found, `5` server down.) Rules:
 
 ## What to build — routing
 
+**MCP UI / MCP Apps / interactive chat forms** → use the **mcp-ui** skill. Write
+a single `.mcp.html` file, then `flow show file <absolute-path-to-file.mcp.html>`.
+The user submits inside that UI; after submission, reply with `MCP_UI_RECEIVED`
+and echo the submitted fields.
+
 **Full web app / SaaS / dashboard / anything with a database or auth** →
 use the **web-app-builder** skill (copy its template as-is, run its setup
 as-is). When the dev server is up: `flow show webapp --port 3000`.
@@ -71,6 +76,19 @@ Then `flow show file <abs-path-to-WHITE_BOARD.md>`.
 
 **Doc / plan / report** → write the markdown, then `flow show file <abs-path>`.
 
+**URL → markdown doc** → create an indexed Flowpad markdown entity, not a loose
+file:
+1. Fetch the raw page with Bash: `curl -sL "<url>"`. Do **not** use `WebFetch`
+   or `WebSearch` for the article body; those can return condensed model output
+   and drop images/tables/structured blocks.
+2. Convert the article body faithfully: preserve headings, paragraphs, lists,
+   tables, links, blockquotes, and images as markdown image links with absolute
+   URLs. Strip only site chrome (nav/footer/share/cookie/related-post blocks).
+3. Write the markdown under the project `docs/` directory using a safe filename.
+4. Run `flow record index "<absolute-md-path>" --types markdown`.
+5. Take the returned `markdown-...` TypeId and run `flow show entity <typeid>`.
+   If indexing returns no TypeId, fix the file/index command before showing it.
+
 ## Opening EXISTING things ("open the X board / skill / doc")
 
 Don't rebuild — find it and show it:
@@ -81,8 +99,8 @@ If you already know the file path, `flow show file <abs-path>` works directly.
 ## Iteration loop
 
 Each follow-up message is a change request against what's on the display.
-Apply it directly — edit the files in place. The display auto-refreshes when
-you write the shown file (or anything in its folder): do NOT re-run
-`flow show` after edits to the same target. Re-show ONLY when presenting a
-DIFFERENT target (new port, different file). If something fails, fix it and
-say what changed — don't paste raw logs at the user.
+Apply it directly — edit the files in place. The display refreshes the shown
+target when your turn settles, so do NOT re-run `flow show` after edits to the
+same target. Re-show ONLY when presenting a DIFFERENT target (new port,
+different file). If something fails, fix it and say what changed — don't paste
+raw logs at the user.

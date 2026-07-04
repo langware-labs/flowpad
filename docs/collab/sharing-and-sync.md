@@ -131,6 +131,41 @@ body-upload work happens in exactly one function.
                   (link · jsonl append · hub header · body upload)
 ```
 
+### Git-backed body sharing
+
+The dispatch funnel is unchanged for git-backed sharing: the message header,
+conversation invite, delivery receipts, and body-status lifecycle are the same.
+The difference is the body upload mode. `FlowMessage.upload_body` can ask
+`pack_bundle` for `transfer_mode='git'` instead of the default `copy`.
+
+In `copy` mode, file-backed entity bytes ride in the body bundle. If those bytes
+come from a git checkout, `GitOrigin` is recorded as provenance and placement,
+but the bundle still contains the source files.
+
+In `git` mode, git-backed attachments share **declaration, not bytes**:
+
+```
+header.json
+git_origins.json
+git_transfers.json
+metadata/<type>-@<id>/metadata.json
+```
+
+For file-backed entities, the receiver resolves the `GitOrigin` to a local repo:
+prefer the conversation's mapped project checkout when it matches, then any known
+local clone, then clone the remote. Once the checkout exists, the receiver indexes
+the entity from the filesystem path named by `GitOrigin.rel_path` and applies the
+sender's `metadata.json` as metadata. Markdown documents restored this way become
+ordinary indexed markdown records and are searchable after the
+receive/download/open indexing step.
+
+For graph `artifact` shares, git mode carries the artifact declaration and
+`GitOrigin` only. The sender-local absolute `path` is cleared on receive, because
+it is meaningless on the other machine. A git-backed webapp artifact resolves its
+local path later through `resolve-git-location`: if the current project already
+matches the repo and branch, the artifact is marked ready; otherwise the UI opens
+the git setup wizard and retries with the wizard's local checkout result.
+
 ### Path A — NEW: `share_action.share_entity()` (`share_action.py:43-113`)
 
 The generic `share` action (`types="all"`). It reconstructs the entity in-process

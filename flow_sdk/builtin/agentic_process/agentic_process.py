@@ -1804,6 +1804,30 @@ class AgenticProcess(Entity):
         await self.on_show(payload)
         return ApiSuccessResponse(data=payload)
 
+    # ── Wizard completion ───────────────────────────────────────────────────
+
+    async def on_wizard_close(self, payload: dict) -> dict:
+        """Close a wizard process by emitting the typed frontend result event.
+
+        Inbound path is the generic ``entity-event`` action, used by both the
+        UI footer buttons and the agent-facing ``flow wizard <id> close`` CLI.
+        The event is re-emitted as ``wizard.closed`` so the frontend promise
+        registered by ``launchWizard`` can resolve through the same entity-event
+        channel as other AgenticProcess control events.
+        """
+        status = str(payload.get("status") or "").strip().lower()
+        if status not in {"done", "cancel", "error"}:
+            status = "error"
+            payload = {**payload, "status": status, "errorStr": payload.get("errorStr") or "Invalid wizard status"}
+        result = {
+            "status": status,
+            "data": payload.get("data"),
+            "errorStr": payload.get("errorStr"),
+            "wizardId": payload.get("wizardId") or (self.context_data or {}).get("wizard", {}).get("id") or self.id,
+        }
+        await self.emit_entity_event("wizard.closed", result)
+        return result
+
     # ── Execution ─────────────────────────────────────────────────────────────
 
     async def prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
@@ -3524,6 +3548,21 @@ class AgenticProcess(Entity):
             object.__getattribute__(self, "__dict__").get("_in_start_lifecycle", False)
         )
 
+    async def _preserve_latest_display_pin(self) -> None:
+        """Keep ``context_data.last_shown`` from being lost by stale whole-row saves."""
+        if not getattr(self, "exist_in_db", False):
+            return
+        current_context = self.context_data if isinstance(self.context_data, dict) else {}
+        if "last_shown" in current_context:
+            return
+        latest = await AgenticProcess.get_by_id(self.id)
+        if latest is None or latest is self:
+            return
+        latest_context = latest.context_data if isinstance(latest.context_data, dict) else {}
+        if "last_shown" not in latest_context:
+            return
+        self.context_data = {**current_context, "last_shown": latest_context["last_shown"]}
+
     async def save(self, owner=None, notify: bool = True):
         """Override to maintain ``restart_required`` automatically.
 
@@ -3538,6 +3577,7 @@ class AgenticProcess(Entity):
         change-then-undo doesn't leave a phantom "restart needed" glow). A
         successful ``start_pty()`` also clears it by re-capturing the hash.
         """
+        await self._preserve_latest_display_pin()
         if (
             not self._is_in_start_lifecycle()
             and self.status == ProcessStatus.RUNNING.value
@@ -3789,6 +3829,13 @@ class AgenticProcess(Entity):
         the value more than once should fetch once and pass it along (e.g.
         ``is_ready_for_input(self, worker_status=...)``).
         """
+        if self.status in {
+            ProcessStatus.NEW.value,
+            ProcessStatus.STOPPED.value,
+        }:
+            return None
+        if self.status == ProcessStatus.FAILED.value:
+            return WorkerStatus.ERROR
         return self._discover_status_from_transcript()
 
     def _discover_status_from_transcript(self) -> WorkerStatus | None:
@@ -5038,3 +5085,6 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
+
+
+AgenticProcess.on_event("wizard.close")(AgenticProcess.on_wizard_close)

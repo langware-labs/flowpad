@@ -39,6 +39,7 @@ invariants established by the previous one.
                               │  FlowMessage  │  content; delivery + body FSMs
                               │               │
                               │ attachments[] │──► TYPE_ID | FILE | REPO | URL | PROMPT
+                              │ body transfer │──► copy | git
                               └───────────────┘
 ```
 
@@ -84,8 +85,19 @@ skill, …) are anchored to the conversation and recursively auto-share.
   `conversation.jsonl` by `project_pointers_to_entity`
   (`flow_sdk/fs_store/operations/conversation.py:150`); the *only* sanctioned
   writer. Direct mutation raises.
-- **body bundle** — the `.flowmsg` zip carrying a message's attachment bytes,
+- **body bundle** — the `.flowmsg` zip carrying a message's attachment payload,
   uploaded/downloaded out-of-band; gated by `BodyStatus` (NA | UPLOADING | READY).
+  In normal `copy` mode this includes file/entity bytes. In `git` mode, git-backed
+  entities carry metadata plus `GitOrigin` and the receiver reads bytes from a
+  matching checkout instead.
+- **`GitOrigin`** — a value object, not an entity. It names an upstream repo,
+  branch/head, and safe repo-relative asset path. It is the single git pointer
+  used by git-backed shares, project setup, and artifact resolution.
+- **git transfer** — a body-bundle transfer mode where the message carries
+  declaration metadata (`metadata.json`, `git_origins.json`, `git_transfers.json`)
+  but does not copy git-backed file bytes. Receive means fetch/pull/clone as
+  needed, index from the local filesystem, and preserve the sender's repo-relative
+  layout.
 - **delivery vs read** — `DeliveryStatus` (transport: created/sent/delivered/
   received) is distinct from `FlowMessage.is_read` (per-recipient read state).
 - **roster / role ladder** — `participants` is the hub-authoritative membership

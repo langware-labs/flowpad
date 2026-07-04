@@ -327,6 +327,16 @@ async def _pack_attachment_entry(
     elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
         await _pack_flowpad_diagnosis_attachment(entry_id, attachment_dir)
     else:
+        if await _pack_git_reference_attachment(
+            entry_type,
+            entry_id,
+            attachment_dir,
+            origins,
+            repo_cache,
+            transfers,
+            transfer_mode,
+        ):
+            return
         info = SchemaRegistry.get(entry_type)
         if info is not None and getattr(info, "main_subdir", None) is not None:
             await _pack_file_backed_attachment(
@@ -426,6 +436,94 @@ def _write_git_transfer_metadata(
         encoding="utf-8",
     )
     return rel.as_posix()
+
+
+def _read_graph_entity_metadata(entry_type: str, entry_id: str, ent) -> dict:
+    """Return the sender's graph entity payload for metadata-only git transfer."""
+    payload = ent.model_dump(
+        mode="python",
+        context={"skip_api_serializer": True},
+    )
+    payload.pop("expand", None)
+    payload["type"] = entry_type
+    payload["id"] = entry_id
+    return payload
+
+
+def _write_graph_git_transfer_metadata(
+    tmp_root: Path,
+    entry_type: str,
+    entry_id: str,
+    ent,
+) -> str:
+    key = _entry_key(entry_type, entry_id)
+    rel = PurePosixPath("metadata") / key / "metadata.json"
+    dest = tmp_root / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        json.dumps(_read_graph_entity_metadata(entry_type, entry_id, ent), default=_json_default, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return rel.as_posix()
+
+
+async def _pack_git_reference_attachment(
+    entry_type: str,
+    entry_id: str,
+    attachment_dir: Path,
+    origins: dict | None,
+    repo_cache: dict | None,
+    transfers: dict | None,
+    transfer_mode: str,
+) -> bool:
+    """Pack a graph entity whose data is expected to arrive through git.
+
+    This is intentionally narrower than file-backed asset packing. ``artifact``
+    is a graph entity, not an FSRecord type, so git mode carries its metadata
+    and GitOrigin only. The receiver materializes the row as pending and resolves
+    the checkout later through the artifact git wizard/open path.
+    """
+    if transfer_mode != _TRANSFER_MODE_GIT or transfers is None:
+        return False
+    if entry_type != EntityType.ARTIFACT.value:
+        return False
+
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+
+    ent = await Artifact.get_one({"id": entry_id})
+    if ent is None:
+        return False
+
+    raw_origin = getattr(ent, "git_origin", None)
+    if raw_origin is None and isinstance(getattr(ent, "metadata", None), dict):
+        raw_origin = ent.metadata.get("git_origin")
+    origin = None
+    if raw_origin is not None:
+        try:
+            origin = raw_origin if isinstance(raw_origin, GitOrigin) else GitOrigin.model_validate(raw_origin)
+        except Exception:
+            origin = None
+    if origin is None and getattr(ent, "path", None):
+        origin = await asyncio.to_thread(GitOrigin.for_asset_path, str(ent.path), repo_cache)
+    if origin is None:
+        return False
+
+    key = _entry_key(entry_type, entry_id)
+    if origins is not None:
+        origins[key] = origin.model_dump(mode="python")
+    metadata_path = _write_graph_git_transfer_metadata(
+        attachment_dir.parent,
+        entry_type,
+        entry_id,
+        ent,
+    )
+    transfers[key] = {
+        "transfer_mode": _TRANSFER_MODE_GIT,
+        "metadata_path": metadata_path,
+        "entity_mode": "metadata",
+    }
+    return True
 
 
 async def _pack_file_backed_attachment(
@@ -773,14 +871,18 @@ def _git_origin_index_scope(checkout_root: Path, rel_path: str, info) -> Path:
     return checkout_root / PurePosixPath(*prefix_parts) if prefix_parts else checkout_root
 
 
-def _repo_matches_git_origin(repo_path: Path, origin) -> bool:
+def _repo_matches_git_origin(repo_path: Path, origin, *, require_branch: bool = False) -> bool:
     try:
         from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
-        from flow_sdk.utils.git import git_remote_url  # noqa: PLC0415
+        from flow_sdk.utils.git import git_current_branch, git_remote_url  # noqa: PLC0415
 
         remote = git_remote_url(str(repo_path))
         candidate = GitOrigin.from_url(remote, rel_path=origin.rel_path or ".") if remote else None
-        return bool(candidate and candidate.key() == origin.key())
+        if not candidate or candidate.key() != origin.key():
+            return False
+        if require_branch and origin.branch:
+            return git_current_branch(str(repo_path)) == origin.branch
+        return True
     except Exception:
         return False
 
@@ -817,7 +919,7 @@ def _next_git_clone_target(origin) -> Path:
     candidate = base / leaf
     n = 2
     while candidate.exists():
-        if _repo_matches_git_origin(candidate, origin):
+        if _repo_matches_git_origin(candidate, origin, require_branch=True):
             return candidate
         candidate = base / f"{leaf}-{n}"
         n += 1
@@ -835,12 +937,12 @@ async def _resolve_git_checkout(
     candidates: list[Path] = []
     if preferred_root is not None and preferred_root.exists():
         preferred_repo = await asyncio.to_thread(find_project_root, str(preferred_root))
-        if preferred_repo and _repo_matches_git_origin(Path(preferred_repo), origin):
+        if preferred_repo and _repo_matches_git_origin(Path(preferred_repo), origin, require_branch=True):
             candidates.append(Path(preferred_repo))
 
     clone_url = origin.clone_url()
     local_repo = await asyncio.to_thread(find_local_repo_for_url, clone_url)
-    if local_repo:
+    if local_repo and _repo_matches_git_origin(Path(local_repo), origin, require_branch=True):
         p = Path(local_repo)
         if p not in candidates:
             candidates.append(p)
@@ -1030,6 +1132,94 @@ async def _restore_git_transfer_entry(
         owner_typeid=owner_typeid,
     )
     await _stamp_git_origins({(entry_type, entry_id)}, {key: origin.model_dump(mode="python")}, owner_typeid)
+    return True
+
+
+def _git_origin_from_payload(payload: dict, origins_map: dict, key: str, transfer: dict):
+    raw = origins_map.get(key) or transfer.get("git_origin") or payload.get("git_origin")
+    if raw is None and isinstance(payload.get("metadata"), dict):
+        raw = payload["metadata"].get("git_origin")
+    if raw is None:
+        return None
+    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+
+    try:
+        return raw if isinstance(raw, GitOrigin) else GitOrigin.model_validate(raw)
+    except Exception:
+        logger.warning("[bundle] invalid git transfer origin for %s", key, exc_info=True)
+        return None
+
+
+async def _restore_git_reference_entity_entry(
+    tmp_root: Path,
+    key: str,
+    transfer: dict,
+    origins_map: dict,
+    *,
+    overwrite: bool,
+    owner_typeid: str | None,
+) -> bool:
+    """Materialize graph entities whose bytes are supplied by git, not bundle.
+
+    For ``artifact`` we only persist the received declaration and GitOrigin. The
+    checkout remains unresolved until the receiver opens the artifact and the
+    git setup wizard can provide a local path.
+    """
+    if not isinstance(transfer, dict) or transfer.get("transfer_mode") != _TRANSFER_MODE_GIT:
+        return False
+    parsed = _parse_entry_key(key)
+    if parsed is None:
+        return False
+    entry_type, entry_id = parsed
+    if entry_type != EntityType.ARTIFACT.value:
+        return False
+
+    from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType  # noqa: PLC0415
+
+    payload = _read_transfer_metadata(tmp_root, transfer)
+    origin = _git_origin_from_payload(payload, origins_map, key, transfer)
+    if origin is None:
+        return False
+
+    metadata = dict(payload.get("metadata") or {})
+    metadata["git_origin"] = origin.model_dump(mode="python")
+    payload = {
+        **payload,
+        "type": entry_type,
+        "id": entry_id,
+        "git_origin": origin.model_dump(mode="python"),
+        "metadata": metadata,
+        # Sender-local absolute paths must not become Bob's usable path. The
+        # resolver will fill this only after validating a local checkout.
+        "path": "",
+    }
+    payload.setdefault("name", f"artifact-{entry_id[:8]}")
+    payload.setdefault("ref_type", ArtifactReferenceType.FOLDER.value)
+    payload.setdefault("artifact_type", ArtifactType.WEBAPP.value)
+
+    existing = await Artifact.get_one({"id": entry_id})
+    if existing is not None and not overwrite:
+        existing_origin = _git_origin_from_payload(
+            existing.model_dump(mode="python", context={"skip_api_serializer": True}),
+            {},
+            key,
+            {},
+        )
+        if existing_origin is not None and existing_origin.key() == origin.key():
+            if getattr(existing, "git_origin", None) is None:
+                existing.git_origin = origin
+                existing.metadata = {**(existing.metadata or {}), "git_origin": origin.model_dump(mode="python")}
+                await existing.save(owner_typeid)
+            return True
+        raise FlowMessageExistsError([{
+            "type": entry_type,
+            "id": entry_id,
+            "path": getattr(existing, "path", "") or None,
+        }])
+
+    artifact = Artifact.model_validate(payload)
+    artifact.id = entry_id
+    await artifact.save(owner_typeid)
     return True
 
 
@@ -1583,6 +1773,16 @@ async def unpack_bundle(
         for key, transfer in sorted(git_transfers_map.items()):
             parsed = _parse_entry_key(key)
             if parsed is None:
+                continue
+            if await _restore_git_reference_entity_entry(
+                tmp_root,
+                key,
+                transfer,
+                git_origins_map,
+                overwrite=overwrite,
+                owner_typeid=owner_typeid,
+            ):
+                git_received_entries.add(parsed)
                 continue
             if await _restore_git_transfer_entry(
                 tmp_root,

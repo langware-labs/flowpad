@@ -819,6 +819,31 @@ def test_api_json_serializer_ready_false_when_not_running(monkeypatch):
     assert payload["ready_for_input"] is False
 
 
+@pytest.mark.parametrize(
+    "lifecycle,expected",
+    [
+        (ProcessStatus.NEW.value, None),
+        (ProcessStatus.STOPPED.value, None),
+        (ProcessStatus.FAILED.value, WorkerStatus.ERROR),
+    ],
+)
+def test_fetch_worker_status_terminal_lifecycle_overrides_transcript(monkeypatch, lifecycle, expected):
+    """Terminal process lifecycle wins over a stale transcript tail.
+
+    A cancelled/stopped process can leave the JSONL ending at an unmatched tool
+    call; the wire payload must not keep reporting that as a live busy worker.
+    """
+    proc = AgenticProcess()
+    proc.status = lifecycle
+    monkeypatch.setattr(
+        AgenticProcess,
+        "_discover_status_from_transcript",
+        lambda self: WorkerStatus.TOOL_RUNNING,
+    )
+
+    assert proc.fetch_worker_status() == expected
+
+
 def test_api_json_serializer_never_emits_stored_running(monkeypatch):
     """Regression: the wire ``status`` must never be the stored ``running`` — a
     RUNNING process always projects to ready or busy."""

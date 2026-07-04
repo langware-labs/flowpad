@@ -155,8 +155,9 @@ def _typed_asset_shape(resolved: str) -> tuple[str | None, str]:
 
     Only shapes the type registry declares unambiguously are inferred — these
     drive the targeted fresh-asset discovery above: a folder type's main file
-    (or a dir containing one), and ``.md`` files under a ``.claude/<subdir>``
-    a file type claims (e.g. ``.claude/agents``).
+    (or a dir containing one), ``.md`` files under a ``.claude/<subdir>`` a
+    file type claims (e.g. ``.claude/agents``), and markdown docs under a docs
+    root. Generic project-root markdown remains a raw VFS file until indexed.
     """
     from pathlib import Path  # noqa: PLC0415
 
@@ -173,7 +174,62 @@ def _typed_asset_shape(resolved: str) -> tuple[str | None, str]:
         for subdir, type_name in _claude_subdir_file_types().items():
             if parent.endswith("/" + subdir):
                 return type_name, resolved
+        if _is_docs_markdown_path(p):
+            if p.name == "index.md" and _has_markdown_index_frontmatter(p):
+                return "markdown_index", resolved
+            return "markdown", resolved
     return None, resolved
+
+
+def _is_docs_markdown_path(path: "Path") -> bool:
+    """True when an explicit ``.md`` path belongs to a docs root."""
+    if path.suffix.lower() != ".md":
+        return False
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path.absolute()
+
+    # Fast path for the common agent-created project docs layout:
+    # <project>/docs/foo.md or <project>/.claude/docs/foo.md.
+    if "docs" in resolved.parts:
+        return True
+
+    # Keep parity with the markdown indexer's configured search roots.
+    try:
+        from flow_sdk.fs_store.operations.markdown_dirs import doc_search_dirs  # noqa: PLC0415
+
+        for root in doc_search_dirs():
+            try:
+                resolved.relative_to(root)
+            except ValueError:
+                continue
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _has_markdown_index_frontmatter(path: "Path") -> bool:
+    """Detect generated ``index.md`` files without parsing arbitrary markdown."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")[:4096]
+    except OSError:
+        return False
+    if not text.startswith("---"):
+        return False
+    end = text.find("\n---", 3)
+    if end < 0:
+        return False
+    frontmatter = text[3:end]
+    for raw in frontmatter.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        if key.strip() == "type":
+            return value.strip().strip("\"'") == "markdown_index"
+    return False
 
 
 def _entity_payload(entity: Entity) -> dict:

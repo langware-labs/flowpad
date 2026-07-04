@@ -230,9 +230,10 @@ export function EntityExecutionPanel({
   }, [forceNew, selectedProcessId, sortedProcesses]);
 
   // 3. Resolve the full AgenticProcess entity (watched; query result may be partial).
+  const effectiveProcessId = selectedProcessId ?? pickedProcess?.id ?? null;
   const processTypeId = useMemo(
-    () => (pickedProcess?.id ? new TypeId(AgenticProcess.type, pickedProcess.id) : null),
-    [pickedProcess?.id],
+    () => (effectiveProcessId ? new TypeId(AgenticProcess.type, effectiveProcessId) : null),
+    [effectiveProcessId],
   );
   const { data: resolvedProcess } = useEntity<AgenticProcess>(processTypeId, {
     watch: true,
@@ -368,6 +369,7 @@ export function EntityExecutionPanel({
 
       // Lazy-create on first send.
       if (!proc) {
+        if (selectedProcessId && !opts?.forceNewProcess) return;
         if (createInFlightRef.current) return;
         createInFlightRef.current = true;
         try {
@@ -413,7 +415,7 @@ export function EntityExecutionPanel({
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId]);
 
   const handleStop = useCallback(async () => {
     if (!activeProcess) return;

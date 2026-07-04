@@ -49,6 +49,22 @@ export { ASSET_SOURCE_LABEL, READONLY_ASSET_SOURCES, isReadOnlySource } from './
 
 export { serializeAgenticContext } from './agentic-context';
 export type { AgenticContext, PermissionMode, IAgenticProcessOptions, ISpawnWorkerOptions } from './agentic-context';
+export {
+  launchWizard,
+  setWizardLauncher,
+  awaitWizardResult,
+  completeWizard,
+  normalizeWizardResult,
+  buildWizardPrompt,
+} from './wizard';
+export type {
+  WizardData,
+  WizardLaunchContext,
+  WizardLaunchRequest,
+  WizardLauncher,
+  WizardProcessResult,
+  WizardStatus,
+} from './wizard';
 
 export { extractUIPayload, isUIFlowData, UIHandler } from './ui-handler';
 export type { UIComponent } from './ui-handler';

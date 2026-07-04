@@ -172,6 +172,49 @@ If a process is visible and already has a live PTY worker, normal user input
 should be sent through the terminal. The backend `prompt` action rejects the
 streaming CLI prompt path for visible live PTY processes.
 
+## Wizard Runtime
+
+A wizard is an `AgenticProcess` used as an interactive setup assistant. It is a
+process kind, not a separate execution system: the same entity, prompt routing,
+FlowData stream, and chat surface are reused.
+
+Generic launch flow:
+
+```text
+caller awaits launchWizard(name, data)
+  -> WizardHost creates AgenticProcess kind="wizard"
+     visible=false, pty_mode=false, loadFlowpadAssistant=true
+  -> WizardHost opens a modal with EntityExecutionPanel
+  -> initial prompt includes the caller's wizard data and close instruction
+  -> user and agent interact in the same chat UI as other processes
+  -> completion emits wizard.close
+  -> AgenticProcess re-emits wizard.closed
+  -> launchWizard resolves WizardProcessResult<T>
+```
+
+`WizardProcessResult<T>` is the typed boundary back to the caller:
+
+```ts
+{
+  status: 'done' | 'cancel' | 'error'
+  data: T | null
+  errorStr?: string | null
+}
+```
+
+There are two equivalent completion paths. The modal footer calls
+`completeWizard(process, result)`, which posts the generic `entity-event`
+`wizard.close`. An agent running inside the wizard can close itself with:
+
+```bash
+flow wizard <agentic_process_id> close '{"status":"done","data":{}}'
+```
+
+The backend handler validates the result, emits `wizard.closed` on the process,
+and the frontend promise registered by `launchWizard` resolves. This keeps
+domain setup flows decoupled from the UI: the git setup wizard, for example, is
+just one wizard name and prompt using the same generic close protocol.
+
 ## Status Model
 
 Status has two axes.

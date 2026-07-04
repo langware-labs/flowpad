@@ -1,15 +1,64 @@
-import logging
 """Artifact entity representing filesystem entities or references created during execution."""
 
+import logging
+import os
 from enum import Enum
+from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel
 
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.core import Entity
+from flow_sdk.builtin.git_origin import GitOrigin, is_safe_rel_path
+from flow_sdk.core import Entity, action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+
+logger = logging.getLogger(__name__)
+
+
+def _artifact_git_origin(data: dict) -> GitOrigin | None:
+    raw = data.get("git_origin")
+    if raw is None and isinstance(data.get("metadata"), dict):
+        raw = data["metadata"].get("git_origin")
+    if raw is None:
+        return None
+    try:
+        return raw if isinstance(raw, GitOrigin) else GitOrigin.model_validate(raw)
+    except Exception:
+        return None
+
+
+def _repo_matches_origin(repo_path: str | Path, origin: GitOrigin, *, require_branch: bool = False) -> tuple[bool, str | None]:
+    from flow_sdk.utils.git import git_current_branch, git_remote_url
+
+    remote = git_remote_url(str(repo_path))
+    candidate = GitOrigin.from_url(remote, rel_path=origin.rel_path or ".") if remote else None
+    if not candidate or candidate.key() != origin.key():
+        return False, "Repository origin does not match"
+    if require_branch and origin.branch:
+        branch = git_current_branch(str(repo_path))
+        if branch != origin.branch:
+            return False, f"Repository is on branch {branch or 'HEAD'}, expected {origin.branch}"
+    return True, None
+
+
+async def _index_checkout(root: Path, *, project_id: str | None = None) -> None:
+    try:
+        from flow_sdk.fs_store.fs_ref import FSRef
+        from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer
+        from flow_sdk.fs_store.record_types import RecordType
+
+        await get_shared_indexer().index(
+            IndexerOptions(
+                roots=(FSRef(root, record_type=RecordType.REAL_PROJECT_CWD, scope="project", project_id=project_id),),
+                force=True,
+                verbose=False,
+                include_temp=True,
+            )
+        )
+    except Exception:
+        logger.warning("[artifact] failed to index checkout %s", root, exc_info=True)
 
 
 # ref to physical
@@ -120,6 +169,10 @@ class Artifact(CodeRef):
     type: str = APIField(default=BuiltinEntityType.ARTIFACT.value)
     artifact_type: ArtifactType = APIField(description="Type of artifact content")
     generating_flow_id: Optional[str] = APIField(default=None, description="ID of the flow that created this artifact")
+    git_origin: Optional[GitOrigin] = APIField(
+        default=None,
+        description="Git provenance and repo-relative placement for git-backed artifacts",
+    )
 
     # Service control attributes (for app_service and webapp types)
     port: Optional[str] = APIField(default=None, description="Port number for services")
@@ -139,7 +192,200 @@ class Artifact(CodeRef):
                 data["start_cmd"] = metadata.get("start_cmd")
             if "health" in metadata and "health" not in data:
                 data["health"] = metadata.get("health")
+            if "git_origin" in metadata and "git_origin" not in data:
+                data["git_origin"] = metadata.get("git_origin")
+        if data.get("git_origin") is not None:
+            metadata = dict(metadata)
+            try:
+                origin = data["git_origin"] if isinstance(data["git_origin"], GitOrigin) else GitOrigin.model_validate(data["git_origin"])
+                metadata["git_origin"] = origin.model_dump(mode="json")
+                data["git_origin"] = origin
+                data["metadata"] = metadata
+            except Exception:
+                pass
         super().__init__(**data)
+
+    async def _ready_from_checkout(self, checkout_root: Path, project) -> dict:
+        from flow_sdk.utils.git import git_pull
+
+        origin = self.git_origin
+        if origin is None:
+            return {"kind": "error", "message": "Artifact has no git_origin"}
+        if not is_safe_rel_path(origin.rel_path):
+            return {"kind": "error", "message": "Artifact git_origin has an unsafe rel_path"}
+
+        ok, msg = await git_pull(str(checkout_root), branch=origin.branch or None)
+        if not ok:
+            return {
+                "kind": "needs_wizard",
+                "artifact": self.model_dump(mode="json"),
+                "gitOrigin": origin.model_dump(mode="json"),
+                "reason": msg or "Could not fetch repository",
+            }
+
+        rel = "." if origin.rel_path == "." else origin.rel_path
+        asset_path = (checkout_root / rel).resolve()
+        try:
+            asset_path.relative_to(checkout_root.resolve())
+        except ValueError:
+            return {"kind": "error", "message": "Resolved artifact path escapes checkout root"}
+        if not asset_path.exists():
+            return {
+                "kind": "needs_wizard",
+                "artifact": self.model_dump(mode="json"),
+                "gitOrigin": origin.model_dump(mode="json"),
+                "reason": f"Expected artifact path was not found: {asset_path}",
+            }
+
+        self.path = str(asset_path)
+        if project is not None and getattr(project, "id", None):
+            self.project_id = project.id
+        metadata = dict(self.metadata or {})
+        metadata["git_origin"] = origin.model_dump(mode="json")
+        self.metadata = metadata
+        await self.save()
+        await _index_checkout(checkout_root, project_id=getattr(project, "id", None))
+        return {
+            "kind": "ready",
+            "artifact": self.model_dump(mode="json"),
+            "project": project.model_dump(mode="json") if project is not None else None,
+            "localPath": str(asset_path),
+        }
+
+    @action.post(action_name="resolve-git-location")
+    async def resolve_git_location(self):
+        """Resolve a git-backed artifact to a local checkout, or request a wizard.
+
+        Body accepts ``current_project_id`` and, after a wizard completes,
+        ``local_path``/``project_id``. The action never clones by itself: it
+        uses a wizard-provided checkout, an already-valid artifact path, the
+        current matching project, or a known local repo. Every filesystem path
+        is validated against ``git_origin`` before it can become ready.
+        """
+        from flow_sdk.builtin.project import Project
+        from flow_sdk.request_context.methods import get_current_request_info
+        from flow_sdk.responses.response import ApiSuccessResponse
+        from flow_sdk.utils.git import find_local_repo_for_url, find_project_root
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        body = body if isinstance(body, dict) else {}
+
+        if self.git_origin is None:
+            origin = _artifact_git_origin(self.model_dump(mode="python"))
+            if origin is not None:
+                self.git_origin = origin
+        origin = self.git_origin
+        if origin is None:
+            return ApiSuccessResponse(data={"kind": "error", "message": "Artifact has no git_origin"})
+        if not is_safe_rel_path(origin.rel_path):
+            return ApiSuccessResponse(data={"kind": "error", "message": "Artifact git_origin has an unsafe rel_path"})
+
+        async def _ready_from_candidate(
+            raw_path: str | None,
+            project_id: str | None = None,
+            *,
+            strict: bool = False,
+        ) -> dict | None:
+            if not raw_path:
+                return None
+            try:
+                candidate = Path(os.path.expanduser(str(raw_path))).resolve()
+            except Exception as e:
+                if strict:
+                    return {
+                        "kind": "needs_wizard",
+                        "artifact": self.model_dump(mode="json"),
+                        "gitOrigin": origin.model_dump(mode="json"),
+                        "reason": f"Could not resolve local path: {e}",
+                    }
+                return None
+            if not candidate.exists():
+                if strict:
+                    return {
+                        "kind": "needs_wizard",
+                        "artifact": self.model_dump(mode="json"),
+                        "gitOrigin": origin.model_dump(mode="json"),
+                        "reason": f"Local path does not exist: {candidate}",
+                    }
+                return None
+            repo_root = find_project_root(str(candidate))
+            if not repo_root:
+                if strict:
+                    return {
+                        "kind": "needs_wizard",
+                        "artifact": self.model_dump(mode="json"),
+                        "gitOrigin": origin.model_dump(mode="json"),
+                        "reason": f"Local path is not inside a git repository: {candidate}",
+                    }
+                return None
+            matches, reason = _repo_matches_origin(repo_root, origin, require_branch=True)
+            if not matches:
+                if strict:
+                    return {
+                        "kind": "needs_wizard",
+                        "artifact": self.model_dump(mode="json"),
+                        "gitOrigin": origin.model_dump(mode="json"),
+                        "reason": reason or "Repository origin does not match",
+                    }
+                return None
+            project = await Project.get_by_id(project_id) if project_id else None
+            if project is None:
+                project = await Project.recover_by_path(repo_root)
+            return await self._ready_from_checkout(Path(repo_root), project)
+
+        wizard_result = body.get("wizard_result") if isinstance(body.get("wizard_result"), dict) else {}
+        wizard_path = body.get("local_path") or body.get("localPath") or wizard_result.get("localPath")
+        wizard_project_id = str(
+            body.get("project_id")
+            or body.get("projectId")
+            or wizard_result.get("projectId")
+            or ""
+        ).strip() or None
+        explicit = await _ready_from_candidate(str(wizard_path) if wizard_path else None, wizard_project_id, strict=True)
+        if explicit is not None:
+            return ApiSuccessResponse(data=explicit)
+
+        cached = await _ready_from_candidate(self.path, getattr(self, "project_id", None), strict=False)
+        if cached is not None:
+            return ApiSuccessResponse(data=cached)
+
+        current_project_id = str(body.get("current_project_id") or getattr(self, "project_id", "") or "").strip()
+        if current_project_id:
+            project = await Project.get_by_id(current_project_id)
+            project_root = Path(project.fs_storage_mount_path).expanduser() if project and project.fs_storage_mount_path else None
+            repo_root = find_project_root(str(project_root)) if project_root else None
+            if repo_root:
+                matches, reason = _repo_matches_origin(repo_root, origin, require_branch=True)
+                if matches:
+                    return ApiSuccessResponse(data=await self._ready_from_checkout(Path(repo_root), project))
+                if reason and "branch" in reason.lower():
+                    return ApiSuccessResponse(data={
+                        "kind": "needs_wizard",
+                        "artifact": self.model_dump(mode="json"),
+                        "gitOrigin": origin.model_dump(mode="json"),
+                        "reason": reason,
+                    })
+
+        local_repo = find_local_repo_for_url(origin.clone_url())
+        if local_repo:
+            matches, reason = _repo_matches_origin(local_repo, origin, require_branch=True)
+            if matches:
+                project = await Project.recover_by_path(local_repo)
+                return ApiSuccessResponse(data=await self._ready_from_checkout(Path(local_repo), project))
+            return ApiSuccessResponse(data={
+                "kind": "needs_wizard",
+                "artifact": self.model_dump(mode="json"),
+                "gitOrigin": origin.model_dump(mode="json"),
+                "reason": reason or "Local repository is not on the expected branch",
+            })
+
+        return ApiSuccessResponse(data={
+            "kind": "needs_wizard",
+            "artifact": self.model_dump(mode="json"),
+            "gitOrigin": origin.model_dump(mode="json"),
+            "reason": "No local checkout was found for this git origin",
+        })
 
 
 class ArtifactRelation(Entity):

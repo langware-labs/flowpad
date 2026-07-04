@@ -4,10 +4,9 @@ id: d8d149e9-2f0b-5f37-90ed-8a8eefe83212
 
 # Agentic-process flows (test-derived)
 
-> **Status model superseded.** This doc still says `headless == !visible` and
-> describes a `running` wire status. Both are stale: transport routing keys on
-> `pty_mode` (never `visible`), and the wire `status` is the logical `ready`/`busy`
-> projection of stored `running`. See
+> **Status model note.** Transport routing keys on `pty_mode` (never `visible`),
+> and the wire `status` is the logical `ready`/`busy` projection of stored
+> `running`. See
 > [docs/agent/agentic_process_statuses.md](../agent/agentic_process_statuses.md)
 > for the current three-axis model.
 
@@ -26,13 +25,13 @@ Related interface docs (relative to this file):
 
 Two routing facts recur throughout and are worth stating once:
 
-- **`headless == !visible`.** A process is either headless (print-mode worker, stdout
-  streamed) or interactive (a live PTY). The `visible` flag on the entity is the tab-facing
-  name for that split.
-- **`pty_mode` is the durable transport selector**, decoupled from `visible` since the
-  commit-624ddb89 routing refactor. `pty_mode` defaults to `True`. Print-mode streaming
-  (the `flow-status`/`flow-chat`/`flow-end` frames) is only reached when `pty_mode=False`.
-  See [status-model](./status-model.md) for how these interact with worker status.
+- **`pty_mode` is the durable transport selector.** `True` means interactive PTY;
+  `False` means headless print-mode streaming. Print-mode streaming (the
+  `flow-status`/`flow-chat`/`flow-end` frames) is reached when `pty_mode=False`.
+- **`visible` is tab visibility.** Launch and mode-switch flows commonly keep
+  `visible` and `pty_mode` in lock-step, but execution routers must not derive
+  transport from `visible`. See [status-model](./status-model.md) for how these
+  interact with worker status.
 
 ---
 
@@ -145,7 +144,7 @@ they want a spawn, a discovery-upsert, or a lookup. See [Findings](#findings).
 <a id="prompt-streaming"></a>
 ## #prompt-streaming — prompt streams in BOTH transports
 
-`prompt` is a **single** endpoint with two transports keyed off `visible`. The older
+`prompt` is a **single** endpoint with two transports keyed off `pty_mode`. The older
 "PTY processes reject with 409" contract no longer holds — both return 200.
 
 | Transport | createProcess body | What streams |
@@ -165,7 +164,7 @@ Runs against the **already-running** hub (`FLOWPAD_HUB_URL`, must be a dedicated
 never the main dev backend) rather than an in-process test client — the bootstrap path scans
 the filesystem and hangs on transient tmp paths.
 
-**Slickness:** Good — one endpoint, transport chosen by the entity's own `visible` flag,
+**Slickness:** Good — one endpoint, transport chosen by the entity's own `pty_mode` flag,
 identical `<flow-` frame contract on both sides. The unification is the slick part.
 
 ---
@@ -174,7 +173,8 @@ identical `<flow-` frame contract on both sides. The unification is the slick pa
 ## #mode-switch — headless ⇄ interactive
 
 One logical session, transport flipped in place. The single backend seam is the
-`switch-mode` action; routing stays `headless == !visible`.
+`switch-mode` action; the toggle updates both `visible` and `pty_mode` in the
+normal UI flow, while execution routing continues to key on `pty_mode`.
 
 | # | Layer | Call |
 |---|-------|------|

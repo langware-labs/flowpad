@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import subprocess
 import zipfile
+import json
 from pathlib import Path
 
 import pytest
@@ -24,8 +25,11 @@ import pytest
 import flow_sdk.models.entities  # noqa: F401
 
 from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType
+from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
-from flow_sdk.builtin.flow_message_bundle import pack_bundle, unpack_bundle
+from flow_sdk.builtin.flow_message_bundle import _resolve_git_checkout, pack_bundle, unpack_bundle
+from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.core import Entity
@@ -45,6 +49,18 @@ GIT_CLONE_SKILL_ID = "a1a1a1a1-0000-4000-8000-000000000777"
 GIT_CLONE_CONV_ID = "c1c1c1c1-0000-4000-8000-000000000888"
 GIT_CLONE_FM_ID = "f1f1f1f1-0000-4000-8000-000000000999"
 GIT_CLONE_SEARCH_TOKEN = "gitsearchclonebeta"
+GIT_ARTIFACT_ID = "a1a1a1a1-0000-4000-8000-000000001111"
+GIT_ARTIFACT_CONV_ID = "c1c1c1c1-0000-4000-8000-000000001222"
+GIT_ARTIFACT_FM_ID = "f1f1f1f1-0000-4000-8000-000000001333"
+GIT_ARTIFACT_TOKEN = "gitartifactwebappgamma"
+GIT_MARKDOWN_ID = "a1a1a1a1-0000-4000-8000-000000001444"
+GIT_MARKDOWN_CONV_ID = "c1c1c1c1-0000-4000-8000-000000001555"
+GIT_MARKDOWN_FM_ID = "f1f1f1f1-0000-4000-8000-000000001666"
+GIT_MARKDOWN_TOKEN = "gitmarkdownsearchdelta"
+GIT_MARKDOWN_CLONE_ID = "a1a1a1a1-0000-4000-8000-000000001777"
+GIT_MARKDOWN_CLONE_CONV_ID = "c1c1c1c1-0000-4000-8000-000000001888"
+GIT_MARKDOWN_CLONE_FM_ID = "f1f1f1f1-0000-4000-8000-000000001999"
+GIT_MARKDOWN_CLONE_TOKEN = "gitmarkdowncloneepsilon"
 
 
 def _init_repo(root: Path) -> None:
@@ -235,4 +251,268 @@ async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path
     results = await Entity.search(GIT_CLONE_SEARCH_TOKEN, record_type=EntityType.SKILL.value)
     assert any(result.id == GIT_CLONE_SKILL_ID for result in results), (
         "cloned git-transfer skill materialized but was not searchable via FTS"
+    )
+
+
+async def test_git_checkout_resolution_skips_matching_remote_on_wrong_branch(tmp_path, monkeypatch):
+    workspace = tmp_path / "flowpad-workspace"
+    monkeypatch.setattr("flow_sdk.config.AGENT_MOUNT_FOLDER", str(workspace))
+
+    origin = tmp_path / "branch-origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+
+    sender_repo = tmp_path / "sender_branch_repo"
+    _git(tmp_path, "clone", "-q", origin.resolve().as_uri(), str(sender_repo))
+    _git(sender_repo, "checkout", "-q", "-b", "feature/expected")
+    _git(sender_repo, "config", "user.email", "t@t.co")
+    _git(sender_repo, "config", "user.name", "t")
+    (sender_repo / "expected.txt").write_text("expected branch\n", encoding="utf-8")
+    _git(sender_repo, "add", "-A")
+    _git(sender_repo, "commit", "-qm", "expected")
+    _git(sender_repo, "push", "-q", "-u", "origin", "feature/expected")
+
+    _git(sender_repo, "checkout", "-q", "-b", "feature/other")
+    (sender_repo / "other.txt").write_text("other branch\n", encoding="utf-8")
+    _git(sender_repo, "add", "-A")
+    _git(sender_repo, "commit", "-qm", "other")
+    _git(sender_repo, "push", "-q", "-u", "origin", "feature/other")
+
+    wrong_branch_repo = tmp_path / "wrong_branch_repo"
+    _git(tmp_path, "clone", "-q", "--branch", "feature/other", origin.resolve().as_uri(), str(wrong_branch_repo))
+
+    git_origin = GitOrigin.from_url(origin.resolve().as_uri(), branch="feature/expected", rel_path=".")
+    assert git_origin is not None
+
+    checkout_root, _ = await _resolve_git_checkout(
+        git_origin,
+        preferred_root=wrong_branch_repo,
+        preferred_project_id=None,
+    )
+
+    assert checkout_root.resolve() != wrong_branch_repo.resolve()
+    branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=checkout_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert branch == "feature/expected"
+
+
+async def test_git_transfer_packs_graph_artifact_metadata_without_copying_app_files(tmp_path):
+    origin = tmp_path / "artifact-origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+
+    sender_repo = tmp_path / "sender_artifact_repo"
+    _git(tmp_path, "clone", "-q", origin.resolve().as_uri(), str(sender_repo))
+    _git(sender_repo, "checkout", "-q", "-b", "feature/artifact-git-transfer")
+    _git(sender_repo, "config", "user.email", "t@t.co")
+    _git(sender_repo, "config", "user.name", "t")
+    app_dir = sender_repo / "apps" / "shared-webapp"
+    app_dir.mkdir(parents=True)
+    (app_dir / "index.html").write_text(
+        f"<html><body>{GIT_ARTIFACT_TOKEN}</body></html>\n",
+        encoding="utf-8",
+    )
+    _git(sender_repo, "add", "-A")
+    _git(sender_repo, "commit", "-qm", "webapp")
+    _git(sender_repo, "push", "-q", "-u", "origin", "feature/artifact-git-transfer")
+
+    git_origin = GitOrigin.for_asset_path(str(app_dir))
+    assert git_origin is not None
+    artifact = Artifact(
+        id=GIT_ARTIFACT_ID,
+        name="shared webapp",
+        ref_type=ArtifactReferenceType.FOLDER,
+        path=str(app_dir),
+        artifact_type=ArtifactType.WEBAPP,
+        port="45678",
+        git_origin=git_origin,
+    )
+    await artifact.save(notify=False)
+
+    fm = FlowMessage(
+        text="webapp by git",
+        sender_name="gx7",
+        conversation_id=GIT_ARTIFACT_CONV_ID,
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID,
+                               data=f"{EntityType.ARTIFACT.value}-{GIT_ARTIFACT_ID}")],
+    )
+    fm.id = GIT_ARTIFACT_FM_ID
+    zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
+
+    key = f"{EntityType.ARTIFACT.value}-@{GIT_ARTIFACT_ID}"
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        assert "git_origins.json" in names
+        assert "git_transfers.json" in names
+        metadata_name = f"metadata/{key}/metadata.json"
+        assert metadata_name in names
+        metadata = json.loads(zf.read(metadata_name).decode("utf-8"))
+        assert metadata["id"] == GIT_ARTIFACT_ID
+        assert metadata["path"] == str(app_dir)
+        assert metadata["git_origin"]["rel_path"] == "apps/shared-webapp"
+        assert not any(name.endswith("/index.html") for name in names), names
+
+    await artifact.delete()
+    await unpack_bundle(zip_path, local_user_id="gx8")
+
+    received = await Artifact.get_one({"id": GIT_ARTIFACT_ID})
+    assert received is not None, "receiver never materialized the git-backed artifact declaration"
+    assert received.path == "", "receiver must not trust the sender's local filesystem path"
+    assert received.port == "45678"
+    received_origin = (
+        received.git_origin.model_dump(mode="python")
+        if hasattr(received.git_origin, "model_dump")
+        else received.git_origin
+    )
+    assert received_origin and received_origin.get("provider") == "file"
+    assert received_origin.get("rel_path") == "apps/shared-webapp"
+
+
+async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_searchable(tmp_path):
+    origin = tmp_path / "markdown-origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+
+    sender_repo = tmp_path / "sender_markdown_repo"
+    _git(tmp_path, "clone", "-q", origin.resolve().as_uri(), str(sender_repo))
+    _git(sender_repo, "checkout", "-q", "-b", "feature/markdown-git-transfer")
+    _git(sender_repo, "config", "user.email", "t@t.co")
+    _git(sender_repo, "config", "user.name", "t")
+    rel_path = "product/docs/shared-git-doc.md"
+    sender_doc = sender_repo / rel_path
+    sender_doc.parent.mkdir(parents=True)
+    sender_doc.write_text(
+        (
+            "---\n"
+            f"id: {GIT_MARKDOWN_ID}\n"
+            "title: Shared Git Markdown\n"
+            "---\n\n"
+            "# Shared Git Markdown\n\n"
+            f"{GIT_MARKDOWN_TOKEN}\n"
+        ),
+        encoding="utf-8",
+    )
+    _git(sender_repo, "add", "-A")
+    _git(sender_repo, "commit", "-qm", "markdown")
+    _git(sender_repo, "push", "-q", "-u", "origin", "feature/markdown-git-transfer")
+
+    recv_repo = tmp_path / "recv_markdown_repo"
+    _git(tmp_path, "clone", "-q", "--branch", "feature/markdown-git-transfer", origin.resolve().as_uri(), str(recv_repo))
+
+    sender_doc_entity = Docs(
+        id=GIT_MARKDOWN_ID,
+        title="Shared Git Markdown",
+        name="Shared Git Markdown",
+        asset_ref=str(sender_doc),
+    )
+    await sender_doc_entity.save(notify=False)
+
+    fm = FlowMessage(
+        text="markdown by git",
+        sender_name="gx7",
+        conversation_id=GIT_MARKDOWN_CONV_ID,
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID,
+                               data=f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_ID}")],
+    )
+    fm.id = GIT_MARKDOWN_FM_ID
+    zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
+
+    key = f"{EntityType.MARKDOWN.value}-@{GIT_MARKDOWN_ID}"
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        assert "git_origins.json" in names
+        assert "git_transfers.json" in names
+        assert f"metadata/{key}/metadata.json" in names
+        assert not any(name.endswith("shared-git-doc.md") for name in names), names
+
+    project = Project(name="reflect-markdown-git-dst", fs_storage_mount_path=str(recv_repo))
+    await project.save(notify=False)
+    conv = Conversation(id=GIT_MARKDOWN_CONV_ID, title="reflect markdown git", project_id=project.id)
+    await conv.save(notify=False)
+
+    await sender_doc_entity.delete()
+    await unpack_bundle(zip_path, local_user_id="gx8")
+
+    received_doc = await Docs.get_one({"id": GIT_MARKDOWN_ID})
+    assert received_doc is not None, "receiver never materialized the git-backed markdown doc"
+    assert Path(received_doc.asset_ref).resolve() == (recv_repo / rel_path).resolve()
+    assert received_doc.title == "Shared Git Markdown"
+    assert GIT_MARKDOWN_TOKEN in (recv_repo / rel_path).read_text(encoding="utf-8")
+    assert received_doc.git_origin and received_doc.git_origin.get("provider") == "file"
+    assert received_doc.git_origin.get("rel_path") == rel_path
+
+    results = await Entity.search(GIT_MARKDOWN_TOKEN, record_type=EntityType.MARKDOWN.value)
+    assert any(result.id == GIT_MARKDOWN_ID for result in results), (
+        "git-transferred markdown materialized but was not searchable via FTS"
+    )
+
+
+async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_path, monkeypatch):
+    workspace = tmp_path / "flowpad-workspace"
+    monkeypatch.setattr("flow_sdk.config.AGENT_MOUNT_FOLDER", str(workspace))
+
+    origin = tmp_path / "markdown-clone-origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+
+    sender_repo = tmp_path / "sender_markdown_clone_repo"
+    _git(tmp_path, "clone", "-q", origin.resolve().as_uri(), str(sender_repo))
+    _git(sender_repo, "checkout", "-q", "-b", "feature/markdown-clone-transfer")
+    _git(sender_repo, "config", "user.email", "t@t.co")
+    _git(sender_repo, "config", "user.name", "t")
+    rel_path = "research/docs/cloned-git-doc.md"
+    sender_doc = sender_repo / rel_path
+    sender_doc.parent.mkdir(parents=True)
+    sender_doc.write_text(
+        (
+            "---\n"
+            f"id: {GIT_MARKDOWN_CLONE_ID}\n"
+            "title: Cloned Git Markdown\n"
+            "---\n\n"
+            "# Cloned Git Markdown\n\n"
+            f"{GIT_MARKDOWN_CLONE_TOKEN}\n"
+        ),
+        encoding="utf-8",
+    )
+    _git(sender_repo, "add", "-A")
+    _git(sender_repo, "commit", "-qm", "markdown")
+    _git(sender_repo, "push", "-q", "-u", "origin", "feature/markdown-clone-transfer")
+
+    sender_doc_entity = Docs(
+        id=GIT_MARKDOWN_CLONE_ID,
+        title="Cloned Git Markdown",
+        name="Cloned Git Markdown",
+        asset_ref=str(sender_doc),
+    )
+    await sender_doc_entity.save(notify=False)
+
+    fm = FlowMessage(
+        text="clone markdown by git",
+        sender_name="gx7",
+        conversation_id=GIT_MARKDOWN_CLONE_CONV_ID,
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID,
+                               data=f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_CLONE_ID}")],
+    )
+    fm.id = GIT_MARKDOWN_CLONE_FM_ID
+    zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
+
+    conv = Conversation(id=GIT_MARKDOWN_CLONE_CONV_ID, title="reflect markdown git clone")
+    await conv.save(notify=False)
+
+    await sender_doc_entity.delete()
+    await unpack_bundle(zip_path, local_user_id="gx8")
+
+    cloned_root = workspace / "markdown-clone-origin"
+    expected = cloned_root / rel_path
+    assert expected.exists(), f"receiver did not clone/index git markdown transfer into {expected}"
+    received_doc = await Docs.get_one({"id": GIT_MARKDOWN_CLONE_ID})
+    assert received_doc is not None
+    assert Path(received_doc.asset_ref).resolve() == expected.resolve()
+    assert received_doc.git_origin and received_doc.git_origin.get("provider") == "file"
+    assert received_doc.git_origin.get("rel_path") == rel_path
+
+    results = await Entity.search(GIT_MARKDOWN_CLONE_TOKEN, record_type=EntityType.MARKDOWN.value)
+    assert any(result.id == GIT_MARKDOWN_CLONE_ID for result in results), (
+        "cloned git-transferred markdown materialized but was not searchable via FTS"
     )
