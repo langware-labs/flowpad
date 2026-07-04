@@ -318,7 +318,7 @@ async def handle_has_body(fm_id: str) -> ApiResponse:
     return ApiSuccessResponse(data={"has_body": fm.has_body()})
 
 
-async def handle_upload_body(fm_id: str) -> ApiResponse:
+async def handle_upload_body(fm_id: str, *, transfer_mode: str = "copy") -> ApiResponse:
     """Pack + upload this message's body bundle. Idempotent: a second call
     re-uploads (the hub PUT overwrites). On failure the hub-side body_status
     remains UPLOADING and the exception surfaces as an ApiFailResponse."""
@@ -327,7 +327,10 @@ async def handle_upload_body(fm_id: str) -> ApiResponse:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
     from flow_sdk.core.network.resource_tracker import make_flow_message_progress_emitter
     try:
-        await fm.upload_body(on_progress=make_flow_message_progress_emitter(fm_id, "upload"))
+        await fm.upload_body(
+            on_progress=make_flow_message_progress_emitter(fm_id, "upload"),
+            transfer_mode=transfer_mode,
+        )
     except Exception as e:
         logger.error("[flow_message_action] upload_body fm=%s: %s", fm_id, e, exc_info=True)
         return ApiFailResponse(message=f"upload_body failed: {e}")
@@ -407,7 +410,10 @@ async def upload_body_action() -> ApiResponse:
         request_info = get_current_request_info()
         if not request_info or not request_info.target_entity_typeid:
             return ApiFailResponse(message="No request info found", status_code=400)
-        return await handle_upload_body(str(request_info.target_entity_typeid.id))
+        body = await request_info.get_post_data() or {}
+        # _normalize_transfer_mode (bundle packer) is the single strip/lower/validate point.
+        transfer_mode = (body.get("transfer_mode") if isinstance(body, dict) else None) or "copy"
+        return await handle_upload_body(str(request_info.target_entity_typeid.id), transfer_mode=transfer_mode)
     except Exception as e:
         logger.error(f"[flow_message_action] upload_body error: {e}", exc_info=True)
         return ApiFailResponse(message=f"upload_body failed: {e}")

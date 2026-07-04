@@ -114,6 +114,18 @@ def test_for_asset_path_returns_none_outside_a_repo(tmp_path):
     assert GitOrigin.for_asset_path(str(loose)) is None
 
 
+def test_file_remote_origin_round_trips_clone_url(tmp_path):
+    bare = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(bare)], check=True, capture_output=True)
+
+    origin = GitOrigin.from_url(bare.resolve().as_uri(), branch="main", rel_path=".claude/skills/foo")
+    assert origin is not None
+    assert origin.provider == "file"
+    assert origin.owner == bare.parent.as_posix()
+    assert origin.name == "origin"
+    assert origin.clone_url() == bare.resolve().as_uri()
+
+
 # --------------------------------------------------------------------------- #
 # Pack
 # --------------------------------------------------------------------------- #
@@ -243,6 +255,46 @@ async def test_pack_bundle_writes_git_origins_json_and_rel_path_subtree(tmp_path
         assert origins[key]["owner"] == "Acme"
         # Subtree stored keyed by rel_path (the receiver mirrors it verbatim).
         assert f"attachment/{key}/packages/x/.claude/skills/foo/SKILL.md" in names
+
+
+@pytest.mark.asyncio
+async def test_pack_bundle_git_transfer_writes_metadata_only(tmp_path, monkeypatch):
+    import json
+    import zipfile
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+    from flow_sdk.builtin.flow_message_bundle import pack_bundle
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    asset = repo / "packages" / "x" / ".claude" / "skills" / "foo"
+    asset.mkdir(parents=True)
+    (asset / "SKILL.md").write_text("---\nname: foo\n---\n\n# foo\n", encoding="utf-8")
+    _stub_file_backed_lookup(monkeypatch, str(asset), name="foo")
+
+    fm = FlowMessage(
+        text="here is a skill",
+        sender_name="Alice",
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID,
+                               data=f"{EntityType.SKILL.value}-{ENTITY_ID}")],
+    )
+    fm.id = "f5f5f5f5-0000-4000-8000-000000000abd"
+
+    zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        key = f"{EntityType.SKILL.value}-@{ENTITY_ID}"
+        assert "git_origins.json" in names
+        assert "git_transfers.json" in names
+        assert f"metadata/{key}/metadata.json" in names
+        assert f"attachment/{key}/packages/x/.claude/skills/foo/SKILL.md" not in names
+
+        transfers = json.loads(zf.read("git_transfers.json"))
+        assert transfers[key]["transfer_mode"] == "git"
+        assert transfers[key]["metadata_path"] == f"metadata/{key}/metadata.json"
+        metadata = json.loads(zf.read(transfers[key]["metadata_path"]))
+        assert metadata["type"] == EntityType.SKILL.value
+        assert metadata["id"] == ENTITY_ID
+        assert metadata["asset_ref"] == str(asset)
 
 
 # --------------------------------------------------------------------------- #

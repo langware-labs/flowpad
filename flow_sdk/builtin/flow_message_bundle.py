@@ -3,6 +3,9 @@
 Bundle format (.flowmsg — a zip file):
   <slug>.flowmsg
   ├── header.json                              (top-level FlowMessage fields)
+  ├── git_origins.json                         (optional GitOrigin map)
+  ├── git_transfers.json                       (optional git-mode transfer map)
+  ├── metadata/<type>-@<id>/metadata.json      (optional metadata-only entity copy)
   └── attachment/
       ├── spec-@<id>/spec.md                   (frontmatter + content)
       ├── task-@<id>/header.json               (task fields)
@@ -76,6 +79,10 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
 
 from flow_sdk.builtin.flow_message import AttachmentType, FILE_VFS_PREFIX, PROMPT_FILE_VFS_PREFIX
+
+_TRANSFER_MODE_COPY = "copy"
+_TRANSFER_MODE_GIT = "git"
+_GIT_TRANSFERS_FILE = "git_transfers.json"
 
 
 def _json_default(obj):
@@ -285,6 +292,7 @@ async def _pack_conversation_attachment(
 async def _pack_attachment_entry(
     entry, flow_message: "FlowMessage", attachment_dir: Path,
     origins: dict | None = None, repo_cache: dict | None = None,
+    transfers: dict | None = None, transfer_mode: str = _TRANSFER_MODE_COPY,
 ) -> None:
     """Dispatch a single attachment entry to the correct FAMILY packer.
 
@@ -321,7 +329,15 @@ async def _pack_attachment_entry(
     else:
         info = SchemaRegistry.get(entry_type)
         if info is not None and getattr(info, "main_subdir", None) is not None:
-            await _pack_file_backed_attachment(entry_type, entry_id, attachment_dir, origins, repo_cache)
+            await _pack_file_backed_attachment(
+                entry_type,
+                entry_id,
+                attachment_dir,
+                origins,
+                repo_cache,
+                transfers=transfers,
+                transfer_mode=transfer_mode,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -369,9 +385,55 @@ async def _resolve_file_backed_source(entry_type: str, entry_id: str):
     return (info, ent, src_root)
 
 
+def _entry_key(entry_type: str, entry_id: str) -> str:
+    return f"{entry_type}-@{entry_id}"
+
+
+def _read_file_backed_metadata(entry_type: str, entry_id: str, ent) -> dict:
+    """Return the sender's FSRecord metadata payload for a file-backed entity."""
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+
+    try:
+        record = FSRecord.load(entry_type, entry_id)
+        return record.meta_dict()
+    except Exception:
+        payload = {"type": entry_type, "id": entry_id}
+        metadata_payload = getattr(ent, "metadata_payload", None)
+        if callable(metadata_payload):
+            try:
+                payload.update(metadata_payload())
+            except Exception:
+                pass
+        asset_ref = getattr(ent, "asset_ref", None)
+        if asset_ref:
+            payload["asset_ref"] = str(asset_ref)
+        return payload
+
+
+def _write_git_transfer_metadata(
+    tmp_root: Path,
+    entry_type: str,
+    entry_id: str,
+    ent,
+) -> str:
+    """Write the sender metadata.json copy for a git-mode file-backed entity."""
+    key = _entry_key(entry_type, entry_id)
+    rel = PurePosixPath("metadata") / key / "metadata.json"
+    dest = tmp_root / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        json.dumps(_read_file_backed_metadata(entry_type, entry_id, ent), default=_json_default, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return rel.as_posix()
+
+
 async def _pack_file_backed_attachment(
     entry_type: str, entry_id: str, attachment_dir: Path,
     origins: dict | None = None, repo_cache: dict | None = None,
+    *,
+    transfers: dict | None = None,
+    transfer_mode: str = _TRANSFER_MODE_COPY,
 ) -> None:
     """Copy a file-backed asset's on-disk subtree into the bundle.
 
@@ -404,7 +466,26 @@ async def _pack_file_backed_attachment(
         if src_root is not None else None
     )
     if origin is not None and origins is not None:
-        origins[f"{entry_type}-@{entry_id}"] = origin.model_dump(mode="python")
+        origins[_entry_key(entry_type, entry_id)] = origin.model_dump(mode="python")
+
+    if (
+        transfer_mode == _TRANSFER_MODE_GIT
+        and origin is not None
+        and src_root is not None
+        and transfers is not None
+    ):
+        key = _entry_key(entry_type, entry_id)
+        metadata_path = _write_git_transfer_metadata(
+            attachment_dir.parent,
+            entry_type,
+            entry_id,
+            ent,
+        )
+        transfers[key] = {
+            "transfer_mode": _TRANSFER_MODE_GIT,
+            "metadata_path": metadata_path,
+        }
+        return
 
     if src_root is None:
         # No on-disk source — render the body from the type's default_body_fn
@@ -648,6 +729,310 @@ async def _reindex_git_origin_scopes(
             await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=tuple(types), project_id=project_id)
 
 
+def _parse_entry_key(key: str) -> tuple[str, str] | None:
+    entry_type, sep, entry_id = (key or "").partition("-@")
+    if not sep or not entry_type or not entry_id:
+        return None
+    return entry_type, entry_id
+
+
+def _git_origin_asset_root(checkout_root: Path, rel_path: str) -> Path | None:
+    from flow_sdk.builtin.git_origin import is_safe_rel_path  # noqa: PLC0415
+
+    if not is_safe_rel_path(rel_path):
+        return None
+    root = checkout_root.resolve()
+    candidate = checkout_root / PurePosixPath(rel_path.replace("\\", "/"))
+    try:
+        candidate.resolve().relative_to(root)
+    except ValueError:
+        return None
+    return candidate
+
+
+def _asset_ref_for_git_origin(checkout_root: Path, rel_path: str, info) -> Path | None:
+    asset_root = _git_origin_asset_root(checkout_root, rel_path)
+    if asset_root is None:
+        return None
+    if (
+        getattr(info, "main_layout", None) == "folder"
+        and getattr(info, "main_file_is_asset_ref", False)
+        and getattr(info, "main_file", None)
+    ):
+        return asset_root / info.main_file
+    return asset_root
+
+
+def _git_origin_index_scope(checkout_root: Path, rel_path: str, info) -> Path:
+    main_subdir = getattr(info, "main_subdir", None) if info else None
+    if not rel_path or not main_subdir:
+        return checkout_root
+    drop = len(PurePosixPath(main_subdir.replace("\\", "/")).parts) + 1
+    rel_parts = PurePosixPath(rel_path.replace("\\", "/")).parts
+    prefix_parts = rel_parts[:-drop] if len(rel_parts) > drop else ()
+    return checkout_root / PurePosixPath(*prefix_parts) if prefix_parts else checkout_root
+
+
+def _repo_matches_git_origin(repo_path: Path, origin) -> bool:
+    try:
+        from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+        from flow_sdk.utils.git import git_remote_url  # noqa: PLC0415
+
+        remote = git_remote_url(str(repo_path))
+        candidate = GitOrigin.from_url(remote, rel_path=origin.rel_path or ".") if remote else None
+        return bool(candidate and candidate.key() == origin.key())
+    except Exception:
+        return False
+
+
+async def _project_id_for_checkout(
+    checkout_root: Path,
+    *,
+    preferred_root: Path | None,
+    preferred_project_id: str | None,
+) -> str | None:
+    try:
+        if preferred_root is not None and preferred_project_id:
+            if checkout_root.resolve() == preferred_root.resolve():
+                return preferred_project_id
+    except OSError:
+        pass
+    try:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await Project.recover_by_path(str(checkout_root))
+        return project.id if project else Project.derive_id_for_path(str(checkout_root))
+    except Exception:
+        return None
+
+
+def _next_git_clone_target(origin) -> Path:
+    from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+    from flow_sdk.utils.git import derive_repo_leaf_from_url  # noqa: PLC0415
+
+    base = Path(AGENT_MOUNT_FOLDER)
+    base.mkdir(parents=True, exist_ok=True)
+    leaf = derive_repo_leaf_from_url(origin.clone_url()) or (origin.name or "repo").removesuffix(".git")
+    leaf = "".join(c if c.isalnum() or c in ("-", "_", ".") else "-" for c in leaf).strip("-") or "repo"
+    candidate = base / leaf
+    n = 2
+    while candidate.exists():
+        if _repo_matches_git_origin(candidate, origin):
+            return candidate
+        candidate = base / f"{leaf}-{n}"
+        n += 1
+    return candidate
+
+
+async def _resolve_git_checkout(
+    origin,
+    *,
+    preferred_root: Path | None,
+    preferred_project_id: str | None,
+) -> tuple[Path, str | None]:
+    from flow_sdk.utils.git import find_local_repo_for_url, find_project_root, git_clone, git_pull  # noqa: PLC0415
+
+    candidates: list[Path] = []
+    if preferred_root is not None and preferred_root.exists():
+        preferred_repo = await asyncio.to_thread(find_project_root, str(preferred_root))
+        if preferred_repo and _repo_matches_git_origin(Path(preferred_repo), origin):
+            candidates.append(Path(preferred_repo))
+
+    clone_url = origin.clone_url()
+    local_repo = await asyncio.to_thread(find_local_repo_for_url, clone_url)
+    if local_repo:
+        p = Path(local_repo)
+        if p not in candidates:
+            candidates.append(p)
+
+    for candidate in candidates:
+        if origin.branch:
+            ok, msg = await git_pull(str(candidate), branch=origin.branch)
+            if not ok:
+                logger.info("[bundle] git pull failed for %s: %s", candidate, msg)
+        asset_root = _git_origin_asset_root(candidate, origin.rel_path)
+        if asset_root is not None and asset_root.exists():
+            project_id = await _project_id_for_checkout(
+                candidate,
+                preferred_root=preferred_root,
+                preferred_project_id=preferred_project_id,
+            )
+            return candidate, project_id
+
+    clone_target = _next_git_clone_target(origin)
+    if clone_target.exists() and _repo_matches_git_origin(clone_target, origin):
+        project_id = await _project_id_for_checkout(
+            clone_target,
+            preferred_root=preferred_root,
+            preferred_project_id=preferred_project_id,
+        )
+        return clone_target, project_id
+    ok, msg = await git_clone(clone_url, str(clone_target), branch=origin.branch or None)
+    if not ok:
+        raise RuntimeError(msg)
+    project_id = await _project_id_for_checkout(
+        clone_target,
+        preferred_root=preferred_root,
+        preferred_project_id=preferred_project_id,
+    )
+    return clone_target, project_id
+
+
+def _read_transfer_metadata(tmp_root: Path, transfer: dict) -> dict:
+    rel = str(transfer.get("metadata_path") or "")
+    if not rel:
+        return {}
+    from flow_sdk.builtin.git_origin import is_safe_rel_path  # noqa: PLC0415
+
+    if not is_safe_rel_path(rel):
+        return {}
+    path = tmp_root / PurePosixPath(rel)
+    try:
+        path.resolve().relative_to(tmp_root.resolve())
+    except ValueError:
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        logger.warning("[bundle] unreadable git transfer metadata at %s", rel, exc_info=True)
+        return {}
+
+
+async def _save_entity_db_only(ent, owner_typeid: str | None) -> None:
+    """Persist entity fields without rewriting the file-backed record/FTS row."""
+    from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE  # noqa: PLC0415
+
+    token = _SUPPRESS_STORE.set(True)
+    try:
+        await ent.save(owner_typeid)
+    finally:
+        _SUPPRESS_STORE.reset(token)
+
+
+async def _apply_git_transfer_metadata(
+    tmp_root: Path,
+    transfer: dict,
+    entry_type: str,
+    entry_id: str,
+    *,
+    asset_ref: Path,
+    project_id: str | None,
+    owner_typeid: str | None,
+) -> None:
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    patch = _read_transfer_metadata(tmp_root, transfer)
+    patch["type"] = entry_type
+    patch["id"] = entry_id
+    patch["asset_ref"] = str(asset_ref)
+    if project_id:
+        patch["project_id"] = project_id
+    else:
+        patch.pop("project_id", None)
+
+    record = FSRecord(type=entry_type, id=entry_id)
+    record.asset_ref = str(asset_ref)
+    await asyncio.to_thread(record.save_metadata, patch)
+
+    cls = SchemaRegistry.get_entity_cls(entry_type)
+    if cls is None:
+        return
+    ent = await cls.get_one({"id": entry_id})
+    if ent is None:
+        return
+    fields = getattr(ent.__class__, "model_fields", {}) or {}
+    for k, v in patch.items():
+        if k in ("id", "type"):
+            continue
+        if k in fields or hasattr(ent, k):
+            try:
+                setattr(ent, k, v)
+            except Exception:
+                pass
+    try:
+        await _save_entity_db_only(ent, owner_typeid)
+    except Exception:
+        logger.warning("[bundle] failed to apply git transfer metadata on %s-@%s", entry_type, entry_id, exc_info=True)
+
+
+async def _restore_git_transfer_entry(
+    tmp_root: Path,
+    key: str,
+    transfer: dict,
+    origins_map: dict,
+    *,
+    preferred_project_root: Path | None,
+    preferred_project_id: str | None,
+    overwrite: bool,
+    owner_typeid: str | None,
+) -> bool:
+    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    if not isinstance(transfer, dict) or transfer.get("transfer_mode") != _TRANSFER_MODE_GIT:
+        return False
+    parsed = _parse_entry_key(key)
+    if parsed is None:
+        return False
+    entry_type, entry_id = parsed
+    info = SchemaRegistry.get(entry_type)
+    if info is None or getattr(info, "main_subdir", None) is None:
+        return False
+    raw_origin = origins_map.get(key) or transfer.get("git_origin")
+    if not raw_origin:
+        return False
+    try:
+        origin = GitOrigin.model_validate(raw_origin)
+    except Exception:
+        logger.warning("[bundle] invalid git transfer origin for %s", key, exc_info=True)
+        return False
+
+    checkout_root, project_id = await _resolve_git_checkout(
+        origin,
+        preferred_root=preferred_project_root,
+        preferred_project_id=preferred_project_id,
+    )
+    asset_ref = _asset_ref_for_git_origin(checkout_root, origin.rel_path, info)
+    if asset_ref is None or not asset_ref.exists():
+        raise FileNotFoundError(f"git transfer asset not found: {checkout_root / origin.rel_path}")
+
+    cls = SchemaRegistry.get_entity_cls(entry_type)
+    existing = await cls.get_one({"id": entry_id}) if cls is not None else None
+    existing_asset_raw = (getattr(existing, "asset_ref", "") or "") if existing is not None else ""
+    existing_asset = Path(existing_asset_raw) if existing_asset_raw else None
+    if existing is not None and existing_asset is not None and not overwrite:
+        try:
+            same_asset = existing_asset.resolve() == asset_ref.resolve()
+        except OSError:
+            same_asset = str(existing_asset) == str(asset_ref)
+        if not same_asset:
+            raise FlowMessageExistsError([{
+                "type": entry_type,
+                "id": entry_id,
+                "path": str(existing_asset),
+            }])
+
+    scope = _git_origin_index_scope(checkout_root, origin.rel_path, info)
+    try:
+        record_type = RecordType(entry_type)
+    except ValueError:
+        return False
+    await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(record_type,), project_id=project_id)
+    await _apply_git_transfer_metadata(
+        tmp_root,
+        transfer,
+        entry_type,
+        entry_id,
+        asset_ref=asset_ref,
+        project_id=project_id,
+        owner_typeid=owner_typeid,
+    )
+    await _stamp_git_origins({(entry_type, entry_id)}, {key: origin.model_dump(mode="python")}, owner_typeid)
+    return True
+
+
 async def _stamp_git_origins(
     received_entries: "set[tuple[str, str]]", origins_map: dict, owner_typeid: str | None,
 ) -> None:
@@ -661,6 +1046,7 @@ async def _stamp_git_origins(
     dropped rather than persisted raw.
     """
     from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     for entry_type, entry_id in received_entries:
@@ -678,9 +1064,17 @@ async def _stamp_git_origins(
         ent = await cls.get_one({"id": entry_id})
         if ent is None:
             continue
-        ent.git_origin = origin.model_dump(mode="python")
+        origin_payload = origin.model_dump(mode="python")
         try:
-            await ent.save(owner_typeid)
+            await asyncio.to_thread(
+                FSRecord(type=entry_type, id=entry_id).save_metadata_field,
+                "git_origin", origin_payload,
+            )
+        except Exception:
+            logger.warning("[bundle] failed to persist git_origin metadata on %s-@%s", entry_type, entry_id, exc_info=True)
+        ent.git_origin = origin_payload
+        try:
+            await _save_entity_db_only(ent, owner_typeid)
         except Exception:
             logger.warning("[bundle] failed to stamp git_origin on %s-@%s", entry_type, entry_id, exc_info=True)
 
@@ -789,7 +1183,19 @@ def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Pat
     return zip_path
 
 
-async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None) -> Path:
+def _normalize_transfer_mode(transfer_mode: str | None) -> str:
+    mode = (transfer_mode or _TRANSFER_MODE_COPY).strip().lower()
+    if mode not in {_TRANSFER_MODE_COPY, _TRANSFER_MODE_GIT}:
+        raise ValueError(f"Unsupported bundle transfer_mode: {transfer_mode!r}")
+    return mode
+
+
+async def pack_bundle(
+    flow_message: "FlowMessage",
+    dest_dir: Path | None = None,
+    *,
+    transfer_mode: str = _TRANSFER_MODE_COPY,
+) -> Path:
     """Build a .flowmsg zip from a FlowMessage entity. Returns the zip path.
 
     File-backed assets that live inside a git repo on the sender contribute a
@@ -797,7 +1203,13 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
     typeid). Those entries are stored in the bundle keyed by their repo-relative
     ``rel_path`` so the receiver mirrors the sender's repo layout; assets with no
     git origin keep the canonical ``<main_subdir>/<leaf>`` layout.
+
+    ``transfer_mode='git'`` switches git-backed file-backed assets to metadata-
+    only transfer: the bundle carries ``git_origins.json`` + ``git_transfers.json``
+    + the sender's ``metadata.json`` copy, and the receiver indexes from the git
+    checkout instead of copying asset bytes out of the bundle.
     """
+    transfer_mode = _normalize_transfer_mode(transfer_mode)
     tmp_root = Path(tempfile.mkdtemp(prefix="flowmsg_pack_"))
     try:
         _write_top_level_header(flow_message, tmp_root)
@@ -807,12 +1219,25 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
         # asset resolves to a git repo. Written once at the top level. ``repo_cache``
         # memoizes per-repo git reads so co-shared assets from one checkout probe once.
         origins: dict[str, dict] = {}
+        transfers: dict[str, dict] = {}
         repo_cache: dict = {}
         for entry in flow_message.attachment:
-            await _pack_attachment_entry(entry, flow_message, attachment_dir, origins, repo_cache)
+            await _pack_attachment_entry(
+                entry,
+                flow_message,
+                attachment_dir,
+                origins,
+                repo_cache,
+                transfers=transfers,
+                transfer_mode=transfer_mode,
+            )
         if origins:
             (tmp_root / "git_origins.json").write_text(
                 json.dumps(origins, default=_json_default, ensure_ascii=False), encoding="utf-8"
+            )
+        if transfers:
+            (tmp_root / _GIT_TRANSFERS_FILE).write_text(
+                json.dumps(transfers, default=_json_default, ensure_ascii=False), encoding="utf-8"
             )
         return _zip_bundle(tmp_root, dest_dir, flow_message.id)
     finally:
@@ -1146,6 +1571,31 @@ async def unpack_bundle(
             except Exception:
                 logger.warning("[bundle] unreadable git_origins.json; ignoring", exc_info=True)
 
+        git_transfers_map: dict = {}
+        _gt_path = tmp_root / _GIT_TRANSFERS_FILE
+        if _gt_path.exists():
+            try:
+                git_transfers_map = json.loads(_gt_path.read_text(encoding="utf-8")) or {}
+            except Exception:
+                logger.warning("[bundle] unreadable %s; ignoring", _GIT_TRANSFERS_FILE, exc_info=True)
+
+        git_received_entries: set[tuple[str, str]] = set()
+        for key, transfer in sorted(git_transfers_map.items()):
+            parsed = _parse_entry_key(key)
+            if parsed is None:
+                continue
+            if await _restore_git_transfer_entry(
+                tmp_root,
+                key,
+                transfer,
+                git_origins_map,
+                preferred_project_root=project_root,
+                preferred_project_id=project_pid,
+                overwrite=overwrite,
+                owner_typeid=owner_typeid,
+            ):
+                git_received_entries.add(parsed)
+
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -1348,6 +1798,9 @@ async def unpack_bundle(
             # CREATE data_op each — or their conversation chips stay stuck on the
             # pre-download 404 ("not found locally") until a manual reload.
             await _notify_received_assets(received_entries)
+
+        if git_received_entries:
+            await _notify_received_assets(git_received_entries)
 
         # 4c. No-project note: file-backed assets were extracted but the
         # conversation isn't mapped to a project, so they were NOT copied/indexed

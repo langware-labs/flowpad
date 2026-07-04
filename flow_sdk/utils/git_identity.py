@@ -14,7 +14,8 @@ URLs for running git commands after that pointer has been resolved.
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
+from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 # Same owner/name shape as utils/git.py:git_repo_full_name — handles
 # https, ssh:// and scp-style remotes, with an optional trailing ".git".
@@ -65,10 +66,18 @@ def parse_git_origin_url(url: str) -> tuple[str, str, str] | None:
     """
     if not url or not url.strip():
         return None
-    host = _host_of(url)
+    raw = url.strip()
+    parsed = urlparse(raw) if "://" in raw else None
+    if parsed is not None and parsed.scheme == "file":
+        path = Path(unquote(parsed.path or ""))
+        if not path.name:
+            return None
+        return ("file", path.parent.as_posix(), _strip_git_suffix(path.name))
+
+    host = _host_of(raw)
     if not host:
         return None
-    m = _FULL_NAME_RE.search(url.strip())
+    m = _FULL_NAME_RE.search(raw)
     if not m:
         return None
     full_name = m.group(1)
@@ -81,5 +90,11 @@ def parse_git_origin_url(url: str) -> tuple[str, str, str] | None:
 
 def git_origin_clone_url(provider: str, owner: str, name: str) -> str:
     """Build the canonical HTTPS clone URL for a GitOrigin repo coordinate."""
+    if provider.strip().lower() == "file":
+        base = Path(owner.strip())
+        leaf = _strip_git_suffix(name.strip())
+        plain = base / leaf
+        path = plain if plain.exists() else base / f"{leaf}.git"
+        return path.resolve().as_uri()
     host = _PROVIDER_HOSTS.get(provider.strip().lower(), provider.strip())
     return f"https://{host}/{owner}/{_strip_git_suffix(name)}.git"
