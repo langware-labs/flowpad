@@ -6,11 +6,10 @@ import { EnvVarType } from '@src/types/envVarTypes';
 import { useEntityEnv } from '@sdk/react/hooks';
 import { SidebarProvider } from '@src/components/ui/sidebar';
 import { useIsVibe } from '@src/components/view-mode';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ViewType } from '@src/types/ViewType';
 import { useEffect, useMemo } from 'react';
 import { ContentPanel } from './content-panel/content-panel';
 import { VibeWorkspace } from './vibe-workspace';
+import { useVibeWorkspaceSession } from './use-vibe-workspace-session';
 
 export default function FlowPage() {
   const { flow } = useAgentContext();
@@ -36,12 +35,11 @@ export default function FlowPage() {
   }, [table, setEnvVars]);
 
   const isVibe = useIsVibe();
-  const { currentDock } = useDockNavigation();
-  // A Vibe "session" = an active agentic_process surface (the home prompt seeds
-  // one and lands on SHELL/agentic_process-<id>). On it, Vibe shows the
-  // side-chat ↔ display split; otherwise (the bare home) the centered prompt.
-  const inVibeSession =
-    currentDock?.viewType === ViewType.SHELL && !!currentDock?.pointer?.includes('agentic_process');
+  // A Vibe "session" = a workspace surface: the process's own dock (the display
+  // URL) OR a child tab opened from inside it. Resolved by one hook so the
+  // "is this a workspace surface" shape lives in one place, reusable by any
+  // future workspace-with-children view. Null on the bare home (centered prompt).
+  const vibeSession = useVibeWorkspaceSession();
 
   // Vibe mode: no left rail (the chat panel owns the chrome), Lovable-style.
   // We still RESERVE the rail's footprint with an invisible spacer that mirrors
@@ -57,7 +55,9 @@ export default function FlowPage() {
           <div aria-hidden className={`${RAIL_WIDTH_CLASS} shrink-0 border-r border-transparent`} />
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex-1 overflow-hidden">{inVibeSession ? <VibeWorkspace /> : <ContentPanel />}</div>
+            <div className="flex-1 overflow-hidden">
+              {vibeSession ? <VibeWorkspace session={vibeSession} /> : <ContentPanel />}
+            </div>
             <Footer />
           </div>
         </div>
