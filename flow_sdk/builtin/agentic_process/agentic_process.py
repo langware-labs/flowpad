@@ -3880,6 +3880,20 @@ class AgenticProcess(Entity):
         shell = await self.shell()
         return shell.compute_node if shell else None
 
+    async def _resolve_dev_host(self, port: int) -> str:
+        """Resolve the compute-node host URL for a dev-server ``port`` (shared by
+        get-host and app-proxy). Raises ``ValueError`` with a client-safe message
+        on a bad port or missing compute node."""
+        int_port = int(port)
+        if not 1024 <= int_port <= 65535:
+            raise ValueError("Invalid port")
+        compute_node = await self.get_compute_node()
+        if compute_node is None:
+            compute_node = await self._get_local_compute_node()
+        if not compute_node:
+            raise ValueError("No compute node found")
+        return compute_node.get_host(int_port)
+
     @action.all(action_name="get-host")
     async def get_host(self, port: int, redirect: bool = True):
         """Resolve the public host for a dev-server ``port`` running on this
@@ -3889,19 +3903,13 @@ class AgenticProcess(Entity):
         """
         from fastapi.responses import RedirectResponse
 
-        int_port = int(port)
-        if not 1024 <= int_port <= 65535:
-            return ApiFailResponse(message="Invalid port")
+        try:
+            host = await self._resolve_dev_host(port)
+        except ValueError as e:
+            return ApiFailResponse(message=f"get-host: {e}")
 
-        compute_node = await self.get_compute_node()
-        if compute_node is None:
-            compute_node = await self._get_local_compute_node()
-        if not compute_node:
-            return ApiFailResponse(message="get-host: No compute node found")
-
-        host = compute_node.get_host(int_port)
         if not redirect:
-            return ApiSuccessResponse(data={"url": host, "port": int_port})
+            return ApiSuccessResponse(data={"url": host, "port": int(port)})
         return RedirectResponse(url=host)
 
     @action.all(action_name="app-proxy")
@@ -3922,17 +3930,10 @@ class AgenticProcess(Entity):
         """
         from fastapi.responses import Response
 
-        int_port = int(port)
-        if not 1024 <= int_port <= 65535:
-            return ApiFailResponse(message="Invalid port")
-
-        compute_node = await self.get_compute_node()
-        if compute_node is None:
-            compute_node = await self._get_local_compute_node()
-        if not compute_node:
-            return ApiFailResponse(message="app-proxy: No compute node found")
-
-        base = compute_node.get_host(int_port).rstrip("/")
+        try:
+            base = (await self._resolve_dev_host(port)).rstrip("/")
+        except ValueError as e:
+            return ApiFailResponse(message=f"app-proxy: {e}")
         sub = path if path.startswith("/") else f"/{path}"
         url = f"{base}{sub}"
 
@@ -3947,15 +3948,11 @@ class AgenticProcess(Entity):
         content_type = upstream.headers.get("content-type", "")
         body = upstream.content
 
+        # A ``<script src>`` runs wherever it lands in the document, so appending
+        # is equivalent to splicing before ``</head>`` — and avoids lowercasing a
+        # full copy of the body just to find the insertion point.
         if "text/html" in content_type.lower():
-            tag = b'<script src="/sdk/flowpad-select-bridge.js"></script>'
-            html = body
-            lower = html.lower()
-            idx = lower.rfind(b"</head>")
-            if idx == -1:
-                idx = lower.rfind(b"</body>")
-            html = html[:idx] + tag + html[idx:] if idx != -1 else html + tag
-            body = html
+            body = body + b'<script src="/sdk/flowpad-select-bridge.js"></script>'
 
         # Strip hop-by-hop / framing headers so the response renders inline.
         drop = {"content-length", "content-encoding", "transfer-encoding", "connection", "x-frame-options"}
