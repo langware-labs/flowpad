@@ -107,7 +107,7 @@ async function promptWhenReady(process: AgenticProcess, prompt: string): Promise
       return;
     } catch (e) {
       if (!isPromptBusyError(e) || attempt === 3) throw e;
-      await waitForPromptReady(process);
+      // loop head re-awaits readiness before the next prompt attempt
     }
   }
 }

@@ -872,19 +872,7 @@ def _git_origin_index_scope(checkout_root: Path, rel_path: str, info) -> Path:
 
 
 def _repo_matches_git_origin(repo_path: Path, origin, *, require_branch: bool = False) -> bool:
-    try:
-        from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
-        from flow_sdk.utils.git import git_current_branch, git_remote_url  # noqa: PLC0415
-
-        remote = git_remote_url(str(repo_path))
-        candidate = GitOrigin.from_url(remote, rel_path=origin.rel_path or ".") if remote else None
-        if not candidate or candidate.key() != origin.key():
-            return False
-        if require_branch and origin.branch:
-            return git_current_branch(str(repo_path)) == origin.branch
-        return True
-    except Exception:
-        return False
+    return origin.matches_repo(repo_path, require_branch=require_branch)[0]
 
 
 async def _project_id_for_checkout(

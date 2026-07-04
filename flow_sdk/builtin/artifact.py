@@ -29,20 +29,6 @@ def _artifact_git_origin(data: dict) -> GitOrigin | None:
         return None
 
 
-def _repo_matches_origin(repo_path: str | Path, origin: GitOrigin, *, require_branch: bool = False) -> tuple[bool, str | None]:
-    from flow_sdk.utils.git import git_current_branch, git_remote_url
-
-    remote = git_remote_url(str(repo_path))
-    candidate = GitOrigin.from_url(remote, rel_path=origin.rel_path or ".") if remote else None
-    if not candidate or candidate.key() != origin.key():
-        return False, "Repository origin does not match"
-    if require_branch and origin.branch:
-        branch = git_current_branch(str(repo_path))
-        if branch != origin.branch:
-            return False, f"Repository is on branch {branch or 'HEAD'}, expected {origin.branch}"
-    return True, None
-
-
 async def _index_checkout(root: Path, *, project_id: str | None = None) -> None:
     try:
         from flow_sdk.fs_store.fs_ref import FSRef
@@ -205,6 +191,14 @@ class Artifact(CodeRef):
                 pass
         super().__init__(**data)
 
+    def _needs_wizard(self, origin: GitOrigin, reason: str) -> dict:
+        return {
+            "kind": "needs_wizard",
+            "artifact": self.model_dump(mode="json"),
+            "gitOrigin": origin.model_dump(mode="json"),
+            "reason": reason,
+        }
+
     async def _ready_from_checkout(self, checkout_root: Path, project) -> dict:
         from flow_sdk.utils.git import git_pull
 
@@ -216,12 +210,7 @@ class Artifact(CodeRef):
 
         ok, msg = await git_pull(str(checkout_root), branch=origin.branch or None)
         if not ok:
-            return {
-                "kind": "needs_wizard",
-                "artifact": self.model_dump(mode="json"),
-                "gitOrigin": origin.model_dump(mode="json"),
-                "reason": msg or "Could not fetch repository",
-            }
+            return self._needs_wizard(origin, msg or "Could not fetch repository")
 
         rel = "." if origin.rel_path == "." else origin.rel_path
         asset_path = (checkout_root / rel).resolve()
@@ -230,12 +219,7 @@ class Artifact(CodeRef):
         except ValueError:
             return {"kind": "error", "message": "Resolved artifact path escapes checkout root"}
         if not asset_path.exists():
-            return {
-                "kind": "needs_wizard",
-                "artifact": self.model_dump(mode="json"),
-                "gitOrigin": origin.model_dump(mode="json"),
-                "reason": f"Expected artifact path was not found: {asset_path}",
-            }
+            return self._needs_wizard(origin, f"Expected artifact path was not found: {asset_path}")
 
         self.path = str(asset_path)
         if project is not None and getattr(project, "id", None):
@@ -293,41 +277,21 @@ class Artifact(CodeRef):
                 candidate = Path(os.path.expanduser(str(raw_path))).resolve()
             except Exception as e:
                 if strict:
-                    return {
-                        "kind": "needs_wizard",
-                        "artifact": self.model_dump(mode="json"),
-                        "gitOrigin": origin.model_dump(mode="json"),
-                        "reason": f"Could not resolve local path: {e}",
-                    }
+                    return self._needs_wizard(origin, f"Could not resolve local path: {e}")
                 return None
             if not candidate.exists():
                 if strict:
-                    return {
-                        "kind": "needs_wizard",
-                        "artifact": self.model_dump(mode="json"),
-                        "gitOrigin": origin.model_dump(mode="json"),
-                        "reason": f"Local path does not exist: {candidate}",
-                    }
+                    return self._needs_wizard(origin, f"Local path does not exist: {candidate}")
                 return None
             repo_root = find_project_root(str(candidate))
             if not repo_root:
                 if strict:
-                    return {
-                        "kind": "needs_wizard",
-                        "artifact": self.model_dump(mode="json"),
-                        "gitOrigin": origin.model_dump(mode="json"),
-                        "reason": f"Local path is not inside a git repository: {candidate}",
-                    }
+                    return self._needs_wizard(origin, f"Local path is not inside a git repository: {candidate}")
                 return None
-            matches, reason = _repo_matches_origin(repo_root, origin, require_branch=True)
+            matches, reason = origin.matches_repo(repo_root, require_branch=True)
             if not matches:
                 if strict:
-                    return {
-                        "kind": "needs_wizard",
-                        "artifact": self.model_dump(mode="json"),
-                        "gitOrigin": origin.model_dump(mode="json"),
-                        "reason": reason or "Repository origin does not match",
-                    }
+                    return self._needs_wizard(origin, reason or "Repository origin does not match")
                 return None
             project = await Project.get_by_id(project_id) if project_id else None
             if project is None:
@@ -356,36 +320,25 @@ class Artifact(CodeRef):
             project_root = Path(project.fs_storage_mount_path).expanduser() if project and project.fs_storage_mount_path else None
             repo_root = find_project_root(str(project_root)) if project_root else None
             if repo_root:
-                matches, reason = _repo_matches_origin(repo_root, origin, require_branch=True)
+                matches, reason = origin.matches_repo(repo_root, require_branch=True)
                 if matches:
                     return ApiSuccessResponse(data=await self._ready_from_checkout(Path(repo_root), project))
                 if reason and "branch" in reason.lower():
-                    return ApiSuccessResponse(data={
-                        "kind": "needs_wizard",
-                        "artifact": self.model_dump(mode="json"),
-                        "gitOrigin": origin.model_dump(mode="json"),
-                        "reason": reason,
-                    })
+                    return ApiSuccessResponse(data=self._needs_wizard(origin, reason))
 
         local_repo = find_local_repo_for_url(origin.clone_url())
         if local_repo:
-            matches, reason = _repo_matches_origin(local_repo, origin, require_branch=True)
+            matches, reason = origin.matches_repo(local_repo, require_branch=True)
             if matches:
                 project = await Project.recover_by_path(local_repo)
                 return ApiSuccessResponse(data=await self._ready_from_checkout(Path(local_repo), project))
-            return ApiSuccessResponse(data={
-                "kind": "needs_wizard",
-                "artifact": self.model_dump(mode="json"),
-                "gitOrigin": origin.model_dump(mode="json"),
-                "reason": reason or "Local repository is not on the expected branch",
-            })
+            return ApiSuccessResponse(
+                data=self._needs_wizard(origin, reason or "Local repository is not on the expected branch")
+            )
 
-        return ApiSuccessResponse(data={
-            "kind": "needs_wizard",
-            "artifact": self.model_dump(mode="json"),
-            "gitOrigin": origin.model_dump(mode="json"),
-            "reason": "No local checkout was found for this git origin",
-        })
+        return ApiSuccessResponse(
+            data=self._needs_wizard(origin, "No local checkout was found for this git origin")
+        )
 
 
 class ArtifactRelation(Entity):

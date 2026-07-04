@@ -94,6 +94,27 @@ class GitOrigin(BaseModel):
         rel = PurePosixPath(self.rel_path.strip().replace("\\", "/")).as_posix()
         return mint_uuid(key=f"{remote_key}:{rel}", namespace=uuid.NAMESPACE_URL)
 
+    def matches_repo(self, repo_path, *, require_branch: bool = False) -> tuple[bool, Optional[str]]:
+        """Whether an on-disk checkout at ``repo_path`` is this origin.
+
+        Compares the checkout's ``origin`` remote (as a ``GitOrigin.key()``) and,
+        when ``require_branch`` is set, its current branch. Returns
+        ``(matches, reason)`` where ``reason`` is a human-readable mismatch
+        explanation (``None`` on a match). Runs blocking git subprocesses.
+        """
+        try:
+            remote = git_remote_url(str(repo_path))
+            candidate = GitOrigin.from_url(remote, rel_path=self.rel_path or ".") if remote else None
+            if not candidate or candidate.key() != self.key():
+                return False, "Repository origin does not match"
+            if require_branch and self.branch:
+                branch = git_current_branch(str(repo_path))
+                if branch != self.branch:
+                    return False, f"Repository is on branch {branch or 'HEAD'}, expected {self.branch}"
+            return True, None
+        except Exception:
+            return False, "Repository origin does not match"
+
     @classmethod
     def for_asset_path(cls, asset_root: str, repo_cache: Optional[dict] = None) -> Optional["GitOrigin"]:
         """Build a ``GitOrigin`` for an on-disk asset root (folder or file).
