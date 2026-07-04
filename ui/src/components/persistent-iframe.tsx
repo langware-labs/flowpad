@@ -15,6 +15,8 @@ interface PersistentIframeProps {
 
 export interface PersistentIframeHandle {
   refresh: () => void;
+  /** Post a message to the guest document (parent→iframe channel). */
+  postToGuest: (message: unknown) => void;
 }
 
 // Global iframe registry that keeps iframes in fixed DOM locations
@@ -236,6 +238,11 @@ class IframeRegistry {
       iframe.src = src;
     }
   }
+
+  postToGuest(src: string, message: unknown): void {
+    const iframe = this.iframes.get(src);
+    iframe?.contentWindow?.postMessage(message, '*');
+  }
 }
 
 const registry = IframeRegistry.getInstance();
@@ -281,13 +288,14 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
       registry.refresh(src);
     }, [src, refetchSource]);
 
-    // Expose refresh method to parent via ref
+    // Expose refresh + guest-post methods to parent via ref
     useImperativeHandle(
       ref,
       () => ({
         refresh: refreshIframe,
+        postToGuest: (message: unknown) => registry.postToGuest(src, message),
       }),
-      [refreshIframe],
+      [refreshIframe, src],
     );
 
     useEffect(() => {
