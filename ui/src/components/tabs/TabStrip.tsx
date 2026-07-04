@@ -51,6 +51,10 @@ export interface TabStripItem {
   statusReason?: string;
   /** Rename capability — present iff the tab has a target entity (Part 3 §3). */
   renameable?: boolean;
+  /** Whether the chip can be closed (default true). A `closable: false` chip
+   *  hides its X, is excluded from close-all/close-others/close-right, and shows
+   *  no "Close" context item — for pinned fixtures like the vibe "Display" chip. */
+  closable?: boolean;
   /** Hover tooltip content; falls back to statusReason when disabled. */
   tooltip?: React.ReactNode;
   /** data-testid for the chip. */
@@ -210,10 +214,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
     }
   };
 
+  // Pinned (closable === false) chips are never batch-closed.
+  const closableKeys = new Set(items.filter((i) => i.closable === false).map((i) => i.key));
   const closeMany = (keys: string[]) => {
-    if (keys.length === 0) return;
-    if (onCloseMany) onCloseMany(keys);
-    else keys.forEach((k) => onClose(k));
+    const closeable = keys.filter((k) => !closableKeys.has(k));
+    if (closeable.length === 0) return;
+    if (onCloseMany) onCloseMany(closeable);
+    else closeable.forEach((k) => onClose(k));
   };
 
   // One context-menu group: the entries followed by a separator. Shared by the
@@ -308,7 +315,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
   // color so it reads over truncated text; close is always visible on the
   // active chip, hover-revealed on inactive ones; popout is hover-only and
   // drops out below normal density.
-  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean) => (
+  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean, closable = true) => (
     <div
       className={`absolute right-0.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded transition-opacity ${
         isActive ? 'bg-background opacity-100' : 'bg-muted opacity-0 group-hover:opacity-100'
@@ -329,17 +336,19 @@ export const TabStrip: React.FC<TabStripProps> = ({
           <ExternalLink className="h-3 w-3" />
         </button>
       )}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose(key);
-        }}
-        disabled={isDisabled}
-        className="rounded p-0.5 hover:bg-destructive/20"
-        aria-label={t`Close tab`}
-      >
-        <X className="h-3 w-3" />
-      </button>
+      {closable && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose(key);
+          }}
+          disabled={isDisabled}
+          className="rounded p-0.5 hover:bg-destructive/20"
+          aria-label={t`Close tab`}
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
     </div>
   );
 
@@ -435,7 +444,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           )
         )}
 
-        {!isEditing && renderButtonOverlay(key, isActive, isDisabled)}
+        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, item.closable !== false)}
       </div>
     );
 
@@ -481,12 +490,14 @@ export const TabStrip: React.FC<TabStripProps> = ({
             )}
             {renderMenuGroup(item.contextMenuItems)}
             {renderMenuGroup(newTabMenuItems)}
-            <ContextMenuItem onSelect={() => onClose(key)}>
-              <Trans>Close</Trans>{' '}
-              {closeShortcutLabel && (
-                <span className="ml-auto pl-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
-              )}
-            </ContextMenuItem>
+            {item.closable !== false && (
+              <ContextMenuItem onSelect={() => onClose(key)}>
+                <Trans>Close</Trans>{' '}
+                {closeShortcutLabel && (
+                  <span className="ml-auto pl-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
+                )}
+              </ContextMenuItem>
+            )}
             <ContextMenuItem onSelect={() => closeMany(allVisibleItems.map((i) => i.key))}><Trans>Close All</Trans></ContextMenuItem>
             <ContextMenuItem
               onSelect={() => closeMany(list.filter((i) => i.key !== key).map((i) => i.key))}

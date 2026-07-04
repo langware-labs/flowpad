@@ -88,6 +88,13 @@ class Tab(Entity):
     target_type: str | None = APIField(default=None)
     target_id: str | None = APIField(default=None)
 
+    # Advisory grouping edge to the opener tab (the vibe display tab is the first
+    # consumer). Never affects ordering/close/recency; children stay ordinary
+    # global tabs. Nulled only on hard reap (see ``_clear_parent_refs``) — a
+    # soft-closed parent leaves it dangling-but-inert, and the deterministic
+    # uuid5 id regroups children when the parent's pointer reopens.
+    parent_tab_id: str | None = APIField(default=None)
+
     # Display primitives the strip draws straight off the Tab, so the chip never
     # has to fetch its backing Shell/AgenticProcess (docs/tab-management.md). Both
     # are CREATE-only and static for a tab's life:
@@ -406,7 +413,33 @@ async def _reap_orphans(
             # Background reap (no user navigation) — ping clients so the dangling
             # chip drops live instead of waiting for the next list fetch.
             await broadcast_tabs_changed()
+    # Null any child ``parent_tab_id`` pointing at a hard-deleted row so no
+    # permanently-dangling group edges accumulate (soft-close leaves them intact
+    # by design — the id is deterministic and regroups on reopen; only a real
+    # delete is terminal). Fires only when something was actually reaped.
+    if deleted_ids:
+        await _clear_parent_refs(deleted_ids)
     return [t for t in tabs if t.id not in deleted_ids]
+
+
+async def _clear_parent_refs(parent_ids: "set[str]") -> None:
+    """Null ``parent_tab_id`` on every tab whose parent was hard-deleted. Rare
+    path (only on genuine reap); best-effort, one query per gone parent."""
+    changed = False
+    for pid in parent_ids:
+        try:
+            children = await Tab.get_all({"parent_tab_id": pid})
+        except Exception:
+            continue
+        for child in children:
+            child.parent_tab_id = None
+            try:
+                await child.save()
+                changed = True
+            except Exception:
+                continue
+    if changed:
+        await broadcast_tabs_changed()
 
 
 async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> bool:
@@ -440,6 +473,7 @@ async def ensure_tab(
     icon_key: str | None = None,
     worktree: bool | None = None,
     after_tab_id: str | None = None,
+    parent_tab_id: str | None = None,
 ) -> Tab:
     """Deterministic get-or-create for a tab, keyed by the canonical pointer.
 
@@ -515,6 +549,13 @@ async def ensure_tab(
         if not existing.worktree and worktree:
             existing.worktree = True
             dirty = True
+        # Adopt into a group on (re)open: opening an already-open tab from inside
+        # a workspace must pull it into that workspace's subset. Last-writer-wins
+        # (a tab belongs to at most one group). ``None`` = no hint → preserve
+        # (matches the name/icon_key hint convention). Never self-parent.
+        if parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
+            existing.parent_tab_id = parent_tab_id
+            dirty = True
         if dirty:
             await existing.save()
         return existing
@@ -541,6 +582,7 @@ async def ensure_tab(
         icon_key=icon_key,
         worktree=bool(worktree),
         visible=True,
+        parent_tab_id=parent_tab_id if parent_tab_id and parent_tab_id != tid else None,
     )
     new_order = compute_insert_new(existing_ids, tid, after_tab_id)
     # Shift the existing rows whose index moved (reuses the reorder persister); the
@@ -763,6 +805,7 @@ def _serialize_row(tab: Tab) -> dict:
         "pointer": tab.pointer,
         "target_type": tab.target_type,
         "target_id": tab.target_id,
+        "parent_tab_id": tab.parent_tab_id,
         "project_id": tab.project_id,
         "name": tab.name,
         "icon_key": tab.icon_key,
@@ -826,6 +869,7 @@ async def _http_new_tab(
     icon_key: str | None = None,
     worktree: bool = False,
     after_tab_id: str | None = None,
+    parent_tab_id: str | None = None,
 ):
     """POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
     right after ``after_tab_id`` (the opener); reopen keeps its slot. Returns the
@@ -839,6 +883,7 @@ async def _http_new_tab(
         icon_key=icon_key,
         worktree=worktree,
         after_tab_id=after_tab_id,
+        parent_tab_id=parent_tab_id,
     )
     await broadcast_tabs_changed()
     return await _list_response(project_id)

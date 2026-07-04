@@ -14,6 +14,7 @@ import {
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
+import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer, HIGHLIGHT_PARAM } from './DockPointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
@@ -63,6 +64,17 @@ export class NavigationActions {
 
   private static getCurrentBrowserUrl(): string {
     return `${window.location.pathname}${window.location.search}`;
+  }
+
+  /** The `?viewMode` on the LIVE browser URL, or null. Used for view-mode
+   *  stickiness seeding — always current, unlike the React-state `currentDock`
+   *  mirror which lags during the first navigation after a hard page load. */
+  private static currentBrowserViewMode(): ViewMode | null {
+    try {
+      return DockPointer.fromUrl(NavigationActions.getCurrentBrowserUrl()).viewMode;
+    } catch {
+      return null;
+    }
   }
 
   private static needsRouterFallback(): boolean {
@@ -187,6 +199,16 @@ export class NavigationActions {
     if (dock.viewType && SCOPE_SEEDED_VIEWS.has(dock.viewType) && dock.scopeFilter === null) {
       const projectId = dataContext.project?.id ?? null;
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
+    }
+
+    // URL-first stickiness: inherit the live URL's ?viewMode unless the target
+    // names its own (mirrors the scope-seed above); explicit target / ViewToggle
+    // mode still wins. `currentBrowserViewMode` reads window.location as a
+    // stopgap for the lagging React `currentDock` — the durable fix (correct
+    // viewMode at hydration) belongs in the view-mode override, not here.
+    if (dock.viewMode === null) {
+      const liveViewMode = NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null;
+      if (liveViewMode) dock = dock.withViewMode(liveViewMode);
     }
 
     if (this.currentDock?.equals(dock)) {

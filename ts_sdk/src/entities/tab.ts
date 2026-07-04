@@ -126,6 +126,9 @@ export interface ITab extends IEntity {
   /** Denormalized target identity (off the pointer) for fast reverse lookup. */
   target_type?: string | null;
   target_id?: string | null;
+  /** Advisory grouping edge to the opener tab (see backend Tab.parent_tab_id).
+   *  Never affects ordering/close/recency; children stay ordinary global tabs. */
+  parent_tab_id?: string | null;
   /** Visibility = membership. Non-null; a close broadcasts ``visible=false``. */
   visible?: boolean;
   /**
@@ -149,6 +152,8 @@ export interface IEnsureTabOpts {
   name?: string | null;
   iconKey?: string | null;
   worktree?: boolean;
+  /** Mark the new/reopened tab a child of this tab (the opener). See ITab. */
+  parentTabId?: string | null;
 }
 
 export interface INewTabOpts extends IEnsureTabOpts {
@@ -162,6 +167,7 @@ export interface TabRow extends ITab {
   pointer: string;
   target_type: string | null;
   target_id: string | null;
+  parent_tab_id: string | null;
   project_id: string | null;
   name: string | null;
   icon_key: string | null;
@@ -179,6 +185,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
   pointer: string = '';
   target_type: string | null = null;
   target_id: string | null = null;
+  parent_tab_id: string | null = null;
   visible: boolean = true;
   icon_key: string | null = null;
   worktree: boolean = false;
@@ -244,6 +251,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       icon_key: opts.iconKey ?? null,
       worktree: opts.worktree ?? false,
       after_tab_id: opts.afterTabId ?? null,
+      parent_tab_id: opts.parentTabId ?? null,
     };
     const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
     return Tab.fromResponse(res?.tabs ?? []);
@@ -262,7 +270,10 @@ export class Tab extends APIEntity<Tab> implements ITab {
    * `project_id`; a target-less dock → null. No-tab docks (home, bare shell)
    * return [].
    */
-  static async getFromDockPointer(dock: IDockPointer): Promise<Tab[]> {
+  static async getFromDockPointer(
+    dock: IDockPointer,
+    opts: { parentTabId?: string | null } = {},
+  ): Promise<Tab[]> {
     const pointerJson = dock.toJSON?.();
     if (!pointerJson) return [];
 
@@ -315,6 +326,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       name: dataManager.getTabName(dock),
       iconKey,
       worktree,
+      parentTabId: opts.parentTabId ?? null,
     });
   }
 
