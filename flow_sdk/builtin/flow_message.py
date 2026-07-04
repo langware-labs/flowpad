@@ -449,10 +449,10 @@ class FlowMessage(Entity):
                 return False
         return True
 
-    async def to_file(self, dest_dir: Path | None = None) -> Path:
+    async def to_file(self, dest_dir: Path | None = None, *, transfer_mode: str = "copy") -> Path:
         """Pack this FlowMessage + attachments into a .flowmsg zip. Returns path to zip."""
         from flow_sdk.builtin.flow_message_bundle import pack_bundle
-        return await pack_bundle(self, dest_dir)
+        return await pack_bundle(self, dest_dir, transfer_mode=transfer_mode)
 
     @classmethod
     async def from_file(cls, zip_path: Path, local_user_id: str, *, overwrite: bool = False) -> "FlowMessage":
@@ -565,7 +565,7 @@ class FlowMessage(Entity):
         return clone
 
     async def upload_body(
-        self, *, on_progress: Optional[ProgressCallback] = None,
+        self, *, on_progress: Optional[ProgressCallback] = None, transfer_mode: str = "copy",
     ) -> "FlowMessage":
         """Pack the body, upload it to the hub, and stamp body_status=READY.
 
@@ -596,7 +596,7 @@ class FlowMessage(Entity):
         if not self.id:
             raise ValueError("upload_body requires self.id (FM must exist on hub)")
 
-        zip_path = await self.to_file()
+        zip_path = await self.to_file(transfer_mode=transfer_mode)
         try:
             content = zip_path.read_bytes()
             await hub_post(

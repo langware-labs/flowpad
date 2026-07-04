@@ -130,6 +130,31 @@ async def test_upload_body_happy_path(bootstrapped_client, tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_upload_body_accepts_git_transfer_mode(bootstrapped_client, tmp_path: Path) -> None:
+    fm_id = await _save_local_fm(
+        text="with git body",
+        attachments=[Attachment(attachment_type=AttachmentType.TYPE_ID, data="skill-deadbeef")],
+        body_status=BodyStatus.NA,
+    )
+    fake_zip = tmp_path / "body.flowmsg"
+    fake_zip.write_bytes(b"PK\x03\x04 fake git zip")
+    to_file = AsyncMock(return_value=fake_zip)
+
+    with (
+        patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", to_file),
+        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})),
+        patch("flow_sdk.utils.hub.hub_post", AsyncMock(return_value={})),
+    ):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/flow_message/{fm_id}/upload_body",
+            json={"transfer_mode": "git"},
+        )
+
+    assert r.status_code == 200, r.text
+    to_file.assert_awaited_once_with(transfer_mode="git")
+
+
+@pytest.mark.asyncio
 async def test_upload_body_404_when_entity_missing(
     bootstrapped_client,
 ) -> None:
