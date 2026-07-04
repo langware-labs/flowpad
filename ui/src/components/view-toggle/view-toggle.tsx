@@ -1,6 +1,7 @@
 import { ViewMode, setViewMode, useViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
+import { useVibeWorkspaceSession } from '@src/pages/flow-page/use-vibe-workspace-session';
 
 const LABELS: Record<ViewMode, string> = {
   [ViewMode.Vibe]: 'Vibe',
@@ -28,7 +29,11 @@ const RING_DEV: readonly ViewMode[] = [...RING_NORMAL, ViewMode.Dev];
 export function ViewToggle() {
   const mode = useViewMode();
   const { currentDock, navigation } = useDockNavigation();
-  const onAgenticProcess = currentDock?.viewType === ViewType.AGENTIC_PROCESS;
+  // Offer Vibe in the cycle on the agentic-process view AND anywhere inside a
+  // vibe workspace session (the display URL or one of its child tabs) — so the
+  // toggle can still leave/re-enter vibe while browsing child tabs.
+  const inWorkspace = !!useVibeWorkspaceSession();
+  const onAgenticProcess = currentDock?.viewType === ViewType.AGENTIC_PROCESS || inWorkspace;
   // Include Dev in the cycle only when already in Dev mode (developers know they're there)
   const isDev = mode === ViewMode.Dev;
   const baseRing = isDev ? RING_DEV : RING_NORMAL;

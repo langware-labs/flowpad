@@ -19,7 +19,10 @@ import { useEffect, useMemo, useState } from 'react';
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
 
-function tabKey(tab: Tab): string {
+/** The canonical strip chip key for a tab (its tabHash, else the raw id). The
+ *  ONE place this fallback rule lives — every strip must key chips by this so
+ *  select/close-by-key stay in lockstep. */
+export function tabKey(tab: Tab): string {
   return tab.dockPointer?.tabHash ?? tab.id;
 }
 
