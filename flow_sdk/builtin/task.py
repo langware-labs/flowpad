@@ -3,6 +3,7 @@ from flow_sdk._compat import StrEnum
 from typing import Any, ClassVar, Dict, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import TypeId
 
@@ -55,7 +56,6 @@ class Task(Entity):
     analysis_json_path: Optional[str] = APIField(None)
     analysis_path: Optional[str] = APIField(None)
     artifacts: Optional[List[Any]] = APIField(None)
-    branch: Optional[str] = APIField(None)
     classification_category: Optional[str] = APIField(None)
     classification_command: Optional[str] = APIField(None)
     classification_path: Optional[str] = APIField(None)
@@ -68,9 +68,8 @@ class Task(Entity):
     process_id: Optional[str] = APIField(None)
     project_name: Optional[str] = APIField(None)
     project_root: Optional[str] = APIField(None)
-    project_url: Optional[str] = APIField(None)
+    git_origin: Optional[GitOrigin] = APIField(None)
     recipient_email: Optional[str] = APIField(None)
-    repo_id: Optional[str] = APIField(None)
     result_uname: Optional[str] = APIField(None)
     sender_email: Optional[str] = APIField(None)
     sender_name: Optional[str] = APIField(None)

@@ -12,6 +12,7 @@ from pydantic.alias_generators import to_camel
 from flow_sdk.config import ComputeProviderType, PLATFORM_WIN32
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.builtin.faas.compute_node import ComputeNode
+from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.core.flow.models.execution.env_context import FlowEnv
 
 
@@ -19,8 +20,7 @@ class ComputeSourceControlInitializeOptions(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True)
 
     git_init: bool = True
-    git_remote_repo_url: str | None = None
-    git_branch: str | None = None
+    git_origin: GitOrigin | None = None
     zip_file: UploadFile | None = None
 
 
@@ -199,7 +199,7 @@ class ComputeSourceControl:
                 f"Failed to clean working directory (exit code: {clean_cmd.exit_code}): {clean_cmd.all_stderr}"
             )
 
-    async def _setup_remote_repo(self, repo_url: str) -> bool:
+    async def _setup_remote_repo(self, clone_url: str) -> bool:
         env_variable_name = oauth_providers_config_cache["github"].user_credentials_name
         project_env_variable_name = build_shared_var_name(env_variable_name, BuiltinEntityType.PROJECT.value.upper())
         logging.info(f"Looking for GitHub token in env variable: {project_env_variable_name}")
@@ -232,7 +232,7 @@ class ComputeSourceControl:
             )
             raise RuntimeError("Failed to configure in-memory git credentials")
 
-        git_remote_add_cmd = await self.compute_node.run_command(f'git remote add origin "{repo_url}"', env=self._env)
+        git_remote_add_cmd = await self.compute_node.run_command(f'git remote add origin "{clone_url}"', env=self._env)
         await git_remote_add_cmd.wait()
         if git_remote_add_cmd.exit_code != 0:
             error_msg = (
@@ -322,7 +322,10 @@ class ComputeSourceControl:
         async with self.compute_node.ready_session():
             if initialize_options.git_init:
                 # Setup remote repository if provided (Scenarios 2 & 3)
-                if initialize_options.git_remote_repo_url:
+                if initialize_options.git_origin:
+                    git_origin = initialize_options.git_origin
+                    clone_url = git_origin.clone_url()
+                    git_branch = git_origin.branch or None
                     # Backup .mcp_servers before cleaning
                     mcp_backup_path = await self._backup_mcp_servers()
 
@@ -335,20 +338,20 @@ class ComputeSourceControl:
                         return
 
                     # Setup remote repository
-                    if await self._setup_remote_repo(initialize_options.git_remote_repo_url):
+                    if await self._setup_remote_repo(clone_url):
                         # Pull and checkout branch
-                        git_pull_success = await self._pull_and_checkout_branch(initialize_options.git_branch)
+                        git_pull_success = await self._pull_and_checkout_branch(git_branch)
 
                         if not git_pull_success:
                             branch_message = (
-                                f"Failed to pull from specified branch '{initialize_options.git_branch}'."
-                                if initialize_options.git_branch
+                                f"Failed to pull from specified branch '{git_branch}'."
+                                if git_branch
                                 else "Failed to pull from both main and master branches."
                             )
                             logging.error(f"{branch_message} Repository may be empty or inaccessible.")
                         else:
                             # If no branch was specified but pull succeeded, default to main
-                            if not initialize_options.git_branch:
+                            if not git_branch:
                                 self._git_branch = self._git_branch or "main"
 
                             # Restore .mcp_servers after successful checkout

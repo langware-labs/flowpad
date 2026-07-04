@@ -28,6 +28,17 @@ def _mock_response(status_code: int = 200, json_body=None, headers=None, text: s
     return resp
 
 
+def _git_origin(owner: str = "langware-labs", name: str = "flowpad", branch: str = "main") -> dict:
+    return {
+        "provider": "github",
+        "owner": owner,
+        "name": name,
+        "branch": branch,
+        "head_commit": None,
+        "rel_path": ".",
+    }
+
+
 @pytest.fixture(autouse=True)
 def _test_sod_driver(tmp_path):
     """Wire a fresh file SOD so set_user_credentials can write before the test."""
@@ -111,6 +122,7 @@ async def test_repo_list_page1_returns_summaries(bootstrapped_client, github_use
         "html_url": "https://github.com/langware-labs/flowpad",
         "description": "Flowpad",
         "fork": False,
+        "git_origin": _git_origin(),
     }
     # role mapping: admin=False, push=True → "write"
     assert data["repos"][1]["role"] == "write"
@@ -240,13 +252,13 @@ async def test_invitation_decline_204(bootstrapped_client, github_user_with_toke
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_branches_accepts_owner_name(bootstrapped_client, github_user_with_token):
+async def test_branches_accepts_git_origin(bootstrapped_client, github_user_with_token):
     user = github_user_with_token
     fake_branches = [{"name": "main", "protected": True}, {"name": "dev", "protected": False}]
     with patch.object(ra.requests, "get", return_value=_mock_response(200, json_body=fake_branches)):
         r = await bootstrapped_client.post(
             f"/api/v1/graph/user/{user.id}/repo/branches",
-            json={"provider": "github", "owner": "langware-labs", "name": "flowpad"},
+            json={"git_origin": _git_origin()},
         )
     assert r.status_code == 200, r.text
     data = r.json()["data"]
@@ -269,13 +281,13 @@ async def test_branches_accepts_owner_name(bootstrapped_client, github_user_with
     "",                       # empty
     "foo%2Fbar",              # url-encoded slash
 ])
-async def test_branches_rejects_unsafe_owner(bootstrapped_client, github_user_with_token, bad_owner):
+async def test_branches_rejects_unsafe_origin_owner(bootstrapped_client, github_user_with_token, bad_owner):
     user = github_user_with_token
     # If sanitization fails, no HTTP call is made; assert by patching to raise.
     with patch.object(ra.requests, "get", side_effect=AssertionError("should not reach GitHub")):
         r = await bootstrapped_client.post(
             f"/api/v1/graph/user/{user.id}/repo/branches",
-            json={"provider": "github", "owner": bad_owner, "name": "flowpad"},
+            json={"git_origin": _git_origin(owner=bad_owner)},
         )
     assert r.status_code == 400, r.text
     assert "slug" in r.json()["message"].lower() or "owner" in r.json()["message"].lower()

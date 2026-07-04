@@ -4,15 +4,14 @@ import { LanguageSelector } from '@src/components/footer/LanguageSelector';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
 import { PoweredBy } from '@src/components/powered-by';
-import { FusionSpinner } from '@src/components/icons/FusionSpinner';
 import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
 import { StatusBar } from '@src/components/status-bar';
 import { VersionPopover } from '@src/components/version-popover';
 import { AdvancedOnly } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-popover';
-import { Agent, ArtifactType, FLOWPAD_ASSISTANT_PROJECT_UNAME, TypeId } from '@sdk';
-import { useCurrentArtifacts, useEntity } from '@sdk/react/hooks';
+import { Agent, FLOWPAD_ASSISTANT_PROJECT_UNAME, TypeId } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -26,55 +25,16 @@ interface FooterProps {
   className?: string;
 }
 
-interface ArtifactWithMetadata {
-  artifact_type?: string;
-  metadata?: {
-    url?: string;
-    name?: string;
-    branch?: string;
-  };
-}
-
 export function Footer({ className = '' }: FooterProps) {
   const { version } = useContext();
   const { t } = useLingui();
   const { agentId } = useParams();
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId);
-  const { data: projectArtifacts, isLoading: isLoadingArtifacts } = useCurrentArtifacts();
   const { navigation } = useDockNavigation();
   const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   useColorPalette(agent?.site_config);
   usePendingCompletionSound();
-
-  // Extract repo and branch info from artifacts
-  const repoInfo = useMemo(() => {
-    if (!projectArtifacts?.length) return null;
-
-    const repoArtifacts = projectArtifacts.filter(
-      (artifact) => (artifact as ArtifactWithMetadata).artifact_type === ArtifactType.GIT_REPO,
-    );
-
-    // Signal "has artifacts but no git repo" via noRepo sentinel
-    if (repoArtifacts.length === 0) {
-      return { url: null, branch: null, isZip: false, noRepo: true };
-    }
-
-    const repoArtifact = repoArtifacts[0] as ArtifactWithMetadata;
-    const metadata = repoArtifact?.metadata;
-
-    if (!metadata?.url) return null;
-
-    const isZipFile = !metadata.url.startsWith('http') && !metadata.url.startsWith('git');
-
-    if (isZipFile) {
-      const zipName = metadata.name || metadata.url.replace(/\.zip$/i, '');
-      return { url: zipName, branch: null, isZip: true, noRepo: false };
-    }
-
-    const branch = metadata.branch || 'main';
-    return { url: metadata.url, branch, isZip: false, noRepo: false };
-  }, [projectArtifacts]);
 
   return (
     <footer
@@ -93,20 +53,7 @@ export function Footer({ className = '' }: FooterProps) {
         {/* Status bar with project name */}
         <StatusBar className="min-w-0 flex-1 sm:ml-4" />
 
-        {/* Repo info centered in the available space */}
-        <div className="hidden min-w-0 flex-1 text-center md:block">
-          {isLoadingArtifacts ? (
-            <FusionSpinner size="xs" />
-          ) : repoInfo?.noRepo ? (
-            <div className="truncate font-mono text-[10px] text-muted-foreground">
-              <Trans>(no git repo)</Trans>
-            </div>
-          ) : repoInfo ? (
-            <div className="truncate font-mono text-[10px] text-muted-foreground">
-              {repoInfo.isZip ? repoInfo.url : `${repoInfo.url}:${repoInfo.branch}`}
-            </div>
-          ) : null}
-        </div>
+        <div className="hidden min-w-0 flex-1 md:block" />
 
         {/* Version + Powered by on the right */}
         <div className="flex w-full min-w-0 items-center justify-end gap-1 overflow-hidden sm:ml-auto sm:w-auto sm:flex-none sm:gap-2">

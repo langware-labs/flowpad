@@ -1,7 +1,6 @@
 """GitOrigin — git provenance + placement for a shared asset (value object, NOT an entity).
 
-Replaces the former ``GitRemote`` / ``GitBranch`` entities. Git here is *purely
-provenance + placement*: a ``GitOrigin`` records which upstream repo + branch a
+Git here is *purely provenance + placement*: a ``GitOrigin`` records which upstream repo + branch a
 shared asset came from and its path **relative to the repo root**, so a receiver
 can mirror the sender's layout instead of dumping everything at the canonical
 type subdir. It is immutable, fully derivable, and never a DB/graph node — it
@@ -24,7 +23,7 @@ from pydantic import BaseModel
 
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.utils.git import _run_git, find_project_root, git_current_branch, git_remote_url
-from flow_sdk.utils.git_identity import canonical_git_remote_key, parse_git_remote_url
+from flow_sdk.utils.git_identity import canonical_git_origin_repo_key, git_origin_clone_url, parse_git_origin_url
 
 
 def is_safe_rel_path(rel_path: str) -> bool:
@@ -66,6 +65,24 @@ class GitOrigin(BaseModel):
     # the asset root, never "a file".
     rel_path: str = ""
 
+    @classmethod
+    def from_url(cls, url: str, *, branch: str = "", rel_path: str = ".") -> Optional["GitOrigin"]:
+        """Build a ``GitOrigin`` from a clone/origin URL.
+
+        ``rel_path='.'`` represents the repository root, used by task-receive
+        and project-setup flows that reference a whole repo instead of one
+        file-backed asset inside it.
+        """
+        parsed = parse_git_origin_url(url)
+        if not parsed or not is_safe_rel_path(rel_path):
+            return None
+        provider, owner, name = parsed
+        return cls(provider=provider, owner=owner, name=name, branch=branch or "", rel_path=rel_path)
+
+    def clone_url(self) -> str:
+        """Canonical HTTPS clone URL for this origin's repository."""
+        return git_origin_clone_url(self.provider, self.owner, self.name)
+
     def key(self) -> str:
         """Deterministic, branch-independent dedup handle.
 
@@ -73,7 +90,7 @@ class GitOrigin(BaseModel):
         position in the same repo always yields the same key across machines and
         across shares, so "received now" and "cloned later" reconcile by value.
         """
-        remote_key = canonical_git_remote_key(self.provider, self.owner, self.name)
+        remote_key = canonical_git_origin_repo_key(self.provider, self.owner, self.name)
         rel = PurePosixPath(self.rel_path.strip().replace("\\", "/")).as_posix()
         return mint_uuid(key=f"{remote_key}:{rel}", namespace=uuid.NAMESPACE_URL)
 
@@ -96,7 +113,7 @@ class GitOrigin(BaseModel):
             return None
         meta = repo_cache.get(root) if repo_cache is not None else None
         if meta is None:
-            parsed = parse_git_remote_url(git_remote_url(root))
+            parsed = parse_git_origin_url(git_remote_url(root))
             meta = (
                 (*parsed, git_current_branch(root), _head_commit(root)) if parsed else False
             )

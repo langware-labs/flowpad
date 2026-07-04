@@ -21,6 +21,48 @@ export interface GitOrigin {
   rel_path: string;
 }
 
+const HOST_PROVIDERS: Record<string, string> = {
+  'github.com': 'github',
+  'gitlab.com': 'gitlab',
+  'bitbucket.org': 'bitbucket',
+};
+
+function stripGitSuffix(name: string): string {
+  return name.endsWith('.git') ? name.slice(0, -4) : name;
+}
+
+function hostOfGitUrl(url: string): string {
+  const value = url.trim();
+  if (value.includes('://')) {
+    try {
+      return new URL(value).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  }
+  const match = value.match(/^(?:[^@/\s]+@)?([^:/\s]+):/);
+  return match?.[1]?.toLowerCase() ?? '';
+}
+
+/** Build a repo-root GitOrigin from a clone/origin URL. */
+export function gitOriginFromUrl(url: string, branch = '', relPath = '.'): GitOrigin | null {
+  if (!url.trim() || !isSafeRelPath(relPath)) return null;
+  const host = hostOfGitUrl(url);
+  if (!host) return null;
+  const match = url.trim().match(/[:/]([^/:\s]+\/[^/:\s]+?)(?:\.git)?\/?$/);
+  if (!match) return null;
+  const [owner, name] = match[1].split('/');
+  if (!owner || !name || owner.toLowerCase() === host) return null;
+  return {
+    provider: HOST_PROVIDERS[host] ?? host,
+    owner,
+    name: stripGitSuffix(name),
+    branch,
+    head_commit: null,
+    rel_path: relPath,
+  };
+}
+
 /** ``owner/name`` (the upstream repo's full name), or just the name. */
 export function gitOriginRepoFullName(o: GitOrigin): string {
   return o.owner && o.name ? `${o.owner}/${o.name}` : o.name || '';
@@ -33,7 +75,7 @@ export function gitOriginRepoFullName(o: GitOrigin): string {
 export function formatGitOrigin(o: GitOrigin): string {
   const full = gitOriginRepoFullName(o);
   const head = o.branch ? `${full} · ${o.branch}` : full;
-  return o.rel_path ? `${head} — ${o.rel_path}` : head;
+  return o.rel_path && o.rel_path !== '.' ? `${head} — ${o.rel_path}` : head;
 }
 
 /**

@@ -747,8 +747,8 @@ async def handle_add_message(
     # in an optimistic FE write. Skip the conversation's own typeid and the
     # transport types (conversation/flow_message) that ride every message.
     context_typeids = _parse_context_typeids(conv, asset_references, shared_context_entities)
-    # parent_share_on_default expansion: flagged types (e.g. git_branch)
-    # advertise their parent typeid on the rail so receivers re-materialize it.
+    # parent_share_on_default expansion: flagged types advertise their parent
+    # typeid on the rail so receivers re-materialize it.
     parent_typeids = await collect_parent_share_typeids(context_typeids)
     if parent_typeids:
         context_typeids = [*context_typeids, *parent_typeids]
@@ -1225,9 +1225,7 @@ async def open_notification() -> ApiResponse:
     return await handle_notification_deep_link(
         fm_id=notification_id,
         task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
-        project_url=(meta.get("project_url") or (data or {}).get("project_url") or "").strip(),
-        branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
-        repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
+        git_origin=(meta.get("git_origin") or (data or {}).get("git_origin")),
         sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
         title=(meta.get("task_title") or (data or {}).get("task_title") or "").strip(),
     )

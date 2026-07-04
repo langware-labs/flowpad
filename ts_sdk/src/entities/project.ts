@@ -1,7 +1,7 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
-import { ActionInfo, TypeId } from '../models';
+import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
 import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
@@ -135,11 +135,10 @@ export class Project extends APIEntity<Project> {
     this.include_dirs = (this.include_dirs ?? []).filter((d) => d !== path);
   }
 
-  async setupComputeNode(options?: { gitRemoteRepoUrl?: string; gitBranch?: string }): Promise<ComputeNode | null> {
+  async setupComputeNode(options?: { gitOrigin?: GitOrigin | null }): Promise<ComputeNode | null> {
     const actionInfo = new ActionInfo('initialize', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = {
-      ...(options?.gitRemoteRepoUrl && { gitRemoteRepoUrl: options.gitRemoteRepoUrl }),
-      ...(options?.gitBranch && { gitBranch: options.gitBranch }),
+      ...(options?.gitOrigin && { gitOrigin: options.gitOrigin }),
     };
     const response = await dataManager.callAction<typeof actionInfo.bodyParameters, { compute_node: any }>(actionInfo);
 
@@ -355,6 +354,7 @@ export class Project extends APIEntity<Project> {
 
   /**
    * Clone a git URL into the desktop workspace and materialize a Project.
+   * The wire contract is GitOrigin; URL/branch inputs are converted locally.
    * Dispatches to the compute_node `create-project-from-git` action.
    *
    * Returns one of:
@@ -372,15 +372,16 @@ export class Project extends APIEntity<Project> {
     | { kind: 'collision'; suggestedName: string; attemptedName: string }
     | { kind: 'error'; message: string }
   > {
+    const gitOrigin = gitOriginFromUrl(projectUrl, branch);
+    if (!gitOrigin) return { kind: 'error', message: 'Invalid Git repository URL' };
     const action = new ActionInfo('create-project-from-git', 'compute_node', computeNodeId, 'POST');
     action.bodyParameters = {
-      project_url: projectUrl,
+      git_origin: gitOrigin,
       ...(targetName ? { target_name: targetName } : {}),
-      ...(branch ? { branch } : {}),
     };
     try {
       const response = await dataManager.callAction<
-        { project_url: string; target_name?: string },
+        { git_origin: GitOrigin; target_name?: string },
         { project: unknown }
       >(action);
       if (!response?.project) return { kind: 'error', message: 'No project returned' };

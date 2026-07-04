@@ -11,7 +11,7 @@ import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useProjects } from '@src/hooks/use-projects';
-import { apiClient, ComputeNode, dataContext, PrefKey, ProcessKind, Project, TypeId } from '@sdk';
+import { apiClient, ComputeNode, dataContext, isCompleteGitOrigin, PrefKey, ProcessKind, Project, TypeId } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -28,7 +28,7 @@ import { X, CheckCircle2 } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { LastScanResult } from '@sdk';
+import type { GitOrigin, LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 // The vibe agent's asset_ref is stable for the app's lifetime — resolve once,
@@ -66,7 +66,7 @@ export function HomeLanding() {
 
   // Incoming task dialog — driven by URL params (email deep-link) or WS events.
   // Deep link shape:
-  //   ?action=open&fm=<id>[&conversation_id=...&task_id=...&project_url=...&...]
+  //   ?action=open&fm=<id>[&conversation_id=...&task_id=...&git_origin=...&...]
   // The backend's /open handler unpacks the bundle and resolves
   // conversation_id / task_id from the FM's context, so we navigate directly
   // off the URL params — no FM lookup needed on the UI side.
@@ -79,20 +79,26 @@ export function HomeLanding() {
     const taskId = params.get('task_id') || '';
     const title = params.get('title') || 'Shared';
     const senderName = params.get('sender_name') || 'Someone';
-    const projectUrl = params.get('project_url') || undefined;
-    const branch = params.get('branch') || undefined;
-    const repoId = params.get('repo_id') || undefined;
+    const gitOriginParam = params.get('git_origin');
+    let gitOrigin: GitOrigin | null = null;
+    if (gitOriginParam) {
+      try {
+        const parsed = JSON.parse(gitOriginParam) as GitOrigin;
+        gitOrigin = isCompleteGitOrigin(parsed) ? parsed : null;
+      } catch {
+        gitOrigin = null;
+      }
+    }
 
     // Clean URL so refreshing doesn't re-trigger
     const url = new URL(window.location.href);
-    for (const key of ['action', 'fm', 'conversation_id', 'task_id', 'title', 'sender_name', 'project_url', 'branch', 'repo_id']) {
+    for (const key of ['action', 'fm', 'conversation_id', 'task_id', 'title', 'sender_name', 'git_origin']) {
       url.searchParams.delete(key);
     }
     window.history.replaceState(null, '', url.toString());
 
-    if (projectUrl && taskId) {
-      // REPO attachment — show pull/clone dialog before navigating in.
-      setPendingTask({ taskId, taskTitle: title, senderName, projectUrl, branch, repoId });
+    if (gitOrigin && taskId) {
+      setPendingTask({ taskId, taskTitle: title, senderName, gitOrigin });
       return;
     }
 
@@ -429,9 +435,7 @@ export function HomeLanding() {
           taskId={pendingTask.taskId}
           taskTitle={pendingTask.taskTitle}
           senderName={pendingTask.senderName}
-          projectUrl={pendingTask.projectUrl}
-          branch={pendingTask.branch}
-          repoId={pendingTask.repoId}
+          gitOrigin={pendingTask.gitOrigin}
           onClose={() => setPendingTask(null)}
         />
       )}

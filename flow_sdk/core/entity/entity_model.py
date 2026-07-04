@@ -1612,9 +1612,8 @@ class Entity(DBEntity):
             sanitized["id"] = data["id"]
         if effective_parent and "parent_type_id" in cls.model_fields:
             sanitized["parent_type_id"] = effective_parent
-        # parent_share_on_default types materialize their (deterministic)
-        # parent FIRST — upsert-by-id, re-minted from the payload's plain
-        # fields, never trusted from the wire (see GitBranch).
+        # parent_share_on_default types materialize their deterministic parent
+        # before the child. No built-in types currently use this hook.
         info = SchemaRegistry.get(cls.get_type())
         if info is not None and getattr(info, "parent_share_on_default", False):
             pid = await cls.materialize_share_parent(sanitized, someone_typeid)
@@ -1632,8 +1631,7 @@ class Entity(DBEntity):
     ) -> Optional[str]:
         """Hook for ``parent_share_on_default`` types: ensure the entity's
         parent exists locally (upsert-by-deterministic-id) and return its
-        typeid, or None. No-op on the base class — flagged types override
-        (see ``GitBranch.materialize_share_parent``)."""
+        typeid, or None. No-op on the base class."""
         return None
 
     @staticmethod

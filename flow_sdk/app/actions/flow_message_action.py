@@ -180,19 +180,10 @@ async def upload_flow_message() -> ApiResponse:
 
 async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     """Fetch FlowMessage from hub, materialise bundle if needed, delegate to deep-link handler."""
-    from flow_sdk.builtin.flow_message import AttachmentType
     from flow_sdk.server.routes.notify import handle_notification_deep_link
 
     data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
     meta = (data or {}).get("metadata") or {}
-
-    # The first REPO attachment URL triggers the git pull/clone flow; absence means bundle path.
-    raw_attachments = (data or {}).get("attachment") or []
-    repo_url = next(
-        (a["data"] for a in raw_attachments
-         if isinstance(a, dict) and a.get("attachment_type") == AttachmentType.REPO.value and a.get("data")),
-        "",
-    )
 
     attachment_filename = ((data or {}).get("attachment_filename") or "").strip()
 
@@ -201,7 +192,7 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     # optional Task), so the UI deep link can navigate directly without
     # needing a separate FM lookup. Scenario B has no Task — only the bundle
     # gates the download.
-    if not repo_url and attachment_filename:
+    if attachment_filename:
         try:
             await _download_and_unpack_bundle(
                 fm_id, attachment_filename, body_status=(data or {}).get("body_status"),
@@ -255,17 +246,15 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
             logger.warning("[open_flow_message] conv sync failed (non-fatal): %s", e, exc_info=True)
 
     logger.warning(
-        "[open_flow_message] fm_id=%s attachment_filename=%r repo_url=%r conv_id=%s task_id=%s",
-        fm_id, attachment_filename, repo_url, conversation_id, task_id,
+        "[open_flow_message] fm_id=%s attachment_filename=%r conv_id=%s task_id=%s",
+        fm_id, attachment_filename, conversation_id, task_id,
     )
 
     return await handle_notification_deep_link(
         fm_id=fm_id,
         conversation_id=conversation_id,
         task_id=task_id,
-        project_url=repo_url,
-        branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
-        repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
+        git_origin=(meta.get("git_origin") or (data or {}).get("git_origin")),
         sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
         title=(meta.get("task_title") or meta.get("spec_title") or (data or {}).get("task_title") or "").strip(),
     )

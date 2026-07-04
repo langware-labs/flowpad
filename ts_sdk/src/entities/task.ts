@@ -3,6 +3,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { IEntity } from '../IEntity';
+import type { GitOrigin } from '../models/GitOrigin';
 
 export interface ITask extends IEntity {
   title?: string;
@@ -35,7 +36,6 @@ export interface ITask extends IEntity {
   analysis_json_path?: string | null;
   analysis_path?: string | null;
   artifacts?: any[] | null;
-  branch?: string | null;
   classification_category?: string | null;
   classification_command?: string | null;
   classification_path?: string | null;
@@ -48,9 +48,8 @@ export interface ITask extends IEntity {
   process_id?: string | null;
   project_name?: string | null;
   project_root?: string | null;
-  project_url?: string | null;
+  git_origin?: GitOrigin | null;
   recipient_email?: string | null;
-  repo_id?: string | null;
   result_uname?: string | null;
   sender_email?: string | null;
   sender_name?: string | null;
@@ -90,7 +89,6 @@ export class Task extends APIEntity<Task> implements ITask {
   analysis_json_path?: string | null;
   analysis_path?: string | null;
   artifacts?: any[] | null;
-  branch?: string | null;
   classification_category?: string | null;
   classification_command?: string | null;
   classification_path?: string | null;
@@ -103,9 +101,8 @@ export class Task extends APIEntity<Task> implements ITask {
   process_id?: string | null;
   project_name?: string | null;
   project_root?: string | null;
-  project_url?: string | null;
+  git_origin?: GitOrigin | null;
   recipient_email?: string | null;
-  repo_id?: string | null;
   result_uname?: string | null;
   sender_email?: string | null;
   sender_name?: string | null;
@@ -146,7 +143,6 @@ export class Task extends APIEntity<Task> implements ITask {
     this.analysis_json_path = entity.analysis_json_path;
     this.analysis_path = entity.analysis_path;
     this.artifacts = entity.artifacts;
-    this.branch = entity.branch;
     this.classification_category = entity.classification_category;
     this.classification_command = entity.classification_command;
     this.classification_path = entity.classification_path;
@@ -159,9 +155,8 @@ export class Task extends APIEntity<Task> implements ITask {
     this.process_id = entity.process_id;
     this.project_name = entity.project_name;
     this.project_root = entity.project_root;
-    this.project_url = entity.project_url;
+    this.git_origin = entity.git_origin;
     this.recipient_email = entity.recipient_email;
-    this.repo_id = entity.repo_id;
     this.result_uname = entity.result_uname;
     this.sender_email = entity.sender_email;
     this.sender_name = entity.sender_name;
