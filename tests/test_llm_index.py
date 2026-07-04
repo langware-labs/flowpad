@@ -7,10 +7,9 @@ timestamp-free Merkle hashing, wiki-link rendering, and print_index output.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
-
-import json
 
 from flow_sdk.llm_index import (
     FolderNote,
@@ -212,31 +211,35 @@ def test_stamp_then_real_fs_mutations_detected(tmp_path: Path):
 
 
 def test_no_change_rescan_has_zero_false_positives(tmp_path: Path):
-    _make_vault(tmp_path)
-    base = tmp_path / ".data" / "baseline"
-    s1 = LLMIndexer(tmp_path, baseline_dir=base).stamp(now=FIXED_NOW)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _make_vault(vault)
+    base = tmp_path / "data" / "baseline"
+    s1 = LLMIndexer(vault, baseline_dir=base).stamp(now=FIXED_NOW)
     assert s1.folders_stamped == 2
 
-    idx = LLMIndexer(tmp_path, baseline_dir=base)
+    idx = LLMIndexer(vault, baseline_dir=base)
     st = _statuses(idx.to_graph())
     assert set(st.values()) == {"fresh"}
     d = idx.diff_since_baseline()
     assert all(not v for v in d.values())
 
     # Idempotent re-stamp, even with a different clock: nothing rewritten.
-    s2 = LLMIndexer(tmp_path, baseline_dir=base).stamp(now=LATER_NOW)
+    s2 = LLMIndexer(vault, baseline_dir=base).stamp(now=LATER_NOW)
     assert s2.folders_stamped == 0 and s2.folders_skipped == 2
 
 
 def test_removed_folder_becomes_ghost_chain(tmp_path: Path):
-    _make_vault(tmp_path)
-    base = tmp_path / ".data" / "baseline"
-    LLMIndexer(tmp_path, baseline_dir=base).stamp(now=FIXED_NOW)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _make_vault(vault)
+    base = tmp_path / "data" / "baseline"
+    LLMIndexer(vault, baseline_dir=base).stamp(now=FIXED_NOW)
 
     import shutil
-    shutil.rmtree(tmp_path / "auth")
+    shutil.rmtree(vault / "auth")
 
-    idx = LLMIndexer(tmp_path, baseline_dir=base)
+    idx = LLMIndexer(vault, baseline_dir=base)
     graph = idx.to_graph()
     ghost_folders = [n for n in graph["nodes"] if n["is_ghost"] and n["type"] == "markdown_index"]
     assert [g["rel_path"] for g in ghost_folders] == ["auth"]
@@ -248,41 +251,45 @@ def test_removed_folder_becomes_ghost_chain(tmp_path: Path):
 
 
 def test_manual_folder_is_never_stamped_or_flagged(tmp_path: Path):
-    _make_vault(tmp_path)
-    (tmp_path / "auth" / "index.md").write_text("---\nmanual: true\n---\n\n# Hand-made\n")
-    base = tmp_path / ".data" / "baseline"
-    LLMIndexer(tmp_path, baseline_dir=base).stamp(now=FIXED_NOW)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _make_vault(vault)
+    (vault / "auth" / "index.md").write_text("---\nmanual: true\n---\n\n# Hand-made\n")
+    base = tmp_path / "data" / "baseline"
+    LLMIndexer(vault, baseline_dir=base).stamp(now=FIXED_NOW)
     assert not (base / "auth" / "index.md.json").exists()
 
-    idx = LLMIndexer(tmp_path, baseline_dir=base)
+    idx = LLMIndexer(vault, baseline_dir=base)
     assert _statuses(idx.to_graph())["auth"] == "manual"
     d = idx.diff_since_baseline()
     assert "auth" not in d["stale_folders"] and "auth" not in d["unindexed_folders"]
 
 
 def test_blobs_written_size_guarded_and_gcd(tmp_path: Path):
-    _make_vault(tmp_path)
-    big = tmp_path / "big.md"
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _make_vault(vault)
+    big = vault / "big.md"
     big.write_text("# Big\n" + "x" * 100)
-    base = tmp_path / ".data" / "baseline"
+    base = tmp_path / "data" / "baseline"
 
-    idx = LLMIndexer(tmp_path, baseline_dir=base)
+    idx = LLMIndexer(vault, baseline_dir=base)
     idx.stamp(now=FIXED_NOW, max_blob_bytes=50)   # guard excludes big.md
     blobs = idx.blobs_dir
-    big_hash = next(d.content_hash for d in LLMIndexer(tmp_path, baseline_dir=base).docs()
+    big_hash = next(d.content_hash for d in LLMIndexer(vault, baseline_dir=base).docs()
                     if d.path.name == "big.md")
     assert not (blobs / big_hash).exists()
 
-    intro = LLMIndexer(tmp_path, baseline_dir=base).baseline_file("intro.md")
+    intro = LLMIndexer(vault, baseline_dir=base).baseline_file("intro.md")
     old_blob = blobs / intro.content_hash
     assert old_blob.is_file()
 
     # Edit intro → re-stamp → new blob exists, orphaned old blob GC'd.
-    (tmp_path / "intro.md").write_text("# Intro\n\nedited\n")
-    s = LLMIndexer(tmp_path, baseline_dir=base).stamp(now=LATER_NOW, max_blob_bytes=50)
+    (vault / "intro.md").write_text("# Intro\n\nedited\n")
+    s = LLMIndexer(vault, baseline_dir=base).stamp(now=LATER_NOW, max_blob_bytes=50)
     assert s.blobs_deleted >= 1
     assert not old_blob.exists()
-    new_ref = LLMIndexer(tmp_path, baseline_dir=base).baseline_file("intro.md")
+    new_ref = LLMIndexer(vault, baseline_dir=base).baseline_file("intro.md")
     assert (blobs / new_ref.content_hash).is_file()
 
 
@@ -290,10 +297,12 @@ def test_legacy_demo_sidecar_degrades_to_unindexed(tmp_path: Path):
     """Regression pin: the old IndexMdJson schema (per-file rel_path/size_bytes,
     fake sha256:demo_* hashes, as in docs/index.md.json) must load as NO
     baseline — folder `unindexed`, zero `modified` — not as all-modified."""
-    _make_vault(tmp_path)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _make_vault(vault)
     legacy = {
-        "typeid": "markdown_index-x", "parent_ref": "", "vault_root": str(tmp_path),
-        "folder_rel_path": "", "folder_name": tmp_path.name,
+        "typeid": "markdown_index-x", "parent_ref": "", "vault_root": str(vault),
+        "folder_rel_path": "", "folder_name": vault.name,
         "inputs_hash": "sha256:demo", "template_version": 1, "prompt_version": 1,
         "self_summary": "demo", "generated_at": "2026-05-24T00:00:00",
         "latest_process_ref": "", "schema_version": 1,
@@ -301,9 +310,9 @@ def test_legacy_demo_sidecar_degrades_to_unindexed(tmp_path: Path):
                    "summary": "demo", "content_hash": "sha256:demo_intro", "size_bytes": 1}],
         "subfolders": [],
     }
-    (tmp_path / "index.md.json").write_text(json.dumps(legacy))
+    (vault / "index.md.json").write_text(json.dumps(legacy))
 
-    idx = LLMIndexer(tmp_path, baseline_dir=tmp_path / ".data" / "baseline")
+    idx = LLMIndexer(vault, baseline_dir=tmp_path / "data" / "baseline")
     st = _statuses(idx.to_graph())
     assert st[""] == "unindexed"
     assert st["intro.md"] == "unindexed"
@@ -313,16 +322,18 @@ def test_legacy_demo_sidecar_degrades_to_unindexed(tmp_path: Path):
 def test_edges_carry_indexed_summaries(tmp_path: Path):
     """Tree edges expose the indexed one-liner (FileRef.summary / child
     self_summary) so the Atlas can render it along the connecting line."""
-    _make_vault(tmp_path)
-    base = tmp_path / ".data"
-    idx = LLMIndexer(tmp_path, summaries_dir=base / "sums", baseline_dir=base / "baseline")
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _make_vault(vault)
+    base = tmp_path / "data"
+    idx = LLMIndexer(vault, summaries_dir=base / "sums", baseline_dir=base / "baseline")
     for d in idx.docs():
         if d.path.name == "intro.md":
             d.set_summary("Getting-started walkthrough and install steps")
     idx.stamp(now=FIXED_NOW)
 
     g = LLMIndexer(
-        tmp_path, summaries_dir=base / "sums", baseline_dir=base / "baseline"
+        vault, summaries_dir=base / "sums", baseline_dir=base / "baseline"
     ).to_graph()
     with_summary = [e for e in g["edges"] if e["kind"] == "child" and e.get("summary")]
     assert len(with_summary) == 1

@@ -26,16 +26,15 @@ import uuid
 from pathlib import Path
 from typing import Iterator
 
-from flow_sdk.fs_store.indexer.functions._codex_session_stats import (
-    _get_codex_session_batch_stats,
-)
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.fs_store.indexer.functions._codex_session_stats import (
+    _get_codex_session_batch_stats,
+)
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
-
 
 _HEAD_LINES = 64
 

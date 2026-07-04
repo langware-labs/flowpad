@@ -89,9 +89,23 @@ file:
 5. Take the returned `markdown-...` TypeId and run `flow show entity <typeid>`.
    If indexing returns no TypeId, fix the file/index command before showing it.
 
-## Opening EXISTING things ("open the X board / skill / doc")
+## Opening EXISTING things
 
-Don't rebuild — find it and show it:
+**Existing web apps / sites / UIs** ("open the app", "run the dashboard",
+"show the frontend") → don't rebuild. Use the app opener:
+
+```bash
+flow app open "<user words>"
+```
+
+It first reuses a matching saved WEBAPP artifact. If none matches, it scans the
+project for web app roots (`package.json`, common frameworks, static
+`index.html` folders), starts the best match, creates/updates the WEBAPP
+artifact, and shows it in the display. Exit 0 = opened and shown. Exit 4 = no
+app found → say so briefly and offer to create one. Do not manually emit
+`<flow-result>` XML for this; the command persists the artifact.
+
+**Other existing things** ("open the X board / skill / doc") → don't rebuild:
 1. `flow record search "<name or words>" 0 5` → take the best match's typeid.
 2. `flow show entity <typeid>` (exit 4 = not found → say so, offer to create).
 If you already know the file path, `flow show file <abs-path>` works directly.

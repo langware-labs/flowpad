@@ -164,6 +164,9 @@ class AgenticContext(BaseModel):
     # Claude's ``--add-dir``). Drivers populate this from process configuration
     # so print-mode workers see the same skill/agent surface as PTY-mode runs.
     add_dirs: list[str] = Field(default_factory=list)
+    system_prompt_file: str | None = None
+    developer_instructions: str | None = None
+    custom_instruction_dirs: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def set_defaults(self) -> "AgenticContext":
@@ -262,6 +265,7 @@ class WorkerCLIOptions:
     # How a system-prompt addition reaches the worker: a CLI flag name
     # (claude ``--append-system-prompt``) or None ⇒ prepend into the prompt body.
     SYSTEM_PROMPT_FLAG: str | None = None
+    SYSTEM_PROMPT_FILE_FLAG: str | None = None
 
     def __init__(
         self,
@@ -279,6 +283,7 @@ class WorkerCLIOptions:
         # set by the launcher; derived state — not a ctor param, not serialized,
         # so restart hashing is unaffected.
         self.system_prompt_append: str | None = None
+        self.system_prompt_file: str | None = None
 
     @property
     def model(self) -> str | None:
@@ -322,6 +327,8 @@ class WorkerCLIOptions:
         spawn tuple both derive from this."""
         argv: list[str] = [*self._resolve_binary(), *self._emit_flags()]
         spa = self._system_prompt(system_prompt_append)
+        if self.system_prompt_file and self.SYSTEM_PROMPT_FILE_FLAG:
+            argv.extend([self.SYSTEM_PROMPT_FILE_FLAG, self.system_prompt_file])
         if spa and self.SYSTEM_PROMPT_FLAG:
             argv.extend([self.SYSTEM_PROMPT_FLAG, spa])
         if self.PROMPT_CHANNEL == "argv" and instruction:
@@ -653,8 +660,11 @@ class WorkerDriver(Protocol):
         instruction: str,
         agents_json: dict | None,
     ) -> str:
-        """Inline embedded-agent definitions (or pass through unchanged) so
-        the parent worker reliably honours their side-effect instructions."""
+        """Return the user prompt, optionally transformed by a vendor driver.
+
+        Current drivers keep this as a passthrough; embedded-agent instructions
+        are delivered via generated process instruction assets.
+        """
         ...
 
     # ── External-session probe (used by test invariant) ──────────────────────

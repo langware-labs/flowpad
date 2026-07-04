@@ -106,9 +106,6 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Dev file log: failed to init ({_e})")
 
-    if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
-        return
-
     set_server_info(
         {
             "port": settings.port,
@@ -118,6 +115,8 @@ async def _on_server_startup():
         }
     )
     print(f"  server.json:   {settings.server_json_path}")
+    if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
+        print("  singleton lock: skipped (FLOWPAD_SKIP_LOCK=true)")
 
     from flow_sdk.fs_store.operations.record_retention import run_old_record_cleanup
 

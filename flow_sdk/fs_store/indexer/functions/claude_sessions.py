@@ -39,12 +39,12 @@ from pathlib import Path
 from typing import Iterator
 
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
-from flow_sdk.fs_store.indexer.functions._claude_session_stats import (
-    _get_session_batch_stats,
-)
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.fs_store.indexer.functions._claude_session_stats import (
+    _get_session_batch_stats,
+)
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings

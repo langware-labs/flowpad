@@ -25,9 +25,16 @@ function TurnDivider() {
  * tab's Standard-mode SimpleChatPane so both render identical chat turns.
  */
 export function TurnGroupsList({ groups, worker }: { groups: TurnGroup[]; worker?: string }) {
+  const visibleGroups = groups.filter((g) => {
+    if (g.kind !== 'message') return true;
+    if (g.flowData.attributes?.['is-meta'] !== 'true') return true;
+    const content = g.flowData.content ?? '';
+    return !isFlowpadPromptEnvelope(String(content));
+  });
+
   return (
     <>
-      {groups.map((g, i) => {
+      {visibleGroups.map((g, i) => {
         // Partition index `i` is the tiebreaker: two messages can share a
         // timestamp (and lack an id), which collided on `id ?? timestamp` and
         // tripped React's duplicate-key warning (children duplicated/omitted)
@@ -69,4 +76,9 @@ export function TurnGroupsList({ groups, worker }: { groups: TurnGroup[]; worker
       })}
     </>
   );
+}
+
+function isFlowpadPromptEnvelope(content: string): boolean {
+  if (!content.includes('\n# User message\n')) return false;
+  return content.startsWith("# You are the '") || content.startsWith('# Embedded agent specs');
 }

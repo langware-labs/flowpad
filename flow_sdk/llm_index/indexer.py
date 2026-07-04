@@ -1,6 +1,6 @@
 """LLMIndexer — deterministic driver for the markdown folder-index.
 
-Pure stdlib. Python owns every deterministic step (walk, hash, the Merkle tree,
+Python owns every deterministic step (walk, hash, the Merkle tree,
 the summary cache, building :class:`IndexData`, rendering through
 ``MarkdownDocument``); the LLM is two **injected** pure functions::
 
@@ -135,6 +135,11 @@ class IndexItem:
     @property
     def is_stale(self) -> bool:
         return self._node.is_stale
+
+    @property
+    def existing_hash(self) -> str:
+        """The ``inputs_hash`` currently on disk (index.md frontmatter)."""
+        return self._node.existing_hash
 
     @property
     def is_manual(self) -> bool:
@@ -278,7 +283,8 @@ class LLMIndexer:
 
     ``path`` may be ``None`` and supplied later via :meth:`scan`. ``summaries_dir``
     is the content-addressed summary cache; it defaults to ``<root>/.llm_index``
-    (which the walker ignores).
+    (which the walker ignores). ``gitignore`` toggles ``.gitignore`` filtering
+    in the shared walk (the hardcoded denylist always applies).
     """
 
     def __init__(
@@ -289,8 +295,10 @@ class LLMIndexer:
         baseline_dir: Path | str | None = None,
         blobs_dir: Path | str | None = None,
         force: bool = False,
+        gitignore: bool = True,
     ):
         self.force = force
+        self.gitignore = gitignore
         self._summaries_dir = Path(summaries_dir) if summaries_dir is not None else None
         # Baseline snapshots (the native `stamp`) live OUTSIDE the vault — the
         # caller (server) resolves the per-entity data dir and passes it in.
@@ -380,7 +388,9 @@ class LLMIndexer:
                 counts["files" if kind == "file" else "folders"] += 1
                 on_tick(ScanTick(counts["folders"], counts["files"], str(node_path)))
 
-        self._root_item = IndexItem(scan_tree(self.root, on_node=on_node), self)
+        self._root_item = IndexItem(
+            scan_tree(self.root, gitignore=self.gitignore, on_node=on_node), self,
+        )
         return self
 
     def _require_scanned(self) -> IndexItem:
@@ -426,7 +436,7 @@ class LLMIndexer:
         """Drive a full incremental rebuild. The two summarize callables are the
         only LLM touch-points; ``summarize_folder`` is skipped (prior reused) for
         any folder whose own files are unchanged."""
-        root = self._require_scanned()
+        self._require_scanned()
         generated_at = (now or datetime.now(timezone.utc)).isoformat()
 
         total_folders = 0

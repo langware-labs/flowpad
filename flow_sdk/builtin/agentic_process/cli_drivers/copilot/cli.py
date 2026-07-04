@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
@@ -29,6 +30,7 @@ class CopilotCliOptions(WorkerCLIOptions):
         no_auto_update: bool = True,
         no_custom_instructions: bool = True,
         allow_all: bool = True,
+        custom_instruction_dirs: list[str] | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -43,6 +45,7 @@ class CopilotCliOptions(WorkerCLIOptions):
         self.no_auto_update = no_auto_update
         self.no_custom_instructions = no_custom_instructions
         self.allow_all = allow_all
+        self.custom_instruction_dirs: list[str] = list(custom_instruction_dirs or [])
 
     EXECUTABLE = "copilot"
     PROMPT_CHANNEL = "stdin"  # copilot reads the prompt from stdin
@@ -78,9 +81,33 @@ class CopilotCliOptions(WorkerCLIOptions):
             head.append("--no-ask-user")
         if self.no_auto_update:
             head.append("--no-auto-update")
-        if self.no_custom_instructions:
+        if self.no_custom_instructions and not self.custom_instruction_dirs:
             head.append("--no-custom-instructions")
         return head + allow_all + self._common_tail()
+
+    def _sync_custom_instruction_env(self) -> None:
+        if not self.custom_instruction_dirs:
+            return
+        existing = self.env_vars.get("COPILOT_CUSTOM_INSTRUCTIONS_DIRS") or os.environ.get("COPILOT_CUSTOM_INSTRUCTIONS_DIRS", "")
+        parts = [p for p in existing.split(",") if p]
+        for directory in self.custom_instruction_dirs:
+            if directory not in parts:
+                parts.append(directory)
+        self.env_vars["COPILOT_CUSTOM_INSTRUCTIONS_DIRS"] = ",".join(parts)
+
+    def to_spawn(
+        self, instruction: str | None = None, system_prompt_append: str | None = None
+    ) -> tuple[list[str], dict[str, str], str | None]:
+        self._sync_custom_instruction_env()
+        return super().to_spawn(instruction=instruction, system_prompt_append=system_prompt_append)
+
+    def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
+        self._sync_custom_instruction_env()
+        return super().to_spawn_args(instruction=instruction)
+
+    def to_shell_string(self, instruction: str | None = None) -> str:
+        self._sync_custom_instruction_env()
+        return super().to_shell_string(instruction=instruction)
 
     def to_json(self) -> dict[str, Any]:
         data = super().to_json()

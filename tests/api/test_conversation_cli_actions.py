@@ -9,8 +9,12 @@ SDK layer (``FlowMessage.get_one`` / ``Conversation.get_one``).
 """
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import AsyncMock
+
 import pytest
 
+from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import DeliveryStatus, FlowMessage
 
 pytestmark = pytest.mark.asyncio
@@ -88,6 +92,62 @@ async def test_logged_in_local_conversation_send_is_created(bootstrapped_client,
 
     fm = await FlowMessage.get_one({"id": data["flow_message_id"]})
     assert fm.delivery_status == DeliveryStatus.CREATED.value
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_add_message_git_share_config_reaches_background_upload(
+    bootstrapped_client, user, monkeypatch
+):
+    """Git-backed shares are normal attachment sends whose body packer runs in
+    git mode. This verifies the conversation action forwards the dialog's
+    share_config through to the background upload task.
+    """
+    _force_login(monkeypatch, logged_in=True)
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    conv = await Conversation.get_one({"id": conv_id})
+    conv.remote = True
+    await conv.save()
+
+    upload_calls: list[str] = []
+
+    async def fake_upload(_fm, _conv_id, *, transfer_mode: str = "copy") -> None:
+        upload_calls.append(transfer_mode)
+
+    tasks: list[asyncio.Task] = []
+    real_create_task = asyncio.create_task
+
+    def capture_task(coro):
+        task = real_create_task(coro)
+        tasks.append(task)
+        return task
+
+    monkeypatch.setattr(
+        "flow_sdk.app.actions.notification_action._send_conversation_message_header",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "flow_sdk.app.actions.notification_action._upload_body_and_finalize",
+        fake_upload,
+    )
+    monkeypatch.setattr(
+        "flow_sdk.app.actions.notification_action.asyncio.create_task",
+        capture_task,
+    )
+
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={
+            "message": "shared git-backed app",
+            "asset_references": ["artifact-11111111-1111-4111-8111-111111111111"],
+            "share_config": {"transfer_mode": "git"},
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert tasks, "body upload task was not scheduled"
+    await asyncio.gather(*tasks)
+    assert upload_calls == ["git"]
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

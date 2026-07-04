@@ -22,23 +22,21 @@ frontmatter+body parse without inheriting from a Record subclass.
 
 from __future__ import annotations
 
-import os
 import re
-import uuid
 from pathlib import Path
 from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-from flow_sdk.fs_store.record_types import RecordType
-
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
     _render_frontmatter,
     _yaml_load,
 )
+from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+from flow_sdk.fs_store.record_types import RecordType
+
 
 def _is_appledouble(name: str) -> bool:
     """True for macOS AppleDouble sidecars (``._foo.md``) — binary

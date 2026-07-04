@@ -16,7 +16,6 @@ import sys
 from pathlib import Path
 from typing import Iterator
 
-
 _IS_WINDOWS = sys.platform == "win32"
 
 

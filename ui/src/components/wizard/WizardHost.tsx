@@ -1,5 +1,6 @@
 import {
   AgenticProcess,
+  apiClient,
   awaitWizardResult,
   buildWizardPrompt,
   completeWizard,
@@ -15,6 +16,18 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { notify } from '@src/notifications/notify';
 import { useEffect, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
+
+let wizardAgentRefCache: Record<string, string | null> = {};
+
+async function resolveWizardAgentRef(name: string): Promise<string | null> {
+  if (name in wizardAgentRefCache) return wizardAgentRefCache[name];
+  const rows = await apiClient.get<{ name?: string; asset_ref?: string }[]>(
+    '/graph/agent?include_system=true',
+  );
+  const ref = (rows ?? []).find((r) => r.name === name)?.asset_ref ?? null;
+  wizardAgentRefCache = { ...wizardAgentRefCache, [name]: ref };
+  return ref;
+}
 
 interface ActiveWizard {
   request: WizardLaunchRequest;
@@ -57,6 +70,12 @@ export function WizardHost() {
         );
         const initialPrompt = buildWizardPrompt(process.id, request);
         const resultPromise = awaitWizardResult<T>(process);
+        try {
+          const agentRef = await resolveWizardAgentRef(request.wizardName);
+          if (agentRef) await process.loadEmbeddedAgent(agentRef);
+        } catch (e) {
+          console.warn(`[WizardHost] failed to embed wizard agent ${request.wizardName}`, e);
+        }
 
         return await new Promise<WizardProcessResult<T>>((resolve) => {
           const finish = (result: WizardProcessResult<unknown>) => {

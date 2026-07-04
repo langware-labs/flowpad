@@ -1,4 +1,4 @@
-import { APIEntity, createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User, type AgenticProcess, type WorkerStatus } from '@sdk';
+import { APIEntity, Artifact, createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User, type AgenticProcess, type WorkerStatus } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -26,6 +26,7 @@ import type { SendTarget } from '@src/hooks/use-send-to-conversation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
+import { openArtifact } from '@src/components/artifacts/open-artifact';
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -642,14 +643,21 @@ function MessageEntityChip({
   projectId?: string | null;
   forceShow: boolean;
 }) {
+  const { navigation } = useDockNavigation();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useEntity<APIEntity<any>>(typeId);
   // Hidden until either the entity is on disk (local) or the bundle is downloaded.
   if (!data && !forceShow) return null;
+  const artifact = typeId.type === Artifact.type && data
+    ? data instanceof Artifact
+      ? data
+      : new Artifact(data as unknown as Partial<Artifact>)
+    : null;
   return (
     <ContextEntityChip
       typeId={typeId}
       inside={{ type: 'conversation', id: conversationId }}
+      onClick={artifact ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null }) : undefined}
       projectId={projectId}
     />
   );

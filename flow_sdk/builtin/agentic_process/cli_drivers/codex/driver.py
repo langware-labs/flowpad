@@ -3,9 +3,8 @@
 Concentrates everything previously expressed as ``if worker_type == CODEX`` in
 ``AgenticProcess`` so the entity stays vendor-pure: cli_options building,
 headless ``codex exec --json`` turn execution, transcript location (process-
-local file the worker tee'd), tail-status mapping, history loading, and
-prompt composition that inlines embedded agents (codex has no native sub-
-agent dispatch in --ephemeral mode).
+local file the worker tee'd), tail-status mapping, history loading, and the
+prompt-composition compatibility hook.
 """
 
 from __future__ import annotations
@@ -66,11 +65,10 @@ class CodexDriver:
     def cli_options(self, process: "AgenticProcess") -> CodexCliOptions:
         """Build a Codex CLI command for ``process``.
 
-        Codex doesn't accept inline ``--agents`` like Claude — it discovers
-        skills from ``~/.codex/skills/``. We surface the embedded agent names
-        as ``skill_names`` so ``cmd_line`` reflects them (some tests assert
-        on this), and the runtime path inlines the agent body via
-        ``compose_prompt`` instead.
+        Codex doesn't accept inline ``--agents`` like Claude. We surface the
+        embedded agent names as ``skill_names`` so ``cmd_line`` reflects them
+        (some tests assert on this); the instruction bodies are delivered via
+        generated process instruction assets.
         """
         cmd = CodexCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
@@ -114,6 +112,7 @@ class CodexDriver:
             await process.get_project()
         except Exception:
             logger.debug("CodexDriver.headless_prompt: get_project failed", exc_info=True)
+        instruction_assets = await process.prepare_system_instruction_assets()
         if not process.workdir:
             return ApiFailResponse(message="codex prompt: workdir is not set")
 
@@ -133,9 +132,8 @@ class CodexDriver:
             # fresh lets the worker mint a rollout; its real id is captured from
             # the stream below and persisted back onto ``process.session_id``.
             resume_session_id=process.session_id if self.has_resumable_session(process) else None,
-            # ContextProcess §2.4: fold the bound context summary into the system
-            # prompt. Generic across vendors; "" when no context is bound.
-            instructions=await process.resolve_system_instructions(),
+            add_dirs=list(process.resolved_add_dirs or []),
+            **process._instruction_context_kwargs(instruction_assets),
         )
 
         worker = CodexCLIStreamWorker.for_process(process.id)
@@ -304,44 +302,7 @@ class CodexDriver:
         instruction: str,
         agents_json: dict | None,
     ) -> str:
-        """Inline embedded-agent definitions so codex executes them directly.
-
-        Codex has its own collaboration/delegation system but it can't fork the
-        current ``codex exec --ephemeral`` thread, so attempting to delegate
-        causes "thread can't be forked for a sub-agent" errors. Instead, we
-        flatten each embedded agent's instructions into the user prompt and
-        tell codex explicitly to follow them in-process.
-        """
-        agents_json = agents_json or {}
-        if not agents_json:
-            return instruction
-        sections: list[str] = [
-            "# Inline sub-agent definitions",
-            (
-                "Each ## block below defines a named sub-agent. Do NOT try to "
-                "delegate, fork, or spawn a separate agent — there is no "
-                "sub-agent runtime here. When the user instruction asks you "
-                "to use one of these agents, follow that agent's instructions "
-                "yourself, in this same turn."
-            ),
-            (
-                "Be fast: as soon as every required artifact (file, command "
-                "output) exists on disk, end the turn immediately with a one-"
-                "line confirmation. Do NOT write recaps, summaries, "
-                "explanations, verification steps, or follow-up suggestions."
-            ),
-        ]
-        for name, entry in agents_json.items():
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections.append(f"\n## {name}")
-            if desc:
-                sections.append(desc)
-            if body:
-                sections.append(body)
-        sections.append("\n# User instruction")
-        sections.append(instruction)
-        return "\n".join(sections)
+        return instruction
 
     # ── External-session probe ───────────────────────────────────────────────
 

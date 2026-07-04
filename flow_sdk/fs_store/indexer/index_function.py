@@ -17,8 +17,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 
-from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.progress_table import (
     PROGRESS_TEXT_COMPLETE,
     IndexProgressTable,
@@ -27,7 +27,6 @@ from flow_sdk.fs_store.indexer.progress_table import (
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.server.search_filters import SCOPED_RECORD_TYPES, ScopeFilter
-
 
 # DFS waypoints the walker visits to reach leaf record types. Either they
 # don't materialize records at all (USER_HOME_FOLDER, SYSTEM_ROOT, FOLDER,
@@ -191,6 +190,7 @@ def _read_disk_record_scope(
     cross-scope).
     """
     import json  # noqa: PLC0415
+
     from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
         get_default_records_root,
         record_stem,
@@ -431,8 +431,9 @@ class FSIndexer:
             targets = [r for r in refs if r.record_type in target_set]
 
         # Imports localized to break cycles
+        from flow_sdk.db import get_db_driver
+        from flow_sdk.db import session as _db_session
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
-        from flow_sdk.db import get_db_driver, session as _db_session
 
         # Skip-fresh is entirely on-disk: it reads each record's own ``.hash``
         # sentinel (``index_required``). The per-record index loop makes ZERO
