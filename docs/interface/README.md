@@ -1,3 +1,7 @@
+---
+id: 10f4e57c-07b4-5272-9750-0fd51154d0c1
+---
+
 # Interface Reference — the agentic-process stack
 
 Complete interface reference for the objects that run agents and terminals: what

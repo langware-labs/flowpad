@@ -1,6 +1,6 @@
 # Test Index
 
-> Last updated: 2026-06-29T22-06-34Z
+> Last updated: 2026-07-04T05-29-17Z
 > Scope: manual_regression categories. Counts derived from filesystem.
 
 | Category | .md specs | .md.ts | Orphan .md (no .md.ts) |
@@ -9,7 +9,7 @@
 | assets | 3 | 3 | 0 |
 | chat | 14 | 14 | 0 |
 | cli-log | 1 | 1 | 0 |
-| collaboration | 4 | 4 | 0 |
+| collaboration | 7 | 7 | 0 |
 | conversation | 2 | 2 | 0 |
 | editor | 13 | 13 | 0 |
 | general | 7 | 7 | 0 |
@@ -24,7 +24,7 @@
 | triggers | 1 | 5 | 0 |
 | whiteboard | 8 | 8 | 0 |
 | workflow | 2 | 2 | 0 |
-| **TOTAL** | **114** | **128** | **2** |
+| **TOTAL** | **117** | **131** | **2** |
 
 ## Phase 12 orphan scope (md without md.ts sibling)
 - agentic-process/conversation_view_three_spawn_branches.md

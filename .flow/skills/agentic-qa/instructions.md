@@ -8,6 +8,7 @@
 
 - Backend: `http://localhost:9008` (port set via `LOCAL_SERVER_PORT=9008` in `.env.local`)
 - Frontend: `http://localhost:4098` (VITE_PORT=4098 in `.env.local`, NOT 4097)
+- 2026-07-04 focused hub/GitOrigin run: backend `http://localhost:9008` reachable; hub `http://localhost:8093` reachable; frontend `http://localhost:4098` was down, so validation stayed at pytest/API hub layer. Local hub named credentials (`alice@local.test` / `bob@local.test`) rejected `/login`; `login/local` worked. `ops/scripts/setup_test_users.sh` in `../test_flowpad/FlowPad` failed against the current hub checkout because `User.grant_access_to_public_data` is missing.
 - Backend start command: `cd <repo root> && LOCAL_SERVER_PORT=9008 uv run -m flow_sdk.server.run`
 - Backend reindex endpoint: `POST http://localhost:9008/api/v1/graph/<type>/<id>/wiki/reindex` (per-entity). The path `/api/v1/search/reindex/<type>` does NOT exist (returns 405) — older docs reference it; the actual route was renamed and only the per-entity form remains as of 2026-05-19.
 - Platform: darwin (macOS) — Python 3.10.17, uv 0.10.9
@@ -18,6 +19,12 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-07-04 — Focused GitOrigin hub-share validation
+
+**Git-backed body bundles passed through the live local hub after preserving `conversation_id` on the SDK return payload.** The failing shape was: `Conversation.add_message()` POSTed to the scoped hub route with `conversation_id`, but the hub response did not echo that field. `FlowMessage.upload_body()` then packed `header.json` with `"conversation_id": null`; the receiver-side `download_body()` could fetch the correct `body.flowmsg`, but `unpack_bundle()` could not resolve the mapped conversation project, so the git-backed skill stayed parked instead of restoring under `<project>/<repo-relative rel_path>`. Fix: `Conversation.add_message()` now stamps `data["conversation_id"] = self.id` when the hub omits it. Regression added: `tests/hub_tests/test_git_origin_share_roundtrip.py` creates a real git-backed skill, uploads/downloads through the live hub, and asserts the receiver restores `tools/kit/.claude/skills/hubgit/SKILL.md` with `git_origin` metadata.
+
+**For local hub runs without seeded named users, override to `login/local`.** The relevant GitOrigin/body-share slice ran with `FLOWPAD_CLOUD_USER_EMAIL=` and `FLOWPAD_CLOUD_USER_PASSWORD=` so `tests/hub_tests/conftest.py` uses `/login/local`. The full `tests/hub_tests` package still has named-user failures when `alice@local.test` / `bob@local.test` are not seeded; those are environment-gated, not GitOrigin regressions.
 
 ### 2026-06-19 — Full QA cycle (0.2.67-fixes branch, tab-system unification)
 

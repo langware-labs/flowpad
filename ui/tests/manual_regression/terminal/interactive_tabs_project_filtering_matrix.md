@@ -345,19 +345,8 @@ test 30: "Select Project" red pill — tab spawn flow
 test 31: "Open folder" launches at workdir [skip:platform]
 - mark `status:"skip"` with `skip_reason:"platform"` and `skip_challenge_required:true`. The OS file manager opens outside the browser; we cannot verify it headlessly.
 
-test 32: Footer repo/branch reflects active project's Git artifact
-- (rationale: the matrix originally referenced a `gitRepo` entity. There is NO such graph entity — `flow_sdk/builtin/faas/git_repo.py:69` defines a `class GitRepo` that is a CLI helper, not an APIEntity. The footer at `ui/src/components/footer.tsx:33-61` reads from the project's **artifacts** via `useCurrentArtifacts()` (filtering for `artifact_type === ArtifactType.GIT_REPO`). The correct fixture is an Artifact entity with `artifact_type='GIT_REPO'`.)
-- via REST: create `Proj-B` (record `<proj-b-id>`). Create a GIT_REPO artifact scoped to that project:
-  ```bash
-  curl -X POST "$API/api/v1/graph/artifact" -H 'Content-Type: application/json' \
-    -d '{"artifact_type":"GIT_REPO","metadata":{"url":"git@example.com:org/repo.git","branch":"feat/x"},"context_entities":[{"type_id":"project-<proj-b-id>"}]}'
-  ```
-  (NOTE: artifact-to-project scoping convention may need verification per the codebase — `useCurrentArtifacts` queries `type:'artifact'` with `scope:[projectTypeId]`. If `context_entities` doesn't bind it correctly, try setting a `parent_id` or `project_id` field on the body. Record the working shape in `notes`.)
-- with current = bootstrap project, validate footer center shows the bootstrap project's repo/branch (or empty)
-- via chip, switch to `Proj-B`
-- validate footer center shows the artifact's url + `:feat/x`
-- via chip, switch back; validate footer updates
-- run common validation block
+test 32: Footer repo/branch Git artifact [removed]
+- mark `status:"skip"` with `skip_reason:"removed"`. Project Git artifacts and footer repo/branch rendering were removed; git share provenance is represented by `GitOrigin` bundle metadata instead.
 
 ## F. Restart & CLI changes
 

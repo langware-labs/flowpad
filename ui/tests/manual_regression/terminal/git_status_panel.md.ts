@@ -1,7 +1,7 @@
 /**
  * Regression tests: Git Status Side Panel (Unified Side Window)
  *
- * Feature: A GitBranch icon in the TerminalBottomRibbon (agentic process terminals only)
+ * Feature: A git branch icon in the TerminalBottomRibbon (agentic process terminals only)
  * opens a Git tab in the unified side window showing the current branch, ahead/behind counts,
  * and a list of changed/added/deleted/untracked files with per-file insertion/deletion counts.
  *

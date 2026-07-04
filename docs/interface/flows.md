@@ -384,7 +384,7 @@ Python or SDK integration test exists.
    history (fork copies it).
 
 **From the global search dock-menu** (`fork_action_from_search_dock.md`):
-1. Fork action (GitBranch) on a `claude_session` search result.
+1. Fork action (branch icon) on a `claude_session` search result.
 2. Creates a new `AgenticProcess` with `workdir == source session cwd`; the `createProcess`
    payload includes `{ visible: true, watchProcess: false }`.
 3. The new shell tab mounts an **interactive** xterm (typing `echo hi` prints `hi`).
@@ -397,7 +397,7 @@ longer exists. Spawn now lives in `useApproveAndExecute.ts` and `useMyProcess.ts
 `my_process_id`). Do not treat its four numbered branches as current behavior.
 
 **Slickness:** Can't judge the API from tests — there is none below the browser. The two live
-scenarios show two different fork entry points (toolbar GitFork vs search GitBranch) producing
+scenarios show two different fork entry points (toolbar GitFork vs search branch icon) producing
 similarly-shaped results; the search path's `{ visible: true, watchProcess: false }` payload is
 the only concrete API contract captured, and only as a DevTools assertion. See [Findings](#findings).
 

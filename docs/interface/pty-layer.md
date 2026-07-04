@@ -1,3 +1,7 @@
+---
+id: 8a2e3132-0493-545a-9acc-2f2faed61a69
+---
+
 # PTY layer — interface
 
 The internal PTY layer runs interactive terminal/agent processes on the local

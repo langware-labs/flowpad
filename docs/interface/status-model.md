@@ -1,3 +1,7 @@
+---
+id: bd90c939-b6dd-5b73-bf05-3a53bd714966
+---
+
 # Status model — interface
 
 Interface reference for the process/worker status model, backend↔frontend paired. This is the two-axis `(ProcessStatus, WorkerStatus)` model plus its derived projections (`WorkerMode`, `ExecutionMode`, `ready_for_input`). For the narrative on why the two axes exist and how PTY/headless routing works, see [agentic-process.md](../agent-management/agentic-process.md).
