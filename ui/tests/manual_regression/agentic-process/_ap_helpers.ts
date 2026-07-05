@@ -102,7 +102,11 @@ export async function waitForRunningSession(page: Page, apiBase: string, process
       },
       { base: apiBase, id: processId },
     );
-    expect(data.status).toBe('running');
+    // The wire never emits the stored "running" status: it projects to
+    // ready/busy (canonical status model, docs/agent/agentic_process_statuses.md).
+    // Both mean the stored FSM is running (alive) — the live projection callers
+    // wait for. Asserting the raw "running" is stale post status-realignment.
+    expect(['ready', 'busy']).toContain(data.status);
     expect(data.session_id).toBeTruthy();
   }).toPass({ timeout: 45_000 });
   // The ProcessToolbar re-renders several times while the worker initializes
