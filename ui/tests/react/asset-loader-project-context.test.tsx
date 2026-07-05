@@ -43,6 +43,9 @@ import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
 // The exact asset from the report.
 const SKILL_PATH = '/private/tmp/.claude/skills/shopiing';
+// The skill's owning project root — a project whose name is this absolute path
+// mounts here, so the scoped skill materializes at `<PROJECT_ROOT>/.claude/skills/shopiing`.
+const PROJECT_ROOT = '/private/tmp';
 // A real, unrelated project to seed as the pre-existing context so the
 // assertion is meaningful: if the loader never sets the project, the context
 // keeps this sentinel rather than coincidentally matching the skill's project.
@@ -54,8 +57,21 @@ describe('loadAssetRoute — VFS asset loads its owning project into context', (
   });
 
   it('sets CurrentProjectTypeId to the skill VFS entity project_id', async () => {
-    // 1. Resolve the skill exactly as the loader does — by VFS path.
+    // 0. Materialize the fixture the report references — a skill named `shopiing`
+    //    living under the project rooted at `/private/tmp`. A project whose
+    //    `name` is an absolute path gets `fs_storage_mount_path` = that path
+    //    (backend `Project.set_fs_storage_mount_path`), and a skill created under
+    //    that project scope is written to `<mount>/.claude/skills/<name>/` with
+    //    `project_id` + `asset_ref` stamped server-side (`_prepare_for_storage`).
+    //    Idempotent: skip when the fixture already exists on this instance.
     await dataManager.clearCache();
+    if (!(await dataManager.getEntityByPath<Skill>(SKILL_PATH))) {
+      const project = await new Project({ name: PROJECT_ROOT }).save();
+      await Skill.createInProject(project, 'shopiing');
+      await dataManager.clearCache();
+    }
+
+    // 1. Resolve the skill exactly as the loader does — by VFS path.
     const skill = await dataManager.getEntityByPath<Skill>(SKILL_PATH);
     expect(skill, `fixture skill ${SKILL_PATH} must exist on this instance`).toBeTruthy();
     const projectId: string = (skill as any).project_id;

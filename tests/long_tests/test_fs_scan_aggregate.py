@@ -47,8 +47,14 @@ def _cn_url(bootstrap_payload: dict, sub: str) -> str:
     return f"/api/v1/graph/compute_node/{cn_id}/fs-records/{sub}"
 
 
-async def _create_skill(client, cn_url_base, name: str) -> str:
-    resp = await client.post(cn_url_base, json={"name": name, "description": f"{name} desc"})
+async def _create_skill(client, name: str) -> str:
+    # Create via the sanctioned entity endpoint (Entity.save chokepoint), which
+    # materialises the real ``<user_home>/.claude/skills/<name>/SKILL.md`` folder
+    # that the FS scan walks. The lower-level ``fs-records/skill`` POST only
+    # writes the metadata.json shadow under records_root and never lands an
+    # on-disk skill for the indexer to discover — so the aggregate scan would
+    # (correctly) count 0.
+    resp = await client.post("/api/v1/graph/skill", json={"name": name, "description": f"{name} desc"})
     assert resp.status_code == 200, resp.text
     return resp.json()["data"]["id"]
 
@@ -64,9 +70,8 @@ async def test_scan_aggregate_structure(bootstrapped_client):
     (independent of the host's real ~/.claude size).
     """
     boot = await _bootstrap(bootstrapped_client)
-    skill_base = _cn_url(boot, "skill")
-    await _create_skill(bootstrapped_client, skill_base, "skill-alpha")
-    await _create_skill(bootstrapped_client, skill_base, "skill-beta")
+    await _create_skill(bootstrapped_client, "skill-alpha")
+    await _create_skill(bootstrapped_client, "skill-beta")
 
     resp = await bootstrapped_client.get(_cn_url(boot, "scan"))
     assert resp.status_code == 200
