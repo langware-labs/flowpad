@@ -830,6 +830,34 @@ ipcMain.handle('copy-to-clipboard', (_event, text) => {
   return false;
 });
 
+ipcMain.handle('capture-region', async (event, rawRegion) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) {
+    throw new Error('No active window to capture');
+  }
+
+  const region = rawRegion && typeof rawRegion === 'object' ? rawRegion : {};
+  const toNumber = (value, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  const bounds = win.getContentBounds();
+  const maxX = Math.max(0, bounds.width - 1);
+  const maxY = Math.max(0, bounds.height - 1);
+  const rect = {
+    x: Math.min(maxX, Math.max(0, Math.floor(toNumber(region.x)))),
+    y: Math.min(maxY, Math.max(0, Math.floor(toNumber(region.y)))),
+    width: Math.max(1, Math.ceil(toNumber(region.width, bounds.width))),
+    height: Math.max(1, Math.ceil(toNumber(region.height, bounds.height))),
+  };
+  rect.width = Math.min(rect.width, Math.max(1, bounds.width - rect.x));
+  rect.height = Math.min(rect.height, Math.max(1, bounds.height - rect.y));
+
+  const image = await win.webContents.capturePage(rect);
+  return image.toDataURL();
+});
+
 // Quit from the startup-timeout recovery panel's "Quit" button.
 ipcMain.on('quit-app', () => {
   app.quit();
