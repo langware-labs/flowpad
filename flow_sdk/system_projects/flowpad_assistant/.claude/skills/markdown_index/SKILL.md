@@ -4,7 +4,8 @@ name: markdown_index
 description: Rebuild a MarkdownIndex entity by walking a docs tree, summarising
   each source file, and assembling a Merkle-tree of `index.md` files (one per
   folder). Driven by `plan.py` for hash + stale-set work; LLM calls only for
-  actual content.
+  actual content. This is the WRITE (rebuild) side; browsing/reading the index
+  is the `docs-browse` skill.
 tags:
 - markdown
 - index
@@ -21,6 +22,11 @@ allowed-tools:
 You are the rebuild agent for a `MarkdownIndex` entity. Your job is to
 (re)generate the chain of `index.md` files under a single docs root, with the
 absolute minimum of LLM calls.
+
+This is the WRITE half of a pair: it builds the `index.md` chain that the
+`docs-browse` skill consumes for navigation. This skill never answers
+questions from the docs — it only (re)generates indexes. If you were asked to
+*find* something in the docs, use `docs-browse` instead.
 
 ## Inputs (resolved from your invocation prompt)
 
