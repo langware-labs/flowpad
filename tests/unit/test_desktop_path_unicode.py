@@ -127,6 +127,43 @@ def test_winpty_safe_cwd_falls_back_when_api_raises(monkeypatch):
     assert _winpty_safe_cwd(HEBREW_DIR) == HEBREW_DIR
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="real GetShortPathNameW; run on a Windows host")
+def test_winpty_safe_cwd_keeps_ansi_path_with_space(tmp_path):
+    """A plain-ASCII cwd whose folder name merely contains a space must keep
+    its long form.
+
+    ``GetShortPathNameW`` shortens EVERY long component, not only the
+    non-ANSI-representable ones the Hebrew workaround was added for. When the
+    PTY resume path spawns ``claude --resume`` against the 8.3 alias
+    (``FLOWPA~1``), the CLI derives its ``~/.claude/projects/<encoded-cwd>``
+    slug from that alias, finds no transcript for a session created under the
+    long form (the headless spawn path), and exits within seconds — the
+    "Flowpad workspace" resume crash-loop.
+
+    No mocks: real directory, real syscall, real ``_winpty_safe_cwd``.
+    """
+    workdir = tmp_path / "Flowpad workspace" / "teachpal-zone"
+    workdir.mkdir(parents=True)
+    long_form = str(workdir)
+
+    # Precondition: the volume actually generates 8.3 aliases. If generation
+    # is disabled, GetShortPathNameW echoes the input and this test could not
+    # tell the fix from the bug — skip rather than pass vacuously.
+    import ctypes as real_ctypes
+    from ctypes import wintypes
+
+    fn = real_ctypes.windll.kernel32.GetShortPathNameW
+    fn.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    fn.restype = wintypes.DWORD
+    needed = fn(long_form, None, 0)
+    buf = real_ctypes.create_unicode_buffer(needed or 1)
+    fn(long_form, buf, needed or 1)
+    if not needed or buf.value == long_form:
+        pytest.skip("8.3 short-name generation disabled on this volume")
+
+    assert _winpty_safe_cwd(long_form) == long_form
+
+
 # ---------------------------------------------------------------------------
 # Dev file logging is UTF-8 (so non-ASCII tracebacks aren't dropped)
 # ---------------------------------------------------------------------------
@@ -158,9 +195,7 @@ def test_dev_file_handler_is_utf8(dev_logging):
     path = dev_logging.init_dev_file_logging()
     assert path is not None
 
-    handler = next(
-        h for h in logging.getLogger().handlers if getattr(h, "_flowpad_dev_file", False)
-    )
+    handler = next(h for h in logging.getLogger().handlers if getattr(h, "_flowpad_dev_file", False))
     assert (handler.encoding or "").lower() == "utf-8"
 
 
