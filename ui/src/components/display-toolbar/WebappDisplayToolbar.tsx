@@ -1,6 +1,6 @@
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { MousePointerClick, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useWebappHealth, type WebappHealth } from './use-webapp-health';
 
@@ -11,10 +11,6 @@ interface WebappDisplayToolbarProps {
   port: string;
   /** Re-mount / reload the iframe. */
   onRefresh: () => void;
-  /** True while element-select mode is armed (highlights the button). */
-  selectActive?: boolean;
-  /** Toggle element-select mode on the shown app. Omit to hide the control. */
-  onToggleSelect?: () => void;
 }
 
 const LED: Record<WebappHealth, { color: string; label: React.ReactNode }> = {
@@ -29,7 +25,7 @@ const LED: Record<WebappHealth, { color: string; label: React.ReactNode }> = {
  * Health comes from pinging the get-host URL (see useWebappHealth), so it works
  * for the `flow show webapp --port` path where there's no WEBAPP artifact.
  */
-export function WebappDisplayToolbar({ host, port, onRefresh, selectActive, onToggleSelect }: WebappDisplayToolbarProps) {
+export function WebappDisplayToolbar({ host, port, onRefresh }: WebappDisplayToolbarProps) {
   const { t } = useLingui();
   const health = useWebappHealth(host);
   const led = LED[health];
@@ -53,26 +49,6 @@ export function WebappDisplayToolbar({ host, port, onRefresh, selectActive, onTo
       <span className="font-mono text-xs text-muted-foreground">localhost:{port}</span>
 
       <TooltipProvider delayDuration={300}>
-        {onToggleSelect && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                data-testid="display-select-element"
-                aria-label={selectActive ? t`Cancel element selection` : t`Select element`}
-                title={selectActive ? t`Cancel element selection` : t`Select element`}
-                className={`h-7 w-7 ${selectActive ? 'bg-primary/20 text-primary hover:bg-primary/30 hover:text-primary' : ''}`}
-                onClick={onToggleSelect}
-              >
-                <MousePointerClick className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
-              <p>{selectActive ? <Trans>Cancel select</Trans> : <Trans>Select an element</Trans>}</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
