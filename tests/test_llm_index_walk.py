@@ -142,6 +142,40 @@ def test_plan_py_parity_with_llm_indexer(tmp_path: Path):
     assert plan["total_folders"] == 2 and plan["total_files"] == 3
 
 
+def test_repo_docs_walk_covers_all_non_gitignored_md():
+    """The scan of the real checkout's docs/ must include EVERY non-gitignored
+    markdown file — verified against the shared gitignore engine's flat walk.
+    Read-only on the repo; never writes."""
+    from flow_sdk.fs_store.operations.markdown_dirs import walk_markdown_files
+
+    docs = Path(__file__).parents[1] / "docs"
+    assert docs.is_dir()
+
+    root = scan_tree(docs)
+    scanned: set[str] = set()
+
+    def collect(node):
+        for f in node.files:
+            scanned.add(f.rel_path)
+        if node.folder_note is not None:      # <dir>/<dir>.md is walked too,
+            scanned.add(node.folder_note.rel_path)  # just not a summarisable leaf
+        for sub in node.subfolders:
+            collect(sub)
+
+    collect(root)
+
+    expected = {
+        rel for rel in walk_markdown_files(docs)
+        if Path(rel).name != "index.md"          # generated index excluded from leaves
+    }
+    # scan_tree additionally includes .mdx; the repo docs are .md-only, so the
+    # two contracts coincide here.
+    assert scanned == expected
+    assert expected, "repo docs/ unexpectedly empty"
+    # Deep coverage: at least one covered file lives below the top level.
+    assert any("/" in rel for rel in scanned)
+
+
 def test_ignore_everything_leaves_bare_root(tmp_path: Path):
     _touch(tmp_path / ".gitignore", "*\n")
     _touch(tmp_path / "a.md")

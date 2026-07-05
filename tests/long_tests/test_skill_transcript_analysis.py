@@ -26,7 +26,6 @@ downgraded to a skip by the conftest report hook.
 
 import asyncio
 import shutil
-import time
 import uuid
 from pathlib import Path
 
@@ -34,20 +33,14 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.transcript_analyzer import AgentTranscriptFile, EntryKind
-from flow_sdk.transcript_analyzer.resolver import (
-    TranscriptNotFoundError,
-    resolve_session_jsonl,
+from flow_sdk.transcript_analyzer import EntryKind
+from tests.long_tests._transcript_helpers import (
+    ANALYZER_WORKER_KEY,
+    assert_prompt_ok,
+    await_transcript,
+    safe_exit,
 )
 from tests.test_settings import test_service_config
-
-# Analyzer/resolver worker key per WorkerType (the analyzer speaks "claude",
-# not "claude_code").
-_ANALYZER_NAME = {
-    WorkerType.CLAUDE_CODE: "claude",
-    WorkerType.CODEX: "codex",
-    WorkerType.COPILOT: "copilot",
-}
 
 pytestmark = [
     pytest.mark.skipif(
@@ -147,7 +140,8 @@ def _skill_call_entries(transcript, skill_name: str) -> list:
 # do not increase timeout without approval
 @pytest.mark.timeout(120)
 async def test_skill_usage_visible_in_transcript(
-    worker_type, cli_name, temp_skill, tmp_path, _workers_discovered
+    worker_type, cli_name, temp_skill, tmp_path, _workers_discovered,
+    local_project, local_compute_node,
 ):
     if shutil.which(cli_name) is None:
         pytest.skip(f"{cli_name} CLI not installed")
@@ -160,12 +154,15 @@ async def test_skill_usage_visible_in_transcript(
         if codex_installed is None:
             pytest.skip("cannot stage skill into ~/.codex/skills")
 
-    process = AgenticProcess(
+    # prompt() resolves the process by id server-side — an unsaved instance
+    # fails with "not found in database" (which the old `getattr(result, "ok",
+    # True)` assert could not catch, degrading this test to a permanent skip).
+    process = await AgenticProcess(
         worker_type=worker_type,
         workdir=str(tmp_path),
         additional_dirs=[str(skills_parent)],
         visible=False,
-    )
+    ).save()
     instruction = (
         f"Run the {skill_name} skill now and follow its instructions exactly."
     )
@@ -173,10 +170,13 @@ async def test_skill_usage_visible_in_transcript(
         # Headless prompt is fire-and-forget; the worker streams its turn into a
         # JSONL transcript in the background and assigns process.session_id.
         result = await process.prompt(instruction)
-        assert getattr(result, "ok", True), f"prompt failed: {result}"
+        assert_prompt_ok(result)
 
-        transcript = await _await_transcript_with_skill(
-            process, worker_type, skill_name, deadline_s=90
+        transcript = await await_transcript(
+            process,
+            ANALYZER_WORKER_KEY[worker_type],
+            lambda tf: bool(_skill_call_entries(tf, skill_name)),
+            deadline_s=90,
         )
         if transcript is None:
             pytest.skip(f"{cli_name} produced no usable transcript within 90s — infra/LLM latency")
@@ -217,51 +217,4 @@ async def test_skill_usage_visible_in_transcript(
     finally:
         if codex_installed is not None:
             shutil.rmtree(codex_installed, ignore_errors=True)
-        await asyncio.shield(_safe_exit(process))
-
-
-def _resolve_transcript(process, worker_type) -> AgentTranscriptFile | None:
-    """Path-free transcript load, worker-agnostic.
-
-    Prefers the driver's own resolver (``process._load_transcript()``) — it knows
-    each worker's native location (e.g. codex headless tees into the process
-    record dir, not ``~/.codex/sessions``). Falls back to the analyzer's
-    session resolver, which reads ``Path.home()`` live and so survives the
-    conftest HOME swap when the in-process indexer cache is anchored to the
-    sandbox HOME (the claude path under pytest).
-    """
-    tf = process._load_transcript()
-    if tf is not None:
-        return tf
-    session_id = process.session_id
-    if not session_id:
-        return None
-    worker_key = _ANALYZER_NAME[worker_type]
-    try:
-        path = resolve_session_jsonl(worker_key, session_id)
-    except (TranscriptNotFoundError, ValueError):
-        return None
-    if path and path.exists():
-        return AgentTranscriptFile(worker_key, path)
-    return None
-
-
-async def _await_transcript_with_skill(process, worker_type, skill_name, deadline_s):
-    """Poll until the run's transcript shows the SkillCallEntry (or deadline lapses)."""
-    deadline = time.monotonic() + deadline_s
-    last: AgentTranscriptFile | None = None
-    while time.monotonic() < deadline:
-        tf = _resolve_transcript(process, worker_type)
-        if tf is not None:
-            last = tf
-            if _skill_call_entries(tf, skill_name):
-                return tf
-        await asyncio.sleep(2.0)
-    return last
-
-
-async def _safe_exit(process: AgenticProcess) -> None:
-    try:
-        await process.exit()
-    except Exception:
-        pass
+        await asyncio.shield(safe_exit(process))

@@ -44,9 +44,11 @@ _REAL_HOME_TEST_MODULES = frozenset({
     "test_clean_claude_pty_stress",
     "test_markdown_index",
     "test_prompt_queue_integration",
+    "test_process_status_report_stream",
     "test_agent",
     "test_debug_log_records",
     "test_skill_transcript_analysis",
+    "test_docs_browse_skill",
     "test_context_process",
     "test_system_prompt",
 })
@@ -83,7 +85,7 @@ def _real_home_for_cli_subprocess_tests(request):
     else:
         yield
 
-from tests.api.conftest import clean_db, client, bootstrapped_client, reset_db_for_testclient, drain_background_tasks  # noqa: F401
+from tests.api.conftest import clean_db, client, bootstrap_payload, bootstrapped_client, reset_db_for_testclient, drain_background_tasks  # noqa: F401
 from flow_sdk.builtin.worker_status import ApiErrorTimeoutError
 
 
