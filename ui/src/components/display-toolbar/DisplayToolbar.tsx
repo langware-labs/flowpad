@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useRef } from 'react';
 import { GenericDisplayToolbar } from './GenericDisplayToolbar';
 
 interface DisplayToolbarProps {
@@ -10,6 +10,8 @@ interface DisplayToolbarProps {
   /** Per-type toolbar content (left), e.g. the webapp port/health strip.
    *  Omit for types with no bespoke toolbar. */
   perType?: ReactNode;
+  /** Generic annotate action for the active display content area. */
+  onAnnotate?: (target: HTMLElement) => void;
   /** The viewer being displayed — fills the area below the strip. */
   children: ReactNode;
 }
@@ -20,14 +22,20 @@ interface DisplayToolbarProps {
  * the resolved `externalUrl` and the caller-supplied `perType` node; the
  * kind→{externalUrl, perType} mapping lives in `display-descriptors`.
  */
-export function DisplayToolbar({ externalUrl, onOpenInTab, perType, children }: DisplayToolbarProps) {
+export function DisplayToolbar({ externalUrl, onOpenInTab, perType, onAnnotate, children }: DisplayToolbarProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+
   return (
     <div className="flex h-full w-full flex-col">
       <div className="flex h-9 shrink-0 items-center justify-between gap-1 border-b bg-muted/30 px-2">
         <div className="flex items-center gap-2">{perType}</div>
-        <GenericDisplayToolbar externalUrl={externalUrl} onOpenInTab={onOpenInTab} />
+        <GenericDisplayToolbar
+          externalUrl={externalUrl}
+          onOpenInTab={onOpenInTab}
+          onAnnotate={onAnnotate ? () => contentRef.current && onAnnotate(contentRef.current) : undefined}
+        />
       </div>
-      <div className="relative min-h-0 flex-1">{children}</div>
+      <div ref={contentRef} className="relative min-h-0 flex-1">{children}</div>
     </div>
   );
 }

@@ -7,6 +7,8 @@ import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import { McpAppPreview } from '@src/components/mcp-app-preview/McpAppPreview';
 import PersistentIframe, { PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { DisplayToolbar, WebappDisplayToolbar } from '@src/components/display-toolbar';
+import { captureElementAsImageFile } from '@src/components/display-toolbar/capture-region';
+import { annotateImage } from '@src/components/image-annotator/image-annotator-store';
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
@@ -14,12 +16,34 @@ import { useViewerStore, useProcessWebApp } from '@src/hooks/flow-hooks';
 import { isMcpAppPath } from '@src/lib/mcp-app-resources';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath, editorForType } from '@src/navigation/asset-doc-types';
-import { AgenticProcess, dataContext, FlowData, ProcessKind, Project, TypeId, ViewType, type ShowTarget } from '@sdk';
+import {
+  ActionInfo,
+  AgenticProcess,
+  dataContext,
+  dataManager,
+  FlowData,
+  fsStore,
+  ProcessKind,
+  Project,
+  TypeId,
+  ViewType,
+} from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { setActiveTabParent } from '@src/tabs/tab-parent-context';
+import { notify } from '@src/notifications/notify';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { ContentPanel } from './content-panel/content-panel';
 import type { VibeWorkspaceSession } from './use-vibe-workspace-session';
+import {
+  buildDisplayAnnotationPrompt,
+  displayAnnotationContextForDock,
+  displayAnnotationContextForPath,
+  displayAnnotationContextForShown,
+  displayAnnotationContextForWebapp,
+  displayAnnotationImageName,
+  type DisplayAnnotationContext,
+  type DisplayShowTarget,
+} from './display-annotation';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -61,10 +85,12 @@ function useVibeFocus(items: FlowData[]): VibeFocus {
       if (it.focus) {
         const d = it.data as { path?: string; metadata?: { port?: unknown } } | undefined;
         const port = d?.metadata?.port;
+        const portText =
+          typeof port === 'string' || typeof port === 'number' ? String(port) : undefined;
         return {
-          viewType: it.focus as ViewType,
+          viewType: it.focus,
           path: d?.path ?? it.attributes?.path,
-          port: port != null && port !== '' ? String(port) : undefined,
+          port: portText && portText !== '' ? portText : undefined,
         };
       }
     }
@@ -91,7 +117,7 @@ interface VibeWorkspaceProps {
 export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const { t } = useLingui();
   const { project, flow } = useAgentContext();
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   // Select only the stable setter — subscribing to the whole store would
   // re-render this component on its own `currentContext` writes (it never reads it).
   const setCurrentContext = useViewerStore((s) => s.setCurrentContext);
@@ -124,7 +150,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // last shown target PINS the display: it outranks the involuntary per-file
   // write focus noise from the stream. A new show replaces the pin; switching
   // to another process clears it.
-  const [shown, setShown] = useState<ShowTarget | null>(null);
+  const [shown, setShown] = useState<DisplayShowTarget | null>(null);
   // Bumped on every `flow show` — even for the SAME webapp port. The iframe
   // registry keys by src (get-host?port=N), so a same-port re-show reuses the
   // cached iframe and shows stale content after a rebuild; feeding this as the
@@ -138,11 +164,11 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     // Restore the persisted pin (context_data.last_shown) so a display mounted
     // AFTER the agent's `flow show` (page reload, late-opened tab) still lands
     // on the deliverable — the on_show entity event has no replay.
-    const lastShown = (activeProcess.context_data as { last_shown?: ShowTarget } | undefined)
+    const lastShown = (activeProcess.context_data as { last_shown?: DisplayShowTarget } | undefined)
       ?.last_shown;
     setShown(lastShown ?? null);
     return activeProcess.onShow((payload) => {
-      setShown(payload as ShowTarget);
+      setShown(payload);
       setShowNonce((n) => n + 1);
     });
   }, [activeProcess]);
@@ -171,6 +197,40 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const webAppConfig = useProcessWebApp(activeProcess, webappPort);
   const webappFrameRef = useRef<PersistentIframeHandle>(null);
 
+  const submitAnnotatedDisplay = useCallback(async (file: File, context: DisplayAnnotationContext) => {
+    if (!activeProcess?.id) throw new Error('No active Vibe session');
+
+    const dir = await dataManager.callAction<null, { abs_path: string; compute_node_id: string }>(
+      new ActionInfo('input-dir', AgenticProcess.type, activeProcess.id, 'GET'),
+    );
+    if (!dir?.abs_path || !dir?.compute_node_id) throw new Error('Could not resolve the chat input directory');
+
+    const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, [file]);
+    await Promise.all(uploads.map((upload) => upload.waitForCompletion()));
+
+    const filePath = `${dir.abs_path}/${file.name}`;
+    await activeProcess.prompt(buildDisplayAnnotationPrompt({ fileName: file.name, filePath, context }));
+  }, [activeProcess]);
+
+  const handleAnnotateDisplay = useCallback(async (
+    target: HTMLElement,
+    context = displayAnnotationContextForDock(currentDock),
+  ) => {
+    try {
+      const file = await captureElementAsImageFile(target, displayAnnotationImageName(context));
+      const submitted = await annotateImage(file, {
+        submitLabel: t`Submit`,
+        onSubmit: (annotated) => submitAnnotatedDisplay(annotated, context),
+      });
+      if (submitted) notify.success({ title: t`Annotation submitted` });
+    } catch (err) {
+      notify.error({
+        title: t`Could not annotate view`,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }, [currentDock, submitAnnotatedDisplay, t]);
+
   // Display precedence: explicit `flow show` target first (agent-intentional),
   // then stream focus (write/diff noise), then the webapp preview. Each viewer
   // self-resolves its data (WebappViewer from the store, AssetEditorRouter
@@ -197,7 +257,17 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const displayEl = useMemo(() => {
     // Fallback (nothing explicitly shown): the artifact-driven WebappViewer,
     // which carries its own chrome — left unwrapped.
-    const preview = <WebappViewer onWebappErrorRetry={onRetry} />;
+    const preview = (
+      <WebappViewer
+        onWebappErrorRetry={onRetry}
+        onAnnotate={(target) => {
+          void handleAnnotateDisplay(
+            target,
+            displayAnnotationContextForWebapp(webAppConfig.host, webappPort ?? focus.port),
+          );
+        }}
+      />
+    );
 
     // A shown viewer under the two-tier toolbar: per-type toolbar (left) +
     // the generic action (right). For entities/files that action is "open in
@@ -205,18 +275,27 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     // Flowpad content tab), NOT a browser tab; only webapps open externally.
     const openPtrInTab = (ptr: AssetDocPointer) => () => navigation.openDock(ptr.toDockPointer());
     const wrapAsset = (path: string, node: React.ReactNode) => (
-      <DisplayToolbar onOpenInTab={openPtrInTab(AssetDocPointer.forVfs(editorForPath(path), path))}>
+      <DisplayToolbar
+        onOpenInTab={openPtrInTab(AssetDocPointer.forVfs(editorForPath(path), path))}
+        onAnnotate={(target) => {
+          void handleAnnotateDisplay(target, displayAnnotationContextForPath(path));
+        }}
+      >
         {node}
       </DisplayToolbar>
     );
 
     if (shown) {
       switch (shown.kind) {
-        case 'webapp':
+        case 'webapp': {
           if (!webAppConfig.host) return preview;
+          const webappContext = displayAnnotationContextForShown(shown, webAppConfig.host, webappPort);
           return (
             <DisplayToolbar
               externalUrl={webAppConfig.host}
+              onAnnotate={(target) => {
+                void handleAnnotateDisplay(target, webappContext);
+              }}
               perType={
                 <WebappDisplayToolbar
                   host={webAppConfig.host}
@@ -237,12 +316,19 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
               />
             </DisplayToolbar>
           );
+        }
         case 'entity': {
+          const entityContext = displayAnnotationContextForShown(shown);
           const editor = shown.type ? editorForType(shown.type) : undefined;
           if (editor && shown.typeid) {
             const ptr = AssetDocPointer.forTypeId(editor, new TypeId(shown.typeid));
             return (
-              <DisplayToolbar onOpenInTab={openPtrInTab(ptr)}>
+              <DisplayToolbar
+                onOpenInTab={openPtrInTab(ptr)}
+                onAnnotate={(target) => {
+                  void handleAnnotateDisplay(target, entityContext);
+                }}
+              >
                 <AssetEditorRouter key={`${ptr.toPointer()}:${refreshStamp}`} pointer={ptr.toPointer()} />
               </DisplayToolbar>
             );
@@ -262,19 +348,42 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
         return focus.path
           ? wrapAsset(focus.path, <CodeEditor activePath={focus.path} readOnly />)
           : preview;
-      case ViewType.DIFF:
+      case ViewType.DIFF: {
+        const diffContext: DisplayAnnotationContext = {
+          kind: 'diff',
+          title: 'Diff',
+          path: focus.path,
+          viewType: ViewType.DIFF,
+        };
         return focus.path ? (
-          <DisplayToolbar>
+          <DisplayToolbar onAnnotate={(target) => {
+            void handleAnnotateDisplay(target, diffContext);
+          }}>
             <DiffViewer checkpoint_hash={focus.path} />
           </DisplayToolbar>
         ) : (
           preview
         );
+      }
       case ViewType.WEB_APP:
       default:
         return preview;
     }
-  }, [shown, showNonce, refreshStamp, focus.viewType, focus.path, onRetry, webAppConfig, webappPort, t, navigation, activeProcess]);
+  }, [
+    shown,
+    showNonce,
+    refreshStamp,
+    focus.viewType,
+    focus.path,
+    focus.port,
+    onRetry,
+    webAppConfig,
+    webappPort,
+    t,
+    navigation,
+    activeProcess,
+    handleAnnotateDisplay,
+  ]);
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full w-full">
@@ -318,7 +427,17 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           <div className="min-h-0 flex-1">
             {/* On the display URL: the agent-driven pin. On a child URL: the
                 child's ContentPanel (chrome-less). */}
-            {session.onDisplayUrl ? displayEl : <ContentPanel minimalChrome />}
+            {session.onDisplayUrl ? (
+              displayEl
+            ) : (
+              <DisplayToolbar
+                onAnnotate={(target) => {
+                  void handleAnnotateDisplay(target, displayAnnotationContextForDock(currentDock));
+                }}
+              >
+                <ContentPanel minimalChrome />
+              </DisplayToolbar>
+            )}
           </div>
         </div>
       </ResizablePanel>
