@@ -171,47 +171,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const webAppConfig = useProcessWebApp(activeProcess, webappPort);
   const webappFrameRef = useRef<PersistentIframeHandle>(null);
 
-  // Element selection result. The old app-proxy bridge path is disabled; the
-  // replacement should inspect the direct iframe via CDP without changing src.
-  const [, setSelectActive] = useState(false);
-  const [selection, setSelection] = useState<{
-    tag?: string; selector?: string; text?: string; html?: string;
-  } | null>(null);
-
-  useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      const d = e.data as { source?: string; type?: string; payload?: unknown } | undefined;
-      if (!d || d.source !== 'flowpad') return;
-      if (d.type === 'selected') {
-        setSelection(d.payload as typeof selection);
-        setSelectActive(false);
-      } else if (d.type === 'select-mode-ended') {
-        setSelectActive(false);
-      }
-    };
-    window.addEventListener('message', onMsg);
-    return () => window.removeEventListener('message', onMsg);
-  }, []);
-
-  // Clear selection + disarm when the shown target changes (new app/asset).
-  useEffect(() => {
-    setSelection(null);
-    setSelectActive(false);
-  }, [shown]);
-
-  // The picked element as a prompt-context block the agent can describe.
-  const promptContext = useMemo(() => {
-    if (!selection) return null;
-    const label = `Selected: <${selection.tag ?? 'element'}>`;
-    const text =
-      'The user selected this element on the previewed web page:\n' +
-      `- tag: ${selection.tag ?? ''}\n` +
-      `- selector: ${selection.selector ?? ''}\n` +
-      `- text: ${selection.text ?? ''}\n` +
-      `- html: ${selection.html ?? ''}`;
-    return { label, text };
-  }, [selection]);
-
   // Display precedence: explicit `flow show` target first (agent-intentional),
   // then stream focus (write/diff noise), then the webapp preview. Each viewer
   // self-resolves its data (WebappViewer from the store, AssetEditorRouter
@@ -263,17 +222,12 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
                   host={webAppConfig.host}
                   port={webappPort ?? ''}
                   onRefresh={() => webappFrameRef.current?.refresh()}
-                  selectActive={false}
-                  onToggleSelect={undefined}
                 />
               }
             >
               <PersistentIframe
                 ref={webappFrameRef}
                 testId="vibe-webapp-frame"
-                // Keep the displayed app on the real dev-server URL. Element
-                // selection must not switch to app-proxy; that changes origin
-                // and can damage framework runtime state.
                 src={webAppConfig.host}
                 // Reload on each re-show (same-port stale guard) AND on the
                 // agent's turn-end (rebuild picked up) — the registry keys the
@@ -320,7 +274,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       default:
         return preview;
     }
-  }, [shown, showNonce, refreshStamp, focus.viewType, focus.path, onRetry, webAppConfig, webappPort, selectActive, toggleSelect, t, navigation, activeProcess]);
+  }, [shown, showNonce, refreshStamp, focus.viewType, focus.path, onRetry, webAppConfig, webappPort, t, navigation, activeProcess]);
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full w-full">
@@ -330,8 +284,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           processType={ProcessKind.Chat}
           className="h-full border-r border-border"
           dense
-          promptContext={promptContext}
-          onPromptContextConsumed={() => setSelection(null)}
           // "New project" (back to VibeHome) sits on the LEFT of the same header
           // row as the session buttons — Vibe has no left rail.
           leadingSlot={

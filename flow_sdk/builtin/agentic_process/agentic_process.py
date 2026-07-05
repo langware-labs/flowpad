@@ -4246,8 +4246,8 @@ class AgenticProcess(Entity):
 
     async def _resolve_dev_host(self, port: int) -> str:
         """Resolve the compute-node host URL for a dev-server ``port`` (shared by
-        get-host and app-proxy). Raises ``ValueError`` with a client-safe message
-        on a bad port or missing compute node."""
+        get-host). Raises ``ValueError`` with a client-safe message on a bad
+        port or missing compute node."""
         int_port = int(port)
         if not 1024 <= int_port <= 65535:
             raise ValueError("Invalid port")
@@ -4275,114 +4275,6 @@ class AgenticProcess(Entity):
         if not redirect:
             return ApiSuccessResponse(data={"url": host, "port": int(port)})
         return RedirectResponse(url=host)
-
-    @action.all(action_name="app-proxy")
-    async def app_proxy(self, port: int, path: str = "/"):
-        """Reverse-proxy a dev-server ``port`` on this process's compute node,
-        injecting the element-selection bridge into HTML responses.
-
-        Unlike ``get-host`` (a redirect to ``localhost:<port>``, which makes the
-        Vibe display iframe CROSS-origin so its DOM is unreachable), this serves
-        the app THROUGH the backend origin and rewrites HTML to add
-        ``<script src="/sdk/flowpad-select-bridge.js">``. The injected bridge is
-        then same-origin with the served page (can read its DOM) and posts the
-        clicked element to the Vibe display via ``postMessage``.
-
-        Root-relative assets are rewritten back through this action so framework
-        dev servers such as Next/Vite can load their CSS/JS while the iframe is
-        same-origin with Flowpad for element selection.
-        """
-        from fastapi.responses import Response
-        from urllib.parse import quote, urljoin
-        import re  # noqa: PLC0415
-
-        try:
-            base = (await self._resolve_dev_host(port)).rstrip("/")
-        except ValueError as e:
-            return ApiFailResponse(message=f"app-proxy: {e}")
-        sub = path if path.startswith("/") else f"/{path}"
-        url = f"{base}{sub}"
-
-        import httpx  # noqa: PLC0415
-
-        try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
-                upstream = await client.get(url)
-        except httpx.HTTPError as e:
-            return ApiFailResponse(message=f"app-proxy: cannot reach {url}: {e}")
-
-        content_type = upstream.headers.get("content-type", "")
-        body = upstream.content
-        lower_content_type = content_type.lower()
-
-        proxy_action_path = f"/api/v1/graph/agentic_process/{self.id}/app-proxy"
-
-        def proxied_url(raw: str) -> str:
-            value = raw.strip()
-            if not value:
-                return raw
-            if value.startswith(proxy_action_path):
-                return value
-            if value.startswith(("#", "//", "http://", "https://", "data:", "blob:", "mailto:", "tel:")):
-                return value
-            # This script is served by Flowpad, not the guest app.
-            if value == "/sdk/flowpad-select-bridge.js":
-                return value
-            app_path = value if value.startswith("/") else urljoin(f"{sub.rsplit('/', 1)[0]}/", value)
-            return f"{proxy_action_path}?port={int(port)}&path={quote(app_path, safe='/%')}"
-
-        def rewrite_html(text: str) -> str:
-            def rewrite_html_fragment(fragment: str) -> str:
-                # HTML attributes and framework chunk tags.
-                fragment = re.sub(
-                    r'(?P<prefix>\b(?:src|href|action)=["\'])(?P<url>[^"\']+)(?P<suffix>["\'])',
-                    lambda m: f"{m.group('prefix')}{proxied_url(m.group('url'))}{m.group('suffix')}",
-                    fragment,
-                    flags=re.IGNORECASE,
-                )
-                # CSS url(...) values inside style tags/attributes.
-                fragment = rewrite_css(fragment)
-                # Root-relative framework URLs in non-script HTML data.
-                return re.sub(
-                    r'(?P<quote>["\'])(?P<url>/(?:_next|@vite|src|assets|static|favicon\.ico|manifest\.json|robots\.txt)[^"\']*)',
-                    lambda m: f"{m.group('quote')}{proxied_url(m.group('url'))}",
-                    fragment,
-                )
-
-            # Do not rewrite inside inline scripts. Next flight/bootstrap payloads
-            # contain escaped HTML/JS strings; treating them as normal markup can
-            # corrupt hydration code and leave the app in its SSR fallback state.
-            return "".join(
-                part if part.lower().startswith("<script") else rewrite_html_fragment(part)
-                for part in re.split(r"(<script\b[^>]*>.*?</script>)", text, flags=re.IGNORECASE | re.DOTALL)
-            )
-
-        def rewrite_css(text: str) -> str:
-            return re.sub(
-                r'url\((?P<quote>["\']?)(?P<url>/[^)"\']+)(?P=quote)\)',
-                lambda m: f"url({m.group('quote')}{proxied_url(m.group('url'))}{m.group('quote')})",
-                text,
-            )
-
-        # A ``<script src>`` runs wherever it lands in the document, so appending
-        # is equivalent to splicing before ``</head>`` — and avoids lowercasing a
-        # full copy of the body just to find the insertion point.
-        if "text/html" in lower_content_type or "text/css" in lower_content_type:
-            encoding = upstream.encoding or "utf-8"
-            text = body.decode(encoding, errors="replace")
-            if "text/html" in lower_content_type:
-                text = rewrite_html(text)
-            else:
-                text = rewrite_css(text)
-            if "text/html" in lower_content_type:
-                bridge = '<script src="/sdk/flowpad-select-bridge.js"></script>'
-                text = re.sub(r"</body>", f"{bridge}</body>", text, count=1, flags=re.IGNORECASE) if "</body" in text.lower() else text + bridge
-            body = text.encode(encoding, errors="replace")
-
-        # Strip hop-by-hop / framing headers so the response renders inline.
-        drop = {"content-length", "content-encoding", "transfer-encoding", "connection", "x-frame-options"}
-        headers = {k: v for k, v in upstream.headers.items() if k.lower() not in drop}
-        return Response(content=body, status_code=upstream.status_code, media_type=content_type or None, headers=headers)
 
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start_pty()."""

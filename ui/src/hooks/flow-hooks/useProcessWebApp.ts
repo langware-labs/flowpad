@@ -5,9 +5,6 @@ import { useCurrentArtifacts } from './useCurrentArtifacts';
 export interface WebAppConfig {
   /** Direct `get-host` URL (redirects to the dev server; cross-origin iframe). */
   host: string;
-  /** `app-proxy` URL — same app served through the backend origin with the
-   *  select bridge injected, so the Vibe display can read the guest DOM. */
-  proxyHost: string;
   cacheKey: number;
 }
 
@@ -31,22 +28,18 @@ export function useProcessWebApp(flow: Flow | null | undefined, port: string | n
     }
 
     if (!_port || !flow) {
-      return { host: '', proxyHost: '', cacheKey: 0 };
+      return { host: '', cacheKey: 0 };
     }
 
-    // `get-host` / `app-proxy` are registered on the AgenticProcess entity (the
-    // legacy Flow entity was removed). The active "flow" from AgentContext is an
+    // `get-host` is registered on the AgenticProcess entity (the legacy Flow
+    // entity was removed). The active "flow" from AgentContext is an
     // AgenticProcess, so target that type — using Flow.type 404s.
     const entityType = flow instanceof AgenticProcess ? AgenticProcess.type : Flow.type;
-    const urlFor = (action: string) => {
-      const info = new ActionInfo(action, entityType, flow.id);
-      info.queryParameters = { port: _port as string };
-      return info.fullActionUrl;
-    };
+    const info = new ActionInfo('get-host', entityType, flow.id);
+    info.queryParameters = { port: _port as string };
 
     return {
-      host: urlFor('get-host'),
-      proxyHost: urlFor('app-proxy'),
+      host: info.fullActionUrl,
       cacheKey,
     };
   }, [artifacts, flow, port]);
