@@ -25,6 +25,15 @@ async function openEditor(page: Page, id: string) {
 // and pass THAT to the editor's onChange (calling onChange in the same tick as
 // updateScene serializes a stale/empty scene).
 async function injectAndSave(page: Page, skeleton: unknown[]) {
+  // The editor can remount between openEditor() and here (a data-load re-render),
+  // which clears window.__whiteboardApi. Re-wait for the live hook right before
+  // using it — a concrete-signal wait, not a fixed delay.
+  await page.waitForFunction(
+    () => typeof (window as any).__whiteboardApi === 'object' && !!(window as any).__whiteboardApi
+      && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
+    null,
+    { timeout: 15_000 },
+  );
   await page.evaluate((skel) => {
     const lib = (window as any).__excalidrawLib;
     const api = (window as any).__whiteboardApi;
