@@ -233,10 +233,13 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     links.extend(fields.get("links") or [])
 
     raw_id = fields.get("asset_id") or fields.get("id")
-    if not raw_id and path is not None:
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    # Validate-on-adopt (v4/v5 only) — a foreign/hand-authored id is never
+    # adopted; derive the stable uuid5(path) instead. Keeps this path in
+    # agreement with _read_frontmatter_asset_id (the gen_uuid_fn side).
+    asset_id = adopt_entity_id(raw_id)
+    if not asset_id and path is not None:
         asset_id = _markdown_id_from_path(path)
-    else:
-        asset_id = raw_id
     parent_id = fields.get("parent_id")
     scope = fields.get("scope") or None
 
