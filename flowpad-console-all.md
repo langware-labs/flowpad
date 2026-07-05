@@ -1,3 +1,7 @@
+---
+id: c80bb30b-af40-57ee-bfa6-052078b8bf37
+---
+
 Total messages: 41 (Errors: 2, Warnings: 0)
 Returning 203 messages for level "info"
 
