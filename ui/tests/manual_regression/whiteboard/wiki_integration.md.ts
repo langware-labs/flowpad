@@ -20,6 +20,13 @@ async function materialize(page: Page, id: string, assetRef: string) {
   await page.waitForFunction(() => typeof (window as any).__whiteboardApi === 'object' && (window as any).__whiteboardApi, null, {
     timeout: 15_000,
   });
+  // Re-wait for the live hooks right before use: the editor can remount (a
+  // data-load re-render) and clear window.__whiteboardApi. Concrete-signal wait.
+  await page.waitForFunction(
+    () => typeof (window as any).__whiteboardApi === 'object' && !!(window as any).__whiteboardApi
+      && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
+    null, { timeout: 15_000 },
+  );
   await page.evaluate(() => {
     const lib = (window as any).__excalidrawLib;
     const api = (window as any).__whiteboardApi;
