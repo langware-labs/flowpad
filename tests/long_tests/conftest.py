@@ -35,19 +35,22 @@ _SANDBOX_HOME = os.environ["HOME"]
 # Test modules whose tests spawn real Claude/Codex CLI subprocesses and need
 # real ``$HOME`` for credentials. Anything not in this set keeps the parent
 # conftest's sandbox HOME.
-_REAL_HOME_TEST_MODULES = frozenset({
-    "test_agentic_process",
-    "test_agentic_process_prompt_streaming",
-    "test_agentic_cli_shell_mix",
-    "test_claude_cli",
-    "test_clean_claude_pty",
-    "test_clean_claude_pty_stress",
-    "test_markdown_index",
-    "test_prompt_queue_integration",
-    "test_agent",
-    "test_debug_log_records",
-    "test_skill_transcript_analysis",
-})
+_REAL_HOME_TEST_MODULES = frozenset(
+    {
+        "test_agentic_process",
+        "test_agentic_process_prompt_streaming",
+        "test_agentic_cli_shell_mix",
+        "test_claude_cli",
+        "test_clean_claude_pty",
+        "test_clean_claude_pty_stress",
+        "test_markdown_index",
+        "test_prompt_queue_integration",
+        "test_relaunch_kills_session_orphan",
+        "test_agent",
+        "test_debug_log_records",
+        "test_skill_transcript_analysis",
+    }
+)
 
 
 @pytest.fixture(autouse=True)
@@ -81,8 +84,15 @@ def _real_home_for_cli_subprocess_tests(request):
     else:
         yield
 
-from tests.api.conftest import clean_db, client, bootstrapped_client, reset_db_for_testclient, drain_background_tasks  # noqa: F401
-from flow_sdk.builtin.worker_status import ApiErrorTimeoutError
+
+from flow_sdk.builtin.worker_status import ApiErrorTimeoutError  # noqa: E402
+from tests.api.conftest import (  # noqa: F401, E402
+    bootstrapped_client,
+    clean_db,
+    client,
+    drain_background_tasks,
+    reset_db_for_testclient,
+)
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -165,8 +175,10 @@ def allocate_ports(unused_tcp_port_factory):
         port, = allocate_ports()          # one port
         p1, p2 = allocate_ports(2)        # two ports
     """
+
     def _allocate(n: int = 1) -> tuple:
         return tuple(unused_tcp_port_factory() for _ in range(n))
+
     return _allocate
 
 
@@ -225,6 +237,7 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
 
     async def _make(**kwargs):
         return await AgenticProcess(worker_type=enum_value, **kwargs).save()
+
     return _make
 
 
@@ -236,4 +249,5 @@ def external_session_snapshot(worker_id) -> Callable[[], set[str]]:
     before / after the run and asserts the diff is empty.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+
     return get_driver(worker_id).external_session_dirs
