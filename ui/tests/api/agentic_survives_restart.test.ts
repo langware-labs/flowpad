@@ -93,6 +93,14 @@ suite('Agentic process survives server restart (dev-1)', () => {
       { timeout: 40_000, interval: 1_000 },
     );
 
+    // 3b. Re-watch the process on the fresh connection. PTY recovery is
+    //     ON-DEMAND, not a global sweep (see pty_recovery.py + commit bd14a1ab
+    //     "recover on-demand, not a global sweep (out-of-pty-devices crash)"):
+    //     the watchdog only respawns a process a live connection is actively
+    //     watching. A real UI re-subscribes to its open tab on reconnect; this
+    //     re-registers that watch so the watchdog has a reason to recover.
+    await proc.watch();
+
     // 4. The dead-worker watchdog (~5s interval) should respawn the worker —
     //    os-status `worker_alive` flips back to true once the PID is live again.
     await vi.waitFor(
