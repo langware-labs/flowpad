@@ -496,60 +496,112 @@ class UvManager {
   }
 
   /**
-   * Windows-only: kill any process whose executable lives inside the flowpad
-   * uv tool venv, so a `--force`/`--reinstall` install can replace it.
-   *
-   * `uv tool install … --force` must delete and recreate
-   * `…\uv\tools\flowpad\Scripts\`, but Windows refuses to remove a directory
-   * that contains a running .exe — "failed to remove directory … Scripts:
-   * Access is denied. (os error 5)". The usual culprit is an orphaned backend
-   * from a previous session (`python.exe -m flow_sdk.server.launch`) still
-   * holding `Scripts\python.exe` open. It may NOT be listening on 9007
-   * (crashed/hung mid-boot), so `ensurePortFree`/`_killPort` — which only target
-   * the port listener — can't reach it. Match by image path instead and kill the
-   * whole tree (`/T`) so spawned workers under the same venv go too.
-   *
-   * No-op on Unix: unlinking a running executable's file is allowed there, so
-   * the tool dir can be replaced while the old backend keeps running.
+   * Absolute path to the flowpad uv tool venv. The backend interpreter and every
+   * agentic-process worker it spawns run this venv's python, so matching on this
+   * path finds the WHOLE tree — the backend and its workers alike.
    */
-  async _killStaleToolProcesses() {
-    if (!IS_WIN) return;
-    const toolDir = path.join(
-      os.homedir(), 'AppData', 'Roaming', 'uv', 'tools', PYPI_PACKAGE
-    );
-    try {
-      const escaped = toolDir.replace(/'/g, "''");
-      const { stdout } = await execFileAsync('powershell.exe', [
-        '-NoProfile', '-Command',
-        `Get-CimInstance Win32_Process | ` +
-        `Where-Object { $_.ExecutablePath -like '${escaped}\\*' } | ` +
-        `Select-Object -ExpandProperty ProcessId`,
-      ], { timeout: 8000, windowsHide: true });
-      const pids = stdout.split(/\r?\n/)
-        .map((s) => parseInt(s.trim(), 10))
-        .filter((p) => p > 0);
-      for (const pid of pids) {
-        try {
-          await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 });
-          this.log.info(`[uv] Killed stale tool process PID ${pid} (held ${toolDir})`);
-        } catch { /* already gone / not killable — ignore */ }
+  _toolVenvDir() {
+    return IS_WIN
+      ? path.join(os.homedir(), 'AppData', 'Roaming', 'uv', 'tools', PYPI_PACKAGE)
+      : path.join(os.homedir(), '.local', 'share', 'uv', 'tools', PYPI_PACKAGE);
+  }
+
+  /**
+   * Drain every process running under the flowpad uv tool venv — the backend AND
+   * the agentic-process workers it spawned — so a `--force`/`--reinstall` install
+   * can replace the venv cleanly and the freshly-upgraded backend can boot.
+   *
+   * Why this must go beyond `_killPort(9007)`: `stop()`/`ensurePortFree` only ever
+   * target the process LISTENING on 9007. Workers run under the same venv but are
+   * not on the port, so they survive `stop()` and then break the upgrade in two
+   * distinct ways:
+   *
+   *   • Windows — `uv tool install … --force` must delete and recreate
+   *     `…\uv\tools\flowpad\Scripts\`, but Windows refuses to remove a directory
+   *     that contains a running .exe ("Access is denied. (os error 5)"). A worker
+   *     (or an orphaned backend from a previous session) holding `python.exe` open
+   *     blocks the reinstall. Match by image path and kill the tree (`/T`).
+   *
+   *   • macOS/Linux — unlinking a running exe is allowed, so the install itself
+   *     won't file-lock; but a surviving worker keeps holding the 9007 socket
+   *     and/or a JSONL session lock, so the reinstalled backend never gets healthy
+   *     inside the post-upgrade health window and the user lands on the timeout
+   *     panel. Match by command line (`pgrep -f <venv>`) and SIGTERM→SIGKILL them.
+   *
+   * No-op when the venv has no live processes (e.g. first-time install).
+   */
+  async _drainVenvProcesses() {
+    const venvDir = this._toolVenvDir();
+
+    if (IS_WIN) {
+      try {
+        const escaped = venvDir.replace(/'/g, "''");
+        const { stdout } = await execFileAsync('powershell.exe', [
+          '-NoProfile', '-Command',
+          `Get-CimInstance Win32_Process | ` +
+          `Where-Object { $_.ExecutablePath -like '${escaped}\\*' } | ` +
+          `Select-Object -ExpandProperty ProcessId`,
+        ], { timeout: 8000, windowsHide: true });
+        const pids = stdout.split(/\r?\n/)
+          .map((s) => parseInt(s.trim(), 10))
+          .filter((p) => p > 0);
+        for (const pid of pids) {
+          try {
+            await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 });
+            this.log.info(`[uv] Killed venv process PID ${pid} (held ${venvDir})`);
+          } catch { /* already gone / not killable — ignore */ }
+        }
+      } catch (e) {
+        this.log.warn(`[uv] _drainVenvProcesses (win) failed: ${e.message}`);
       }
-    } catch (e) {
-      this.log.warn(`[uv] _killStaleToolProcesses failed: ${e.message}`);
+      return;
+    }
+
+    // macOS/Linux: pgrep -f matches the full command line, which carries the venv
+    // interpreter path for the backend and every worker it spawned. Exclude our
+    // own pid (this Electron process never runs under the venv, but be safe).
+    let pids = [];
+    try {
+      const { stdout } = await execFileAsync('pgrep', ['-f', venvDir], { timeout: 5000 });
+      pids = stdout.split(/\r?\n/)
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((p) => p > 0 && p !== process.pid);
+    } catch {
+      // pgrep exits 1 when nothing matches — nothing to drain.
+      return;
+    }
+    if (!pids.length) return;
+
+    for (const pid of pids) {
+      try {
+        process.kill(pid, 'SIGTERM');
+        this.log.info(`[uv] Sent SIGTERM to venv process PID ${pid} (under ${venvDir})`);
+      } catch (e) {
+        if (e.code !== 'ESRCH') this.log.warn(`[uv] Failed to SIGTERM PID ${pid}: ${e.message}`);
+      }
+    }
+    // Give the tree a bounded moment to exit and release its port / session-lock
+    // handles, then SIGKILL whatever is still alive (mirrors _killPort).
+    await new Promise((r) => setTimeout(r, 2000));
+    for (const pid of pids) {
+      try { process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
     }
   }
 
   /**
-   * Run `uv tool install … --force` resiliently against the Windows tool-dir
-   * lock. On Windows, `--force` must delete and recreate
+   * Run `uv tool install … --force` resiliently against a live venv. Every
+   * attempt first drains the whole venv process tree — backend + workers — via
+   * `_drainVenvProcesses()`, so the reinstall isn't fighting a running process
+   * (and the upgraded backend can boot without a stale worker holding the port
+   * or a session lock). On Windows, `--force` must delete and recreate
    * `…\uv\tools\flowpad\Scripts\`, which fails with "Access is denied (os
    * error 5)" while ANY process under that venv still holds a file open. We
-   * kill those processes first, but `taskkill` returns before Windows has
+   * drain those processes first, but `taskkill` returns before Windows has
    * actually released the handles, so a same-instant install can still lose
    * the race (observed in the field: a post-boot upgrade aborts here and the
    * app is left stuck on the loading splash).
    *
-   * Strategy: kill the stale tool processes, attempt the install, and ONLY on
+   * Strategy: drain the venv processes, attempt the install, and ONLY on
    * a tool-dir-locked error re-kill and wait a bounded moment for the
    * already-terminating processes to release their handles, then retry — up to
    * MAX_LOCK_RETRIES. This is not a blind retry to paper over a flake: we retry
@@ -562,7 +614,7 @@ class UvManager {
     const MAX_LOCK_RETRIES = 3;
     const HANDLE_RELEASE_WAIT_MS = 1500;
     for (let attempt = 1; ; attempt++) {
-      await this._killStaleToolProcesses();
+      await this._drainVenvProcesses();
       try {
         return await this._uv(installArgs, { timeout: 120000 });
       } catch (err) {
