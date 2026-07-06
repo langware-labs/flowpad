@@ -123,6 +123,11 @@ def _build_reply_flow_message(
         "sender_name": sender_name,
         "conversation_id": conv_id,
         "is_draft": is_draft,
+        # The sender authored this message → it is read from their side. Without
+        # this the sender's own outgoing message persists is_read=False and the
+        # inbox row's unread facet (``!latestMessage.is_read``, which does NOT
+        # exclude own messages) shows the conversation as unread on send.
+        "is_read": True,
     })
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
     reply_fm.attachment = [
@@ -647,6 +652,11 @@ async def _try_send_reply_via_hub(
         payload = dict(fm_payload)
         payload["id"] = hub_fm_id
         payload["text"] = text
+        # Sender-side materialize of the sender's OWN message — read from their
+        # side. The hub payload carries is_read=False (the hub doesn't track the
+        # sender's local read state); adopt True so the sender's conversation
+        # doesn't flip unread on send. is_read is a LOCAL_ONLY_FIELD.
+        payload["is_read"] = True
         if sender_id and not payload.get("sender_id"):
             payload["sender_id"] = sender_id
         if sender_name and not payload.get("sender_name"):
