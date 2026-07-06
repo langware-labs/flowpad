@@ -33,8 +33,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
-import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
+import { groupTurnEvents, splitLiveGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
+import { ChatActivityLine } from './ChatActivityLine';
+import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
+import { useTurnActivity } from './hooks/useTurnActivity';
 import {
   buildHistorySubline,
   pickHistoryTitle,
@@ -307,6 +310,19 @@ export function EntityExecutionPanel({
   // rules.
   const turnGroups = useMemo(() => (dense ? groupTurnEvents(items) : []), [dense, items]);
 
+  // Dense (chat) mode: a live "agent is working" footer — the SAME dots +
+  // elapsed-clock line the interactive chat pane shows (ChatActivityLine),
+  // plus a live event-counter chip. While a turn is in flight the CURRENT
+  // turn's dense events are surfaced in that chip (its number climbs on each
+  // new flow-data event; click opens the per-event list) instead of inline, so
+  // the chat stays message-clean. Past turns keep their own inline collapsed
+  // ToolEntryRow lists.
+  const activity = useTurnActivity(dense ? activeProcess : null);
+  const { inlineGroups, liveEvents } = useMemo(
+    () => splitLiveGroup(turnGroups, dense && activity.active),
+    [dense, activity.active, turnGroups],
+  );
+
   // 4. Project workdir + id (lazy-create inputs). Caller-supplied defaults
   // take precedence so surfaces like the floating Flowpad Assistant chat can
   // pin the process to a specific project (Flowpad Assistant) instead of
@@ -441,7 +457,9 @@ export function EntityExecutionPanel({
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
     scrollRef.current?.scrollToBottom();
-  }, [messages.length]);
+    // In dense mode new tool events (and the appearing activity footer) don't
+    // bump messages.length — track the group count + active edge too.
+  }, [messages.length, turnGroups.length, activity.active]);
 
   const showEmptyState = !activeProcess && !listLoading && !sending;
 
@@ -576,7 +594,20 @@ export function EntityExecutionPanel({
           </div>
         )}
         {dense
-          ? <TurnGroupsList groups={turnGroups} worker={activeProcess?.worker_type ?? undefined} />
+          ? (
+            <>
+              <TurnGroupsList groups={inlineGroups} worker={activeProcess?.worker_type ?? undefined} />
+              {activeProcess && (
+                <ChatActivityLine
+                  process={activeProcess}
+                  active={activity.active}
+                  startedAt={activity.startedAt}
+                  status={activity.status}
+                  trailing={<TurnEventChip events={liveEvents} />}
+                />
+              )}
+            </>
+          )
           : messages.map((m) => (
               <ExecutionMessage
                 key={m.id ?? m.timestamp}
