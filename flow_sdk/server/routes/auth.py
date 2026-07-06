@@ -54,7 +54,9 @@ async def login_callback(
         )
 
         if not flowpad_api_key:
-            raise ValueError("No API key provided. Expected 'flowpad-api-key' parameter.")
+            raise ValueError(
+                "No API key provided. Expected 'flowpad-api-key' parameter. Restart Flowpad and upgrade your version."
+            )
 
         # Pre-flight the OS-keychain approval ONLY under signed Electron
         # (FLOWPAD_DESKTOP=1, set by electron/uv-manager.js::start()). Only
@@ -71,12 +73,14 @@ async def login_callback(
             return RedirectResponse(url=f"/electron/keychain-approval?{qs}", status_code=302)
 
         user_info = await validate_api_key_async(flowpad_api_key)
-        await _finalize_login(LoginData(
-            token=flowpad_api_key,
-            expires=None,
-            refresh_token=None,
-            user=user_info,
-        ))
+        await _finalize_login(
+            LoginData(
+                token=flowpad_api_key,
+                expires=None,
+                refresh_token=None,
+                user=user_info,
+            )
+        )
 
         if next and next.startswith("/"):
             return RedirectResponse(url=next, status_code=302)
