@@ -39,6 +39,8 @@ scripts/instance_ctl.sh kill qa-cycle          # MUST clean up what you launched
 
 Never raise a timeout to mask host-load slowness, and never kill a process you didn't launch to remove it. Those are the two banned shortcuts.
 
+**Instance reset primitive (`flow instance reset <name>`) — the Phase 11/12 workhorse.** Between browser test units, do NOT rely on `desktop-db/clear` — it only wipes the DB, never the *process*, so a dedicated backend degrades after ~4-5 heavy real-Claude-PTY categories (leaked PTY/subprocess children, connection/memory growth) and manufactures phantom failures. `flow instance reset <name>` fixes this at the root: it **kills the instance's processes** (flushing all leaked children), **wipes its DB** (fresh state), **relaunches**, **re-applies `view_mode=standard`**, and **waits for readiness** — in ~3-4s. It is **surgical**: only ever touches the named instance's own processes/dir/`.env.<name>.local`/keychain slot, and is **safe to run while sibling instances (`dev-1`/`dev-2`/`prod`) are up** — they are never disturbed. Flags: `--backend-only` (~3s; keeps vite + the cloud login up — the default for the sweep), `--no-relaunch` (kill+wipe only), `--keep-keychain`, `--json`. Verify it any time with `scripts/verify_instance_reset.sh`. Use it only on instances the cycle owns.
+
 **Step 0.5 — create the cycle-state file and record every test verdict.** Create `<output-dir>/<timestamp>/cycle-state.md` (phase, per-item dispositions, owners, instance locks, pending validations) and update it at every milestone — see SKILL.md "Durable cycle state". **Critically: before anything else starts (before the next phase work begins), every test attempt must end by recording its verdict** — either the test passed/failed outcome, or an explicit "no verdict: <reason>" — in cycle-state.md. An attempt without a recorded verdict is indistinguishable from an attempt that never ran, leaving the cycle's history incomplete and resumption ambiguous.
 
 ---
@@ -219,43 +221,32 @@ d = json.loads(p.read_text()); d["preferences.ui.view_mode"] = "standard"
 p.write_text(json.dumps(d, indent=2)); print("view_mode -> standard")
 PY
 ```
-The frontend reads `preferences.json` fresh via its VFS path at each app boot, so no backend restart is needed. Verified: `general` goes 8-fail → 13/13 pass with this one change. (If a NEW category still fails wholesale on homepage/greeting locators, re-check this pref first — a later DB restore or instance relaunch can reset it.)
+The frontend reads `preferences.json` fresh via its VFS path at each app boot, so no backend restart is needed. Verified: `general` goes 8-fail → 13/13 pass with this one change. **`flow instance reset` (used per-file in 11a below) re-applies `view_mode=standard` automatically on every relaunch**, so once the sweep uses reset you don't need to re-set it manually — but still confirm it once, and if a NEW category fails wholesale on homepage/greeting locators, re-check this pref first.
 
 **Write integrity while the sweep runs:** The sweep clears the DB and mutates instances repeatedly across 18 categories in the background. While the sweep is running, those instances are exclusively owned by the sweep — **record no other verdicts against them, run no other suites, clear no DBs, restart nothing on them.** A verdict collected while another actor mutates the environment is not a verdict (reference SKILL.md "One writer per instance"); concurrent writes manufacture false failures. Schedule verification work that needs the same instances before the sweep starts or after it completes. The background sweep provides load isolation automatically — do serial verification work on a separate instance or interval, never during.
 
 ### 11a. Sweep — machine verdict (authoritative)
 
-1. Build/refresh the test index. List every category dir under `scenarios-dir` that contains `.md.ts` files.
-2. For each such category, reset the DB then run the category with the JSON reporter (machine-readable per-test results — never scrape list output):
+1. Build/refresh the test index. List every `.md.ts` file under `scenarios-dir` (per file, not just per category).
+2. **Hybrid cadence — `flow instance reset` per CATEGORY + `desktop-db/clear` per FILE.** This is evidence-based (learned the hard way this cycle):
+   - The backend degradation is **cumulative across categories** (leaked PTY/claude children accumulate; `desktop-db/clear` never resets the *process*, so after ~4-5 heavy categories it starts timing out and mass-fails). A **full `flow instance reset` at the START of each category** flushes that accumulation — a fresh, non-degraded backend per category.
+   - But a **cold-booted backend can't surface warm-state-dependent tests** (e.g. an asset picker's self-seeded agent won't appear in the tree on a just-restarted backend — proven: `assets/agent_execution_asset_picker` 8/8 after `desktop-db/clear` vs 9/9 FAIL right after a reset). So **within a category, use `desktop-db/clear` per file** (fresh DB, backend stays warm) — NOT another reset.
    ```bash
-   # Clear the DB and verify success by reading the response body (not discarded to /dev/null)
-   CLEAR_RESPONSE=$(curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear)
-   if ! echo "${CLEAR_RESPONSE}" | grep -q '"backup_path"'; then
-     echo "DB clear failed or backup not verified: ${CLEAR_RESPONSE}"
-     exit 1
+   # --- once at the START of each category (fresh, warm backend) ---
+   if ! uv run flow instance reset <INSTANCE> --keep-keychain --json | tee /dev/stderr | grep -q '"ready": true'; then
+     echo "category reset not ready — aborting category"; exit 1
    fi
-   
-   # Poll bootstrap until health returns valid, verifying re-index completed and records exist
-   BOOTSTRAP_READY=0
-   for i in {1..30}; do
-     if BOOTSTRAP=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap 2>/dev/null); then
-       if echo "${BOOTSTRAP}" | grep -q '"projects"' && ! echo "${BOOTSTRAP}" | grep -q '"projects":\[\]'; then
-         BOOTSTRAP_READY=1
-         break
-       fi
-     fi
-     sleep 1
-   done
-   if [ $BOOTSTRAP_READY -eq 0 ]; then
-     echo "Bootstrap health check failed after DB clear; re-index may have stalled"
-     exit 1
-   fi
+   # --- then, before EACH .md.ts file in the category ---
+   CLR=$(curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear)
+   echo "$CLR" | grep -q '"backup_path"' || { echo "db clear failed: $CLR"; exit 1; }
+   for i in {1..30}; do curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap 2>/dev/null | grep -q '"types"' && break; sleep 1; done
 
    cd ui && VITE_PORT=${VITE_PORT} \
-     PLAYWRIGHT_JSON_OUTPUT_NAME=<abs-results-dir>/<timestamp>/phase11--<category>.json \
-     npx playwright test --config tests/manual_regression/<category>/playwright.config.ts --reporter=json
+     PLAYWRIGHT_JSON_OUTPUT_NAME=<abs-results-dir>/<timestamp>/phase11--<category>--<file>.json \
+     npx playwright test --config tests/manual_regression/<category>/playwright.config.ts <file>.md.ts --reporter=json
    ```
-3. Parse each `phase11--<category>.json` and aggregate into `<output-dir>/<timestamp>/phase11-summary.json`:
+   `flow instance reset` re-applies `view_mode=standard` on relaunch, is surgical (never touches sibling instances), and takes ~3-4s. Gate readiness on `"types"` present (an unauthed dedicated instance shows `projects:[]`, which is normal). If a *single* heavy category (e.g. `terminal`, 31 files) still degrades mid-category, add a per-file reset for that one category only — but a per-file reset universally breaks the warm-state tests, so it is NOT the default. (`<INSTANCE>` = the dedicated instance you launched.)
+3. Parse each `phase11--<category>--<file>.json` and aggregate into `<output-dir>/<timestamp>/phase11-summary.json`:
    - one entry per test: `{ category, file, test_title, status, duration_ms, error_excerpt }`
 4. Print the per-test pass/fail table:
    ```
@@ -272,7 +263,7 @@ For each `.md.ts` file with ≥1 non-passing test (`failed`/`timedOut`/`interrup
 
 - The agent runs the file, and on failure **RCAs the full flow against the sibling `.md`** (the source of truth) using the `rca` skill's on/off-switch method: prove the cause with a toggle, then classify honestly — `fail` → fix the **app**; `test-issue` → fix the **`.md.ts`** (selectors/timing/steps; never weaken or delete an assertion to go green). If the failing `.md.ts` has **no** sibling `.md`, RCA from the test + app directly.
 - The agent re-runs until the file exits 0, then stability-checks with `--repeat-each=3` (a stability check on the just-changed file — `retries` stays 0; this is never a retry mask).
-- **Concurrency follows "one writer per instance":** failing-file agents run in parallel ONLY when each owns a separate instance (the manager grants ownership explicitly); on a single shared instance they run serially, each doing the DB-clear preflight first.
+- **Concurrency follows "one writer per instance":** failing-file agents run in parallel ONLY when each owns a separate instance (the manager grants ownership explicitly); on a single shared instance they run serially, each doing a `flow instance reset <INSTANCE> --backend-only` first (surgical — safe even while sibling agents own other instances).
 - Bounded effort per file = the standard Run Mode attempts (2 fix→re-validate retries; fixer↔debugger 3 iterations). A file still red after that is **not flagged** — it remains a hard block (see gate).
 
 ### 11c. Gate — manager re-runs the FULL sweep
@@ -312,32 +303,13 @@ That list IS Phase 12's complete scope. (A `.md.ts` with no `.md` is fine — Ph
    ```
    (`--repeat-each=3` is a stability check on the just-authored test — it is NOT a retry mask; `retries` stays 0.)
 
-- **Before each scenario**, the tester must reset the DB to a clean state and verify restoration:
+- **Once before the phase** (and any time the backend has degraded), `flow instance reset <INSTANCE> --keep-keychain` for a fresh, non-degraded, warm backend. **Then before each scenario**, `desktop-db/clear` for a fresh DB WITHOUT restarting the backend (a cold backend can't surface warm-state-dependent scenarios — see Phase 11 11a):
   ```bash
-  # Clear the DB and read the response body to confirm success and backup (not discarded to /dev/null)
-  CLEAR_RESPONSE=$(curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear)
-  if ! echo "${CLEAR_RESPONSE}" | grep -q '"backup_path"'; then
-    echo "DB clear failed or backup not verified: ${CLEAR_RESPONSE}"
-    exit 1
-  fi
-  
-  # Poll bootstrap until health returns valid, confirming re-index completed and records are restored
-  BOOTSTRAP_READY=0
-  for i in {1..30}; do
-    if BOOTSTRAP=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap 2>/dev/null); then
-      if echo "${BOOTSTRAP}" | grep -q '"projects"' && ! echo "${BOOTSTRAP}" | grep -q '"projects":\[\]'; then
-        BOOTSTRAP_READY=1
-        break
-      fi
-    fi
-    sleep 1
-  done
-  if [ $BOOTSTRAP_READY -eq 0 ]; then
-    echo "Bootstrap health check failed after DB clear; re-index may have stalled — aborting scenario"
-    exit 1
-  fi
+  CLR=$(curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear)
+  echo "$CLR" | grep -q '"backup_path"' || { echo "db clear failed: $CLR"; exit 1; }
+  for i in {1..30}; do curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap 2>/dev/null | grep -q '"types"' && break; sleep 1; done
   ```
-  This backs up and wipes the DB + FTS index, verifies the backup succeeded and the re-index completed, then confirms records were restored before the scenario starts. A clear that leaves zero records means the re-index failed — the fixture catches that now, before burning test assertions against an empty DB.
+  Data-dependent scenarios must self-seed via API + `fs-records/index` after the clear (the DB starts empty; the reset re-seeds only system projects).
 - A scenario's task is complete only when all three sub-goals hold (`.md` ✓ AND a newly-authored `.md.ts` ✓ stable).
 - **Gate (hard, no `flagged`):** after authoring, the manager **re-runs the affected categories' full sweep** (11a mechanics); every newly-authored `.md.ts` must exit 0. The only non-green allowed is a documented env-SKIP expressed as a real `test.skip(...)`. A `.md` that cannot be made to pass — or whose authored `.md.ts` stays red after the bounded Run Mode attempts — is a hard **BLOCK** reported in the summary, never quarantined-and-passed. Then print the QA Cycle Summary.
 
