@@ -8,8 +8,9 @@ import {
   dataContext,
   FlowDataSource,
   fsStore,
-  isAwaitingUserInput,
-  ProcessStatus,
+  isProcessRunning,
+  isReadyForInput,
+  PrefKey,
   Shell,
   WorkerMode,
   type AgenticProcess,
@@ -22,6 +23,7 @@ import { useContext } from '@src/hooks/useContext';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
+import { usePreference } from '@src/hooks/use-preference';
 import { DockPointer, useDockNavigation, useSideWindows } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
@@ -86,18 +88,6 @@ export interface TraceFilters {
   promptAnnotations: boolean;
 }
 
-const DEFAULT_FILTERS: TraceFilters = {
-  events: true,
-  time: false,
-  index: false,
-  line: false,
-  absLine: false,
-  debugTime: false,
-  refTime: false,
-  promptAnnotations: false,
-};
-const LS_KEY = 'traceFilters';
-
 export interface ColVisibility {
   trace: boolean;
   time: boolean;
@@ -107,45 +97,11 @@ export interface ColVisibility {
 // Stable empty-array identity so a doc-less process doesn't hand the ribbon a
 // fresh `[]` every render.
 const EMPTY_DOCS: MarkdownDoc[] = [];
-const DEFAULT_COL_VIS: ColVisibility = { trace: true, time: true, annotations: true };
-const COL_VIS_LS_KEY = 'colVisibility';
 
 // An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
 // signal an image paste delivers to the PTY, which the CLI reads the system
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
 const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
-
-function loadColVis(): ColVisibility {
-  try {
-    return { ...DEFAULT_COL_VIS, ...JSON.parse(localStorage.getItem(COL_VIS_LS_KEY) ?? 'null') };
-  } catch {
-    return DEFAULT_COL_VIS;
-  }
-}
-
-function saveColVis(v: ColVisibility): void {
-  try {
-    localStorage.setItem(COL_VIS_LS_KEY, JSON.stringify(v));
-  } catch {
-    /* ignore */
-  }
-}
-
-function loadTraceFilters(): TraceFilters {
-  try {
-    return { ...DEFAULT_FILTERS, ...JSON.parse(localStorage.getItem(LS_KEY) ?? 'null') };
-  } catch {
-    return DEFAULT_FILTERS;
-  }
-}
-
-function saveTraceFilters(f: TraceFilters): void {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(f));
-  } catch {
-    /* ignore */
-  }
-}
 
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 import {
@@ -250,7 +206,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [shellReady, setShellReady] = useState(false);
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
-  const processIsActive = process?.status === ProcessStatus.RUNNING;
+  const processIsActive = process?.status ? isProcessRunning(process.status) : false;
 
   // Live failed-to-start latch → banner. The loader only classifies a latched
   // process on navigation; when the worker dies instantly while this tab is
@@ -259,13 +215,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // not reactive, so subscribe via useEntity and surface the banner here.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const liveStartFailure = liveProcess?.start_failure ?? null;
-  // The chat⇄terminal toggle is only enabled while the agent is awaiting the
-  // user's input (IDLE/COMPLETE/INTERRUPTED/PENDING_USER). A mode switch
-  // mid-turn is 409'd by the backend, so gating on the (reactive) worker status
-  // keeps the toggle in lock-step with the AP and never lands on a 409 hole.
-  // `liveProcess` is the reactive entity; the loader `process` is the fallback
-  // for the first render before the subscription resolves.
-  const awaitingUserInput = isAwaitingUserInput(liveProcess?.workerStatus ?? process?.workerStatus);
+  // The chat⇄terminal toggle is only enabled while the process is ready for input
+  // (RUNNING and no turn in flight). A mode switch mid-turn is 409'd by the backend
+  // on the SAME `is_turn_busy` predicate that sets the wire `busy` boolean, so
+  // gating on `isReadyForInput` (reactive `status === RUNNING && !busy`) keeps the
+  // toggle in lock-step with the AP and can never land on a 409 hole. `liveProcess` is the reactive
+  // entity; the loader `process` is the fallback for the first render before the
+  // subscription resolves.
+  const awaitingUserInput = isReadyForInput(liveProcess ?? process ?? {});
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({
@@ -315,9 +272,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     lastCellHeightRef.current = next;
     setCellHeight(next);
   }, []);
-  const [traceFilters, setTraceFiltersState] = useState<TraceFilters>(() => loadTraceFilters());
+  const [traceFilters, setTraceFilters] = usePreference<TraceFilters>(PrefKey.TRACE_FILTERS);
   const [gutterExpanded, setGutterExpanded] = useState(false);
-  const [colVis, setColVisState] = useState<ColVisibility>(() => loadColVis());
+  const [colVis, setColVis] = usePreference<ColVisibility>(PrefKey.COLUMN_VISIBILITY);
   // Open side windows + active are dock state (URL: ?sideWindows&activeSideWindow),
   // read/written through the shared useSideWindows() hook. We narrow the generic
   // string ids back to this surface's SideTabId registry (dropping any stale or
@@ -354,16 +311,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   inputFsRef.current = inputFs;
   const inputDirBrowse = inputDirInfo ? (inputFs?.browse(inputDirInfo.absPath) ?? null) : null;
   const fileCount = inputDirBrowse?.items.length ?? 0;
-
-  const setTraceFilters = useCallback((f: TraceFilters) => {
-    setTraceFiltersState(f);
-    saveTraceFilters(f);
-  }, []);
-
-  const setColVis = useCallback((v: ColVisibility) => {
-    setColVisState(v);
-    saveColVis(v);
-  }, []);
 
   // Sidecar shell state derived from entity
   const sidecarShellId = process?.sidecar_shell_id ?? null;
@@ -1069,7 +1016,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (data.includes('\x1b[3J'))
         console.log('[PTY] ESC[3J (clear scrollback) received, seq:', seq, 'size:', data.length);
       if (data.includes('\x1b[2J')) console.log('[PTY] ESC[2J (clear screen) received, seq:', seq);
-      if (data.includes('\x1b[H')) console.log('[PTY] ESC[H (cursor home) received, seq:', seq);
       if (seq !== undefined) {
         const chunk = shell.getPtyChunk(seq);
         if (chunk) ptySyncRef.current.processChunk(chunk);
@@ -1336,8 +1282,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       // attachPty({ force: true }) resets attach state, then re-attaches
       // and re-subscribes the output handler once the attach completes.
+      // The re-attach races the restart's PTY lifecycle (the old PTY is killed
+      // and the new one is still spawning), so a transient "PTY not found"
+      // rejection is expected and recoverable — the subsequent attach (on the
+      // settled session) reconnects. Swallow it so it doesn't surface as an
+      // uncaught page error; a real, persistent failure shows as a blank
+      // terminal the user can click to reattach (TerminalRuntimeErrorBanner).
       const shell = shellRef.current;
-      void shell?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true });
+      void shell
+        ?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true })
+        .catch((err) => console.debug('[InteractiveTerminal] restart re-attach deferred:', err));
 
       // Re-fit after a frame so xterm recalculates row/col geometry
       requestAnimationFrame(() => {
@@ -1459,9 +1413,39 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     });
   }, [active, terminalReady, sessionId, handlePtyResize, targetTimestamp]);
 
+  // Re-assert this view's geometry to the backend PTY. Needed because the same
+  // PTY can be attached in another tab with a different container size; whoever
+  // resized last wins, leaving this xterm's cols/rows stale on the backend until
+  // an input event happens to re-fit. On focus we re-fit and re-send our size —
+  // even when it's unchanged locally, it differs from the backend's current
+  // (other tab's) shape, so it triggers a SIGWINCH and repaints to our width.
+  const reassertGeometry = useCallback(() => {
+    const term = terminalRef.current;
+    const fit = fitAddonRef.current;
+    if (!term || !fit) return;
+    if (isTransitioningRef.current) return;
+    try {
+      fit.fit();
+      handlePtyResize(term.cols, term.rows);
+    } catch (e) {
+      console.warn('[InteractiveTerminal] reassertGeometry failed:', e);
+    }
+  }, [handlePtyResize]);
+
   const handleContainerClick = () => {
     terminalRef.current?.focus();
   };
+
+  // Re-sync width whenever the terminal gains focus (click, tab, or programmatic).
+  // xterm routes focus into a hidden <textarea> inside the container, so focusin
+  // (which bubbles) captures every focus path.
+  useEffect(() => {
+    if (!terminalReady) return;
+    const container = xtermContainerRef.current;
+    if (!container) return;
+    container.addEventListener('focusin', reassertGeometry);
+    return () => container.removeEventListener('focusin', reassertGeometry);
+  }, [terminalReady, reassertGeometry]);
 
   const handleFileDrop = useCallback(
     async (e: React.DragEvent) => {
@@ -1524,19 +1508,26 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         await process.switchMode(WorkerMode.Interactive, dims);
         setChatUiOverride('terminal');
       }
-      // Reconcile: pull in turns the other mode produced. clear() alone leaves
-      // `_historyLoaded` set, so force the reload.
-      process.flowDataStream.clear();
-      await process.loadHistory({ force: true });
     } catch (err) {
       console.error('[InteractiveTerminal] mode switch failed', err);
       notify.error({
         title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
         message: err instanceof Error ? err.message : String(err),
       });
-    } finally {
       setSwitching(false);
+      return;
     }
+    // The TRANSPORT switch is done — re-enable the toggle now. The transcript
+    // reconcile (pull in turns the other mode produced) is a VIEW concern and is
+    // slow on a large session (the backend transcript parse), so DON'T hold the
+    // toggle disabled behind it — that wedged rapid switching. Reconcile in the
+    // background; the chat pane fills in when it resolves (and the live WS stream
+    // keeps it current meanwhile). `loadHistory({ force: true })` REPLACES the
+    // stream with the transcript (clears internally) — no separate clear needed.
+    setSwitching(false);
+    void process
+      .loadHistory({ force: true })
+      .catch((err) => console.debug('[InteractiveTerminal] post-switch reconcile deferred:', err));
   }, [process, switching, showSimpleChat, awaitingUserInput]);
 
   // Compute synthetic shell-pane active state for the ribbon

@@ -10,7 +10,6 @@ and performs the actual in-app navigation.
 """
 
 import json
-import os
 from typing import Optional, Union
 from uuid import uuid4
 
@@ -18,8 +17,8 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from flow_sdk.core.display_target import DisplayTargetKind, resolve_display_target
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.type_id import TypeId, is_named_id
 
 from .websocket import (
@@ -199,30 +198,28 @@ async def navigate_file(req: NavigateFileRequest):
     raw = (req.path or "").strip()
     if not raw:
         return _error(400, "INVALID_PATH", "Missing path")
-    path = canonical_posix_path(os.path.abspath(os.path.expanduser(raw)))
 
     target = _pick_target(req.connection_id)
     if isinstance(target, JSONResponse):
         return target
     connection_id, ws = target
 
-    # Step 1 — prefer the entity-backed asset when the path is already indexed.
-    entity = await Entity.get_by_asset_ref(path)
-    if entity is not None and getattr(entity, "id", None):
-        await _send_ui_command(ws, "navigate_entity", type=entity.get_type(), id=entity.id)
+    # Shared resolution policy with `flow show` (resolve_display_target):
+    # entity-backed asset when the path is indexed, else a raw VFS open — the
+    # client builds the asset-editor dock pointer (editor chosen by extension).
+    resolved = await resolve_display_target(path=raw)
+    if resolved["kind"] == DisplayTargetKind.ENTITY:
+        await _send_ui_command(ws, "navigate_entity", type=resolved["type"], id=resolved["id"])
         return {
             "ok": True,
             "connection_id": connection_id,
             "mode": "entity",
-            "path": path,
-            "type": entity.get_type(),
-            "id": entity.id,
+            "path": resolved["path"],
+            "type": resolved["type"],
+            "id": resolved["id"],
         }
-
-    # Step 2 — fall back to a raw VFS open. The client builds the asset-editor
-    # dock pointer for the path (editor chosen by extension) and navigates.
-    await _send_ui_command(ws, "navigate_vfs", path=path)
-    return {"ok": True, "connection_id": connection_id, "mode": "vfs", "path": path}
+    await _send_ui_command(ws, "navigate_vfs", path=resolved["path"])
+    return {"ok": True, "connection_id": connection_id, "mode": "vfs", "path": resolved["path"]}
 
 
 @router.get("/api/v1/agent/context")

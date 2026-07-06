@@ -7,6 +7,7 @@ import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { Check, EyeOff, Forward, MessageSquarePlus } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useDiagnosisReportAvailability } from './use-diagnosis-report-availability';
 
 interface DiagnosisActionButtonsProps {
   /** The support conversation — excluded from the Forward list (you don't forward
@@ -67,6 +68,7 @@ export function DiagnosisActionButtons({
   trailing,
 }: DiagnosisActionButtonsProps) {
   const { t } = useLingui();
+  const reportAvailability = useDiagnosisReportAvailability();
   const [forwardOpen, setForwardOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   // Forward target list: most recent conversations, fetched only while open. The
@@ -82,6 +84,11 @@ export function DiagnosisActionButtons({
   useEffect(() => {
     if (forwardOpen) listRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [forwardOpen, conversations.length]);
+
+  const reportDisabledReason = !canReport
+    ? t`Diagnosis is not available yet`
+    : reportAvailability.disabledReason;
+  const reportDisabled = busy || !canReport || !reportAvailability.canReport;
 
   return (
     <>
@@ -107,7 +114,8 @@ export function DiagnosisActionButtons({
           <Button
             type="button"
             size="sm"
-            disabled={busy || !canReport}
+            disabled={reportDisabled}
+            title={reportDisabledReason}
             onClick={onReportIssue}
             className="h-6 px-2 text-xs"
           >

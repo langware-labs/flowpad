@@ -1,7 +1,7 @@
 import { AppRenderer } from '@mcp-ui/client';
-import type { CallToolResult, ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
-import { fsManager, VFSPath } from '@sdk';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { SANDBOX_URL } from '@src/lib/mcp-sandbox';
+import { readVfsResource } from '@src/lib/mcp-app-resources';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans } from '@lingui/react/macro';
@@ -28,17 +28,6 @@ function parseAppParams(
   return { uname: parts.uname, routerPath: parts.routerPath, options: options ?? {} };
 }
 
-async function readResource(uri: string): Promise<ReadResourceResult> {
-  const stripped = uri.replace(/^(ui|vfs):\/\//, '');
-  const vfsPath = VFSPath.parse(stripped);
-  if (!vfsPath.typeId) {
-    throw new Error(`Unsupported resource URI: ${uri}`);
-  }
-  const bytes = await fsManager.download(vfsPath.typeId, vfsPath.entitySubPath);
-  const text = typeof bytes === 'string' ? bytes : await bytes.text();
-  return { contents: [{ uri, mimeType: 'text/plain', text }] };
-}
-
 async function handleCallTool(params: { name: string }): Promise<CallToolResult> {
   return {
     content: [{ type: 'text', text: `Tool '${params.name}' is not yet routed through the Flowpad SDK.` }],
@@ -47,7 +36,7 @@ async function handleCallTool(params: { name: string }): Promise<CallToolResult>
 }
 
 async function handleReadResource(params: { uri: string }) {
-  return readResource(params.uri);
+  return readVfsResource(params.uri);
 }
 
 export function AppHost() {

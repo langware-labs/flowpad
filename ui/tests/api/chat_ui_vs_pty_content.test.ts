@@ -153,8 +153,40 @@ suite('PTY vs chat UI content across 5 heavy sessions (dev-1)', () => {
       ),
     );
 
-    // 4. Give the chat surface a bounded chance to reflect each turn.
-    await new Promise((res) => setTimeout(res, 5_000));
+    // 4. Wait for each session's chat transcript to MATERIALIZE and SETTLE on
+    //    disk before comparing. The chat surface is transcript-derived
+    //    (`get-history` → claude session JSONL), and claude finalizes that JSONL
+    //    *after* the END token streams to the PTY and the worker is marked
+    //    terminal — so `END in PTY` is not a signal the chat side has caught up.
+    //    A fixed sleep here raced that flush (count=0 → every token spuriously
+    //    "omitted"). Instead poll `get-history` until each session reports a
+    //    non-empty history that is UNCHANGED across two consecutive reads (the
+    //    file stopped growing). This is a concrete completion signal, not a blind
+    //    delay, and it does NOT weaken the parity check: a transcript that
+    //    settles while missing a token the PTY showed still fails step 6. A
+    //    session that never settles falls through (via `.catch`) and is compared
+    //    anyway — its tokens count as omitted, so this can never hang a real
+    //    omission into a pass.
+    const histCount = async (id: string): Promise<number> => {
+      const res: any = await sdk.apiClient.get(`${entityUrl(id)}/get-history`).catch(() => null);
+      return typeof res?.count === 'number' ? res.count : 0;
+    };
+    await Promise.all(
+      procs.map((proc) => {
+        let prev = -1;
+        return vi
+          .waitFor(
+            async () => {
+              const count = await histCount(proc.id);
+              const settled = count > 0 && count === prev;
+              prev = count;
+              if (!settled) throw new Error('transcript not settled yet');
+            },
+            { timeout: 60_000, interval: 2_000 },
+          )
+          .catch(() => {});
+      }),
+    );
 
     // 5. Compare PTY vs chat per session, token by token.
     const results: SessionResult[] = [];

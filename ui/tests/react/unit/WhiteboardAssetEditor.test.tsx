@@ -58,6 +58,7 @@ vi.mock('@excalidraw/excalidraw', () => {
     }, [props]);
     return (
       <div data-testid="excalidraw-stub" data-theme={props.theme ?? ''}>
+        <pre data-testid="current-elements">{JSON.stringify(elementsRef.current)}</pre>
         <button
           data-testid="trigger-change"
           onClick={() =>
@@ -170,6 +171,23 @@ describe('WhiteboardAssetEditor', () => {
 
     await waitFor(() => expect(screen.queryByTestId('whiteboard-editor')).not.toBeNull());
     await waitFor(() => expect(screen.queryByTestId('trigger-change')).not.toBeNull());
+    expect(writeLog).toHaveLength(0);
+  });
+
+  it('loads plain Excalidraw scene JSON without treating it as an empty wrapped board', async () => {
+    files['root/board.json'] = JSON.stringify({
+      elements: [{ id: 'plain-1', type: 'rectangle' }],
+      appState: { theme: 'light' },
+      files: {},
+    });
+    const fsRef = makeFsRef('root', files, writeLog);
+
+    render(<WhiteboardAssetEditor fsRef={fsRef} />);
+
+    await screen.findByTestId('whiteboard-editor');
+    await waitFor(() =>
+      expect(screen.getByTestId('current-elements').textContent).toContain('plain-1'),
+    );
     expect(writeLog).toHaveLength(0);
   });
 

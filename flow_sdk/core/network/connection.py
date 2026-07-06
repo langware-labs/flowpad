@@ -34,7 +34,7 @@ class Notification(Entity):
     notification_status: str = APIField(default=NotificationStatus.PENDING)
     message: Optional[str] = APIField(None)
 
-    # Extra context (project_url, spec_id, sender_name, etc.)
+    # Extra context (git_origin, spec_id, sender_name, etc.)
     metadata: Optional[Dict[str, Any]] = APIField(None)
 
     def after_create(self, create_data: dict):

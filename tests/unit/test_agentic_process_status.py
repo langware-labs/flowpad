@@ -68,6 +68,51 @@ def test_error_set_matches_spec(status_fixture):
     assert _ERROR_STATUSES == expected
 
 
+def test_busy_worker_set_matches_spec(status_fixture):
+    """Python ``_BUSY_WORKER_STATUSES`` (the raw worker states that make a turn
+    ``busy``) must equal the shared fixture ``worker_busy`` literal — the same
+    key the TS parity describe asserts against ``WORKER_BUSY_STATUSES``. Pins the
+    busy predicate to one source of truth: ``{initializing, working, thinking,
+    tool_call, tool_running}`` (api_error excluded — it maps to a *ready* process
+    status)."""
+    from flow_sdk.builtin.agentic_process.status_predicates import _BUSY_WORKER_STATUSES
+
+    expected = {WorkerStatus(v) for v in status_fixture["worker_busy"]}
+    assert _BUSY_WORKER_STATUSES == expected
+
+
+def test_process_running_wire_set_matches_spec(status_fixture):
+    """``process_lifecycle.is_running`` must accept exactly the fixture
+    ``process_running_wire`` literal (``{starting, running, stopping}``). Since
+    busy/ready are no longer projected into ``status``, the wire live set equals
+    the stored live set. Py side of the TS ``isProcessRunning`` parity test."""
+    from flow_sdk.builtin.process_lifecycle import is_running as is_process_running
+
+    expected = {ProcessStatus(v) for v in status_fixture["process_running_wire"]}
+    actual = {s for s in ProcessStatus if is_process_running(s)}
+    assert actual == expected
+
+
+def test_process_stored_running_values(status_fixture):
+    """The stored-FSM live values now EQUAL the wire live set — there is no
+    ready/busy projection that adds wire-only values."""
+    stored = {ProcessStatus(v) for v in status_fixture["process_stored_running"]}
+    wire = {ProcessStatus(v) for v in status_fixture["process_running_wire"]}
+    assert stored == wire
+    assert not hasattr(ProcessStatus, "READY") and not hasattr(ProcessStatus, "BUSY")
+
+
+def test_process_startable_set_matches_spec(status_fixture):
+    """``process_lifecycle.is_startable`` must accept exactly the fixture
+    ``process_startable`` literal (``{new, stopped, failed}``) — the py side of
+    the TS ``process_startable fixture matches isProcessStartable`` parity test."""
+    from flow_sdk.builtin.process_lifecycle import is_startable as is_process_startable
+
+    expected = {ProcessStatus(v) for v in status_fixture["process_startable"]}
+    actual = {s for s in ProcessStatus if is_process_startable(s)}
+    assert actual == expected
+
+
 # ── classify_execution_mode truth table ──────────────────────────────────────
 
 
@@ -76,38 +121,55 @@ def test_classify_execution_mode_truth_table():
 
     # Not live → None.
     for s in ("new", "stopping", "stopped", "failed"):
-        assert classify_execution_mode(status=s, worker_status=None, visible=True) is None
+        assert classify_execution_mode(status=s, worker_status=None, pty_mode=True) is None
 
-    # Live PTY / CLI split.
+    # Live PTY / CLI split — keyed on the transport ``pty_mode``, not ``visible``.
     for s in ("running", "starting"):
         assert (
-            classify_execution_mode(status=s, worker_status=None, visible=True)
+            classify_execution_mode(status=s, worker_status=None, pty_mode=True)
             == ExecutionMode.INTERACTIVE
         )
         assert (
-            classify_execution_mode(status=s, worker_status=None, visible=False)
+            classify_execution_mode(status=s, worker_status=None, pty_mode=False)
             == ExecutionMode.BACKGROUND
         )
 
-    # Error worker_status wins over visible, for both PTY and CLI.
+    # Error worker_status wins over transport, for both PTY and CLI.
     for w in ("error", "api_timeout", "inactive"):
         assert (
-            classify_execution_mode(status="running", worker_status=w, visible=True)
+            classify_execution_mode(status="running", worker_status=w, pty_mode=True)
             == ExecutionMode.ERROR
         )
         assert (
-            classify_execution_mode(status="running", worker_status=w, visible=False)
+            classify_execution_mode(status="running", worker_status=w, pty_mode=False)
             == ExecutionMode.ERROR
         )
 
     # Dead PTY pid → Error; CLI without pid liveness stays Background.
     assert (
-        classify_execution_mode(status="running", worker_status=None, visible=True, pid_alive=False)
+        classify_execution_mode(status="running", worker_status=None, pty_mode=True, pid_alive=False)
         == ExecutionMode.ERROR
     )
     assert (
-        classify_execution_mode(status="running", worker_status=None, visible=False)
+        classify_execution_mode(status="running", worker_status=None, pty_mode=False)
         == ExecutionMode.BACKGROUND
+    )
+
+
+def test_classify_execution_mode_hidden_live_pty_is_interactive():
+    """A hidden live PTY (visible=False but pty_mode=True) is a PTY worker →
+    INTERACTIVE, NOT the headless BACKGROUND bucket. Pins the transport-keyed
+    contract that the old ``visible``-keyed classifier got wrong."""
+    from flow_sdk.builtin.worker_status import ExecutionMode, classify_execution_mode
+
+    assert (
+        classify_execution_mode(status="running", worker_status=None, pty_mode=True)
+        == ExecutionMode.INTERACTIVE
+    )
+    # And a dead-PID hidden PTY still surfaces as Error (rule 2 keys on pty_mode).
+    assert (
+        classify_execution_mode(status="running", worker_status=None, pty_mode=True, pid_alive=False)
+        == ExecutionMode.ERROR
     )
 
 
@@ -121,6 +183,10 @@ def test_process_status_values():
     assert ProcessStatus.STOPPING.value == "stopping"
     assert ProcessStatus.STOPPED.value == "stopped"
     assert ProcessStatus.FAILED.value == "failed"
+    # busy/ready are no longer status values — turn-in-flight is a separate
+    # ``busy`` boolean (``is_turn_busy``).
+    assert not hasattr(ProcessStatus, "READY")
+    assert not hasattr(ProcessStatus, "BUSY")
 
 
 def test_process_status_no_live():
@@ -139,7 +205,7 @@ EXPECTED_WORKER_VALUES = {
     "error",
     "interrupted",
     "inactive",
-    "waiting",
+    "working",
     "thinking",
     "tool_call",
     "tool_running",
@@ -228,6 +294,56 @@ def test_tail_status_tool_call(tmp_path: Path):
     assert _tail_status(f) == WorkerStatus.TOOL_CALL
 
 
+def test_tail_status_pending_user_question_is_pending_user(tmp_path: Path):
+    """An unanswered blocking user-input tool (AskUserQuestion / ExitPlanMode)
+    is PENDING_USER ("Idle"), NOT TOOL_CALL — Claude has yielded to
+    the user and is idle awaiting their answer, so the spinner must not spin.
+    """
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
+            {"type": "tool_use", "id": "toolu_ask1", "name": "AskUserQuestion", "input": {}},
+        ]}},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.PENDING_USER
+
+
+def test_tail_status_pending_user_question_survives_trailing_meta(tmp_path: Path):
+    """Trailing ``last-prompt``/``mode``/``permission-mode`` markers after the
+    asking turn must not mask the pending question (the real regressed case)."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
+            {"type": "tool_use", "id": "toolu_ask2", "name": "AskUserQuestion", "input": {}},
+        ]}},
+        {"type": "last-prompt"},
+        {"type": "mode"},
+        {"type": "permission-mode"},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.PENDING_USER
+
+
+def test_tail_status_answered_user_question_falls_through(tmp_path: Path):
+    """Once the user answers, the ``tool_result`` (paired by ``tool_use_id``)
+    resolves the question and the tail classifies normally (here → COMPLETE)."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
+            {"type": "tool_use", "id": "toolu_ask3", "name": "AskUserQuestion", "input": {}},
+        ]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_ask3", "content": "ok"},
+        ]}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
 def test_tail_status_tool_running(tmp_path: Path):
     """Active file + last entry type=progress → TOOL_RUNNING."""
     f = tmp_path / "session.jsonl"
@@ -258,12 +374,12 @@ def test_tail_status_last_prompt_after_end_turn_is_complete(tmp_path: Path):
 def test_tail_status_last_prompt_with_end_turn_past_tail_window_is_complete(tmp_path: Path):
     """``end_turn`` stranded past the 4 KB tail window must still read COMPLETE.
 
-    Regression for the "pinned at WAITING / never PENDING_USER" bug: the turn
+    Regression for the "pinned at WORKING / never PENDING_USER" bug: the turn
     genuinely ended (``stop_reason=end_turn``) and Claude appended trailing
     ``last-prompt`` / ``system`` / envelope markers, but a large preceding
     ``tool_use`` line pushed the ``end_turn`` entry just past the 4 KB
     (``_TAIL_BYTES``) tail read. The ``last-prompt`` branch then saw no completed
-    assistant in-window and fell through to WAITING — leaving a finished, idle
+    assistant in-window and fell through to WORKING — leaving a finished, idle
     worker stuck on the animated "Waiting" pill (``ready_for_input=False``,
     never projected to PENDING_USER). The tail read must widen until the
     completing assistant turn is in-window.
@@ -272,7 +388,7 @@ def test_tail_status_last_prompt_with_end_turn_past_tail_window_is_complete(tmp_
     # A large final assistant turn (a long summary message is routine), so the
     # ``end_turn`` line's START lands > 4096 bytes from EOF once the trailing
     # ack/envelope run is appended — exactly the on-disk shape that pinned a
-    # finished worker at WAITING.
+    # finished worker at WORKING.
     big_blob = "x" * 6000
     _write_jsonl(f, [
         {"type": "user", "message": {"role": "user"}},
@@ -303,7 +419,7 @@ def test_tail_status_last_prompt_between_tool_calls_is_not_complete(tmp_path: Pa
     during that pause. Before the fix this was read as COMPLETE, cutting
     ``stream_transcript`` off mid-turn so ``flow diagnose`` falsely reported the
     result "not recorded". Only a real ``end_turn`` is terminal → here it stays
-    WAITING so the stream keeps reading.
+    WORKING so the stream keeps reading.
     """
     f = tmp_path / "session.jsonl"
     _write_jsonl(f, [
@@ -319,18 +435,18 @@ def test_tail_status_last_prompt_between_tool_calls_is_not_complete(tmp_path: Pa
         {"type": "last-prompt"},
     ])
     os.utime(f, None)
-    assert _tail_status(f) == WorkerStatus.WAITING
+    assert _tail_status(f) == WorkerStatus.WORKING
 
 
 def test_tail_status_waiting(tmp_path: Path):
-    """Active file + last entry is a fresh user message (<90s) → WAITING."""
+    """Active file + last entry is a fresh user message (<90s) → WORKING."""
     f = tmp_path / "session.jsonl"
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
     _write_jsonl(f, [
         {"type": "user", "timestamp": now_iso, "message": {"role": "user"}},
     ])
     os.utime(f, None)
-    assert _tail_status(f) == WorkerStatus.WAITING
+    assert _tail_status(f) == WorkerStatus.WORKING
 
 
 def test_tail_status_api_error(tmp_path: Path):
@@ -434,13 +550,24 @@ def test_tail_status_expands_past_envelope_run_beyond_4kb(tmp_path: Path):
 
 # ── is_ready_for_input truth table ───────────────────────────────────────────
 #
-# Contract: status == RUNNING AND worker_status ∈ {IDLE, COMPLETE, INTERRUPTED}.
+# Contract (realigned): is_ready_for_input(p) ⇔ is_process_running(p.status) AND
+# ¬is_turn_busy(p) ⇔ the process is RUNNING AND ¬busy. busy ⇔ prompt-lock held ∨ _turn_in_flight
+# ∨ worker ∈ {initializing, working, thinking, tool_call, tool_running}.
+# Everything else while RUNNING (idle/complete/interrupted/pending_user AND the
+# fail-open error states error/api_error/api_timeout/inactive/unknown/None) is
+# READY — the user can just re-prompt.
 
 
 class _FakeProcess:
     """Minimal stand-in for AgenticProcess in the predicate truth-table."""
 
+    _counter = 0
+
     def __init__(self, status: ProcessStatus, worker: WorkerStatus | None = None, session_id: str | None = None, turn_in_flight: bool = False):
+        # Unique id so ``is_turn_busy`` → ``_prompt_lock_locked`` reads a fresh
+        # (unlocked) per-process lock and never a lock a prior case left held.
+        _FakeProcess._counter += 1
+        self.id = f"fake-proc-{_FakeProcess._counter}"
         self.status = status.value
         self._worker = worker
         self.session_id = session_id
@@ -453,21 +580,25 @@ class _FakeProcess:
 @pytest.mark.parametrize(
     "process_status,worker_status,expected",
     [
-        # Ready states when LIVE=RUNNING
+        # Ready states when RUNNING and no turn in flight
         (ProcessStatus.RUNNING, WorkerStatus.IDLE, True),
         (ProcessStatus.RUNNING, WorkerStatus.COMPLETE, True),
         (ProcessStatus.RUNNING, WorkerStatus.INTERRUPTED, True),
-        # Not ready while worker is mid-turn
+        # PENDING_USER (worker asked a question) — the user CAN respond → ready.
+        (ProcessStatus.RUNNING, WorkerStatus.PENDING_USER, True),
+        # Fail-open error/stale states — re-promptable, so ready (the exact error
+        # still shows via the raw worker_status label / the ExecutionMode chip).
+        (ProcessStatus.RUNNING, WorkerStatus.API_ERROR, True),
+        (ProcessStatus.RUNNING, WorkerStatus.API_TIMEOUT, True),
+        (ProcessStatus.RUNNING, WorkerStatus.ERROR, True),
+        (ProcessStatus.RUNNING, WorkerStatus.INACTIVE, True),
+        (ProcessStatus.RUNNING, WorkerStatus.UNKNOWN, True),
+        # Busy — a turn is genuinely in flight (worker mid-turn).
         (ProcessStatus.RUNNING, WorkerStatus.THINKING, False),
-        (ProcessStatus.RUNNING, WorkerStatus.WAITING, False),
+        (ProcessStatus.RUNNING, WorkerStatus.WORKING, False),
         (ProcessStatus.RUNNING, WorkerStatus.TOOL_CALL, False),
         (ProcessStatus.RUNNING, WorkerStatus.TOOL_RUNNING, False),
-        (ProcessStatus.RUNNING, WorkerStatus.API_ERROR, False),
-        (ProcessStatus.RUNNING, WorkerStatus.API_TIMEOUT, False),
-        (ProcessStatus.RUNNING, WorkerStatus.ERROR, False),
-        (ProcessStatus.RUNNING, WorkerStatus.INACTIVE, False),
         (ProcessStatus.RUNNING, WorkerStatus.INITIALIZING, False),
-        (ProcessStatus.RUNNING, WorkerStatus.UNKNOWN, False),
         # Any non-RUNNING lifecycle → never ready
         (ProcessStatus.NEW, WorkerStatus.IDLE, False),
         (ProcessStatus.STARTING, WorkerStatus.IDLE, False),
@@ -479,6 +610,77 @@ class _FakeProcess:
 def test_is_ready_for_input_truth_table(process_status, worker_status, expected):
     proc = _FakeProcess(process_status, worker_status)
     assert is_ready_for_input(proc, worker_status) is expected
+
+
+@pytest.mark.parametrize(
+    "process_status,worker_status,expected_busy",
+    [
+        (ProcessStatus.RUNNING, WorkerStatus.IDLE, False),
+        (ProcessStatus.RUNNING, WorkerStatus.PENDING_USER, False),
+        (ProcessStatus.RUNNING, WorkerStatus.API_ERROR, False),
+        (ProcessStatus.RUNNING, WorkerStatus.THINKING, True),
+        (ProcessStatus.RUNNING, WorkerStatus.INITIALIZING, True),
+        # Non-running lifecycle → never busy (no turn can be in flight).
+        (ProcessStatus.STARTING, WorkerStatus.INITIALIZING, False),
+        (ProcessStatus.STOPPED, WorkerStatus.COMPLETE, False),
+        (ProcessStatus.FAILED, WorkerStatus.ERROR, False),
+    ],
+)
+def test_busy_is_orthogonal_to_status(process_status, worker_status, expected_busy):
+    """``busy`` is a separate boolean (``is_turn_busy``), never folded into
+    ``status``. The lifecycle value is emitted verbatim — ``running`` stays
+    ``running`` — and ``busy`` carries the turn-in-flight signal alongside it.
+
+    Note: a mid-turn worker status on a non-RUNNING FSM value can't happen in
+    practice; here we only assert the RUNNING rows drive ``busy`` and that the
+    status value is never mutated into ready/busy."""
+    from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
+
+    proc = _FakeProcess(process_status, worker_status)
+    # status is emitted verbatim — never projected to a ready/busy literal.
+    assert proc.status == process_status.value
+    assert proc.status not in ("ready", "busy")
+    if process_status is ProcessStatus.RUNNING:
+        assert is_turn_busy(proc, worker_status) is expected_busy
+
+
+def test_is_turn_busy_signal_priority():
+    """``is_turn_busy`` ORs three signals: prompt lock, ``_turn_in_flight``, and a
+    mid-turn worker status. Any one → busy. This is the SAME predicate the
+    switch-mode 409 and the serialized ``busy`` field derive from."""
+    from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
+
+    # (1) No lock, no turn, a ready worker → NOT busy (the held-lock case is
+    #     covered separately in the async test below, which needs a running loop).
+    p_ready = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.COMPLETE)
+    assert is_turn_busy(p_ready, WorkerStatus.COMPLETE) is False
+
+    # (2) _turn_in_flight → busy regardless of worker status.
+    p_turn = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.COMPLETE, turn_in_flight=True)
+    assert is_turn_busy(p_turn, WorkerStatus.COMPLETE) is True
+
+    # (3) A mid-turn worker status → busy with no lock / no turn flag.
+    p_worker = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.THINKING)
+    assert is_turn_busy(p_worker, WorkerStatus.THINKING) is True
+
+    # api_error is re-promptable → NOT busy (maps to a ready process status).
+    p_api = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.API_ERROR)
+    assert is_turn_busy(p_api, WorkerStatus.API_ERROR) is False
+
+
+@pytest.mark.asyncio
+async def test_is_turn_busy_held_prompt_lock():
+    """A held prompt lock makes the turn busy even when the worker status looks
+    ready — the switch-mode 409's authoritative in-flight signal for a
+    native-xterm turn (which holds no _turn_in_flight flag)."""
+    from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
+    from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
+
+    proc = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.COMPLETE)
+    async with ap_mod._PROMPT_LOCKS[proc.id]:
+        assert is_turn_busy(proc, WorkerStatus.COMPLETE) is True
+    # Released → back to ready.
+    assert is_turn_busy(proc, WorkerStatus.COMPLETE) is False
 
 
 def test_is_ready_for_input_none_worker_turn_in_flight(tmp_path):
@@ -508,19 +710,21 @@ def test_worker_mode_enum_values():
 
 
 class _ModeProc:
-    def __init__(self, visible: bool):
-        self.visible = visible
+    def __init__(self, pty_mode: bool):
+        self.pty_mode = pty_mode
 
 
 @pytest.mark.parametrize(
-    "visible,expected",
+    "pty_mode,expected",
     [
         (True, WorkerMode.INTERACTIVE),
         (False, WorkerMode.CLI),
     ],
 )
-def test_get_worker_mode_derivation(visible, expected):
-    assert get_worker_mode(_ModeProc(visible)) is expected
+def test_get_worker_mode_derivation(pty_mode, expected):
+    """WorkerMode keys on the transport ``pty_mode`` — a hidden live PTY
+    (pty_mode=True) is INTERACTIVE regardless of tab visibility."""
+    assert get_worker_mode(_ModeProc(pty_mode)) is expected
 
 
 # ── Field-removal regression guards ──────────────────────────────────────────
@@ -560,3 +764,119 @@ def test_process_failed_terminal_state():
     proc = AgenticProcess()
     proc.status = ProcessStatus.FAILED.value
     assert proc.is_idle  # FAILED is one of the idle-lifecycle states
+
+
+# ── Serializer injection branch (worker_status / busy / ready_for_input) ──────
+#
+# ``worker_status``, ``busy`` and ``ready_for_input`` are NOT stored — they are
+# derived onto the wire payload each serialize by ``api_json_serializer`` (the
+# live ``model_dump`` path). ``status`` is the lifecycle FSM emitted VERBATIM
+# (``running`` and all — no projection); ``busy`` = ``is_turn_busy(self,
+# computed)``; ``ready_for_input`` = ``is_process_running(status) and not busy``.
+# These tests pin that branch directly, driven only by a monkeypatched
+# ``fetch_worker_status`` (no server, no transcript).
+
+
+@pytest.mark.parametrize(
+    "computed,exp_worker_status,exp_busy,exp_ready",
+    [
+        # Ready worker states → status stays running, busy False, ready True.
+        (WorkerStatus.COMPLETE, "complete", False, True),
+        (WorkerStatus.IDLE, "idle", False, True),
+        (WorkerStatus.INTERRUPTED, "interrupted", False, True),
+        # Fail-open: error/stale worker states are re-promptable → not busy,
+        # but the raw worker_status is surfaced verbatim ("what we found").
+        (WorkerStatus.ERROR, "error", False, True),
+        # Busy worker states → busy True, not ready.
+        (WorkerStatus.THINKING, "thinking", True, False),
+        (WorkerStatus.TOOL_RUNNING, "tool_running", True, False),
+        (WorkerStatus.INITIALIZING, "initializing", True, False),
+        # Undiscovered transcript → worker_status is NULL (never coerced to a
+        # placeholder); not busy (spawned-and-idle, no turn in flight).
+        (None, None, False, True),
+    ],
+)
+def test_api_json_serializer_emits_status_busy_axes(
+    monkeypatch, computed, exp_worker_status, exp_busy, exp_ready
+):
+    """The live serializer emits the lifecycle ``status`` VERBATIM (``running``),
+    surfaces the raw nullable ``worker_status``, and derives the orthogonal
+    ``busy`` boolean + ``ready_for_input`` — all on the RUNNING process payload.
+    The two axes never mix: ``status`` is always ``running`` here."""
+    proc = AgenticProcess()
+    proc.status = ProcessStatus.RUNNING.value
+    monkeypatch.setattr(AgenticProcess, "fetch_worker_status", lambda self: computed)
+
+    payload = proc.model_dump(mode="json")
+    assert payload["worker_status"] == exp_worker_status
+    assert payload["status"] == "running"
+    assert payload["busy"] is exp_busy
+    assert payload["ready_for_input"] is exp_ready
+
+
+def test_api_json_serializer_ready_false_when_not_running(monkeypatch):
+    """A COMPLETE worker on a non-RUNNING container is never ready or busy, and its
+    wire status passes through as the stored lifecycle value."""
+    proc = AgenticProcess()
+    proc.status = ProcessStatus.STOPPED.value
+    monkeypatch.setattr(AgenticProcess, "fetch_worker_status", lambda self: WorkerStatus.COMPLETE)
+
+    payload = proc.model_dump(mode="json")
+    assert payload["worker_status"] == "complete"
+    assert payload["status"] == "stopped"
+    assert payload["busy"] is False
+    assert payload["ready_for_input"] is False
+
+
+@pytest.mark.parametrize(
+    "lifecycle,expected",
+    [
+        (ProcessStatus.NEW.value, None),
+        (ProcessStatus.STOPPED.value, None),
+        (ProcessStatus.FAILED.value, WorkerStatus.ERROR),
+    ],
+)
+def test_fetch_worker_status_terminal_lifecycle_overrides_transcript(monkeypatch, lifecycle, expected):
+    """Terminal process lifecycle wins over a stale transcript tail.
+
+    A cancelled/stopped process can leave the JSONL ending at an unmatched tool
+    call; the wire payload must not keep reporting that as a live busy worker.
+    """
+    proc = AgenticProcess()
+    proc.status = lifecycle
+    monkeypatch.setattr(
+        AgenticProcess,
+        "_discover_status_from_transcript",
+        lambda self: WorkerStatus.TOOL_RUNNING,
+    )
+
+    assert proc.fetch_worker_status() == expected
+
+
+def test_api_json_serializer_always_emits_raw_running(monkeypatch):
+    """Regression (inverted from the old projection model): the wire ``status`` of
+    a RUNNING process is ALWAYS the raw ``running`` — turn-in-flight lives in the
+    separate ``busy`` boolean, never folded into ``status``."""
+    for computed in (WorkerStatus.IDLE, WorkerStatus.THINKING, None):
+        proc = AgenticProcess()
+        proc.status = ProcessStatus.RUNNING.value
+        monkeypatch.setattr(AgenticProcess, "fetch_worker_status", lambda self, c=computed: c)
+        payload = proc.model_dump(mode="json")
+        assert payload["status"] == "running"
+        assert payload["status"] not in ("ready", "busy")
+        # busy tracks the worker: mid-turn (thinking) → True, else False.
+        assert payload["busy"] is (computed == WorkerStatus.THINKING)
+
+
+def test_api_json_serializer_skip_context_suppresses_injection(monkeypatch):
+    """The ``skip_api_serializer`` context short-circuits the projection — the
+    computed fields are NOT injected (used by the internal persistence dump that
+    must not pay the tail-read cost)."""
+    proc = AgenticProcess()
+    proc.status = ProcessStatus.RUNNING.value
+    monkeypatch.setattr(AgenticProcess, "fetch_worker_status", lambda self: WorkerStatus.COMPLETE)
+
+    payload = proc.model_dump(mode="json", context={"skip_api_serializer": True})
+    assert "worker_status" not in payload
+    assert "busy" not in payload
+    assert "ready_for_input" not in payload

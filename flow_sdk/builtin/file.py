@@ -24,7 +24,7 @@ from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.types import EntityType
 from flow_sdk.utils.git import find_project_root, git_remote_url
-from flow_sdk.utils.git_identity import canonical_git_remote_key, parse_git_remote_url
+from flow_sdk.utils.git_identity import canonical_git_origin_repo_key, parse_git_origin_url
 
 
 class File(Entity):
@@ -59,10 +59,10 @@ def file_identity_key(path: str | Path) -> tuple[str, str, str, str]:
     root = find_project_root(canon)
     if root:
         remote = git_remote_url(root)
-        parsed = parse_git_remote_url(remote) if remote else None
+        parsed = parse_git_origin_url(remote) if remote else None
         if parsed is not None:
             provider, owner, name = parsed
-            repo_key = canonical_git_remote_key(provider, owner, name)
+            repo_key = canonical_git_origin_repo_key(provider, owner, name)
             rel = str(PurePosixPath(canon).relative_to(canonical_posix_path(root)))
             return (f"{repo_key}:{rel}", repo_key, rel, "")
     from flow_sdk.utils.machine_id import get_machine_id  # noqa: PLC0415

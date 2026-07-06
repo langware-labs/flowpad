@@ -27,6 +27,8 @@ import { buildConversationItems, ConversationItemKind } from './conversation-ite
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
+import { mostRecentProcess } from '@src/utils/process-recency';
 
 // Cap the initial messages window so long conversations don't fetch + watch
 // every FlowMessage they've ever held. Newest-first so the visible window is
@@ -49,10 +51,9 @@ interface ConversationViewProps {
   onSelectMessage?: (messageId: string) => void;
   /** Reports the most recent message id so the parent can default-select it. */
   onMostRecentMessageChange?: (messageId: string | null) => void;
-  /** Fired the instant the user clicks Approve & Execute, so the parent can
-   *  surface the spawned run (e.g. pop the Runs drawer tab). The action
-   *  itself is async — this just announces the click. */
-  onApproveAndExecuteFired?: () => void;
+  /** Open an executed message's run in the drawer's Runs tab, focused on it.
+   *  Fired by the per-message run-status one-liner (not by executing). */
+  onOpenRun?: (processId: string) => void;
 }
 
 export function ConversationView({
@@ -62,7 +63,7 @@ export function ConversationView({
   selectedMessageIds,
   onSelectMessage,
   onMostRecentMessageChange,
-  onApproveAndExecuteFired,
+  onOpenRun,
 }: ConversationViewProps) {
   const { t } = useLingui();
   const conversationTypeId = useMemo(
@@ -71,6 +72,18 @@ export function ConversationView({
   );
   const { data: conversation, refetch } = useEntity<Conversation>(conversationTypeId);
   const { localUser } = useLocalUser();
+
+  // Resolve the conversation's headless run + its live status ONCE here, rather
+  // than per bubble, and hand it to every executed message's run-status
+  // one-liner. Load-bearing assumption: the backend reuses ONE run per
+  // conversation (execute_prompt.py `_reuse_or_spawn_headless`), so the
+  // most-recent run IS the run each executed message spawned. Same query key as
+  // the Runs tab, so the two subscriptions dedup.
+  const { processes: convRuns } = useProcessesForTarget(conversationTypeId.toString());
+  const convRun = useMemo(() => mostRecentProcess(convRuns), [convRuns]);
+  // The run entity carries live worker status now (headless turns broadcast
+  // mid-turn), so read it directly instead of deriving over the stream.
+  const convRunStatus = convRun?.workerStatus ?? null;
 
   // Member roster used to resolve a message's hub-authoritative sender_id to
   // a display name. Precedence is `conversation.participants` (entity-cache,
@@ -204,9 +217,8 @@ export function ConversationView({
 
   const runExecute = useCallback(
     (messageId: string, autoReply: boolean) => {
-      // Surface the spawned run right away — execution is async (the headless
-      // run round-trips), so flip the drawer to Runs at confirm time.
-      onApproveAndExecuteFired?.();
+      // No drawer pop on execute — the per-message run-status one-liner surfaces
+      // the spawned run in place; the drawer opens only when the user clicks it.
       const action = async () => {
         await executePrompt(messageId, { autoReply });
         void refetch();
@@ -214,7 +226,7 @@ export function ConversationView({
       if (ensureMapped) ensureMapped(action);
       else void action();
     },
-    [executePrompt, refetch, ensureMapped, onApproveAndExecuteFired],
+    [executePrompt, refetch, ensureMapped],
   );
 
   // Implement Plan lifecycle — spawn + watch + open. See `useImplementPlan.ts`
@@ -441,6 +453,9 @@ export function ConversationView({
                   participants={participants}
                   rosterReady={rosterReady}
                   onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
+                  run={convRun}
+                  runStatus={convRunStatus}
+                  onOpenRun={onOpenRun}
                   onImplementPlan={task && !openPlanSession ? runImplementPlan : undefined}
                   onOpenPlanSession={openPlanSession}
                   onViewPlan={runViewPlan}

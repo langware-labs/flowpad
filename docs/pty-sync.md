@@ -393,6 +393,137 @@ Scroll state resets on session or `targetTimestamp` change.
 
 ---
 
+## Part 3.5 — Restart & Reconnect Recovery
+
+This section is the consolidated reference for what survives — and what is lost —
+across the three restart cases. The membership/lifecycle mechanics (attach FSM,
+parking, framed-stream replay, seq numbers) are documented in
+[pty-websocket.md](./agent-management/pty-websocket.md); this section is the
+per-case recovery narrative that ties those pieces together.
+
+### What persists vs what dies
+
+| Artifact | Lives in | Survives FE reload | Survives BE restart |
+|----------|----------|:------:|:------:|
+| OS PTY process (shell / worker child) | kernel, child of the backend | yes | **no** — dies with the parent (SIGHUP) |
+| `PtyState` seq counter + membership (attached/detached connections) | backend `PtyRegistry` (in-memory, no bytes) | yes (parked/resumed) | **no** — rebuilt on respawn, seq re-seeded from `max_seq()` |
+| **Framed PTY stream file (`.pty`)** | disk, `shell_pty_stream_path(record_id, pty_pid)` | yes | **yes** — the disk record of scrollback |
+| `Shell` entity + `ShellRecord` (status, `pty_pid`, `workdir`, `session_id`) | DB + disk record | yes | **yes** |
+| CLI transcript / session id (`claude`/`codex`/`copilot` JSONL) | vendor session store on disk | yes | **yes** — the basis for `--resume` |
+| Frontend xterm buffer | browser tab memory | **no** — reset on reload | no |
+
+The framed stream file (`flow_sdk/compute/providers/desktop/pty_stream_file.py`)
+is the load-bearing disk artifact for scrollback recovery. It records output
+frames **and** resize frames (`["o", b64, seq]` / `["r", [cols, rows]]`) so
+replay reconstructs the exact winsize timeline — replaying bytes at the wrong
+width garbles cursor-relative TUI repaints (ink / Claude). It is served by
+`GET /api/v1/shell/{shell_id}/pty-stream`
+(`flow_sdk/server/routes/pty_stream.py:19`).
+
+### The attach handshake (shared by all three cases)
+
+`InteractiveTerminal`'s `onConnected`
+(`ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx:1061`)
+is the single repaint path, re-run on first mount, on `on_reconnected`, and on
+`on_recovered`. A `connectGen` token makes re-entry safe (a newer run supersedes
+an in-flight one). Steps:
+
+1. `fetchPtyStream(pty_pid)` → `replayPtyStream(...)`
+   (`ui/src/components/terminal/interactive-terminal/pty-replay.ts`) replays the
+   framed disk stream through a **headless** xterm at the recorded sizes,
+   serializes scrollback+screen+cursor, and records `historyLastSeq`.
+2. `term.reset()` then `term.write(historySerialized)` — clean slate + restored
+   history.
+3. Replay live WS chunks accumulated since attach, **skipping** any with
+   `chunk.seq <= historyLastSeq` (dedup against the disk replay).
+4. Assert this client's size (`shell.resize`) to force a SIGWINCH repaint at real
+   dimensions, then subscribe live output.
+
+Because the disk file is the *only* scrollback record that survives a backend
+restart (there is no in-memory replay buffer — attach does no byte replay, see
+[pty-websocket.md](./agent-management/pty-websocket.md) "Replay model note"),
+this handshake is what restores scrollback after case (b)/(c).
+
+**seq monotonicity across restart is critical.** On respawn,
+`start_machine_pty_session` seeds the new session's counter from
+`pty_stream_file.max_seq()` (`flow_sdk/builtin/faas/pty_actions.py:414`). Without
+this, the fresh process would restart seq at 1, the frontend's
+`chunk.seq <= historyLastSeq` dedup would drop all post-restart output, and the
+terminal would look dead after a server restart.
+
+### Case (a) — Frontend reload only (backend up)
+
+- PTY, worker, and `PtyState` all survive.
+- The reloaded tab opens a fresh WebSocket (new `connection_id`) and re-runs the
+  loader → `process.start()` / `Shell.attachPty()`. The reattach fast-path
+  (`_perform_open`, agentic_process.py:1009) confirms `has_attachable_pty()` **and**
+  `worker_alive()` and returns without respawning.
+- `onConnected` replays the disk stream + live tail. **Nothing is lost**; this is
+  a pure repaint. No `recovered` event.
+
+### Case (b) — Backend restart, live PTYs (frontend stays open)
+
+- Every OS PTY child dies (SIGHUP). In-memory buffer and `PtyState` are gone. The
+  DB still shows `status=running` with a now-dead `worker_pid` (split-brain).
+- Startup (`app.py:_on_server_startup`): `reconcile_orphaned_workers` stamps dead
+  **headless** (`visible=false`) RUNNING/STARTING processes → `STOPPED` (awaited
+  before serving, so the first bootstrap is clean). Visible PTYs are left for the
+  recovery watchdog.
+- `start_recovery_task` runs `run_pty_recovery` every 5s. Recovery is
+  **on-demand**: only a process/shell a live connection is *watching* is respawned
+  (an unopened session stays dead until the user loads it). This guards against
+  the boot-time mass-respawn that exhausted the OS pty pool
+  (`OSError: out of pty devices`).
+- Respawn goes through the locked `proc.start_pty()` → `_perform_open`: the
+  reattach gate fails (PTY+worker dead), so it **soft-drops** the stale shell
+  (`preserve_shell_id=True` — keeps the `.pty` file so scrollback replays and
+  the same session id resumes), relaunches the worker with `--resume` when the
+  driver reports `has_resumable_session`, and emits the distinct `recovered`
+  event.
+- The open UI receives `recovered_msg`, matches on `process_id`/`shell_id`, and
+  re-runs `onConnected` — disk-stream replay restores pre-restart scrollback and
+  the resumed worker continues the conversation.
+- **Lost:** in-flight (uncommitted) worker output between the last disk-frame
+  flush and the crash; any headless turn in progress; live buffer chunks newer
+  than the disk file that weren't yet flushed. **Restored:** scrollback (to the
+  disk file's tail), the CLI conversation (via `--resume`), and the tab.
+
+### Case (c) — Full machine restart
+
+- Superset of (b): every backend, PTY, and browser tab is gone. On relaunch the
+  backend starts cold; the browser reloads.
+- Same recovery path as (b), but recovery only fires **after** a client re-opens
+  a terminal (nothing is watched at cold boot — see the watchdog note). Until the
+  user navigates to a terminal, its worker stays dead and its `Shell` row stays
+  `running` on disk.
+- `--resume` still works because the vendor CLI session store is on disk and
+  outlives the machine restart.
+
+### Per-CLI resume path
+
+Restart recovery relaunches with `--resume <session_id>` only when the driver's
+`has_resumable_session(process)` confirms a transcript exists in that vendor's
+own store:
+
+| CLI | Resume probe |
+|-----|--------------|
+| Claude | `get_claude_session(session_id) is not None` (claude/driver.py:312) — a session imported from another machine/CWD is *not* locally resumable. |
+| Codex | `find_codex_session_jsonl(session_id) is not None` (codex/driver.py:284). |
+| Copilot | `self._has_session(process)` — checks the copilot session file (copilot/driver.py:249). |
+
+If the probe is false, the worker relaunches **fresh** (no `--resume`) rather
+than colliding with a dead session lock.
+
+### Bare (non-agentic) terminal recovery
+
+A plain shell tab (`worker_pid=None`) is recovered by `_recover_bare_shells`
+(pty_recovery.py:258): watched + `status=running` + not attachable + within a
+1-hour recency window → `Shell.start_pty()` (a **fresh** shell — there is no
+conversation to resume). The recency window is a secondary guard against reviving
+an abandoned tab whose disk row was never closed.
+
+---
+
 ## Part 4 — File Map
 
 | File | Purpose |
@@ -411,3 +542,8 @@ Scroll state resets on session or `targetTimestamp` change.
 | `ui/src/hooks/use-agentic-process-stream.ts` | Stable `useSyncExternalStore` subscription to the per-process stream |
 | `ts_sdk/src/process/agentic-process.ts` | `getPrompts()` calls `transcript/prompts` for canonical prompt text |
 | `ts_sdk/src/entities/memo.ts` | Memo entity (memo_type, session_id, data.line, content) |
+| `ui/src/components/terminal/interactive-terminal/pty-replay.ts` | `fetchPtyStream` / `replayPtyStream` — disk framed-stream fetch + headless-xterm replay (Part 3.5 recovery) |
+| `flow_sdk/compute/providers/desktop/pty_stream_file.py` | Framed rolling `.pty` disk buffer (output + resize frames, seq, truncation) — the restart-surviving scrollback record |
+| `flow_sdk/server/routes/pty_stream.py` | `GET /shell/{id}/pty-stream` — serves framed stream for attach replay |
+| `flow_sdk/server/pty_recovery.py` | On-demand PTY-recovery watchdog + `reconcile_orphaned_workers` + `recovered` event emission |
+| `flow_sdk/builtin/faas/pty_actions.py` | `start_machine_pty_session` — wires `PtyStreamFile`, seeds seq from `max_seq()` for restart monotonicity |

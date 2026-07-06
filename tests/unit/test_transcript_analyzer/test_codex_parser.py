@@ -7,7 +7,6 @@ import warnings
 from flow_sdk.transcript_analyzer import (
     AgentTranscriptFile,
     AssistantMessageEntry,
-    EntryKind,
     MetaEntry,
     SystemEntry,
     ToolResultEntry,
@@ -313,9 +312,8 @@ def _token_count_line(ts, *, in_t, cached, out_t, tot_in, tot_cached, tot_out):
 
 
 def _write_jsonl(tmp_path, name, lines):
-    import json as _json
     path = tmp_path / name
-    path.write_text("\n".join(_json.dumps(l) for l in lines) + "\n", encoding="utf-8")
+    path.write_text("\n".join(json.dumps(l) for l in lines) + "\n", encoding="utf-8")
     return path
 
 
@@ -356,6 +354,35 @@ def test_codex_duplicate_token_count_events_billed_once(tmp_path):
     ])
     totals = _usage_totals(AgentTranscriptFile("codex", path))
     assert totals == {"input": 200, "cache_read": 800, "output": 50}
+
+
+# ── naming/title classification drift guard ───────────────────────────────────
+#
+# Mirrors the claude ``ai-title`` guard (parsers/claude.py ``_META_TYPES``):
+# a session naming/title line must classify as MetaEntry — never an
+# UnknownEntry, and never a spurious "unknown entry type" warning. If codex
+# ships a new naming ``event_msg`` subtype, it still falls through the parser's
+# ``event_msg.<type>`` meta bucket so the transcript stays clean.
+
+
+def test_codex_naming_event_msg_is_meta_not_unknown(tmp_path):
+    from flow_sdk.transcript_analyzer.entries import UnknownEntry
+
+    path = _write_jsonl(tmp_path, "rollout.jsonl", [
+        {"timestamp": "t0", "type": "session_meta",
+         "payload": {"id": "019dddd0-1234-7000-9000-000000000001", "cwd": "/repo"}},
+        {"timestamp": "t1", "type": "event_msg",
+         "payload": {"type": "session_title", "title": "Add a helper function"}},
+    ])
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        t = AgentTranscriptFile("codex", path)
+
+    meta_kinds = {e.meta_kind for e in t.entries if isinstance(e, MetaEntry)}
+    assert "event_msg.session_title" in meta_kinds
+    assert not any(isinstance(e, UnknownEntry) for e in t.entries)
+    assert not any("unknown entry type" in str(w.message) for w in caught)
 
 
 def test_codex_cumulative_reset_treated_as_fresh_counter(tmp_path):

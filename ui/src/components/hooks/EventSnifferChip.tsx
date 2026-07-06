@@ -1,5 +1,7 @@
+import { PrefKey } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { useEventFilterMask } from '@src/hooks/use-event-filter-mask';
+import { usePreference } from '@src/hooks/use-preference';
 import { type SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
 import { useSnifferPipeline, parsePipelineFilters, SnifferLevel, type PipelineFilters } from '@src/hooks/use-sniffer-pipeline';
@@ -18,8 +20,6 @@ import { EventTooltipContent, getEventColor, getEventIcon, navigateToTranscript 
 // Constants
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = 'flowpad-sniffer-timespan';
-
 type TimeSpan = '10s' | '1M' | '10' | '60' | '1D';
 
 const TIME_SPANS: { value: TimeSpan; ms: number; tooltip: string }[] = [
@@ -29,34 +29,6 @@ const TIME_SPANS: { value: TimeSpan; ms: number; tooltip: string }[] = [
   { value: '60', ms: 3_600_000, tooltip: 'Time span: 60 minutes' },
   { value: '1D', ms: 86_400_000, tooltip: 'Time span: 1 day' },
 ];
-
-function loadTimeSpan(): TimeSpan {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && TIME_SPANS.some((t) => t.value === stored)) return stored as TimeSpan;
-  } catch {
-    // ignore
-  }
-  return '1M';
-}
-
-// ---------------------------------------------------------------------------
-// Sniffer filters
-// ---------------------------------------------------------------------------
-
-const FILTERS_STORAGE_KEY = 'flowpad-sniffer-filters';
-
-function loadFilters(): PipelineFilters {
-  return parsePipelineFilters(localStorage.getItem(FILTERS_STORAGE_KEY));
-}
-
-function saveFilters(filters: PipelineFilters): void {
-  try {
-    localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
-  } catch {
-    // ignore
-  }
-}
 
 // ---------------------------------------------------------------------------
 // HeartbeatChart – flowing, icon-based timeline
@@ -173,18 +145,21 @@ export function EventSnifferChip() {
   const { navigation } = useDockNavigation();
   const { mask, removeFilter, clearAll: clearMask } = useEventFilterMask();
 
-  const [timeSpan, setTimeSpan] = useState<TimeSpan>(loadTimeSpan);
+  const [timeSpan, setTimeSpan] = usePreference<TimeSpan>(PrefKey.SNIFFER_TIME_SPAN);
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const [filters, setFilters] = useState<PipelineFilters>(loadFilters);
+  const [storedFilters, setStoredFilters] = usePreference<PipelineFilters>(PrefKey.SNIFFER_FILTERS);
+  const filters = useMemo<PipelineFilters>(
+    () => parsePipelineFilters(JSON.stringify(storedFilters)),
+    [storedFilters],
+  );
   const levelClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleFilterChange = useCallback((update: Partial<PipelineFilters>) => {
-    setFilters((prev) => {
-      const next = { ...prev, ...update };
-      saveFilters(next);
-      return next;
-    });
-  }, []);
+  const handleFilterChange = useCallback(
+    (update: Partial<PipelineFilters>) => {
+      setStoredFilters({ ...storedFilters, ...update });
+    },
+    [storedFilters, setStoredFilters],
+  );
 
   const pipelineFilters = useMemo<PipelineFilters>(
     () => ({ ...filters, mask: Object.keys(mask).length > 0 ? mask : undefined }),
@@ -192,14 +167,12 @@ export function EventSnifferChip() {
   );
   const { filteredEvents } = useSnifferPipeline(events, pipelineFilters);
 
-  const handleTimeSpan = useCallback((value: TimeSpan) => {
-    setTimeSpan(value);
-    try {
-      localStorage.setItem(STORAGE_KEY, value);
-    } catch {
-      // ignore
-    }
-  }, []);
+  const handleTimeSpan = useCallback(
+    (value: TimeSpan) => {
+      setTimeSpan(value);
+    },
+    [setTimeSpan],
+  );
 
   const handleEventClick = useCallback(
     (event: SnifferEvent) => {

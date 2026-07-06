@@ -611,8 +611,8 @@ class TestPromptAttachmentRoundtrip:
 
 @pytest.mark.asyncio
 async def test_resolve_project_root_prefers_task_then_project():
-    """_resolve_project_root_for_conv precedence:
-    (a) a context Task's project_root wins;
+    """_resolve_project_root_for_conv precedence (returns ``(root, project_id)``):
+    (a) a context Task's project_root wins (id = conv.project_id or path-derived);
     (b) a blank Task project_root falls through to the Project mount;
     (c) no task → the Project mount path;
     (d) conversation missing → None;
@@ -634,7 +634,10 @@ async def test_resolve_project_root_prefers_task_then_project():
         patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv_a)),
         patch.object(Task, "get_one", new=AsyncMock(return_value=task_a)),
     ):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) == Path("/sender/work/proj-a")
+        assert await _resolve_project_root_for_conv(_CONV_UUID) == (
+            Path("/sender/work/proj-a"),
+            Project.derive_id_for_path("/sender/work/proj-a"),
+        )
 
     # --- (b) task present but blank project_root → Project mount ---
     conv_b = Conversation(shared_context_entities=[f"task-{task_id}"], project_id=proj_id)
@@ -649,7 +652,7 @@ async def test_resolve_project_root_prefers_task_then_project():
         patch.object(Task, "get_one", new=AsyncMock(return_value=task_b)),
         patch.object(Project, "get_one", new=AsyncMock(return_value=proj_b)),
     ):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) == Path("/local/projects/p")
+        assert await _resolve_project_root_for_conv(_CONV_UUID) == (Path("/local/projects/p"), proj_id)
 
     # --- (c) no task context, project mount set → project mount ---
     conv_c = Conversation(shared_context_entities=[], project_id=proj_id)
@@ -660,7 +663,7 @@ async def test_resolve_project_root_prefers_task_then_project():
         patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv_c)),
         patch.object(Project, "get_one", new=AsyncMock(return_value=proj_c)),
     ):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) == Path("/local/projects/c")
+        assert await _resolve_project_root_for_conv(_CONV_UUID) == (Path("/local/projects/c"), proj_id)
 
     # --- (d) conversation missing → None ---
     with patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)):

@@ -23,9 +23,6 @@ The rebuild AgenticProcess is the only writer; callers use
 
 from __future__ import annotations
 
-import uuid
-from pathlib import Path
-
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 

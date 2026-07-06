@@ -1,9 +1,10 @@
 import { AppRenderer } from '@mcp-ui/client';
-import type { CallToolResult, ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { fsManager, VFSPath } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SANDBOX_URL } from '@src/lib/mcp-sandbox';
+import { readVfsResource } from '@src/lib/mcp-app-resources';
 import { isInternalDockUrl, parseDockUrlToPointer } from '@src/components/app-host/dock-url-helpers';
 import { Trans } from '@lingui/react/macro';
 import '@src/lib/mcp-host.css';
@@ -44,19 +45,6 @@ async function fetchSkillUIHtml(entityVfs: string, component: string): Promise<s
   return content;
 }
 
-async function readResource(uri: string): Promise<ReadResourceResult> {
-  const stripped = uri.replace(/^(ui|vfs):\/\//, '');
-  const vfsPath = VFSPath.parse(stripped);
-  if (!vfsPath.typeId) {
-    throw new Error(`Unsupported resource URI: ${uri}`);
-  }
-  const bytes = await fsManager.download(vfsPath.typeId, vfsPath.entitySubPath);
-  const text = typeof bytes === 'string' ? bytes : await bytes.text();
-  // TODO: detect MIME from extension or have fsManager return Content-Type;
-  // hardcoded text/plain will mis-label any binary resource (png, audio, pdf).
-  return { contents: [{ uri, mimeType: 'text/plain', text }] };
-}
-
 async function handleCallTool(params: { name: string }): Promise<CallToolResult> {
   return {
     content: [
@@ -70,7 +58,7 @@ async function handleCallTool(params: { name: string }): Promise<CallToolResult>
 }
 
 async function handleReadResource(params: { uri: string }) {
-  return readResource(params.uri);
+  return readVfsResource(params.uri);
 }
 
 async function handleMessage() {

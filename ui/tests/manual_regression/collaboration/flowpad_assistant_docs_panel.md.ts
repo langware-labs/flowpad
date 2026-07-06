@@ -28,8 +28,10 @@ test.describe('Flowpad Assistant project space', () => {
     await page.goto('/dock/project/@flowpad_assistant');
     await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
     await expect(page.locator('body')).not.toContainText('No editor for type: project');
-    await expect(page.getByText('Assets', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/Project:/).first()).toBeVisible({ timeout: 15_000 });
+    // Project view header renders "Project assets"; the project scope indicator
+    // is the project-name chip (data-testid="project-name-chip"), not a "Project:" label.
+    await expect(page.getByText('Project assets').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('project-name-chip').first()).toBeVisible({ timeout: 15_000 });
 
     const offending = errors.filter((e) => !/ResizeObserver|favicon/.test(e) && !/user-/.test(e) && !/agent_hook/.test(e) && !/\b404\b/.test(e));
     expect(offending, `Console errors: ${offending.join(', ')}`).toHaveLength(0);
@@ -38,13 +40,13 @@ test.describe('Flowpad Assistant project space', () => {
   test('test 2: The seeded hello-flowpad doc is indexed and searchable', async () => {
     test.setTimeout(60_000);
     const rq = await apiContext();
-    // Index markdown, then search (include_system to reach the seeded system doc).
-    // The seeded hello-flowpad doc is only searchable AFTER an index pass, and
-    // the index POST returns before the FTS commit settles, so re-issue the
-    // index inside the poll (the index is the action under test; re-running it
-    // is idempotent) and check until the doc surfaces — within the 15s cap.
+    // Index markdown once (the action under test), then poll the search
+    // (include_system to reach the seeded system doc) until the FTS commit
+    // settles and the seeded hello-flowpad doc surfaces — within the 15s cap.
+    // Re-issuing the (multi-thousand-file) index inside the poll made a single
+    // iteration exceed the cap; the index only needs to run once here.
+    await rq.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=markdown`);
     await expect(async () => {
-      await rq.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=markdown`);
       const res = await rq.get(`${API}/api/v1/search?record_type=markdown&q=hello&include_system=true`);
       expect(res.status()).toBe(200);
       const text = JSON.stringify(await res.json());
@@ -63,8 +65,8 @@ test.describe('Flowpad Assistant project space', () => {
     // No React error boundary.
     await expect(page.getByText(/Something went wrong/i)).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /^Error$/ })).toHaveCount(0);
-    // Asset browser is up.
-    await expect(page.getByText('Assets', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    // Asset browser is up (project view header renders "Project assets").
+    await expect(page.getByText('Project assets').first()).toBeVisible({ timeout: 15_000 });
 
     const offending = errors.filter((e) => !/ResizeObserver|favicon/.test(e) && !/user-/.test(e) && !/agent_hook/.test(e) && !/\b404\b/.test(e));
     expect(offending, `Console errors: ${offending.join(', ')}`).toHaveLength(0);

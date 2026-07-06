@@ -15,9 +15,12 @@
  */
 import {
   AgenticProcess,
+  Artifact,
   dataManager,
   fsManager,
+  isCompleteGitOrigin,
   TypeId,
+  type ConversationSendPayload,
 } from '@sdk';
 import { loadOptionalTranscript } from '@src/components/conversation/transcript-attachment';
 
@@ -29,6 +32,8 @@ export interface SharePrepPayload {
   sharedContextEntities: string[];
   /** Optional files (e.g. a session transcript) to ride the body bundle. */
   files?: File[];
+  /** Body transfer policy for this share. Defaults to copy. */
+  shareConfig?: ConversationSendPayload['shareConfig'];
 }
 
 export interface SharePrepOptions {
@@ -59,6 +64,8 @@ export interface ShareSource {
   supportsFiles?: boolean;
   /** Offer the transcript-attach toggle (AgenticProcess only). */
   isProcess?: boolean;
+  /** Static body transfer policy for this source. */
+  shareConfig?: ConversationSendPayload['shareConfig'];
   prepare(opts: SharePrepOptions): Promise<SharePrepPayload>;
 }
 
@@ -91,6 +98,33 @@ export function genericEntityShareSource(
       Promise.resolve({
         assetReferences: [ref],
         sharedContextEntities: [ref],
+      }),
+    ),
+  };
+}
+
+/**
+ * Artifact share. Git-backed artifacts ride as a metadata declaration plus
+ * GitOrigin; the receiver resolves the checkout from git when opening.
+ */
+export function artifactShareSource(
+  artifact: Artifact,
+  opts: { label?: string; typeLabel?: string } = {},
+): ShareSource {
+  const ref = artifact.typeId.toString();
+  const shareConfig = isCompleteGitOrigin(artifact.git_origin)
+    ? { transferMode: 'git' as const }
+    : undefined;
+  return {
+    label: opts.label ?? artifact.displayName ?? ref,
+    typeLabel: opts.typeLabel ?? artifact.artifact_type ?? Artifact.type,
+    defaultTitle: opts.label ?? artifact.displayName,
+    shareConfig,
+    prepare: resolveOnce(() =>
+      Promise.resolve({
+        assetReferences: [ref],
+        sharedContextEntities: [ref],
+        ...(shareConfig ? { shareConfig } : {}),
       }),
     ),
   };
@@ -195,4 +229,3 @@ function noAssetShareSource(label: string, typeLabel: string): ShareSource {
 export function messageForwardShareSource(args: { label: string }): ShareSource {
   return noAssetShareSource(args.label, 'MESSAGE');
 }
-

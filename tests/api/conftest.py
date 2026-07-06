@@ -216,18 +216,51 @@ async def client():
 
 
 @pytest_asyncio.fixture
-async def bootstrapped_client(client):
-    """Client with bootstrap called -- DB initialized, local entities created."""
+async def bootstrap_payload(client) -> dict:
+    """The unwrapped bootstrap payload (``ApiResponse.data``), fetched once.
+
+    Shared by ``bootstrapped_client`` and ``user`` so a single bootstrap GET
+    serves both — parse it with ``default_compute_node_id`` etc.
+    """
     response = await client.get("/api/v1/graph/bootstrap")
     assert response.status_code == 200, f"Bootstrap failed: {response.text}"
+    return ApiResponse(**response.json()).data
+
+
+@pytest_asyncio.fixture
+async def bootstrapped_client(client, bootstrap_payload):
+    """Client with bootstrap called -- DB initialized, local entities created."""
     yield client
 
 
 @pytest_asyncio.fixture
-async def user(bootstrapped_client):
-    """The @local user entity, fetched via the graph API after bootstrap."""
-    response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-    assert response.status_code == 200, response.text
-    res = ApiResponse(**response.json())
-    assert res.data and res.data.get("user"), "No user found after bootstrap"
-    return User(**res.data["user"])
+async def user(bootstrap_payload):
+    """The @local user entity, from the shared bootstrap payload."""
+    assert bootstrap_payload and bootstrap_payload.get("user"), "No user found after bootstrap"
+    return User(**bootstrap_payload["user"])
+
+
+# ---------------------------------------------------------------------------
+# Shared HTTP helpers (import from api tests to avoid per-file copies)
+# ---------------------------------------------------------------------------
+
+
+async def create_agentic_process(client, **fields) -> str:
+    """POST ``/agentic_process`` (defaulting ``worker_type=claude_code``) and
+    return the new process id."""
+    body = {"worker_type": "claude_code", **fields}
+    resp = await client.post("/api/v1/graph/agentic_process", json=body)
+    assert resp.status_code == 200, resp.text
+    return ApiResponse(**resp.json()).data["id"]
+
+
+async def get_agentic_process(client, pid: str) -> dict:
+    """GET one ``agentic_process`` row (unwrapped ``ApiResponse.data``)."""
+    resp = await client.get(f"/api/v1/graph/agentic_process/{pid}")
+    assert resp.status_code == 200, resp.text
+    return ApiResponse(**resp.json()).data
+
+
+def default_compute_node_id(bootstrap_payload: dict) -> str:
+    """``default_compute_node.id`` from the unwrapped ``bootstrap_payload``."""
+    return bootstrap_payload["default_compute_node"]["id"]

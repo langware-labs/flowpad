@@ -52,5 +52,10 @@ export function useWorkerHistory(
     return data;
   }, [data]);
 
+  // `worker-history` is fetched ONCE on load (a plain `useAction` query keyed by
+  // compute node + limit + project scope). It intentionally does NOT auto-refetch
+  // on AgenticProcess data_ops — a running agent emits a stream of status/
+  // transcript update ops, and refetching per op turned into a request storm.
+  // Callers that need a fresh list drive it explicitly via the returned `refetch`.
   return { entries, isLoading, refetch };
 }

@@ -1,13 +1,20 @@
 """ProcessStatus — backend-owned control-plane FSM for the AgenticProcess container.
 
-Part of the two-axis status model:
+Part of the status model:
 
-- ``ProcessStatus`` (this file) — app/user-level lifecycle of the process container.
-  Stored. Transitions are explicit (NEW → STARTING → RUNNING → STOPPING → STOPPED,
-  any → FAILED). Six values.
-- ``WorkerStatus`` (``agent_status.py``) — expert-level state of the worker running
-  inside the process. Derived from the Claude transcript JSONL on each serialize.
-  Only meaningful when ``ProcessStatus ∈ {RUNNING, STOPPING, STOPPED}``.
+- ``ProcessStatus`` (this file) — app/user-level lifecycle of the process
+  container. The FSM is **stored** and its transitions are explicit
+  (NEW → STARTING → RUNNING → STOPPING → STOPPED, any → FAILED). ``RUNNING`` is
+  the single "live" value, emitted verbatim on the wire (no projection).
+
+  "Is a turn in flight?" is a **separate**, orthogonal axis — the ``busy``
+  boolean, derived per read by ``status_predicates.is_turn_busy`` and serialized
+  alongside ``status`` as its own field. It is never folded into this FSM.
+- ``WorkerStatus`` (``worker_status.py``) — raw "what we found" state of the
+  worker running inside the process, in worker lingo. Derived from the vendor
+  transcript on each serialize; never stored.
+
+See ``docs/agent/agentic_process_statuses.md`` for the full model.
 """
 
 from __future__ import annotations
@@ -18,13 +25,19 @@ from flow_sdk._compat import StrEnum
 class ProcessStatus(StrEnum):
     NEW = "new"
     STARTING = "starting"
+    # The "live" value. Both stored AND emitted on the wire — turn-in-flight is
+    # now a *separate* ``busy`` boolean (derived per read from ``is_turn_busy``),
+    # NOT a projection that overloads this lifecycle FSM. See
+    # ``status_predicates.is_turn_busy`` and ``docs/agent/agentic_process_statuses.md``.
     RUNNING = "running"
     STOPPING = "stopping"
     STOPPED = "stopped"
     FAILED = "failed"
 
 
-_RUNNING_STATUSES: frozenset[ProcessStatus] = frozenset({
+# Live states — `running` is the single live value on both realms now (no more
+# `ready`/`busy` projection), plus the STARTING/STOPPING bookends.
+_WIRE_RUNNING_STATUSES: frozenset[ProcessStatus] = frozenset({
     ProcessStatus.STARTING,
     ProcessStatus.RUNNING,
     ProcessStatus.STOPPING,
@@ -38,8 +51,12 @@ _STARTABLE_STATUSES: frozenset[ProcessStatus] = frozenset({
 
 
 def is_running(status: ProcessStatus) -> bool:
-    """True while the process container is in a running state (STARTING/RUNNING/STOPPING)."""
-    return status in _RUNNING_STATUSES
+    """True while the process container is live (STARTING/RUNNING/STOPPING).
+
+    Lifecycle only — "is a turn in flight?" is the orthogonal ``busy`` boolean
+    (``is_turn_busy``), not a status value.
+    """
+    return status in _WIRE_RUNNING_STATUSES
 
 
 def is_startable(status: ProcessStatus) -> bool:

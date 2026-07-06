@@ -102,7 +102,7 @@ integration cost.
 - **Effort if missing:** M
 
 ### `--add-dir <path>` (repeatable, must precede `--`)
-- **Need:** Mount extra dirs so skills/agents are discovered in print-mode runs.
+- **Need:** Mount extra dirs so skills/agents and generated process instruction assets are discovered in print-mode runs.
 - **Claude:** `--add-dir <path>` repeated, emitted BEFORE the `--` instruction (claude/cli.py:133-134, 241-245); `AgenticContext.add_dirs` (cli_worker_base_driver.py:119)
 - **Codex:** `--add-dir <path>` repeated (codex/cli.py:112-113, 129-130)
 - **Required:** Yes
@@ -111,12 +111,14 @@ integration cost.
 - **Maps to:** _____________________
 - **Effort if missing:** M
 
-### `--agents <json>` (Claude-only — vendor parallel: inline into prompt)
-- **Need:** Define embedded sub-agents for this invocation.
-- **Claude:** `--agents <json>` (claude/cli.py:131-132, 235-237)
-- **Codex:** not supported — skills materialized to `~/.codex/skills/`, name list tracked only as `cmd_line` comment (codex/cli.py:60, 86-88); `WorkerDriver.compose_prompt` inlines for vendors lacking it (cli_worker_base_driver.py:410-417)
-- **Required:** Claude-only
-- **Vendor must expose:** Either an inline-agent flag OR ability to discover from a mounted dir + driver-side `compose_prompt` inlining.
+### Embedded agents and process instructions
+- **Need:** Deliver per-process instructions and embedded-agent persona/body text without mutating the user prompt.
+- **Flowpad mechanism:** materialize `<record_dir>/execution/assets/` through `AssetDir`, write `CLAUDE.md`, `AGENTS.md`, `.agents`, and `.github/instructions/flowpad.instructions.md`, then include the assets dir in `additional_dirs`.
+- **Claude:** receives `--append-system-prompt-file <assets>/CLAUDE.md`; legacy `--agents <json>` can still be emitted for existing `cli_config.agents_json`.
+- **Codex:** receives `-c developer_instructions=<generated text>`; embedded-agent names may be surfaced as `skill_names` for command visibility.
+- **Copilot:** receives `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets>`; the generated `.github/instructions/flowpad.instructions.md` is the custom instruction source.
+- **Required:** Yes
+- **Vendor must expose:** one reliable per-turn instruction sink (file flag, config override, or custom-instruction directory) plus a way to mount the generated assets dir when directory discovery is required.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
 - **Effort if missing:** L
@@ -821,22 +823,23 @@ integration cost.
 - **Maps to:** _____________________
 - **Effort if missing:** S
 
-### Embedded agents via `--agents <json>`
-- **Need:** Register per-process inline agent definitions (name → {description, prompt}) with the worker so the model can dispatch by name.
-- **Claude:** `--agents <json>` flag, JSON-serialized `agents_json` dict (claude/cli.py:131-132, 235-237; claude/driver.py:88-90)
-- **Codex:** not supported as a flag — falls back to inline-into-prompt via `compose_prompt` (codex worker materializes skills under `~/.codex/skills/` separately) (codex/cli.py:57-60, 86-89)
-- **Required:** Optional
-- **Vendor must expose:** either a per-invocation agent-registration flag OR a prompt-composition fallback that inlines agent bodies
+### Embedded agents via process instruction assets
+- **Need:** Make embedded agent definitions affect the worker while preserving the exact user instruction.
+- **Flowpad mechanism:** `load-embedded-agent` materializes the agent markdown under `<assets>/.claude/agents/<name>.md`; `prepare_system_instruction_assets()` parses materialized/legacy agents and writes persona/dispatch instructions into the generated instruction files.
+- **Claude:** generated file is passed with `--append-system-prompt-file`; legacy `--agents <json>` remains a compatibility path.
+- **Codex:** generated text is passed through `developer_instructions`; no prompt inlining.
+- **Copilot:** generated `.github/instructions/flowpad.instructions.md` is discovered through `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`; no prompt inlining.
+- **Required:** Yes for embedded-agent support
+- **Vendor must expose:** a dependable instruction channel that works in both headless and interactive launches.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
 - **Effort if missing:** M
 
-### `compose_prompt` directive forms (single-agent persona vs multi-agent dispatch)
-- **Need:** When embedded agents are present, prepend directives to the user prompt: single-agent → "you ARE this agent, adopt the persona"; multi-agent → "execute literally on name match, do NOT delegate via Task".
-- **Claude:** `ClaudeDriver.compose_prompt` branches on `len(agents_json) == 1`; emits persona block ("You are the '<name>' agent…") or dispatch block ("# Embedded agent specs … do NOT delegate via the Task tool") (claude/driver.py:324-399)
-- **Codex:** same `compose_prompt` shape applies as the inline-fallback for embedded agents
+### `compose_prompt` compatibility hook
+- **Need:** Preserve an extension point for vendors that truly must transform the user prompt.
+- **Current drivers:** passthrough. Embedded-agent/persona instructions are delivered through generated process instruction assets instead.
 - **Required:** Optional
-- **Vendor must expose:** `compose_prompt(instruction, agents_json) -> str` hook on the driver
+- **Vendor must expose:** `compose_prompt(instruction, agents_json) -> str` hook on the driver, preferably passthrough.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
 - **Effort if missing:** S

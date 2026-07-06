@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
+import { getActiveTabParent } from './tab-parent-context';
 
 export enum TabLifecycleState {
   Opening = 'opening',
@@ -134,14 +135,24 @@ function dockAddressesAsset(dock: DockPointer): boolean {
 async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tabs: Tab[] }> {
   const existing = await Tab.listAll();
   const existingTab = findTabForDock(existing, dock);
-  // Reuse an existing tab verbatim EXCEPT a project-less content tab: a content
-  // tab materialized before its asset was resolvable is persisted with
-  // project_id == null, and the backend's tab heal only re-derives a tab's
-  // project when its target ENTITY MOVES projects — so a tab born project-less
-  // whose asset never moves is never healed there. Fall through to
-  // `getFromDockPointer` for it (re-resolves project_id from the asset and
-  // self-heals the row) so it adopts its project on this load.
-  if (existingTab && (existingTab.project_id || !dockAddressesAsset(dock))) {
+  // A workspace surface (the vibe display) may have registered itself as the
+  // parent for tabs materialized right now. A tab opened while that window is
+  // up becomes its child (Tab.parent_tab_id) — this is the ONLY grouping seam;
+  // no navigation call site knows about children.
+  const parentTabId = getActiveTabParent();
+  // Mirror the backend's self-parent guard: the display tab IS its own workspace
+  // parent, so it can never adopt `parentTabId` (== its own id) and would
+  // otherwise re-resolve on every return-to-display navigation forever.
+  const needsReparent =
+    !!parentTabId &&
+    !!existingTab &&
+    existingTab.id !== parentTabId &&
+    existingTab.parent_tab_id !== parentTabId;
+  // Reuse an existing tab verbatim EXCEPT a project-less content tab (see the
+  // project self-heal below) OR one that needs re-parenting into the active
+  // workspace. Both cases fall through to `getFromDockPointer`, which re-derives
+  // project_id from the asset and adopts the parent, self-healing the row.
+  if (existingTab && (existingTab.project_id || !dockAddressesAsset(dock)) && !needsReparent) {
     return { tab: existingTab, tabs: existing };
   }
 
@@ -151,7 +162,7 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
   // `applyAllTabs`): doing so erases every other project's tabs, collapsing the
   // footer projects-chip to a single project. Use the scoped list only to find
   // the materialized tab, then re-read the UNSCOPED global list for adoption.
-  const scoped = await Tab.getFromDockPointer(dock);
+  const scoped = await Tab.getFromDockPointer(dock, { parentTabId });
   const scopedTab = findTabForDock(scoped, dock);
 
   const all = await Tab.listAll();

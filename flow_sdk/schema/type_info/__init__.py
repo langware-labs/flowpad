@@ -60,9 +60,14 @@ class TypeMetadata:
     # (``parent_type_id``) in the outgoing ``shared_context_entities``, and the
     # receive path materializes the parent first (see
     # ``Entity.materialize_share_parent``). Only safe when the parent type is
-    # deterministic/field-frozen (e.g. ``git_remote``) — a mutable parent would
-    # reintroduce cross-sender ownership conflicts.
+    # deterministic/field-frozen; a mutable parent would reintroduce cross-sender
+    # ownership conflicts.
     parent_share_on_default: bool = False
+    # True ⇒ this hub-hosted ``is_child`` type is pulled during the shared-context
+    # catch-up sync (the live bridge already materializes any child generically via
+    # ``_handle_child_op``). Makes the catch-up path registry-driven like the live
+    # path, instead of a hardcoded type list. Runtime-only; not in the schema hash.
+    shared_child: bool = False
     # Indexer dispatch callables (walked types only).
     from_disk_fn: Any = None
     gen_uuid_fn: Any = None
@@ -99,6 +104,7 @@ class TypeMetadata:
             main_ext=self.main_ext,
             parent_type=self.parent_type,
             parent_share_on_default=self.parent_share_on_default,
+            shared_child=self.shared_child,
             from_disk_fn=self.from_disk_fn,
             gen_uuid_fn=self.gen_uuid_fn,
             asset_hash_fn=self.asset_hash_fn,

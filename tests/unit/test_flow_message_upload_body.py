@@ -40,13 +40,16 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
     fm = _fm_with_file_attachment()
     fake_zip = tmp_path / "body.flowmsg"
     fake_zip.write_bytes(b"PK\x03\x04 pretend zip")
+    to_file = AsyncMock(return_value=fake_zip)
 
     with (
-        patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", AsyncMock(return_value=fake_zip)),
+        patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", to_file),
         patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})) as mock_put,
         patch("flow_sdk.utils.hub.hub_post", AsyncMock(return_value={})) as mock_post,
     ):
-        await fm.upload_body()
+        await fm.upload_body(transfer_mode="git")
+
+    to_file.assert_awaited_once_with(transfer_mode="git")
 
     # No PUT: the hub auto-stamps body_status=UPLOADING server-side
     # (_attachments_require_body during message-header creation), so the

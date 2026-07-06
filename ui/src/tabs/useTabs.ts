@@ -19,7 +19,10 @@ import { useEffect, useMemo, useState } from 'react';
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
 
-function tabKey(tab: Tab): string {
+/** The canonical strip chip key for a tab (its tabHash, else the raw id). The
+ *  ONE place this fallback rule lives — every strip must key chips by this so
+ *  select/close-by-key stay in lockstep. */
+export function tabKey(tab: Tab): string {
   return tab.dockPointer?.tabHash ?? tab.id;
 }
 
@@ -55,6 +58,22 @@ export function useCurrentTabs(): Tab[] {
     () => uniqueTabsByDockKey(all.filter((t) => tabInProject(t, project?.id ?? null))),
     [all, project?.id],
   );
+}
+
+/** Set of `tabHash`es for all currently-open tabs. Powers rail "dim entries that
+ *  have no open tab" — a Browseable row whose `pointer.tabHash` is in this set is
+ *  open and stays bright; everything else dims. */
+export function useOpenTabHashes(): Set<string> {
+  const all = useAllTabs();
+  return useMemo(() => new Set(all.map((t) => t.dockPointer?.tabHash).filter(Boolean) as string[]), [all]);
+}
+
+/** Set of target ids (AgenticProcess/Shell) that currently back a tab. Same
+ *  dimming rule as `useOpenTabHashes`, but for the custom-row rails (Chats) that
+ *  match by `target_id` rather than by a DockPointer. */
+export function useOpenTabTargetIds(): Set<string> {
+  const all = useAllTabs();
+  return useMemo(() => new Set(all.map((t) => t.target_id).filter(Boolean) as string[]), [all]);
 }
 
 /** React binding for terminal tabs, reading the global store. */
@@ -218,6 +237,14 @@ export function useTabProjectBuckets(): UseTabProjectBucketsResult {
     for (const tab of allTabs) {
       const pid = tab.project_id ?? null;
       if (!pid) continue;
+      // Skip a project's OWN landing/brief host tab (target === the project
+      // itself): `DockPointer.forProject` — where last-tab-close navigates —
+      // materializes a visible `project`-target Tab, but that is the empty-state
+      // host, not a real open tab. Counting it left the chip advertising "1 tab"
+      // for a project the brief correctly showed as empty. Membership in this
+      // chip means ≥1 real (content/terminal) tab; a project re-earns its slot
+      // when an actual session/content tab opens.
+      if (tab.target_type === Project.type) continue;
       counts.set(pid, (counts.get(pid) ?? 0) + 1);
     }
     return Array.from(counts.entries());

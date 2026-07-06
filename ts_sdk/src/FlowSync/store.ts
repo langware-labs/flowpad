@@ -1347,7 +1347,23 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       for (const parent_type_id of scope) {
         const parent_ref = this.entities.get(parent_type_id);
         if (parent_ref && parent_ref.entity && !parent_ref.entity.saved) {
-          return [];
+          try {
+            await this.fetchByTypeId(parent_type_id);
+          } catch (error) {
+            const httpStatus =
+              (error as { response?: { status?: number }; status?: number })?.response?.status ??
+              (error as { status?: number })?.status;
+            if (httpStatus === 404) {
+              parent_ref.status = EntityStatus.ERROR;
+              parent_ref.notFound = true;
+              return [];
+            }
+            throw error;
+          }
+          const refreshedParent = this.getByTypeIdFromCache(parent_type_id);
+          if (refreshedParent && !refreshedParent.saved) {
+            return [];
+          }
         }
       }
 

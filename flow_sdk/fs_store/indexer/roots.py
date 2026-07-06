@@ -20,7 +20,6 @@ from pathlib import Path
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 
-
 _ENV_VAR_TO_TYPE = (
     "FLOWPAD_DOC_DIRS",
     "FLOWPAD_PLAN_DIRS",
@@ -110,8 +109,8 @@ def resolve_project_id_for_cwd(cwd: str | None) -> str | None:
     if not cwd:
         return None
 
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
     # Cache only confirmed real-id hits — a project's id won't change once it
     # exists. The derived-alias fallback is intentionally NOT cached so a

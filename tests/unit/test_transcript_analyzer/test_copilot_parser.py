@@ -75,3 +75,35 @@ def test_kind_breakdown_has_no_unknowns(copilot_tool_failure_jsonl):
     assert EntryKind.TOOL_RESULT in kinds
     assert EntryKind.ASSISTANT_MESSAGE in kinds
     assert any(isinstance(e, MetaEntry) for e in transcript.entries)
+
+
+# ── naming/title classification drift guard ───────────────────────────────────
+#
+# Mirrors the claude ``ai-title`` guard: a session naming/title line must
+# classify as MetaEntry with its ``meta_kind`` preserved — never an
+# UnknownEntry. Copilot buckets every ``session.*`` control line as meta, so a
+# future ``session.title`` naming event stays out of the chat stream while
+# keeping its type visible for downstream consumers.
+
+
+def test_copilot_session_title_is_meta_not_unknown(tmp_path):
+    import json
+
+    path = tmp_path / "copilot_named.jsonl"
+    path.write_text(
+        "\n".join([
+            json.dumps({"type": "result", "sessionId": "cop-name-1", "timestamp": "t0"}),
+            json.dumps({"type": "session.title", "timestamp": "t1",
+                        "data": {"title": "Add a helper function"}}),
+        ]) + "\n",
+        encoding="utf-8",
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        transcript = AgentTranscriptFile("copilot", path)
+
+    meta_kinds = {e.meta_kind for e in transcript.entries if isinstance(e, MetaEntry)}
+    assert "session.title" in meta_kinds
+    assert not any(isinstance(e, UnknownEntry) for e in transcript.entries)
+    assert not any("unknown entry type" in str(w.message) for w in caught)

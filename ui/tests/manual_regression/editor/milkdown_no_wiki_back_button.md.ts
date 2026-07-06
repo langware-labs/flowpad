@@ -34,7 +34,19 @@ async function openFirstMarkdownDoc(page: Page) {
   }
   await expect(leaf).toBeVisible({ timeout: 15_000 });
   await leaf.click();
-  await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 20_000 });
+  // "Doc opened" = the MarkdownEditor header mounted. Do NOT wait on `.ProseMirror`
+  // here: the chosen editor mode is persisted across docs (PrefKey.EDITOR_MODE), so a
+  // doc can restore in Review mode (ReviewSurface, no `.ProseMirror`) — the view chip
+  // is rendered in every mode, making it a mode-agnostic open signal.
+  await expect(page.locator('[data-testid="editor-mode-chip-view"]')).toBeVisible({ timeout: 20_000 });
+  // The review/markdown mode chips are Advanced-only surfaces. View mode is now a
+  // prefMan-owned pref (`preferences.ui.view_mode`) whose backend value wins over the
+  // legacy localStorage `viewMode` seed, so setting localStorage alone no longer
+  // enters Advanced. Flip it through the live app API the way the footer view pill
+  // does (window.setView, exposed by view-mode-context), then wait for the
+  // Advanced-only review chip to render.
+  await page.evaluate(() => window.setView('advanced'));
+  await expect(page.locator('[data-testid="editor-mode-chip-review"]')).toBeVisible({ timeout: 10_000 });
 }
 
 test.describe('Markdown editor header has no "Wiki" back button', () => {

@@ -1,8 +1,9 @@
-import { type SkillItem } from '@sdk';
+import { PrefKey, type SkillItem } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { Badge } from '@src/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Folder, Loader2, Pin, PinOff, Sparkles } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import './SkillsSidebar.css';
 
@@ -39,30 +40,11 @@ function getSkillTimestamp(skill: SkillItem): number {
 export function SkillsSidebar({ skills, isLoading, onSkillClick }: SkillsSidebarProps) {
   const { t } = useLingui();
   const favoriteGap = 1000;
-  const storageKey = 'flowpad.skills.favoriteIndex';
   const [activeFilters, setActiveFilters] = useState<Set<SkillLocation>>(() => new Set<SkillLocation>(locationFilters));
   const [query, setQuery] = useState('');
-  const [favoriteIndexMap, setFavoriteIndexMap] = useState<Record<string, number>>(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) return {};
-      const parsed = JSON.parse(raw) as Record<string, number>;
-      if (!parsed || typeof parsed !== 'object') return {};
-      return parsed;
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(favoriteIndexMap));
-    } catch {
-      // Ignore storage failures (private mode, quota exceeded)
-    }
-  }, [favoriteIndexMap]);
+  const [favoriteIndexMap, setFavoriteIndexMap] = usePreference<Record<string, number>>(
+    PrefKey.SKILL_FAVORITE_INDICES,
+  );
 
   const toggleFilter = (filter: SkillLocation) => {
     setActiveFilters((prev) => {
@@ -107,15 +89,13 @@ export function SkillsSidebar({ skills, isLoading, onSkillClick }: SkillsSidebar
 
   const handleTogglePin = (skill: SkillItem) => {
     const currentIndex = getFavoriteIndex(skill);
-    setFavoriteIndexMap((prev) => {
-      const next = { ...prev };
-      if (currentIndex !== null && currentIndex !== undefined) {
-        delete next[skill.id];
-        return next;
-      }
+    const next = { ...favoriteIndexMap };
+    if (currentIndex !== null && currentIndex !== undefined) {
+      delete next[skill.id];
+    } else {
       next[skill.id] = getNextFavoriteIndex(filteredSkills);
-      return next;
-    });
+    }
+    setFavoriteIndexMap(next);
   };
 
   const [pinnedSkills, unpinnedSkills] = useMemo(() => {

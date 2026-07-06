@@ -20,6 +20,31 @@ async function openEditor(page: Page, id: string) {
   });
 }
 
+// Open the whiteboard asset list with the sidebar tree showing whiteboard rows.
+// Two setup facts the .md's "find a whiteboard row" step depends on:
+//   1. Whiteboard is `browseable_by=advanced` (TypeInfo) — it only appears in
+//      the Assets tree in Advanced view mode. `setView` beats any backend-stored
+//      view_mode preference (localStorage boot-key alone loses to it).
+//   2. Navigating to `/dock/assets/list/<type>` deliberately does NOT auto-expand
+//      the sidebar root (it avoids a duplicate /search of the right-panel list),
+//      so the whiteboard rows only materialize after its chevron is expanded —
+//      the same expand-if-collapsed pattern the agent asset-picker test uses.
+async function openWhiteboardListExpanded(page: Page) {
+  await page.goto('/dock/assets/list/whiteboard');
+  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
+  await page.evaluate(() => (window as any).setView?.('advanced'));
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.getAttribute('data-view')), { timeout: 10_000 })
+    .toBe('advanced');
+  const chevron = page.locator('[data-testid^="browseable-chevron-asset-type:whiteboard:"]').first();
+  await expect(chevron).toBeVisible({ timeout: 15_000 });
+  const anyRow = page.locator('[data-testid^="browseable-toolbar-delete:whiteboard:"]').first();
+  if (!(await anyRow.isVisible({ timeout: 2_000 }).catch(() => false))) {
+    await chevron.click();
+  }
+  await expect(anyRow).toBeVisible({ timeout: 15_000 });
+}
+
 test.describe('Whiteboard — UI / UX (U1–U5)', () => {
   test('U1: tree row carries a Palette icon', async ({ page, request }) => {
     test.setTimeout(60_000);
@@ -40,9 +65,7 @@ test.describe('Whiteboard — UI / UX (U1–U5)', () => {
     }
     await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`);
 
-    await page.goto('/dock/assets/list/whiteboard');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await page.waitForTimeout(2_000);
+    await openWhiteboardListExpanded(page);
 
     // Any whiteboard tree row's leading icon is a lucide Palette glyph (the
     // whiteboard Entity's static icon = 'Palette'). Walk from a row's delete
@@ -82,9 +105,7 @@ test.describe('Whiteboard — UI / UX (U1–U5)', () => {
     }
     await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`);
 
-    await page.goto('/dock/assets/list/whiteboard');
-    await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-    await page.waitForTimeout(2_000);
+    await openWhiteboardListExpanded(page);
 
     // On the whiteboard list path, the rendered rows are all whiteboards — no
     // skill/agent/markdown rows leak in.

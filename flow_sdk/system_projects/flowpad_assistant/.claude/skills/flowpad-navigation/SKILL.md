@@ -51,6 +51,21 @@ flow context list                      # JSON; read e.g. CurrentProjectTypeId
 flow navigate entity <that-typeid>     # if the value is null, tell the user and stop
 ```
 
+## Presenting your own work: `flow show` (not navigate)
+
+Decision rule: the user asked to open/jump somewhere → `flow navigate`. You are
+presenting something YOU created or run (a file, an app you started) → `flow show`.
+`show` never moves the user's browser; it sets the display focus for whoever is
+watching this session. Exit 0 = recorded, done — even if nothing is visibly open.
+
+```bash
+flow show file <absolute-path>       # a file you just wrote (no TypeId needed)
+flow show entity <typeid>            # a known TypeId
+flow show webapp --port <port>       # a dev server / web app you started
+```
+
+One command, then stop. (`2` bad args, `4` entity not found, `5` server down.)
+
 See `../flowpad-assistance/navigate.md` ONLY if a case above doesn't fit — but the
-above covers open/show/navigate. After a successful `flow navigate` (exit 0), you
-are done: no verification, no follow-up commands, no report.
+above covers open/show/navigate. After a successful `flow navigate` or `flow show`
+(exit 0), you are done: no verification, no follow-up commands, no report.

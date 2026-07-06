@@ -3,6 +3,7 @@ import ErrorScreen from '@src/components/agent-layout/error-screen/error-screen'
 import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import DeveloperLayout from '@src/components/developer-layout/developer-layout';
 import { FloatingChatWindow } from '@src/components/floating-chat';
+import { WizardHost } from '@src/components/wizard/WizardHost';
 import { HooksView } from '@src/components/hooks-view/hooks-view';
 import { SessionsView } from '@src/components/sessions-view/sessions-view';
 // `WorkflowTracePreviewPage` was a dev-only standalone preview that bypassed
@@ -48,6 +49,7 @@ function RootLayout() {
   return (
     <App>
       <Outlet />
+      <WizardHost />
       <FloatingChatWindow />
     </App>
   );

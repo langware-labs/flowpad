@@ -84,8 +84,30 @@ export interface Browseable {
    *  `pointer` (e.g. an `editor/<t>/typeid/<id>` URL vs a vfs-path leaf). The
    *  tree compares it (as a string) against its `activeKey` prop, in addition to
    *  the pointer-string match. Only set where a row has a stable id (asset
-   *  leaves set their `<type>-<uuid>` typeid); other rows leave it undefined. */
+   *  leaves set their `<type>-<uuid>` typeid); other rows leave it undefined.
+   *
+   *  Doubles as the membership key for *multi-select* (see `selectable`). */
   selectionKey?: string;
+
+  /** Multi-select: when true (and `selectionKey` is set), this row participates
+   *  in OS-native multi-selection (Cmd/Ctrl-click toggle, Shift-click range).
+   *  Default off → the row behaves exactly as before (plain click navigates).
+   *  Independent of the URL-first *navigation* cursor; selection is ephemeral
+   *  local state, never persisted or written to the URL. */
+  selectable?: boolean;
+
+  /** Multi-select: the entity `type_name` (e.g. `skill`, `agent`, `markdown`) or
+   *  an adapter discriminator (e.g. `file`). A `bulkActions` resolver branches the
+   *  selection toolbar on the set of selected types. */
+  selectionType?: string;
+
+  /** Multi-select: how to delete this row in a bulk operation, plus the node id
+   *  to refresh afterward. The adapter that builds the row owns the delete (it
+   *  already has the endpoint / path in scope); the selection toolbar runs each
+   *  selected row's `run` under a single confirm, then refreshes the distinct
+   *  `refreshId`s. Keeps delete knowledge with the adapter rather than re-derived
+   *  (endpoint vs compute-node, path shape) in the toolbar resolver. */
+  bulkDelete?: { run: () => Promise<void>; refreshId: string };
 
   /** Inline hover actions. Side effects only. */
   toolbar?: ToolbarAction[];

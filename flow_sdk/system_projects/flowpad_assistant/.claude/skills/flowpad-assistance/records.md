@@ -7,7 +7,9 @@ The pipeline is the same for every record type:
 1. **Discover** the type with `flow schema info <type>`.
 2. **Materialize** the record on disk at the location the schema's `creation.location` points to.
 3. **Index** that path with `flow record index <path>` so the indexer parses + persists it.
-4. (Optional) **Navigate** to the new record via [`navigate.md`](navigate.md).
+4. (Optional) **Open** the new record: in standard assistant mode use
+   [`navigate.md`](navigate.md); in Vibe mode use `flow show entity <typeid>`
+   so the result appears in the active display pane.
 
 Never call backend APIs directly, never edit the SQLite DB, never write outside the documented `creation.location` — the indexer is the single chokepoint.
 
@@ -89,6 +91,9 @@ Always pass `--types` when you know the type — it scopes parsing/upsert to you
 ## Step 4 — open the result (optional)
 
 The new TypeId is `<type>-<uid_field_value>` — for tasks that's `task-<task_id>`, for skills it's `skill-<skill_id>`, etc. The `after_index` hint in `flow schema info` tells you the exact form. Pass it to `flow navigate entity <typeid>` per [`navigate.md`](navigate.md).
+
+When you are running as the Vibe agent, do not use `flow navigate`; use
+`flow show entity <typeid>` instead so the entity opens in the display pane.
 
 ## Worked example — create a task and open it
 

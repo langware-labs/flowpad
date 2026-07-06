@@ -376,7 +376,9 @@ async def _setup_mapped_conversation(tmp_path: Path, subdir: str = "proj"):
     # Sanity: the resolver the receiver runs must agree with our project_root.
     from flow_sdk.builtin.flow_message_bundle import _resolve_project_root_for_conv
     resolved = await _resolve_project_root_for_conv(conv_id)
-    assert resolved == project_root, f"resolver {resolved} != {project_root}"
+    # Resolver now returns ``(root, project_id)``; the root half must agree.
+    assert resolved is not None and resolved[0] == project_root, f"resolver {resolved} != {project_root}"
+    assert resolved[1] == project.id, f"resolver project_id {resolved[1]} != {project.id}"
     return conv_id, project_root
 
 

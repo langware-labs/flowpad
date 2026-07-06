@@ -1,12 +1,18 @@
-"""WorkerStatus — expert-level state of the worker running inside an AgenticProcess.
+"""WorkerStatus — raw "what we found" state of the worker inside an AgenticProcess.
 
-Derived from the Claude transcript JSONL on every serialize (via ``_tail_status``);
-never stored. Only meaningful when the containing ``ProcessStatus`` is one of
-``RUNNING``, ``STOPPING``, or ``STOPPED`` — in any other lifecycle state, consumers
-should treat the worker status as undefined.
+The values are worker lingo: the union of the granular states the various worker
+vendors (claude / codex / copilot) can evidence in their transcripts. Derived
+from the vendor transcript tail on every serialize (via ``_tail_status`` and the
+per-vendor ``status.py`` maps); never stored. Only meaningful when the containing
+``ProcessStatus`` is one of ``RUNNING``, ``STOPPING``, or ``STOPPED``.
 
-See ``agentic_process_lifecycle.py`` for the companion ``ProcessStatus`` enum and
-the two-axis model overview.
+This is the "what we found" axis. The companion axes are the lifecycle
+``ProcessStatus`` FSM (``process_lifecycle.py``) and the derived ``busy`` boolean
+(``status_predicates.is_turn_busy``). Worker statuses are never projected or
+synthesized here; the ``busy`` mapping lives entirely in ``status_predicates``.
+
+See ``process_lifecycle.py`` for the companion ``ProcessStatus`` enum and
+``docs/agent/agentic_process_statuses.md`` for the two-axis model overview.
 
 Neutral module with no intra-package imports. Both ClaudeSessionRecord and
 AgenticProcessRecord import from here; this breaks the circular dependency that
@@ -29,32 +35,31 @@ class WorkerStatus(StrEnum):
     # both meant "worker exists but has no parseable content yet", which is one state.
     INITIALIZING = "initializing"
 
-    # Workflow default — no Claude session linked yet. Also the "ready for input" state
-    # used by the ``isReadyForInput`` predicate (together with COMPLETE, INTERRUPTED).
+    # No worker session linked / at the prompt. Raw-derivable from a ``system:init``
+    # tail (worker booted and is sitting at the prompt) and the default for a
+    # spawned-but-never-prompted worker.
     IDLE = "idle"
 
     # Terminal — session ended, cannot resume
     COMPLETE     = "complete"     # finished cleanly (end_turn / last-prompt)
     ERROR        = "error"        # abnormal end (stop_sequence / crash)
     INTERRUPTED  = "interrupted"  # user interrupted (Escape / Ctrl-C)
-    INACTIVE     = "inactive"     # stale file >5 min with no terminal signal,
-                                  # OR terminal+aged >5 min since terminal_at
-                                  # (drop-from-active-list semantics — single
-                                  # value regardless of cause)
+    INACTIVE     = "inactive"     # raw: stale file >5 min with no terminal signal
 
-    # Backend-derived from terminal + ``AgenticProcess.terminal_at`` age. The
-    # 5-minute window after a session completes during which the UI keeps the
-    # session visible in the active list. After 5 min the projection layer in
-    # ``_discover_status_from_transcript`` flips it to INACTIVE.
+    # Raw: an unresolved user-input tool (AskUserQuestion / ExitPlanMode) sits at
+    # the tail — the worker asked and handed control back to the user. Surfaced as
+    # "Idle" to the user. (This is NOT a backend projection: it is read directly
+    # from the transcript by ``_tail_status``; the logical process status maps it
+    # to ``ready``.)
     PENDING_USER = "pending_user"
 
     # Active — transcript-derivable
-    WAITING      = "waiting"      # user message received, Claude has not yet responded
+    WORKING      = "working"      # input received, Claude is producing a reply (pre-first-token lull through streaming)
     THINKING     = "thinking"     # assistant streaming / generating text
     TOOL_CALL    = "tool_call"    # Claude finished its turn and dispatched tool(s)
     TOOL_RUNNING = "tool_running" # tool is actively executing (progress events)
     API_ERROR    = "api_error"    # Anthropic API returned an error (e.g. 529); Claude is retrying — mid-turn
-    API_TIMEOUT  = "api_timeout"  # JSONL stalled in WAITING state — connection hang / model slow to start
+    API_TIMEOUT  = "api_timeout"  # JSONL stalled in WORKING state — connection hang / model slow to start
 
     # Parse fallback — the last JSONL entry did not match any known pattern. Surfaces
     # bugs (new Claude event types, malformed writes) instead of hiding them as "RUNNING".
@@ -70,17 +75,11 @@ class WorkerStatus(StrEnum):
 # ---------------------------------------------------------------------------
 
 _RUNNING_STATUSES: frozenset[WorkerStatus] = frozenset({
-    WorkerStatus.WAITING,
+    WorkerStatus.WORKING,
     WorkerStatus.THINKING,
     WorkerStatus.TOOL_CALL,
     WorkerStatus.TOOL_RUNNING,
     WorkerStatus.API_ERROR,  # mid-turn retry — still running from the user's POV
-})
-
-_BUSY_STATUSES: frozenset[WorkerStatus] = frozenset({
-    WorkerStatus.THINKING,
-    WorkerStatus.TOOL_CALL,
-    WorkerStatus.TOOL_RUNNING,
 })
 
 _TERMINAL_STATUSES: frozenset[WorkerStatus] = frozenset({
@@ -99,8 +98,11 @@ _ERROR_STATUSES: frozenset[WorkerStatus] = frozenset({
 })
 
 # Live process-lifecycle states. String literals (not ProcessStatus) keep this a
-# true leaf module — they mirror ``ProcessStatus.RUNNING`` / ``STARTING``.
-_LIVE_PROCESS_STATUSES: frozenset[str] = frozenset({"running", "starting"})
+# true leaf module. ``running`` is the single live value on both realms now (no
+# more ``ready`` / ``busy`` projection).
+_LIVE_PROCESS_STATUSES: frozenset[str] = frozenset(
+    {"running", "starting"}
+)
 
 
 class ExecutionMode(StrEnum):
@@ -110,8 +112,8 @@ class ExecutionMode(StrEnum):
     Derived, never stored. ``EXTERNAL`` is server-only (OS-scanned).
     """
 
-    INTERACTIVE = "interactive"   # PTY worker (visible=true)
-    BACKGROUND = "background"     # headless CLI worker (visible=false)
+    INTERACTIVE = "interactive"   # PTY worker (pty_mode=true)
+    BACKGROUND = "background"     # headless CLI worker (pty_mode=false)
     ERROR = "error"              # error/dead state
     EXTERNAL = "external"        # running outside the app (OS-scanned)
 
@@ -120,37 +122,36 @@ def classify_execution_mode(
     *,
     status: str | None,
     worker_status: str | None,
-    visible: bool | None,
+    pty_mode: bool | None,
     pid_alive: bool | None = None,
 ) -> ExecutionMode | None:
     """Classify a *live* worker into an ``ExecutionMode`` (or ``None`` when the
-    process is not live). Mirrors the TS ``classifyExecutionMode`` truth table:
+    process is not live). Keyed on the *transport* ``pty_mode`` (NOT tab
+    ``visible``), mirroring the TS ``classifyExecutionMode`` truth table:
 
-      1. worker_status ∈ _ERROR_STATUSES               → ERROR
-      2. visible is True and pid_alive is False (dead PTY) → ERROR
-      3. visible is True                                → INTERACTIVE
-      4. visible is False                               → BACKGROUND
+      1. worker_status ∈ _ERROR_STATUSES                 → ERROR
+      2. pty_mode is not False and pid_alive is False     → ERROR (dead PTY)
+      3. pty_mode is not False                            → INTERACTIVE
+      4. pty_mode is False                                → BACKGROUND
 
-    ``EXTERNAL`` is never returned here. ``pid_alive`` only matters for PTY;
-    CLI workers have no PID so rule 2 never applies to them.
+    A hidden live PTY (``visible=False`` but ``pty_mode=True``) classifies as
+    INTERACTIVE — it is a PTY worker, just not shown as a tab. ``EXTERNAL`` is
+    never returned here. ``pid_alive`` only matters for PTY (rule 2); headless CLI
+    workers have no PID, so rule 2 never applies to them.
     """
     if status not in _LIVE_PROCESS_STATUSES:
         return None
     if worker_status is not None and worker_status in _ERROR_STATUSES:
         return ExecutionMode.ERROR
-    if visible is True and pid_alive is False:
+    is_pty = pty_mode is not False
+    if is_pty and pid_alive is False:
         return ExecutionMode.ERROR
-    return ExecutionMode.INTERACTIVE if visible else ExecutionMode.BACKGROUND
+    return ExecutionMode.INTERACTIVE if is_pty else ExecutionMode.BACKGROUND
 
 
 def is_running(status: WorkerStatus) -> bool:
-    """True while the worker is mid-turn (WAITING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR)."""
+    """True while the worker is mid-turn (WORKING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR)."""
     return status in _RUNNING_STATUSES
-
-
-def is_busy(status: WorkerStatus) -> bool:
-    """True when actively processing (THINKING/TOOL_CALL/TOOL_RUNNING). Excludes WAITING/API_ERROR."""
-    return status in _BUSY_STATUSES
 
 
 def is_idle(status: WorkerStatus) -> bool:
@@ -199,6 +200,61 @@ _IGNORED_TYPES: frozenset[str] = frozenset({
     "agent-name",
     "bridge-session",
 })
+
+
+# Tools whose ``tool_use`` block BLOCKS on a human response. While one is pending
+# (its ``tool_result`` — keyed by ``tool_use_id`` — hasn't landed yet) the worker
+# has handed control back to the user and is idle awaiting them, NOT executing a
+# tool. Surfacing that as PENDING_USER ("Idle", no spinner) instead of
+# TOOL_CALL/TOOL_RUNNING is the whole point of ``_pending_user_input_tool``.
+_USER_INPUT_TOOLS: frozenset[str] = frozenset({
+    "AskUserQuestion",
+    "ExitPlanMode",
+})
+
+
+def _pending_user_input_tool(chunk: str) -> bool:
+    """True when an unresolved user-input ``tool_use`` (``AskUserQuestion`` /
+    ``ExitPlanMode``) sits at the tail — i.e. Claude asked and is blocked on the
+    user's answer.
+
+    Pairs ``tool_use`` blocks to their ``tool_result`` by ``tool_use_id`` (the
+    same id Claude echoes back when the user responds), so it is robust to the
+    streaming split that scatters one logical turn across several ``assistant``
+    lines and to intervening meta/idle markers. Returns True iff at least one
+    user-input tool id has no matching ``tool_result``.
+    """
+    open_ids: set[str] = set()
+    resolved: set[str] = set()
+    for line in chunk.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        t = entry.get("type", "")
+        msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        if t == "assistant":
+            for b in content:
+                if (
+                    isinstance(b, dict)
+                    and b.get("type") == "tool_use"
+                    and b.get("name") in _USER_INPUT_TOOLS
+                    and b.get("id")
+                ):
+                    open_ids.add(b["id"])
+        elif t == "user":
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    tid = b.get("tool_use_id")
+                    if tid:
+                        resolved.add(tid)
+    return bool(open_ids - resolved)
 
 
 def _has_pending_tool_use(chunk: str) -> bool:
@@ -290,7 +346,7 @@ def _last_user_is_tool_result(chunk: str) -> bool:
     """True when the most recent ``user`` entry carries a ``tool_result`` block.
 
     Distinguishes "user just sent a fresh prompt" (the worker is genuinely
-    WAITING for assistant output) from "user is the tool runtime returning a
+    WORKING on a reply) from "user is the tool runtime returning a
     tool_result" (the worker just finished its side effects). The latter is
     safe to treat as terminal once no other tool_use remains pending.
     """
@@ -405,10 +461,11 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
          when the file is still active. Fallback is UNKNOWN (not RUNNING) so
          that new / malformed event types are visible.
 
-    Returns one of: INITIALIZING, COMPLETE, ERROR, INTERRUPTED, INACTIVE,
-                    WAITING, THINKING, TOOL_CALL, TOOL_RUNNING, API_ERROR,
-                    API_TIMEOUT, UNKNOWN.
-    (IDLE is a workflow state set externally, not transcript-derivable.)
+    Returns one of: INITIALIZING, IDLE, PENDING_USER, COMPLETE, ERROR,
+                    INTERRUPTED, INACTIVE, WORKING, THINKING, TOOL_CALL,
+                    TOOL_RUNNING, API_ERROR, API_TIMEOUT, UNKNOWN.
+    (IDLE is derivable — a ``system:init`` tail means the worker booted and is
+    sitting at the prompt.)
     """
     p = _Path(path)
     try:
@@ -429,11 +486,11 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     #
     # ALSO widen when the tail ends in a ``last-prompt`` idle marker but the
     # window doesn't yet contain a completed assistant turn: the ``last-prompt``
-    # branch below classifies COMPLETE vs WAITING from the ``end_turn`` of the
+    # branch below classifies COMPLETE vs WORKING from the ``end_turn`` of the
     # last assistant entry, and a single oversized tool_use line just ahead of
     # the trailing ``last-prompt``/``system``/envelope run can strand that
     # ``end_turn`` past the 4 KB window — making ``_has_completed_assistant``
-    # falsely return False and pinning a genuinely-finished worker at WAITING
+    # falsely return False and pinning a genuinely-finished worker at WORKING
     # forever (never projected to PENDING_USER). Widen until the assistant turn
     # is in-window (or we hit the file start / ``_TAIL_MAX_BYTES``).
     last_type: str | None = None
@@ -460,6 +517,18 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
             break
         read_bytes = min(read_bytes * 16, _TAIL_MAX_BYTES)
 
+    # A pending user-input tool (AskUserQuestion / ExitPlanMode) dominates every
+    # other reading of the tail: Claude has yielded to the user and is idle until
+    # they answer. Detect it by ``tool_use_id`` pairing (not last-entry shape) so
+    # trailing ``last-prompt``/``mode``/envelope markers — or the streaming split
+    # of the asking turn — can't mask it as TOOL_CALL/TOOL_RUNNING and spin the
+    # spinner forever. Answered questions pair their ``tool_result`` and fall
+    # through to the normal classification below. The cheap substring gate skips
+    # the extra parse pass on the hot path unless a user-input tool name is
+    # literally present in the tail (it must be, verbatim, for a match).
+    if any(name in chunk for name in _USER_INPUT_TOOLS) and _pending_user_input_tool(chunk):
+        return WorkerStatus.PENDING_USER
+
     # Claude 2.x writes ``last-prompt`` as an idle marker — but in PTY mode it
     # can appear *between* an assistant ``stop_reason=tool_use`` and the actual
     # tool execution (which the JSONL records via a subsequent
@@ -475,7 +544,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         # only then starts thinking. Don't declare COMPLETE until there's at
         # least one assistant entry AND no pending tool execution.
         if not _has_completed_assistant(chunk):
-            return WorkerStatus.WAITING
+            return WorkerStatus.WORKING
         if _has_pending_tool_use(chunk):
             return WorkerStatus.TOOL_RUNNING
         # ``last-prompt`` also rides in as an idle ack *between* tool calls:
@@ -486,10 +555,10 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         # cuts ``stream_transcript`` off during a long inter-tool pause (Opus can
         # take 20-40 s), so the diagnose runner never scrapes the final report
         # and falsely reports "not recorded". Only a genuine ``end_turn`` is
-        # terminal; otherwise stay WAITING and keep reading. (Mirrors the
+        # terminal; otherwise stay WORKING and keep reading. (Mirrors the
         # ``stop_reason=="end_turn"`` guard on the ``_post_tool_idle`` path.)
         if _last_assistant_stop_reason(chunk) != "end_turn":
-            return WorkerStatus.WAITING
+            return WorkerStatus.WORKING
         return WorkerStatus.COMPLETE
     if last_type == "user" and "interrupted" in _last_user_text(chunk).lower():
         return WorkerStatus.INTERRUPTED
@@ -526,7 +595,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     if last_type == "user":
         if last_user_ts and (_time.time() - last_user_ts) > 90:
             return WorkerStatus.API_TIMEOUT
-        return WorkerStatus.WAITING
+        return WorkerStatus.WORKING
 
     # Unrecognised entry type — surface as UNKNOWN so new Claude event types or
     # malformed writes are visible, rather than silently masked as "running".

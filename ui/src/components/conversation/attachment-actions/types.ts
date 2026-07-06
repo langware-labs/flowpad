@@ -11,8 +11,6 @@ export interface AttachmentActionHandlers {
   implementPlan?: () => void;
   openPlanSession?: () => void;
   viewPlan?: (specId: string) => void;
-  /** Open the shared git repo (GitBranch) in the prefilled clone/attach dialog. */
-  openSharedRepo?: (gitBranchTypeId: TypeId) => void;
   /** Composer preview only — reopen the prompt dialog. */
   edit?: () => void;
 }
@@ -30,8 +28,6 @@ export interface AttachmentActionContext {
    *  View / Open Spec / session affordances as a spec, so descriptors read
    *  this one unified field. */
   specOrPlanTypeId: TypeId | null;
-  /** Resolved GitBranch (shared repo) TypeId on this message, or null. */
-  gitBranchTypeId: TypeId | null;
   /** First prompt-entity TYPE_ID attachment's TypeId, or null. */
   promptEntityTypeId: TypeId | null;
   /** True when a plan-implementation session already exists for the thread. */

@@ -31,6 +31,7 @@ export function coerceTab(tab: Tab | ITab): Tab {
         pointer: '',
         target_type: null,
         target_id: null,
+        parent_tab_id: null,
         visible: true,
         icon_key: null,
         worktree: false,

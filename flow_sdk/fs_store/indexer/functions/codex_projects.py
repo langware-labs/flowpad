@@ -27,7 +27,6 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.utils.file_system import is_temp_path
 
-
 # ── Codex project path helpers (inlined from former fs_records/codex/codex_project.py) ──
 
 

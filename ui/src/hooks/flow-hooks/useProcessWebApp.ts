@@ -1,8 +1,9 @@
-import { ActionInfo, ArtifactType, Flow } from '@sdk';
+import { ActionInfo, AgenticProcess, ArtifactType, Flow } from '@sdk';
 import { useMemo } from 'react';
 import { useCurrentArtifacts } from './useCurrentArtifacts';
 
 export interface WebAppConfig {
+  /** Direct `get-host` URL (redirects to the dev server; cross-origin iframe). */
   host: string;
   cacheKey: number;
 }
@@ -30,11 +31,15 @@ export function useProcessWebApp(flow: Flow | null | undefined, port: string | n
       return { host: '', cacheKey: 0 };
     }
 
-    const actionInfo = new ActionInfo('get-host', Flow.type, flow.id);
-    actionInfo.queryParameters = { port: _port };
+    // `get-host` is registered on the AgenticProcess entity (the legacy Flow
+    // entity was removed). The active "flow" from AgentContext is an
+    // AgenticProcess, so target that type — using Flow.type 404s.
+    const entityType = flow instanceof AgenticProcess ? AgenticProcess.type : Flow.type;
+    const info = new ActionInfo('get-host', entityType, flow.id);
+    info.queryParameters = { port: _port as string };
 
     return {
-      host: actionInfo.fullActionUrl,
+      host: info.fullActionUrl,
       cacheKey,
     };
   }, [artifacts, flow, port]);

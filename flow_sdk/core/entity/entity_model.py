@@ -115,6 +115,20 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    # Git provenance + placement for an asset RECEIVED via a conversation. A raw
+    # ``GitOrigin`` dict ({provider,owner,name,branch,head_commit,rel_path}) —
+    # stored as json to avoid a core→builtin import cycle; construct/validate via
+    # ``flow_sdk.builtin.git_origin.GitOrigin`` at the boundaries. Set ONLY on the
+    # receiver when a shared file-backed asset carried a git origin in the bundle,
+    # so the receiver knows the asset's intended repo-relative location even
+    # without git access. ``persist=TRUE`` → written to the backend record
+    # metadata.json (survives reindex), NOT the asset's user-facing file. Excluded
+    # from ``share()`` (local provenance, never a hub-synced field).
+    git_origin: dict | None = APIField(
+        default=None,
+        persist=Persist.TRUE,
+        description="Git provenance/placement of a received shared asset (local-only; see GitOrigin).",
+    )
     semantic_lock: bool = APIField(
         default=False,
         description=(
@@ -1225,6 +1239,10 @@ class Entity(DBEntity):
                 cls.get_type(), eid, wiki_exc,
             )
 
+        # Orphan-Tab cleanup — the HTTP delete path (handle_delete_by_id) bypasses
+        # the instance delete(), so it must fire here too.
+        await cls._close_orphan_tabs_for(cls.get_type(), str(eid))
+
         # Call parent delete_by_id
         return await super().delete_by_id(eid)
 
@@ -1454,6 +1472,7 @@ class Entity(DBEntity):
                 "created_date", "updated_date",
                 "remote", "system", "fetched_at",
                 "message_count",
+                "git_origin",  # local-only provenance; never a hub-synced field
                 "tags", "project_id", "participants",
             },
         )
@@ -1593,9 +1612,8 @@ class Entity(DBEntity):
             sanitized["id"] = data["id"]
         if effective_parent and "parent_type_id" in cls.model_fields:
             sanitized["parent_type_id"] = effective_parent
-        # parent_share_on_default types materialize their (deterministic)
-        # parent FIRST — upsert-by-id, re-minted from the payload's plain
-        # fields, never trusted from the wire (see GitBranch).
+        # parent_share_on_default types materialize their deterministic parent
+        # before the child. No built-in types currently use this hook.
         info = SchemaRegistry.get(cls.get_type())
         if info is not None and getattr(info, "parent_share_on_default", False):
             pid = await cls.materialize_share_parent(sanitized, someone_typeid)
@@ -1613,8 +1631,7 @@ class Entity(DBEntity):
     ) -> Optional[str]:
         """Hook for ``parent_share_on_default`` types: ensure the entity's
         parent exists locally (upsert-by-deterministic-id) and return its
-        typeid, or None. No-op on the base class — flagged types override
-        (see ``GitBranch.materialize_share_parent``)."""
+        typeid, or None. No-op on the base class."""
         return None
 
     @staticmethod
@@ -1859,27 +1876,37 @@ class Entity(DBEntity):
                 self.type, self.id, wiki_exc,
             )
 
-        # Soft-close any content Tab pointing at this entity (denormalized
-        # target_id) so a deleted target can't leave an orphan chip in the strip
-        # (docs/tab-management.md). Generic — one chokepoint covers every type.
-        # Best-effort; the Tab type may be absent (e.g. a pytest env without
-        # register_all), so a failure here must never block the delete.
-        if self.type != "tab":  # don't recurse on a Tab deleting itself
-            try:
-                from flow_sdk.builtin.tab import Tab
-                orphans = await Tab.get_all({"target_type": self.type, "target_id": str(self.id)})
-                for tab in orphans:
-                    if getattr(tab, "visible", False):
-                        await tab.close()
-            except Exception as tab_exc:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Tab orphan-cleanup failed for %s:%s — %s",
-                    self.type, self.id, tab_exc,
-                )
+        # Soft-close any content Tab pointing at this entity so a deleted target
+        # can't leave an orphan chip in the strip (docs/tab-management.md).
+        await self._close_orphan_tabs_for(self.type, self.id)
 
         # Call parent delete
         return await super().delete()
+
+    @staticmethod
+    async def _close_orphan_tabs_for(entity_type: str, entity_id: str) -> None:
+        """Soft-close every visible content Tab denormalized onto a now-deleted
+        target entity so the deletion can't strand a dangling chip that 404s on
+        click (docs/tab-management.md). Generic — one chokepoint, invoked from
+        BOTH the instance :meth:`delete` and the classmethod :meth:`delete_by_id`
+        (the HTTP delete path). Run BEFORE the row is removed so ``Tab.close`` can
+        still dispatch teardown to the live target. Best-effort — the Tab type may
+        be absent (e.g. a pytest env without ``register_all``) and a failure here
+        must never block the delete.
+        """
+        if entity_type == "tab":  # don't recurse on a Tab deleting itself
+            return
+        try:
+            from flow_sdk.builtin.tab import _tabs_for_target
+            for tab in await _tabs_for_target(entity_type, str(entity_id)):
+                if getattr(tab, "visible", False):
+                    await tab.close()
+        except Exception as tab_exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Tab orphan-cleanup failed for %s:%s — %s",
+                entity_type, entity_id, tab_exc,
+            )
 
     async def update(self):
         """Override update to invalidate cache when entity is updated."""

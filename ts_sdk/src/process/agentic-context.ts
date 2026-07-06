@@ -103,6 +103,9 @@ export interface AgenticContext {
 
   /** Discriminates how this process is being used (chat vs execution). */
   processType?: ProcessKind;
+
+  /** Additional process context persisted in AgenticProcess.context_data. */
+  contextData?: Record<string, unknown>;
 }
 
 /**
@@ -148,6 +151,7 @@ export interface ISpawnWorkerOptions {
  */
 export function serializeAgenticContext(ctx: AgenticContext): Record<string, unknown> {
   return {
+    ...(ctx.contextData ?? {}),
     instructions: ctx.instructions,
     workdir: ctx.workdir,
     env_vars: ctx.envVars || {},

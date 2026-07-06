@@ -140,6 +140,24 @@ suite('Bare PTY recovered by backend watchdog after server restart (dev-1)', () 
     // 4. Re-init the compute node provider so the PTY can rebind on the node.
     await cn.setup();
 
+    // 4b. Re-watch the bare shell against the FRESH backend. PTY recovery is
+    //     ON-DEMAND, not a global sweep (see pty_recovery.py + commit bd14a1ab
+    //     "recover on-demand, not a global sweep (out-of-pty-devices crash)"):
+    //     `run_pty_recovery` early-returns when nothing is watched, and
+    //     `_recover_bare_shells` skips any shell whose `shell:<id>` key isn't in
+    //     the watch set. A real terminal UI re-subscribes to its open shell on
+    //     reconnect; `attach` is a pure read probe and never registers a watch,
+    //     so we re-register it here to give the watchdog a reason to respawn the
+    //     bare shell — the bare-shell analog of the agentic sibling's
+    //     `proc.watch()`. The restart wiped the backend's in-memory watch
+    //     registry, so this must run against the new process; it's a REST POST
+    //     (no live WS needed), and the watchdog gate only checks that the
+    //     `shell:<id>` key is present, independent of connection liveness — the
+    //     recovery proof below is likewise HTTP-only.
+    await sdk.apiClient.post(`${sdk.GRAPH_API_PREFIX}/shell/${shellId}/watch`, {
+      connection_id: manager.id,
+    });
+
     // 5. Poll attach (HTTP — no live WS required) until the watchdog has
     //    respawned the shell. `attach` returns `reattached` only when the PTY
     //    handle exists; after a restart it exists ONLY if `_recover_bare_shells`

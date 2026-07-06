@@ -93,8 +93,18 @@ export async function openAgenticProcess(
   interactive?: boolean,
 ): Promise<void> {
   try {
+    // Resolve the backing entity only when we actually need it. An EXPLICIT
+    // terminal intent (`interactive === true`) attaches the PTY by id alone and
+    // must not depend on first reading the AgenticProcess: the entity may be
+    // uncached and the fetch can fail (offline/transient), which would otherwise
+    // swallow the click in the catch below and never open the terminal. The
+    // entity is needed only to INFER `visible` (unspecified intent) or to read
+    // `session_id` for the headless transcript branch.
+    const cached = apFromCache(processId);
     const ap =
-      apFromCache(processId) ?? ((await AgenticProcess.getById<AgenticProcess>(processId)) as APWithIds | null);
+      interactive === true
+        ? cached
+        : cached ?? ((await AgenticProcess.getById<AgenticProcess>(processId)) as APWithIds | null);
     const asTerminal = interactive ?? !!ap?.visible;
 
     if (asTerminal) {

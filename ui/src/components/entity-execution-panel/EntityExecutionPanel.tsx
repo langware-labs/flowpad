@@ -1,15 +1,17 @@
 import {
+  ActionInfo,
   AgenticProcess,
   ComputeNode,
+  dataManager,
   FlowElementTypes,
+  fsStore,
   isBusy,
-  isWorkerRunning,
   ProcessKind,
   type StatusBearingProcess,
   TypeId,
   type FlowData,
-  WorkerStatus,
 } from '@sdk';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 import { useEntity } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
@@ -31,8 +33,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
-import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
+import { groupTurnEvents, splitLiveGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
+import { ChatActivityLine } from './ChatActivityLine';
+import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
+import { useTurnActivity } from './hooks/useTurnActivity';
 import {
   buildHistorySubline,
   pickHistoryTitle,
@@ -40,7 +45,6 @@ import {
   WorkerIcon as HistoryWorkerIcon,
 } from './history-row';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
-import { useDerivedWorkerStatus } from './hooks/useDerivedWorkerStatus';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 
@@ -87,6 +91,8 @@ interface EntityExecutionPanelProps {
   emptyStateText?: string;
   /** Optional header label rendered above the panel (e.g. "Agent execution"). Hidden when omitted. */
   headerLabel?: string;
+  /** Optional node rendered on the LEFT of the header action row (e.g. a title / home button). */
+  leadingSlot?: React.ReactNode;
   /** Placeholder for the composer textbox. Defaults to "Ask about this doc…". */
   placeholder?: string;
   /**
@@ -126,6 +132,21 @@ interface EntityExecutionPanelProps {
    * process per run, so each run is its own history entry.
    */
   autoPrompt?: { text: string; nonce: number; newSession?: boolean } | null;
+  /**
+   * Extra context prepended to the NEXT user prompt (e.g. an element the user
+   * selected on a previewed web app). Rendered as a dismissible chip above the
+   * composer; `text` is prepended to whatever the user types, then
+   * `onPromptContextConsumed` fires so the host can clear it. Null = none.
+   */
+  promptContext?: { label: string; text: string } | null;
+  onPromptContextConsumed?: () => void;
+  /**
+   * Seed the picker to a SPECIFIC process instead of the "latest-wins" default.
+   * Used when the panel must stay bound to one session across target-URL changes
+   * (the vibe workspace: the side chat keeps the parent process while the user
+   * navigates its child tabs). The picker stays fully functional afterward.
+   */
+  initialProcessId?: string | null;
 }
 
 /**
@@ -155,12 +176,16 @@ export function EntityExecutionPanel({
   noPastSessionsLabel = 'No past executions',
   emptyStateText = 'Ask about this document. The conversation will persist.',
   headerLabel,
+  leadingSlot,
   placeholder,
   dense = false,
   defaultProjectId,
   defaultWorkdir,
   transport = 'print',
   autoPrompt,
+  promptContext,
+  onPromptContextConsumed,
+  initialProcessId,
 }: EntityExecutionPanelProps) {
   const { t } = useLingui();
   const targetStr = target ?? '';
@@ -190,14 +215,16 @@ export function EntityExecutionPanel({
 
   // 2. User-selected process overrides the default "latest-wins" pick. `null` means auto-latest
   //    or, when combined with startNewSession(), a fresh one on the next send.
-  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
+  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(initialProcessId ?? null);
   const [forceNew, setForceNew] = useState(false);
 
-  // When target changes (navigating between files), reset picker state.
+  // When target changes (navigating between files), reset picker state — but
+  // seed back to `initialProcessId` when the host pins a session (vibe keeps the
+  // parent process bound while the user browses its child tabs).
   useEffect(() => {
-    setSelectedProcessId(null);
+    setSelectedProcessId(initialProcessId ?? null);
     setForceNew(false);
-  }, [targetStr]);
+  }, [targetStr, initialProcessId]);
 
   const pickedProcess: AgenticProcess | null = useMemo(() => {
     if (forceNew) return null;
@@ -206,9 +233,10 @@ export function EntityExecutionPanel({
   }, [forceNew, selectedProcessId, sortedProcesses]);
 
   // 3. Resolve the full AgenticProcess entity (watched; query result may be partial).
+  const effectiveProcessId = selectedProcessId ?? pickedProcess?.id ?? null;
   const processTypeId = useMemo(
-    () => (pickedProcess?.id ? new TypeId(AgenticProcess.type, pickedProcess.id) : null),
-    [pickedProcess?.id],
+    () => (effectiveProcessId ? new TypeId(AgenticProcess.type, effectiveProcessId) : null),
+    [effectiveProcessId],
   );
   const { data: resolvedProcess } = useEntity<AgenticProcess>(processTypeId, {
     watch: true,
@@ -244,6 +272,28 @@ export function EntityExecutionPanel({
   // Stream ingestion — FlowStreamProcessor (inside AgenticProcess.prompt) appends
   // to flowDataStream; our local hook subscribes to its 'data' event.
   const items = useAgenticProcessStream(activeProcess);
+
+  // Image paste — upload pasted screenshots to the process's input dir and return
+  // one reference line per file (inserted at the caret, ridden along on the next
+  // send). Same behaviour as the interactive terminal's chat composer. The input
+  // dir is resolved lazily on paste (not on mount) so this shared chat surface
+  // doesn't fire a per-mount GET for a rarely-used feature.
+  const handlePasteImages = useCallback(
+    async (incoming: File[]): Promise<string[]> => {
+      const procId = activeProcess?.id;
+      if (!procId || !incoming.length) return [];
+      const files = await annotateImageFiles(incoming);
+      if (!files.length) return [];
+      const dir = await dataManager.callAction<null, { abs_path: string; compute_node_id: string }>(
+        new ActionInfo('input-dir', 'agentic_process', procId, 'GET'),
+      );
+      if (!dir?.abs_path || !dir?.compute_node_id) return [];
+      const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, files);
+      await Promise.all(uploads.map((u) => u.waitForCompletion()));
+      return files.map((file) => `File ${file.name} is available here: ${dir.abs_path}/${file.name}`);
+    },
+    [activeProcess],
+  );
   const messages = useMemo(() => {
     return items.filter((d) => {
       const t: string = d.elementType;
@@ -259,6 +309,19 @@ export function EntityExecutionPanel({
   // as expandable summary rows. See `groupTurnEvents` for the partitioning
   // rules.
   const turnGroups = useMemo(() => (dense ? groupTurnEvents(items) : []), [dense, items]);
+
+  // Dense (chat) mode: a live "agent is working" footer — the SAME dots +
+  // elapsed-clock line the interactive chat pane shows (ChatActivityLine),
+  // plus a live event-counter chip. While a turn is in flight the CURRENT
+  // turn's dense events are surfaced in that chip (its number climbs on each
+  // new flow-data event; click opens the per-event list) instead of inline, so
+  // the chat stays message-clean. Past turns keep their own inline collapsed
+  // ToolEntryRow lists.
+  const activity = useTurnActivity(dense ? activeProcess : null);
+  const { inlineGroups, liveEvents } = useMemo(
+    () => splitLiveGroup(turnGroups, dense && activity.active),
+    [dense, activity.active, turnGroups],
+  );
 
   // 4. Project workdir + id (lazy-create inputs). Caller-supplied defaults
   // take precedence so surfaces like the floating Flowpad Assistant chat can
@@ -322,6 +385,7 @@ export function EntityExecutionPanel({
 
       // Lazy-create on first send.
       if (!proc) {
+        if (selectedProcessId && !opts?.forceNewProcess) return;
         if (createInFlightRef.current) return;
         createInFlightRef.current = true;
         try {
@@ -354,16 +418,20 @@ export function EntityExecutionPanel({
 
       if (!proc) throw new Error('process creation failed');
 
+      // Prepend host-supplied context (e.g. a selected web-app element) to this
+      // turn, then consume it so it doesn't leak into later prompts.
+      const composed = promptContext ? `${promptContext.text}\n\n${text}` : text;
       // One method, both transports: the backend's prompt action routes by the
       // process's `visible` flag (PTY-transcript poll vs print-mode stream).
-      await proc.prompt(text);
+      await proc.prompt(composed);
+      if (promptContext) onPromptContextConsumed?.();
     } catch (err) {
       console.error('[EntityExecutionPanel] prompt failed', err);
       notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId]);
 
   const handleStop = useCallback(async () => {
     if (!activeProcess) return;
@@ -389,7 +457,9 @@ export function EntityExecutionPanel({
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
     scrollRef.current?.scrollToBottom();
-  }, [messages.length]);
+    // In dense mode new tool events (and the appearing activity footer) don't
+    // bump messages.length — track the group count + active edge too.
+  }, [messages.length, turnGroups.length, activity.active]);
 
   const showEmptyState = !activeProcess && !listLoading && !sending;
 
@@ -440,37 +510,26 @@ export function EntityExecutionPanel({
     }
   }, [pendingDelete, sortedProcesses, selectedProcessId, localProcess?.id]);
 
-  // CLI-mode processes don't get entity patches mid-turn, so fall back to a
-  // derivation over flowDataStream events. See useDerivedWorkerStatus.
-  const derivedWorkerStatus = useDerivedWorkerStatus(activeProcess);
-  const indicatorProcess: StatusBearingProcess | null = activeProcess
-    ? {
-        status: activeProcess.status,
-        workerStatus: derivedWorkerStatus ?? activeProcess.workerStatus,
-        session_id: activeProcess.session_id,
-      }
-    : null;
+  // Headless AND PTY turns now broadcast their worker-status transitions
+  // mid-turn (the backend removed the INITIALIZING pin), so the reactive
+  // `activeProcess` entity carries live status — no flowDataStream derivation
+  // needed. `activeProcess` is a `StatusBearingProcess` (status + workerStatus).
+  const indicatorProcess: StatusBearingProcess | null = activeProcess;
 
-  // EXPERIMENT(pty-poll): a PTY chat session must stay sendable when its
-  // worker is dead (backend restart, worker exit) — the prompt turn relaunches
-  // it with --resume. `isBusy` would lock the composer forever (it requires
-  // status=RUNNING), so the pty arm skips the status gate and blocks only on
-  // the gold mid-turn predicate — mirroring the backend prompt action's own
-  // admission, which rejects only STOPPING/FAILED.
-  // PENDING_USER: the turn finished cleanly and the worker is waiting at its
-  // prompt for the next message — exactly when the user should be able to type.
-  // `isBusy` returns true for PENDING_USER (it isn't in READY_WORKER_STATUSES,
-  // mirroring Python's `is_ready_for_input`) but the drain-local superset and
-  // the prompt action both admit it. Carve it out so the textarea stays enabled.
-  const indicatorWorkerStatus = indicatorProcess?.workerStatus as WorkerStatus | undefined;
-  const busy = !!indicatorProcess && (
-    transport === 'pty-poll'
-      ? isWorkerRunning(indicatorWorkerStatus as WorkerStatus)
-      : isBusy(indicatorProcess) && indicatorWorkerStatus !== WorkerStatus.PENDING_USER
-  );
+  // One boolean gates the composer: the backend's turn-in-flight `busy` boolean
+  // (serialized alongside `status`; read via `isBusy`). A dead/complete PTY, a PENDING_USER worker (asked a
+  // question), and a headless worker between turns all read as ¬busy, so the
+  // textarea stays sendable exactly when the backend prompt action would admit
+  // the turn — no transport special-casing and no PENDING_USER carve-out needed.
+  const busy = !!indicatorProcess && isBusy(indicatorProcess);
   const sendDisabled = !targetStr || sending || busy;
 
-  const statusSlot = indicatorProcess ? (
+  // While the dense chat's live activity footer is showing (dots + phase label
+  // + elapsed clock), it already carries the "working" signal — suppress the
+  // composer's duplicate status indicator so a turn isn't announced twice (the
+  // "two dots" look). The composer slot still shows resting states (Complete /
+  // Idle / asked-you-a-question) once the footer disappears.
+  const statusSlot = indicatorProcess && !(dense && activity.active) ? (
     <span
       title={getStatusLabel(indicatorProcess)}
       className="flex items-center"
@@ -507,6 +566,7 @@ export function EntityExecutionPanel({
         onDeleteSession={handleDeleteOne}
         onClearAll={handleClearAll}
         cursorLine={cursorLine ?? null}
+        leadingSlot={leadingSlot}
         newSessionLabel={newSessionLabel}
         historyLabel={historyLabel}
         pastSessionsLabel={pastSessionsLabel}
@@ -539,7 +599,20 @@ export function EntityExecutionPanel({
           </div>
         )}
         {dense
-          ? <TurnGroupsList groups={turnGroups} worker={activeProcess?.worker_type ?? undefined} />
+          ? (
+            <>
+              <TurnGroupsList groups={inlineGroups} worker={activeProcess?.worker_type ?? undefined} />
+              {activeProcess && (
+                <ChatActivityLine
+                  process={activeProcess}
+                  active={activity.active}
+                  startedAt={activity.startedAt}
+                  status={activity.status}
+                  trailing={<TurnEventChip events={liveEvents} />}
+                />
+              )}
+            </>
+          )
           : messages.map((m) => (
               <ExecutionMessage
                 key={m.id ?? m.timestamp}
@@ -552,7 +625,22 @@ export function EntityExecutionPanel({
               />
             ))}
       </AutoScrollContainer>
-      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} running={busy} onStop={handleStop} statusSlot={statusSlot} placeholder={placeholder} />
+      {promptContext && (
+        <div className="flex flex-shrink-0 items-center gap-2 px-3 pt-2" data-testid="prompt-context-chip">
+          <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs text-primary">
+            <span className="truncate">{promptContext.label}</span>
+            <button
+              type="button"
+              aria-label={t`Clear selection`}
+              className="shrink-0 rounded-full px-0.5 hover:bg-primary/20"
+              onClick={() => onPromptContextConsumed?.()}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        </div>
+      )}
+      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} running={busy} onStop={handleStop} statusSlot={statusSlot} placeholder={placeholder} onPasteImages={handlePasteImages} />
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
@@ -589,6 +677,7 @@ function ExecutionHistoryHeader({
   onClearAll,
   cursorLine,
   settingsSlot,
+  leadingSlot,
   newSessionLabel,
   historyLabel,
   pastSessionsLabel,
@@ -603,6 +692,8 @@ function ExecutionHistoryHeader({
   onClearAll: () => void;
   cursorLine: number | null;
   settingsSlot?: React.ReactNode;
+  /** Optional node rendered on the LEFT of the header row (e.g. a title / home button). */
+  leadingSlot?: React.ReactNode;
   newSessionLabel: string;
   historyLabel: string;
   pastSessionsLabel: string;
@@ -613,9 +704,16 @@ function ExecutionHistoryHeader({
     'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
   return (
     <div
-      className="flex flex-shrink-0 items-center gap-0.5 border-b px-2 py-1"
+      className={cn(
+        'flex flex-shrink-0 items-center gap-0.5 border-b px-2',
+        // A leadingSlot (e.g. Vibe's "New" button) gets a fixed 36px header so it
+        // aligns with the display pane's toolbar and gives the pill vertical room;
+        // every other consumer keeps the content-sized header.
+        leadingSlot ? 'h-9' : 'py-1',
+      )}
       data-testid="entity-execution-header"
     >
+      {leadingSlot}
       {cursorLine != null && (
         <span
           className="text-[11px] tabular-nums text-muted-foreground"

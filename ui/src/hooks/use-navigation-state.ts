@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
+import { toplog } from '@sdk';
 
 // Browser history entry with metadata
 interface HistoryEntry {
@@ -43,6 +44,12 @@ const useNavigationStore = create<NavigationStore>()(
         set((state) => {
           // Remove any forward history when pushing new entry
           const newHistory = [...state.history.slice(0, state.currentIndex + 1), entry];
+          toplog.log('navigation', 'store.pushHistory', {
+            path: entry.pathname + entry.search,
+            prevIndex: state.currentIndex,
+            newIndex: newHistory.length - 1,
+            len: newHistory.length,
+          });
           return {
             history: newHistory.slice(-50), // Keep last 50 entries
             currentIndex: newHistory.length - 1,
@@ -51,16 +58,29 @@ const useNavigationStore = create<NavigationStore>()(
         }),
 
       goBack: () =>
-        set((state) => ({
-          currentIndex: Math.max(0, state.currentIndex - 1),
-          isNavigatingBack: true,
-        })),
+        set((state) => {
+          toplog.log('navigation', 'store.goBack', {
+            fromIndex: state.currentIndex,
+            toIndex: Math.max(0, state.currentIndex - 1),
+            target: state.history[Math.max(0, state.currentIndex - 1)]?.pathname,
+          });
+          return {
+            currentIndex: Math.max(0, state.currentIndex - 1),
+            isNavigatingBack: true,
+          };
+        }),
 
       goForward: () =>
-        set((state) => ({
-          currentIndex: Math.min(state.history.length - 1, state.currentIndex + 1),
-          isNavigatingBack: false,
-        })),
+        set((state) => {
+          toplog.log('navigation', 'store.goForward', {
+            fromIndex: state.currentIndex,
+            toIndex: Math.min(state.history.length - 1, state.currentIndex + 1),
+          });
+          return {
+            currentIndex: Math.min(state.history.length - 1, state.currentIndex + 1),
+            isNavigatingBack: false,
+          };
+        }),
 
       canGoBack: () => get().currentIndex > 0,
       canGoForward: () => get().currentIndex < get().history.length - 1,
@@ -110,6 +130,9 @@ export function useNavigationState(config?: DeepLinkConfig) {
     if (!store.isNavigatingBack) {
       store.pushHistory(entry);
     } else {
+      toplog.log('navigation', 'location change while isNavigatingBack — skip push, reset flag', {
+        path: entry.pathname + entry.search,
+      });
       // Reset the flag so the next forward navigation is tracked
       useNavigationStore.setState({ isNavigatingBack: false });
     }
@@ -180,13 +203,27 @@ export function useNavigationState(config?: DeepLinkConfig) {
     // Navigation
     navigateWithState,
     goBack: () => {
-      if (store.canGoBack()) {
+      const can = store.canGoBack();
+      // NOTE: this drives TWO stacks at once — the zustand store (store.goBack)
+      // AND the browser/router history (navigate(-1)). If both advance, a single
+      // "back" click steps back twice. The store/popstate trace lines around this
+      // one reveal whether that is what's happening.
+      toplog.log('navigation', 'useNavigationState.goBack', {
+        canGoBack: can,
+        url: location.pathname + location.search,
+      });
+      if (can) {
         store.goBack();
         void navigate(-1);
       }
     },
     goForward: () => {
-      if (store.canGoForward()) {
+      const can = store.canGoForward();
+      toplog.log('navigation', 'useNavigationState.goForward', {
+        canGoForward: can,
+        url: location.pathname + location.search,
+      });
+      if (can) {
         store.goForward();
         void navigate(1);
       }

@@ -27,6 +27,12 @@ const config: LinguiConfig = {
     },
   ],
   format: 'po',
+  // Keep the `#: file.tsx` source references but drop the volatile `:<line>`
+  // suffix. Line numbers shift on any edit, so `lingui extract` (run by
+  // `npm run build`) would otherwise rewrite hundreds of location comments on
+  // every build — a huge diff with no real string changes. File paths still
+  // move meaningfully when a string is added/removed/relocated.
+  formatOptions: { lineNumbers: false },
 };
 
 export default config;

@@ -1,6 +1,6 @@
 """core — deterministic tree walk + Merkle hashing + stale-set.
 
-Pure stdlib. Builds one :class:`FolderNode` tree from a docs root, computing:
+Builds one :class:`FolderNode` tree from a docs root, computing:
 
   * per-file ``content_hash`` (sha256 of bytes) + ``title`` (via MarkdownDocument)
   * per-folder ``own_hash``    = versions + direct source files
@@ -15,6 +15,15 @@ change yields identical hashes and nothing is spuriously stale. ``own_hash``
 A folder's summarisable "doc" leaves exclude the generated ``index.md`` and the
 folder note (``<dir>/<dir>.md``) — the latter represents the folder, not content
 inside it.
+
+Walking is delegated to the shared FSIndexer engine
+(:func:`flow_sdk.fs_store.indexer.walk.gitignore_walk`), so scan scope matches
+every other walker in the codebase: dot-directories ARE walked, ``.claude/`` is
+force-included (except ``.claude/worktrees``), nested ``.gitignore`` files are
+honored (monotonic stack, last-match-wins within a file), and the hardcoded
+denylist (``node_modules``, ``.git``, flowpad state dirs ``.llm_index`` /
+``.flowpad`` / ``.markdown_index``, …) is always skipped — even with
+``gitignore=False``. Symlinked dirs are never followed.
 """
 
 from __future__ import annotations
@@ -24,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator
 
+from flow_sdk.fs_store.indexer.walk import gitignore_walk
 from flow_sdk.llm_index.folder_note import FolderNote
 from flow_sdk.llm_index.index_document import INDEX_FILENAME
 from flow_sdk.llm_index.markdown_document import MarkdownDocument
@@ -31,12 +41,6 @@ from flow_sdk.llm_index.markdown_document import MarkdownDocument
 TEMPLATE_VERSION = 1
 PROMPT_VERSION = 1
 SOURCE_EXTS = frozenset({".md", ".mdx"})
-IGNORE_DIRS = frozenset({
-    ".git", "node_modules", "__pycache__", ".venv", "venv",
-    ".tox", "dist", "build", ".eggs", ".mypy_cache", ".pytest_cache",
-    ".ruff_cache", ".next", ".nuxt", "coverage", ".cache",
-    ".flowpad", ".markdown_index", ".llm_index",
-})
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -73,41 +77,6 @@ class FolderNode:
         return not self.existing_hash or self.existing_hash != self.inputs_hash
 
 
-# ── listing ───────────────────────────────────────────────────────────────────
-
-
-def _list_subfolders(folder: Path) -> list[Path]:
-    out: list[Path] = []
-    try:
-        for entry in sorted(folder.iterdir()):
-            if not entry.is_dir():
-                continue
-            if entry.name in IGNORE_DIRS or entry.name.startswith("."):
-                continue
-            try:
-                if entry.is_symlink():
-                    continue
-            except OSError:
-                continue
-            out.append(entry)
-    except OSError:
-        pass
-    return out
-
-
-def _list_source_files(folder: Path) -> list[Path]:
-    out: list[Path] = []
-    try:
-        for entry in sorted(folder.iterdir()):
-            if not entry.is_file() or entry.name == INDEX_FILENAME:
-                continue
-            if entry.suffix.lower() in SOURCE_EXTS:
-                out.append(entry)
-    except OSError:
-        pass
-    return out
-
-
 # ── hashing ───────────────────────────────────────────────────────────────────
 
 
@@ -134,17 +103,32 @@ def _merkle_hash(own_hash: str, subfolders: list[FolderNode]) -> str:
 def scan_tree(
     root: Path | str,
     *,
+    gitignore: bool = True,
     on_node: Callable[[Path, str], None] | None = None,
 ) -> FolderNode:
     """Walk ``root`` into a :class:`FolderNode` tree with hashes computed.
 
-    ``on_node(path, kind)`` — when given — is called once per source file
-    (``kind="file"``) and once per folder (``kind="folder"``, after its children),
-    for progress reporting. Kept as a plain sync callback so this stays pure.
+    ``gitignore`` toggles ``.gitignore`` filtering; the hardcoded denylist
+    (``node_modules``, flowpad state dirs, …) always applies. ``on_node(path,
+    kind)`` — when given — is called once per source file (``kind="file"``) and
+    once per folder (``kind="folder"``, after its children), for progress
+    reporting. Kept as a plain sync callback so this stays deterministic.
     """
     root = Path(root).resolve()
     if not root.is_dir():
         raise NotADirectoryError(str(root))
+
+    # One shared-engine walk up front (pre-order); visit() below re-folds it
+    # recursively so hashing stays post-order (children before parents).
+    listing: dict[Path, tuple[list[Path], list[Path]]] = {}
+    for dir_path, subdirs, files in gitignore_walk(root, gitignore=gitignore):
+        listing[dir_path] = (
+            subdirs,
+            [
+                f for f in files
+                if f.name != INDEX_FILENAME and f.suffix.lower() in SOURCE_EXTS
+            ],
+        )
 
     def make_file_node(path: Path) -> FileNode | None:
         try:
@@ -162,10 +146,11 @@ def scan_tree(
         )
 
     def visit(folder: Path) -> FolderNode:
-        subfolders = [visit(s) for s in _list_subfolders(folder)]
+        sub_paths, file_paths = listing.get(folder, ([], []))
+        subfolders = [visit(s) for s in sub_paths]
         files: list[FileNode] = []
         folder_note: FileNode | None = None
-        for sf in _list_source_files(folder):
+        for sf in file_paths:
             node = make_file_node(sf)
             if node is None:
                 continue

@@ -125,6 +125,7 @@ export function WorkflowsNavigator() {
       id: 'workflows',
       roots,
       isLoading,
+      search: { recordTypes: ['workflow'], placeholder: t`Search workflows…` },
       header: {
         title: t`Workflows`,
         countBadge: workflows.length,

@@ -1,8 +1,11 @@
 import { ArrowDown, ArrowUp, Check, Copy, Loader2, MessageSquare, Pin } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { AgenticProcess } from '@sdk';
+import { PrefKey, type AgenticProcess } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { cn } from '@src/lib/utils';
+import { Checkbox } from '@src/components/ui/checkbox';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { timeAgo } from '@src/components/entity-execution-panel/history-row';
 import {
@@ -28,6 +31,18 @@ interface PromptIndexPanelProps {
   process?: AgenticProcess | null;
   /** Project scope for the library pin-state lookup. */
   projectId?: string | null;
+}
+
+/**
+ * "System / Claude-machinery" prompts are XML-tag wrapper entries injected by the
+ * harness rather than typed by the user — e.g. <task-notification>, <command-message>,
+ * <command-name>, <command-args>, <system-reminder>, <local-command-stdout>. They are
+ * noise in the human prompt history, so the standard list hides them. The advanced-only
+ * "Show all" toggle reveals them, where they're marked with a SYS badge.
+ */
+const SYSTEM_PROMPT_RE = /^\s*<([a-zA-Z][\w-]*)\b[^>]*>/;
+export function isSystemPrompt(text: string): boolean {
+  return SYSTEM_PROMPT_RE.test(text);
 }
 
 function formatTime(iso: string): string {
@@ -75,11 +90,15 @@ const PromptItem: React.FC<{
   };
 
   const preview = entry.text.length > 80 ? entry.text.slice(0, 80) + '…' : entry.text;
+  const system = isSystemPrompt(entry.text);
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="group cursor-pointer rounded px-2 py-1.5 hover:bg-muted/50" onClick={handleClick}>
+        <div
+          className={cn('group cursor-pointer rounded px-2 py-1.5 hover:bg-muted/50', system && 'opacity-60')}
+          onClick={handleClick}
+        >
           <div className="flex items-start gap-1.5">
             <span
               className={cn(
@@ -96,6 +115,14 @@ const PromptItem: React.FC<{
                 <span className="flex items-baseline gap-1 text-[10px] text-muted-foreground">
                   <span>{formatTime(entry.time)}</span>
                   <span className="text-muted-foreground/60">· {timeAgo(entry.time)}</span>
+                  {system && (
+                    <span
+                      className="rounded bg-muted px-1 text-[8px] font-bold uppercase tracking-wide text-muted-foreground/80"
+                      title={t`Harness-generated entry (not typed by you)`}
+                    >
+                      <Trans>sys</Trans>
+                    </span>
+                  )}
                 </span>
                 <div className="flex items-center gap-1">
                   {entry.absRow !== null && (
@@ -150,18 +177,6 @@ const PromptItem: React.FC<{
   );
 };
 
-type SortDir = 'asc' | 'desc';
-const SORT_STORAGE_KEY = 'flowpad.promptIndexPanel.sortDir';
-
-function readStoredSortDir(): SortDir {
-  if (typeof window === 'undefined') return 'asc';
-  try {
-    return window.localStorage.getItem(SORT_STORAGE_KEY) === 'desc' ? 'desc' : 'asc';
-  } catch {
-    return 'asc';
-  }
-}
-
 export const PromptIndexPanel: React.FC<PromptIndexPanelProps> = ({
   prompts,
   onScrollToLine,
@@ -169,7 +184,12 @@ export const PromptIndexPanel: React.FC<PromptIndexPanelProps> = ({
   projectId,
 }) => {
   const { t } = useLingui();
-  const [sortDir, setSortDir] = useState<SortDir>(readStoredSortDir);
+  const [sortDir, setSortDir] = usePreference<string>(PrefKey.PROMPT_SORT_DIR);
+  const isAdvanced = useIsAdvanced();
+  // Hide harness-generated XML entries by default; only the advanced view exposes
+  // the "Show all" escape hatch. When not advanced, showAll stays false so the
+  // standard list always filters them out.
+  const [showAll, setShowAll] = useState(false);
 
   // Pin-from-history: library prompts keyed by normalized text. Disabled
   // (no query) when the host doesn't supply a process.
@@ -177,14 +197,6 @@ export const PromptIndexPanel: React.FC<PromptIndexPanelProps> = ({
   const { byNormalizedText, refresh: refreshLibrary } = useLibraryPromptsForProject(
     pinningEnabled ? (projectId ?? null) : undefined,
   );
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(SORT_STORAGE_KEY, sortDir);
-    } catch {
-      // localStorage may be unavailable (private mode, quota) — preference simply doesn't persist.
-    }
-  }, [sortDir]);
 
   const sortedPrompts = useMemo(() => {
     const copy = [...prompts];
@@ -198,36 +210,68 @@ export const PromptIndexPanel: React.FC<PromptIndexPanelProps> = ({
     return copy;
   }, [prompts, sortDir]);
 
+  // System (XML) prompts are hidden unless the advanced "Show all" toggle is on.
+  const effectiveShowAll = isAdvanced && showAll;
+  const visiblePrompts = useMemo(
+    () => (effectiveShowAll ? sortedPrompts : sortedPrompts.filter((p) => !isSystemPrompt(p.text))),
+    [sortedPrompts, effectiveShowAll],
+  );
+  const hiddenCount = sortedPrompts.length - visiblePrompts.length;
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center justify-between gap-1.5 border-b px-3 py-2">
         <span className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-lime-400" />
-          <span className="text-sm font-medium"><Trans>Prompts ({prompts.length})</Trans></span>
+          <span className="text-sm font-medium"><Trans>Prompts ({visiblePrompts.length})</Trans></span>
         </span>
-        <button
-          type="button"
+        <div className="flex items-center gap-2">
+          {isAdvanced && (
+            <label
+              className="flex cursor-pointer items-center gap-1 text-[10px] text-muted-foreground select-none"
+              title={t`Show harness-generated entries (SYS) hidden from the standard list`}
+            >
+              <Checkbox
+                className="h-3 w-3"
+                checked={showAll}
+                onCheckedChange={(v) => setShowAll(v === true)}
+                data-testid="prompt-index-show-all"
+              />
+              <span><Trans>Show all</Trans>{hiddenCount > 0 ? ` (${hiddenCount})` : ''}</span>
+            </label>
+          )}
+          <button
+            type="button"
           title={
             sortDir === 'desc'
               ? t`Sort by time: newest first (click for oldest first)`
               : t`Sort by time: oldest first (click for newest first)`
           }
           className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+          onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
           data-testid="prompt-index-sort-time"
           aria-label={t`Sort prompts by time`}
         >
-          {sortDir === 'desc' ? <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />}
-        </button>
+            {sortDir === 'desc' ? <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-1">
         {prompts.length === 0 ? (
           <p className="mt-4 px-2 text-center text-xs text-muted-foreground"><Trans>No prompts yet</Trans></p>
+        ) : visiblePrompts.length === 0 ? (
+          <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
+            {isAdvanced ? (
+              <Trans>Only harness entries here — enable “Show all” to view them.</Trans>
+            ) : (
+              <Trans>No prompts yet</Trans>
+            )}
+          </p>
         ) : (
           <TooltipProvider delayDuration={600}>
             <div className="flex flex-col gap-0.5">
-              {sortedPrompts.map((entry, i) => {
+              {visiblePrompts.map((entry, i) => {
                 const pinProcess = pinningEnabled ? process : null;
                 const pinnedPrompt = pinProcess
                   ? (byNormalizedText.get(normalizePromptText(entry.text)) ?? null)

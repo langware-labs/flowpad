@@ -525,7 +525,15 @@ class Conversation(Entity):
         body["conversation_id"] = self.id
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            return await client.post(path, body)
+            data = await client.post(path, body)
+        # Some hub deployments do not echo conversation_id on the FlowMessage
+        # payload even though the add_message route is scoped to this
+        # conversation. Preserve the known parent locally so callers that pack
+        # the returned message into a body bundle can restore file-backed assets
+        # into the receiver's mapped project.
+        if isinstance(data, dict) and not data.get("conversation_id"):
+            data["conversation_id"] = self.id
+        return data
 
     async def remove_message(self, flow_message_id: str) -> dict:
         """Delete a FlowMessage from this conversation on the hub.

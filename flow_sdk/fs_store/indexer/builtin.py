@@ -11,7 +11,6 @@ from flow_sdk.fs_store.indexer.index_function import FSIndexer
 from flow_sdk.fs_store.indexer.roots import default_roots
 from flow_sdk.fs_store.record_types import RecordType
 
-
 # Terminal record types the indexer writes via Record.from_fsref.
 # Used by rebuild mode in the index handler to know what to clear.
 INDEXABLE_TYPES: list[RecordType] = [
@@ -50,47 +49,54 @@ def build_default_indexer() -> FSIndexer:
     # self-registering on functions-module import, so building the indexer is
     # the chokepoint that guarantees a complete registry. Idempotent.
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+    from flow_sdk.fs_store.indexer.functions.agent import agent_fn
+    from flow_sdk.fs_store.indexer.functions.agent_trace import agent_trace_fn
+    from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
+    from flow_sdk.fs_store.indexer.functions.claude_hook import (
+        claude_hook_files_extras_fn,
+        claude_hook_files_fn,
+        hooks_in_settings_fn,
+    )
+    from flow_sdk.fs_store.indexer.functions.claude_md import (
+        claude_md_in_claude_subdir_fn,
+        claude_md_in_project_root_fn,
+    )
+    from flow_sdk.fs_store.indexer.functions.claude_memory import claude_memory_fn
+    from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_fn
+
     # Import locally to keep this module import-light at package-init time.
     from flow_sdk.fs_store.indexer.functions.claude_projects import claude_projects_fn
+    from flow_sdk.fs_store.indexer.functions.claude_rules import claude_rules_fn
     from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
-    from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
     from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
-    from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_fn
-    from flow_sdk.fs_store.indexer.functions.claude_md import (
-        claude_md_in_claude_subdir_fn, claude_md_in_project_root_fn,
-    )
-    from flow_sdk.fs_store.indexer.functions.claude_rules import claude_rules_fn
-    from flow_sdk.fs_store.indexer.functions.spec import spec_project_fn
-    from flow_sdk.fs_store.indexer.functions.prompt import prompt_project_fn
-    from flow_sdk.fs_store.indexer.functions.skill import skill_fn
-    from flow_sdk.fs_store.indexer.functions.whiteboard import whiteboard_fn
-    from flow_sdk.fs_store.indexer.functions.agent_trace import agent_trace_fn
-    from flow_sdk.fs_store.indexer.functions.workflow_run import workflow_run_fn
-    from flow_sdk.fs_store.indexer.functions.usage_report import usage_report_fn
-    from flow_sdk.fs_store.indexer.functions.agent import agent_fn
-    from flow_sdk.fs_store.indexer.functions.workflow import (
-        workflow_fn, workflow_frontmatter_fn,
-    )
-    from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
-    from flow_sdk.fs_store.indexer.functions.claude_memory import claude_memory_fn
+    from flow_sdk.fs_store.indexer.functions.dataset import dataset_fn
+    from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
     from flow_sdk.fs_store.indexer.functions.markdown import (
-        markdown_flat_fn, markdown_in_folder_fn,
+        markdown_flat_fn,
+        markdown_in_folder_fn,
     )
+    from flow_sdk.fs_store.indexer.functions.mcp_server import (
+        mcp_servers_in_file_fn,
+        mcp_source_files_fn,
+    )
+    from flow_sdk.fs_store.indexer.functions.plugin import plugin_fn
     from flow_sdk.fs_store.indexer.functions.project_folder_walker import (
         project_folder_walker_fn,
     )
+    from flow_sdk.fs_store.indexer.functions.prompt import prompt_project_fn
+    from flow_sdk.fs_store.indexer.functions.skill import skill_fn
+    from flow_sdk.fs_store.indexer.functions.spec import spec_project_fn
     from flow_sdk.fs_store.indexer.functions.task import task_fn
-    from flow_sdk.fs_store.indexer.functions.dataset import dataset_fn
-    from flow_sdk.fs_store.indexer.functions.claude_hook import (
-        claude_hook_files_fn, claude_hook_files_extras_fn, hooks_in_settings_fn,
-    )
-    from flow_sdk.fs_store.indexer.functions.mcp_server import (
-        mcp_source_files_fn, mcp_servers_in_file_fn,
-    )
-    from flow_sdk.fs_store.indexer.functions.plugin import plugin_fn
     from flow_sdk.fs_store.indexer.functions.todo import todo_fn
+    from flow_sdk.fs_store.indexer.functions.usage_report import usage_report_fn
+    from flow_sdk.fs_store.indexer.functions.whiteboard import whiteboard_fn
+    from flow_sdk.fs_store.indexer.functions.workflow import (
+        workflow_fn,
+        workflow_frontmatter_fn,
+    )
+    from flow_sdk.fs_store.indexer.functions.workflow_run import workflow_run_fn
 
     # Transcript handlers are opt-in (full-JSONL parse is expensive — see
     # flow_sdk/fs_store/transcript_indexer/).

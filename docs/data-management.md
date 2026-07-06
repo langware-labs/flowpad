@@ -54,7 +54,7 @@ The codebase uses the word "index" for two related systems (a third, the per-rec
 
 | System | What it is | Where it lives | Updated by |
 |--------|-----------|----------------|------------|
-| **Hash sentinel** | Per-record index-staleness token (`<epoch>_<digest>.hash` file in the record folder) | `flow_sdk/fs_store/fs_record.py` (`get_hash`) | `FSRecord.sync_from_entity()` after a successful entity sync |
+| **Hash sentinel** | Per-record index-staleness token (`<epoch>_<hash>_<pathdigest>.hash` file in the record shadow folder) | `flow_sdk/fs_store/fs_record.py` (`write_hash`, `index_required`) | The indexer, after the DB batch commits (write-ahead ordering); also `Entity.check_and_refresh_record()` after a GET-time re-sync |
 | **Entity Index** | SQLite rows mirroring Record metadata | `flow_sdk/core/entity/entity_model.py` | `FSRecord.sync_to_db()` via `Entity.from_record()` |
 | **FTS Index** | Full-text search virtual table | `entities_fts` in SQLite | `FSRecord.sync_to_db()` via `fts_upsert()` (only if `content` is not None) |
 
@@ -115,7 +115,7 @@ MCP server (stdio, FastMCP)
 All record and entity types are managed by the **SchemaRegistry** (`flow_sdk/fs_store/schema_registry.py`), which provides:
 - O(1) type registration and lookup via `TypeInfo` dataclasses (each `TypeInfo.locations` lists which layers a type lives in, e.g. `["index"]`)
 - Entity-side auto-registration: `DBBaseRecord.__init_subclass__` (`flow_sdk/db/drivers/db_base_record.py`) registers each concrete entity with `locations=["index"]` and `entity_cls=cls`. Record-side per-type behavior (`from_disk_fn`, icons, etc.) is registered via `register_all` in `flow_sdk/schema/type_info/` and the indexer registrations (`flow_sdk/fs_store/indexer/registrations.py`) — `FSRecord` itself has no `__init_subclass__`.
-- Per-type persistence at `~/.flow/schema/types/<type>/type_info.json` (hash-gated writes)
+- Per-type JSONL run logs at `~/.flow/.../schema/types/<type>/` (`scan_log.jsonl` / `index_log.jsonl`; note `type_info.json` is NOT persisted — see [Schema Registry](data-management/schema-registry.md))
 - Index orchestration: `clear_index()`, `get_index_status()` (note: the older `discover()`/`rebuild_index()`/`incremental()` SchemaRegistry methods no longer exist; scan/index walking now lives in `flow_sdk/fs_store/indexer/`)
 
 The single canonical type enum is **`EntityType`** (`flow_sdk/schema/types.py`). It replaced the two historical enums — `RecordType` (formerly `fs_store/record_types.py`) and `BuiltinEntityType` (db layer) — which are now thin aliases re-exported for backward compatibility (`flow_sdk/fs_store/record_types.py` aliases `RecordType = EntityType`). String values are DB/filesystem-persisted and must never change.
@@ -154,6 +154,34 @@ The filesystem scan layer: `FSRecord.discover(type)` (O(N) directory scan over `
 
 ---
 
+### [Gitignore-Aware Walk](data-management/gitignore-walk.md)
+The single shared filesystem traversal (`gitignore_walk()`) used by the indexer's folder walkers, the asset-menu walk, and the LLM index scanner. Covers the hardcoded `_WALK_IGNORED` denylist, the per-directory `.gitignore` stack (last-match-wins, deliberately monotonic — child `!` re-includes of ancestor-ignored paths are not honored), the `.claude/` force-include with the `.claude/worktrees` carve-out, symlink policy, and the `IndexerOptions.gitignore` flag.
+
+**Key source files:** `flow_sdk/fs_store/indexer/walk.py`, `flow_sdk/fs_store/indexer/gitignore.py`
+
+---
+
+### [Transcript Indexing](data-management/transcript-indexing.md)
+The transcript indexer: an async walker over Claude/Codex session JSONLs that routes entries to registered `TranscriptHandler`s (e.g. `PlanHandler` cross-linking ClaudePlan ↔ AgenticProcess). Covers its `updated_date`-vs-mtime freshness (distinct from the `.hash` sentinel), the handler contract, and the `_index_single_file` self-heal wrappers behind the dock loader's `?hint_path=` 404 recovery.
+
+**Key source files:** `flow_sdk/fs_store/transcript_indexer/`, `flow_sdk/fs_store/transcript_indexer/handlers/`
+
+---
+
+### [LLM Index (Merkle docs index)](data-management/llm-index.md)
+The LLMIndexer → `index.md` → MarkdownIndex-entity pipeline — a separate system from the FSIndexer. Covers the deterministic Merkle folder index with cached LLM summaries (`stamp`/`rebuild`/`diff`), the produced `index.md` + `.md.json` sidecar, the `markdown_index` entity type rebuilt by an AgenticProcess, the serving routes, and how it differs from the FSIndexer.
+
+**Key source files:** `flow_sdk/llm_index/`, `flow_sdk/builtin/markdown_index.py`, `flow_sdk/fs_store/operations/markdown_index.py`, `flow_sdk/server/routes/markdown_index.py`, `flow_sdk/server/routes/docs_graph.py`
+
+---
+
+### [Wiki Link Graph](llm_wiki.md)
+The `[[wiki-link]]` edge graph: link parsing, edge extraction inside every `sync_to_db()`, the `AsyncLinkStore` edge table, name resolution, backlinks, and cleanup on delete/orphan sweep.
+
+**Key source files:** `flow_sdk/wiki/`, `flow_sdk/fs_store/fs_record.py` (`sync_to_db`, `get_links`/`get_backlinks`)
+
+---
+
 ### [Record Search](data-management/record-search.md)
 FTS5-backed full-text search for Records. Covers the `search_content` opt-in property (default: `content` or `body` field), inline indexing via `FSRecord.sync_to_db()` (no background worker), the FTS status post-filter limitation, and the FTS gap for webhook-created entities.
 
@@ -169,7 +197,7 @@ The `fs-records` custom action on `ComputeNode` -- the primary HTTP API for read
 ---
 
 ### [Entity-Index Sync](data-management/entity-index-sync.md)
-How SQLite Entities stay in sync with filesystem Records. Covers the three "index" naming distinction (RecordState vs Entity Index vs FTS Index), `Entity.from_record()` delegation, hash file tracking, `RecordError` on indexing failure, `vfs_record` VFS URI link, `vfs_orphan` tombstone, `sync_record()` mtime-based algorithm, `_apply_record_metadata()` field mapping, trigger points (API GET by ID, ComputeNode CRUD), `DataOpMessage` structure, `WSMessageType` enum, `resource_tracker` recipient resolution, SchemaRegistry orchestration methods (`discover()`, `rebuild_index()`, `incremental()`, `clear_index()`, `get_index_status()`), and the FTS gap for webhook-created entities.
+How SQLite Entities stay in sync with filesystem Records. Covers the "index" naming disambiguation (hash sentinel vs Entity Index vs FTS Index), the `Record.sync_to_db()` pipeline (`Entity.from_record()` → `sync_from_entity` mirror-back → FTS upsert → wiki edges → `post_sync_fn`), when `sync_to_db()` is called, `RecordError` on indexing failure, `DataOpMessage` structure and the fs-records CRUD → broadcast flow, `SchemaRegistry` index bookkeeping (`clear_index()`, `get_index_status()`, JSONL scan/index logs), staleness semantics (`index_required`), and the FTS gap for webhook-created entities.
 
 **Key source files:** `flow_sdk/core/entity/entity_model.py`, `flow_sdk/app/actions/graph_crud_actions.py`, `flow_sdk/builtin/faas/fs_records_actions.py` (`_broadcast_fs_record_op`), `flow_sdk/core/network/resource_tracker.py`, `flow_sdk/api/messages.py`, `flow_sdk/fs_store/schema_registry.py`, `flow_sdk/fs_store/operations/record_error.py`
 
@@ -218,6 +246,11 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 | How does Claude Code write entity data? | [MCP Operations](data-management/mcp-operations.md) |
 | What types are registered and what are their schemas? | [Schema Registry](data-management/schema-registry.md) |
 | How do I scan or index all records? | [Scan and Discovery](data-management/scan-and-discovery.md) + [Schema Registry](data-management/schema-registry.md) |
+| When does indexing run (triggers)? | [Scan and Discovery](data-management/scan-and-discovery.md#when-does-indexing-run) |
+| Which files/folders does the walk skip? | [Gitignore-Aware Walk](data-management/gitignore-walk.md) |
+| How do session transcripts get indexed? | [Transcript Indexing](data-management/transcript-indexing.md) |
+| What builds the `index.md` docs indexes? | [LLM Index](data-management/llm-index.md) |
+| How do `[[wiki links]]` and backlinks work? | [Wiki Link Graph](llm_wiki.md) |
 | How do frontend components get live updates? | [Listen Action and CRUD Event Pipeline](data-management/listen-action.md) |
 | What are the three "index" systems? | [Entity-Index Sync](data-management/entity-index-sync.md) |
 | Why don't webhook entities appear in search? | [Entity-Index Sync](data-management/entity-index-sync.md) / [Record Search](data-management/record-search.md) |

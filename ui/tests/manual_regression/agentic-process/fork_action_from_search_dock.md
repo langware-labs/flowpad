@@ -21,7 +21,7 @@ id: d390caa6-6074-5554-8a5a-5425811fc04d
 1. Probe `GET /api/v1/search?record_type=claude_session&limit=1`. If `total === 0`, SKIP this test (see preconditions).
 2. Open the command/search palette (global search) and type a query that returns a `claude_session` result.
 3. Right-click (or open the actions menu via the dock-menu affordance) on the `claude_session` row.
-4. Click the `Fork` action (GitBranch icon).
+4. Click the `Fork` action (branch icon).
 5. Observe the dock navigating to the newly-created AgenticProcess shell tab.
 
 ## Expected result

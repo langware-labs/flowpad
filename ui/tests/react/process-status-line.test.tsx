@@ -50,15 +50,22 @@ describe('ProcessStatusLine — Open-in-Terminal gate', () => {
     expect(screen.queryByTestId('process-status-line-open-terminal')).toBeNull();
   });
 
-  it('is enabled when an interactive worker is ready_for_input', () => {
+  it('is disabled when an interactive worker is merely IDLE (fallback, no completed turn)', () => {
+    // IDLE is deliberately EXCLUDED from the ready baseline in BOTH the SDK
+    // (isReadyForInput / Python is_ready_for_input) and this component: it is the
+    // worker_status fallback for a process that has not run a real turn, so
+    // enabling Open-in-Terminal for it would fire prematurely. Even an
+    // interactive (pty_mode) IDLE worker with no session stays gated off — only a
+    // finished turn (COMPLETE / INTERRUPTED / PENDING_USER) or a resumable
+    // session enables it.
     render(
       <ProcessStatusLine
-        process={makeProcess({ workerStatus: WorkerStatus.IDLE, session_id: null, visible: true })}
+        process={makeProcess({ workerStatus: WorkerStatus.IDLE, session_id: null, pty_mode: true })}
         onOpenInTerminal={() => {}}
       />,
     );
     const btn = screen.getByTestId('process-status-line-open-terminal') as HTMLButtonElement;
-    expect(btn.disabled).toBe(false);
+    expect(btn.disabled).toBe(true);
   });
 
   it('is enabled when an interactive worker is COMPLETE and process is RUNNING', () => {

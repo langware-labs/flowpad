@@ -11,14 +11,10 @@ export enum ResultType {
   APP_SERVICE = 'app_service',
   /** Cloud service or infrastructure */
   CLOUD_SERVICE = 'cloud_service',
-  /** Report or analysis document */
-  REPORT = 'report',
   /** File or document */
   FILE = 'file',
   /** Data structure or dataset */
   DATA = 'data',
-  /** Git repository */
-  GIT_REPO = 'git_repo',
   /** Text file or document */
   TEXT_FILE = 'text_file',
   /** Running web application on a port */
@@ -62,11 +58,6 @@ export const ResultTypeMetadata: Record<ResultType, ResultTypeInfo> = {
     description: 'Cloud infrastructure service or deployment configuration',
     icon: 'Cloud',
   },
-  [ResultType.REPORT]: {
-    type: ResultType.REPORT,
-    description: 'Analysis report or documentation with insights and findings',
-    icon: 'FileText',
-  },
   [ResultType.FILE]: {
     type: ResultType.FILE,
     description: 'File or document created in the filesystem',
@@ -76,11 +67,6 @@ export const ResultTypeMetadata: Record<ResultType, ResultTypeInfo> = {
     type: ResultType.DATA,
     description: 'Structured data, dataset, or data transformation output',
     icon: 'Database',
-  },
-  [ResultType.GIT_REPO]: {
-    type: ResultType.GIT_REPO,
-    description: 'Git repository with version-controlled code',
-    icon: 'GitBranch',
   },
   [ResultType.TEXT_FILE]: {
     type: ResultType.TEXT_FILE,
