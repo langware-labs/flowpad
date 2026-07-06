@@ -230,7 +230,7 @@ const MAX_HEALTH_CHECKS = 240; // 120 seconds — cold-start window. Sized to ri
                                // boots reach health in ~35-40s, so 120s keeps a ~3x
                                // margin. Do NOT raise to mask a slow boot — fix the
                                // slow path instead.
-const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — the just-upgraded path is the
+const POST_UPGRADE_HEALTH_CHECKS = 5; // 120 seconds — the just-upgraded path is the
                                         // slower one (all venv files freshly written →
                                         // heaviest AV scan), so this is the riskiest
                                         // window to tighten; kept == the normal window.
