@@ -42,7 +42,19 @@ INDEXABLE_TYPES: list[RecordType] = [
 
 
 def build_default_indexer() -> FSIndexer:
-    """Construct an FSIndexer with the canonical root set + all functions registered."""
+    """Construct the canonical indexer: root set + all functions registered.
+
+    Honors the ``indexer_backend`` toggle (env ``FLOWPAD_INDEXER_BACKEND`` >
+    pref ``preferences.advanced.indexer_backend``): ``rust`` returns the
+    RSIndexerAdapter behind the same surface (fail-open to FSIndexer when the
+    binary doesn't resolve). Default is the Python FSIndexer.
+    """
+    rs = _maybe_rs_indexer()
+    if rs is not None:
+        # TypeInfo registry must still be complete — scan-projection callers
+        # run from_disk_fn Python-side on the adapter's FSRefs.
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+        return rs
     # Ensure all TypeInfo metadata (slot fns, post_sync_fn, presentation) is
     # registered before any indexing/sync runs. Type metadata now lives in
     # schema/type_info/<type>_info.py (registered by register_all) rather than
@@ -210,11 +222,48 @@ def build_default_indexer() -> FSIndexer:
     return idx
 
 
+def _maybe_rs_indexer():
+    """Return an RSIndexerAdapter when the instance selects the Rust backend
+    AND the external binary resolves; else None (Python FSIndexer).
+
+    Fail-open by design: a selected-but-unresolvable Rust backend logs one
+    warning and falls back to Python, mirroring ``vendored_flow_rs_enabled``.
+    The custom-slice builders (project_list, single-file self-heal) always
+    build FSIndexer directly and are unaffected by this toggle.
+    """
+    from flow_sdk.fs_store.indexer.rs_adapter import (  # noqa: PLC0415
+        RSIndexerAdapter,
+        resolve_rs_indexer_bin,
+        rs_backend_selected,
+    )
+
+    try:
+        if not rs_backend_selected():
+            return None
+        bin_path = resolve_rs_indexer_bin()
+        if bin_path is None:
+            import logging  # noqa: PLC0415
+            logging.warning(
+                "indexer_backend=rust selected but no usable binary "
+                "(set FLOWPAD_RS_INDEXER_BIN); using the Python FSIndexer"
+            )
+            return None
+        return RSIndexerAdapter(bin_path)
+    except Exception:
+        import logging  # noqa: PLC0415
+        logging.warning("RSIndexer backend selection failed; using FSIndexer", exc_info=True)
+        return None
+
+
 _shared: FSIndexer | None = None
 
 
 def get_shared_indexer() -> FSIndexer:
-    """Return the process-wide indexer, lazily constructed on first call."""
+    """Return the process-wide indexer, lazily constructed on first call.
+
+    The backend toggle lives in ``build_default_indexer`` so every caller —
+    this singleton AND direct ``build_default_indexer()`` users — honors it.
+    """
     global _shared
     if _shared is None:
         _shared = build_default_indexer()
