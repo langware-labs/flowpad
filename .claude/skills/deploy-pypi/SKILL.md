@@ -32,8 +32,9 @@ below describes by hand, in the correct order, with validation gates:
 > branch; a **minor/major** opens a *new* `release/vX.(Y+1)` (or `v(X+1).0`) branch
 > off the release point — see *Minor / major releases* below.
 
-After a successful deploy, this skill **also** checks whether `electron/` changed
-since the previous release and, if so, kicks off the desktop installer build.
+After a release actually publishes a new version to PyPI, this skill **also**
+checks whether `electron/` changed since the previous release and, only if both are
+true, kicks off the desktop installer build (a `--no-pypi` or failed run does not).
 
 > **This publishes to PyPI and pushes a tag — both hard to undo.** Confirm with the
 > user before running a real (non-`--no-pypi`) deploy. State the current version and
@@ -118,28 +119,48 @@ The script is `set -e` and fails fast — if it exits non-zero (tests, signing,
 asset check, or install validation), the release did **not** publish. Report the
 failure; do not retry blindly.
 
-After it completes, capture the new tag:
+After it completes, capture the new tag and confirm whether a new version was
+actually **published to PyPI** — Step 3 depends on this. A run does NOT publish if
+you passed `--no-pypi` or the script exited non-zero, so check for the version
+directly on PyPI rather than assuming the deploy implies a publish:
 
 ```bash
 NEW_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | head -1)
+NEW_VERSION=${NEW_TAG#v}
 echo "Released: $NEW_TAG"
+
+# Did this run actually upload a new version to PyPI? (allow for propagation delay)
+if curl -fsS "https://pypi.org/pypi/flowpad/$NEW_VERSION/json" >/dev/null 2>&1; then
+  PUBLISHED=1    # new version is live on PyPI → a desktop release may be warranted
+else
+  PUBLISHED=0    # --no-pypi, a failed deploy, or not yet propagated → do NOT release desktop
+fi
+echo "PUBLISHED=$PUBLISHED"
 ```
 
-### Step 3 — Desktop build if electron/ changed
+### Step 3 — Desktop build if we published to PyPI AND electron/ changed
 
-If `electron/` changed between the previous release and the just-released HEAD, the
-desktop app needs rebuilding too. Check it:
+The desktop release fires only when **both** conditions hold:
+
+1. **This run actually published a new version to PyPI** (`PUBLISHED=1` from Step 2), and
+2. **`electron/` changed** between the previous release and the just-released HEAD.
+
+Either alone is not enough. A `--no-pypi` or failed run shipped nothing, so there's
+no new version for a desktop release to wrap. And a PyPI-only patch that didn't
+touch `electron/` reuses the existing desktop shell — no rebuild needed. Check both:
 
 ```bash
-if git diff --quiet "$PREV_TAG" HEAD -- electron/; then
-  echo "No electron/ changes since $PREV_TAG — desktop build NOT needed."
+if [ "$PUBLISHED" != 1 ]; then
+  echo "No new version published to PyPI this run — desktop build SKIPPED."
+elif git diff --quiet "$PREV_TAG" HEAD -- electron/; then
+  echo "Published $NEW_TAG but no electron/ changes since $PREV_TAG — desktop build NOT needed."
 else
-  echo "electron/ changed since $PREV_TAG — desktop build needed:"
+  echo "Published $NEW_TAG AND electron/ changed since $PREV_TAG — desktop build needed:"
   git diff --stat "$PREV_TAG" HEAD -- electron/
 fi
 ```
 
-**If there are changes**, trigger the desktop build directly — dispatch the
+**Only if both conditions hold**, trigger the desktop build directly — dispatch the
 `build-desktop.yml` workflow with `flowpad_branch` set to the **current branch**
 (`<branch>` below):
 
