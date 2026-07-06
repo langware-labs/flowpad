@@ -37,7 +37,7 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import {
-  acceptInvitationInUI,
+  dismissWelcomeModal,
   launchBrowser,
   openConversation,
   openInstancePage,
@@ -286,6 +286,52 @@ async function closeUiGitWizard(processId: string, localPath: string, projectId:
   expect(JSON.parse(stdout).ok).toBe(true);
 }
 
+async function acceptConversationInvitationInUI(inst: InstancePage, conversationId: string): Promise<void> {
+  const { page } = inst;
+  const rowSelector = `[data-testid="inbox-conversation-row"][data-conversation-id="${conversationId}"]`;
+  const deadline = Date.now() + 35_000;
+  let lastState = '(not rendered)';
+
+  for (;;) {
+    await fetch(`${inst.apiUrl}/api/v1/graph/conversation-list`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).catch(() => undefined);
+
+    await page.goto(`${inst.feUrl}/dock/inbox`, { waitUntil: 'domcontentloaded' });
+    await dismissWelcomeModal(page);
+
+    const row = page.locator(rowSelector).first();
+    if (await row.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      lastState = await row.innerText().catch(() => '(row text unavailable)');
+      const kind = await row.getAttribute('data-kind').catch(() => null);
+      if (kind !== 'invitation') return;
+
+      const accept = row.getByTestId('inbox-accept-invitation-button');
+      if (await accept.isVisible({ timeout: 2_000 }).catch(() => false)) {
+        await accept.click({ timeout: 5_000 });
+        await pollUntil(async () => {
+          const invitations = await fetch(`${inst.apiUrl}/api/v1/graph/invitation`)
+            .then((x) => x.json())
+            .catch(() => null);
+          const rows = (invitations?.data ?? []) as any[];
+          const inv = rows.find((i) => i?.target_url_path === `/conversation/${conversationId}`);
+          return inv?.accepted === true ? true : null;
+        }, 20_000, `conversation ${conversationId} invitation accepted`);
+        return;
+      }
+    }
+
+    if (Date.now() > deadline) {
+      throw new Error(
+        `conversation invitation row did not become accept-ready for ${conversationId}. Last state: ${lastState}`,
+      );
+    }
+    await page.waitForTimeout(1_000);
+  }
+}
+
 async function flowCliAsync(inst: ResolvedInstance, args: string[], cwd: string): Promise<string> {
   const envFile = await readEnvFile(inst.name);
   const port = new URL(inst.apiUrl).port;
@@ -373,18 +419,14 @@ describe('hub: git-backed artifact share wizard', () => {
     const add = await post(alice.apiUrl, `/graph/conversation/${conv.id}/add_message`, {
       message: 'git webapp for you',
       asset_references: [`artifact-${artifactId}`],
+      share_config: { transfer_mode: 'git' },
     });
     const fmId = add.body?.data?.flow_message_id as string;
     expect(fmId, JSON.stringify(add.body)).toBeTruthy();
 
-    const upload = await post(alice.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {
-      transfer_mode: 'git',
-    });
-    expect(upload.body?.data?.body_status, JSON.stringify(upload.body)).toBe('ready');
-
     const zipPath = path.join(fixture.root, 'hub-body.flowmsg');
     const metadataName = `metadata/artifact-@${artifactId}/metadata.json`;
-    await downloadHubBundle(fmId, zipPath);
+    await waitForHubBundle(fmId, zipPath);
     const inspected = inspectBundle(zipPath, metadataName);
     expect(inspected.names).toContain('git_origins.json');
     expect(inspected.names).toContain('git_transfers.json');
@@ -478,7 +520,7 @@ describe('hub: git-backed artifact share wizard', () => {
       browser = await launchBrowser();
       bobPage = await openInstancePage(browser, INST_2);
 
-      await acceptInvitationInUI(bobPage);
+      await acceptConversationInvitationInUI(bobPage, conv.id!);
       const bobFmId = await findReadyMessage(conv.id!);
       const download = await post(bob.apiUrl, `/graph/flow_message/${bobFmId}/download_body`, {});
       expect(download.status, JSON.stringify(download.body)).toBeLessThan(400);
@@ -532,5 +574,5 @@ describe('hub: git-backed artifact share wizard', () => {
     } finally {
       await browser?.close();
     }
-  }, 90_000);
+  }, 150_000);
 });

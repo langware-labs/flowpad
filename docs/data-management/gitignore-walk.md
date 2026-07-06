@@ -1,3 +1,7 @@
+---
+id: 7c3884f1-0581-5d94-9a65-7b2ed6b155a3
+---
+
 # Gitignore-Aware Filesystem Walk
 
 Every tree walker in `flow_sdk` that recurses a real project directory shares one function: `gitignore_walk()` (`flow_sdk/fs_store/indexer/walk.py`). It is a generic pre-order DFS that yields one `(dir_path, subdirs, files)` tuple per surviving directory, applying a single skip policy so that the "what do we descend into" decision lives in exactly one place (`flow_sdk/fs_store/indexer/gitignore.py`) rather than being re-implemented by each consumer.
