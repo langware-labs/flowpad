@@ -13,6 +13,8 @@ export interface IFlowpadDiagnosis extends IEntity {
   rca?: string; // root cause found after debugging
   fix?: string; // what was done to resolve it
   summary?: string; // one-paragraph plain-language summary shown to the user
+  origin_project_id?: string; // project the user was in when the diagnosis was recorded
+  origin_project_name?: string; // display name of origin_project_id (travels with the record)
 }
 
 @registerEntity
@@ -26,6 +28,8 @@ export class FlowpadDiagnosis
   rca?: string;
   fix?: string;
   summary?: string;
+  origin_project_id?: string;
+  origin_project_name?: string;
   static type: string = 'flowpad_diagnosis';
 
   constructor(entity: Partial<IFlowpadDiagnosis> = {}) {
@@ -36,5 +40,7 @@ export class FlowpadDiagnosis
     this.rca = entity.rca;
     this.fix = entity.fix;
     this.summary = entity.summary;
+    this.origin_project_id = entity.origin_project_id;
+    this.origin_project_name = entity.origin_project_name;
   }
 }

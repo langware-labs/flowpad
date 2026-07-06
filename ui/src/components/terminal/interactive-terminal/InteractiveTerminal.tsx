@@ -104,7 +104,7 @@ const EMPTY_DOCS: MarkdownDoc[] = [];
 const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
 
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
-import { FONT_FAMILY, FONT_SIZE_PX, openTerminalLink } from './terminalConfig';
+import { FONT_FAMILY, FONT_SIZE_PX, openTerminalLink, registerOsc52ClipboardWrite } from './terminalConfig';
 
 interface InteractiveTerminalProps {
   sessionId: string;
@@ -823,6 +823,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         term.parser.registerCsiHandler({ final: 'c', prefix: '?' }, () => true);
         term.parser.registerCsiHandler({ final: 'I' }, () => true);
         term.parser.registerCsiHandler({ final: 'O' }, () => true);
+        registerOsc52ClipboardWrite(term);
       } catch (e) {
         console.warn('[InteractiveTerminal] Parser API not available:', e);
       }

@@ -152,41 +152,6 @@ else:
     termios = None
 
 
-def _winpty_safe_cwd(path: str) -> str:
-    """Return a winpty-safe working directory on Windows.
-
-    winpty rejects directory paths whose characters aren't representable in the
-    system ANSI code page, surfacing as ``[WinError 123]`` (ERROR_INVALID_NAME)
-    — e.g. a project folder with Hebrew characters on a Latin Windows install.
-    The 8.3 "short" name of an *existing* directory is pure ASCII, so resolve to
-    it when available. Falls back to the original path when short-name
-    generation is disabled on the volume (``GetShortPathNameW`` then echoes the
-    input) or anything goes wrong, so we never regress the ASCII-path case.
-
-    The directory must already exist for the short name to resolve — callers
-    must ``os.makedirs`` first.
-    """
-    if sys.platform != PLATFORM_WIN32:
-        return path
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW  # type: ignore[attr-defined]
-        GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
-        GetShortPathNameW.restype = wintypes.DWORD
-
-        needed = GetShortPathNameW(path, None, 0)
-        if needed == 0:
-            return path
-        buf = ctypes.create_unicode_buffer(needed)
-        if GetShortPathNameW(path, buf, needed) == 0:
-            return path
-        return buf.value or path
-    except Exception:
-        return path
-
-
 def _ps_single_quote(value: str) -> str:
     """Quote a string as a PowerShell single-quoted literal.
 
@@ -839,19 +804,23 @@ class LocalComputeProvider(ComputeProvider):
                         f"non-UTF-8 decode)."
                     ) from mkdir_exc
 
-                # winpty can't represent non-ASCII (e.g. Hebrew) cwd paths and
-                # fails with [WinError 123]; spawn against the ASCII 8.3 short
-                # name on Windows. No-op elsewhere and for already-ASCII paths.
-                spawn_cwd = _winpty_safe_cwd(pty_working_dir)
-
+                # Spawn with the cwd EXACTLY as given — never rewrite it.
+                # Session-keyed CLIs (claude/codex/copilot) derive their
+                # transcript-store key from the exact cwd string, so any
+                # rewrite (e.g. the 8.3 short name a since-removed workaround
+                # substituted here) makes ``--resume`` look up the wrong key
+                # and exit immediately — the "Flowpad workspace" crash-loop.
+                # Non-ASCII (e.g. Hebrew) cwds are fine as-is: pywinpty ≥ 3
+                # spawns them correctly on both the ConPTY and winpty backends
+                # (covered by a real-PTY test in test_desktop_path_unicode.py).
                 logger.info(
-                    f"Spawning PTY (session={session_id}, cwd={spawn_cwd!r}, "
+                    f"Spawning PTY (session={session_id}, cwd={pty_working_dir!r}, "
                     f"argv={final_spawn_args!r})"
                 )
                 try:
                     return PtyProcess.spawn(  # type: ignore[union-attr]
                         final_spawn_args,
-                        cwd=spawn_cwd,
+                        cwd=pty_working_dir,
                         env=env,
                         dimensions=(rows, cols),
                     )
@@ -863,16 +832,13 @@ class LocalComputeProvider(ComputeProvider):
                     # every spawn input so the NEXT failure is self-diagnosing.
                     logger.error(
                         "PTY spawn failed (session=%s): %r\n"
-                        "  argv      = %r\n"
-                        "  cwd(raw)  = %r\n"
-                        "  cwd(spawn)= %r  (short_path_applied=%s)\n"
-                        "  PATH      = %r",
+                        "  argv = %r\n"
+                        "  cwd  = %r\n"
+                        "  PATH = %r",
                         session_id,
                         spawn_exc,
                         final_spawn_args,
                         pty_working_dir,
-                        spawn_cwd,
-                        spawn_cwd != pty_working_dir,
                         env.get("PATH"),
                         exc_info=True,
                     )

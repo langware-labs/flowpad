@@ -10,17 +10,17 @@ Routes:
 
 import logging
 
-from flow_sdk.core import action
-from flow_sdk.api.oauth_api import OAuthAction, OAuthErrorCode, OAuthProvider, OauthClientRequestInfo
+from flow_sdk.api.oauth_api import OAuthAction, OauthClientRequestInfo, OAuthProvider
 from flow_sdk.app.actions.desktop_oauth import (
     _desktop_oauth_sessions,
     cancel_github_device_flow,
     delete_anthropic_token_for_current_user,
-    get_desktop_oauth_auth_url,
     get_anthropic_token_for_current_user,
+    get_desktop_oauth_auth_url,
     handle_desktop_oauth_callback,
     wait_for_desktop_oauth_callback,
 )
+from flow_sdk.core import action
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -237,30 +237,22 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
 
     # Extract user_id from request context
     user_id = ""
-    if request_info and hasattr(request_info, 'target_entity_id') and request_info.target_entity_id:
+    if request_info and hasattr(request_info, "target_entity_id") and request_info.target_entity_id:
         user_id = request_info.target_entity_id
-    elif request_info and hasattr(request_info, 'user') and request_info.user:
-        user_id = request_info.user.id if hasattr(request_info.user, 'id') else str(request_info.user)
+    elif request_info and hasattr(request_info, "user") and request_info.user:
+        user_id = request_info.user.id if hasattr(request_info.user, "id") else str(request_info.user)
 
     return await get_desktop_oauth_auth_url(provider, user_id)
 
 
 async def _get_flowpad_cloud_oauth_auth() -> ApiResponse:
     """Generate Flowpad cloud login URL."""
-    from flow_sdk.cli.auth.cloud_urls import get_login_url
-    from flow_sdk.instance_settings import get_instance_settings
-
-    settings = get_instance_settings()
-    callback_path = "/auth/login_callback"
-    if settings.docker_public_url:
-        callback_url = f"{settings.docker_public_url}{callback_path}"
-    else:
-        callback_url = f"http://127.0.0.1:{settings.port}{callback_path}"
+    from flow_sdk.cli.auth.cloud_urls import desktop_login_callback_url, get_login_url
 
     return ApiSuccessResponse(
         data=OauthClientRequestInfo(
             provider=OAuthProvider.FLOWPAD_CLOUD,
-            auth_url=get_login_url(callback_url),
+            auth_url=get_login_url(desktop_login_callback_url()),
             # Fixed ID — must match the oauth_request_id broadcast by _finalize_login
             oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
         )

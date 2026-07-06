@@ -64,8 +64,6 @@ subfolder_count: '2'
 
 * [Pty Terminal Spec](pty-terminal-spec.md) — Synthetic placeholder summary for pty-terminal-spec.md (30569 bytes).
 
-* [Pypi Deploy](pypi-deploy.md) — Synthetic placeholder summary for pypi-deploy.md (2585 bytes).
-
 * [Record Entity Sync](record-entity-sync.md) — Synthetic placeholder summary for record-entity-sync.md (5716 bytes).
 
 * [Session Share Spec](session_share_spec.md) — Synthetic placeholder summary for session\_share\_spec.md (9245 bytes).

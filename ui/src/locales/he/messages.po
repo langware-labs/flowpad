@@ -993,6 +993,19 @@ msgstr "טווח זמן עוגן"
 msgid "Annotate image"
 msgstr "הערות על התמונה"
 
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
+#: src/components/webapp-viewer.tsx
+#: src/components/webapp-viewer.tsx
+#: src/components/webapp-viewer.tsx
+msgid "Annotate view"
+msgstr ""
+
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "Annotation submitted"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Annotations"
@@ -1515,6 +1528,10 @@ msgstr "קריאות"
 msgid "Calls"
 msgstr "קריאות"
 
+#: src/components/diagnose/open-in-terminal-button.tsx
+msgid "Can't open terminal"
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
@@ -1570,10 +1587,6 @@ msgstr "קריאות"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr "ביטול"
-
-#: src/components/display-toolbar/WebappDisplayToolbar.tsx
-msgid "Cancel select"
-msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -2539,6 +2552,10 @@ msgstr "עלות"
 msgid "Cost"
 msgstr "עלות"
 
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "Could not annotate view"
+msgstr ""
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Could not change privacy mode"
 msgstr "לא היה ניתן לשנות את מצב הפרטיות"
@@ -3187,10 +3204,6 @@ msgstr "תאר את הבעיה או הדבק את השגיאה, ואז הפעל 
 msgid "Describe the task..."
 msgstr "תאר את המשימה..."
 
-#: src/pages/flow-page/vibe-workspace.tsx
-msgid "Describe what to build or change…"
-msgstr ""
-
 #: src/components/conversation/PromptComposerDialog.tsx
 msgid "Describe what you'd like Claude to do…"
 msgstr "תאר מה היית רוצה ש-Claude יעשה…"
@@ -3281,11 +3294,6 @@ msgstr "דיאגנוזה הועברה בהצלחה"
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 msgid "Diagnosis is not available yet"
 msgstr ""
-
-#: src/components/version-popover/version-popover.tsx
-#: src/notifications/diagnose/DiagnoseIconButton.tsx
-#~ msgid "Diagnosis needs an internet connection — you appear to be offline"
-#~ msgstr ""
 
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Diagnosis not found."
@@ -4320,6 +4328,10 @@ msgstr "כישלון בפתיחת תיקייה"
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Failed to open folder picker"
 msgstr "נכשל בפתיחת בוחר התיקייה"
+
+#: src/components/diagnose/open-in-terminal-button.tsx
+msgid "Failed to open in terminal"
+msgstr ""
 
 #: src/components/account/system-log.tsx
 msgid "Failed to open log file"
@@ -5716,6 +5728,10 @@ msgstr "אישור מחזיק המפתחות לא ניתן"
 msgid "Knowledge Atlas"
 msgstr "אטלס הידע"
 
+#: src/components/contact-picker/AddressBookButton.tsx
+msgid "Known by user id only"
+msgstr ""
+
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "Known false positives — marked as ignored."
 msgstr "תוצאות חיוביות שגויות ידועות — סומנו כמתעלמות."
@@ -6973,7 +6989,6 @@ msgstr "אין שיחות"
 #~ msgid "No conversations yet"
 #~ msgstr "אין שיחות עדיין"
 
-#: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 msgid "No conversations yet."
 msgstr "אין שיחות עדיין."
@@ -7898,6 +7913,8 @@ msgstr "פתח פרויקט קיים"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
 msgid "Open externally"
 msgstr "פתח חיצונית"
 
@@ -7950,6 +7967,8 @@ msgid "Open full view"
 msgstr "פתח תצוגה מלאה"
 
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
+#: src/components/display-toolbar/GenericDisplayToolbar.tsx
 msgid "Open in a new tab"
 msgstr ""
 
@@ -7995,6 +8014,11 @@ msgstr "פתח בכרטיסית מיומנויות"
 #: src/components/directory-tree/DirectoryTree.tsx
 msgid "Open in system file explorer"
 msgstr "פתח במנהל הקבצים של המערכת"
+
+#: src/components/diagnose/open-in-terminal-button.tsx
+#: src/components/diagnose/open-in-terminal-button.tsx
+msgid "Open in terminal"
+msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open in the transcript viewer"
@@ -8093,6 +8117,7 @@ msgstr "פתח הפעלה"
 msgid "Open Shared Terminal"
 msgstr "פתח טרמינל משותף"
 
+#: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open terminal"
 msgstr "פתח טרמינל"
@@ -8328,6 +8353,10 @@ msgstr "הדבק"
 msgid "Paste a Claude CLI session id (UUID) to resume it in a new tab."
 msgstr "הדבק מזהה פגישת Claude CLI (UUID) כדי לשחזר בלשונית חדשה."
 
+#: src/components/chats-navigator/ChatsNavigator.tsx
+msgid "Paste a session id (UUID) to restore it in a new tab."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Paste or drag files here"
 msgstr "הדבק או גרור קובצים לכאן"
@@ -8395,8 +8424,8 @@ msgid "Permission"
 msgstr "הרשאה"
 
 #: src/components/contact-picker/AddressBookButton.tsx
-msgid "Permissions"
-msgstr "הרשאות"
+#~ msgid "Permissions"
+#~ msgstr "הרשאות"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Personal note, actionable item"
@@ -8792,8 +8821,8 @@ msgid "Prompt name"
 msgstr "שם הנושא"
 
 #: src/components/contact-picker/AddressBookButton.tsx
-msgid "Prompt permissions"
-msgstr "הרשאות הנושא"
+#~ msgid "Prompt permissions"
+#~ msgstr "הרשאות הנושא"
 
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Prompt Queue"
@@ -9099,7 +9128,10 @@ msgstr "מרובט אך לא בטבלת הישויות"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -9329,6 +9361,10 @@ msgstr "הדוח נכשל."
 msgid "Report issue"
 msgstr "דווח בעיה"
 
+#: src/components/diagnose/diagnosis-action-buttons.tsx
+msgid "Reported"
+msgstr ""
+
 #: src/components/diagnose/use-diagnosis-report-availability.ts
 msgid "Reporting is disabled in Local data privacy mode"
 msgstr ""
@@ -9420,10 +9456,16 @@ msgstr "הפעל מחדש את הסדרה"
 msgid "Restarting…"
 msgstr "הפעלה מחדש בתהליך..."
 
+#: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/chats-navigator/ChatsFilterBar.tsx
+msgid "Restore session by id"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Results"
 msgstr "תוצאות"
 
+#: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/hooks/sniffer_view_mock.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -9440,6 +9482,10 @@ msgstr "שחזור פגישת Claude…"
 
 #: src/components/context-process/ContextProcessButton.tsx
 msgid "Resume context"
+msgstr ""
+
+#: src/components/chats-navigator/ChatsNavigator.tsx
+msgid "Resume session by id"
 msgstr ""
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
@@ -9816,6 +9862,10 @@ msgstr "אומר שלום..."
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Scan & index complete — {0} records found"
 msgstr "סריקה ואינדקס הושלמו — {0} רשומות נמצאו"
+
+#: src/components/contact-picker/AddressBookButton.tsx
+msgid "Scan conversations for new contacts"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Scan failed."
@@ -10227,10 +10277,6 @@ msgstr "בחר סוג אמנות למעלה כדי קבלת שדות מטא-דט
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Select an available harness, or install one from its homepage and re-check it."
 msgstr "בחר ב-Harness זמין, או התקן אחד מעמוד הבית שלו ובדוק שוב."
-
-#: src/components/display-toolbar/WebappDisplayToolbar.tsx
-msgid "Select an element"
-msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
 msgid "Select artifact type"
@@ -10983,6 +11029,11 @@ msgstr "התחל Copilot"
 msgid "Start date"
 msgstr "תאריך התחלה"
 
+#: src/components/account/system-diagnoses.tsx
+#: src/components/diagnose/diagnosis-action-buttons.tsx
+msgid "Start new conversation"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Start new conversation · {effectiveTitle}"
 msgstr "התחל שיחה חדשה · {effectiveTitle}"
@@ -11111,6 +11162,10 @@ msgstr "סוכנים משנה"
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Subfolders"
 msgstr "תיקיות משנה"
+
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "Submit"
+msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Suggest a prompt for the other user to approve"
@@ -11411,6 +11466,10 @@ msgstr "לא ניתן היה למצוא את הסוכן המבוקש."
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text."
 msgstr "לישות שנבחרה אין שם עדיין. בחר אחד — הוא יישמר בישות ויהיה בשימוש כטקסט הקישור."
+
+#: src/components/diagnose/open-in-terminal-button.tsx
+msgid "The selected project has no folder on this machine."
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
@@ -12159,6 +12218,7 @@ msgstr "גרסה:"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
+#: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "View"
 msgstr "הצג"
 
@@ -12173,6 +12233,10 @@ msgstr "צפה בקוד callback"
 #: src/components/settings-view/SettingsView.tsx
 msgid "View Claude Code settings across user, project, and local scopes"
 msgstr "צפה בהגדרות Claude Code בין ההיקפים של משתמש, פרויקט, ומקומי"
+
+#: src/components/contact-picker/AddressBookButton.tsx
+msgid "View contact details"
+msgstr ""
 
 #: src/components/viewers/UnsupportedContentViewer.tsx
 msgid "View Context Details"

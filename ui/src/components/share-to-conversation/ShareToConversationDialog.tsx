@@ -55,6 +55,14 @@ interface ShareToConversationDialogProps {
    *  payload; must return the conversation id (or null on failure). The
    *  dialog still owns prep, busy/error state, and the success screen. */
   commit?: (target: SendTarget, payload: ConversationSendPayload) => Promise<string | null>;
+  /** Hide the Title input — the source already supplies a `defaultTitle` and
+   *  the user has no reason to edit it (e.g. forwarding a diagnosis). The
+   *  effective title still derives from the source default. */
+  hideTitle?: boolean;
+  /** Hide the Note textarea — the attached entity carries the meaning, so a
+   *  personal note is noise (e.g. forwarding a diagnosis). A `defaultNote`, if
+   *  given, is still sent as the message caption. */
+  hideNote?: boolean;
 }
 
 const MAX_CONVERSATIONS = 5;
@@ -88,6 +96,8 @@ export function ShareToConversationDialog({
   initialParticipants,
   onShared,
   commit,
+  hideTitle,
+  hideNote,
 }: ShareToConversationDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -314,33 +324,37 @@ export function ShareToConversationDialog({
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                <Trans>Title</Trans>
-              </label>
-              <Input
-                value={titleInput}
-                onChange={(e) => setTitleInput(e.target.value)}
-                placeholder={source.requiresTitle ? t`What do you need help with?` : defaultTitle || t`Conversation title`}
-                disabled={busy}
-                data-testid="share-title-input"
-              />
-            </div>
+            {!hideTitle && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                  <Trans>Title</Trans>
+                </label>
+                <Input
+                  value={titleInput}
+                  onChange={(e) => setTitleInput(e.target.value)}
+                  placeholder={source.requiresTitle ? t`What do you need help with?` : defaultTitle || t`Conversation title`}
+                  disabled={busy}
+                  data-testid="share-title-input"
+                />
+              </div>
+            )}
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                <Trans>Note (optional)</Trans>
-              </label>
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder={t`Add a personal note…`}
-                rows={2}
-                disabled={busy}
-                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                data-testid="share-note-input"
-              />
-            </div>
+            {!hideNote && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                  <Trans>Note (optional)</Trans>
+                </label>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder={t`Add a personal note…`}
+                  rows={2}
+                  disabled={busy}
+                  className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  data-testid="share-note-input"
+                />
+              </div>
+            )}
 
             {source.supportsFiles && (
               <div className="flex flex-col gap-1.5">

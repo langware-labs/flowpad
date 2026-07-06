@@ -23,6 +23,8 @@ interface FeedEntryCardProps {
   onDismiss: (entry: FeedEntry) => void;
   /** "Report issue" — email the diagnosis to the Flowpad team. */
   onReportIssue: (entry: FeedEntry, suggest: MessageSuggest) => void;
+  /** The issue report for this entry was already sent (session-scoped). */
+  reported?: boolean;
   /** "Forward" — post the report into the chosen conversation. */
   onForwardMessageSuggest: (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => void;
 }
@@ -33,6 +35,7 @@ export function FeedEntryCard({
   error,
   onDismiss,
   onReportIssue,
+  reported,
   onForwardMessageSuggest,
 }: FeedEntryCardProps) {
   const feedData = useMemo(() => FeedData.fromEntry(entry), [entry]);
@@ -43,33 +46,21 @@ export function FeedEntryCard({
   });
 
   if (!targetTypeId) {
-    return (
-      <UnavailableFeedEntryCard
-        entry={entry}
-        busy={busy}
-        feedData={feedData}
-        onDismiss={onDismiss}
-      />
-    );
+    return <UnavailableFeedEntryCard entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss} />;
   }
 
   if (isLoading || entity === undefined) {
     return (
       <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
-        <p className="text-xs text-muted-foreground"><Trans>Loading feed item</Trans></p>
+        <p className="text-xs text-muted-foreground">
+          <Trans>Loading feed item</Trans>
+        </p>
       </FeedEntryFrame>
     );
   }
 
   if (!entity) {
-    return (
-      <UnavailableFeedEntryCard
-        entry={entry}
-        busy={busy}
-        feedData={feedData}
-        onDismiss={onDismiss}
-      />
-    );
+    return <UnavailableFeedEntryCard entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss} />;
   }
 
   // WikiTip feed entries carry `data.kind === 'wiki_tip'` and point at a wiki
@@ -97,6 +88,7 @@ export function FeedEntryCard({
         feedData={feedData}
         onDismiss={onDismiss}
         onReportIssue={onReportIssue}
+        reported={reported}
         onForward={onForwardMessageSuggest}
       />
     );
@@ -138,14 +130,7 @@ export function FeedEntryCard({
     );
   }
 
-  return (
-    <UnavailableFeedEntryCard
-      entry={entry}
-      busy={busy}
-      feedData={feedData}
-      onDismiss={onDismiss}
-    />
-  );
+  return <UnavailableFeedEntryCard entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss} />;
 }
 
 interface FeedEntryFrameProps {
@@ -199,9 +184,7 @@ function FeedEntryFrame({
           <Icon className="h-3.5 w-3.5" aria-hidden />
         </span>
         <div className="flex min-w-0 shrink-0 items-center gap-1.5">
-          {recorded && (
-            <p className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">{recorded}</p>
-          )}
+          {recorded && <p className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">{recorded}</p>}
           <button
             type="button"
             aria-label={hideLabel}
@@ -227,6 +210,8 @@ interface MessageSuggestFeedEntryCardProps {
   feedData: FeedData;
   onDismiss: (entry: FeedEntry) => void;
   onReportIssue: (entry: FeedEntry, suggest: MessageSuggest) => void;
+  /** The issue report for this entry was already sent (session-scoped). */
+  reported?: boolean;
   onForward: (entry: FeedEntry, suggest: MessageSuggest, conversationId: string) => void;
 }
 
@@ -238,6 +223,7 @@ function MessageSuggestFeedEntryCard({
   feedData,
   onDismiss,
   onReportIssue,
+  reported,
   onForward,
 }: MessageSuggestFeedEntryCardProps) {
   const { t } = useLingui();
@@ -247,7 +233,13 @@ function MessageSuggestFeedEntryCard({
   const body = suggest.message_text ?? '';
   const expandable = body.length > 80 || body.includes('\n');
   const isDiagnosis = suggest.kind !== 'draft_reply';
+  // Clean sweep — the diagnosis found nothing wrong. The runner only creates the
+  // support conversation when there IS an issue, so "no conversation" is the flag
+  // (see diagnose_cmd._post_home_feed_entry). Render the title green.
+  const allClear = isDiagnosis && !!suggest.diagnosis_id && !suggest.conversation_id;
 
+  // Icon-only with a tooltip — the narrow feed column can't fit three labeled
+  // buttons (Report issue / Forward / View) on one row.
   const viewButton =
     isDiagnosis && suggest.diagnosis_id ? (
       <Button
@@ -255,18 +247,26 @@ function MessageSuggestFeedEntryCard({
         size="sm"
         variant="outline"
         disabled={busy}
+        aria-label={t`View`}
+        title={t`View`}
         onClick={() => setViewOpen(true)}
-        className="h-6 gap-1 px-2 text-xs"
+        className="h-6 w-6 p-0"
       >
         <Eye className="h-3.5 w-3.5" />
-        <Trans>View</Trans>
       </Button>
     ) : null;
 
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
       {title && (
-        <p className="min-w-0 shrink-0 text-xs font-medium leading-snug text-foreground">{title}</p>
+        <p
+          className={cn(
+            'min-w-0 shrink-0 text-xs font-medium leading-snug text-foreground',
+            allClear && 'text-green-600 dark:text-green-500',
+          )}
+        >
+          {title}
+        </p>
       )}
 
       {body &&
@@ -344,6 +344,9 @@ function MessageSuggestFeedEntryCard({
               error={error}
               showDismiss={false}
               canReport={!!suggest.diagnosis_id}
+              reported={reported}
+              diagnosisId={suggest.diagnosis_id ?? undefined}
+              diagnosisTitle={title}
               onDismiss={() => onDismiss(entry)}
               onReportIssue={() => onReportIssue(entry, suggest)}
               onForward={(conversationId) => onForward(entry, suggest, conversationId)}
@@ -448,9 +451,7 @@ function UserNoteFeedEntryCard({ entry, note, busy, feedData, onDismiss }: UserN
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
       <div className="max-h-36 overflow-y-auto overscroll-contain">
-        <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-          {note.content}
-        </p>
+        <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{note.content}</p>
       </div>
     </FeedEntryFrame>
   );
@@ -471,8 +472,7 @@ interface WikiTipFeedEntryCardProps {
  * round-trip. See docs/wikitip.md.
  */
 function WikiTipFeedEntryCard({ entry, page, busy, feedData, onDismiss }: WikiTipFeedEntryCardProps) {
-  const wikiword =
-    (entry.data as { wiki?: string } | null)?.wiki ?? page.name ?? page.title ?? '';
+  const wikiword = (entry.data as { wiki?: string } | null)?.wiki ?? page.name ?? page.title ?? '';
   const { active, phase } = useLingeringHighlight(wikiword);
 
   return (
@@ -486,7 +486,9 @@ function WikiTipFeedEntryCard({ entry, page, busy, feedData, onDismiss }: WikiTi
     >
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         <WikiLabel wikiword={wikiword} label={wikiword} />
-        <span className="text-muted-foreground"><Trans>— open, peek, or get highlighted here</Trans></span>
+        <span className="text-muted-foreground">
+          <Trans>— open, peek, or get highlighted here</Trans>
+        </span>
       </div>
     </FeedEntryFrame>
   );
@@ -510,7 +512,9 @@ function AgentTraceFeedEntryCard({ entry, trace, busy, feedData, onDismiss }: Ag
         className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => navigation.openDock(trace.editorDockPointer)}
       >
-        <p className="min-w-0 text-xs font-medium leading-snug text-foreground"><Trans>Skill analysis</Trans></p>
+        <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
+          <Trans>Skill analysis</Trans>
+        </p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           <Trans>Skill analysis ready for review and improvements</Trans>
         </p>
@@ -562,7 +566,9 @@ interface UnavailableFeedEntryCardProps {
 function UnavailableFeedEntryCard({ entry, busy, feedData, onDismiss }: UnavailableFeedEntryCardProps) {
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
-      <p className="min-w-0 text-xs font-medium leading-snug text-foreground"><Trans>Unavailable feed item</Trans></p>
+      <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
+        <Trans>Unavailable feed item</Trans>
+      </p>
     </FeedEntryFrame>
   );
 }

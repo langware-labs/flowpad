@@ -29,6 +29,39 @@ export function openTerminalLink(_event: MouseEvent, uri: string): void {
 
 export const FONT_SIZE_PX = 14;
 
+/**
+ * Honor OSC 52 clipboard WRITES from PTY apps.
+ *
+ * TUIs that own their text selection (Claude Code's renderer, tmux, neovim)
+ * copy by emitting `OSC 52 ; Pc ; <base64> ST` — they never see the host
+ * clipboard directly. Every mainstream terminal (Windows Terminal, PyCharm,
+ * iTerm2) applies it; xterm.js only does so via an addon, so without this
+ * handler a Ctrl+C inside such a TUI is silently dropped and a later Ctrl+V
+ * pastes stale clipboard content.
+ *
+ * Reads (`Pd = ?`) are deliberately NOT answered — responding would let any
+ * PTY app exfiltrate the user's clipboard. Returning true still consumes the
+ * sequence so it can't leak into the buffer as garbage.
+ */
+export function registerOsc52ClipboardWrite(term: {
+  parser: { registerOscHandler(ident: number, cb: (data: string) => boolean): unknown };
+}): void {
+  term.parser.registerOscHandler(52, (data: string) => {
+    const semi = data.indexOf(';');
+    if (semi === -1) return true;
+    const payload = data.slice(semi + 1);
+    if (payload === '?') return true; // clipboard read — not supported
+    try {
+      const bytes = Uint8Array.from(atob(payload), (ch) => ch.charCodeAt(0));
+      const text = new TextDecoder().decode(bytes);
+      if (text) void navigator.clipboard.writeText(text).catch(() => {});
+    } catch {
+      // malformed base64 — consume and ignore
+    }
+    return true;
+  });
+}
+
 // Empirical ratios for monospace at this font size — accurate enough that the
 // post-mount fit.fit() rarely changes by more than ±2 cols.
 const CELL_WIDTH_RATIO = 0.6;   // Cascadia at 14px renders ~8.4 px/char
