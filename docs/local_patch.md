@@ -10,7 +10,7 @@ deployment on port **9007** that the desktop app (and a bare `flow start`) runs.
 > **There is exactly one supported way to patch the local install: a full, stamped
 > deployment.** Bump `flow_sdk/_version.py` to `${max(checkout,PyPI)}+local<N>`, run
 > `build_ui.py`, `uv build`, `uv tool install` the wheel, restart. This is the _Local
-> Deployment_ in [`pypi-deploy.md`](./pypi-deploy.md) — the same wheel path a real release
+> Deployment_ in the [`deploy-pypi` skill](../.claude/skills/deploy-pypi/SKILL.md) — the same wheel path a real release
 > takes, just with a `+local<N>` label.
 >
 > ⚠️ **Do NOT overlay files into `site-packages`** (`git archive HEAD | tar -x` onto the

@@ -15,12 +15,12 @@ import collections
 import logging
 import os
 from datetime import datetime, timezone
-from flow_sdk._compat import StrEnum
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 import psutil
 
-from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk._compat import StrEnum
+from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -30,7 +30,11 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.utils.serialization import now_epoch_ms
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions, WorkerExecutionInfo
+    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+        WorkerCLIOptions,
+        WorkerExecutionInfo,
+    )
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.faas.pty_session import Pty
 
@@ -61,7 +65,6 @@ def get_shell_record(uid: str) -> FSRecord | None:
 
 def shell_pty_stream_path(record_id: str, pty_pid: str | None):
     """Path to the .pty stream file for a shell session."""
-    from pathlib import Path
     from flow_sdk.fs_store.fs_record import record_stem
     from flow_sdk.fs_store.record_paths import get_default_records_data_root
 
@@ -88,6 +91,7 @@ def close_shell_record(record: FSRecord) -> None:
         except (OSError, ValueError):
             pass
     record.save_metadata_field("status", ShellStatus.CLOSED.value)
+
 
 class Shell(Entity):
     """Entity representing a shell tab (PTY session).
@@ -131,7 +135,9 @@ class Shell(Entity):
             "Cleared the first time the user manually renames this tab in the UI."
         ),
     )
-    last_launch_cmd: dict | None = APIField(default=None, description="Serialized WorkerCLIOptions from the last launch() call")
+    last_launch_cmd: dict | None = APIField(
+        default=None, description="Serialized WorkerCLIOptions from the last launch() call"
+    )
 
     def get_implicit_private_context_entities(self) -> list["TypeId"]:
         """Project the owning process into private context (the reverse of
@@ -171,6 +177,7 @@ class Shell(Entity):
         if self._bound_compute_node is not None:
             return self._bound_compute_node
         from flow_sdk.builtin.faas.compute_node import ComputeNode
+
         return ComputeNode(
             id=self.compute_node_id or "",
             node_provider_id="local",
@@ -295,7 +302,9 @@ class Shell(Entity):
                 return False
 
         if expected_session_id:
-            actual_session_id = cls._argv_flag_value(cmdline, "--session-id") or cls._argv_flag_value(cmdline, "--resume")
+            actual_session_id = cls._argv_flag_value(cmdline, "--session-id") or cls._argv_flag_value(
+                cmdline, "--resume"
+            )
             # Only fail when cmdline carries an explicit session id that
             # disagrees with ours. Workers whose interactive mode doesn't
             # surface session_id on argv (codex TUI) leave actual=None;
@@ -321,7 +330,9 @@ class Shell(Entity):
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return False
 
-        expected_session_id = self._argv_flag_value(spawn_args, "--session-id") or self._argv_flag_value(spawn_args, "--resume")
+        expected_session_id = self._argv_flag_value(spawn_args, "--session-id") or self._argv_flag_value(
+            spawn_args, "--resume"
+        )
         return self._cmdline_matches_expected(
             cmdline,
             expected_exe=spawn_args[0],
@@ -365,6 +376,7 @@ class Shell(Entity):
         if not self.project_id:
             try:
                 from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
                 local = await Project.get_by_prop("uname", "local", "project")
                 if local is not None and getattr(local, "id", None):
                     self.project_id = local.id
@@ -434,6 +446,10 @@ class Shell(Entity):
 
             if existing and not existing.is_alive:
                 await existing.kill()
+                # A dead PTY handle does not imply a dead worker — sweep the
+                # session before respawning so the fresh ``--resume`` can't
+                # collide with a surviving worker's JSONL session lock.
+                await self.terminate_worker()
             elif existing:
                 if connection_id:
                     await existing.attach(connection_id)
@@ -484,31 +500,65 @@ class Shell(Entity):
         await self.stop()
         await self.start_pty()
 
-    async def terminate_worker(self) -> None:
-        """Gracefully kill the Claude worker and wait for full reap.
+    def _session_worker_procs(self, session_id: str, exclude: set[int]) -> list[psutil.Process]:
+        """Every live process whose argv names *session_id* via --session-id/--resume.
 
-        SIGTERM the worker and its descendants, wait up to 3s for the kernel
+        The session id is a UUID unique to this shell's worker session, so an
+        argv match is a positive identification regardless of which pid the
+        shell row currently records.
+        """
+        matches: list[psutil.Process] = []
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            if proc.info["pid"] in exclude:
+                continue
+            cmdline = proc.info.get("cmdline") or []
+            sid = self._argv_flag_value(cmdline, "--session-id") or self._argv_flag_value(cmdline, "--resume")
+            if sid == session_id:
+                matches.append(proc)
+        return matches
+
+    async def terminate_worker(self) -> None:
+        """Gracefully kill EVERY worker on this shell's session and wait for full reap.
+
+        Victims are the recorded ``worker_pid`` (+ descendants) PLUS a sweep of
+        all live processes whose argv carries this session's id — a relaunch
+        overwrites ``worker_pid`` (see ``start_pty``), so a still-live previous
+        worker can be orphaned with no pid record; its held JSONL session lock
+        would make every subsequent ``claude --resume`` collide and stall.
+
+        SIGTERM the victims and their descendants, wait up to 3s for the kernel
         to reap them, then SIGKILL any survivors and wait again. Returns only
         once every victim is fully reaped — once that holds, any flock-held
         resources (e.g. Claude's JSONL session lock) are released, so a
-        subsequent ``claude --resume`` won't collide with the dead worker's
+        subsequent ``claude --resume`` won't collide with a dead worker's
         leftover lock file.
 
         Shell entity and PTY are left alive (status unchanged).
-        Uses self.worker_pid set by _launch_worker_process().
         """
-        pid = self.worker_pid
-        if not pid:
+        victims: list[psutil.Process] = []
+        if self.worker_pid:
+            try:
+                proc = psutil.Process(self.worker_pid)
+                try:
+                    victims = [proc, *proc.children(recursive=True)]
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    victims = [proc]
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        launch_cmd = getattr(self, "last_launch_cmd", None)
+        session_id = launch_cmd.get("session_id") if isinstance(launch_cmd, dict) else None
+        if session_id:
+            seen = {p.pid for p in victims}
+            for proc in self._session_worker_procs(session_id, seen):
+                victims.append(proc)
+                try:
+                    victims.extend(c for c in proc.children(recursive=True) if c.pid not in seen)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+        if not victims:
             return
-        try:
-            proc = psutil.Process(pid)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            return
-        try:
-            children = proc.children(recursive=True)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            children = []
-        victims = [proc, *children]
 
         for p in victims:
             try:
@@ -629,9 +679,11 @@ class Shell(Entity):
         """Stream live PTY output as it arrives. Delegates to self.pty.output()."""
         pty_handle = self.compute_node.get_pty(self.id)
         if pty_handle is None:
+
             async def _empty():
                 return
                 yield
+
             return _empty()
         return pty_handle.output()
 
@@ -744,9 +796,7 @@ class Shell(Entity):
 
         return True
 
-    async def _poll_for_worker_pid(
-        self, shell_pid: int | None, executable: str, timeout: float = 1.0
-    ) -> int | None:
+    async def _poll_for_worker_pid(self, shell_pid: int | None, executable: str, timeout: float = 1.0) -> int | None:
         """Poll for a child process of shell_pid whose argv[0] matches executable."""
         import os as _os
 
@@ -764,8 +814,7 @@ class Shell(Entity):
                         # whose argv[0] is the runtime (e.g. ``node``) and
                         # argv[1] is the script path (e.g. ``codex``).
                         if cmdline and any(
-                            _os.path.splitext(_os.path.basename(c))[0].casefold() == expected
-                            for c in cmdline[:2]
+                            _os.path.splitext(_os.path.basename(c))[0].casefold() == expected for c in cmdline[:2]
                         ):
                             return child.pid
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
