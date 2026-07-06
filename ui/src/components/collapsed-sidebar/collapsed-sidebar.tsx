@@ -135,10 +135,16 @@ export function CollapsedSidebar() {
 
   // Partition the nav config by the current view mode: 'visible' items ride the
   // top rail, 'collapsed' items live behind the chevron expander, 'hidden' drop.
-  // Vibe inherits Standard's minimal rail.
-  const effectiveMode: CoreViewMode = viewMode === ViewMode.Vibe ? ViewMode.Standard : viewMode;
-  const visibleItems = navItems.filter((item) => item.vis[effectiveMode] === 'visible');
-  const collapsedItems = navItems.filter((item) => item.vis[effectiveMode] === 'collapsed');
+  // Vibe is the stripped creator skin: its rail keeps only the top navigation
+  // (the back/refresh row, always rendered below) + a Home button, plus the
+  // shared bottom cluster (search / assistant / theme / user login). Everything
+  // in between (Chats, Inbox, Assets, …) is dropped.
+  const isVibe = viewMode === ViewMode.Vibe;
+  const effectiveMode: CoreViewMode = isVibe ? ViewMode.Standard : viewMode;
+  const visibleItems = isVibe
+    ? navItems.filter((item) => item.viewType === null) // Home only
+    : navItems.filter((item) => item.vis[effectiveMode] === 'visible');
+  const collapsedItems = isVibe ? [] : navItems.filter((item) => item.vis[effectiveMode] === 'collapsed');
 
   const currentView = currentDock?.viewType;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
@@ -226,7 +232,7 @@ export function CollapsedSidebar() {
 
             {/* Discover — full-page marketplace; a top-level route, not a dock tab,
                 so it navigates directly rather than via navigation.openTab.
-                Dev-only affordance. */}
+                Dev-only affordance (never shown in Vibe, which is not Dev). */}
             <DevOnly reserve={false}>
               <SidebarMenuItem>
                 <SidebarMenuButton
