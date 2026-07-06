@@ -109,6 +109,6 @@ skill, …) are anchored to the conversation and recursively auto-share.
 - [`../session_share_spec.md`](../session_share_spec.md) — Claude Code *session
   transcript* transfer between machines (adjacent, but not conversation collab).
 - [`../data-management/record-model.md`](../data-management/record-model.md) and
-  [`../record-entity-sync.md`](../record-entity-sync.md) — the record/entity
-  index machinery the projection and receive paths build on.
+  [`../data-management/entity-index-sync.md`](../data-management/entity-index-sync.md) —
+  the record/entity index machinery the projection and receive paths build on.
 - [`../typeid.md`](../typeid.md) — the `TypeId` grammar used throughout.
