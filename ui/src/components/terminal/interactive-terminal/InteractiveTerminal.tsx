@@ -209,11 +209,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // not reactive, so subscribe via useEntity and surface the banner here.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const liveStartFailure = liveProcess?.start_failure ?? null;
-  // The chat⇄terminal toggle is only enabled while the process is READY (live
-  // and no turn in flight). A mode switch mid-turn is 409'd by the backend on
-  // the SAME `is_turn_busy` predicate that produces the wire `busy` status, so
-  // gating on the (reactive) `status === 'ready'` keeps the toggle in lock-step
-  // with the AP and can never land on a 409 hole. `liveProcess` is the reactive
+  // The chat⇄terminal toggle is only enabled while the process is ready for input
+  // (RUNNING and no turn in flight). A mode switch mid-turn is 409'd by the backend
+  // on the SAME `is_turn_busy` predicate that sets the wire `busy` boolean, so
+  // gating on `isReadyForInput` (reactive `status === RUNNING && !busy`) keeps the
+  // toggle in lock-step with the AP and can never land on a 409 hole. `liveProcess` is the reactive
   // entity; the loader `process` is the fallback for the first render before the
   // subscription resolves.
   const awaitingUserInput = isReadyForInput(liveProcess ?? process ?? {});

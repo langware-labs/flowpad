@@ -9,7 +9,7 @@ status and the transition-gated ``notify_updated`` never fired.
 
 Removing that pin makes the raw tail flow through, so mid-turn transitions
 (thinking → tool_call → complete) broadcast for headless exactly as for PTY. The
-broadcast key is the PAIR (wire_status, worker_status), so both the busy→ready
+broadcast key is the TRIPLE (status, busy, worker_status), so both the busy→ready
 wire flip and the raw worker moves within a busy turn broadcast.
 
 Drives the REAL flush path (real ``_tail_status`` over real JSONL file writes) —
@@ -110,18 +110,18 @@ async def test_headless_midturn_transition_broadcasts(
     await ap.on_transcript_change(path, [])
     await ap._debounce_task
     assert notify_calls == [None]
-    assert ap._last_broadcast_key == ("busy", "thinking")
+    assert ap._last_broadcast_key == ("running", True, "thinking")
 
-    # Worker advances to a tool call — same wire (busy), different worker.
+    # Worker advances to a tool call — same busy, different worker.
     _write(path, [
         {"type": "user", "message": {"role": "user"}},
         {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": []}},
     ])
     await ap.on_transcript_change(path, [])
     await ap._debounce_task
-    # The pair key changed (busy,thinking) → (busy,tool_call), so it re-broadcasts.
+    # The triple key changed (…,thinking) → (…,tool_call), so it re-broadcasts.
     assert notify_calls == [None, None]
-    assert ap._last_broadcast_key == ("busy", "tool_call")
+    assert ap._last_broadcast_key == ("running", True, "tool_call")
 
 
 @pytest.mark.asyncio
@@ -129,7 +129,7 @@ async def test_headless_turn_end_flips_wire_to_ready(
     initialize_test_db, monkeypatch, tmp_path
 ) -> None:
     """At turn end the worker writes end_turn (COMPLETE); the turn is no longer in
-    flight so the wire flips busy → ready and broadcasts."""
+    flight so ``busy`` flips true → false and broadcasts."""
     path = tmp_path / "session.jsonl"
     _write(path, [
         {"type": "user", "message": {"role": "user"}},
@@ -146,7 +146,7 @@ async def test_headless_turn_end_flips_wire_to_ready(
 
     await ap.on_transcript_change(path, [])
     await ap._debounce_task
-    assert ap._last_broadcast_key == ("busy", "thinking")
+    assert ap._last_broadcast_key == ("running", True, "thinking")
 
     # Turn ends: end_turn on disk AND the driver clears _turn_in_flight.
     _write(path, [
@@ -156,5 +156,5 @@ async def test_headless_turn_end_flips_wire_to_ready(
     object.__setattr__(ap, "_turn_in_flight", False)
     await ap.on_transcript_change(path, [])
     await ap._debounce_task
-    assert ap._last_broadcast_key == ("ready", "complete")
+    assert ap._last_broadcast_key == ("running", False, "complete")
     assert notify_calls == [None, None]

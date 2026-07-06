@@ -7,9 +7,9 @@ import pytest
 from flow_sdk.responses.response import ApiResponse
 
 
-# Wire ``status`` values for a live process — the stored ``running`` FSM value is
-# projected to one of these on the wire (never surfaced as "running").
-LIVE_WIRE_STATUSES = {"ready", "busy"}
+# Wire ``status`` values for a live process — the raw lifecycle FSM value is
+# emitted verbatim now (turn-in-flight is the separate ``busy`` boolean).
+LIVE_WIRE_STATUSES = {"running"}
 
 # Raw ``worker_status`` is nullable on the wire (None = "nothing found yet").
 PRE_PROMPT_WORKER_STATUSES = {
@@ -69,7 +69,7 @@ async def test_process_status_running_after_atomic_create(bootstrapped_client):
     _, process_id = await _create_process(bootstrapped_client, compute_node_id)
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
-    assert entity.get("status") in LIVE_WIRE_STATUSES, f"Expected live wire status (ready/busy) after atomic-start, got {entity.get('status')}"
+    assert entity.get("status") in LIVE_WIRE_STATUSES, f"Expected live wire status (running) after atomic-start, got {entity.get('status')}"
     # Worker is transcript-derived; pre-prompt it can be idle/initializing/waiting.
     assert entity.get("worker_status") in PRE_PROMPT_WORKER_STATUSES, (
         f"Expected pre-prompt worker_status, got {entity.get('worker_status')}"
@@ -94,7 +94,7 @@ async def test_process_status_after_start(bootstrapped_client):
     assert result.status == "SUCCESS", f"open failed: {result.message}"
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
-    assert entity.get("status") in LIVE_WIRE_STATUSES, f"Expected live wire status (ready/busy) after open, got {entity.get('status')}"
+    assert entity.get("status") in LIVE_WIRE_STATUSES, f"Expected live wire status (running) after open, got {entity.get('status')}"
     assert entity.get("worker_status") in TRANSCRIPT_DERIVED_WORKER_STATUSES, (
         f"Expected transcript-derived worker_status, got {entity.get('worker_status')}"
     )
@@ -152,7 +152,7 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     _, process_id = await _create_process(bootstrapped_client, compute_node_id)
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
-    assert entity.get("status") in LIVE_WIRE_STATUSES, f"Step 1: Expected live wire status (ready/busy) after atomic-start, got {entity.get('status')}"
+    assert entity.get("status") in LIVE_WIRE_STATUSES, f"Step 1: Expected live wire status (running) after atomic-start, got {entity.get('status')}"
     assert entity.get("worker_status") in PRE_PROMPT_WORKER_STATUSES, (
         f"Step 1: Expected pre-prompt worker_status, got {entity.get('worker_status')}"
     )
@@ -167,7 +167,7 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     assert result.status == "SUCCESS", f"open failed: {result.message}"
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
-    assert entity.get("status") in LIVE_WIRE_STATUSES, f"Step 2: Expected live wire status (ready/busy), got {entity.get('status')}"
+    assert entity.get("status") in LIVE_WIRE_STATUSES, f"Step 2: Expected live wire status (running), got {entity.get('status')}"
     assert entity.get("worker_status") in TRANSCRIPT_DERIVED_WORKER_STATUSES, (
         f"Step 2: Expected transcript-derived worker_status, got {entity.get('worker_status')}"
     )

@@ -166,6 +166,8 @@ export interface IAgenticProcess extends IEntity {
   // field is declared here for it (local-only, never on the wire).
   favorite_index?: number | null;
   readonly status?: ProcessStatus;
+  /** Turn-in-flight boolean (``is_turn_busy``) — orthogonal to ``status``. */
+  readonly busy?: boolean;
   readonly worker_status?: WorkerStatus;
   session_id?: string | null;
   /**
@@ -790,6 +792,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Backend-owned lifecycle status. */
   private _status: ProcessStatus = ProcessStatus.NEW;
 
+  /** Backend-derived turn-in-flight boolean (``is_turn_busy``), orthogonal to status. */
+  private _busy: boolean = false;
+
   /** Granular transcript-derived worker status. */
   private _workerStatus: WorkerStatus = WorkerStatus.INITIALIZING;
 
@@ -800,6 +805,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   private set status(value: ProcessStatus) {
     this._status = value;
+  }
+
+  /** Turn-in-flight. Read-only outside this class. Read via ``isBusy(this)``. */
+  get busy(): boolean {
+    return this._busy;
+  }
+
+  private set busy(value: boolean) {
+    this._busy = value;
   }
 
   /** Transcript-derived worker status. Read-only outside this class. */
@@ -1302,6 +1316,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.context_data = entity.context_data;
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessStatus) ?? ProcessStatus.NEW;
+    this.busy = entity.busy ?? false;
     this.workerStatus = (entity.worker_status as WorkerStatus) ?? WorkerStatus.INITIALIZING;
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
@@ -2723,6 +2738,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       if (this.status === ProcessStatus.FAILED && !isWorkerTerminal(this.workerStatus)) {
         this._handleError(new Error(`Process ended with lifecycle status: ${this.status}`));
       }
+    }
+    // Guard on the value being a real boolean (not truthiness) so a
+    // ``true → false`` turn-end flip still applies and emits — else the
+    // input/toggle gates (isBusy) never re-enable.
+    if (typeof data.busy === 'boolean' && data.busy !== this.busy) {
+      const oldBusy = this.busy;
+      this.busy = data.busy as boolean;
+      this.emit('state_change', {
+        field: 'busy',
+        oldValue: oldBusy,
+        newValue: this.busy,
+      });
     }
     if (data.worker_status && data.worker_status !== this.workerStatus) {
       const oldWorker = this.workerStatus;

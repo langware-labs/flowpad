@@ -6,12 +6,12 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react';
  * Pending Actions store.
  *
  * "Pending action" (glow) semantics: an AgenticProcess that has just
- * *transitioned into* the logical ``ready`` status (a turn finished; the worker
- * is now awaiting the user — "something is waiting for you now") within the last
- * `PENDING_DURATION_MS` (300s) and that the user has not yet acknowledged
- * (clicked) this session. Keying on the single ``status === 'ready'`` wire value
- * (rather than the old RUNNING + worker_status ∈ {PENDING_USER, IDLE}) is the
- * client-side replacement for the removed backend PENDING_USER projection.
+ * *transitioned into* the ready-for-input state (RUNNING and not busy — a turn
+ * finished; the worker is now awaiting the user, "something is waiting for you
+ * now") within the last `PENDING_DURATION_MS` (300s) and that the user has not
+ * yet acknowledged (clicked) this session. Keying on ``isReadyForInput`` (the
+ * ``status === RUNNING && !busy`` predicate) is the client-side replacement for
+ * the removed backend PENDING_USER projection.
  *
  * The glow is **transition-driven and client-stamped**: it arms only on an
  * observed live status change into a glow status, and `readyAt` is the client
@@ -36,9 +36,12 @@ export interface ProcessTracker {
   projectId: string | null;
   status: string | undefined;
   workerStatus: string | undefined;
+  /** Turn-in-flight boolean serialized alongside ``status``. The single value the
+   *  burning/glow predicates gate on (via ``isBusy`` / ``isReadyForInput``). */
+  busy: boolean | undefined;
   /** PTY (visible=true) vs headless CLI (visible=false). Routes ExecutionMode. */
   visible: boolean | undefined;
-  /** True while currently in a glow status (RUNNING + PENDING_USER/IDLE). */
+  /** True while currently ready-for-input (RUNNING and not busy). */
   glowing: boolean;
   /** Wall time (ms) of the most recent observed status / worker_status change. */
   lastStatusChangedAt: number;
@@ -51,12 +54,12 @@ export interface ProcessTracker {
 const PENDING_DURATION_MS = 300_000;
 const TIMER_TICK_MS = 1_000;
 
-/** True when the process is live and awaiting the user (wire status ``ready``).
- *  The glow arms on the transition INTO this status (see the arm/disarm logic in
- *  `handleDataOp`); a process already ready on first observation never arms.
- *  Uses the SDK's `isReadyForInput` so "awaiting the user" is defined in one place. */
-function isGlowStatus(status: string | undefined): boolean {
-  return isReadyForInput({ status });
+/** True when the process is live and awaiting the user. The glow arms on the
+ *  transition INTO this state (see the arm/disarm logic in `handleDataOp`); a
+ *  process already ready on first observation never arms. Delegates to the SDK's
+ *  `isReadyForInput` so "awaiting the user" is defined in one place. */
+function isGlowStatus(status: string | undefined, busy: boolean | undefined): boolean {
+  return isReadyForInput({ status, busy });
 }
 
 const trackers = new Map<string, ProcessTracker>();
@@ -156,6 +159,7 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
   const obj = data as {
     status?: string;
     worker_status?: string;
+    busy?: boolean;
     project_id?: string | null;
     visible?: boolean;
   };
@@ -166,6 +170,7 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
     | (AgenticProcess & {
         status?: string;
         worker_status?: string;
+        busy?: boolean;
         project_id?: string | null;
         visible?: boolean;
       })
@@ -173,12 +178,15 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
   const merged = {
     status: obj.status ?? cached?.status,
     worker_status: obj.worker_status ?? cached?.worker_status,
+    // ``busy`` is a boolean, so ``??`` (not ``||``) preserves an explicit false.
+    busy: obj.busy ?? cached?.busy,
     project_id: obj.project_id ?? cached?.project_id ?? null,
     visible: obj.visible ?? cached?.visible,
   };
-  const glowing = isGlowStatus(merged.status);
+  const glowing = isGlowStatus(merged.status, merged.busy);
   const newStatus = merged.status;
   const newWorkerStatus = merged.worker_status;
+  const newBusy = merged.busy;
   const newVisible = merged.visible;
   const projectId = merged.project_id;
   const now = Date.now();
@@ -193,6 +201,7 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
       projectId,
       status: newStatus,
       workerStatus: newWorkerStatus,
+      busy: newBusy,
       visible: newVisible,
       glowing,
       lastStatusChangedAt: now,
@@ -210,9 +219,16 @@ export function handleDataOp(typeIdStr: string, op: string, data: unknown): void
   }
 
   let dirty = false;
-  if (prev.status !== newStatus || prev.workerStatus !== newWorkerStatus) {
+  if (
+    prev.status !== newStatus ||
+    prev.workerStatus !== newWorkerStatus ||
+    prev.busy !== newBusy
+  ) {
     prev.status = newStatus;
     prev.workerStatus = newWorkerStatus;
+    // ``busy`` flips drive the per-row burning indicator (isBurningTracker) and,
+    // combined with status, the glow arm/disarm below.
+    prev.busy = newBusy;
     prev.lastStatusChangedAt = now;
     dirty = true;
   }

@@ -31,11 +31,10 @@
     "running",
     "stopping"
   ],
+  "_note_process_running_wire": "Since busy/ready are no longer projected into status, the wire live-set equals the stored live-set: `running` is emitted verbatim and turn-in-flight is the separate `busy` boolean.",
   "process_running_wire": [
     "starting",
     "running",
-    "ready",
-    "busy",
     "stopping"
   ],
   "process_startable": [

@@ -498,8 +498,8 @@ export function EntityExecutionPanel({
   // needed. `activeProcess` is a `StatusBearingProcess` (status + workerStatus).
   const indicatorProcess: StatusBearingProcess | null = activeProcess;
 
-  // One boolean gates the composer: the backend's logical `busy` (the projected
-  // `status === 'busy'`). A dead/complete PTY, a PENDING_USER worker (asked a
+  // One boolean gates the composer: the backend's turn-in-flight `busy` boolean
+  // (serialized alongside `status`; read via `isBusy`). A dead/complete PTY, a PENDING_USER worker (asked a
   // question), and a headless worker between turns all read as ¬busy, so the
   // textarea stays sendable exactly when the backend prompt action would admit
   // the turn — no transport special-casing and no PENDING_USER carve-out needed.

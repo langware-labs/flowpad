@@ -9,11 +9,11 @@ synthesis — so with no transcript it returns:
   * ``STARTING`` lifecycle boot                          → INITIALIZING (raw boot)
   * ``RUNNING`` with no transcript                       → None ("nothing found")
 
-The ready/busy meaning is then derived by ``is_turn_busy`` / ``wire_status``, NOT
+The busy meaning is then derived by ``is_turn_busy`` (a separate boolean), NOT
 by the worker status:
 
-  * RUNNING, no turn in flight, no transcript            → ready  (wire ``ready``)
-  * RUNNING, a turn spinning up (``_turn_in_flight``)    → busy   (wire ``busy``)
+  * RUNNING, no turn in flight, no transcript            → ¬busy  (ready for input)
+  * RUNNING, a turn spinning up (``_turn_in_flight``)    → busy
 
 This file locks those branches plus the supporting predicates (``_tail_status``
 honouring Claude's ``system:init`` line, and ``is_ready_for_input`` gating on

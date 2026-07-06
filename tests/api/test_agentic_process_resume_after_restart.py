@@ -28,10 +28,10 @@ from flow_sdk.responses.response import ApiResponse
 # Helpers
 # ---------------------------------------------------------------------------
 
-# The wire never emits the stored "running" status: it projects to ready/busy
-# (canonical status model, docs/agent/agentic_process_statuses.md). Both mean the
-# stored FSM is running (alive) — the live projection the loader keys off.
-_LIVE_STATUSES = ("ready", "busy")
+# The wire now emits the raw lifecycle FSM value verbatim: a live (alive) process
+# reports "running" (canonical status model, docs/agent/agentic_process_statuses.md).
+# Turn-in-flight is the separate ``busy`` boolean, not a status value.
+_LIVE_STATUSES = ("running",)
 
 
 def _compute_node_id(bootstrap_resp) -> str:

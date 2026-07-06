@@ -31,14 +31,15 @@ export const WORKER_STATUS_LABEL: Record<WorkerStatus, string> = {
   [WorkerStatus.UNKNOWN]: 'Unknown',
 };
 
-/** Logical process status ("what it means") → user label. */
+/**
+ * Lifecycle process status ("what it means") → user label. Turn-in-flight is the
+ * separate ``busy`` boolean (labelled by the worker status while running), not a
+ * status value — so ``RUNNING`` reads as the idle-at-prompt "Idle" here.
+ */
 export const PROCESS_STATUS_LABEL: Record<ProcessStatus, string> = {
   [ProcessStatus.NEW]: 'New',
   [ProcessStatus.STARTING]: 'Starting',
-  // Legacy stored value — never on the wire; kept for exhaustiveness.
-  [ProcessStatus.RUNNING]: 'Running',
-  [ProcessStatus.READY]: 'Idle',
-  [ProcessStatus.BUSY]: 'Working',
+  [ProcessStatus.RUNNING]: 'Idle',
   [ProcessStatus.STOPPING]: 'Stopping',
   [ProcessStatus.STOPPED]: 'Complete',
   [ProcessStatus.FAILED]: 'Error',

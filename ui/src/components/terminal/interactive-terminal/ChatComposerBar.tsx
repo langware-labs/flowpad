@@ -71,8 +71,9 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
 
   // Headless and PTY turns both broadcast status live now, so the reactive
   // entity is the single source. One boolean gates the composer: the backend's
-  // logical `busy` (`status === 'busy'`). A dead PTY reads ¬busy and is
-  // relaunched by prompt(), so it stays sendable.
+  // turn-in-flight `busy` boolean (serialized alongside `status`; read via
+  // `isBusy`). A dead PTY reads ¬busy and is relaunched by prompt(), so it stays
+  // sendable.
   const indicatorProcess = reflected;
   const busy = isBusy(indicatorProcess);
 

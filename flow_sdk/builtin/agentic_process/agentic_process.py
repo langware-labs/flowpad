@@ -42,8 +42,8 @@ from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
     is_process_startable,
     is_ready_for_input,
+    is_ready_from_busy,
     is_turn_busy,
-    wire_status,
 )
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.builtin.worker_status import WorkerStatus
@@ -4091,19 +4091,15 @@ class AgenticProcess(Entity):
             return data
         if data is None:
             return None
-        # Two-axis status projection (wire-only — persistence took the
-        # skip_api_serializer early-return above, so stored ``status`` stays the
-        # FSM value ``running``):
-        #   - ``worker_status``: the raw "what we found" state, nullable when the
-        #     transcript yields nothing (never coerced to a placeholder).
-        #   - ``status``: the stored FSM with ``running`` projected to the logical
-        #     ``ready`` / ``busy`` via ``wire_status`` — the single boolean the
-        #     frontend gates input and the pty-mode switch on.
+        # Emit all three status axes fresh (nothing here is persisted — the
+        # skip_api_serializer path took the early-return above). See
+        # docs/agent/agentic_process_statuses.md for the model.
         computed = self.fetch_worker_status()
         data["worker_status"] = str(computed) if computed else None
-        wire = wire_status(self, computed)
-        data["status"] = wire
-        data["ready_for_input"] = wire == ProcessStatus.READY.value
+        data["status"] = self.status
+        busy = is_turn_busy(self, computed)
+        data["busy"] = busy
+        data["ready_for_input"] = is_ready_from_busy(self.status, busy)
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
         # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
@@ -4198,16 +4194,18 @@ class AgenticProcess(Entity):
 
     @action.all(action_name="status")
     async def get_status(self):
-        """Return the wire status axes: logical ``status`` (ready/busy projection),
-        raw ``worker_status`` (nullable), and the derived ``ready_for_input``.
-        Same projection the serializer applies, so an on-demand poll and a
-        broadcast can never disagree."""
+        """Return the status axes: lifecycle ``status`` (FSM, verbatim), the
+        derived ``busy`` boolean (turn-in-flight), raw ``worker_status``
+        (nullable), and the derived ``ready_for_input``. Same derivation the
+        serializer applies, so an on-demand poll and a broadcast can never
+        disagree."""
         worker_status = self.fetch_worker_status()
-        wire = wire_status(self, worker_status)
+        busy = is_turn_busy(self, worker_status)
         return ApiSuccessResponse(data={
-            "status": wire,
+            "status": self.status,
+            "busy": busy,
             "worker_status": str(worker_status) if worker_status else None,
-            "ready_for_input": wire == ProcessStatus.READY.value,
+            "ready_for_input": is_ready_from_busy(self.status, busy),
         })
 
     @property
@@ -4975,23 +4973,24 @@ class AgenticProcess(Entity):
             # and get_status use, so the broadcast can never disagree with what
             # consumers compute on demand.
             current = self.fetch_worker_status()
-            # Logical wire status (ready/busy) — the axis the frontend gates on.
-            # The broadcast key is the PAIR (wire_status, worker_status): a busy⇄ready
-            # flip must broadcast even when the raw worker_status is unchanged (the
-            # prompt lock is acquired/released before the JSONL tail moves — this is
-            # what lets a HEADLESS turn broadcast its start/end edges), and a raw
-            # worker move (thinking→tool_call) must broadcast even while wire stays
-            # busy so the mid-turn indicator advances.
-            current_wire = wire_status(self, current)
+            # The busy boolean (turn-in-flight) — the axis the frontend gates on.
+            # The broadcast key is the TRIPLE (status, busy, worker_status): a
+            # busy⇄idle flip must broadcast even when the raw worker_status is
+            # unchanged (the prompt lock is acquired/released before the JSONL tail
+            # moves — this is what lets a HEADLESS turn broadcast its start/end
+            # edges), and a raw worker move (thinking→tool_call) must broadcast even
+            # while busy stays true so the mid-turn indicator advances. ``status``
+            # is in the key too so a lifecycle flip (running→stopped) still fires.
+            current_busy = is_turn_busy(self, current)
             worker_key = str(current) if current is not None else None
-            key = (current_wire, worker_key)
+            key = (self.status, current_busy, worker_key)
             previous = getattr(self, "_last_broadcast_key", None)
-            prev_wire = previous[0] if previous else None
+            prev_busy = previous[1] if previous else None
 
             # Generic agent-progress projection. Runs every flush (counters move
             # without a status transition), so it precedes the transition
             # early-return below. Change-gated internally.
-            await self._emit_status_report(current, current_wire)
+            await self._emit_status_report(current, current_busy)
 
             if key == previous:
                 return
@@ -5007,14 +5006,10 @@ class AgenticProcess(Entity):
 
             await self.notify_updated()
 
-            # Drain the prompt queue on a transition INTO the ready wire status
-            # (busy→ready edge). Single AP-level seam for both PTY *and* headless
-            # turns (both write the transcript that lands here), so no driver
-            # coupling.
-            if (
-                current_wire == ProcessStatus.READY.value
-                and prev_wire != ProcessStatus.READY.value
-            ):
+            # Drain the prompt queue on the turn-end edge (busy→not-busy). Single
+            # AP-level seam for both PTY *and* headless turns (both write the
+            # transcript that lands here), so no driver coupling.
+            if not current_busy and prev_busy:
                 self._schedule_queue_drain("ready")
         except asyncio.CancelledError:
             raise
@@ -5121,11 +5116,12 @@ class AgenticProcess(Entity):
                     )
         return None
 
-    async def _emit_status_report(self, current, current_wire: str) -> None:
+    async def _emit_status_report(self, current, current_busy: bool) -> None:
         """Recompute the ProcessStatusReport and push it (change-gated).
 
-        ``current_wire`` is the already-projected wire status from the caller, so
-        the report doesn't recompute ``wire_status`` (and its lock probe) again.
+        ``current_busy`` is the already-derived turn-in-flight boolean from the
+        caller, so the report doesn't recompute ``is_turn_busy`` (and its lock
+        probe) again.
 
         Runs on every debounce flush — counters change without a worker-status
         transition — so it sits BEFORE the transition early-return. The snapshot
@@ -5158,7 +5154,8 @@ class AgenticProcess(Entity):
             report = ProcessStatusReport.from_transcript(
                 transcript,
                 worker_status=(current.value if current is not None else ""),
-                process_status=current_wire,
+                process_status=self.status,
+                busy=current_busy,
                 focused_asset=self._derive_focused_asset(transcript),
             )
             report_dict = report.model_dump()

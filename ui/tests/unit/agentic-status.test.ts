@@ -52,15 +52,15 @@ const fixture: StatusSetsFixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8'
 // ─── ProcessStatus wire values ───────────────────────────────────────────────
 
 describe('ProcessStatus', () => {
-  it('has exactly 8 canonical values (6 stored + ready/busy wire projections)', () => {
+  it('has exactly 6 canonical lifecycle values (no ready/busy projection)', () => {
     expect(Object.values(ProcessStatus).sort()).toEqual(
-      ['busy', 'failed', 'new', 'ready', 'running', 'starting', 'stopped', 'stopping'].sort(),
+      ['failed', 'new', 'running', 'starting', 'stopped', 'stopping'].sort(),
     );
   });
 
-  it('exposes the ready/busy wire projections and keeps legacy RUNNING', () => {
-    expect(ProcessStatus.READY).toBe('ready');
-    expect(ProcessStatus.BUSY).toBe('busy');
+  it('has no ready/busy status values — busy is a separate boolean now', () => {
+    expect((ProcessStatus as Record<string, unknown>).READY).toBeUndefined();
+    expect((ProcessStatus as Record<string, unknown>).BUSY).toBeUndefined();
     expect(ProcessStatus.RUNNING).toBe('running');
     expect((ProcessStatus as Record<string, unknown>).LIVE).toBeUndefined();
   });
@@ -68,8 +68,6 @@ describe('ProcessStatus', () => {
   it.each([
     [ProcessStatus.STARTING, true],
     [ProcessStatus.RUNNING, true],
-    [ProcessStatus.READY, true],
-    [ProcessStatus.BUSY, true],
     [ProcessStatus.STOPPING, true],
     [ProcessStatus.NEW, false],
     [ProcessStatus.STOPPED, false],
@@ -300,37 +298,40 @@ describe('supportedExecutionModes', () => {
   });
 });
 
-// ─── isReadyForInput / isBusy — the ONE gate, keyed on the wire status ───────
+// ─── isReadyForInput / isBusy — the ONE gate, two orthogonal axes ────────────
 //
-// Realigned: both predicates read the projected process ``status`` directly (the
-// backend already folded lock + turn-in-flight + worker activity into it). They
-// do NOT re-derive from workerStatus. READY and BUSY are disjoint.
+// Realigned: ``isBusy`` reads the separate ``busy`` boolean; ``isReadyForInput``
+// ⇔ ``status === RUNNING && !busy``. They do NOT re-derive from workerStatus.
+// The two are disjoint by construction.
 
 describe('isReadyForInput', () => {
-  it('is true exactly for the READY wire status', () => {
-    expect(isReadyForInput({ status: ProcessStatus.READY })).toBe(true);
+  it('is true exactly for RUNNING and not busy', () => {
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: false })).toBe(true);
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING })).toBe(true); // busy defaults falsy
+  });
+
+  it('is false when RUNNING but busy (a turn is in flight)', () => {
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: true })).toBe(false);
   });
 
   it.each([
-    ProcessStatus.BUSY,
-    ProcessStatus.RUNNING, // stored value never on the wire, but not "ready"
     ProcessStatus.NEW,
-    ProcessStatus.STARTING,
+    ProcessStatus.STARTING, // live bookend, but the worker isn't fully up → not ready
     ProcessStatus.STOPPING,
     ProcessStatus.STOPPED,
     ProcessStatus.FAILED,
-  ])('is false for %s', (s) => {
-    expect(isReadyForInput({ status: s })).toBe(false);
+  ])('is false for %s regardless of busy', (s) => {
+    expect(isReadyForInput({ status: s, busy: false })).toBe(false);
   });
 
-  it('ignores workerStatus and session_id — status is the single source', () => {
+  it('ignores workerStatus and session_id — status + busy are the source', () => {
     // A ready process stays ready whatever the raw worker label says.
     expect(
-      isReadyForInput({ status: ProcessStatus.READY, workerStatus: WorkerStatus.THINKING }),
+      isReadyForInput({ status: ProcessStatus.RUNNING, busy: false, workerStatus: WorkerStatus.THINKING }),
     ).toBe(true);
     // A busy process is not ready even if the worker label looks idle.
     expect(
-      isReadyForInput({ status: ProcessStatus.BUSY, workerStatus: WorkerStatus.IDLE, session_id: 's' }),
+      isReadyForInput({ status: ProcessStatus.RUNNING, busy: true, workerStatus: WorkerStatus.IDLE, session_id: 's' }),
     ).toBe(false);
   });
 
@@ -340,24 +341,25 @@ describe('isReadyForInput', () => {
 });
 
 describe('isBusy', () => {
-  it('is true exactly for the BUSY wire status', () => {
-    expect(isBusy({ status: ProcessStatus.BUSY })).toBe(true);
+  it('is true exactly when the busy boolean is set', () => {
+    expect(isBusy({ status: ProcessStatus.RUNNING, busy: true })).toBe(true);
   });
 
   it.each([
-    ProcessStatus.READY,
+    ProcessStatus.RUNNING,
     ProcessStatus.NEW,
     ProcessStatus.STARTING,
     ProcessStatus.STOPPING,
     ProcessStatus.STOPPED,
     ProcessStatus.FAILED,
-  ])('is false for %s (a non-live process is not busy, just not ready)', (s) => {
+  ])('is false for %s when busy is unset', (s) => {
     expect(isBusy({ status: s })).toBe(false);
+    expect(isBusy({ status: s, busy: false })).toBe(false);
   });
 
-  it('is the disjoint complement of isReadyForInput on the live statuses', () => {
-    expect(isBusy({ status: ProcessStatus.READY })).toBe(false);
-    expect(isReadyForInput({ status: ProcessStatus.BUSY })).toBe(false);
+  it('is the disjoint complement of isReadyForInput while RUNNING', () => {
+    expect(isBusy({ status: ProcessStatus.RUNNING, busy: false })).toBe(false);
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: true })).toBe(false);
   });
 });
 

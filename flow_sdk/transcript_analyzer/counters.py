@@ -138,7 +138,10 @@ class ProcessStatusReport(BaseModel):
     counters: ProcessCounters
     focused_asset: Optional[FocusedAsset] = None
     worker_status: str = ""
+    # Lifecycle FSM value (``running`` and all — no ready/busy projection).
     process_status: str = ""
+    # Turn-in-flight, the orthogonal boolean axis (``is_turn_busy``).
+    busy: bool = False
 
     @classmethod
     def from_transcript(
@@ -147,6 +150,7 @@ class ProcessStatusReport(BaseModel):
         *,
         worker_status: str = "",
         process_status: str = "",
+        busy: bool = False,
         focused_asset: Optional[FocusedAsset] = None,
     ) -> "ProcessStatusReport":
         return cls(
@@ -154,4 +158,5 @@ class ProcessStatusReport(BaseModel):
             focused_asset=focused_asset,
             worker_status=worker_status,
             process_status=process_status,
+            busy=busy,
         )

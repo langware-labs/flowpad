@@ -50,7 +50,7 @@ export interface TurnActivity {
  *     (InteractiveTerminal: `propProcess` vs `useEntity`), and only the cached
  *     one gets WS broadcasts. Both headless AND PTY turns now broadcast their
  *     status live (the backend removed the INITIALIZING pin), so the reactive
- *     entity's `status === 'busy'` is the single running signal — no
+ *     entity's `busy` boolean (via `isBusy`) is the single running signal — no
  *     flowDataStream derivation needed.
  *
  * A short trailing hold ({@link HOLD_MS}) smooths transient gaps so the indicator

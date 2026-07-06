@@ -4,9 +4,9 @@ derived ``WorkerMode`` (Interactive / CLI).
 Central place for the two questions the whole system gates on:
 
   - **"is a turn in flight?"** → :func:`is_turn_busy`. The single source of truth
-    for the ``busy`` boolean. It feeds the wire ``status`` projection
-    (:func:`wire_status`), the ``switch-mode`` / ``restart`` 409 guard, and — via
-    the serialized ``status`` field — every frontend input/toggle gate.
+    for the ``busy`` boolean. It is serialized as its own ``busy`` field (never
+    folded into ``status``), and feeds the ``switch-mode`` / ``restart`` 409 guard
+    and every frontend input/toggle gate.
   - **"which worker flavour is running?"** → :func:`get_worker_mode`.
 
 ``busy`` is a function of process state (lock + in-flight + worker activity),
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "is_turn_busy",
-    "wire_status",
+    "is_ready_from_busy",
     "is_ready_for_input",
     "is_process_running",
     "is_process_startable",
@@ -133,21 +133,15 @@ def is_turn_busy(
     return resolved in _BUSY_WORKER_STATUSES
 
 
-def wire_status(
-    process: "AgenticProcess",
-    worker_status: WorkerStatus | None = None,
-) -> str:
-    """Project the stored ``process.status`` to its wire value.
-
-    Stored ``RUNNING`` becomes the logical ``BUSY`` (a turn is in flight) or
-    ``READY`` (the worker can take the next prompt). Every other stored value
-    passes through unchanged. ``READY``/``BUSY`` are never persisted — this
-    function is the only place stored ``running`` turns into them.
+def is_ready_from_busy(status: str, busy: bool) -> bool:
+    """Combine the two orthogonal axes into "can send now": the worker is fully up
+    (``status == RUNNING``, not the STARTING/STOPPING bookends) and no turn is in
+    flight. The single definition of the RUNNING-literal predicate — callers that
+    have already computed ``busy`` (the serializer, ``get_status``) pass it here to
+    avoid re-probing ``is_turn_busy``; ``is_ready_for_input`` computes ``busy`` for
+    callers that only hold the process.
     """
-    if process.status != ProcessStatus.RUNNING.value:
-        return process.status
-    busy = is_turn_busy(process, worker_status)
-    return (ProcessStatus.BUSY if busy else ProcessStatus.READY).value
+    return status == ProcessStatus.RUNNING.value and not busy
 
 
 def is_ready_for_input(
@@ -158,10 +152,9 @@ def is_ready_for_input(
 
     Contract (also enforced by the vitest / pytest truth-table tests):
 
-        is_ready_for_input(p)  ⇔  wire_status(p) == ProcessStatus.READY
+        is_ready_for_input(p)  ⇔  p.status == RUNNING and not is_turn_busy(p)
 
-    i.e. the process is stored-RUNNING and no turn is in flight. Equivalent to
-    ``not busy`` while live. The ``worker_status`` argument is optional — pass a
-    pre-resolved value to avoid a second tail-read.
+    The ``worker_status`` argument is optional — pass a pre-resolved value to avoid
+    a second tail-read.
     """
-    return wire_status(process, worker_status) == ProcessStatus.READY.value
+    return is_ready_from_busy(process.status, is_turn_busy(process, worker_status))

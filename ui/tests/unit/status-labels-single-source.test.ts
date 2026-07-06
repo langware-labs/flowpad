@@ -38,9 +38,13 @@ describe('status labels — single source of truth', () => {
     expect(workerStatusLabel(WorkerStatus.THINKING, true)).toBe(WORKER_STATUS_LABEL[WorkerStatus.IDLE]);
   });
 
-  it('ready reads as "Idle" and busy as "Working" (the logical projections)', () => {
-    expect(PROCESS_STATUS_LABEL[ProcessStatus.READY]).toBe('Idle');
-    expect(PROCESS_STATUS_LABEL[ProcessStatus.BUSY]).toBe('Working');
+  it('a live RUNNING process reads as "Idle" (turn-in-flight is the separate busy boolean)', () => {
+    // There is no READY/BUSY status anymore; the bare live lifecycle state is
+    // RUNNING, which reads as the idle-at-prompt "Idle". A turn in flight is
+    // surfaced via the fine-grained worker status ("Working"/"Thinking"/…), not a
+    // status value.
+    expect(PROCESS_STATUS_LABEL[ProcessStatus.RUNNING]).toBe('Idle');
+    expect(WORKER_STATUS_LABEL[WorkerStatus.WORKING]).toBe('Working');
   });
 
   it('every enum member has a non-empty label (exhaustive tables)', () => {
