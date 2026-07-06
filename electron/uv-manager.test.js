@@ -166,7 +166,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     // Non-lock error → throw immediately, one attempt, no retry.
     const m = new UvManager(silentLog);
     let uvCalls = 0, kills = 0;
-    m._killStaleToolProcesses = async () => { kills++; };
+    m._drainVenvProcesses = async () => { kills++; };
     m._uv = async () => { uvCalls++; throw new Error('network unreachable'); };
     let threw = false;
     try { await m._uvToolInstallForce(['tool', 'install', 'flowpad']); } catch { threw = true; }
@@ -176,7 +176,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     // Lock error once, then success → retries and resolves; re-kills each attempt.
     const m2 = new UvManager(silentLog);
     let uv2 = 0, kills2 = 0;
-    m2._killStaleToolProcesses = async () => { kills2++; };
+    m2._drainVenvProcesses = async () => { kills2++; };
     m2._uv = async () => {
       uv2++;
       if (uv2 === 1) throw new Error('failed to remove directory flowpad Scripts: Access is denied. (os error 5)');
@@ -185,6 +185,42 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     const res = await m2._uvToolInstallForce(['tool', 'install', 'flowpad']);
     ok(uv2 === 2 && kills2 === 2 && res && typeof res === 'object',
       '_uvToolInstallForce: retries once on a lock error, re-kills, then succeeds');
+  }
+
+  // ── isCorruptEnvError (half-written tool env detector) ──────────────────────
+  // Matches uv's "Invalid environment / missing Python executable" ONLY for the
+  // flowpad tool path; a generic uv message, a network error, or a lock error
+  // (which belongs to isToolDirLockedError) must not trigger a rebuild.
+  {
+    const m = new UvManager(silentLog);
+    const err = (s) => ({ stderr: s });
+    ok(m.isCorruptEnvError(err(
+      'error: Invalid environment at `~/.local/share/uv/tools/flowpad`: ' +
+      'missing Python executable at `.../flowpad/bin/python3`')),
+      'isCorruptEnvError: matches "Invalid environment / missing Python executable" for flowpad');
+    ok(!m.isCorruptEnvError(err('Invalid environment: missing Python executable at /other/tool/bin/python3')),
+      'isCorruptEnvError: does NOT match a non-flowpad tool env');
+    ok(!m.isCorruptEnvError(err('error: failed to fetch: network unreachable')),
+      'isCorruptEnvError: does NOT match a network error');
+    ok(!m.isCorruptEnvError({ message: 'failed to remove directory flowpad Scripts: os error 5' }),
+      'isCorruptEnvError: does NOT match a lock error');
+  }
+
+  // ── _uvToolInstallForce: quarantine + rebuild on a corrupt env ──────────────
+  // A corrupt-env error → move the half-written venv aside and retry (rebuild).
+  {
+    const m = new UvManager(silentLog);
+    let uv = 0, drains = 0, quarantines = 0;
+    m._drainVenvProcesses = async () => { drains++; };
+    m._quarantineToolVenv = () => { quarantines++; };
+    m._uv = async () => {
+      uv++;
+      if (uv === 1) throw new Error('Invalid environment: missing Python executable at .../flowpad/bin/python3');
+      return { stdout: '', stderr: '' };
+    };
+    const res = await m._uvToolInstallForce(['tool', 'install', 'flowpad']);
+    ok(uv === 2 && quarantines === 1 && drains === 2 && res && typeof res === 'object',
+      '_uvToolInstallForce: quarantines the corrupt env once, then rebuilds and succeeds');
   }
 
   console.log(`uv-manager.test.js: ${passed} assertions passed`);
