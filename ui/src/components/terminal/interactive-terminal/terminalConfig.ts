@@ -10,8 +10,7 @@
  * ballpark.
  */
 
-export const FONT_FAMILY =
-  '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace';
+export const FONT_FAMILY = '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace';
 
 /**
  * Click handler for the xterm WebLinksAddon.
@@ -28,6 +27,30 @@ export function openTerminalLink(_event: MouseEvent, uri: string): void {
 }
 
 export const FONT_SIZE_PX = 14;
+
+/**
+ * Restore the character-grid contract for RTL text on Windows.
+ *
+ * PTY apps that compensate for bidi-less terminals emit Hebrew/Arabic
+ * pre-reversed into VISUAL order (Claude Code does this on Windows,
+ * matching Windows Terminal/conhost, which paint cells strictly
+ * left-to-right). xterm's DOM renderer breaks that contract: row spans are
+ * real DOM text, so the browser's Unicode bidi algorithm reorders the RTL
+ * run a SECOND time and the words/letters display in reverse reading order.
+ * The class added here (styled in styles/xterm.css) forces glyphs to paint
+ * in buffer order, matching every native Windows terminal.
+ *
+ * macOS PTY apps emit logical-order RTL text (native terminals there have
+ * real bidi engines), and the browser's single reordering is exactly right
+ * — so the override must NOT apply there. Client platform is used as the
+ * proxy for the PTY host platform: the desktop provider always spawns PTYs
+ * on the machine the UI runs on.
+ */
+export function applyRtlGridContract(container: HTMLElement): void {
+  if (navigator.platform.toLowerCase().includes('win')) {
+    container.classList.add('xterm-rtl-grid');
+  }
+}
 
 /**
  * Honor OSC 52 clipboard WRITES from PTY apps.
@@ -64,8 +87,8 @@ export function registerOsc52ClipboardWrite(term: {
 
 // Empirical ratios for monospace at this font size — accurate enough that the
 // post-mount fit.fit() rarely changes by more than ±2 cols.
-const CELL_WIDTH_RATIO = 0.6;   // Cascadia at 14px renders ~8.4 px/char
-const LINE_HEIGHT_RATIO = 1.3;  // xterm default
+const CELL_WIDTH_RATIO = 0.6; // Cascadia at 14px renders ~8.4 px/char
+const LINE_HEIGHT_RATIO = 1.3; // xterm default
 
 // Rough budget for chrome around the terminal pane in /dock/shell:
 // left sidebar + column gutters ≈ 200 px, top/bottom bars ≈ 100 px.
