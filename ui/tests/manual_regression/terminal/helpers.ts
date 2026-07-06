@@ -1,4 +1,4 @@
-import { type Page, test, expect } from '@playwright/test';
+import { type Page, type Locator, test, expect } from '@playwright/test';
 
 /**
  * Live-env (host PTY exhaustion) detection + sanctioned conditional skip.
@@ -275,15 +275,27 @@ export async function startClaudeSession(page: Page) {
 }
 
 /**
+ * Read a single tab chip's visible label. The chip's FIRST <span> is a
+ * decorative active-accent bar (empty text, rendered only on the active tab —
+ * TabStrip.tsx), so the label is the first span that actually has text. Every
+ * tab-name reader must go through this so the decorative-span drift is handled
+ * in one place, never via `querySelector('span')`/`span').first()`.
+ */
+export async function readTabLabel(tab: Locator): Promise<string> {
+  return tab.evaluate(
+    (el) => [...el.querySelectorAll('span')].map((s) => (s.textContent || '').trim()).find(Boolean) || '',
+  );
+}
+
+/**
  * Get the name of the currently active terminal tab.
  */
 export async function getActiveTabName(page: Page): Promise<string> {
   // Active tab carries data-active="true" on the chip div itself (explicit
   // test contract — never sniff styling classes).
-  const activeTab = page.locator('[data-testid^="tab-"][data-active="true"] span').first();
+  const activeTab = page.locator('[data-testid^="tab-"][data-active="true"]').first();
   if (await activeTab.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    const text = await activeTab.textContent();
-    return text?.trim() || '';
+    return readTabLabel(activeTab);
   }
   return '';
 }
