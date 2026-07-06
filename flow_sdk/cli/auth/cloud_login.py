@@ -23,8 +23,8 @@ import httpx
 from flow_sdk.api.messages import OAuthMessage, OAuthMessageStatus
 from flow_sdk.api.oauth_api import OAuthProvider
 from flow_sdk.cli.app_config import set_user
+from flow_sdk.cli.auth.cloud_urls import desktop_login_callback_url, get_login_url
 from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials, save_credentials
-from flow_sdk.cli.auth.cloud_urls import get_login_url
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 from flow_sdk.cloud_client.api.auth import LoginData
 from flow_sdk.instance_settings import get_instance_settings
@@ -65,7 +65,7 @@ async def cloud_login() -> dict[str, Any]:
             # Browser-mode: success/failure arrives later via the OAuth WS
             # callback. LOGGED_IN / LOGIN_FAILED are emitted from there
             # (_finalize_login on success, _broadcast_oauth_error on error).
-            return await _login_by_window(settings.port, settings.cloud_login_timeout_seconds)
+            return await _login_by_window(settings.cloud_login_timeout_seconds)
 
         if kind == "local":
             if not (settings.cloud_user_email and settings.cloud_user_pass):
@@ -87,21 +87,23 @@ async def _login_by_api(email: str, password: str) -> dict[str, Any]:
     return {"status": "logged_in", "user": login_data.user}
 
 
-async def _login_by_window(port: int, timeout: float) -> dict[str, Any]:
+async def _login_by_window(timeout: float) -> dict[str, Any]:
     # Race window: the cloud could redirect-back before this function returns,
     # so reset the waiter state BEFORE opening the browser.
     from flow_sdk.server import state
+
     state.login_received.clear()
     state.login_result = None
     asyncio.create_task(_wait_or_timeout(timeout))
 
-    url = get_login_url(f"http://127.0.0.1:{port}/auth/login_callback")
+    url = get_login_url(desktop_login_callback_url())
     await asyncio.to_thread(webbrowser.open, url)
     return {"status": "started", "url": url}
 
 
 async def _wait_or_timeout(timeout: float) -> None:
     from flow_sdk.server import state
+
     success = await asyncio.to_thread(state.login_received.wait, timeout)
     if not success:
         await _broadcast_oauth_error(f"Login timed out after {int(timeout)}s — please try again")
@@ -123,8 +125,7 @@ async def _post_cloud_login(email: str, password: str) -> LoginData:
         # Transport failure — hub process is down, DNS resolution failed,
         # connection refused, network unreachable, etc.
         raise RuntimeError(
-            "Cloud is not available. The hub server can't be reached — "
-            "check your connection or try again in a moment."
+            "Cloud is not available. The hub server can't be reached — check your connection or try again in a moment."
         ) from e
     except ValueError as e:
         # ``FlowpadClient._unwrap`` raises ValueError for non-200 / non-success
@@ -155,6 +156,7 @@ async def _post_cloud_login(email: str, password: str) -> LoginData:
         # from the embedded response body so the user sees what the hub
         # said rather than a generic fallback.
         import re as _re
+
         m = _re.search(r'"message"\s*:\s*"([^"]+)"', text)
         if m:
             raise RuntimeError(f"Cloud sign-in failed: {m.group(1)}") from e
@@ -186,11 +188,13 @@ async def _finalize_login(login_data: LoginData) -> None:
             user_info["organization_id"] = org_id
             user_info["organization_role"] = login_data.organization_role or "member"
 
-    await _broadcast_oauth(OAuthMessage(
-        oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
-        status=OAuthMessageStatus.SUCCESS,
-        user=user_info,
-    ))
+    await _broadcast_oauth(
+        OAuthMessage(
+            oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
+            status=OAuthMessageStatus.SUCCESS,
+            user=user_info,
+        )
+    )
 
     # Defensive: ensure consent marker exists before save_credentials writes
     # to instance.sod (which raises SecretsNotEnabledError without consent).
@@ -198,15 +202,14 @@ async def _finalize_login(login_data: LoginData) -> None:
     # explanation page → enable_secrets approval; this call is a no-op on
     # that path but covers any non-canonical caller that reaches here.
     from flow_sdk.cli.auth.secrets import enable_secrets
+
     enable_secrets()
     save_credentials(UserHubCredentials.from_login_data(login_data))
     # Read-back verification: confirms the sod write decrypts cleanly. Pass the
     # just-logged-in user id explicitly — the config.json active-user pointer
     # (set_user below) isn't committed yet, so a zero-arg load here would
     # resolve the PREVIOUS active user's scoped entries, not this login's.
-    login_user_id = (
-        str(user_info["id"]) if isinstance(user_info, dict) and user_info.get("id") else None
-    )
+    login_user_id = str(user_info["id"]) if isinstance(user_info, dict) and user_info.get("id") else None
     stored = load_credentials(login_user_id)
     stored_ok = stored is not None and stored.api_key == login_data.token
     sodot_path = get_instance_settings().sodot_path
@@ -233,6 +236,7 @@ async def _finalize_login(login_data: LoginData) -> None:
     # immediately. ``set_login_status`` is the single funnel for login state.
     from flow_sdk.cloud_client.auth_state import set_login_status
     from flow_sdk.cloud_client.auth_status import HubLoginStatus
+
     await set_login_status(HubLoginStatus.LOGGED_IN, user=user_info)
 
     try:
@@ -246,21 +250,25 @@ async def _finalize_login(login_data: LoginData) -> None:
 async def _broadcast_oauth(msg: OAuthMessage) -> None:
     try:
         from flow_sdk.server.routes.websocket import broadcast
+
         await broadcast(msg.model_dump_json())
     except Exception:
         pass
 
 
 async def _broadcast_oauth_error(message: str) -> None:
-    await _broadcast_oauth(OAuthMessage(
-        oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
-        status=OAuthMessageStatus.ERROR,
-        message=message,
-    ))
+    await _broadcast_oauth(
+        OAuthMessage(
+            oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
+            status=OAuthMessageStatus.ERROR,
+            message=message,
+        )
+    )
     # Mirror the failure into the canonical login-status channel so UI code
     # that has migrated to the new event no longer has to listen to OAuth.
     from flow_sdk.cloud_client.auth_state import set_login_status
     from flow_sdk.cloud_client.auth_status import HubLoginStatus
+
     await set_login_status(HubLoginStatus.LOGIN_FAILED, reason=message)
 
 
