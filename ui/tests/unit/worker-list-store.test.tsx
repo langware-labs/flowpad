@@ -43,6 +43,8 @@ const createdIds = new Set<string>();
 interface OpFields {
   status?: ProcessStatus;
   worker_status?: WorkerStatus;
+  /** Turn-in-flight boolean serialized alongside status (the burning/glow gate). */
+  busy?: boolean;
   visible?: boolean;
   project_id?: string | null;
 }
@@ -129,16 +131,19 @@ describe('per-mode counts + view-mode gating', () => {
   });
 });
 
-describe('glow (transition-driven, arms on the wire READY status)', () => {
+describe('glow (transition-driven, arms on the busy → ready flip)', () => {
+  // Ready-for-input is the RUNNING lifecycle state with the ``busy`` boolean
+  // clear; mid-turn is RUNNING + busy. The glow arms on the transition busy →
+  // ¬busy (a turn finishing while the process stays live).
   it('arms glow on a busy → ready transition ("your turn"), and ack clears it', () => {
     const id = uid();
-    // First observation is BUSY (mid-turn) → no glow armed.
-    emit(id, { status: ProcessStatus.BUSY, worker_status: WorkerStatus.THINKING, visible: true });
+    // First observation is busy (mid-turn) → no glow armed.
+    emit(id, { status: ProcessStatus.RUNNING, busy: true, worker_status: WorkerStatus.THINKING, visible: true });
     const initial = renderHook(() => useWorkerList(ADVANCED));
     expect(initial.result.current.find((e) => e.processId === id)?.pending).toBe(false);
 
-    // Live transition into READY (turn finished) arms the glow.
-    emit(id, { status: ProcessStatus.READY, worker_status: WorkerStatus.COMPLETE, visible: true });
+    // Live transition into ready (turn finished, no longer busy) arms the glow.
+    emit(id, { status: ProcessStatus.RUNNING, busy: false, worker_status: WorkerStatus.COMPLETE, visible: true });
     const armed = renderHook(() => useWorkerList(ADVANCED));
     expect(armed.result.current.find((e) => e.processId === id)?.pending).toBe(true);
 
@@ -153,16 +158,16 @@ describe('glow (transition-driven, arms on the wire READY status)', () => {
 
   it('arms glow on a busy → ready transition for a headless worker too', () => {
     const id = uid();
-    emit(id, { status: ProcessStatus.BUSY, worker_status: WorkerStatus.THINKING, visible: false });
-    emit(id, { status: ProcessStatus.READY, worker_status: WorkerStatus.IDLE, visible: false });
+    emit(id, { status: ProcessStatus.RUNNING, busy: true, worker_status: WorkerStatus.THINKING, visible: false });
+    emit(id, { status: ProcessStatus.RUNNING, busy: false, worker_status: WorkerStatus.IDLE, visible: false });
     const { result } = renderHook(() => useWorkerList(ADVANCED));
     expect(result.current.find((e) => e.processId === id)?.pending).toBe(true);
   });
 
-  it('does NOT glow a process first observed already READY (no re-arm on seed/refresh)', () => {
+  it('does NOT glow a process first observed already ready (no re-arm on seed/refresh)', () => {
     const id = uid();
     // First-ever observation is already ready (cache seed / reload).
-    emit(id, { status: ProcessStatus.READY, worker_status: WorkerStatus.COMPLETE, visible: true });
+    emit(id, { status: ProcessStatus.RUNNING, busy: false, worker_status: WorkerStatus.COMPLETE, visible: true });
     const { result } = renderHook(() => useWorkerList(ADVANCED));
     const row = result.current.find((e) => e.processId === id);
     expect(row).toBeDefined();
@@ -172,8 +177,8 @@ describe('glow (transition-driven, arms on the wire READY status)', () => {
   it('does NOT glow on a transition INTO busy (mid-turn is not "your turn")', () => {
     const id = uid();
     // Seed ready (no arm on first observation), then go busy.
-    emit(id, { status: ProcessStatus.READY, worker_status: WorkerStatus.IDLE, visible: true });
-    emit(id, { status: ProcessStatus.BUSY, worker_status: WorkerStatus.THINKING, visible: true });
+    emit(id, { status: ProcessStatus.RUNNING, busy: false, worker_status: WorkerStatus.IDLE, visible: true });
+    emit(id, { status: ProcessStatus.RUNNING, busy: true, worker_status: WorkerStatus.THINKING, visible: true });
     const { result } = renderHook(() => useWorkerList(ADVANCED));
     expect(result.current.find((e) => e.processId === id)?.pending).toBe(false);
   });

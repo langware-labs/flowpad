@@ -86,11 +86,11 @@ async def test_status_report_matches_transcript_exactly(
     # AgenticProcess is a pydantic model: plain attribute assignment is rejected
     # ("has no field emit_flow_data"). Override the bound method via object.__setattr__.
     object.__setattr__(ap, "emit_flow_data", _capture)
-    # _emit_status_report(current, current_wire) takes the already-projected wire
-    # status too (mirror the production call at agentic_process.py:4994).
-    from flow_sdk.builtin.agentic_process.status_predicates import wire_status
-    current_wire = wire_status(ap, WorkerStatus.COMPLETE)
-    await ap._emit_status_report(WorkerStatus.COMPLETE, current_wire)
+    # _emit_status_report(current, current_busy) takes the already-derived
+    # turn-in-flight boolean too (mirror the production call in _flush_transcript_change).
+    from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
+    current_busy = is_turn_busy(ap, WorkerStatus.COMPLETE)
+    await ap._emit_status_report(WorkerStatus.COMPLETE, current_busy)
 
     assert len(captured) == 1, f"expected one progress_report, got {captured}"
     attrs = captured[0]["attributes"]

@@ -6,10 +6,10 @@ from the vendor transcript tail on every serialize (via ``_tail_status`` and the
 per-vendor ``status.py`` maps); never stored. Only meaningful when the containing
 ``ProcessStatus`` is one of ``RUNNING``, ``STOPPING``, or ``STOPPED``.
 
-This is the "what we found" axis. The companion "what does it mean" axis is the
-logical process status (``ready``/``busy``) — see ``process_lifecycle.py`` and
-``status_predicates.wire_status``. Worker statuses are never projected or
-synthesized here; the logical mapping lives entirely in ``status_predicates``.
+This is the "what we found" axis. The companion axes are the lifecycle
+``ProcessStatus`` FSM (``process_lifecycle.py``) and the derived ``busy`` boolean
+(``status_predicates.is_turn_busy``). Worker statuses are never projected or
+synthesized here; the ``busy`` mapping lives entirely in ``status_predicates``.
 
 See ``process_lifecycle.py`` for the companion ``ProcessStatus`` enum and
 ``docs/agent/agentic_process_statuses.md`` for the two-axis model overview.
@@ -98,10 +98,10 @@ _ERROR_STATUSES: frozenset[WorkerStatus] = frozenset({
 })
 
 # Live process-lifecycle states. String literals (not ProcessStatus) keep this a
-# true leaf module. Includes both the stored ``running`` and its wire projections
-# ``ready`` / ``busy`` so this classifier works on serialized payloads too.
+# true leaf module. ``running`` is the single live value on both realms now (no
+# more ``ready`` / ``busy`` projection).
 _LIVE_PROCESS_STATUSES: frozenset[str] = frozenset(
-    {"running", "ready", "busy", "starting"}
+    {"running", "starting"}
 )
 
 

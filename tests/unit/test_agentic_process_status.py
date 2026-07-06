@@ -83,10 +83,9 @@ def test_busy_worker_set_matches_spec(status_fixture):
 
 def test_process_running_wire_set_matches_spec(status_fixture):
     """``process_lifecycle.is_running`` must accept exactly the fixture
-    ``process_running_wire`` literal (``{starting, running, ready, busy,
-    stopping}``) — it classifies serialized payloads, so it accepts both the
-    stored ``running`` and its wire projections ``ready``/``busy``. Py side of the
-    TS ``isProcessRunning`` parity test."""
+    ``process_running_wire`` literal (``{starting, running, stopping}``). Since
+    busy/ready are no longer projected into ``status``, the wire live set equals
+    the stored live set. Py side of the TS ``isProcessRunning`` parity test."""
     from flow_sdk.builtin.process_lifecycle import is_running as is_process_running
 
     expected = {ProcessStatus(v) for v in status_fixture["process_running_wire"]}
@@ -95,12 +94,12 @@ def test_process_running_wire_set_matches_spec(status_fixture):
 
 
 def test_process_stored_running_values(status_fixture):
-    """The stored-FSM live values (``process_stored_running``) are a subset of the
-    wire live set — the projection only ADDS ready/busy, never removes."""
+    """The stored-FSM live values now EQUAL the wire live set — there is no
+    ready/busy projection that adds wire-only values."""
     stored = {ProcessStatus(v) for v in status_fixture["process_stored_running"]}
     wire = {ProcessStatus(v) for v in status_fixture["process_running_wire"]}
-    assert stored < wire
-    assert ProcessStatus.READY not in stored and ProcessStatus.BUSY not in stored
+    assert stored == wire
+    assert not hasattr(ProcessStatus, "READY") and not hasattr(ProcessStatus, "BUSY")
 
 
 def test_process_startable_set_matches_spec(status_fixture):
@@ -184,9 +183,10 @@ def test_process_status_values():
     assert ProcessStatus.STOPPING.value == "stopping"
     assert ProcessStatus.STOPPED.value == "stopped"
     assert ProcessStatus.FAILED.value == "failed"
-    # Wire-only logical projections of RUNNING.
-    assert ProcessStatus.READY.value == "ready"
-    assert ProcessStatus.BUSY.value == "busy"
+    # busy/ready are no longer status values — turn-in-flight is a separate
+    # ``busy`` boolean (``is_turn_busy``).
+    assert not hasattr(ProcessStatus, "READY")
+    assert not hasattr(ProcessStatus, "BUSY")
 
 
 def test_process_status_no_live():
@@ -550,8 +550,8 @@ def test_tail_status_expands_past_envelope_run_beyond_4kb(tmp_path: Path):
 
 # ── is_ready_for_input truth table ───────────────────────────────────────────
 #
-# Contract (realigned): is_ready_for_input(p) ⇔ wire_status(p) == READY ⇔ the
-# process is stored-RUNNING AND ¬busy. busy ⇔ prompt-lock held ∨ _turn_in_flight
+# Contract (realigned): is_ready_for_input(p) ⇔ is_process_running(p.status) AND
+# ¬is_turn_busy(p) ⇔ the process is RUNNING AND ¬busy. busy ⇔ prompt-lock held ∨ _turn_in_flight
 # ∨ worker ∈ {initializing, working, thinking, tool_call, tool_running}.
 # Everything else while RUNNING (idle/complete/interrupted/pending_user AND the
 # fail-open error states error/api_error/api_timeout/inactive/unknown/None) is
@@ -613,34 +613,41 @@ def test_is_ready_for_input_truth_table(process_status, worker_status, expected)
 
 
 @pytest.mark.parametrize(
-    "process_status,worker_status,expected_wire",
+    "process_status,worker_status,expected_busy",
     [
-        (ProcessStatus.RUNNING, WorkerStatus.IDLE, "ready"),
-        (ProcessStatus.RUNNING, WorkerStatus.PENDING_USER, "ready"),
-        (ProcessStatus.RUNNING, WorkerStatus.API_ERROR, "ready"),
-        (ProcessStatus.RUNNING, WorkerStatus.THINKING, "busy"),
-        (ProcessStatus.RUNNING, WorkerStatus.INITIALIZING, "busy"),
-        # Non-running stored values pass through unchanged (never ready/busy).
-        (ProcessStatus.STARTING, WorkerStatus.INITIALIZING, "starting"),
-        (ProcessStatus.STOPPED, WorkerStatus.COMPLETE, "stopped"),
-        (ProcessStatus.FAILED, WorkerStatus.ERROR, "failed"),
+        (ProcessStatus.RUNNING, WorkerStatus.IDLE, False),
+        (ProcessStatus.RUNNING, WorkerStatus.PENDING_USER, False),
+        (ProcessStatus.RUNNING, WorkerStatus.API_ERROR, False),
+        (ProcessStatus.RUNNING, WorkerStatus.THINKING, True),
+        (ProcessStatus.RUNNING, WorkerStatus.INITIALIZING, True),
+        # Non-running lifecycle → never busy (no turn can be in flight).
+        (ProcessStatus.STARTING, WorkerStatus.INITIALIZING, False),
+        (ProcessStatus.STOPPED, WorkerStatus.COMPLETE, False),
+        (ProcessStatus.FAILED, WorkerStatus.ERROR, False),
     ],
 )
-def test_wire_status_projection(process_status, worker_status, expected_wire):
-    """``wire_status`` projects stored ``running`` → ready/busy and passes every
-    other stored value through unchanged. It is the ONLY place stored ``running``
-    becomes ready/busy — and it never emits the literal ``running``."""
-    from flow_sdk.builtin.agentic_process.status_predicates import wire_status
+def test_busy_is_orthogonal_to_status(process_status, worker_status, expected_busy):
+    """``busy`` is a separate boolean (``is_turn_busy``), never folded into
+    ``status``. The lifecycle value is emitted verbatim — ``running`` stays
+    ``running`` — and ``busy`` carries the turn-in-flight signal alongside it.
+
+    Note: a mid-turn worker status on a non-RUNNING FSM value can't happen in
+    practice; here we only assert the RUNNING rows drive ``busy`` and that the
+    status value is never mutated into ready/busy."""
+    from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
 
     proc = _FakeProcess(process_status, worker_status)
-    assert wire_status(proc, worker_status) == expected_wire
-    assert wire_status(proc, worker_status) != "running"
+    # status is emitted verbatim — never projected to a ready/busy literal.
+    assert proc.status == process_status.value
+    assert proc.status not in ("ready", "busy")
+    if process_status is ProcessStatus.RUNNING:
+        assert is_turn_busy(proc, worker_status) is expected_busy
 
 
 def test_is_turn_busy_signal_priority():
     """``is_turn_busy`` ORs three signals: prompt lock, ``_turn_in_flight``, and a
     mid-turn worker status. Any one → busy. This is the SAME predicate the
-    switch-mode 409 and the wire ``busy`` status derive from."""
+    switch-mode 409 and the serialized ``busy`` field derive from."""
     from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
 
     # (1) No lock, no turn, a ready worker → NOT busy (the held-lock case is
@@ -759,56 +766,57 @@ def test_process_failed_terminal_state():
     assert proc.is_idle  # FAILED is one of the idle-lifecycle states
 
 
-# ── Serializer injection branch (worker_status / ready_for_input) ─────────────
+# ── Serializer injection branch (worker_status / busy / ready_for_input) ──────
 #
-# ``worker_status`` and ``ready_for_input`` are NOT stored — they are projected
-# onto the wire payload each serialize by ``api_json_serializer`` (the live
-# ``model_dump`` path). The projection is: ``worker_status`` = the computed
-# WorkerStatus (or ``"idle"`` when the transcript hasn't been discovered), and
-# ``ready_for_input`` = ``is_ready_for_input(self, computed)``. These tests pin
-# that branch directly, driven only by a monkeypatched ``fetch_worker_status``
-# (no server, no transcript) so the projection is asserted independently.
+# ``worker_status``, ``busy`` and ``ready_for_input`` are NOT stored — they are
+# derived onto the wire payload each serialize by ``api_json_serializer`` (the
+# live ``model_dump`` path). ``status`` is the lifecycle FSM emitted VERBATIM
+# (``running`` and all — no projection); ``busy`` = ``is_turn_busy(self,
+# computed)``; ``ready_for_input`` = ``is_process_running(status) and not busy``.
+# These tests pin that branch directly, driven only by a monkeypatched
+# ``fetch_worker_status`` (no server, no transcript).
 
 
 @pytest.mark.parametrize(
-    "computed,exp_worker_status,exp_status,exp_ready",
+    "computed,exp_worker_status,exp_busy,exp_ready",
     [
-        # Ready worker states → raw worker_status verbatim, wire status ready.
-        (WorkerStatus.COMPLETE, "complete", "ready", True),
-        (WorkerStatus.IDLE, "idle", "ready", True),
-        (WorkerStatus.INTERRUPTED, "interrupted", "ready", True),
-        # Fail-open: error/stale worker states are re-promptable → wire ready,
+        # Ready worker states → status stays running, busy False, ready True.
+        (WorkerStatus.COMPLETE, "complete", False, True),
+        (WorkerStatus.IDLE, "idle", False, True),
+        (WorkerStatus.INTERRUPTED, "interrupted", False, True),
+        # Fail-open: error/stale worker states are re-promptable → not busy,
         # but the raw worker_status is surfaced verbatim ("what we found").
-        (WorkerStatus.ERROR, "error", "ready", True),
-        # Busy worker states → wire status busy, not ready.
-        (WorkerStatus.THINKING, "thinking", "busy", False),
-        (WorkerStatus.TOOL_RUNNING, "tool_running", "busy", False),
-        (WorkerStatus.INITIALIZING, "initializing", "busy", False),
+        (WorkerStatus.ERROR, "error", False, True),
+        # Busy worker states → busy True, not ready.
+        (WorkerStatus.THINKING, "thinking", True, False),
+        (WorkerStatus.TOOL_RUNNING, "tool_running", True, False),
+        (WorkerStatus.INITIALIZING, "initializing", True, False),
         # Undiscovered transcript → worker_status is NULL (never coerced to a
-        # placeholder); wire status ready (spawned-and-idle, no turn in flight).
-        (None, None, "ready", True),
+        # placeholder); not busy (spawned-and-idle, no turn in flight).
+        (None, None, False, True),
     ],
 )
-def test_api_json_serializer_projects_status_axes(
-    monkeypatch, computed, exp_worker_status, exp_status, exp_ready
+def test_api_json_serializer_emits_status_busy_axes(
+    monkeypatch, computed, exp_worker_status, exp_busy, exp_ready
 ):
-    """The live serializer projects the wire ``status`` (ready/busy), surfaces the
-    raw nullable ``worker_status``, and derives ``ready_for_input`` — all on the
-    RUNNING process payload. The stored FSM value ``running`` is never emitted."""
+    """The live serializer emits the lifecycle ``status`` VERBATIM (``running``),
+    surfaces the raw nullable ``worker_status``, and derives the orthogonal
+    ``busy`` boolean + ``ready_for_input`` — all on the RUNNING process payload.
+    The two axes never mix: ``status`` is always ``running`` here."""
     proc = AgenticProcess()
     proc.status = ProcessStatus.RUNNING.value
     monkeypatch.setattr(AgenticProcess, "fetch_worker_status", lambda self: computed)
 
     payload = proc.model_dump(mode="json")
     assert payload["worker_status"] == exp_worker_status
-    assert payload["status"] == exp_status
-    assert payload["status"] != "running"
+    assert payload["status"] == "running"
+    assert payload["busy"] is exp_busy
     assert payload["ready_for_input"] is exp_ready
 
 
 def test_api_json_serializer_ready_false_when_not_running(monkeypatch):
-    """A COMPLETE worker on a non-RUNNING container is never ready, and its wire
-    status passes through as the stored lifecycle value (not projected)."""
+    """A COMPLETE worker on a non-RUNNING container is never ready or busy, and its
+    wire status passes through as the stored lifecycle value."""
     proc = AgenticProcess()
     proc.status = ProcessStatus.STOPPED.value
     monkeypatch.setattr(AgenticProcess, "fetch_worker_status", lambda self: WorkerStatus.COMPLETE)
@@ -816,6 +824,7 @@ def test_api_json_serializer_ready_false_when_not_running(monkeypatch):
     payload = proc.model_dump(mode="json")
     assert payload["worker_status"] == "complete"
     assert payload["status"] == "stopped"
+    assert payload["busy"] is False
     assert payload["ready_for_input"] is False
 
 
@@ -844,15 +853,19 @@ def test_fetch_worker_status_terminal_lifecycle_overrides_transcript(monkeypatch
     assert proc.fetch_worker_status() == expected
 
 
-def test_api_json_serializer_never_emits_stored_running(monkeypatch):
-    """Regression: the wire ``status`` must never be the stored ``running`` — a
-    RUNNING process always projects to ready or busy."""
+def test_api_json_serializer_always_emits_raw_running(monkeypatch):
+    """Regression (inverted from the old projection model): the wire ``status`` of
+    a RUNNING process is ALWAYS the raw ``running`` — turn-in-flight lives in the
+    separate ``busy`` boolean, never folded into ``status``."""
     for computed in (WorkerStatus.IDLE, WorkerStatus.THINKING, None):
         proc = AgenticProcess()
         proc.status = ProcessStatus.RUNNING.value
         monkeypatch.setattr(AgenticProcess, "fetch_worker_status", lambda self, c=computed: c)
         payload = proc.model_dump(mode="json")
-        assert payload["status"] in ("ready", "busy")
+        assert payload["status"] == "running"
+        assert payload["status"] not in ("ready", "busy")
+        # busy tracks the worker: mid-turn (thinking) → True, else False.
+        assert payload["busy"] is (computed == WorkerStatus.THINKING)
 
 
 def test_api_json_serializer_skip_context_suppresses_injection(monkeypatch):
@@ -865,4 +878,5 @@ def test_api_json_serializer_skip_context_suppresses_injection(monkeypatch):
 
     payload = proc.model_dump(mode="json", context={"skip_api_serializer": True})
     assert "worker_status" not in payload
+    assert "busy" not in payload
     assert "ready_for_input" not in payload

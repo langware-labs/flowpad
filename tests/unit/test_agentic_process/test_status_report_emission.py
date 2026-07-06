@@ -51,7 +51,7 @@ async def test_emit_status_report_streams_exact_counters(initialize_test_db, mon
         pushed.append(flow_data)
     monkeypatch.setattr(type(ap), "emit_flow_data", _capture_flow, raising=False)
 
-    await ap._emit_status_report(WorkerStatus.THINKING, "busy")
+    await ap._emit_status_report(WorkerStatus.THINKING, True)
 
     # Persisted snapshot mirrors the exact fixture totals.
     counters = ap.status_report["counters"]
@@ -61,9 +61,10 @@ async def test_emit_status_report_streams_exact_counters(initialize_test_db, mon
     assert counters["cache_write_tokens"] == 3941
     assert counters["assistant_messages"] == 3
     assert ap.status_report["worker_status"] == WorkerStatus.THINKING.value
-    # process_status carries the wire projection: THINKING is busy → "busy"
-    # (stored ``running`` is never surfaced in the report).
-    assert ap.status_report["process_status"] == "busy"
+    # process_status is the lifecycle FSM verbatim (``running`` — no projection);
+    # turn-in-flight rides the separate ``busy`` boolean.
+    assert ap.status_report["process_status"] == "running"
+    assert ap.status_report["busy"] is True
 
     # Pushed on the reused progress_report envelope, kind-discriminated.
     assert len(pushed) == 1
@@ -93,8 +94,8 @@ async def test_emit_status_report_is_change_gated(initialize_test_db, monkeypatc
         pushed.append(flow_data)
     monkeypatch.setattr(type(ap), "emit_flow_data", _capture_flow, raising=False)
 
-    await ap._emit_status_report(WorkerStatus.THINKING, "busy")
-    await ap._emit_status_report(WorkerStatus.THINKING, "busy")  # identical → no-op
+    await ap._emit_status_report(WorkerStatus.THINKING, True)
+    await ap._emit_status_report(WorkerStatus.THINKING, True)  # identical → no-op
 
     assert saves["n"] == 1
     assert len(pushed) == 1

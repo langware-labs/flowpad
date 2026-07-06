@@ -1,17 +1,15 @@
 """ProcessStatus — backend-owned control-plane FSM for the AgenticProcess container.
 
-Part of the two-axis status model:
+Part of the status model:
 
 - ``ProcessStatus`` (this file) — app/user-level lifecycle of the process
   container. The FSM is **stored** and its transitions are explicit
   (NEW → STARTING → RUNNING → STOPPING → STOPPED, any → FAILED). ``RUNNING`` is
-  the only stored "live" value.
+  the single "live" value, emitted verbatim on the wire (no projection).
 
-  On the **wire**, ``RUNNING`` is projected to one of two logical values by
-  ``status_predicates.wire_status`` — ``READY`` (the worker can take the next
-  user prompt) or ``BUSY`` (a turn is in flight). ``READY``/``BUSY`` are
-  **never stored**; they exist only in serialized payloads. This is the
-  "what does it mean" axis, shared identically across every worker vendor.
+  "Is a turn in flight?" is a **separate**, orthogonal axis — the ``busy``
+  boolean, derived per read by ``status_predicates.is_turn_busy`` and serialized
+  alongside ``status`` as its own field. It is never folded into this FSM.
 - ``WorkerStatus`` (``worker_status.py``) — raw "what we found" state of the
   worker running inside the process, in worker lingo. Derived from the vendor
   transcript on each serialize; never stored.
@@ -27,28 +25,21 @@ from flow_sdk._compat import StrEnum
 class ProcessStatus(StrEnum):
     NEW = "new"
     STARTING = "starting"
-    # Stored "live" value. Never serialized directly — the wire projection
-    # replaces it with READY / BUSY (see ``status_predicates.wire_status``).
+    # The "live" value. Both stored AND emitted on the wire — turn-in-flight is
+    # now a *separate* ``busy`` boolean (derived per read from ``is_turn_busy``),
+    # NOT a projection that overloads this lifecycle FSM. See
+    # ``status_predicates.is_turn_busy`` and ``docs/agent/agentic_process_statuses.md``.
     RUNNING = "running"
     STOPPING = "stopping"
     STOPPED = "stopped"
     FAILED = "failed"
 
-    # Wire-only logical projections of RUNNING. NEVER persisted; produced by the
-    # serializer / ``status`` action so consumers gate input and the pty-mode
-    # switch on a single ``status == "busy"`` boolean.
-    READY = "ready"
-    BUSY = "busy"
 
-
-# Live states — accepts both the stored `running` and its wire projections
-# `ready`/`busy` (plus the STARTING/STOPPING bookends), so `is_running` classifies
-# a persisted OR a serialized value without the caller knowing which realm it holds.
+# Live states — `running` is the single live value on both realms now (no more
+# `ready`/`busy` projection), plus the STARTING/STOPPING bookends.
 _WIRE_RUNNING_STATUSES: frozenset[ProcessStatus] = frozenset({
     ProcessStatus.STARTING,
     ProcessStatus.RUNNING,
-    ProcessStatus.READY,
-    ProcessStatus.BUSY,
     ProcessStatus.STOPPING,
 })
 
@@ -60,11 +51,10 @@ _STARTABLE_STATUSES: frozenset[ProcessStatus] = frozenset({
 
 
 def is_running(status: ProcessStatus) -> bool:
-    """True while the process container is live.
+    """True while the process container is live (STARTING/RUNNING/STOPPING).
 
-    Accepts both the stored form (STARTING/RUNNING/STOPPING) and the wire
-    projection (STARTING/READY/BUSY/STOPPING), so callers don't have to know
-    whether they hold a persisted or serialized value.
+    Lifecycle only — "is a turn in flight?" is the orthogonal ``busy`` boolean
+    (``is_turn_busy``), not a status value.
     """
     return status in _WIRE_RUNNING_STATUSES
 

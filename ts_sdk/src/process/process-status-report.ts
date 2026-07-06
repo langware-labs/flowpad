@@ -79,7 +79,10 @@ export interface ProcessStatusReport {
   counters: ProcessCounters;
   focused_asset: FocusedAsset | null;
   worker_status: string;
+  /** Lifecycle FSM value (``running`` and all — no ready/busy projection). */
   process_status: string;
+  /** Turn-in-flight, the orthogonal boolean axis. */
+  busy: boolean;
 }
 
 /**
@@ -98,6 +101,7 @@ export function parseStatusReport(raw: unknown): ProcessStatusReport | null {
     focused_asset: fa && typeof fa === 'object' ? fa : null,
     worker_status: String(r.worker_status ?? ''),
     process_status: String(r.process_status ?? ''),
+    busy: r.busy === true,
   };
 }
 

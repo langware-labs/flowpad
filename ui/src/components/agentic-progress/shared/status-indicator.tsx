@@ -58,29 +58,14 @@ export const processStatusConfig: Record<ProcessStatus, StatusConfig> = {
     label: PROCESS_STATUS_LABEL[ProcessStatus.STARTING],
     animate: true,
   },
-  // Legacy stored value — should never reach the wire, but keep a config so the
-  // exhaustive Record typechecks and any stray legacy payload still renders.
+  // Live container. Turn-in-flight is the separate ``busy`` boolean (rendered via
+  // the fine-grained workerStatus config while working); the bare RUNNING state
+  // is the idle-at-prompt look. Reads as "Idle".
   [ProcessStatus.RUNNING]: {
-    icon: Loader2,
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-100 dark:bg-blue-900/30',
-    label: PROCESS_STATUS_LABEL[ProcessStatus.RUNNING],
-    animate: true,
-  },
-  // Live + idle: the worker can take the next prompt. Reads as "Idle".
-  [ProcessStatus.READY]: {
     icon: Circle,
     color: 'text-gray-400',
     bgColor: 'bg-gray-100 dark:bg-gray-800',
-    label: PROCESS_STATUS_LABEL[ProcessStatus.READY],
-  },
-  // Live + a turn in flight. Reads as "Working" with a spinner.
-  [ProcessStatus.BUSY]: {
-    icon: Loader2,
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-100 dark:bg-blue-900/30',
-    label: PROCESS_STATUS_LABEL[ProcessStatus.BUSY],
-    animate: true,
+    label: PROCESS_STATUS_LABEL[ProcessStatus.RUNNING],
   },
   [ProcessStatus.STOPPING]: {
     icon: Loader2,

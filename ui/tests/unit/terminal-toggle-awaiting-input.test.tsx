@@ -26,18 +26,21 @@ afterEach(() => cleanup());
 
 // The chat⇄terminal toggle may only be used while the agent is awaiting the
 // user's input — a mid-turn switchMode is 409'd by the backend. The gate is the
-// single logical wire status: the toggle is enabled ⇔ the process is READY
-// (¬busy). READY and BUSY are disjoint, so enabling on READY can never hit the
+// single readiness predicate: the toggle is enabled ⇔ the process is RUNNING and
+// not busy (a turn is not in flight). "ready" and "busy" are disjoint by
+// construction (RUNNING && !busy vs busy), so enabling on ready can never hit the
 // backend's busy 409. These tests pin the predicate and the ribbon wiring.
 
 describe('isReadyForInput — the "your turn" toggle gate', () => {
-  it('is true exactly for the READY wire status', () => {
-    expect(isReadyForInput({ status: ProcessStatus.READY })).toBe(true);
+  it('is true exactly for a RUNNING, non-busy process', () => {
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: false })).toBe(true);
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING })).toBe(true); // busy defaults falsy
   });
 
-  it('is false for BUSY and every non-live / terminal status (no 409 hole)', () => {
+  it('is false when busy (turn in flight) and for every non-live / terminal status (no 409 hole)', () => {
+    // A RUNNING process with a turn in flight is busy, not ready.
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: true })).toBe(false);
     for (const s of [
-      ProcessStatus.BUSY,
       ProcessStatus.NEW,
       ProcessStatus.STARTING,
       ProcessStatus.STOPPING,

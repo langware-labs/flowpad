@@ -119,13 +119,14 @@ async def test_status_reflects_lifecycle_writes(bootstrapped_client, user):
         assert data["ready_for_input"] is False
 
         # RUNNING — still no session_id, so worker has never been prompted and no
-        # turn is in flight → the wire status projects to READY, never "running".
+        # turn is in flight → status is the raw ``running`` (emitted verbatim),
+        # ``busy`` is False, and ``ready_for_input`` is True.
         process.status = ProcessStatus.RUNNING.value
         await process.save()
         resp = await client.get(f"/api/v1/graph/agentic_process/{process.id}/status")
         data = ApiResponse(**resp.json()).data
-        assert data["status"] == ProcessStatus.READY.value
-        assert data["status"] != "running"
+        assert data["status"] == ProcessStatus.RUNNING.value
+        assert data["busy"] is False
         assert data["ready_for_input"] is True
 
         # STOPPED (terminal) — not ready any more.
