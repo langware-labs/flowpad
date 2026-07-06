@@ -250,6 +250,12 @@ class UvManager {
       return { stdout: stdout.trim(), stderr: stderr.trim() };
     } catch (error) {
       this.log.error(`[uv] Command failed: ${cmd} ${args.join(' ')}`);
+      // Always record exit code / signal / killed — a fast, empty-stderr failure
+      // (e.g. a child killed by a signal: Gatekeeper, OOM, the timeout) is
+      // otherwise indistinguishable from a non-zero uv error in the logs.
+      this.log.error(
+        `[uv] exit code=${error.code} signal=${error.signal} killed=${error.killed}`
+      );
       if (error.stdout) this.log.error(`[uv] stdout: ${error.stdout}`);
       if (error.stderr) this.log.error(`[uv] stderr: ${error.stderr}`);
       throw error;
@@ -589,6 +595,25 @@ class UvManager {
   }
 
   /**
+   * Move a corrupt/half-written flowpad tool venv aside so the next
+   * `uv tool install … --force` rebuilds it from scratch. We rename rather than
+   * delete: the corrupt dir is preserved as `…/flowpad.corrupt-<ts>` for
+   * diagnosis (an interrupted destructive replace is the usual cause), and a
+   * rename is atomic where a recursive delete could itself be interrupted.
+   */
+  _quarantineToolVenv() {
+    const venvDir = this._toolVenvDir();
+    try {
+      if (!fs.existsSync(venvDir)) return;
+      const aside = `${venvDir}.corrupt-${Date.now()}`;
+      fs.renameSync(venvDir, aside);
+      this.log.info(`[uv] quarantined corrupt tool env → ${aside}`);
+    } catch (e) {
+      this.log.warn(`[uv] failed to quarantine tool env: ${e.message}`);
+    }
+  }
+
+  /**
    * Run `uv tool install … --force` resiliently against a live venv. Every
    * attempt first drains the whole venv process tree — backend + workers — via
    * `_drainVenvProcesses()`, so the reinstall isn't fighting a running process
@@ -601,29 +626,47 @@ class UvManager {
    * the race (observed in the field: a post-boot upgrade aborts here and the
    * app is left stuck on the loading splash).
    *
-   * Strategy: drain the venv processes, attempt the install, and ONLY on
-   * a tool-dir-locked error re-kill and wait a bounded moment for the
-   * already-terminating processes to release their handles, then retry — up to
-   * MAX_LOCK_RETRIES. This is not a blind retry to paper over a flake: we retry
-   * exclusively the "dir is locked by a process we just killed" error, giving
-   * the OS time to finish a teardown that is already in progress. Any other
-   * failure throws immediately. On Unix the lock can't occur (unlinking a
-   * running exe is allowed), so the first attempt always succeeds.
+   * Strategy: drain the venv processes, attempt the install, and retry — up to
+   * MAX_RETRIES — ONLY on two specific, self-correctable failures; any other
+   * error throws immediately (this is not a blind retry to paper over a flake):
+   *
+   *   • Tool-dir locked (Windows) — re-drain and wait a bounded moment for the
+   *     already-terminating holders to release their handles, then retry. On
+   *     Unix the lock can't occur (unlinking a running exe is allowed), so the
+   *     first attempt succeeds.
+   *   • Corrupt/half-written env — an interrupted destructive replace can leave
+   *     `…/flowpad` with `lib/` + `pyvenv.cfg` but no `bin/python`, so `--force`
+   *     aborts with "Invalid environment: missing Python executable" instead of
+   *     replacing it (otherwise a hard startup failure → the timeout panel; see
+   *     RCA fad616fc). We quarantine the corrupt dir aside (renamed, not deleted,
+   *     so it survives for diagnosis) and retry, which rebuilds the env clean.
    */
   async _uvToolInstallForce(installArgs) {
-    const MAX_LOCK_RETRIES = 3;
+    const MAX_RETRIES = 3;
     const HANDLE_RELEASE_WAIT_MS = 1500;
     for (let attempt = 1; ; attempt++) {
       await this._drainVenvProcesses();
       try {
         return await this._uv(installArgs, { timeout: 120000 });
       } catch (err) {
-        if (attempt >= MAX_LOCK_RETRIES || !this.isToolDirLockedError(err)) throw err;
-        this.log.warn(
-          `[uv] tool dir locked (attempt ${attempt}/${MAX_LOCK_RETRIES}) — re-killing ` +
-          `holders and waiting ${HANDLE_RELEASE_WAIT_MS}ms for handles to release`
-        );
-        await new Promise((r) => setTimeout(r, HANDLE_RELEASE_WAIT_MS));
+        if (attempt >= MAX_RETRIES) throw err;
+        if (this.isCorruptEnvError(err)) {
+          this.log.warn(
+            `[uv] corrupt tool env (attempt ${attempt}/${MAX_RETRIES}) — ` +
+            `quarantining half-written venv and retrying`
+          );
+          this._quarantineToolVenv();
+          continue;
+        }
+        if (this.isToolDirLockedError(err)) {
+          this.log.warn(
+            `[uv] tool dir locked (attempt ${attempt}/${MAX_RETRIES}) — re-killing ` +
+            `holders and waiting ${HANDLE_RELEASE_WAIT_MS}ms for handles to release`
+          );
+          await new Promise((r) => setTimeout(r, HANDLE_RELEASE_WAIT_MS));
+          continue;
+        }
+        throw err;
       }
     }
   }
@@ -1340,6 +1383,22 @@ class UvManager {
     return (/failed to remove directory/i.test(text) && /flowpad/i.test(text))
       || /\bos error 5\b/i.test(text)
       || (/access is denied/i.test(text) && /flowpad/i.test(text));
+  }
+
+  /**
+   * True when `uv tool install … --force` aborted because the flowpad tool env
+   * is corrupt/half-written — an interrupted destructive replace left `…/flowpad`
+   * with `lib/` + `pyvenv.cfg` but no `bin/python`, so uv reports
+   * "Invalid environment: missing Python executable at …/flowpad/bin/python3"
+   * and refuses to replace it (rather than a lock or a network error). Narrow by
+   * design: require the flowpad tool path so a generic uv message never triggers
+   * the quarantine-and-rebuild. See RCA fad616fc.
+   */
+  isCorruptEnvError(error) {
+    const text = `${error?.message || ''}\n${error?.stderr || ''}\n${error?.stdout || ''}`;
+    const corrupt = /invalid environment/i.test(text)
+      || /missing python executable/i.test(text);
+    return corrupt && /flowpad/i.test(text);
   }
 
   /**
