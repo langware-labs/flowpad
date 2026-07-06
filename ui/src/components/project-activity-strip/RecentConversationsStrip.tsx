@@ -446,7 +446,11 @@ function ConversationRow({
     latestMessage,
     latestPtrTs: lastPtr?.ts ?? null,
     invitation,
-    viewer: { email: myEmail, cloudUserId: cloudUser?.id ?? currentUser?.id ?? null },
+    viewer: {
+      email: myEmail,
+      cloudUserId: cloudUser?.id ?? null,
+      localUserId: currentUser?.id ?? null,
+    },
   });
   const isInvitationRow = facets.isInvitation;
 
