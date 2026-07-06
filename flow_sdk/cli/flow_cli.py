@@ -998,6 +998,9 @@ app.command(
 from flow_sdk.cli.commands.migrate_cmd import migrate_app
 app.add_typer(migrate_app, name="migrate")
 
+from flow_sdk.cli.commands.instance_cmd import instance_app
+app.add_typer(instance_app, name="instance")
+
 from flow_sdk.cli.commands.diagnose_cmd import diagnose_command
 # No positional MESSAGE arg — the issue is read at a prompt. allow_extra_args so
 # stray words (e.g. `flow diagnose backend down`) are ignored, not errors.
