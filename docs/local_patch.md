@@ -5,8 +5,8 @@ id: 23897332-8b35-504e-8b94-1234fe32ea0b
 # Local Hot-Patch Runbook
 
 How to apply a **single-commit hot-patch** to the locally-installed `flowpad` (the
-uv-tool deployment from [`pypi-deploy.md`](./pypi-deploy.md) → _Local Deployment_) **in
-place, without rebuilding the wheel and without running tests.**
+uv-tool deployment from the [`deploy-pypi` skill](../.claude/skills/deploy-pypi/SKILL.md) →
+_Local deployment_) **in place, without rebuilding the wheel and without running tests.**
 
 > **Two surfaces, two patch paths.** This runbook (sections below) patches the **backend**
 > (`flow_sdk` Python in `site-packages`). To patch the **Electron desktop shell** itself —
@@ -28,7 +28,7 @@ deployment, restart the service:
 | health | `$(hostname -i):8000/api/v1/health/version` | `127.0.0.1:9007/api/v1/graph/bootstrap` |
 
 > ⚠️ **This is the fast inner-loop path, not the deploy path.** The supported way to ship
-> a build is the full **Local Deployment** in [`pypi-deploy.md`](./pypi-deploy.md)
+> a build is the full **Local deployment** in the [`deploy-pypi` skill](../.claude/skills/deploy-pypi/SKILL.md)
 > (`build_ui.py` → `uv build` → `uv tool install`). Use this runbook to iterate quickly on
 > backend code already installed. **No tests are run** — that is by design; verify behavior
 > yourself. Any patch is wiped the next time you run the full local deployment (see
@@ -88,7 +88,7 @@ like the hub's source-tree systemd service.
 
 ### 0. Prereqs
 - A local deployment exists (`flow` at `~/.local/share/uv/tools/flowpad/bin/flow`). If not,
-  run **Local Deployment** in [`pypi-deploy.md`](./pypi-deploy.md) first.
+  run **Local deployment** in the [`deploy-pypi` skill](../.claude/skills/deploy-pypi/SKILL.md) first.
 - The commit you want to ship exists in your repo. **Uncommitted edits are not captured** —
   commit them, or pass `git stash create`'s sha as `<ref>`.
 
