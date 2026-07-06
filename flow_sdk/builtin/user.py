@@ -97,6 +97,31 @@ class User(Entity):
         return {"user_id": "", "name": override, "email": ""}
 
     @classmethod
+    async def self_ids(cls) -> set[str]:
+        """Every id the local user may be stamped with as a ``sender_id``.
+
+        Send paths stamp either the cloud user id
+        (``current_sender_participant`` when cloud-logged-in) or the local
+        desktop user id (``local_sender_identity``, logged-out sends) — so any
+        "is this message self-sent" check must accept both.
+        """
+        ids: set[str] = set()
+        local_user = await cls.get_local()
+        if local_user and local_user.id:
+            ids.add(local_user.id)
+        try:
+            from flow_sdk.cli.app_config import get_user
+            from flow_sdk.cli.auth.hub_login import is_logged_in
+
+            if is_logged_in():
+                cloud_user = get_user()
+                if isinstance(cloud_user, dict) and cloud_user.get("id"):
+                    ids.add(str(cloud_user["id"]))
+        except Exception:
+            pass
+        return ids
+
+    @classmethod
     async def get_user_by_email(cls, email: str) -> "User | None":
         return await cls.get_one({"email": email})
 
