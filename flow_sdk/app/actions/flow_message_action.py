@@ -92,13 +92,50 @@ def _participant_label(participant: dict) -> str:
     )
 
 
-async def _learn_address_book(participants: list[dict]) -> None:
-    for participant in _normalize_participants(participants):
+def participant_identity_key(participant: dict) -> str:
+    """Canonical identity key for a participant: ``user_id || email || name``,
+    lowercased. Mirrors the frontend ``participantKey`` (``use-contacts.ts``) so
+    the backend scan/matcher and the UI agree on "the same person".
+    """
+    value = (
+        _participant_value(participant, "user_id", "user_id")
+        or _participant_value(participant, "email", "user_email")
+        or _participant_value(participant, "name", "user_name")
+        or ""
+    )
+    return value.strip().lower()
+
+
+async def _learn_address_book(participants: list[dict]) -> int:
+    """Upsert every participant into the address book. Keyed on user_id OR email
+    (a hub-only participant carries a ``user_id`` and no email). Returns the
+    number of participants that produced/updated a contact. The single per-roster
+    learner — reused by create/receive/share and the address-book scan.
+    """
+    return await _learn_normalized_participants(_normalize_participants(participants))
+
+
+async def _learn_normalized_participants(participants: list[dict]) -> int:
+    """Learner fast-path for callers that already hold a normalized roster —
+    skips the re-normalization. See :func:`_learn_address_book`.
+    """
+    upserted = 0
+    for participant in participants:
         email = _participant_value(participant, "email")
-        if not email:
+        user_id = _participant_value(participant, "user_id")
+        if not email and not user_id:
             continue
         name = _participant_value(participant, "name")
-        await User.get_or_create_by_email(email, name=name)
+        picture = _participant_value(participant, "picture")
+        # remote defaults False: a learned contact is a LOCAL mirror minted at a
+        # local uuid5 id, not a hub entity at the same id — marking it remote
+        # would wrongly route ops through hub-reflection.
+        contact = await User.upsert_contact(
+            user_id=user_id, email=email, name=name, picture=picture
+        )
+        if contact is not None:
+            upserted += 1
+    return upserted
 
 
 async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
@@ -2683,6 +2720,24 @@ async def _upsert_hub_conversation_metadata(
         return None
     if existing is _UNSET:
         existing = await Conversation.get_one({"id": conv_id})
+    # Receive-side address-book reconcile (rule 3): every conversation that syncs
+    # down from the hub upserts its roster into the address book. This is the
+    # passive path (conversation-list background sync, WS reflection) — the one
+    # that previously wrote participants onto the row but never learned contacts.
+    # Runs outside the remote_reflection() conv-save blocks below (contacts are
+    # independent local rows). Gated to a roster CHANGE (new conv, or the hub
+    # roster differs from what we've stored) so a steady-state re-sync of N
+    # conversations doesn't fan out N×M no-op contact upserts on this hot path.
+    # Best-effort: never fail a conv sync over it.
+    roster = hub_conv.get("participants")
+    if isinstance(roster, list) and roster:
+        norm_roster = _normalize_participants(roster)
+        if existing is None or (existing.participants or []) != norm_roster:
+            try:
+                await _learn_normalized_participants(norm_roster)
+            except Exception as learn_err:  # noqa: BLE001
+                logger.debug("[conv-upsert] address-book learn failed for conv=%s: %s",
+                             conv_id[:8], learn_err)
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
         for k in ("title", "participants", "remote_project_id", "remote_project_name",
