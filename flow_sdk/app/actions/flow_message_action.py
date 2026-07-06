@@ -1554,8 +1554,11 @@ async def handle_inbox_list() -> ApiResponse:
     badge counted orphan FMs the user had no way to open or dismiss.
     """
     from flow_sdk.db.drivers.query import QueryFilter
-    current_user = await User.get_one({"uname": "local"})
-    current_user_id = current_user.id if current_user else None
+    # Self-sent exclusion must check BOTH the cloud and local user ids —
+    # sends stamp the cloud id when logged in, the local id otherwise.
+    # Comparing against the local id alone let cloud-stamped self-sends
+    # through, inflating the sidebar badge on every message the user sent.
+    self_ids = await User.self_ids()
     flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
     all_messages = await FlowMessage.get_all(flt)
     conv_flt = QueryFilter(type=BuiltinEntityType.CONVERSATION.value)
@@ -1563,7 +1566,7 @@ async def handle_inbox_list() -> ApiResponse:
     messages = [
         m for m in all_messages
         if not m.is_archived
-        and m.sender_id != current_user_id
+        and m.sender_id not in self_ids
         and m.conversation_id in known_conv_ids
     ]
     messages.sort(key=lambda m: m.created_date or "", reverse=True)

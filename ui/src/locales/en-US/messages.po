@@ -1,11 +1,17 @@
 msgid ""
 msgstr ""
-"POT-Creation-Date: 2026-07-06 18:22+0300\n"
+"POT-Creation-Date: 2026-06-29 01:00+0300\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: @lingui/cli\n"
 "Language: en-US\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
 
 #. placeholder {0}: progress.failed
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
@@ -47,6 +53,10 @@ msgstr "— show trace event gutter"
 #: src/components/artifacts/artifact-form.tsx
 msgid "./src/app or https://... (optional)"
 msgstr "./src/app or https://... (optional)"
+
+#: src/components/collaboration/sidebar/NewDocButton.tsx
+#~ msgid ".claude/docs/ under this project"
+#~ msgstr ".claude/docs/ under this project"
 
 #: src/components/git/BranchPicker.tsx
 msgid "· pick a branch"
@@ -93,6 +103,10 @@ msgstr "(no fields)"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "(no file — inline persona)"
 msgstr "(no file — inline persona)"
+
+#: src/components/footer.tsx
+#~ msgid "(no git repo)"
+#~ msgstr "(no git repo)"
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "(no subject)"
@@ -1058,6 +1072,10 @@ msgstr "API Keys"
 msgid "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
 msgstr "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
 
+#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+#~ msgid "App Settings"
+#~ msgstr "App Settings"
+
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "Appended to the current worker's prompt queue, tagged with this message."
@@ -1415,6 +1433,10 @@ msgstr "buffer px"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "buffer row"
 msgstr "buffer row"
+
+#: src/components/account/settings-section.tsx
+#~ msgid "Buffer terminal sync updates (prevents scroll jumps)"
+#~ msgstr "Buffer terminal sync updates (prevents scroll jumps)"
 
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Build history"
@@ -2594,6 +2616,7 @@ msgstr "Could not resolve home directory from bootstrap info"
 msgid "Could not save changes"
 msgstr "Could not save changes"
 
+#: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Could not start"
 msgstr "Could not start"
@@ -3423,6 +3446,14 @@ msgstr "Displays the mobile sidebar."
 msgid "Distance"
 msgstr "Distance"
 
+#: src/components/collaboration/sidebar/NewDocButton.tsx
+#~ msgid "Doc created"
+#~ msgstr "Doc created"
+
+#: src/components/collaboration/sidebar/NewDocButton.tsx
+#~ msgid "doc name"
+#~ msgstr "doc name"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Docs"
 msgstr "Docs"
@@ -3746,6 +3777,10 @@ msgstr "Enter a name for the new {0}."
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 msgid "Enter a name for the new workflow."
 msgstr "Enter a name for the new workflow."
+
+#: src/components/conversation/MembersAvatarStack.tsx
+#~ msgid "Enter a valid email"
+#~ msgstr "Enter a valid email"
 
 #: src/components/ui/settings-pane.tsx
 msgid "Enter chat rules..."
@@ -4116,6 +4151,10 @@ msgstr "Failed to create"
 msgid "Failed to create artifact"
 msgstr "Failed to create artifact"
 
+#: src/components/collaboration/sidebar/NewDocButton.tsx
+#~ msgid "Failed to create doc"
+#~ msgstr "Failed to create doc"
+
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Failed to create hook"
 msgstr "Failed to create hook"
@@ -4382,6 +4421,7 @@ msgstr "Failed to start services"
 msgid "Failed to start session"
 msgstr "Failed to start session"
 
+#: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Failed to start the build session."
 msgstr "Failed to start the build session."
@@ -5089,6 +5129,10 @@ msgstr "Hide hidden files"
 #: src/components/webapp-viewer.tsx
 msgid "Hide panel"
 msgstr "Hide panel"
+
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+#~ msgid "Hide tree"
+#~ msgstr "Hide tree"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
 msgid "High"
@@ -6648,12 +6692,19 @@ msgid "New build"
 msgstr "New build"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "New chat"
 msgstr "New chat"
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Claude Session"
 msgstr "New Claude Session"
+
+#: src/components/collaboration/sidebar/NewDocButton.tsx
+#: src/components/collaboration/sidebar/NewDocButton.tsx
+#: src/components/collaboration/sidebar/NewDocButton.tsx
+#~ msgid "New doc"
+#~ msgstr "New doc"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New file"
@@ -6831,6 +6882,10 @@ msgstr "No artifacts yet"
 msgid "No assets match those filters."
 msgstr "No assets match those filters."
 
+#: src/components/collaboration/RoomTabs.tsx
+#~ msgid "No assets open. Click a doc or skill in the sidebar to open it here."
+#~ msgstr "No assets open. Click a doc or skill in the sidebar to open it here."
+
 #: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "No assets to run."
 msgstr "No assets to run."
@@ -6933,6 +6988,10 @@ msgstr "No conversation yet."
 msgid "No conversations"
 msgstr "No conversations"
 
+#: src/components/collaboration/sidebar/ConversationsCategory.tsx
+#~ msgid "No conversations yet"
+#~ msgstr "No conversations yet"
+
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 msgid "No conversations yet."
 msgstr "No conversations yet."
@@ -6972,6 +7031,10 @@ msgstr "No diff to display"
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "No differences from the current version."
 msgstr "No differences from the current version."
+
+#: src/components/collaboration/sidebar/DocsCategory.tsx
+#~ msgid "No docs yet"
+#~ msgstr "No docs yet"
 
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "No Document Selected"
@@ -7218,6 +7281,10 @@ msgstr "No past chats"
 msgid "No past sessions used \"{skillName}\"."
 msgstr "No past sessions used \"{skillName}\"."
 
+#: src/components/collaboration/sidebar/PlansCategory.tsx
+#~ msgid "No plans shared"
+#~ msgstr "No plans shared"
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No plugins installed"
 msgstr "No plugins installed"
@@ -7238,6 +7305,14 @@ msgstr "No project"
 #: src/components/explorer-view/explorer-view.tsx
 msgid "No project context available"
 msgstr "No project context available"
+
+#: src/components/collaboration/sidebar/ConversationsCategory.tsx
+#: src/components/collaboration/sidebar/DocsCategory.tsx
+#: src/components/collaboration/sidebar/PlansCategory.tsx
+#: src/components/collaboration/sidebar/RoomsCategory.tsx
+#: src/components/collaboration/sidebar/SkillsCategory.tsx
+#~ msgid "No project linked"
+#~ msgstr "No project linked"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "No project matches \"{normalizedCode}\"."
@@ -7364,6 +7439,10 @@ msgstr "No results for \"{searchQuery}\""
 #: src/components/collaboration/CollaborationPage.tsx
 msgid "No room selected."
 msgstr "No room selected."
+
+#: src/components/collaboration/sidebar/RoomsCategory.tsx
+#~ msgid "No rooms yet"
+#~ msgstr "No rooms yet"
 
 #: src/components/directory-tree/DirectoryTree.tsx
 msgid "No roots configured"
@@ -8347,6 +8426,10 @@ msgstr "Permanently delete?"
 msgid "Permission"
 msgstr "Permission"
 
+#: src/components/contact-picker/AddressBookButton.tsx
+#~ msgid "Permissions"
+#~ msgstr "Permissions"
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Personal note, actionable item"
 msgstr "Personal note, actionable item"
@@ -8478,6 +8561,7 @@ msgstr "Please provide a valid project path"
 msgid "Please select a parent folder"
 msgstr "Please select a parent folder"
 
+#: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Please select or create a project first."
 msgstr "Please select or create a project first."
@@ -8530,6 +8614,14 @@ msgstr "Pre-tool"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Preferences"
 msgstr "Preferences"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#~ msgid "Preparing…"
+#~ msgstr "Preparing…"
+
+#: src/components/collaboration/RoomTabs.tsx
+#~ msgid "Press Enter to save, Esc to cancel"
+#~ msgstr "Press Enter to save, Esc to cancel"
 
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "preview"
@@ -8688,6 +8780,7 @@ msgstr "Project not found locally"
 msgid "Project renamed"
 msgstr "Project renamed"
 
+#: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Project Required"
 msgstr "Project Required"
@@ -8731,6 +8824,10 @@ msgstr "Prompt Library — click a prompt to add it to the queue"
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "Prompt name"
 msgstr "Prompt name"
+
+#: src/components/contact-picker/AddressBookButton.tsx
+#~ msgid "Prompt permissions"
+#~ msgstr "Prompt permissions"
 
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Prompt Queue"
@@ -9881,6 +9978,14 @@ msgstr "scope: user + {0} project{1}"
 msgid "scope: user only"
 msgstr "scope: user only"
 
+#: src/components/tabs/TabStrip.tsx
+#~ msgid "Scroll tabs left"
+#~ msgstr "Scroll tabs left"
+
+#: src/components/tabs/TabStrip.tsx
+#~ msgid "Scroll tabs right"
+#~ msgstr "Scroll tabs right"
+
 #: src/components/AutoScrollContainer.tsx
 msgid "Scroll to bottom"
 msgstr "Scroll to bottom"
@@ -9940,6 +10045,10 @@ msgstr "Search by name…"
 #: src/pages/search-view/SearchView.tsx
 msgid "Search Calibration"
 msgstr "Search Calibration"
+
+#: src/components/chats-navigator/ChatsFilterBar.tsx
+#~ msgid "Search chats"
+#~ msgstr "Search chats"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Search chats…"
@@ -10458,6 +10567,10 @@ msgstr "Share code {0} to invite."
 msgid "Share this plan with someone"
 msgstr "Share this plan with someone"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#~ msgid "Share this repo to a conversation"
+#~ msgstr "Share this repo to a conversation"
+
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 msgid "Share to a conversation"
@@ -10564,6 +10677,10 @@ msgstr "Show coordinates"
 msgid "Show detail panel"
 msgstr "Show detail panel"
 
+#: src/components/collaboration/sidebar/DocsCategory.tsx
+#~ msgid "Show docs from SDK-shipped system projects"
+#~ msgstr "Show docs from SDK-shipped system projects"
+
 #: src/components/label-chip-block.tsx
 msgid "Show fewer labels"
 msgstr "Show fewer labels"
@@ -10615,6 +10732,10 @@ msgstr "Show system"
 #: src/components/account/danger-zone.tsx
 msgid "Show system skills"
 msgstr "Show system skills"
+
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+#~ msgid "Show tree"
+#~ msgstr "Show tree"
 
 #. placeholder {0}: entries.length
 #: src/pages/live-status/LiveStatus.tsx
@@ -10892,6 +11013,10 @@ msgstr "Start a new conversation"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Start Claude"
 msgstr "Start Claude"
+
+#: src/tabs/useTerminalStripController.tsx
+#~ msgid "Start Claude ({modLabel}+C)"
+#~ msgstr "Start Claude ({modLabel}+C)"
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "Start Codex"
@@ -11442,6 +11567,10 @@ msgid "This permanently removes the saved context snapshot. This cannot be undon
 msgstr "This permanently removes the saved context snapshot. This cannot be undone."
 
 #: src/components/version-popover/diagnose-modal.tsx
+#~ msgid "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
+#~ msgstr "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
+
+#: src/components/version-popover/diagnose-modal.tsx
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 msgstr "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 
@@ -11889,6 +12018,10 @@ msgstr "Unstar chat"
 msgid "Unsupported Content"
 msgstr "Unsupported Content"
 
+#: src/components/collaboration/RoomTabs.tsx
+#~ msgid "Unsupported tab type."
+#~ msgstr "Unsupported tab type."
+
 #: src/components/terminal/HistoryModal.tsx
 msgid "Untitled session"
 msgstr "Untitled session"
@@ -12283,6 +12416,10 @@ msgstr "What went wrong? (leave empty for a full sweep)"
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "What would you like to build, {firstName}?"
 msgstr "What would you like to build, {firstName}?"
+
+#: src/pages/flow-page/vibe-new-chat.tsx
+msgid "What would you like to build?"
+msgstr "What would you like to build?"
 
 #: src/components/greeting/Greeting.tsx
 msgid "What would you like to work on today?"

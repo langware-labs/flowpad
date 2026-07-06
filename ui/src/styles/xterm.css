@@ -270,31 +270,89 @@
 /* Grayscale 243..255: too light on white. Skip cells with bg color.
  * Indices 232..242 (#080808..#6c6c6c) are already dark enough on white;
  * remapping them would lower contrast, so we leave them alone. */
-html.light .xterm .xterm-fg-243:not([class*="xterm-bg-"]) { color: #585858; }
-html.light .xterm .xterm-fg-244:not([class*="xterm-bg-"]) { color: #4e4e4e; }
-html.light .xterm .xterm-fg-245:not([class*="xterm-bg-"]) { color: #444444; }
-html.light .xterm .xterm-fg-246:not([class*="xterm-bg-"]) { color: #3a3a3a; }
-html.light .xterm .xterm-fg-247:not([class*="xterm-bg-"]) { color: #303030; }
-html.light .xterm .xterm-fg-248:not([class*="xterm-bg-"]) { color: #262626; }
-html.light .xterm .xterm-fg-249:not([class*="xterm-bg-"]) { color: #1c1c1c; }
-html.light .xterm .xterm-fg-250:not([class*="xterm-bg-"]) { color: #121212; }
-html.light .xterm .xterm-fg-251:not([class*="xterm-bg-"]) { color: #080808; }
-html.light .xterm .xterm-fg-252:not([class*="xterm-bg-"]) { color: #080808; }
-html.light .xterm .xterm-fg-253:not([class*="xterm-bg-"]) { color: #080808; }
-html.light .xterm .xterm-fg-254:not([class*="xterm-bg-"]) { color: #080808; }
-html.light .xterm .xterm-fg-255:not([class*="xterm-bg-"]) { color: #080808; }
+html.light .xterm .xterm-fg-243:not([class*='xterm-bg-']) {
+  color: #585858;
+}
+html.light .xterm .xterm-fg-244:not([class*='xterm-bg-']) {
+  color: #4e4e4e;
+}
+html.light .xterm .xterm-fg-245:not([class*='xterm-bg-']) {
+  color: #444444;
+}
+html.light .xterm .xterm-fg-246:not([class*='xterm-bg-']) {
+  color: #3a3a3a;
+}
+html.light .xterm .xterm-fg-247:not([class*='xterm-bg-']) {
+  color: #303030;
+}
+html.light .xterm .xterm-fg-248:not([class*='xterm-bg-']) {
+  color: #262626;
+}
+html.light .xterm .xterm-fg-249:not([class*='xterm-bg-']) {
+  color: #1c1c1c;
+}
+html.light .xterm .xterm-fg-250:not([class*='xterm-bg-']) {
+  color: #121212;
+}
+html.light .xterm .xterm-fg-251:not([class*='xterm-bg-']) {
+  color: #080808;
+}
+html.light .xterm .xterm-fg-252:not([class*='xterm-bg-']) {
+  color: #080808;
+}
+html.light .xterm .xterm-fg-253:not([class*='xterm-bg-']) {
+  color: #080808;
+}
+html.light .xterm .xterm-fg-254:not([class*='xterm-bg-']) {
+  color: #080808;
+}
+html.light .xterm .xterm-fg-255:not([class*='xterm-bg-']) {
+  color: #080808;
+}
 
 /* Cube indices that map to "white-ish" values — invisible on white,
  * but kept as-is when the cell has its own bg. */
-html.light .xterm .xterm-fg-15:not([class*="xterm-bg-"]) { color: #1e1e1e; }
-html.light .xterm .xterm-fg-231:not([class*="xterm-bg-"]) { color: #1e1e1e; }
-html.light .xterm .xterm-fg-230:not([class*="xterm-bg-"]) { color: #767000; }
-html.light .xterm .xterm-fg-225:not([class*="xterm-bg-"]) { color: #8b1f6e; }
-html.light .xterm .xterm-fg-195:not([class*="xterm-bg-"]) { color: #006d6d; }
-html.light .xterm .xterm-fg-194:not([class*="xterm-bg-"]) { color: #1e6817; }
-html.light .xterm .xterm-fg-189:not([class*="xterm-bg-"]) { color: #4a4a8a; }
-html.light .xterm .xterm-fg-188:not([class*="xterm-bg-"]) { color: #6e6e6e; }
+html.light .xterm .xterm-fg-15:not([class*='xterm-bg-']) {
+  color: #1e1e1e;
+}
+html.light .xterm .xterm-fg-231:not([class*='xterm-bg-']) {
+  color: #1e1e1e;
+}
+html.light .xterm .xterm-fg-230:not([class*='xterm-bg-']) {
+  color: #767000;
+}
+html.light .xterm .xterm-fg-225:not([class*='xterm-bg-']) {
+  color: #8b1f6e;
+}
+html.light .xterm .xterm-fg-195:not([class*='xterm-bg-']) {
+  color: #006d6d;
+}
+html.light .xterm .xterm-fg-194:not([class*='xterm-bg-']) {
+  color: #1e6817;
+}
+html.light .xterm .xterm-fg-189:not([class*='xterm-bg-']) {
+  color: #4a4a8a;
+}
+html.light .xterm .xterm-fg-188:not([class*='xterm-bg-']) {
+  color: #6e6e6e;
+}
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * RTL grid contract (Windows) — see applyRtlGridContract() in
+ * components/terminal/interactive-terminal/terminalConfig.ts.
+ * PTY apps on Windows emit RTL text pre-reversed into visual order for
+ * bidi-less terminals (Windows Terminal/conhost paint cells strictly
+ * left-to-right). The DOM renderer's row text is subject to the browser's
+ * bidi algorithm, which would reorder that run a second time and display
+ * Hebrew/Arabic with reversed letters. Force glyphs to paint in buffer
+ * order. `unicode-bidi` is not inherited, so the rule must target the
+ * text-holding elements (row divs and their spans), not just a container.
+ * ──────────────────────────────────────────────────────────────────────── */
+.xterm-rtl-grid .xterm-rows > div,
+.xterm-rtl-grid .xterm-rows span {
+  unicode-bidi: bidi-override;
+  direction: ltr;
+}
 
 /* Arrows */
 .xterm .xterm-scrollable-element > .scrollbar > .scra {

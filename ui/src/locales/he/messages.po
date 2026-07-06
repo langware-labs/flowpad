@@ -2616,6 +2616,7 @@ msgstr "לא ניתן לפתור את ספריית הבית מתוך מידע bo
 msgid "Could not save changes"
 msgstr "לא היה ניתן לשמור את השינויים"
 
+#: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Could not start"
 msgstr ""
@@ -4420,6 +4421,7 @@ msgstr "נכשל הפעלת השירותים"
 msgid "Failed to start session"
 msgstr "כישלון בהתחלת הפגישה"
 
+#: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Failed to start the build session."
 msgstr ""
@@ -6690,6 +6692,7 @@ msgid "New build"
 msgstr ""
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "New chat"
 msgstr "צ'אט חדש"
 
@@ -8558,6 +8561,7 @@ msgstr "אנא ספק נתיב פרויקט חוקי"
 msgid "Please select a parent folder"
 msgstr "אנא בחר תיקייה אב"
 
+#: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Please select or create a project first."
 msgstr "אנא בחר או צור פרויקט תחילה."
@@ -8776,6 +8780,7 @@ msgstr "הפרויקט לא נמצא באופן מקומי"
 msgid "Project renamed"
 msgstr "שם הפרויקט שונה"
 
+#: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Project Required"
 msgstr "פרויקט נדרש"
@@ -12410,6 +12415,10 @@ msgstr "מה השתבש? (השאר ריק לסריקה מלאה)"
 
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "What would you like to build, {firstName}?"
+msgstr ""
+
+#: src/pages/flow-page/vibe-new-chat.tsx
+msgid "What would you like to build?"
 msgstr ""
 
 #: src/components/greeting/Greeting.tsx

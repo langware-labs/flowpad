@@ -158,7 +158,7 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
     latestMessage,
     latestPtrTs: lastPtr?.ts ?? null,
     invitation,
-    viewer: { email: myEmail, cloudUserId },
+    viewer: { email: myEmail, cloudUserId, localUserId: currentUser?.id ?? null },
   });
   // Alias kept so the existing invitation-row rendering reads cleanly below.
   const isInvitationRow = facets.isInvitation;
