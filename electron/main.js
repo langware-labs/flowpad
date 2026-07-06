@@ -223,12 +223,17 @@ const BACKEND_PORT = 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
 const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
 const HEALTH_CHECK_INTERVAL = 500; // ms
-const MAX_HEALTH_CHECKS = 360; // 180 seconds — cold-start window (widened to ride
+const MAX_HEALTH_CHECKS = 240; // 120 seconds — cold-start window. Sized to ride
                                // past the first-launch AV-scan + bytecode-compile
                                // cost on Windows so a slow-but-healthy backend
-                               // isn't misread as "failed to start")
-const POST_UPGRADE_HEALTH_CHECKS = 360; // 180 seconds — kept >= the normal window
-                                        // (the just-upgraded path is the slower one)
+                               // isn't misread as "failed to start". Observed cold
+                               // boots reach health in ~35-40s, so 120s keeps a ~3x
+                               // margin. Do NOT raise to mask a slow boot — fix the
+                               // slow path instead.
+const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — the just-upgraded path is the
+                                        // slower one (all venv files freshly written →
+                                        // heaviest AV scan), so this is the riskiest
+                                        // window to tighten; kept == the normal window.
 
 let mainWindow = null;
 let uvManager = null;

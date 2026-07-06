@@ -123,12 +123,21 @@ class UvManager {
    * `uv tool install` writes an unsigned shim that's blocked from executing.
    * If we detect that here, swap to the `uv tool run` fallback for the rest
    * of this session. No-op on non-Windows.
+   *
+   * Timeout is deliberately SHORT: a Device Guard / WDAC block fails the
+   * process launch *instantly* (the OS rejects CreateProcess), so the only
+   * thing we're waiting for is that fast rejection. A shim that's merely slow
+   * to print `--help` (cold Python import on first run after install/AV scan)
+   * tells us nothing — it works — so there's no reason to wait it out. On
+   * timeout we fall through and let the real `flow start` proceed normally.
+   * Do NOT widen this to "give --help time to finish": that just re-adds the
+   * old multi-second tax to every cold launch for zero detection benefit.
    */
   async _probeFlowBinOnce() {
     if (this._probedShim || !IS_WIN || !this._flowBin) return;
     this._probedShim = true;
     try {
-      await this._run(this._flowBin, ['--help'], { timeout: 10000 });
+      await this._run(this._flowBin, ['--help'], { timeout: 2000 });
     } catch (err) {
       const stderr = (err.stderr || err.message || '').toString();
       if (/Device Guard|Application Control|blocked by your organization/i.test(stderr)) {
