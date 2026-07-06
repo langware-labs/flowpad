@@ -19,6 +19,25 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoNewShell, apiBase } from './_ap_helpers';
 
+/**
+ * The History modal defaults to PROJECT-SCOPED (`effectiveAllProjects =
+ * allProjects || !currentProject`). The worker-history precondition below,
+ * however, checks the UNSCOPED compute_node action — and after a DB reset the
+ * active project is a fresh empty default (`my_first_project`) that owns none
+ * of the ~/.claude sessions scanned globally. So the modal correctly shows "No
+ * recent sessions" for the empty default project while the global scan has
+ * plenty. Enable "All projects" so the modal surfaces the same history the
+ * precondition actually verified exists (matches the resume-any-session intent).
+ */
+async function ensureAllProjects(page: import('@playwright/test').Page) {
+  const box = page.locator('[data-testid="history-all-projects"] button[role="checkbox"]');
+  await expect(box).toBeVisible({ timeout: 10_000 });
+  if ((await box.getAttribute('aria-checked')) !== 'true') {
+    await page.locator('[data-testid="history-all-projects"]').click();
+    await expect(box).toHaveAttribute('aria-checked', 'true');
+  }
+}
+
 async function countProcesses(page: import('@playwright/test').Page): Promise<number> {
   return page.evaluate(async (base) => {
     const res = await fetch(`${base}/api/v1/graph/agentic_process`);
@@ -47,6 +66,7 @@ test.describe('resume session from recent', () => {
     await page.locator('[data-testid="opener-plus-button"]').click();
     await page.locator('[data-testid="opener-menu-row-history"]').click();
     await expect(page.getByText('Recent Sessions')).toBeVisible({ timeout: 10_000 });
+    await ensureAllProjects(page);
     // Rows come from the worker-history compute_node action, which scans
     // ~/.claude — a real ~7s filesystem load for 30 sessions — so we let the
     // first row appear within the config's standard 20s expect budget rather
@@ -80,6 +100,7 @@ test.describe('resume session from recent', () => {
     await page.locator('[data-testid="opener-plus-button"]').click();
     await page.locator('[data-testid="opener-menu-row-history"]').click();
     await expect(page.getByText('Recent Sessions')).toBeVisible({ timeout: 10_000 });
+    await ensureAllProjects(page);
     await expect(page.locator('[data-testid="history-row"]').first()).toBeVisible();
     await page.locator('[data-testid="history-row"]').first().locator('button').first().click();
     await page.waitForURL(/\/dock\/shell\/agentic_process-[\w-]+/, { timeout: 30_000 });

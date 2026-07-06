@@ -82,10 +82,9 @@ test.describe('processtoolbar fork', () => {
     // liveness is robust to tab-strip overflow / cross-repeat tab accumulation,
     // unlike an exact rendered tab count.
     const original = await fetchProcess(page, apiBase(), pid);
-    // Wire projects the running FSM to ready/busy (canonical status model); a
-    // still-alive process is ready/busy (or transiently stopping) — never the
-    // stale raw "running"/"idle".
-    expect(['ready', 'busy', 'stopping'].includes(String(original.status))).toBeTruthy();
+    // `status` is the raw FSM (busy-ness is a separate field); a still-alive
+    // process is running (or transiently stopping).
+    expect(['running', 'stopping'].includes(String(original.status))).toBeTruthy();
 
     const critical = errors.filter(e => !e.includes('favicon') && !e.includes('ResizeObserver') && !e.includes('net::ERR_'));
     expect(critical, critical.join('\n')).toHaveLength(0);
