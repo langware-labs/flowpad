@@ -18,7 +18,6 @@ from flow_sdk.fs_store.type_id import TypeId
 class AttachmentType(str, Enum):
     TYPE_ID = "type_id"
     FILE = "file"
-    REPO = "repo"
     URL = "url"
     PROMPT = "prompt"
 
@@ -147,10 +146,7 @@ def is_image_filename(name: str) -> bool:
 # message-level ``body_downloaded`` signal, or a message carrying one would be
 # stuck behind the Download button forever.
 _NON_MATERIALIZING_TYPE_IDS = frozenset(
-    {"conversation", "flow_message", "task", "claude_session",
-     # git identity split: bundle unpack creates entity ROWS only (git_branch
-     # header + re-minted git_remote), never a records folder.
-     "git_branch", "git_remote"}
+    {"conversation", "flow_message", "task", "claude_session"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
@@ -205,7 +201,6 @@ class Attachment(BaseModel):
     attachment_type controls how `data` is interpreted:
       - TYPE_ID : data is a TypeId string ("type-id") referencing a local entity
       - FILE    : data is a path relative to the .flowmsg root
-      - REPO    : data is the full repo path (uuid5 is derived from it)
       - URL     : data is a URL
       - PROMPT  : data is the prompt text (inline) or a VFS subpath like "prompt/<filename>"
 
@@ -454,10 +449,10 @@ class FlowMessage(Entity):
                 return False
         return True
 
-    async def to_file(self, dest_dir: Path | None = None) -> Path:
+    async def to_file(self, dest_dir: Path | None = None, *, transfer_mode: str = "copy") -> Path:
         """Pack this FlowMessage + attachments into a .flowmsg zip. Returns path to zip."""
         from flow_sdk.builtin.flow_message_bundle import pack_bundle
-        return await pack_bundle(self, dest_dir)
+        return await pack_bundle(self, dest_dir, transfer_mode=transfer_mode)
 
     @classmethod
     async def from_file(cls, zip_path: Path, local_user_id: str, *, overwrite: bool = False) -> "FlowMessage":
@@ -473,7 +468,7 @@ class FlowMessage(Entity):
         Body-requiring: FILE (VFS-stored bytes), PROMPT-with-file (VFS-stored
         bytes), TYPE_ID (serialized into the bundle's attachment subtree by
         pack_bundle).
-        Body-free:      URL, REPO, inline PROMPT (text only).
+        Body-free:      URL, inline PROMPT (text only).
         """
         for att in self.attachment or []:
             t = att.attachment_type
@@ -570,7 +565,7 @@ class FlowMessage(Entity):
         return clone
 
     async def upload_body(
-        self, *, on_progress: Optional[ProgressCallback] = None,
+        self, *, on_progress: Optional[ProgressCallback] = None, transfer_mode: str = "copy",
     ) -> "FlowMessage":
         """Pack the body, upload it to the hub, and stamp body_status=READY.
 
@@ -601,7 +596,7 @@ class FlowMessage(Entity):
         if not self.id:
             raise ValueError("upload_body requires self.id (FM must exist on hub)")
 
-        zip_path = await self.to_file()
+        zip_path = await self.to_file(transfer_mode=transfer_mode)
         try:
             content = zip_path.read_bytes()
             await hub_post(

@@ -300,17 +300,18 @@ describe('markdownFolderRoot adapter', () => {
   });
 
   describe('toolbar', () => {
-    it('Scan toolbar action calls indexType + onScanComplete', async () => {
+    it('Scan toolbar action calls indexType', async () => {
+      // The scan action reindexes the type; the tree refreshes off the resulting
+      // data_ops (useAssetTreeRefresh) — there is no `onScanComplete` callback in
+      // the flow anymore, so indexType being invoked is the whole contract.
       stageVaultFiles([]);
       const user = userEvent.setup();
       const indexType = vi.fn(async () => ({ indexed: 42 }));
-      const onScanComplete = vi.fn();
-      const root = markdownFolderRoot(makeType([VAULT]), { indexType, onScanComplete });
+      const root = markdownFolderRoot(makeType([VAULT]), { indexType });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
       const scanBtn = screen.getByTestId('browseable-toolbar-scan:markdown');
       await user.click(scanBtn);
       await waitFor(() => expect(indexType).toHaveBeenCalledWith('markdown', undefined));
-      await waitFor(() => expect(onScanComplete).toHaveBeenCalledWith('markdown'));
     });
 
     it('New toolbar action calls onNew', async () => {

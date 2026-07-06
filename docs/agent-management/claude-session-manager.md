@@ -231,6 +231,188 @@ Plain shell tabs use `Shell.start()` and `Shell.close()` directly.
 
 ---
 
+## CLI Options Management
+
+The CLI launch config (model, permission mode, flags, env, add-dirs) is **not**
+managed by `ClaudeSessionManager`. It lives on the `AgenticProcess` entity and
+is finalized into an actual command **server-side** at launch. There is no
+`ClaudeCliCommand` in the live command path — that class
+(`ts_sdk/src/services/claude/claudeCliCommand.ts`) is exported but has no real
+consumers; do not reach for it.
+
+### Where options are stored
+
+| Field | Location | Meaning |
+| --- | --- | --- |
+| `cli_config` | `AgenticProcess` entity (`ts_sdk/src/process/agentic-process.ts:192`, backend field) | Serialized `ClaudeCliOptions`/`WorkerCLIOptions`: `model`, `permission_mode`, `chrome`, `debug`, `env_vars`, etc. The persisted worker launch config. |
+| `workdir` | entity field | Injected into the CLI options at read time; **not** stored inside `cli_config`. |
+| `session_id` | entity field | Injected at read time; drives `--resume`. Not stored in `cli_config`. |
+| `additional_dirs` | entity field | Becomes `--add-dir`; injected into `cliOptions.addDirs`. |
+| `load_flowpad_assistant` | entity field | Adds the assistant mount to the resolved `--add-dir` set. |
+| `embedded_asset_refs` / `embedded_agent_ids` | entity fields | Materialized skills/agents mounted for the worker. |
+
+Frontend read/write is through the `cliOptions` accessor
+(`agentic-process.ts:855-869`): the getter deserializes `cli_config` and
+injects `workdir` + `session_id` + `additional_dirs`; the setter re-serializes
+back into `cli_config`. It mirrors the Python `AgenticProcess.cli_options`
+property exactly.
+
+### Changing an option
+
+The only supported pattern is **mutate → persist → let the backend recompute**:
+
+```ts
+const cli = process.cliOptions;
+cli.chrome = true;                       // or cli.permission_mode = 'bypassPermissions'
+process.cliOptions = cli;                // re-serializes into cli_config
+await process.save();                    // backend save-hook recomputes restart_required
+```
+
+This is exactly what the toolbar's `persistCliFlags` does for the Chrome / Full
+Trust / Debug toggles (`ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx:100-111`).
+`additional_dirs` and the assistant mount have dedicated action wrappers
+(`process.addDir` / `process.removeDir` / `process.setAssistantEnabled`) but the
+effect on restart-required is identical.
+
+Per-turn overrides for **headless / print mode** (e.g. `permissionMode: 'plan'`
+passed to `process.prompt(...)`) do not mutate `cli_config` and do not trip
+restart-required — they apply only to that turn.
+
+---
+
+## Restart-Required Detection
+
+There is **no `RestartRequiredOverlay` and no `claudeSessionManager.restartSession`**
+in the current code (the root `docs/claude-session-manager.md` describing them is
+stale — see "Stale Duplicate Doc" below). Restart awareness is entirely
+**backend-driven** and surfaced as a glowing toolbar button.
+
+### The flag
+
+`AgenticProcess.restart_required: boolean` (`agentic-process.ts:823`, backend
+`agentic_process.py:481`) means: *a worker-relevant field changed since the last
+successful start while the worker is RUNNING, so the live worker is running with
+stale config.*
+
+### How it flips
+
+The backend maintains it in the `AgenticProcess.save()` override
+(`flow_sdk/builtin/agentic_process/agentic_process.py:3522-3541`):
+
+1. On every `save()`, if the process is `RUNNING`, `last_started_hash` is set,
+   and the current worker snapshot hash **differs** from it, set
+   `restart_required = True`.
+2. The hook only ever flips it **ON**. It is cleared **only** on a successful
+   `start_pty()` (`agentic_process.py:1163-1167`), which captures a fresh
+   `last_started_snapshot` + `last_started_hash` and resets the flag.
+3. Skipped while `start_pty()` itself is mutating the entity
+   (`_set_start_lifecycle`) so intermediate bookkeeping saves (status,
+   session_id) don't self-trip.
+
+### What counts as "worker-relevant"
+
+The snapshot (`_restart_snapshot_payload`, `agentic_process.py:3475-3486`) is a
+`{generic, worker}` pair, MD5-hashed:
+
+- **generic** (`_generic_restart_snapshot_payload`): `worker_type`,
+  `shell_mode`, `workdir`, `session_id`, `additional_dirs`,
+  `embedded_asset_refs`, `embedded_agent_ids`.
+- **worker** (driver `restart_snapshot`): the finalized `WorkerCLIOptions` JSON —
+  `model`, `permission_mode`, `chrome`, `debug`, `env_vars`, etc.
+
+**Deliberately excluded** (`restart_payload_from_cli_options`,
+`cli_worker_base_driver.py:380`): `resume`, `fork_session_id`, and the
+`FLOWPAD_EXECUTION_SCOPE` env var. These are derived/transient — they flip as a
+side effect of the worker writing its first transcript line or of a fork
+materializing, and hashing them would light up a phantom restart glow on fresh
+processes.
+
+### Debug surface
+
+`process` exposes a read-only `restart-info` action
+(`agentic_process.py:3606-3628`) returning `{restart_required, running,
+worker_type, loaded, current, changed}` — a per-field diff between the live
+worker's launch payload and the current entity snapshot. It powers the
+"Command Status" viewer (`CommandStatusViewer.tsx`).
+
+---
+
+## Restart Flow (end-to-end)
+
+### User-initiated (toolbar)
+
+```
+toggle CLI flag → process.save() → backend save-hook flips restart_required
+  → toolbar Restart button glows (ProcessToolbar.tsx:324-351, data-restart-required)
+  → user clicks → process.restart()  (agentic-process.ts:2340-2344)
+       → process.stop()  (→ exit → backend kills worker+PTY, keeps shell entity)
+       → process.start() (→ backend `open`/start_pty rebuilds the command from
+                            the persisted cli_config + workdir + session_id,
+                            resumes via --resume, attaches the PTY)
+       → captures fresh last_started_hash, clears restart_required
+       → emits local 'restarted' → InteractiveTerminal clears + re-attaches
+```
+
+The rebuilt command is authored **entirely server-side** in the `open` action;
+the frontend never assembles a `claude …` string. `start()` is the single oracle
+for reattach-vs-recover-vs-fresh (`agentic-process.ts:2201-2272`).
+
+### Server-initiated (`self-restart`)
+
+When the agent itself runs `flow process restart` (e.g. after installing an MCP),
+it calls the backend `self-restart` action
+(`agentic_process.py:1356-1410`). Because the calling CLI is a **child** of the
+worker about to be killed, the restart cannot run inline — it is scheduled on
+the server loop after a short grace, returns `{"scheduled": true}` immediately,
+and once the fresh PTY is up emits a **`worker.restarted`** entity event over the
+WS watcher channel. The frontend bridges that event back to the same
+`'restarted'` terminal re-attach path via `AgenticProcess.onEntityEvent`
+(`agentic-process.ts:2398-2403`).
+
+### Mode switch is a distinct path
+
+Flipping between the interactive PTY and headless/CLI transport is
+`process.switchMode(...)` (`agentic-process.ts:2360-2385`), not `restart()`. It
+is documented with the headless⇄PTY toggle design, not here.
+
+---
+
+## Per-CLI Differences (claude / codex / copilot)
+
+Restart-required detection is **uniform** across drivers: all three
+(`cli_drivers/{claude,codex,copilot}/driver.py`) implement `restart_snapshot`
+identically as `restart_payload_from_cli_options(options)`, so any option change
+trips the same flag.
+
+The vendor-specific part is **whether a restart resumes** the prior transcript,
+decided by each driver's `has_resumable_session`:
+
+| Driver | Resumable check | Plan mode |
+| --- | --- | --- |
+| claude | `get_claude_session(session_id)` present (`claude/driver.py:312`) | yes |
+| codex | `find_codex_session_jsonl(session_id)` present (`codex/driver.py:284`) | no |
+| copilot | `_has_session(process)` (`copilot/driver.py:249`) | no |
+
+If the vendor has no resumable transcript for the process's `session_id`, restart
+recovery relaunches fresh instead of resuming.
+
+---
+
+## Stale Duplicate Doc
+
+`docs/claude-session-manager.md` (repo root, **not** a symlink — a separate older
+file) describes a full-lifecycle `ClaudeSessionManager` with
+`startSession` / `resumeSession` / `restartSession` / `forkSession` /
+`killSession`, a `RestartRequiredOverlay`, `ClaudeCliCommand.fromProcess`, and
+`context_data` / `worker_session_id` fields. **None of that matches the current
+code**: those manager methods don't exist, `RestartRequiredOverlay` has zero
+usages, `ClaudeCliCommand` has zero real consumers, and the persisted session
+field is `session_id` (not `worker_session_id`). Treat this
+`docs/agent-management/claude-session-manager.md` as canonical; the root file
+should be deleted or redirected here.
+
+---
+
 ## Session And PTY IDs
 
 Current TypeScript uses these fields:
@@ -291,6 +473,7 @@ Use these APIs for new code:
 | Fork from an existing process | `process.fork(true)` for a visible tab, or `AgenticProcess.spawn({ resumeSessionId, forkSession: true }, ...)` for programmatic/headless work |
 | Stop but preserve the process/session | `process.stop()` or `process.exit()` |
 | Close/remove a visible process tab | `process.close()` |
+| Switch a session between chat/headless and interactive PTY | `process.switchMode(WorkerMode.Interactive \| WorkerMode.CLI)` — see [mode-switching.md](./mode-switching.md) |
 
 ---
 

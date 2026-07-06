@@ -19,6 +19,7 @@
  * Run: cd ui && npx vitest run --project long create_process_under_live_ptys
  */
 import { describe, expect, it } from 'vitest';
+import { stressDescribe } from './_stress_gate';
 import { launchInstance, killInstance, prepareCleanRealm } from './_backend_lifecycle';
 
 type SdkRealm = typeof import('@sdk');
@@ -26,7 +27,7 @@ type SdkRealm = typeof import('@sdk');
 const LIVE_PTYS = Number(process.env.LIVE_PTYS) || 20;
 const BUDGET_MS = 500;
 
-describe('createProcess(claude) under 20 live PTYs', () => {
+stressDescribe('createProcess(claude) under 20 live PTYs', () => {
   it('21st createProcess returns in < 500ms with 20 live claude PTYs', async () => {
     const name = 'cp-20pty';
     const port = await launchInstance(name);

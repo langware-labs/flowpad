@@ -10,24 +10,29 @@ import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
 import { useProcessWebApp } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks';
 import { ArtifactType, MachineStatus, ViewType, WebappSubview } from '@sdk';
-import { ExternalLink, RefreshCw, Terminal } from 'lucide-react';
+import { useContext as useSdkContext } from '@sdk/react/hooks';
+import { hasElectronDisplayCapture } from '@src/components/display-toolbar/capture-region';
+import { ExternalLink, ImagePlus, RefreshCw, Terminal } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 
 interface WebappViewerProps {
   onWebappErrorRetry: (retryMessage: string) => void;
+  onAnnotate?: (target: HTMLElement) => void;
 }
 
-export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }) => {
+export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry, onAnnotate }) => {
   const { t } = useLingui();
   const { flow } = useAgentContext();
+  const { isDesktop } = useSdkContext();
   const { currentContext } = useViewerStore();
   const { navigation, currentDock } = useDockNavigation();
   const [webAppError, setWebAppError] = useState<string | undefined>();
   const [selectedWebappId, setSelectedWebappId] = useState<string>('');
   const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
   const iframeRef = useRef<PersistentIframeHandle>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Derive panel visibility and active tab from URL pointer
   const subview = currentDock?.pointer as WebappSubview | undefined;
@@ -113,7 +118,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
     const retryMessage =
       t`The web app is not working, please try to fix it.` + (webAppError ? `\n\nError: ${webAppError}` : '');
     onWebappErrorRetry(retryMessage);
-  }, [webAppError, onWebappErrorRetry]);
+  }, [t, webAppError, onWebappErrorRetry]);
 
   const handleRefresh = useCallback(() => {
     iframeRef.current?.refresh();
@@ -126,6 +131,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
   }, [webAppConfig.host]);
 
   const hasWebApp = Boolean(webAppConfig.host);
+  const showAnnotate = !!onAnnotate && isDesktop && hasElectronDisplayCapture();
 
   const handleWebappSelect = useCallback((value: string) => {
     setSelectedWebappId(value);
@@ -154,7 +160,11 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
                   })}
                 </SelectContent>
               </Select>
-              <ServiceStatusLed onShowShell={handleShowShell} onRefreshWebapp={handleRefresh} onStatusChange={setMachineStatus} />
+              <ServiceStatusLed
+                onShowShell={handleShowShell}
+                onRefreshWebapp={handleRefresh}
+                onStatusChange={setMachineStatus}
+              />
             </>
           ) : (
             <span className="text-xs text-muted-foreground"><Trans>Webapp not found in artifacts</Trans></span>
@@ -164,12 +174,36 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
         {/* Right side: Action buttons */}
         <div className="flex items-center gap-1">
           <TooltipProvider delayDuration={300}>
+            {showAnnotate && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    data-testid="webapp-viewer-annotate-view"
+                    aria-label={t`Annotate view`}
+                    title={t`Annotate view`}
+                    onClick={() => {
+                      if (contentRef.current) onAnnotate(contentRef.current);
+                    }}
+                  >
+                    <ImagePlus className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
+                  <p><Trans>Annotate view</Trans></p>
+                </TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className={`h-7 w-7 ${showPanel ? 'bg-green-500/20 text-green-600 hover:bg-green-500/30 hover:text-green-600' : ''}`}
+                  className={`h-7 w-7 ${
+                    showPanel ? 'bg-green-500/20 text-green-600 hover:bg-green-500/30 hover:text-green-600' : ''
+                  }`}
                   onClick={handleTogglePanel}
                 >
                   <Terminal className="h-4 w-4" />
@@ -181,7 +215,13 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleRefresh} disabled={!hasWebApp}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={handleRefresh}
+                  disabled={!hasWebApp}
+                >
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
@@ -208,7 +248,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
           </TooltipProvider>
         </div>
       </div>
-      <div className="relative flex h-[calc(100%-36px)] w-full flex-col">
+      <div ref={contentRef} className="relative flex h-[calc(100%-36px)] w-full flex-col">
         {/* Main content area - iframe or placeholder */}
         <div className={`relative w-full ${showPanel ? 'h-[60%]' : 'h-full'}`}>
           {hasWebApp ? (

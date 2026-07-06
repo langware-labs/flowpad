@@ -1,4 +1,4 @@
-import { ExternalLink, Eye, GitBranch, Pencil, Play } from 'lucide-react';
+import { ExternalLink, Eye, Pencil, Play } from 'lucide-react';
 import type { AttachmentActionContext, AttachmentActionDescriptor } from './types';
 import { firstUnapprovedPromptIdx } from './prompt-attachment';
 
@@ -65,19 +65,6 @@ export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
       title: 'Start a worker session pre-loaded with this spec/plan and the conversation context to read and review (no changes yet)',
       testId: 'message-bubble-open-spec',
       run: () => ctx.handlers.implementPlan?.(),
-    }),
-  },
-  {
-    key: 'git_branch',
-    visible: (ctx) => ctx.isFromOther && !!ctx.gitBranchTypeId && !!ctx.handlers.openSharedRepo,
-    build: (ctx) => ({
-      id: 'git_branch.open-in-git',
-      label: 'Open in Git…',
-      icon: GitBranch,
-      variant: 'primary',
-      title: 'Clone this repo, or attach it to a local copy you already have',
-      testId: 'message-bubble-open-shared-repo',
-      run: () => ctx.handlers.openSharedRepo?.(ctx.gitBranchTypeId!),
     }),
   },
   {

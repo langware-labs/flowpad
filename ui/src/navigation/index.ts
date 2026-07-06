@@ -31,7 +31,7 @@ export { DockPointer } from './DockPointer';
 export { NavigationActions } from './NavigationActions';
 
 // Hooks
-export { useDockNavigation } from './useDockNavigation';
+export { useDockNavigation, useCurrentDock } from './useDockNavigation';
 export { useSideWindows, type SideWindowsController } from './useSideWindows';
 
 // Types

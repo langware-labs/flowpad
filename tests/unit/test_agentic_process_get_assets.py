@@ -406,6 +406,7 @@ def test_is_readonly_source_partition():
         AssetSource.USER_DIR: True,
         AssetSource.WORKDIR: True,
         AssetSource.ADDITIONAL_DIR: True,
+        AssetSource.CONTEXT_DIR: True,
     }
     # Every enum member is covered (no missing keys → guards drift).
     assert set(expected) == set(AssetSource)
@@ -556,3 +557,115 @@ async def test_get_asset_descriptors_read_only_partition(tree, monkeypatch):
         # Writable iff EMBEDDED or INLINE; everything else read-only.
         expected_ro = d.source not in {AssetSource.EMBEDDED, AssetSource.INLINE}
         assert is_readonly_source(d.source) is expected_ro, d
+
+
+# ── Project context folders (include_dirs) ───────────────────────────────────
+
+
+async def _seed_context_skill(tree, tmp_path: Path):
+    """Create <tmp>/context_dir/.claude/skills/ctx_skill/SKILL.md + its Skill
+    entity, and return (context_dir, skill_entity). The dir is deliberately
+    OUTSIDE user_home / project_root / workdir so it gets a clean CONTEXT_DIR
+    attribution."""
+    context_dir = tmp_path / "context_dir"
+    skill_path = context_dir / ".claude" / "skills" / "ctx_skill"
+    skill_path.mkdir(parents=True, exist_ok=True)
+    (skill_path / "SKILL.md").write_text("# ctx skill\n")
+    skill_ent = await Skill(
+        id=str(uuid.uuid4()),
+        name=f"ctx_skill_{uuid.uuid4().hex[:6]}",
+        asset_ref=canonical_posix_path(skill_path),
+    ).save()
+    return context_dir, skill_ent
+
+
+@pytest.mark.asyncio
+async def test_context_dir_attribution(tree, tmp_path):
+    """A skill living under project.include_dirs is surfaced as CONTEXT_DIR
+    (the requested scenario: temp skill in a context folder added to a project,
+    visible to a process bound to that project)."""
+    context_dir, skill_ent = await _seed_context_skill(tree, tmp_path)
+    project = await Project(
+        id=str(uuid.uuid4()),
+        name=f"ctx_project_{uuid.uuid4().hex[:6]}",
+        fs_storage_mount_path=str(tree["project_root"]),
+        include_dirs=[canonical_posix_path(context_dir)],
+    ).save()
+    try:
+        proc = _make_proc(project_id=project.id)
+        descs = await proc.get_asset_descriptors()
+        ctx_descs = _by_source(descs, AssetSource.CONTEXT_DIR)
+        assert skill_ent.id in {d.typeid.split("-", 1)[1] for d in ctx_descs}
+        # Attribution carries the matched context dir.
+        for d in ctx_descs:
+            assert d.source_dir == canonical_posix_path(context_dir), d
+    finally:
+        for e in (skill_ent, project):
+            try:
+                await e.delete()
+            except Exception:
+                pass
+
+
+@pytest.mark.asyncio
+async def test_resolved_add_dirs_includes_project_context(tree, tmp_path):
+    """After get_project() stamps the cache, resolved_add_dirs mounts the
+    project's context folders — this is the --add-dir set every agentic worker
+    launches with. Deduped against per-process additional_dirs."""
+    context_dir, skill_ent = await _seed_context_skill(tree, tmp_path)
+    ctx_canon = canonical_posix_path(context_dir)
+    project = await Project(
+        id=str(uuid.uuid4()),
+        name=f"ctx_project_{uuid.uuid4().hex[:6]}",
+        fs_storage_mount_path=str(tree["project_root"]),
+        include_dirs=[ctx_canon],
+    ).save()
+    try:
+        # Before get_project(): the sync property can't see the project yet.
+        proc = _make_proc(project_id=project.id)
+        assert ctx_canon not in proc.resolved_add_dirs
+
+        # get_project() stamps the cache → the property now mounts it.
+        await proc.get_project()
+        assert ctx_canon in proc.resolved_add_dirs
+
+        # Dedup: an explicit copy in additional_dirs doesn't double it.
+        proc.additional_dirs = [ctx_canon]
+        assert proc.resolved_add_dirs.count(ctx_canon) == 1
+    finally:
+        for e in (skill_ent, project):
+            try:
+                await e.delete()
+            except Exception:
+                pass
+
+
+@pytest.mark.asyncio
+async def test_add_remove_context_dir_actions(tree, tmp_path):
+    """Project.add_context_dir / remove_context_dir canonicalize, dedup, and
+    persist include_dirs."""
+    context_dir, skill_ent = await _seed_context_skill(tree, tmp_path)
+    ctx_canon = canonical_posix_path(context_dir)
+    project = await Project(
+        id=str(uuid.uuid4()),
+        name=f"ctx_project_{uuid.uuid4().hex[:6]}",
+        fs_storage_mount_path=str(tree["project_root"]),
+    ).save()
+    try:
+        await project.add_context_dir(str(context_dir))
+        assert ctx_canon in project.include_dirs
+        # Idempotent — a second add (even un-canonical) doesn't double.
+        await project.add_context_dir(str(context_dir))
+        assert project.include_dirs.count(ctx_canon) == 1
+        # Persisted: reload from the store reflects the field.
+        reloaded = await Project.get_by_id(project.id)
+        assert ctx_canon in (reloaded.include_dirs or [])
+        # Remove drops it.
+        await project.remove_context_dir(str(context_dir))
+        assert ctx_canon not in project.include_dirs
+    finally:
+        for e in (skill_ent, project):
+            try:
+                await e.delete()
+            except Exception:
+                pass

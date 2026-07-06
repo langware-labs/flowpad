@@ -92,7 +92,7 @@ export async function loadDockPointer(
   try {
     switch (dock.viewType) {
       case ViewType.SHELL:
-        await loadShellRoute(dock.pointer, context.requestPath);
+        await loadShellRoute(dock.pointer, context.requestPath, dock.scopeFilter);
         break;
       case ViewType.PROJECT:
         await loadProjectRoute(dock.pointer);

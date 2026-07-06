@@ -165,6 +165,7 @@ export function PendingActionsChip() {
               <button
                 type="button"
                 data-testid="pending-actions-chip"
+                data-minimize-anchor="process-chip"
                 aria-label={tooltipText}
                 className={chipClass}
               >

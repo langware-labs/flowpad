@@ -21,7 +21,6 @@ from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
-
 # ---------------------------------------------------------------------------
 # Domain enums (moved from flow_sdk/fs_records/task.py)
 # ---------------------------------------------------------------------------

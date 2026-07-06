@@ -38,13 +38,6 @@ export class ArtifactTypeMetadata {
           description: 'A cloud service artifact',
           icon: 'cloud',
         };
-      case ArtifactType.REPORT:
-        return {
-          type: ArtifactType.REPORT,
-          name: 'Report',
-          description: 'A report artifact',
-          icon: 'bar-chart',
-        };
       case ArtifactType.FILE:
         return {
           type: ArtifactType.FILE,
@@ -58,13 +51,6 @@ export class ArtifactTypeMetadata {
           name: 'Data',
           description: 'A data artifact',
           icon: 'database',
-        };
-      case ArtifactType.GIT_REPO:
-        return {
-          type: ArtifactType.GIT_REPO,
-          name: 'Git Repository',
-          description: 'A Git repository with version-controlled code',
-          icon: 'git-branch',
         };
       case ArtifactType.WEBAPP:
         return {

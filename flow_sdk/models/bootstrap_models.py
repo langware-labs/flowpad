@@ -86,6 +86,11 @@ class BootstrapInfo(BaseModel):
     sniffer_hook: Optional[Dict[str, Any]] = None
     scan_info: Optional[Dict[str, Any]] = None
     records_root: Optional[str] = None
+    # Locales the app ships translations for (single source of truth:
+    # flow_sdk/i18n/supported_locales.py). Each is a {code, englishName,
+    # nativeName, dir, flag} descriptor. The UI derives its picker from this —
+    # it no longer hardcodes its own list.
+    supported_locales: List[Dict[str, Any]] = []
     # Data-privacy mode for this instance: "local" (no cloud access — login,
     # sharing, and outbound hub HTTP disabled) or "connected" (default). Seeds
     # the frontend privacy manager so the footer control + guards paint without

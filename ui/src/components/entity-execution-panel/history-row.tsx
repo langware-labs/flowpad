@@ -29,30 +29,37 @@ function shortId(id: string): string {
   return id.slice(0, 6);
 }
 
+const clip = (s: string): string => (s.length > 80 ? `${s.slice(0, 80)}…` : s);
+
 /**
- * Best-guess title for a chat session. The worker-history entry is the
- * preferred source — it surfaces the actual subject (often the first user
- * prompt) — but we fall through to the AgenticProcess `displayName` and
- * finally to a short id when neither side has anything human-readable.
+ * Best-guess title for a chat session. The live backing entity wins: when
+ * `process.displayName` is a real name (not the `agentic_process-<id>` fallback)
+ * it reflects the current `AgenticProcess.name`, which a rename
+ * (tab/process/session) updates immediately. `entry.name` is a worker-history
+ * snapshot that is NOT refetched on rename — so preferring it would strand the
+ * renamed name out of the chats list. When the entity has no real name yet, we
+ * fall through to `entry.name` (which surfaces the session subject / first
+ * prompt), then the last prompt, then a short id. Keeps rename tab == rename
+ * process == rename session bidirectional.
  */
 export function pickHistoryTitle(
   process: AgenticProcess | null | undefined,
   entry?: WorkerHistoryEntry | null,
 ): string {
-  const name = (entry?.name ?? '').trim();
-  if (name && !UUID_RE.test(name) && name !== entry?.worker_id) {
-    return name.length > 80 ? `${name.slice(0, 80)}…` : name;
-  }
   const display = (process?.displayName ?? '').trim();
   if (display && !display.startsWith('agentic_process-')) {
-    return display.length > 80 ? `${display.slice(0, 80)}…` : display;
+    return clip(display);
+  }
+  const name = (entry?.name ?? '').trim();
+  if (name && !UUID_RE.test(name) && name !== entry?.worker_id) {
+    return clip(name);
   }
   // No real title — fall through to the last prompt so the row stays
   // identifiable in surfaces that show a single line (worker_history
   // splits name vs last_prompt; only HistoryModal renders both).
   const prompt = (entry?.last_prompt ?? '').trim();
   if (prompt) {
-    return prompt.length > 80 ? `${prompt.slice(0, 80)}…` : prompt;
+    return clip(prompt);
   }
   const id = process?.id ?? entry?.agentic_process_id ?? entry?.worker_id ?? '';
   return id ? `Session ${shortId(id)}` : 'Session';

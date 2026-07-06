@@ -237,7 +237,7 @@ The entity class is resolved via `SchemaRegistry.get_entity_cls(record_type)` (n
 
 ### FTS Index Gap
 
-`_reflect_entity` calls `entity.save()` but does **not** call `Record.sync_to_db()` or `driver.fts_upsert()`. This means entities created or updated via the listen webhook are persisted to the SQLite `entities` table and broadcast to the frontend via `DataOpMessage`, but they are **not** added to the FTS5 full-text search index. To make webhook-created entities searchable, a manual reindex is required (`POST /api/v1/search/reindex`).
+`_reflect_entity` calls `entity.save()` but does **not** call `Record.sync_to_db()` or `driver.fts_upsert()`. This means entities created or updated via the listen webhook are persisted to the SQLite `entities` table and broadcast to the frontend via `DataOpMessage`, but they are **not** added to the FTS5 full-text search index. To make webhook-created entities searchable, a manual reindex is required (the compute-node action `POST /fs-records/index` — the old `POST /api/v1/search/reindex` route no longer exists).
 
 This is one of three parallel entity creation paths in the system:
 1. **`Record.sync_to_db()`** (fs_store layer): creates Entity + FTS entry. Used by `_broadcast_fs_record_op()` after filesystem CRUD.

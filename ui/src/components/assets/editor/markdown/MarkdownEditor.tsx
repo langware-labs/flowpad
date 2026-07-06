@@ -12,7 +12,8 @@ import { History } from 'lucide-react';
 import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, TypeId, copyToClipboard, looksBinaryText } from '@sdk';
+import { FSRef, TypeId, PrefKey, copyToClipboard, looksBinaryText } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { Check, ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
@@ -32,7 +33,6 @@ export type EditorMode = (typeof EDITOR_MODES)[number];
 // Backwards-compatible internal alias; new code should use `EditorMode`.
 type ViewMode = EditorMode;
 
-const MODE_STORAGE_KEY = 'markdownEditor.mode';
 const EDITOR_MODE_PARAM = 'editorMode';
 // Optional 1-indexed body line to drop the caret on at first mount (e.g. a
 // freshly-created skill opens with the caret right after its `# <name>`
@@ -47,16 +47,6 @@ function isEditorMode(value: string | undefined | null): value is ViewMode {
 /** 'review' and 'markdown' are power-user surfaces — only shown in Advanced. */
 function isAdvancedOnlyMode(mode: ViewMode): boolean {
   return mode === 'review' || mode === 'markdown';
-}
-
-function readStoredMode(): ViewMode {
-  if (typeof window === 'undefined') return DEFAULT_MODE;
-  try {
-    const raw = window.localStorage.getItem(MODE_STORAGE_KEY);
-    return (EDITOR_MODES as readonly string[]).includes(raw ?? '') ? (raw as ViewMode) : DEFAULT_MODE;
-  } catch {
-    return DEFAULT_MODE;
-  }
 }
 
 const MODE_ICONS: Record<ViewMode, React.ComponentType<{ className?: string }>> = {
@@ -120,7 +110,7 @@ interface MarkdownEditorProps {
  * - Shows a Properties block only when the file has YAML frontmatter.
  * - Fields are rendered dynamically from whatever keys exist in the frontmatter.
  * - Body is rendered by Milkdown (view/review/editor) or Monaco (markdown).
- * - The chosen mode is persisted across docs via localStorage.
+ * - The chosen mode is persisted across docs via the EDITOR_MODE preference.
  */
 export function MarkdownEditor({
   fsRef,
@@ -216,11 +206,16 @@ function MarkdownEditorContent({
   const advanced = useIsAdvanced();
 
   // viewMode source of truth: URL `?editorMode=…` if present and valid; else
-  // last-used value from localStorage; else DEFAULT_MODE. Updating viewMode
-  // pushes a new DockPointer with the option merged in — the URL becomes
-  // shareable + back-button-restorable, and per-tab independent.
+  // last-used value from the stored preference; else DEFAULT_MODE. Updating
+  // viewMode pushes a new DockPointer with the option merged in — the URL
+  // becomes shareable + back-button-restorable, and per-tab independent.
   const urlMode = currentDock?.options?.[EDITOR_MODE_PARAM];
-  const rawViewMode: ViewMode = isEditorMode(urlMode) ? urlMode : readStoredMode();
+  const [storedMode, setStoredMode] = usePreference<EditorMode>(PrefKey.EDITOR_MODE);
+  const rawViewMode: ViewMode = isEditorMode(urlMode)
+    ? urlMode
+    : isEditorMode(storedMode)
+      ? storedMode
+      : DEFAULT_MODE;
   // In Standard, fall back to 'view' so the body never renders a surface whose
   // chip is hidden (e.g. a share-link pinning ?editorMode=review opened by a
   // Standard user).
@@ -256,11 +251,10 @@ function MarkdownEditorContent({
   // wiki toolbar to insert wikilinks at the cursor.
   const milkdownRef = useRef<MilkdownEditorInstance | null>(null);
 
-  // Keep localStorage as the no-URL fallback for new docs / fresh links.
+  // Keep the stored preference as the no-URL fallback for new docs / fresh links.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try { window.localStorage.setItem(MODE_STORAGE_KEY, viewMode); } catch { /* storage may be disabled */ }
-  }, [viewMode]);
+    setStoredMode(viewMode);
+  }, [viewMode, setStoredMode]);
 
   const {
     fields,

@@ -188,6 +188,14 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         else:
             opts_session_id = resume_sid or fresh_sid
             opts_fork_source = None
+        # NOTE: this is deliberately NOT ``driver.cli_options(process)``. The
+        # headless per-turn spawn is an intentionally different shape from the
+        # general/PTY options ``cmd_line`` reports: it forces the sonnet parent
+        # (opus's parent latency blows the long-test budget), ``--print``/
+        # stream-json transport, and relies on process instruction assets for
+        # embedded-agent/persona content. Codex's equivalent forces
+        # ``ephemeral=False`` so resume works. Do not "unify" these two
+        # construction points — you'd regress model latency and resume behavior.
         opts = ClaudeCliOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
@@ -203,7 +211,9 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             # verbose=True is auto-enabled by ClaudeCliOptions when
             # output_format == "stream-json".
         )
-        argv, env_from_opts = opts.to_spawn_args(instruction=prompt)
+        opts.system_prompt_file = context.system_prompt_file
+        argv = opts.cli_cmd(instruction=prompt, system_prompt_append=context.instructions)
+        env_from_opts = dict(opts.env_vars)
 
         # Start from os.environ so the CLI can find its creds, PATH, home.
         # Strip CLAUDECODE* to avoid the CLI thinking it's already inside a

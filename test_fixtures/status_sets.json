@@ -1,11 +1,18 @@
 {
-  "_note": "Canonical source of truth for the WorkerStatus running/terminal set literals. Python (_RUNNING_STATUSES in flow_sdk/fs_records/agent_status.py, WORKER_RUNNING_STATUSES in ts_sdk/src/process/agentic-types.ts) must equal these byte-for-byte. Contract tests on both sides load this file and assert set equality; editing one side without the other breaks both.",
+  "_note": "Canonical source of truth for the status set literals shared by Python and TS. Python (flow_sdk/builtin/worker_status.py + flow_sdk/builtin/agentic_process/status_predicates.py + flow_sdk/builtin/process_lifecycle.py) and TS (ts_sdk/src/process/agentic-types.ts) must equal these byte-for-byte. Contract tests on both sides load this file and assert set equality; editing one side without the other breaks both.",
   "worker_running": [
-    "waiting",
+    "working",
     "thinking",
     "tool_call",
     "tool_running",
     "api_error"
+  ],
+  "worker_busy": [
+    "initializing",
+    "working",
+    "thinking",
+    "tool_call",
+    "tool_running"
   ],
   "worker_terminal": [
     "complete",
@@ -14,17 +21,18 @@
     "inactive",
     "api_timeout"
   ],
-  "worker_ready_for_input": [
-    "idle",
-    "complete",
-    "interrupted"
-  ],
   "worker_execution_error": [
     "error",
     "api_timeout",
     "inactive"
   ],
-  "process_running": [
+  "process_stored_running": [
+    "starting",
+    "running",
+    "stopping"
+  ],
+  "_note_process_running_wire": "Since busy/ready are no longer projected into status, the wire live-set equals the stored live-set: `running` is emitted verbatim and turn-in-flight is the separate `busy` boolean.",
+  "process_running_wire": [
     "starting",
     "running",
     "stopping"

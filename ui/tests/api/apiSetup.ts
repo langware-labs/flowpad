@@ -7,3 +7,6 @@
 import { installLeakTripwire } from '../_cleanup';
 
 installLeakTripwire(['skill']);
+
+// The `@lingui/react` shim is registered in its own setup file (../_lingui-mock,
+// listed first in this tier's setupFiles) and shared with the unit/react tiers.

@@ -35,7 +35,9 @@ import { closeTerminalTab } from '@src/tabs/useTabs';
 import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
-import { buildShellRedirectUrl, DockPointer } from '@src/navigation';
+import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
+import { ViewType } from '@sdk';
+import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
 import {
@@ -212,7 +214,64 @@ async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
   throw replace(shellUrl(loadedToPointer(result.loaded)));
 }
 
-async function routeProcessPointer(processId: string, shellUrl: ShellUrlBuilder): Promise<void> {
+/**
+ * URL-scope ⇐ opened-entity SSOT (the chats-side-menu-wrong-project fix).
+ *
+ * The opened AgenticProcess's `project_id` is the single source of truth for
+ * "what project are we in": it's the project `loadProcess` loads into context.
+ * The dock's scope filter (what the Chats navigator reads to list history) must
+ * be a PROJECTION of that same id — not the project that happened to be ambient
+ * when the scope was seeded at click (`openDock`, NavigationActions). When they
+ * diverge (open an oss chat while sapora-streams was active → URL carries
+ * sapora's scope), `replace()` the URL onto the same pointer carrying the
+ * process's own project scope. This runs at LOAD, so it also corrects deep
+ * links / hard refresh / back-forward, not just the click path. Projectless
+ * targets keep whatever scope was seeded (no entity project to project from).
+ *
+ * Keyed off entity IDENTITY only and run BEFORE the runtime phase, so the scope
+ * follows `project_id` regardless of how `loadProcess` later resolves — PTY
+ * soft-failure, a stale-instance unexpected throw, or success all land on the
+ * correctly-scoped URL (the runtime then attaches on the redirected re-run).
+ */
+async function reconcileProcessScope(
+  processId: string,
+  requestPath: string,
+  currentScope?: ScopeFilter | null,
+): Promise<void> {
+  // Resolve identity only (cache-first; a cheap get-by-id on cold nav).
+  const proc =
+    AgenticProcess.getByIdFromCache<AgenticProcess>(processId) ??
+    (await AgenticProcess.getById<AgenticProcess>(processId).catch(() => null));
+  if (!proc?.project_id) return; // projectless / unresolvable target — leave the seeded scope as-is
+  const want = projectScope(proc.project_id);
+  if (currentScope && scopeFilterEqual(currentScope, want)) return; // already aligned — no redirect loop
+  // NOTE: this scope-align redirect drops the incoming URL's query options
+  // (`?sideWindows=dir`, etc.) — `requestPath` is pathname-only (loaders.ts:73
+  // strips the query before it reaches here) and this DockPointer seeds
+  // options=undefined. Carrying deep-link options through the redirect needs the
+  // loader `requestPath` contract to include the search string (touches
+  // detectLayout / buildShellRedirectUrl across all routes) — tracked separately;
+  // not fixed here. See dir_panel_scroll.md.ts for the affected deep-link.
+  const url = new DockPointer(ViewType.SHELL, proc.terminalDockPointer.pointer, undefined, detectLayout(requestPath))
+    .withScopeFilter(want)
+    .toUrl(requestPath);
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
+  throw replace(url);
+}
+
+async function routeProcessPointer(
+  processId: string,
+  shellUrl: ShellUrlBuilder,
+  requestPath: string,
+  currentScope?: ScopeFilter | null,
+): Promise<void> {
+  // Align the URL scope to the opened process's project (SSOT) BEFORE the
+  // runtime phase. Throws a `replace()` redirect when diverged; on the re-run
+  // the scopes match (no-op) and the runtime attaches under the right scope.
+  // Independent of `loadProcess` outcome, so a degraded/soft/failed attach can
+  // no longer strand the side menu on the ambient project.
+  await reconcileProcessScope(processId, requestPath, currentScope);
+
   try {
     await loadProcess(processId);
     // Successful load — clear any prior runtime-error banner.
@@ -225,7 +284,8 @@ async function routeProcessPointer(processId: string, shellUrl: ShellUrlBuilder)
     // died, shell entity missing, project dangling, …). DO NOT redirect:
     // keep the user on their requested URL and surface a banner with
     // per-kind recovery. This is what prevents the silent-jump-to-stale-
-    // sibling class of bugs after a backend restart.
+    // sibling class of bugs after a backend restart. (Scope is already
+    // aligned above, before this phase ran.)
     if (e.severity === 'soft') {
       dataContext.setActiveTerminalTargetTypeId(
         new TypeId(AgenticProcess.type, processId),
@@ -364,6 +424,7 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
 export async function loadShellRoute(
   pointer: string | undefined,
   requestPath: string = '/dock/shell',
+  currentScope?: ScopeFilter | null,
 ): Promise<void> {
   perfLog(`loadShellRoute(${pointer || 'no-pointer'}) start`);
 
@@ -399,7 +460,7 @@ export async function loadShellRoute(
 
   if (DockPointer.isAgenticProcessPointer(pointer)) {
     const processId = DockPointer.extractAgenticProcessId(pointer);
-    await routeProcessPointer(processId, shellUrl);
+    await routeProcessPointer(processId, shellUrl, requestPath, currentScope);
     perfLog('loadShellRoute done (agentic process path)');
     return;
   }

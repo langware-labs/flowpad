@@ -99,7 +99,7 @@ export function useRunOnFile({
       const fileLocator = filePath ?? targetVfsPath;
       const instruction = `Run the file ${fileLocator} with the asset ${assetType}: ${assetLocator}`;
 
-      void proc.prompt(instruction);
+      void proc.submit(instruction);
       setProcessEntry({ process: proc });
       onOpenSideWindow?.('runs');
     },

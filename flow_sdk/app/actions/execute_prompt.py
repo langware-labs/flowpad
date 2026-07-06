@@ -26,8 +26,10 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.collaboration_room import CollaborationRoom
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
 
 logger = logging.getLogger(__name__)
 
@@ -157,14 +159,144 @@ async def _reuse_or_spawn_headless(target_typeid_str: str, workdir: str) -> "Age
                 await ap.exit()
             except Exception:
                 pass
-        if ap.visible is not False:
+        # Force headless transport: prompt() routes on pty_mode (NOT visible), and
+        # pty_mode defaults True — without this the run takes the PTY path and spawns
+        # an interactive `claude -- "<prompt>"` that never auto-submits, so the
+        # transcript never appears and the turn hangs.
+        if ap.visible is not False or ap.pty_mode is not False:
             ap.visible = False
+            ap.pty_mode = False
             await ap.save()
         return ap
 
-    ap = AgenticProcess(workdir=workdir, target_typeid_str=target_typeid_str, visible=False)
+    ap = AgenticProcess(
+        workdir=workdir, target_typeid_str=target_typeid_str, visible=False, pty_mode=False
+    )
     await ap.save()
     return ap
+
+
+# ── RemoteWorkerSession binding + PromptResult emission ─────────────────────
+
+def _first_prompt_id(fm: "FlowMessage") -> Optional[str]:
+    """Id of the first entity-backed (``prompt-<id>``) prompt attachment, if any.
+    Gated on the shared ``_is_prompt_attachment`` predicate so the prompt-attachment
+    contract stays single-sourced."""
+    from flow_sdk.app.actions.notification_action import _is_prompt_attachment
+    from flow_sdk.builtin.flow_message import AttachmentType
+
+    for a in getattr(fm, "attachment", None) or []:
+        if _is_prompt_attachment(a) and getattr(a, "attachment_type", None) == AttachmentType.TYPE_ID:
+            try:
+                return TypeId(a.data).id
+            except Exception:
+                pass
+    return None
+
+
+async def _reuse_or_bind_session(
+    *, conversation_id: str, host_user_id: Optional[str], guest_user_id: Optional[str],
+    host_process_id: str, project_id: Optional[str], status: str,
+    collaboration_room_id: Optional[str] = None,
+    host_name: Optional[str] = None, guest_name: Optional[str] = None,
+) -> "RemoteWorkerSession":
+    """One RemoteWorkerSession per (conversation, host) — the session the host's
+    reused worker drives, living inside the conversation's CollaborationRoom.
+    Reuse the existing one (refresh its host_process_id + status), else mint a
+    fresh one bound to the conversation + room. Denormalized host/guest names are
+    stamped so viewers render them without cross-roster id resolution."""
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
+
+    existing = await RemoteWorkerSession.get_all({"conversation_id": conversation_id})
+    rws = next((s for s in existing if getattr(s, "host_user_id", None) == host_user_id), None)
+    if rws is None:
+        rws = RemoteWorkerSession(
+            conversation_id=conversation_id,
+            collaboration_room_id=collaboration_room_id,
+            host_user_id=host_user_id,
+            guest_user_id=guest_user_id,
+            host_name=host_name,
+            guest_name=guest_name,
+            host_process_id=host_process_id,
+            project_id=project_id,
+        )
+    else:
+        rws.host_process_id = host_process_id
+        rws.guest_user_id = rws.guest_user_id or guest_user_id
+        rws.project_id = rws.project_id or project_id
+        rws.collaboration_room_id = rws.collaboration_room_id or collaboration_room_id
+        rws.host_name = rws.host_name or host_name
+        rws.guest_name = rws.guest_name or guest_name
+    rws.mark_activity(status)
+    await rws.save()
+    return rws
+
+
+async def _reuse_or_create_room(
+    *, conversation_id: str, project_id: Optional[str], ap: "AgenticProcess",
+    host_user_id: Optional[str],
+) -> Optional["CollaborationRoom"]:
+    """Ensure ONE CollaborationRoom per executed conversation and link the run to
+    it — the backend port of the FE ``AgenticProcess.createCollaborationRoom``.
+
+    Reuse the room the reused headless AP already points at (so re-executing a
+    conversation shares one room, matching the one-process/one-session-per-
+    conversation invariant), else mint a fresh room on the conversation's
+    project. Sets ``ap.collaboration_room_id`` and appends the process to the
+    room so the run surfaces the room chip and the room lists its processes.
+    Best-effort: a room failure must never fail the execution.
+    """
+    from flow_sdk.builtin.collaboration_room import CollaborationRoom
+    try:
+        room: Optional[CollaborationRoom] = None
+        if ap.collaboration_room_id:
+            room = await CollaborationRoom.get_one({"id": ap.collaboration_room_id})
+        if room is None:
+            host_name = None
+            if host_user_id:
+                from flow_sdk.builtin.user import User
+                host = await User.get_one({"id": host_user_id})
+                host_name = getattr(host, "name", None) if host else None
+            room = CollaborationRoom(
+                project_id=project_id,
+                host_name=host_name,
+                host_member_id=host_user_id,
+            )
+            await room.save()
+        if ap.collaboration_room_id != room.id:
+            ap.collaboration_room_id = room.id
+            await ap.save()
+        await room.add_process(ap.id)
+        return room
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[execute_prompt] room link failed: %s", e)
+        return None
+
+
+async def _emit_prompt_result(
+    reply: str, *, prompt_id: Optional[str], session_id: str, host_process_id: str,
+    source_session_id: Optional[str],
+) -> dict:
+    """Mint a PromptResult entity for this turn and return the TYPE_ID attachment
+    dict (``prompt_result-<id>`` + inline ``result_preview``) to ride the reply."""
+    from flow_sdk.builtin.flow_message import AttachmentType
+    from flow_sdk.builtin.prompt_result import PromptResult
+    from flow_sdk.schema.types import EntityType
+
+    pr = PromptResult(
+        prompt_id=prompt_id,
+        remote_worker_session_id=session_id,
+        text=reply,
+        result_preview=reply,
+        host_process_id=host_process_id,
+        source_session_id=source_session_id,
+    )
+    await pr.save()
+    return {
+        "attachment_type": AttachmentType.TYPE_ID.value,
+        "data": str(TypeId(type=EntityType.PROMPT_RESULT.value, id=pr.id)),
+        "prompt_preview": reply,
+    }
 
 
 def _is_user_turn_boundary(msg: dict) -> bool:
@@ -326,19 +458,59 @@ async def execute_prompt_from_message(
         target = str(TypeId(type="conversation", id=conversation.id))
         ap = await _reuse_or_spawn_headless(target, workdir)
 
+        # Ensure a CollaborationRoom for this conversation and link the run to it
+        # BEFORE the (long, possibly-failing) agent run so the room + room chip
+        # exist even if the claude turn errors — "the shared session" the execute
+        # dialog promises is a real, openable room.
+        room = await _reuse_or_create_room(
+            conversation_id=conversation.id, project_id=project_id, ap=ap,
+            host_user_id=approver_id,
+        )
+
+        # Bind the RemoteWorkerSession this run drives (host = the local executor,
+        # guest = the prompt's sender). Marked RUNNING for the turn.
+        from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus
+        rws = await _reuse_or_bind_session(
+            conversation_id=conversation.id,
+            host_user_id=approver_id,
+            guest_user_id=getattr(fm, "sender_id", None),
+            host_process_id=ap.id,
+            project_id=project_id,
+            status=RemoteWorkerSessionStatus.RUNNING,
+            collaboration_room_id=(room.id if room else None),
+            host_name=(room.host_name if room else None),
+            guest_name=getattr(fm, "sender_name", None),
+        )
+
         await ap.prompt(prompt_text)
         reply = await _capture_assistant_reply(ap)
 
-        if not reply:
-            return ApiSuccessResponse(data={"executed": True, "reply": None, "process_id": ap.id})
+        rws.mark_activity(RemoteWorkerSessionStatus.IDLE)
+        await rws.save()
 
+        if not reply:
+            return ApiSuccessResponse(data={"executed": True, "reply": None, "process_id": ap.id, "session_id": rws.id, "collaboration_room_id": (room.id if room else None)})
+
+        # The reply carries a structured PromptResult attachment (text + preview,
+        # extensible to produced files/assets) — the turn-grained result the
+        # RemoteWorkerSession viewer reconstructs. The wrapped-quote text stays as
+        # the human-readable body. A prompt_result attachment never re-triggers a
+        # run (the inbound gate matches only `prompt-<id>`), so no Claude↔Claude loop.
         from flow_sdk.app.actions.flow_message_action import _wrap_as_claude_quote
         from flow_sdk.app.actions.notification_action import handle_add_message
+        result_att = await _emit_prompt_result(
+            reply,
+            prompt_id=_first_prompt_id(fm),
+            session_id=rws.id,
+            host_process_id=ap.id,
+            source_session_id=getattr(ap, "session_id", None),
+        )
         result = await handle_add_message(
             {
                 "conversation_id": conversation.id,
                 "message": _wrap_as_claude_quote(reply),
                 "is_draft": "true" if not auto_reply else "",
+                "attachment": [result_att],
             },
             someone_typeid,
         )
@@ -354,6 +526,8 @@ async def execute_prompt_from_message(
             "executed": True,
             "auto_reply": auto_reply,
             "process_id": ap.id,
+            "session_id": rws.id,
+            "collaboration_room_id": (room.id if room else None),
             "send_result": getattr(result, "data", None),
             "feed_entry_id": feed_entry_id,
         })

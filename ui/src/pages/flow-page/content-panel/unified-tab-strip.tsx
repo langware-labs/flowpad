@@ -153,8 +153,8 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     [tabByKey, projectId],
   );
 
-  // Keyboard shortcuts (the strip owns them): mod+W close active, mod+T new Claude,
-  // mod+PgUp/PgDn cycle. Mac=Ctrl, Windows=Meta, Linux=Alt.
+  // Keyboard shortcuts (the strip owns them): mod+W close active, mod+T new
+  // terminal, mod+PgUp/PgDn cycle. Mac=Ctrl, Windows=Meta, Linux=Alt.
   useEffect(() => {
     const osPlatform: string =
       (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ??
@@ -169,8 +169,10 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
         e.preventDefault();
         handleClose(activeKey);
       } else if (e.key === 't' || e.key === 'T') {
+        // mod+T = New Terminal, matching the advertised labels. Claude gets no
+        // binding: the mod is Ctrl on Mac, and Ctrl+C is terminal interrupt.
         e.preventDefault();
-        void controller.handleStartClaude();
+        void controller.handleStartTerminal();
       } else if (e.key === 'PageUp') {
         e.preventDefault();
         const idx = tabs.findIndex((t) => (t.dockPointer?.tabHash ?? t.id) === activeKey);

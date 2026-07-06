@@ -71,6 +71,52 @@ class AgenticProcessContextKey(StrEnum):
     WORKER_STARTED_AT = "_worker_started_at"
 
 
+def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
+    """Stamp the standard worker environment — the ONE chokepoint every spawn
+    path (PTY, driver headless, inline print-mode turn) calls.
+
+    * ``FLOWPAD_EXECUTION_SCOPE`` — process identity, so worker `flow`
+      commands (show/record/context/…) resolve their calling process.
+    * ``PATH`` — pinned to this backend's `flow` CLI (version-skew guard,
+      see :func:`flow_cli_env_path`).
+
+    ``setdefault`` semantics for the scope (an explicit override wins);
+    mutates and returns ``env``.
+    """
+    import json as _json  # noqa: PLC0415
+
+    env.setdefault(
+        "FLOWPAD_EXECUTION_SCOPE",
+        _json.dumps([{"type": process.get_type(), "id": process.id}]),
+    )
+    pinned = flow_cli_env_path(env.get("PATH"))
+    if pinned:
+        env["PATH"] = pinned
+    return env
+
+
+def flow_cli_env_path(existing_path: str | None = None) -> str | None:
+    """PATH value that pins the worker's ``flow`` CLI to THIS backend's install.
+
+    Workers shell out to ``flow`` (navigate/show/record/…). Resolved from the
+    inherited PATH, that is typically the globally installed release
+    (``~/.local/bin/flow``), which may predate CLI verbs this backend serves —
+    version skew that silently breaks worker↔backend contracts. The backend's
+    own venv bin dir (``sys.executable``'s directory) carries the matching
+    ``flow``; prepend it so the worker always runs the same CLI version as the
+    backend that spawned it. Returns None when no ``flow`` sits next to the
+    interpreter (e.g. system python) — callers skip the override then.
+    """
+    bin_dir = Path(sys.executable).parent
+    exe = "flow.exe" if sys.platform == "win32" else "flow"
+    if not (bin_dir / exe).exists():
+        return None
+    base = existing_path if existing_path is not None else os.environ.get("PATH", "")
+    if str(bin_dir) == (base.split(os.pathsep, 1)[0] if base else ""):
+        return base  # already first — idempotent across restarts
+    return f"{bin_dir}{os.pathsep}{base}" if base else str(bin_dir)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # AgenticContext — execution context handed to workers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -118,6 +164,9 @@ class AgenticContext(BaseModel):
     # Claude's ``--add-dir``). Drivers populate this from process configuration
     # so print-mode workers see the same skill/agent surface as PTY-mode runs.
     add_dirs: list[str] = Field(default_factory=list)
+    system_prompt_file: str | None = None
+    developer_instructions: str | None = None
+    custom_instruction_dirs: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def set_defaults(self) -> "AgenticContext":
@@ -193,7 +242,30 @@ class WorkerCLIOptions:
     Converts a structured configuration into a shell command string suitable
     for PTY injection. Subclasses override ``_build_worker_args()`` to provide
     the actual executable and its flags.
+
+    Model **tier** resolution lives here, once: assigning ``self.model`` runs it
+    through this class's ``MODEL_TIERS`` map, so a portable size (``sm``/``md``/
+    ``lg``) becomes the worker's concrete model the moment it's set — no matter
+    which path built the options (PTY ``cli_options`` or headless stream worker).
+    A subclass declares its own ``MODEL_TIERS`` (claude does; codex/copilot leave
+    it empty → tiers pass through). A concrete model name is always passed through.
     """
+
+    # Per-worker tier→model map; empty in the base (pass-through). See
+    # ``flow_sdk/builtin/agentic_process/model_tiers.py``.
+    MODEL_TIERS: dict[str, str] = {}
+
+    # ── Vendor spec (declarative; overridden per worker) ─────────────────────
+    # The bare executable name (claude/codex/copilot). ``_resolve_binary`` may
+    # refine it (e.g. claude resolves via ``shutil.which``).
+    EXECUTABLE: str = ""
+    # Where the per-turn prompt is delivered: 'argv' (claude, ``-- <text>``) or
+    # 'stdin' (codex/copilot pipe it). Drives both ``cli_cmd`` and ``stdin_text``.
+    PROMPT_CHANNEL: str = "argv"
+    # How a system-prompt addition reaches the worker: a CLI flag name
+    # (claude ``--append-system-prompt``) or None ⇒ prepend into the prompt body.
+    SYSTEM_PROMPT_FLAG: str | None = None
+    SYSTEM_PROMPT_FILE_FLAG: str | None = None
 
     def __init__(
         self,
@@ -202,9 +274,95 @@ class WorkerCLIOptions:
     ) -> None:
         self.workdir: str | None = workdir
         self.env_vars: dict[str, str] = dict(env_vars or {})
+        # Forking is a claude-only concept, but the attribute lives on the base
+        # (default None) so callers can read ``cmd.fork_session_id`` without a
+        # ``hasattr`` guard. Only claude's ``to_json`` serializes it, so the wire
+        # shape (and restart hash) of codex/copilot is unaffected.
+        self.fork_session_id: str | None = None
+        # Launch-time system-prompt append (``resolve_system_instructions()``),
+        # set by the launcher; derived state — not a ctor param, not serialized,
+        # so restart hashing is unaffected.
+        self.system_prompt_append: str | None = None
+        self.system_prompt_file: str | None = None
+
+    @property
+    def model(self) -> str | None:
+        return getattr(self, "_model", None)
+
+    @model.setter
+    def model(self, value: str | None) -> None:
+        # Resolve the tier as it's assigned — the single seam every options
+        # builder funnels through. ``resolve_model_tier`` is pass-through for a
+        # concrete model or an unmapped tier.
+        from flow_sdk.builtin.agentic_process.model_tiers import resolve_model_tier
+
+        self._model = resolve_model_tier(self.MODEL_TIERS, value)
 
     def add_env(self, key: str, value: str) -> None:
         self.env_vars[key] = value
+
+    def _system_prompt(self, override: str | None) -> str | None:
+        """Explicit per-call value wins; else the launch-derived field."""
+        return override if override is not None else self.system_prompt_append
+
+    # ── Unified arg construction (argv is canonical; shell is derived) ───────
+
+    def _resolve_binary(self) -> list[str]:
+        """argv prefix — ``[EXECUTABLE]`` by default. A list so a vendor can wrap
+        the binary (e.g. claude on win32 → ``[comspec, "/c", path]``); claude also
+        resolves the real path via ``shutil.which``."""
+        return [self.EXECUTABLE]
+
+    def _emit_flags(self) -> list[str]:
+        """Vendor hook: every argv token AFTER the binary, EXCEPT the per-turn
+        instruction (placed by ``cli_cmd`` per ``PROMPT_CHANNEL``) and the
+        system-prompt addition (placed per ``SYSTEM_PROMPT_FLAG``). This is the
+        ONLY arg builder a vendor writes — the shell string is derived from it."""
+        raise NotImplementedError
+
+    def cli_cmd(
+        self, instruction: str | None = None, system_prompt_append: str | None = None
+    ) -> list[str]:
+        """Canonical argv. The single source of truth; the shell string and the
+        spawn tuple both derive from this."""
+        argv: list[str] = [*self._resolve_binary(), *self._emit_flags()]
+        spa = self._system_prompt(system_prompt_append)
+        if self.system_prompt_file and self.SYSTEM_PROMPT_FILE_FLAG:
+            argv.extend([self.SYSTEM_PROMPT_FILE_FLAG, self.system_prompt_file])
+        if spa and self.SYSTEM_PROMPT_FLAG:
+            argv.extend([self.SYSTEM_PROMPT_FLAG, spa])
+        if self.PROMPT_CHANNEL == "argv" and instruction:
+            argv.extend(["--", instruction])
+        return argv
+
+    def stdin_text(
+        self, instruction: str | None = None, system_prompt_append: str | None = None
+    ) -> str | None:
+        """The text to pipe to the worker's stdin, or None for argv-channel
+        vendors. For stdin vendors with no system-prompt flag, the addition is
+        prepended into the prompt body (their only sink)."""
+        if self.PROMPT_CHANNEL != "stdin":
+            return None
+        body = instruction or ""
+        spa = self._system_prompt(system_prompt_append)
+        if spa and not self.SYSTEM_PROMPT_FLAG:
+            body = f"{spa}\n\n{body}".strip() if body else spa
+        return body
+
+    def to_spawn(
+        self, instruction: str | None = None, system_prompt_append: str | None = None
+    ) -> tuple[list[str], dict[str, str], str | None]:
+        """The one IO contract a worker needs: (argv, env, stdin|None)."""
+        return (
+            self.cli_cmd(instruction=instruction, system_prompt_append=system_prompt_append),
+            dict(self.env_vars),
+            self.stdin_text(instruction, system_prompt_append),
+        )
+
+    def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
+        """Back-compat (argv, env) accessor — the prompt rides whichever channel
+        ``PROMPT_CHANNEL`` declares."""
+        return self.cli_cmd(instruction=instruction), dict(self.env_vars)
 
     def to_shell_string(self, instruction: str | None = None) -> str:
         args = self._build_worker_args()
@@ -231,7 +389,17 @@ class WorkerCLIOptions:
         return self.to_json() == other.to_json()
 
     def _build_worker_args(self) -> list[str]:
-        raise NotImplementedError
+        """Shell-token form of the argv (sans instruction — appended by
+        ``_build_posix``/``_build_win32``). Built from ``_emit_flags`` so the
+        shell string can never drift from argv; ``args[0]`` stays the bare binary
+        name (``Shell`` reads it as the worker name, and we skip resolving the
+        real path here since callers only want the name). Vendors that track
+        ``skill_names`` get cosmetic ``# skill=<name>`` suffixes so ``cmd_line``
+        reflects materialized skills (they aren't real CLI args)."""
+        args = [self.EXECUTABLE, *[shlex.quote(a) for a in self._emit_flags()]]
+        for sk in getattr(self, "skill_names", []):
+            args.append(f"# skill={shlex.quote(sk)}")
+        return args
 
     def _build_posix(self, args: list[str], instruction: str | None) -> str:
         workdir = self.workdir or "."
@@ -385,6 +553,12 @@ class WorkerDriver(Protocol):
     # literal text and need a discrete Enter after the paste settles (copilot,
     # codex) — see ``Shell.write_then_submit`` and the ``prompt-pty`` action.
     pty_submits_on_paste: bool
+    # True iff, on resume/fork, this vendor pins the worker's launch cwd
+    # (``CLAUDE_PROJECT_DIR`` + ``workdir``) to the recorded cwd of the source
+    # session's transcript (claude). Codex/copilot don't rewrite the launch cwd
+    # from a transcript record, and have no fork. Replaces a ``hasattr(cmd,
+    # "fork_session_id")`` proxy that meant "is this the claude options shape".
+    pins_resume_cwd: bool
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -486,8 +660,11 @@ class WorkerDriver(Protocol):
         instruction: str,
         agents_json: dict | None,
     ) -> str:
-        """Inline embedded-agent definitions (or pass through unchanged) so
-        the parent worker reliably honours their side-effect instructions."""
+        """Return the user prompt, optionally transformed by a vendor driver.
+
+        Current drivers keep this as a passthrough; embedded-agent instructions
+        are delivered via generated process instruction assets.
+        """
         ...
 
     # ── External-session probe (used by test invariant) ──────────────────────

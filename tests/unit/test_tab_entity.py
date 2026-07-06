@@ -176,6 +176,34 @@ async def test_deleting_target_soft_closes_its_tabs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_delete_by_id_soft_closes_its_tabs() -> None:
+    # Regression (proven this session — "Conversation not found" 404 on project
+    # switch): the HTTP delete action (graph_crud_actions.handle_delete_by_id)
+    # removes an entity via the CLASSMETHOD Entity.delete_by_id, NOT the instance
+    # Entity.delete. Only the instance delete() carries the orphan-Tab cleanup, so
+    # a delete through the real API path strands a visible Tab pointing at a now
+    # nonexistent target. The projects switcher then resolves that tab and
+    # navigates to a dead conversation URL that 404s.
+    probe = _TabTargetProbe(id=str(uuid.uuid4()))
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/probe-del-by-id#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+    )
+    assert tab.visible is True
+
+    # The exact method the HTTP delete action calls (graph_crud_actions.py:134).
+    await _TabTargetProbe.delete_by_id(probe.id)
+
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is not None and reloaded.visible is False, (
+        "deleting the target via delete_by_id (the HTTP delete path) must soft-close "
+        "its Tab, not leave a dangling chip that 404s on click"
+    )
+
+
+@pytest.mark.asyncio
 async def test_missing_project_cleanup_deletes_tab_without_target_teardown() -> None:
     # A missing project means the Tab row itself is stale. Clean it with
     # Tab.delete(), not Tab.close(), so the backing target is not torn down.
@@ -225,6 +253,113 @@ async def test_agentic_process_close_hides_its_terminal_tab() -> None:
     assert reloaded is not None and reloaded.visible is False, (
         "closing the process must soft-close its terminal Tab"
     )
+
+
+# ── parent_tab_id (generic tab grouping — the vibe child-tabs feature) ──────────
+
+
+def _jptr(view_type: str, sub: str) -> str:
+    """A realistic JSON DockPointer (what the frontend stores) — a bare string
+    triggers the legacy-heal path on reopen and mutates the pointer, breaking a
+    re-query by the original string. Real pointers are always JSON."""
+    import json as _j
+
+    return _j.dumps({"viewType": view_type, "pointer": f"{sub}#{uuid.uuid4()}"})
+
+
+@pytest.mark.asyncio
+async def test_parent_tab_id_set_on_create() -> None:
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    child = await ensure_tab(
+        _jptr("editor", "markdown"),
+        target_type="markdown",
+        target_id="md-child",
+        parent_tab_id=parent.id,
+    )
+    assert child.parent_tab_id == parent.id
+
+
+@pytest.mark.asyncio
+async def test_parent_tab_id_adopted_on_reopen_and_preserved_on_none() -> None:
+    # A tab already open with no parent gets adopted when reopened from inside a
+    # workspace; a later reopen with no hint (None) preserves the group.
+    p = _jptr("editor", "markdown")
+    first = await ensure_tab(p, target_type="markdown", target_id="md-a")
+    assert first.parent_tab_id is None
+
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    adopted = await ensure_tab(p, parent_tab_id=parent.id)
+    assert adopted.id == first.id
+    assert adopted.parent_tab_id == parent.id
+
+    # No hint → preserve (matches the name/icon hint convention).
+    preserved = await ensure_tab(p)
+    assert preserved.parent_tab_id == parent.id
+
+    # A DIFFERENT parent re-parents (last-writer-wins; a tab is in one group).
+    parent2 = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    reparented = await ensure_tab(p, parent_tab_id=parent2.id)
+    assert reparented.parent_tab_id == parent2.id
+
+
+@pytest.mark.asyncio
+async def test_parent_tab_id_never_self() -> None:
+    # Guard: a tab is never made its own parent (backend defense; the client
+    # registers the display tab as parent and could re-materialize the display).
+    p = _jptr("shell", f"agentic_process-{uuid.uuid4()}")
+    tab = await ensure_tab(p)
+    same = await ensure_tab(p, parent_tab_id=tab.id)
+    assert same.id == tab.id
+    assert same.parent_tab_id is None, "a tab must never be its own parent"
+
+
+@pytest.mark.asyncio
+async def test_parent_soft_close_leaves_children_intact() -> None:
+    # Parent close is soft and never touches children — they stay ordinary
+    # global tabs; the deterministic id regroups them when the parent reopens.
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    child = await ensure_tab(
+        _jptr("editor", "markdown"), target_type="markdown", target_id="md-keep", parent_tab_id=parent.id
+    )
+
+    await parent.close()
+
+    reloaded = await Tab.get_one({"id": child.id})
+    assert reloaded is not None
+    assert reloaded.visible is True, "child stays visible when parent soft-closes"
+    assert reloaded.parent_tab_id == parent.id, "soft-close preserves the group edge"
+
+
+@pytest.mark.asyncio
+async def test_parent_tab_id_in_wire_projection() -> None:
+    # _serialize_row is the actual wire projection for every list action — the
+    # field MUST be there or the whole FE feature is dark.
+    from flow_sdk.builtin.tab import _serialize_row
+
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    child = await ensure_tab(
+        _jptr("editor", "markdown"), target_type="markdown", target_id="md-w", parent_tab_id=parent.id
+    )
+    row = _serialize_row(child)
+    assert "parent_tab_id" in row
+    assert row["parent_tab_id"] == parent.id
+
+
+@pytest.mark.asyncio
+async def test_hard_reap_clears_child_parent_refs() -> None:
+    # A hard delete of the parent must null its children's parent_tab_id (unlike
+    # soft-close) so no permanently-dangling edges accumulate.
+    from flow_sdk.builtin.tab import _clear_parent_refs
+
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    child = await ensure_tab(
+        _jptr("editor", "markdown"), target_type="markdown", target_id="md-reap", parent_tab_id=parent.id
+    )
+
+    await _clear_parent_refs({parent.id})
+
+    reloaded = await Tab.get_one({"id": child.id})
+    assert reloaded is not None and reloaded.parent_tab_id is None
 
 
 @pytest.mark.asyncio

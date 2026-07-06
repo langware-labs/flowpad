@@ -1,12 +1,14 @@
 import { act, renderHook } from '@testing-library/react';
 import { Bot, History, SquareTerminal } from 'lucide-react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { instancePreferences, PrefKey } from '@sdk';
 import { getInlineOpeners } from '@src/components/terminal/openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor, OpenerId } from '@src/components/terminal/openers/tab_opener_types';
 import { usePinnedOpeners } from '@src/components/terminal/openers/usePinnedOpeners';
+import { resetOpenerPrefs } from '../utils/opener-prefs';
 
-const PINNED_STORAGE_KEY = 'flowpad.terminal.pinnedOpeners';
-const LAST_OPENER_STORAGE_KEY = 'flowpad.terminal.lastOpener';
+// usePinnedOpeners persists through the registry-driven preference store
+// (PrefKey.LAST_OPENER / PINNED_OPENERS), not raw localStorage anymore.
 
 function opener(id: OpenerId, available = true): OpenerDescriptor {
   return {
@@ -24,11 +26,11 @@ function ids(openers: OpenerDescriptor[]): OpenerId[] {
 
 describe('terminal opener toolbar memory slot', () => {
   beforeEach(() => {
-    window.localStorage.clear();
+    resetOpenerPrefs();
   });
 
   afterEach(() => {
-    window.localStorage.clear();
+    resetOpenerPrefs();
   });
 
   it('adds the last opened opener after pinned openers when it is not pinned', () => {
@@ -59,13 +61,13 @@ describe('terminal opener toolbar memory slot', () => {
     });
     expect(result.current.lastOpened).toBe('terminal');
     expect(result.current.pinned).toEqual([]);
-    expect(JSON.parse(window.localStorage.getItem(LAST_OPENER_STORAGE_KEY) ?? 'null')).toBe('terminal');
-    expect(JSON.parse(window.localStorage.getItem(PINNED_STORAGE_KEY) ?? 'null')).toEqual([]);
+    expect(instancePreferences.get(PrefKey.LAST_OPENER)).toBe('terminal');
+    expect(instancePreferences.get(PrefKey.PINNED_OPENERS)).toEqual([]);
   });
 
   it('loads codex from pinned and last-opener storage', () => {
-    window.localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(['codex']));
-    window.localStorage.setItem(LAST_OPENER_STORAGE_KEY, JSON.stringify('codex'));
+    instancePreferences.set(PrefKey.PINNED_OPENERS, ['codex']);
+    instancePreferences.set(PrefKey.LAST_OPENER, 'codex');
 
     const { result } = renderHook(() => usePinnedOpeners());
 

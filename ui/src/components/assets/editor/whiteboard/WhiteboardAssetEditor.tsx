@@ -184,7 +184,16 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
         const raw = await boardRef.read();
         if (cancelled) return;
         const parsed: WrappedBoard = JSON.parse(raw);
-        const data = (parsed?.data ?? {}) as { elements?: unknown[]; appState?: unknown; files?: unknown };
+        // Accept BOTH shapes: the editor's `{kind, version, data}` envelope and
+        // a plain Excalidraw scene `{elements, appState}` (what agents and
+        // exported .excalidraw files write). Without the fallback a plain scene
+        // loaded as `{}` and the first autosave clobbered it with an empty board.
+        const data = (parsed?.data ??
+          (Array.isArray((parsed as unknown as { elements?: unknown[] })?.elements) ? parsed : {})) as {
+          elements?: unknown[];
+          appState?: unknown;
+          files?: unknown;
+        };
         if (data.appState && typeof data.appState === 'object') {
           data.appState = stripEphemeralAppState(data.appState);
         }

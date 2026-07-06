@@ -173,12 +173,26 @@ async function acceptAndFindMessage(convId: string): Promise<{ fmId: string }> {
     return ptrs.some((p: any) => p.type === 'flow_message') ? c : null;
   }, 20_000, 'message pointer on receiver');
   trackForCleanup(received);
-  const fmPtr = received.conversationMessageIds.find((p: any) => p.type === 'flow_message');
-  await pollUntil(async () => {
-    const full = await bob.sdk.FlowMessage.getById(fmPtr!.id).catch(() => null);
-    return full && full.body_status === 'ready' ? full : null;
+  // Two flow_message pointers land on the receiver: the shared ASSET message
+  // (rides a body bundle → body_status READY) AND a kind='invitation'
+  // placeholder ("You've been invited…", no body, stays body_status=na). Both
+  // are typed 'flow_message'; the placeholder is materialized synchronously on
+  // accept and wins the race against the slower catch-up asset message. Don't
+  // pin to the FIRST pointer — poll ALL of them (re-fetching) and select the one
+  // that carries the uploaded bundle (body_status READY). The placeholder never
+  // becomes READY.
+  const fm = await pollUntil(async () => {
+    await bob.sdk.fetchConversations();
+    const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
+    const ptrs = c?.conversationMessageIds ?? [];
+    for (const p of ptrs as any[]) {
+      if (p.type !== 'flow_message') continue;
+      const full = await bob.sdk.FlowMessage.getById(p.id).catch(() => null);
+      if (full && full.body_status === 'ready') return full;
+    }
+    return null;
   }, 20_000, 'shared message READY');
-  return { fmId: fmPtr!.id };
+  return { fmId: fm.id };
 }
 
 describe('plan share → receiver classification (Alice → Bob)', () => {

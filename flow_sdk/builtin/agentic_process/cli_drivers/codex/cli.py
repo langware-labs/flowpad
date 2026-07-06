@@ -21,6 +21,7 @@ lines are easy to filter independently of the Claude CLI lines.
 from __future__ import annotations
 
 import logging
+import json
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
@@ -61,78 +62,53 @@ class CodexCliOptions(WorkerCLIOptions):
         self.add_dirs: list[str] = list(add_dirs or [])
         self.json_stream = json_stream
         self.ephemeral = ephemeral
+        self.developer_instructions: str | None = None
 
-    # Default reasoning effort overridden in ``_build_worker_args`` so user's
-    # global ``model_reasoning_effort = "xhigh"`` from ~/.codex/config.toml
-    # doesn't make every flowpad turn 60+ seconds. Tests run within a 30s
-    # global timeout — keep this in sync if that limit is relaxed.
+    # Default reasoning effort overridden in ``_emit_flags`` so user's global
+    # ``model_reasoning_effort = "xhigh"`` from ~/.codex/config.toml doesn't make
+    # every flowpad turn 60+ seconds. Tests run within a 30s global timeout —
+    # keep this in sync if that limit is relaxed.
     DEFAULT_REASONING_EFFORT = "low"
 
-    def _build_worker_args(self) -> list[str]:
-        """Shell-quoted argv mirroring ``to_spawn_args``.
+    EXECUTABLE = "codex"
+    PROMPT_CHANNEL = "stdin"  # codex reads the prompt from stdin (the `-` sentinel)
+    SYSTEM_PROMPT_FLAG = None  # no flag — a system-prompt addition prepends into stdin
 
-        ``cmd_line`` (``to_shell_string`` → this method) and ``to_spawn_args``
-        used to drift in PTY mode (``json_stream=False``): the spawn argv was
-        bare ``codex`` (interactive TUI) but ``cmd_line`` showed ``codex exec
-        --json …``. Deriving from ``to_spawn_args`` keeps both paths in sync.
-        """
-        import shlex
-
-        argv, _env = self.to_spawn_args()
-        args: list[str] = [shlex.quote(a) for a in argv]
-        # Skills are surfaced as a comment-style suffix so callers asserting on
-        # ``cmd_line`` containing the agent name still find it. They are NOT
-        # actually passed to codex on the command line — codex discovers skills
-        # from ~/.codex/skills/.
-        for sk in self.skill_names:
-            args.append(f"# skill={shlex.quote(sk)}")
-        return args
-
-    def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
-        """Build argv list + env dict for ``asyncio.create_subprocess_exec()``.
-
-        Two shapes:
-          * ``json_stream=True`` (default) → ``codex exec --json -`` — headless,
-            reads the prompt from stdin. Used by ``CodexCLIStreamWorker``.
-          * ``json_stream=False`` → bare ``codex`` — the interactive TUI Codex
-            ships when no subcommand is given. Used when launching codex as
-            the PTY process for a visible AgenticProcess tab.
-        """
-        if not self.json_stream:
-            # Interactive TUI (PTY-attached) — flags forward to ``codex`` per
-            # ``codex --help`` ("If no subcommand is specified, options will
-            # be forwarded to the interactive CLI.").
-            argv: list[str] = ["codex"]
-            if self.permission_mode == "bypassPermissions":
-                argv.append("--dangerously-bypass-approvals-and-sandbox")
-            if self.workdir:
-                argv.extend(["-C", self.workdir])
-            if self.model:
-                argv.extend(["-m", self.model])
-            for d in self.add_dirs:
-                argv.extend(["--add-dir", d])
-            if self.resume and self.session_id:
-                argv.extend(["resume", self.session_id])
-            return argv, dict(self.env_vars)
-
-        argv = ["codex", "exec", "--skip-git-repo-check"]
-        if self.permission_mode == "bypassPermissions":
-            argv.append("--dangerously-bypass-approvals-and-sandbox")
-        if self.ephemeral:
-            argv.append("--ephemeral")
-        argv.append("--json")
-        argv.extend(["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"])
+    def _common_tail(self) -> list[str]:
+        """Flags shared by both transports: cwd, model, add-dirs, resume."""
+        tail: list[str] = []
         if self.workdir:
-            argv.extend(["-C", self.workdir])
+            tail.extend(["-C", self.workdir])
         if self.model:
-            argv.extend(["-m", self.model])
+            tail.extend(["-m", self.model])
         for d in self.add_dirs:
-            argv.extend(["--add-dir", d])
+            tail.extend(["--add-dir", d])
         if self.resume and self.session_id:
-            argv.extend(["resume", self.session_id])
-        # Tell codex to read the prompt from stdin.
-        argv.append("-")
-        return argv, dict(self.env_vars)
+            tail.extend(["resume", self.session_id])  # positional subcommand, not a flag
+        return tail
+
+    def _developer_instruction_flags(self) -> list[str]:
+        if not self.developer_instructions:
+            return []
+        return ["-c", f"developer_instructions={json.dumps(self.developer_instructions)}"]
+
+    def _emit_flags(self) -> list[str]:
+        """argv after ``codex``. Two shapes keyed on ``json_stream``:
+          * True (default) → ``exec … --json … -`` headless, prompt over stdin;
+          * False → bare interactive TUI flags (PTY-attached visible tab).
+        Both end with the shared :meth:`_common_tail`.
+        """
+        bypass = ["--dangerously-bypass-approvals-and-sandbox"] if self.permission_mode == "bypassPermissions" else []
+        dev_flags = self._developer_instruction_flags()
+        if not self.json_stream:
+            return bypass + dev_flags + self._common_tail()
+
+        head = ["exec", "--skip-git-repo-check", *bypass]
+        if self.ephemeral:
+            head.append("--ephemeral")
+        head.append("--json")
+        head.extend(["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"])
+        return head + dev_flags + self._common_tail() + ["-"]  # trailing "-" → codex reads prompt from stdin
 
     def to_json(self) -> dict[str, Any]:
         d = super().to_json()

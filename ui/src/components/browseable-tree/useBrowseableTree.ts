@@ -211,7 +211,11 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
       if (node && node.listChildren && state.expandedIds.has(nodeId)) {
         setLoadState(nodeId, { status: 'loading' });
         try {
-          const children = await node.listChildren();
+          // `{ refresh: true }` so adapters that own a cache (e.g. the skill /
+          // markdown folder adapters' fsStore browseCache) bypass it — an
+          // invalidate's whole purpose is to reflect fresh on-disk state (e.g.
+          // after a delete). Adapters that always fetch (asset /search) ignore it.
+          const children = await node.listChildren({ refresh: true });
           setLoadState(nodeId, { status: 'ready', children });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);

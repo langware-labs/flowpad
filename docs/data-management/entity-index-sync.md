@@ -10,11 +10,11 @@ There are three distinct "index" concepts in the codebase:
 
 | Name | Location | Purpose |
 |------|----------|---------|
-| **RecordState** (`state.json`) | record folder (`JSONFsRef`) | Per-record property cache (cached PropertyRecord values). See [fs_store.md](../fs_store.md#recordindex-per-record-property-cache). |
+| **Hash sentinel** (`<epoch>_<hash>_<pathdigest>.hash`) | record shadow folder | Per-record index-staleness token read by `index_required`. See [record-model.md](record-model.md). |
 | **Entity Index** (SQLite `entities` table) | `Entity` class: `flow_sdk/core/entity/entity_model.py` | Queryable database of record metadata. **This document.** |
 | **FTS5 Index** (`entities_fts`) | `flow_sdk/db/drivers/sqlite/sqlite_driver.py` | Full-text search virtual table, populated alongside Entity Index. |
 
-RecordState and Entity Index are completely unrelated systems that share the word "index".
+(A third historical "index" — the per-record `state.json`/`RecordState` property cache — was removed with the `FSRecord` refactor and no longer exists.)
 
 ---
 

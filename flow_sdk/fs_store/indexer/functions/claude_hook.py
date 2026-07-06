@@ -26,10 +26,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
-
-import uuid
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -40,7 +39,6 @@ from flow_sdk.fs_store.source_file_records import (  # RFC-6901 (shared)
     _escape_json_pointer,
     _unescape_json_pointer,
 )
-
 
 # ── Stage 1: source-file enumeration (was: claude_hook_fn / claude_hook_extras_fn)
 

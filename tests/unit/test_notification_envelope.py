@@ -27,7 +27,7 @@ def test_ws_payload_carries_target_and_event_data():
         recipient_id="bob",
         title="Bob, you've got a new task",
         body_text="text body",
-        metadata={"project_url": "https://example.com/p"},
+        metadata={"source_url": "https://example.com/p"},
         occurred_at="2026-05-01T00:00:00Z",
     )
     payload = env.as_ws_payload()
@@ -37,7 +37,7 @@ def test_ws_payload_carries_target_and_event_data():
     ed = payload["data"]["event_data"]
     assert ed["target"] == str(_TARGET)
     assert ed["title"] == "Bob, you've got a new task"
-    assert ed["metadata"]["project_url"] == "https://example.com/p"
+    assert ed["metadata"]["source_url"] == "https://example.com/p"
     assert ed["schema_version"] == 1
 
 
@@ -52,7 +52,7 @@ def test_email_payload_shares_title_with_ws():
         title="Bob, you've got a new task",
         body_text="text body",
         body_html="<p>html</p>",
-        metadata={"project_url": "https://example.com/p"},
+        metadata={"source_url": "https://example.com/p"},
         occurred_at="2026-05-01T00:00:00Z",
     )
     ws = env.as_ws_payload()

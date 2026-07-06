@@ -1,5 +1,6 @@
-import { dataContext } from '@sdk';
+import { dataContext, formatGitOrigin } from '@sdk';
 import { findProjectForTask, pullForTask, cloneForTask } from '@sdk/entities/task-receive';
+import type { GitOrigin } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -34,8 +35,7 @@ interface KnownProject {
 interface FindResult {
   found: boolean;
   local_path: string | null;
-  repo_url: string;
-  branch: string;
+  git_origin: GitOrigin | null;
   known_projects: KnownProject[];
 }
 
@@ -44,13 +44,11 @@ interface Props {
   taskId: string;
   taskTitle: string;
   senderName: string;
-  projectUrl?: string;
-  branch?: string;
-  repoId?: string;
+  gitOrigin?: GitOrigin | null;
   onClose: () => void;
 }
 
-export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projectUrl, branch, repoId, onClose }: Props) {
+export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, gitOrigin, onClose }: Props) {
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
   const [step, setStep] = useState<Step>('checking');
@@ -72,7 +70,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
     setFindResult(null);
     setErrorMsg('');
 
-    findProjectForTask(taskId, { projectUrl, branch, repoId })
+    findProjectForTask(taskId, { gitOrigin })
       .then((result) => {
         setFindResult(result);
         setLocalPath(result.local_path ?? '');
@@ -98,7 +96,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
   const handleConfirmPull = useCallback(async () => {
     setStep('pulling');
     try {
-      const result = await pullForTask(taskId, localPath || undefined, { projectUrl, branch });
+      const result = await pullForTask(taskId, localPath || undefined, { gitOrigin });
       if (result.conflicts) {
         setStep('conflict');
       } else if (result.success) {
@@ -115,13 +113,13 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
       setErrorMsg(err instanceof Error ? err.message : 'Pull failed.');
       setStep('error');
     }
-  }, [taskId, localPath, projectUrl, branch, navigation, handleClose]);
+  }, [taskId, localPath, gitOrigin, navigation, handleClose]);
 
   const handleConfirmClone = useCallback(async () => {
     if (!cloneTarget) return;
     setStep('cloning');
     try {
-      const result = await cloneForTask(taskId, cloneTarget, { projectUrl, branch });
+      const result = await cloneForTask(taskId, cloneTarget, { gitOrigin });
       if (result.conflicts) {
         setLocalPath(result.cloned_path ?? cloneTarget);
         setStep('conflict');
@@ -139,7 +137,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
       setErrorMsg(err instanceof Error ? err.message : t`Clone failed.`);
       setStep('error');
     }
-  }, [taskId, cloneTarget, projectUrl, branch, navigation, handleClose]);
+  }, [taskId, cloneTarget, gitOrigin, navigation, handleClose]);
 
   const handlePickFolder = useCallback(async () => {
     if (!computeNode) return;
@@ -151,8 +149,9 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
     }
   }, [computeNode]);
 
-  const resolvedBranch = findResult?.branch || branch || '';
-  const repoUrl = findResult?.repo_url || '';
+  const resolvedOrigin = findResult?.git_origin || gitOrigin || null;
+  const resolvedBranch = resolvedOrigin?.branch || '';
+  const originLabel = resolvedOrigin ? formatGitOrigin(resolvedOrigin) : '';
   const knownProjects = findResult?.known_projects ?? [];
 
   return (
@@ -185,10 +184,10 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
               </DialogDescription>
             </DialogHeader>
             <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
-              {repoUrl && (
+              {originLabel && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <span className="shrink-0"><Trans>Repo:</Trans></span>
-                  <code className="truncate text-foreground">{repoUrl}</code>
+                  <code className="truncate text-foreground">{originLabel}</code>
                 </div>
               )}
               {resolvedBranch && (

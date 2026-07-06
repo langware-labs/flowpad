@@ -1,13 +1,16 @@
 /**
- * Closing the LAST tab in the active project shows the empty/no-tabs page
- * (`navigation.closeDock()` → Home) — it does NOT skip to a tab in ANOTHER
- * project, even if that other tab is more recently active.
+ * Closing the LAST tab in the active project lands on that project's HOME
+ * (`navigation.openDock(DockPointer.forProject(projectId))` → ProjectBrief) — it
+ * does NOT skip to a tab in ANOTHER project, even if that other tab is more
+ * recently active.
  *
- * Proven lever (unified-tab-strip.tsx handleClose → resolveNextTab with the
+ * Proven lever (unified-tab-strip.tsx navigateAfterClose → resolveNextTab with the
  * current `projectId`): the next-tab pick is CONFINED to the project scope
  * (current project + projectless tabs). When the closed tab is the project's
- * last, the scoped resolve is null → `navigation.closeDock()` (home). The pick
- * never falls back to the global list, so another project's tab is never chosen.
+ * last, the scoped resolve is null → land on the project home (same destination a
+ * fresh project entry resolves to). The pick never falls back to the global list,
+ * so another project's tab is never chosen; the global home (`closeDock`) is only
+ * reached when there is no project scope at all.
  *
  * Faithful render: real <UnifiedTabStrip> + real handleClose/resolveNextTab over
  * the real all-tabs-store. Boundaries are stubbed, not the logic under test:
@@ -110,9 +113,15 @@ describe('closing the last tab in a project', () => {
     // platform-derived modKey matches in jsdom).
     fireEvent.keyDown(window, { key: 'w', ctrlKey: true, altKey: true, metaKey: true });
 
-    // Expected: closeDock → home (the project has no tabs left); project B's
-    // tab is NOT chosen.
-    await waitFor(() => expect(h.closeDock).toHaveBeenCalled());
-    expect(h.openDock).not.toHaveBeenCalled();
+    // Expected (navigateAfterClose): the project has no tabs left, so land on the
+    // PROJECT HOME (openDock(DockPointer.forProject(PROJ_A)) → ProjectBrief) — the
+    // same destination a fresh project entry resolves to. It must NOT jump to
+    // project B's more-recent tab, and it does NOT fall back to the global home
+    // (closeDock) because a project scope is active.
+    await waitFor(() => expect(h.openDock).toHaveBeenCalled());
+    const dest = h.openDock.mock.calls[0][0] as DockPointer;
+    expect(dest.tabHash).toBe(DockPointer.forProject(PROJ_A).tabHash);
+    expect(dest.tabHash).not.toBe(DockPointer.fromTabHash(tabB.pointer).tabHash); // never project B's tab
+    expect(h.closeDock).not.toHaveBeenCalled();
   });
 });

@@ -30,6 +30,8 @@ export * from './question';
 export * from './shell';
 export * from './tab';
 export * from './collaboration-room';
+export * from './remote-worker-session';
+export * from './prompt-result';
 export * from './siteconfig';
 export * from './conversation';
 export * from './conversation-send';

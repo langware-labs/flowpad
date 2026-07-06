@@ -18,7 +18,7 @@ id: 8a3c1f29-4b7e-4d6a-9f12-2c5e8a1b3d40
 test 1: Open the Flowpad Assistant project space (asset browser)
 - navigate to {APP_URL}/dock/project/@flowpad_assistant
 - wait for the project view to render
-- validate the project asset browser rendered (the "Assets" heading and a "Project:" scope indicator with the asset-type tree)
+- validate the project asset browser rendered (the "Project assets" header and the project-name chip scope indicator with the asset-type tree)
 - validate the page does NOT contain the text "No editor for type: project"
 - check console for errors
 - validate no errors appeared

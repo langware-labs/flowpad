@@ -59,6 +59,7 @@ export enum ViewType {
   SESSION = 'session', // Live session view (simplified workflow without file)
   TASKS = 'tasks', // Task create/edit view
   SETTINGS = 'settings', // Claude Code settings viewer
+  PREFERENCES = 'preferences', // User preferences screen (registry-driven, category tabs)
   AGENTIC_PROCESS = 'agentic_process', // Process terminal view (Layer 3)
   SEARCH = 'search', // Record semantic search view
   TRIGGERS = 'triggers', // Activation rules browser + editor

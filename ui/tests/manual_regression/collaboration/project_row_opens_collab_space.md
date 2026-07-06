@@ -19,7 +19,7 @@ test 1: Direct navigation to /dock/project/<uuid> renders the project asset brow
 - navigate to {APP_URL}/dock/project/<a real project uuid from GET /api/v1/graph/project>
 - validate the URL matches /dock/project/<uuid> (36-char UUID-shaped projectId)
 - validate the page does NOT contain the text "No editor for type: project"
-- validate the project asset browser rendered (the "Assets" heading and a "Project: <name>" scope indicator, with the asset-type tree / "Select a type to browse" prompt)
+- validate the project asset browser rendered (the "Project assets" header and the project-name chip scope indicator, with the asset-type tree / "Select a type to browse" prompt)
 - check console for errors
 - validate no errors appeared
 
@@ -32,7 +32,7 @@ test 1: Direct navigation to /dock/project/<uuid> renders the project asset brow
 test 2: The asset browser exposes a project-scope filter chip
 - navigate to {APP_URL}/dock/assets
 - wait for the asset browser to render
-- validate a project-scope filter control is present (a "Project …" chip / "Project filter" button in the search bar)
+- validate a project-scope filter control is present (the ScopeFilterIconBar "Project" toggle, accessible name "Current project: <name>")
 - validate the BrowseableTree groups assets by type (e.g. an "Agent" or "Markdown" type node is present) and has no "Project" type node
 
 test 3: Project rows in /dock/assets/list/project are NOT row-click targets (hasEditor('project') is false)

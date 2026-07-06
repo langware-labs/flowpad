@@ -14,12 +14,15 @@ class ProcessKind(str, Enum):
     - CONVERSATION: the single live worker session that owns a Conversation;
       the conversation header's Open button targets it, and its absence is what
       surfaces the launch toolbar.
+    - WIZARD: short-lived interactive assistant process shown as a popup and
+      completed by a typed wizard result event.
     """
 
     CHAT = "chat"
     EXECUTION = "execution"
     ANALYSIS = "analysis"
     CONVERSATION = "conversation"
+    WIZARD = "wizard"
 
 # Deprecated alias — renamed to ProcessKind (2026-06-12). Remove after one release.
 ProcessType = ProcessKind

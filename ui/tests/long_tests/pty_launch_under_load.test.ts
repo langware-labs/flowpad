@@ -12,6 +12,7 @@
  * Run: cd ui && LOAD_PTYS=80 npx vitest run --project long pty_launch_under_load
  */
 import { describe, expect, it } from 'vitest';
+import { stressDescribe } from './_stress_gate';
 import { launchInstance, killInstance, prepareCleanRealm } from './_backend_lifecycle';
 
 type SdkRealm = typeof import('@sdk');
@@ -20,7 +21,7 @@ const LOAD = Number(process.env.LOAD_PTYS) || 80;
 const BUDGET_MS = 4000;
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][@-Z\\^_`a-z{|}~]/g;
 
-describe('PTY launch readiness under load', () => {
+stressDescribe('PTY launch readiness under load', () => {
   it(
     `launch a PTY + wait for read in < ${BUDGET_MS}ms under ${LOAD} live PTYs`,
     async () => {

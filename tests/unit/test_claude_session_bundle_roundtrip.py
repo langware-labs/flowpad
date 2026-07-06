@@ -1,6 +1,6 @@
 """ClaudeSession bundle pack/unpack: the DB-record (header.json) family path.
 
-Two real-DB, no-mock tests (mirrors test_git_branch_bundle_roundtrip):
+Two real-DB, no-mock tests:
 
   1. PACK — ``_pack_claude_session_attachment`` writes a header.json whitelisted
      to exactly ``{id,type,name,slug,message_count}``; sender-local ``cwd`` /

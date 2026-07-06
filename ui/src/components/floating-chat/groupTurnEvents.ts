@@ -30,6 +30,27 @@ const DENSE_TYPES = new Set<string>([
   FlowElementTypes.ERROR,
 ]);
 
+const NO_LIVE_EVENTS: FlowData[] = [];
+
+/**
+ * Split the trailing "in-flight" dense group off a grouped turn stream: while a
+ * turn is `active`, its still-running tool/reasoning events are the last dense
+ * group, which a chat surface can surface separately (e.g. a live footer chip)
+ * instead of inline. Returns the groups to render inline plus the live turn's
+ * events (empty when idle or the last group is a message). The notion of a
+ * "live group" lives here, next to `groupTurnEvents`, rather than in a consumer.
+ */
+export function splitLiveGroup(
+  groups: TurnGroup[],
+  active: boolean,
+): { inlineGroups: TurnGroup[]; liveEvents: FlowData[] } {
+  const last = active ? groups[groups.length - 1] : undefined;
+  if (last?.kind === 'dense') {
+    return { inlineGroups: groups.slice(0, -1), liveEvents: last.events };
+  }
+  return { inlineGroups: groups, liveEvents: NO_LIVE_EVENTS };
+}
+
 export function groupTurnEvents(items: FlowData[]): TurnGroup[] {
   const out: TurnGroup[] = [];
   let buffer: FlowData[] = [];
@@ -87,6 +108,10 @@ export function pairToolEvents(events: FlowData[]): {
   pairs: ToolPair[];
   others: FlowData[];
   orphanResults: FlowData[];
+  /** How many entries the turn renders as: one per pair, plus non-tool events
+   *  and orphan results. The single source of truth for the "N events this
+   *  turn" count (the dense-row summary and the footer chip both read it). */
+  total: number;
 } {
   const pairs: ToolPair[] = [];
   const others: FlowData[] = [];
@@ -112,5 +137,5 @@ export function pairToolEvents(events: FlowData[]): {
     }
   }
 
-  return { pairs, others, orphanResults };
+  return { pairs, others, orphanResults, total: pairs.length + others.length + orphanResults.length };
 }

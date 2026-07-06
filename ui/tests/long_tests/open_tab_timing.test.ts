@@ -28,6 +28,7 @@
  */
 import { AgenticProcess, ComputeNode, GRAPH_API_PREFIX, Shell, apiClient } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { stressDescribe } from './_stress_gate';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -69,7 +70,7 @@ async function waitForMarker(
   return { found: false, elapsedMs: budgetMs };
 }
 
-describe('AgenticProcess.openTab timing — regression for shell.write 5s stall', () => {
+stressDescribe('AgenticProcess.openTab timing — regression for shell.write 5s stall', () => {
   beforeEach(async (ctx: any) => {
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
   });

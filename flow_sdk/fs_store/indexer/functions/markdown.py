@@ -22,23 +22,21 @@ frontmatter+body parse without inheriting from a Record subclass.
 
 from __future__ import annotations
 
-import os
 import re
-import uuid
 from pathlib import Path
 from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-from flow_sdk.fs_store.record_types import RecordType
-
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
     _render_frontmatter,
     _yaml_load,
 )
+from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+from flow_sdk.fs_store.record_types import RecordType
+
 
 def _is_appledouble(name: str) -> bool:
     """True for macOS AppleDouble sidecars (``._foo.md``) — binary
@@ -235,10 +233,13 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     links.extend(fields.get("links") or [])
 
     raw_id = fields.get("asset_id") or fields.get("id")
-    if not raw_id and path is not None:
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    # Validate-on-adopt (v4/v5 only) — a foreign/hand-authored id is never
+    # adopted; derive the stable uuid5(path) instead. Keeps this path in
+    # agreement with _read_frontmatter_asset_id (the gen_uuid_fn side).
+    asset_id = adopt_entity_id(raw_id)
+    if not asset_id and path is not None:
         asset_id = _markdown_id_from_path(path)
-    else:
-        asset_id = raw_id
     parent_id = fields.get("parent_id")
     scope = fields.get("scope") or None
 

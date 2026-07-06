@@ -8,6 +8,7 @@ interface PersistentIframeProps {
   src: string;
   cacheKey?: number;
   className?: string;
+  testId?: string;
   onLoad?: () => void;
   onError?: (error: Error) => void;
   onErrorRetry?: () => void;
@@ -15,6 +16,8 @@ interface PersistentIframeProps {
 
 export interface PersistentIframeHandle {
   refresh: () => void;
+  /** Post a message to the guest document (parent→iframe channel). */
+  postToGuest: (message: unknown) => void;
 }
 
 // Global iframe registry that keeps iframes in fixed DOM locations
@@ -48,6 +51,7 @@ class IframeRegistry {
     config: {
       onLoad?: () => void;
       onError?: (error: Error) => void;
+      testId?: string;
     },
   ): { iframe: HTMLIFrameElement; container: HTMLDivElement } {
     const key = src;
@@ -63,6 +67,7 @@ class IframeRegistry {
       // Create iframe
       const iframe = document.createElement('iframe');
       iframe.className = 'w-full h-full border-0';
+      if (config.testId) iframe.dataset.testid = config.testId;
       iframe.sandbox =
         'allow-scripts allow-same-origin allow-forms allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-popups-to-escape-sandbox allow-popups allow-downloads allow-storage-access-by-user-activation';
       iframe.allow =
@@ -102,6 +107,8 @@ class IframeRegistry {
 
       this.iframes.set(key, iframe);
       this.containers.set(key, iframeWrapper);
+    } else if (config.testId) {
+      this.iframes.get(key)!.dataset.testid = config.testId;
     }
 
     return {
@@ -236,12 +243,17 @@ class IframeRegistry {
       iframe.src = src;
     }
   }
+
+  postToGuest(src: string, message: unknown): void {
+    const iframe = this.iframes.get(src);
+    iframe?.contentWindow?.postMessage(message, '*');
+  }
 }
 
 const registry = IframeRegistry.getInstance();
 
 const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProps>(
-  ({ src, cacheKey, onLoad, onError, onErrorRetry }, ref) => {
+  ({ src, cacheKey, testId, onLoad, onError, onErrorRetry }, ref) => {
     const { t } = useLingui();
     const containerRef = useRef<HTMLDivElement>(null);
     const [, forceUpdate] = useState({});
@@ -281,13 +293,14 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
       registry.refresh(src);
     }, [src, refetchSource]);
 
-    // Expose refresh method to parent via ref
+    // Expose refresh + guest-post methods to parent via ref
     useImperativeHandle(
       ref,
       () => ({
         refresh: refreshIframe,
+        postToGuest: (message: unknown) => registry.postToGuest(src, message),
       }),
-      [refreshIframe],
+      [refreshIframe, src],
     );
 
     useEffect(() => {
@@ -334,10 +347,11 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
           onError?.(error);
           triggerUpdate();
         },
+        testId,
       };
 
       registry.getOrCreateIframe(src, config);
-    }, [src, onLoad, onError, triggerUpdate]);
+    }, [src, onLoad, onError, testId, triggerUpdate]);
 
     // Auto-show iframe when ready and container is available
     useEffect(() => {
@@ -419,7 +433,7 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     };
 
     return (
-      <div className="relative h-full w-full" ref={containerRef}>
+      <div className="relative h-full w-full" ref={containerRef} data-testid={testId ? `${testId}-host` : undefined}>
         {renderContent()}
       </div>
     );

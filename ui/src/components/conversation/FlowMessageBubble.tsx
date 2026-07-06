@@ -1,4 +1,4 @@
-import { APIEntity, createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User } from '@sdk';
+import { APIEntity, Artifact, createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User, type AgenticProcess, type WorkerStatus } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -8,6 +8,8 @@ import type { ConversationMessage, ConversationParticipant } from '@sdk/entities
 import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
 import { AlertCircle, Download, File, FileText, Loader2, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
+import { MessageContextButton } from './MessageContextButton';
+import { MessageRunStatus } from './MessageRunStatus';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, iconForEntity } from './EntityChip';
@@ -16,7 +18,7 @@ import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
 import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
 import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
-import { editorPathForLocalFile } from './attachment-url';
+import { dockPointerForLocalFile } from './attachment-url';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { messageForwardShareSource } from '@src/hooks/share-sources';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -24,6 +26,7 @@ import type { SendTarget } from '@src/hooks/use-send-to-conversation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
+import { openArtifact } from '@src/components/artifacts/open-artifact';
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -107,6 +110,13 @@ interface FlowMessageBubbleProps {
   timestamp: string;
   task?: ITask | null;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
+  /** The conversation's headless run + its live status, resolved once by the
+   *  parent and shared across bubbles. Drive the per-message run-status
+   *  one-liner that replaces "Execute" once the prompt is executed. */
+  run?: AgenticProcess | null;
+  runStatus?: WorkerStatus | null;
+  /** Open this message's executed run in the conversation drawer's Runs tab. */
+  onOpenRun?: (processId: string) => void;
   /** Per-message Implement Plan handler. The bubble itself decides whether to
    *  render the chip (spec present + recipient role) — pass the raw messageId
    *  callback and the bubble binds it. */
@@ -166,6 +176,9 @@ export function FlowMessageBubble({
   timestamp,
   task,
   onApproveAndExecute,
+  run,
+  runStatus,
+  onOpenRun,
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
@@ -426,7 +439,7 @@ export function FlowMessageBubble({
 
   const progressPct = progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
-  const footer =
+  const attachmentFooter =
     hasAttachments || downloadError || isBareTranscriptShare ? (
       <div className="mt-2 space-y-1.5">
         {isBareTranscriptShare && (
@@ -481,7 +494,7 @@ export function FlowMessageBubble({
             filename={item.filename}
             state={item.state}
             onOpenInEditor={
-              item.localPath ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!)) : undefined
+              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
             }
             onRevealInFolder={
               item.localPath
@@ -519,7 +532,7 @@ export function FlowMessageBubble({
                 downloading={item.state === AttachmentChipState.Ready && downloading}
                 onDownload={item.state === AttachmentChipState.Ready ? triggerDownload : undefined}
                 onOpenInEditor={
-                  item.localPath ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!)) : undefined
+                  item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
                 }
                 onRevealInFolder={
                   item.localPath
@@ -555,6 +568,17 @@ export function FlowMessageBubble({
         ) : null}
       </div>
     ) : null;
+
+  // The attachment block (when present) + the per-message context-process control
+  // (self-gates to advanced mode; renders nothing otherwise — empty fragment is
+  // inert in MessageBubble's inline `{footer}` slot).
+  const footer = (
+    <>
+      {attachmentFooter}
+      <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
+      <MessageContextButton fm={fm} projectId={attachmentProjectId} />
+    </>
+  );
 
   const canForward = !fm.is_draft && fm.kind !== FlowMessageKind.INVITATION && !!fm.conversation_id;
 
@@ -619,14 +643,21 @@ function MessageEntityChip({
   projectId?: string | null;
   forceShow: boolean;
 }) {
+  const { navigation } = useDockNavigation();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useEntity<APIEntity<any>>(typeId);
   // Hidden until either the entity is on disk (local) or the bundle is downloaded.
   if (!data && !forceShow) return null;
+  const artifact = typeId.type === Artifact.type && data
+    ? data instanceof Artifact
+      ? data
+      : new Artifact(data as unknown as Partial<Artifact>)
+    : null;
   return (
     <ContextEntityChip
       typeId={typeId}
       inside={{ type: 'conversation', id: conversationId }}
+      onClick={artifact ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null }) : undefined}
       projectId={projectId}
     />
   );
