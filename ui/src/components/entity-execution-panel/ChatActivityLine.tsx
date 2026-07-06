@@ -1,5 +1,5 @@
 import { AgenticProcess, WorkerStatus } from '@sdk';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { DotPulse } from '@src/components/dot-pulse';
 import { getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
@@ -12,6 +12,9 @@ interface ChatActivityLineProps {
   startedAt: number | null;
   /** Live worker status for the phase label. */
   status: WorkerStatus | null;
+  /** Optional content pinned to the right of the row. Only rendered while the
+   *  line itself is visible (active). */
+  trailing?: ReactNode;
 }
 
 /**
@@ -20,7 +23,7 @@ interface ChatActivityLineProps {
  * Renders nothing when idle. Driven by `useTurnActivity` (lifted to the pane so
  * the list can scroll it into view).
  */
-export function ChatActivityLine({ process, active, startedAt, status }: ChatActivityLineProps) {
+export function ChatActivityLine({ process, active, startedAt, status, trailing }: ChatActivityLineProps) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -47,6 +50,7 @@ export function ChatActivityLine({ process, active, startedAt, status }: ChatAct
       <DotPulse />
       <span>{label}</span>
       {elapsed && <span className="tabular-nums opacity-70">· {elapsed}</span>}
+      {trailing && <div className="ml-auto">{trailing}</div>}
     </div>
   );
 }

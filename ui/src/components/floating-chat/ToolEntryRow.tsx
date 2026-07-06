@@ -35,13 +35,8 @@ interface OneLiner {
  */
 export function ToolEntryRow({ events }: ToolEntryRowProps) {
   const [expanded, setExpanded] = useState(false);
-  // Raw input/output JSON is developer internals — only Advanced/Dev can drill
-  // into it. Standard expands to the friendly per-event list only. (skin rule:
-  // hook runs unconditionally, we only gate what renders.)
-  const isAdvanced = useIsAdvanced();
 
-  const { pairs, others, orphanResults } = useMemo(() => pairToolEvents(events), [events]);
-  const totalCount = pairs.length + others.length + orphanResults.length;
+  const { pairs, total: totalCount } = useMemo(() => pairToolEvents(events), [events]);
 
   const latest = useMemo<OneLiner | null>(() => describeLatest(events, pairs), [events, pairs]);
 
@@ -88,19 +83,38 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
       </button>
 
       {expanded && (
-        <ul className="ml-3 flex max-w-full flex-col gap-0.5 rounded-md border border-border/60 bg-muted/30 px-2 py-1">
-          {pairs.map((pair, i) => (
-            <ToolPairItem key={`pair-${i}`} pair={pair} showPayload={isAdvanced} />
-          ))}
-          {others.map((evt, i) => (
-            <OtherEventItem key={`other-${i}`} event={evt} showPayload={isAdvanced} />
-          ))}
-          {orphanResults.map((evt, i) => (
-            <OrphanResultItem key={`orphan-${i}`} event={evt} />
-          ))}
-        </ul>
+        <div className="ml-3 max-w-full rounded-md border border-border/60 bg-muted/30 px-2 py-1">
+          <TurnEventList events={events} />
+        </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The per-event list for one turn's dense events: paired TOOL_CALL/TOOL_RESULT
+ * rows, other events (reasoning / status / error), then orphan results. Raw
+ * payload JSON is gated behind Advanced (`useIsAdvanced`). Shared by the inline
+ * {@link ToolEntryRow} (its expanded state) and the vibe footer's
+ * `TurnEventChip` popover so both open to an identical list. Renders nothing
+ * when the turn has no dense events.
+ */
+export function TurnEventList({ events }: { events: FlowData[] }) {
+  const isAdvanced = useIsAdvanced();
+  const { pairs, others, orphanResults, total } = useMemo(() => pairToolEvents(events), [events]);
+  if (total === 0) return null;
+  return (
+    <ul className="flex max-w-full flex-col gap-0.5">
+      {pairs.map((pair, i) => (
+        <ToolPairItem key={`pair-${i}`} pair={pair} showPayload={isAdvanced} />
+      ))}
+      {others.map((evt, i) => (
+        <OtherEventItem key={`other-${i}`} event={evt} showPayload={isAdvanced} />
+      ))}
+      {orphanResults.map((evt, i) => (
+        <OrphanResultItem key={`orphan-${i}`} event={evt} />
+      ))}
+    </ul>
   );
 }
 
