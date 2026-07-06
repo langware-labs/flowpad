@@ -16,7 +16,8 @@
  *   - Tab strip: first .border-b inside the side window
  *   - Prompts tab × close button: button[aria-label="Close Prompts"]
  *   - PromptIndexPanel inner header has NO close button — closing is via tab strip ×
- *   - Ribbon .ml-auto button order: 0=Context, 1=Git, 2=Prompts, 3=Files, 4=Dir
+ *   - Ribbon .ml-auto button order (Advanced): 0=Context, 1=Git, 2=Prompts,
+ *     3=Analysis, 4=SkillsAgents, 5=Files, 6=Dir, 7=Queue, 8=Prompt Library button
  *   - Buttons have NO title attribute — they use tooltips on hover
  *   - Prompt count badge is a lime pill on the Prompts button (index 2)
  *
@@ -107,14 +108,15 @@ test.describe('Prompt Index Panel', () => {
     await expect(mlAuto).toBeVisible({ timeout: 15_000 });
 
     // Prompts button is at index 2 in .ml-auto:
-    // Context(0), Git(1), Prompts(2), Files(3), Dir(4)
+    // Context(0), Git(1), Prompts(2), Analysis(3), SkillsAgents(4), Files(5), Dir(6), Queue(7)
     await expect(mlAuto.locator('button').nth(2)).toBeVisible({ timeout: 15_000 });
 
-    // Validate all 7 buttons are present (6 ribbon side-tabs incl. Queue + Prompt Library; 55a71046)
-    await expect(mlAuto.locator('button')).toHaveCount(7, { timeout: 5_000 });
+    // Validate all 9 buttons are present (8 ribbon side-tabs — Context, Git,
+    // Prompts, Analysis, SkillsAgents, Files, Dir, Queue — plus the Prompt Library button).
+    await expect(mlAuto.locator('button')).toHaveCount(9, { timeout: 5_000 });
 
-    // Files button should also be visible (index 3)
-    await expect(mlAuto.locator('button').nth(3)).toBeVisible({ timeout: 5_000 });
+    // Files button should also be visible (index 5)
+    await expect(mlAuto.locator('button').nth(5)).toBeVisible({ timeout: 5_000 });
   });
 
   // ---------------------------------------------------------------------------
@@ -241,8 +243,8 @@ test.describe('Prompt Index Panel', () => {
     const panel = activePanel(page);
     const mlAuto = panel.locator('.border-t .ml-auto');
 
-    // Open Files (index 3)
-    await mlAuto.locator('button').nth(3).click();
+    // Open Files (index 5)
+    await mlAuto.locator('button').nth(5).click();
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
     // Use tab strip + exact match to avoid strict-mode violation (other elements contain 'Files')

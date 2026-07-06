@@ -11,11 +11,13 @@ test.describe('Terminal Scroll Sync', () => {
 
     await gotoShell(page);
 
-    // Generate enough output to fill terminal and create scrollback
-    for (let i = 0; i < 60; i++) {
-      await sendCommand(page, `echo "scroll_line_${i}"`);
-      await page.waitForTimeout(30);
-    }
+    // Generate enough output to fill the terminal and create scrollback. Emit all
+    // 60 lines from ONE command: typing 60 separate echo commands costs ~1.1s each
+    // of pure harness overhead (focus-click + fixed waits + per-char delay) and
+    // blows the 60s budget, while contributing nothing this test asserts — the
+    // scrollback content and markers are identical either way. (The app echoes
+    // fast; the sibling resize test proves 40 commands render fine.)
+    await sendCommand(page, 'for i in $(seq 0 59); do echo "scroll_line_$i"; done');
 
     // Wait for last line to appear
     await waitForOutput(page, 'scroll_line_59');
@@ -41,11 +43,9 @@ test.describe('Terminal Scroll Sync', () => {
 
     await gotoShell(page);
 
-    // Generate scrollback
-    for (let i = 0; i < 40; i++) {
-      await sendCommand(page, `echo "line_${i}"`);
-      await page.waitForTimeout(30);
-    }
+    // Generate scrollback in one command (see the note in the first test — 40
+    // typed commands is harness overhead, not what's under test).
+    await sendCommand(page, 'for i in $(seq 0 39); do echo "line_$i"; done');
     await waitForOutput(page, 'line_39');
 
     // Trigger resize by changing viewport

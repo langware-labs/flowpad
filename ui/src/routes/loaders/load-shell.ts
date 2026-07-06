@@ -245,6 +245,13 @@ async function reconcileProcessScope(
   if (!proc?.project_id) return; // projectless / unresolvable target — leave the seeded scope as-is
   const want = projectScope(proc.project_id);
   if (currentScope && scopeFilterEqual(currentScope, want)) return; // already aligned — no redirect loop
+  // NOTE: this scope-align redirect drops the incoming URL's query options
+  // (`?sideWindows=dir`, etc.) — `requestPath` is pathname-only (loaders.ts:73
+  // strips the query before it reaches here) and this DockPointer seeds
+  // options=undefined. Carrying deep-link options through the redirect needs the
+  // loader `requestPath` contract to include the search string (touches
+  // detectLayout / buildShellRedirectUrl across all routes) — tracked separately;
+  // not fixed here. See dir_panel_scroll.md.ts for the affected deep-link.
   const url = new DockPointer(ViewType.SHELL, proc.terminalDockPointer.pointer, undefined, detectLayout(requestPath))
     .withScopeFilter(want)
     .toUrl(requestPath);

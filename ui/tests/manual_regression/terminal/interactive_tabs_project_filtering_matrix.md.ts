@@ -365,13 +365,16 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await clickRail(page, 'chats');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     // All three tabs survive the round-trip ("keeps tabs alive"). Re-entry via the
-    // Chats rail goes to /dock/shell (scope-seeded to the active project, like the
-    // Files/Assets rails), whose loader resolves a default among the live tabs — so
-    // assert it lands on one of the strip's actual tabs, not a specific prior
-    // selection (the rail does not carry a remembered pointer).
+    // Chats rail lands on bare /dock/shell (scope-seeded to the active project):
+    // the rail carries NO remembered pointer, so it does NOT auto-restore a
+    // concrete session (same documented behavior as test 45). The surviving tabs
+    // are still selectable — click one and confirm it re-activates (URL → concrete
+    // pointer), which is the real "keeps tabs alive" guarantee.
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
-    const resolved = page.url().match(/(?:shell|agentic_process)-[0-9a-f-]+/)![0];
-    expect(await tabIds(page)).toContain(`tab-shell|${resolved}`);
+    const survivor = (await tabIds(page))[0]; // any surviving tab; first is deterministic
+    const survivorKey = survivor.replace('tab-shell|', '');
+    await page.locator(`[data-testid="${survivor}"]`).click();
+    await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(survivorKey);
     await commonValidation(page);
     await rq.dispose();
   });
@@ -806,12 +809,19 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // Footer reflects project path/name initially.
     const footer = page.locator('[data-testid="footer"]');
     await expect(footer).toBeVisible();
-    // Override workdir → footer shows the explicit path.
+    // Override workdir → the footer's path-bearing affordance reflects the explicit
+    // path. The footer's VISIBLE label is the project's displayName; the workdir →
+    // project-path → name fallback chain surfaces in the "Open folder" / "Open
+    // project view" title+aria-label (StatusBar.projectPath), not the visible text.
+    const overridePath = page.locator(
+      '[data-testid="footer"] [title*="override-workdir"], [data-testid="footer"] [aria-label*="override-workdir"]',
+    );
     await page.evaluate(() => (window as unknown as { dataContext: { setWorkdir: (p: string | null) => Promise<void> } }).dataContext.setWorkdir('/tmp/regression/override-workdir'));
-    await expect(footer).toContainText('override-workdir', { timeout: 10_000 });
-    // Revert.
+    await expect(overridePath.first()).toBeVisible({ timeout: 10_000 });
+    // Revert → the override path drops out of the fallback chain (falls back to the
+    // project's own path).
     await page.evaluate(() => (window as unknown as { dataContext: { setWorkdir: (p: string | null) => Promise<void> } }).dataContext.setWorkdir(null));
-    await expect(footer).not.toContainText('override-workdir', { timeout: 10_000 });
+    await expect(overridePath).toHaveCount(0, { timeout: 10_000 });
     await rq.dispose();
   });
 

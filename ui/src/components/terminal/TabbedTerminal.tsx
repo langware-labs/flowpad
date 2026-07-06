@@ -64,7 +64,7 @@ const TerminalPanel: React.FC<{
   return (
     <div
       data-testid="terminal-panel"
-      data-session-id={tab.pointer}
+      data-session-id={tab.dockPointer?.pointer ?? ''}
       data-worker-session-id={isProcess ? (process?.session_id ?? '') : undefined}
       data-pty-mode={isProcess ? String(process?.pty_mode ?? '') : undefined}
       data-active={isActive ? 'true' : 'false'}
