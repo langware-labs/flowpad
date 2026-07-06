@@ -17,6 +17,7 @@ import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { terminalProfile } from '@src/components/spotlight/profiles';
+import { InputDialog } from '@src/components/ui/input-dialog';
 import { useChatHistory } from './useChatHistory';
 import { ChatsFilterBar } from './ChatsFilterBar';
 import { ChatsList } from './ChatsList';
@@ -43,6 +44,7 @@ export function ChatsNavigator() {
     processId: string | null;
     title: string;
   } | null>(null);
+  const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
 
   const scope = useMemo<ScopeFilter>(
     () => currentDock?.scopeFilter ?? defaultScopeFilter(project?.id ?? null),
@@ -162,7 +164,7 @@ export function ChatsNavigator() {
             onScopeChange={handleScopeChange}
           />
         ),
-        filterBar: <ChatsFilterBar onNewChat={handleNewChat} />,
+        filterBar: <ChatsFilterBar onNewChat={handleNewChat} onResumeById={() => setResumeByIdOpen(true)} />,
       },
       search: {
         recordTypes: terminalProfile.allowedEntityTypes ?? [],
@@ -201,6 +203,15 @@ export function ChatsNavigator() {
   return (
     <>
       <NavigatorPanel descriptor={descriptor} />
+      <InputDialog
+        open={resumeByIdOpen}
+        onOpenChange={setResumeByIdOpen}
+        title={t`Resume session by id`}
+        description={t`Paste a session id (UUID) to restore it in a new tab.`}
+        placeholder="e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa"
+        confirmLabel={t`Resume`}
+        onConfirm={(sessionId) => resumeInTerminal(sessionId)}
+      />
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(open) => !open && setPendingDelete(null)}
