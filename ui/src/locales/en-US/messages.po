@@ -540,11 +540,11 @@ msgstr "About hook triggers"
 msgid "Abs line"
 msgstr "Abs line"
 
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:597
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:601
 msgid "Accept"
 msgstr "Accept"
 
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:597
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:601
 msgid "Accepting…"
 msgstr "Accepting…"
 
@@ -2334,7 +2334,7 @@ msgid "Continue with Google"
 msgstr "Continue with Google"
 
 #: src/components/conversation/ConversationRoute.tsx:200
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:485
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:489
 msgid "Conversation"
 msgstr "Conversation"
 
@@ -5012,11 +5012,11 @@ msgstr "Hide empty"
 msgid "Hide feed entry"
 msgstr "Hide feed entry"
 
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:606
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:610
 msgid "Hide from Recent — still visible in Inbox; reappears when a new message arrives"
 msgstr "Hide from Recent — still visible in Inbox; reappears when a new message arrives"
 
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:607
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:611
 msgid "Hide from Recent conversations"
 msgstr "Hide from Recent conversations"
 
@@ -5478,13 +5478,13 @@ msgstr "Invalid survey JSON"
 msgid "Invalid transcript path"
 msgstr "Invalid transcript path"
 
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:536
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:540
 msgid "invitation"
 msgstr "invitation"
 
 #: src/components/inbox-view/InboxView.tsx:216
 #: src/components/inbox-view/InboxView.tsx:1277
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:484
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:488
 msgid "Invitation"
 msgstr "Invitation"
 
@@ -12277,8 +12277,8 @@ msgid "You're about to open a room on this project. You can invite others with t
 msgstr "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
 
 #: src/components/inbox-view/InboxView.tsx:247
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:494
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:495
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:498
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:499
 msgid "You've been invited to a conversation"
 msgstr "You've been invited to a conversation"
 

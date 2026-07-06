@@ -540,11 +540,11 @@ msgstr "אודות עירובי Hook"
 msgid "Abs line"
 msgstr "שורה אבסולוטית"
 
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:597
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:601
 msgid "Accept"
 msgstr "קבל"
 
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:597
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:601
 msgid "Accepting…"
 msgstr "מקבל..."
 
@@ -2334,7 +2334,7 @@ msgid "Continue with Google"
 msgstr "המשך עם Google"
 
 #: src/components/conversation/ConversationRoute.tsx:200
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:485
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:489
 msgid "Conversation"
 msgstr "שיחה"
 
@@ -5012,11 +5012,11 @@ msgstr "הסתר ריקים"
 msgid "Hide feed entry"
 msgstr "הסתר הזנה"
 
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:606
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:610
 msgid "Hide from Recent — still visible in Inbox; reappears when a new message arrives"
 msgstr "הסתרה מהשיחות האחרונות — עדיין נראה בתיבת הדואר; מופיע שוב כשהודעה חדשה מגיעה"
 
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:607
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:611
 msgid "Hide from Recent conversations"
 msgstr "הסתרה מהשיחות האחרונות"
 
@@ -5478,13 +5478,13 @@ msgstr "JSON סקר לא תקין"
 msgid "Invalid transcript path"
 msgstr "נתיב תמלול לא חוקי"
 
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:536
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:540
 msgid "invitation"
 msgstr "הזמנה"
 
 #: src/components/inbox-view/InboxView.tsx:216
 #: src/components/inbox-view/InboxView.tsx:1277
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:484
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:488
 msgid "Invitation"
 msgstr "הזמנה"
 
@@ -12277,8 +12277,8 @@ msgid "You're about to open a room on this project. You can invite others with t
 msgstr "אתה עומד לפתוח חדר בפרויקט זה. אתה יכול להזמין אחרים באמצעות קוד השיתוף שיופיע בכותרת כשהחדר יתחיל."
 
 #: src/components/inbox-view/InboxView.tsx:247
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:494
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx:495
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:498
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx:499
 msgid "You've been invited to a conversation"
 msgstr "הוזמנת לשיחה"
 
