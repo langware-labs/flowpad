@@ -854,6 +854,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             void handlePasteRef.current();
             return false;
           }
+          if (event.key === 'f') {
+            // Don't send ^F to the PTY; let the event bubble to the container's
+            // keydown handler, which preventDefaults and opens the search bar.
+            return false;
+          }
         }
         return true;
       });
