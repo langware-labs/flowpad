@@ -148,7 +148,13 @@ function saveTraceFilters(f: TraceFilters): void {
 }
 
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
-import { FONT_FAMILY, FONT_SIZE_PX, openTerminalLink, registerOsc52ClipboardWrite } from './terminalConfig';
+import {
+  FONT_FAMILY,
+  FONT_SIZE_PX,
+  applyRtlGridContract,
+  openTerminalLink,
+  registerOsc52ClipboardWrite,
+} from './terminalConfig';
 
 interface InteractiveTerminalProps {
   sessionId: string;
@@ -259,9 +265,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // keeps the toggle in lock-step with the AP and never lands on a 409 hole.
   // `liveProcess` is the reactive entity; the loader `process` is the fallback
   // for the first render before the subscription resolves.
-  const awaitingUserInput = isAwaitingUserInput(
-    liveProcess?.workerStatus ?? process?.workerStatus,
-  );
+  const awaitingUserInput = isAwaitingUserInput(liveProcess?.workerStatus ?? process?.workerStatus);
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({
@@ -325,9 +329,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   );
   const activeSideTab = useMemo<SideTabId | null>(() => {
     const parsed = parseSideTabId(sideWindows.active);
-    return parsed && sideWindowTabs.includes(parsed)
-      ? parsed
-      : (sideWindowTabs[sideWindowTabs.length - 1] ?? null);
+    return parsed && sideWindowTabs.includes(parsed) ? parsed : (sideWindowTabs[sideWindowTabs.length - 1] ?? null);
   }, [sideWindows.active, sideWindowTabs]);
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -682,7 +684,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         ptySyncRef.current.finalizeDefaultSegment(lastEventMs);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     sessionAnnotations,
     terminalReady,
@@ -859,6 +860,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       try {
         term.open(container);
+        applyRtlGridContract(container);
         terminalRef.current = term;
         fitAddonRef.current = fit;
         container.addEventListener('paste', onDomPaste, true);
@@ -1482,9 +1484,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       // Offer markup before the pasted image(s) are attached. Cancel aborts.
       const files = await annotateImageFiles(incoming);
       if (!files.length) return [];
-      const uploads = await fsStore
-        .getState()
-        .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
+      const uploads = await fsStore.getState().uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
       await Promise.all(uploads.map((u) => u.waitForCompletion()));
       openSideTab(SideTabId.Files);
       return files.map((file) => `File ${file.name} is available here: ${inputDirInfo.absPath}/${file.name}`);
@@ -1567,18 +1567,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       );
       panels[SideTabId.Analysis] = <AnalysisPanel process={process} />;
       panels[SideTabId.SkillsAgents] = (
-        <SkillsAgentsPanel
-          workerType={process.worker_type ?? null}
-          sessionId={process.session_id ?? null}
-        />
+        <SkillsAgentsPanel workerType={process.worker_type ?? null} sessionId={process.session_id ?? null} />
       );
     }
     if (inputDirInfo) {
       panels[SideTabId.Files] = (
-        <InputFilesPanel
-          computeNodeTypeId={inputDirInfo.computeNodeTypeId}
-          inputDirAbsPath={inputDirInfo.absPath}
-        />
+        <InputFilesPanel computeNodeTypeId={inputDirInfo.computeNodeTypeId} inputDirAbsPath={inputDirInfo.absPath} />
       );
       if (process?.workdir || shellRef.current?.workdir) {
         panels[SideTabId.Dir] = (
@@ -1617,223 +1611,225 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   return (
     <ChatPlanModeProvider process={process}>
-    <div className={`relative flex h-full flex-col ${className}`} onDragOver={(e) => e.preventDefault()}>
-      {/* Top bar — ProcessToolbar (Claude pane) or PaneBar (Shell pane) */}
-      {process && activePane === 'claude' && (
-        <ProcessToolbar
-          process={process}
-          traceFilters={traceFilters}
-          onTraceFiltersChange={setTraceFilters}
-          colVis={colVis}
-          onColVisChange={setColVis}
-          sessionStartTime={sessionStartTime}
-          lastMessageTime={lastMessageTime}
-          embedded={embedded}
-          onClose={onClose}
-          shell={shell}
-        />
-      )}
-      {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
+      <div className={`relative flex h-full flex-col ${className}`} onDragOver={(e) => e.preventDefault()}>
+        {/* Top bar — ProcessToolbar (Claude pane) or PaneBar (Shell pane) */}
+        {process && activePane === 'claude' && (
+          <ProcessToolbar
+            process={process}
+            traceFilters={traceFilters}
+            onTraceFiltersChange={setTraceFilters}
+            colVis={colVis}
+            onColVisChange={setColVis}
+            sessionStartTime={sessionStartTime}
+            lastMessageTime={lastMessageTime}
+            embedded={embedded}
+            onClose={onClose}
+            shell={shell}
+          />
+        )}
+        {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
 
-      {/* Runtime-error banner — populated by the shell-dock loader on soft
+        {/* Runtime-error banner — populated by the shell-dock loader on soft
           ProcessLoadError (PTY dead, process stopped, project missing,
           shell entity missing, network). Renders nothing when null. */}
-      <TerminalRuntimeErrorBanner />
+        <TerminalRuntimeErrorBanner />
 
-      <PtySyncProvider session={ptySyncRef.current}>
-        {/* Column header — only for Claude pane; terminal debug chrome
+        <PtySyncProvider session={ptySyncRef.current}>
+          {/* Column header — only for Claude pane; terminal debug chrome
             (trace/annotation/PTY-timing), hidden in Standard view and when the
             simple chat replaces the xterm. */}
-        {process && activePane === 'claude' && !showSimpleChat && isAdvanced ? (
-          <ColumnHeaderBar
-            showTrace={showGutter}
-            traceWidth={48}
-            totalTraceEvents={totalTraceEvents}
-            historicalCount={historicalCount}
-            liveCount={liveCount}
-            showTime={showTimeGutter}
-            timeWidth={timeGutterWidth}
-            traceFilters={traceFilters}
-            showAnnotations={showAnnotationGutter}
-            annotationsWidth={24}
-            annotationElements={annotationElements}
-            onToggleTrace={() => setColVis({ ...colVis, trace: !colVis.trace })}
-            onHideTime={() => setColVis({ ...colVis, time: false })}
-            onToggleAnnotations={() => setColVis({ ...colVis, annotations: !colVis.annotations })}
-          />
-        ) : null}
+          {process && activePane === 'claude' && !showSimpleChat && isAdvanced ? (
+            <ColumnHeaderBar
+              showTrace={showGutter}
+              traceWidth={48}
+              totalTraceEvents={totalTraceEvents}
+              historicalCount={historicalCount}
+              liveCount={liveCount}
+              showTime={showTimeGutter}
+              timeWidth={timeGutterWidth}
+              traceFilters={traceFilters}
+              showAnnotations={showAnnotationGutter}
+              annotationsWidth={24}
+              annotationElements={annotationElements}
+              onToggleTrace={() => setColVis({ ...colVis, trace: !colVis.trace })}
+              onHideTime={() => setColVis({ ...colVis, time: false })}
+              onToggleAnnotations={() => setColVis({ ...colVis, annotations: !colVis.annotations })}
+            />
+          ) : null}
 
-        <div className="flex min-h-0 flex-1">
-          {/* Left pane selector strip — only when sidecar exists */}
-          {sidecarShellId && <PaneSelectorBar activePane={activePane} onSelect={handlePaneSelect} />}
+          <div className="flex min-h-0 flex-1">
+            {/* Left pane selector strip — only when sidecar exists */}
+            {sidecarShellId && <PaneSelectorBar activePane={activePane} onSelect={handlePaneSelect} />}
 
-          {/* Claude pane — kept mounted, hidden when shell is active (preserves xterm) */}
-          <div
-            className="relative flex min-h-0 flex-1 flex-row"
-            style={{ display: activePane !== 'claude' ? 'none' : undefined }}
-          >
-            {/* Relative container: xterm fills the space with padding for gutters;
+            {/* Claude pane — kept mounted, hidden when shell is active (preserves xterm) */}
+            <div
+              className="relative flex min-h-0 flex-1 flex-row"
+              style={{ display: activePane !== 'claude' ? 'none' : undefined }}
+            >
+              {/* Relative container: xterm fills the space with padding for gutters;
                 gutters are absolutely positioned over the padded areas.
                 This prevents any gutter mount/unmount from changing xterm width.
                 ``overflow-hidden`` clips gutter rows that overshoot the visible
                 box (TimeGutter etc. render a fixed row count regardless of the
                 container height — without clipping they paint over the footer). */}
-            <div className="relative min-h-0 flex-1 overflow-hidden">
-              {/* Wrapper reserves gutter space; xterm fills the content area only */}
-              <div
-                className="absolute inset-0 flex"
-                style={{
-                  paddingLeft:
-                    (showGutter || reserveGutterSpace ? 48 : 0) +
-                    (showTimeGutter || reserveTimeGutterSpace ? timeGutterWidth : 0),
-                  paddingRight: showAnnotationGutter || reserveAnnotationSpace ? 24 : 0,
-                }}
-              >
-                {/* Headless (pty_mode=false): don't render the xterm container at
+              <div className="relative min-h-0 flex-1 overflow-hidden">
+                {/* Wrapper reserves gutter space; xterm fills the content area only */}
+                <div
+                  className="absolute inset-0 flex"
+                  style={{
+                    paddingLeft:
+                      (showGutter || reserveGutterSpace ? 48 : 0) +
+                      (showTimeGutter || reserveTimeGutterSpace ? timeGutterWidth : 0),
+                    paddingRight: showAnnotationGutter || reserveAnnotationSpace ? 24 : 0,
+                  }}
+                >
+                  {/* Headless (pty_mode=false): don't render the xterm container at
                     all → the mount effect early-returns on the missing ref, so no
                     XTerm/PtySync is created. SimpleChatPane (absolute overlay
                     below) is the whole view. */}
-                {!isHeadless && (
+                  {!isHeadless && (
+                    <div
+                      ref={xtermContainerRef}
+                      className="relative min-h-0 min-w-0 flex-1"
+                      onClick={handleContainerClick}
+                      tabIndex={0}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        void handleFileDrop(e);
+                      }}
+                    >
+                      {searchOpen && (
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <TerminalSearchBar
+                            searchAddon={searchAddonRef.current}
+                            onClose={() => {
+                              setSearchOpen(false);
+                              terminalRef.current?.focus();
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Gutters — absolutely positioned over padded areas */}
+                {showGutter && (
                   <div
-                    ref={xtermContainerRef}
-                    className="relative min-h-0 min-w-0 flex-1"
-                    onClick={handleContainerClick}
-                    tabIndex={0}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      void handleFileDrop(e);
-                    }}
+                    className="absolute bottom-0 left-0 top-0"
+                    style={{ width: 48, zIndex: gutterExpanded ? 50 : 1 }}
                   >
-                    {searchOpen && (
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <TerminalSearchBar
-                          searchAddon={searchAddonRef.current}
-                          onClose={() => {
-                            setSearchOpen(false);
-                            terminalRef.current?.focus();
-                          }}
-                        />
-                      </div>
-                    )}
+                    <TraceGutter
+                      entries={gutterEntries}
+                      totalTraceEvents={totalTraceEvents}
+                      historicalCount={historicalCount}
+                      liveCount={liveCount}
+                      viewportY={viewportY}
+                      rows={rows}
+                      cellHeight={metricsCellHeight}
+                      expanded={gutterExpanded}
+                      onOpen={() => setGutterExpanded(true)}
+                      onClose={() => setGutterExpanded(false)}
+                      hideCounter
+                    />
                   </div>
                 )}
-              </div>
-              {/* Gutters — absolutely positioned over padded areas */}
-              {showGutter && (
-                <div className="absolute bottom-0 left-0 top-0" style={{ width: 48, zIndex: gutterExpanded ? 50 : 1 }}>
-                  <TraceGutter
-                    entries={gutterEntries}
-                    totalTraceEvents={totalTraceEvents}
-                    historicalCount={historicalCount}
-                    liveCount={liveCount}
-                    viewportY={viewportY}
-                    rows={rows}
-                    cellHeight={metricsCellHeight}
-                    expanded={gutterExpanded}
-                    onOpen={() => setGutterExpanded(true)}
-                    onClose={() => setGutterExpanded(false)}
-                    hideCounter
-                  />
-                </div>
-              )}
-              {showTimeGutter && (
-                <div className="absolute bottom-0 top-0" style={{ left: 48, width: timeGutterWidth, zIndex: 1 }}>
-                  <TimeGutter
-                    rows={timeGutterRows}
-                    cellHeight={metricsCellHeight}
-                    filters={traceFilters}
-                    ptySyncSession={ptySyncRef.current}
-                    viewportY={viewportY}
-                    refLines={ptySyncSnapshot.refLines}
-                  />
-                </div>
-              )}
-              {showAnnotationGutter && (
-                <div className="absolute bottom-0 right-0 top-0" style={{ width: 24, zIndex: 1 }}>
-                  <AnnotationGutter
-                    elements={annotationElements}
-                    viewportY={viewportY}
-                    rows={rows}
-                    cellHeight={metricsCellHeight}
-                    scrollToLine={scrollAnnotationToLine}
-                    createBookmark={createBookmark}
-                    createComment={createComment}
-                    deleteBookmark={deleteBookmark}
-                    onHoverRow={onAnnotationHoverRow}
-                    hideCounter
-                  />
-                </div>
-              )}
-              {/* Standard-view simple chat — opaque overlay above xterm +
+                {showTimeGutter && (
+                  <div className="absolute bottom-0 top-0" style={{ left: 48, width: timeGutterWidth, zIndex: 1 }}>
+                    <TimeGutter
+                      rows={timeGutterRows}
+                      cellHeight={metricsCellHeight}
+                      filters={traceFilters}
+                      ptySyncSession={ptySyncRef.current}
+                      viewportY={viewportY}
+                      refLines={ptySyncSnapshot.refLines}
+                    />
+                  </div>
+                )}
+                {showAnnotationGutter && (
+                  <div className="absolute bottom-0 right-0 top-0" style={{ width: 24, zIndex: 1 }}>
+                    <AnnotationGutter
+                      elements={annotationElements}
+                      viewportY={viewportY}
+                      rows={rows}
+                      cellHeight={metricsCellHeight}
+                      scrollToLine={scrollAnnotationToLine}
+                      createBookmark={createBookmark}
+                      createComment={createComment}
+                      deleteBookmark={deleteBookmark}
+                      onHoverRow={onAnnotationHoverRow}
+                      hideCounter
+                    />
+                  </div>
+                )}
+                {/* Standard-view simple chat — opaque overlay above xterm +
                   gutters. The xterm stays mounted (and fitted) underneath so
                   toggling Advanced⇄Standard is instant and never resets the
                   terminal. Same session, same PTY (see SimpleChatPane). */}
-              {showSimpleChat && process && (
-                <div className="absolute inset-0 z-[60]">
-                  <SimpleChatPane process={process} />
-                </div>
+                {showSimpleChat && process && (
+                  <div className="absolute inset-0 z-[60]">
+                    <SimpleChatPane process={process} />
+                  </div>
+                )}
+              </div>
+
+              {/* Side window (non-Shell tabs) */}
+              {sideWindowTabs.length > 0 && activeSideTab && (
+                <TabbedSideDrawer<SideTabId>
+                  open
+                  width="w-80"
+                  tabs={sideTabs}
+                  activeTab={activeSideTab}
+                  onActiveTabChange={selectSideTab}
+                  onCloseTab={closeSideTab}
+                  truncateLabels
+                  scrollableTabs
+                >
+                  {sidePanels}
+                </TabbedSideDrawer>
               )}
             </div>
 
-            {/* Side window (non-Shell tabs) */}
-            {sideWindowTabs.length > 0 && activeSideTab && (
-              <TabbedSideDrawer<SideTabId>
-                open
-                width="w-80"
-                tabs={sideTabs}
-                activeTab={activeSideTab}
-                onActiveTabChange={selectSideTab}
-                onCloseTab={closeSideTab}
-                truncateLabels
-                scrollableTabs
-              >
-                {sidePanels}
-              </TabbedSideDrawer>
+            {/* Shell pane — full content area when active */}
+            {activePane === 'shell' && sidecarShellId && (
+              <PaneView>
+                <SidecarShellTerminal shellId={sidecarShellId} active={true} className="min-h-0 flex-1" />
+              </PaneView>
             )}
           </div>
+        </PtySyncProvider>
 
-          {/* Shell pane — full content area when active */}
-          {activePane === 'shell' && sidecarShellId && (
-            <PaneView>
-              <SidecarShellTerminal shellId={sidecarShellId} active={true} className="min-h-0 flex-1" />
-            </PaneView>
-          )}
-
-        </div>
-      </PtySyncProvider>
-
-      {process && (
-        <TerminalBottomRibbon
-          fileCount={fileCount}
-          isActive={processIsActive}
-          promptCount={mergedPrompts.length}
-          lastPromptText={lastPromptText}
-          process={process}
-          openTabs={ribbonOpenTabs}
-          activeSideTab={ribbonActiveSideTab}
-          onOpenSideTab={(tab) => {
-            if (tab === SideTabId.Shell) {
-              void handleToggleSidecar();
-            } else {
-              toggleSideTab(tab);
+        {process && (
+          <TerminalBottomRibbon
+            fileCount={fileCount}
+            isActive={processIsActive}
+            promptCount={mergedPrompts.length}
+            lastPromptText={lastPromptText}
+            process={process}
+            openTabs={ribbonOpenTabs}
+            activeSideTab={ribbonActiveSideTab}
+            onOpenSideTab={(tab) => {
+              if (tab === SideTabId.Shell) {
+                void handleToggleSidecar();
+              } else {
+                toggleSideTab(tab);
+              }
+            }}
+            hasLastPlan={hasPlan}
+            onOpenLastPlan={handleOpenLastPlan}
+            markdownDocs={markdownDocs}
+            onOpenMarkdown={handleOpenMarkdown}
+            composer={
+              showSimpleChat && process ? (
+                <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} />
+              ) : undefined
             }
-          }}
-          hasLastPlan={hasPlan}
-          onOpenLastPlan={handleOpenLastPlan}
-          markdownDocs={markdownDocs}
-          onOpenMarkdown={handleOpenMarkdown}
-          composer={
-            showSimpleChat && process ? (
-              <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} />
-            ) : undefined
-          }
-          chatActive={showSimpleChat}
-          switching={switching}
-          toggleEnabled={awaitingUserInput}
-          onToggleView={canToggleView ? () => void handleToggleView() : undefined}
-        />
-      )}
-    </div>
+            chatActive={showSimpleChat}
+            switching={switching}
+            toggleEnabled={awaitingUserInput}
+            onToggleView={canToggleView ? () => void handleToggleView() : undefined}
+          />
+        )}
+      </div>
     </ChatPlanModeProvider>
   );
 };
