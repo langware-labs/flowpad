@@ -82,48 +82,86 @@ export function markdownComponents({
     ? 'mb-2 leading-6 last:mb-0 [&:not(:first-child)]:mt-2'
     : 'mb-4 leading-7 last:mb-0 [&:not(:first-child)]:mt-6';
 
+  // Every text-bearing block carries dir="auto" so its base direction (and
+  // with it alignment + punctuation side) follows the block's first strong
+  // character instead of the app UI locale — Hebrew/Arabic content renders
+  // RTL even when the app is in an LTR language. Direction-sensitive spacing
+  // uses logical utilities (ms-*, ps-*, border-s, text-start) so it flips
+  // with the resolved direction.
   return {
-        code: ({ children }) => (
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground">{children}</code>
-        ),
-        pre: ({ children }) => <CodeBlock codeChrome={codeChrome}>{children}</CodeBlock>,
-        p: ({ children }) => <p className={paragraphClass}>{children}</p>,
-        h1: ({ children }) => (
-          <h1 className="mb-4 scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">{children}</h1>
-        ),
-        h2: ({ children }) => (
-          <h2 className="mb-3 scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0">
-            {children}
-          </h2>
-        ),
-        h3: ({ children }) => <h3 className="mb-2 scroll-m-20 text-2xl font-semibold tracking-tight">{children}</h3>,
-        ul: ({ children }) => <ul className="my-6 ml-6 list-disc [&>li]:mt-2">{children}</ul>,
-        ol: ({ children }) => <ol className="my-6 ml-6 list-decimal [&>li]:mt-2">{children}</ol>,
-        li: ({ children }) => <li className="mt-2">{children}</li>,
-        a: ({ href, children }) => (
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
-          >
-            {children}
-          </a>
-        ),
-        blockquote: ({ children }) => (
-          <blockquote className="mt-6 border-l-2 pl-6 italic text-muted-foreground">{children}</blockquote>
-        ),
-        table: ({ children }) => (
-          <div className="my-6 w-full overflow-auto">
-            <table className="w-full">{children}</table>
-          </div>
-        ),
-        thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
-        tbody: ({ children }) => <tbody>{children}</tbody>,
-        tr: ({ children }) => <tr className="border-b border-muted">{children}</tr>,
-        th: ({ children }) => <th className="px-4 py-2 text-left font-semibold">{children}</th>,
-        td: ({ children }) => <td className="px-4 py-2 align-top">{children}</td>,
-        hr: () => <hr className="my-4 border-muted" />,
+    code: ({ children }) => (
+      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground">{children}</code>
+    ),
+    pre: ({ children }) => <CodeBlock codeChrome={codeChrome}>{children}</CodeBlock>,
+    p: ({ children }) => (
+      <p dir="auto" className={paragraphClass}>
+        {children}
+      </p>
+    ),
+    h1: ({ children }) => (
+      <h1 dir="auto" className="mb-4 scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
+        {children}
+      </h1>
+    ),
+    h2: ({ children }) => (
+      <h2 dir="auto" className="mb-3 scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0">
+        {children}
+      </h2>
+    ),
+    h3: ({ children }) => (
+      <h3 dir="auto" className="mb-2 scroll-m-20 text-2xl font-semibold tracking-tight">
+        {children}
+      </h3>
+    ),
+    ul: ({ children }) => (
+      <ul dir="auto" className="my-6 ms-6 list-disc [&>li]:mt-2">
+        {children}
+      </ul>
+    ),
+    ol: ({ children }) => (
+      <ol dir="auto" className="my-6 ms-6 list-decimal [&>li]:mt-2">
+        {children}
+      </ol>
+    ),
+    li: ({ children }) => (
+      <li dir="auto" className="mt-2">
+        {children}
+      </li>
+    ),
+    a: ({ href, children }) => (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
+      >
+        {children}
+      </a>
+    ),
+    blockquote: ({ children }) => (
+      <blockquote dir="auto" className="mt-6 border-s-2 ps-6 italic text-muted-foreground">
+        {children}
+      </blockquote>
+    ),
+    table: ({ children }) => (
+      <div className="my-6 w-full overflow-auto">
+        <table className="w-full">{children}</table>
+      </div>
+    ),
+    thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
+    tbody: ({ children }) => <tbody>{children}</tbody>,
+    tr: ({ children }) => <tr className="border-b border-muted">{children}</tr>,
+    th: ({ children }) => (
+      <th dir="auto" className="px-4 py-2 text-start font-semibold">
+        {children}
+      </th>
+    ),
+    td: ({ children }) => (
+      <td dir="auto" className="px-4 py-2 align-top">
+        {children}
+      </td>
+    ),
+    hr: () => <hr className="my-4 border-muted" />,
   };
 }
 
@@ -131,7 +169,11 @@ export const MarkdownView = ({
   value,
   compact = false,
   codeChrome = true,
-}: { value: string; compact?: boolean; codeChrome?: boolean }) => (
+}: {
+  value: string;
+  compact?: boolean;
+  codeChrome?: boolean;
+}) => (
   <ReactMarkdown
     remarkPlugins={[remarkGfm]}
     rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeHighlight]}
