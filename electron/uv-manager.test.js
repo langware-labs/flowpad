@@ -166,7 +166,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     // Non-lock error → throw immediately, one attempt, no retry.
     const m = new UvManager(silentLog);
     let uvCalls = 0, kills = 0;
-    m._killStaleToolProcesses = async () => { kills++; };
+    m._drainVenvProcesses = async () => { kills++; };
     m._uv = async () => { uvCalls++; throw new Error('network unreachable'); };
     let threw = false;
     try { await m._uvToolInstallForce(['tool', 'install', 'flowpad']); } catch { threw = true; }
@@ -176,7 +176,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     // Lock error once, then success → retries and resolves; re-kills each attempt.
     const m2 = new UvManager(silentLog);
     let uv2 = 0, kills2 = 0;
-    m2._killStaleToolProcesses = async () => { kills2++; };
+    m2._drainVenvProcesses = async () => { kills2++; };
     m2._uv = async () => {
       uv2++;
       if (uv2 === 1) throw new Error('failed to remove directory flowpad Scripts: Access is denied. (os error 5)');
