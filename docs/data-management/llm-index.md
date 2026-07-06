@@ -1,3 +1,7 @@
+---
+id: 9f458fc8-9238-5749-a383-1cca3d2a5a22
+---
+
 # The LLM Folder-Index Pipeline
 
 This document describes the **`index.md` folder-index** subsystem — a second, self-contained pipeline that is easy to confuse with the `FSIndexer` scan/discovery walk (`docs/data-management/scan-and-discovery.md`) but shares almost nothing with it. It builds a Merkle tree of one `index.md` per folder, each summarising the files and subfolders beneath it, so a docs tree becomes a navigable, LLM-summarised map (consumed by the `docs-browse` skill and the docs "Atlas" graph).

@@ -1,3 +1,7 @@
+---
+id: 87b990d0-6d04-5289-851e-96306040e428
+---
+
 # Transcript Indexing
 
 The **transcript indexer** is a second, opt-in indexing pass that runs *over* session transcripts rather than over records. Where the regular `FSIndexer` walks the filesystem and materializes one `Record`/`Entity` per file, the transcript indexer parses a session's JSONL transcript and routes the parsed entries to a set of registered handlers that produce *side effects* — cross-links, on-demand entity creation — without emitting any new child refs of their own.
@@ -50,7 +54,7 @@ The transcript indexer has its **own** freshness check, `_is_fresh` (`flow_sdk/f
 
 The FSIndexer's skip-fresh (`flow_sdk/fs_store/indexer/index_function.py`) is a different mechanism entirely:
 
-- It is **entirely on-disk**: it reads each record's own `<fingerprint>.<timestamp>.hash` sentinel file (`Record.index_required`) and compares the source's current hash against that sentinel. The per-record loop makes **zero DB reads** for the freshness decision itself.
+- It is **entirely on-disk**: it reads each record's own `<epoch>_<hash>_<pathdigest>.hash` sentinel file (`FSRecord.index_required`) and compares the source's current hash against that sentinel. The per-record loop makes **zero DB reads** for the freshness decision itself.
 - Skip-fresh additionally requires a **live DB row** (`row_present`) so a stale sentinel left behind by a DB clear/rebuild can't mask a missing row.
 
 The transcript indexer's `_is_fresh`, by contrast, is a **timestamp comparison against the session Entity's `updated_date`** — it does not read or write any `.hash` sentinel. The two freshness systems are independent: a `CLAUDE_SESSION` record can be skip-fresh at the FSIndexer level (its `.hash` sentinel is current) while the transcript indexer still decides to reprocess it, or vice versa. In both, `opts.force` bypasses the check.

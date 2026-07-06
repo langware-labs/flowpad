@@ -80,24 +80,20 @@ test.describe('Dir side window scrolling', () => {
 
     await gotoAgenticProcess(page);
 
-    // Open the Dir side window via the URL param. NOTE: deep-linking the BARE
-    // process URL + ?sideWindows=dir loses the param — reconcileProcessScope
-    // (load-shell.ts) issues a scope-aligning replace() that rebuilds the URL
-    // WITHOUT query options (requestPath is pathname-only, redirect seeds
-    // options=undefined), so ?sideWindows never reaches the mounted view. That
-    // deep-link option-dropping is a real product bug tracked separately; to test
-    // the SCROLL behavior here, start from the ALREADY-reconciled URL (scope
-    // params present ⇒ reconcile is a no-op ⇒ no redirect) and add sideWindows to it.
-    const reconciled = new URL(page.url());
-    reconciled.searchParams.set('sideWindows', 'dir');
-    await page.goto(reconciled.toString());
-
-    // A full page.goto reload resets the runtime view to the backend pref
-    // (Standard); the Dir side window is advancedOnly, so it only renders once we
-    // re-assert Advanced AFTER this navigation (the pre-goto flip in
-    // gotoAgenticProcess was thrown away by the reload).
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    // Open the Dir side window the way a user does — click its ribbon button —
+    // NOT via a ?sideWindows=dir deep-link. The cold-nav scope-align redirect in
+    // load-shell.ts (`reconcileProcessScope`) deliberately drops the incoming
+    // URL's query options (documented there: `requestPath` is pathname-only and
+    // the redirect seeds options=undefined; carrying deep-link options through it
+    // is a cross-cutting loader-contract change tracked separately), so a
+    // ?sideWindows deep-link never reaches the mounted view. The ribbon toggle is
+    // the canonical, supported path and opens the exact same panel. The button is
+    // Advanced-only; gotoAgenticProcess already flipped to Advanced. Select it by
+    // its FolderTree icon (index-independent — the ribbon gains/loses buttons).
     await ensureAdvancedView(page);
+    const dirButton = activePanel(page).locator('.border-t .ml-auto button:has(svg.lucide-folder-tree)');
+    await expect(dirButton).toBeVisible({ timeout: 15_000 });
+    await dirButton.click();
 
     // Wait for the dir tree to mount and load its rows.
     const filter = activePanel(page).locator('[data-testid="dir-tree-filter"]');

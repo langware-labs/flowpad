@@ -63,12 +63,12 @@ Current storage model:
 Default metadata root:
 
 ```text
-~/.flow/records/<type>/<type>-@<uid>/
-  metadata.json          # wrapped {"data": {...}} containing all public fields
-  state.json             # per-record property/cache state
-  <key>.json             # optional named FSRef children from _domain_fsref_keys
-  output/                # default generated output directory for base Record
+<records_root>/<type>/<type>-@<uid>/
+  metadata.json                     # flat JSON dict of all persisted fields
+  <epoch>_<hash>_<pathdigest>.hash  # index sentinel (zero-byte)
 ```
+
+(The old wrapped `{"data": {...}}` metadata, `state.json` cache, named `<key>.json` children, and `output/` folder were removed with the `FSRecord` refactor — see `docs/data-management/record-model.md` and `docs/data-management/folder-layout.md`.)
 
 Record data/blob root:
 
@@ -350,9 +350,8 @@ Important naming:
 Per-process artifacts live under the record folder:
 
 ```text
-~/.flow/records/agentic_process/agentic_process-@<id>/
+<records_root>/agentic_process/agentic_process-@<id>/
   metadata.json
-  state.json
   execution/
     input/
     output/
