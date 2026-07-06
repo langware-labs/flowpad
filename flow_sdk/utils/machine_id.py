@@ -12,7 +12,6 @@ import logging
 import os
 import platform
 import subprocess
-import sys
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -59,6 +58,25 @@ def local_entity_id(entity_type: str, flow_home: Optional[Path] = None) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{entity_type}:local:{get_machine_id(flow_home)}"))
 
 
+def desktop_instance_id(flow_home: Optional[Path] = None) -> str:
+    """Deterministic per-(machine, instance) identity for the hub's desktop
+    API-key slot: ``uuid5(NAMESPACE_DNS, "desktop-instance:<machine_id>:<instance_name>")``.
+
+    Sent as the ``instance`` query param on the login callback URL; the hub
+    names the desktop key ``desktop-cli:<this id>`` and only ever rotates
+    keys within the same slot. ``machine_id`` separates machines (every
+    machine's callback host is ``localhost``, so host:port cannot), and
+    ``instance_name`` separates instances on one machine. Deterministic so a
+    reinstalled/wiped instance re-derives the SAME slot and its login rotates
+    the old key instead of stranding it active on the hub. The raw machine id
+    never leaves the machine — only this one-way uuid5 does.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    instance_name = get_instance_settings().instance_name
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"desktop-instance:{get_machine_id(flow_home)}:{instance_name}"))
+
+
 # ----------------------------------------------------------------------
 # OS-specific derivation — public so the FaaS remote-execution path can
 # embed the same logic into the script it runs on the compute node.
@@ -89,7 +107,8 @@ def _derive_machine_id() -> tuple[str, str]:
         elif system == "Darwin":
             out = subprocess.check_output(
                 ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                text=True, timeout=5,
+                text=True,
+                timeout=5,
             )
             for line in out.splitlines():
                 if "IOPlatformUUID" in line:
@@ -99,6 +118,7 @@ def _derive_machine_id() -> tuple[str, str]:
                         return parts[3], "darwin:IOPlatformUUID"
         elif system == "Windows":
             import winreg
+
             with winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,
                 r"SOFTWARE\Microsoft\Cryptography",
@@ -107,8 +127,7 @@ def _derive_machine_id() -> tuple[str, str]:
                 if val:
                     return val, "windows:MachineGuid"
     except (OSError, subprocess.SubprocessError, ImportError) as exc:
-        logger.warning("machine_id: stable derivation failed (%s): %s",
-                       system, exc)
+        logger.warning("machine_id: stable derivation failed (%s): %s", system, exc)
 
     # Brittle fallback (uuid.getnode() drifts on MAC randomization); cache fixes it on first call.
     logger.warning(
@@ -116,13 +135,13 @@ def _derive_machine_id() -> tuple[str, str]:
         "First call will cache the value, so subsequent calls are stable.",
         system,
     )
-    return (f"fallback-{platform.machine()}-{uuid.getnode()}",
-            f"fallback:{system}")
+    return (f"fallback-{platform.machine()}-{uuid.getnode()}", f"fallback:{system}")
 
 
 # ----------------------------------------------------------------------
 # Cache file I/O
 # ----------------------------------------------------------------------
+
 
 def _read_cache(cache_path: Path) -> Optional[str]:
     """Return the cached machine_id or None. Never raises."""
@@ -161,7 +180,8 @@ def _write_cache(cache_path: Path, machine_id: str, provenance: str) -> None:
                 "_created_by_version": _flow_version(),
             }
             fd, tmp_path = tempfile.mkstemp(
-                prefix=".system_", suffix=".tmp",
+                prefix=".system_",
+                suffix=".tmp",
                 dir=str(cache_path.parent),
             )
             try:
@@ -185,6 +205,7 @@ def _write_cache(cache_path: Path, machine_id: str, provenance: str) -> None:
 # Internals — resolver helpers
 # ----------------------------------------------------------------------
 
+
 def _resolve_flow_home() -> Path:
     """Pull from InstanceSettings — the single source of truth for FLOW_HOME.
 
@@ -193,12 +214,14 @@ def _resolve_flow_home() -> Path:
     Reproducing the FLOW_HOME read here was a latent SoT violation.
     """
     from flow_sdk.instance_settings import get_instance_settings
+
     return get_instance_settings().flow_home
 
 
 def _flow_version() -> str:
     try:
         from flow_sdk._version import __version__
+
         return __version__
     except Exception:
         return "unknown"
