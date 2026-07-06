@@ -40,8 +40,10 @@ test.describe('Terminal Tab Switch – No Content Duplication', () => {
     // Wait for the new terminal to initialise
     await page.waitForTimeout(2_000);
 
-    // Step 5: Switch back to the first terminal tab by its data-testid
-    const firstTab = page.locator(`[data-testid="tab-${firstSessionId}"]`);
+    // Step 5: Switch back to the first terminal tab by its data-testid. The tab
+    // testid embeds the dock tabHash (`<viewType>|<pointer>`), so a shell session
+    // pointer `shell-<uuid>` chips as `tab-shell|shell-<uuid>`.
+    const firstTab = page.locator(`[data-testid="tab-shell|${firstSessionId}"]`);
     await firstTab.click();
     await page.waitForTimeout(1_500);
 

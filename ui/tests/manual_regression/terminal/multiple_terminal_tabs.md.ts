@@ -58,7 +58,10 @@ test.describe('Multiple Terminal Tabs', () => {
     // Step 7: switch back to the first newly created tab.
     await firstNewTab.click();
     await page.waitForTimeout(500);
-    const clickedSessionId = firstNewTabId.replace('tab-', '');
+    // The tab testid embeds the dock tabHash (`<viewType>|<pointer>`, e.g.
+    // `shell|shell-<uuid>`); the terminal panel's data-session-id is the bare
+    // pointer. Strip the leading `tab-<viewType>|` to recover the pointer.
+    const clickedSessionId = firstNewTabId.replace(/^tab-[^|]*\|/, '');
 
     // Validate the active panel matches the clicked tab.
     const activePanel = page.locator(`[data-testid="terminal-panel"][data-session-id="${clickedSessionId}"]`);

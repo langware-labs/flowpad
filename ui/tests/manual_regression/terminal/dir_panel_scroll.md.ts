@@ -78,10 +78,26 @@ test.describe('Dir side window scrolling', () => {
   test('dir panel scrolls (not clipped) when the directory overflows the viewport', async ({ page }) => {
     test.setTimeout(90_000);
 
-    const base = await gotoAgenticProcess(page);
+    await gotoAgenticProcess(page);
 
-    // Open the Dir side window exactly as the bug repro does: via the URL param.
-    await page.goto(`${base}?sideWindows=dir`);
+    // Open the Dir side window via the URL param. NOTE: deep-linking the BARE
+    // process URL + ?sideWindows=dir loses the param — reconcileProcessScope
+    // (load-shell.ts) issues a scope-aligning replace() that rebuilds the URL
+    // WITHOUT query options (requestPath is pathname-only, redirect seeds
+    // options=undefined), so ?sideWindows never reaches the mounted view. That
+    // deep-link option-dropping is a real product bug tracked separately; to test
+    // the SCROLL behavior here, start from the ALREADY-reconciled URL (scope
+    // params present ⇒ reconcile is a no-op ⇒ no redirect) and add sideWindows to it.
+    const reconciled = new URL(page.url());
+    reconciled.searchParams.set('sideWindows', 'dir');
+    await page.goto(reconciled.toString());
+
+    // A full page.goto reload resets the runtime view to the backend pref
+    // (Standard); the Dir side window is advancedOnly, so it only renders once we
+    // re-assert Advanced AFTER this navigation (the pre-goto flip in
+    // gotoAgenticProcess was thrown away by the reload).
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await ensureAdvancedView(page);
 
     // Wait for the dir tree to mount and load its rows.
     const filter = activePanel(page).locator('[data-testid="dir-tree-filter"]');
