@@ -524,7 +524,12 @@ export function EntityExecutionPanel({
   const busy = !!indicatorProcess && isBusy(indicatorProcess);
   const sendDisabled = !targetStr || sending || busy;
 
-  const statusSlot = indicatorProcess ? (
+  // While the dense chat's live activity footer is showing (dots + phase label
+  // + elapsed clock), it already carries the "working" signal — suppress the
+  // composer's duplicate status indicator so a turn isn't announced twice (the
+  // "two dots" look). The composer slot still shows resting states (Complete /
+  // Idle / asked-you-a-question) once the footer disappears.
+  const statusSlot = indicatorProcess && !(dense && activity.active) ? (
     <span
       title={getStatusLabel(indicatorProcess)}
       className="flex items-center"
