@@ -32,6 +32,7 @@ export enum PrefKey {
   SOUND_KEY = 'preferences.notifications.sound_key',
   SCROLLBACK_LINES = 'preferences.advanced.scrollback_lines',
   EXPERIMENTAL_FLAGS = 'preferences.advanced.experimental_flags',
+  INDEXER_BACKEND = 'preferences.advanced.indexer_backend',
 
   // --- Migrated from localStorage (see prefRegistry plan) ---
   // i18n / ui (boot keys read at module load, gate first paint)
@@ -186,6 +187,20 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description: 'Free-form JSON for experimental feature toggles. Invalid JSON is not saved.',
     dataType: PrefDataType.JSON,
     defaultValue: {},
+  },
+  [PrefKey.INDEXER_BACKEND]: {
+    key: PrefKey.INDEXER_BACKEND,
+    surfaced: true,
+    category: 'advanced',
+    label: 'Indexer backend',
+    description:
+      'Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'python',
+    options: [
+      { value: 'python', label: 'Python (FSIndexer)' },
+      { value: 'rust', label: 'Rust (RSIndexer)' },
+    ],
   },
 
   // ===== Migrated from localStorage =====
