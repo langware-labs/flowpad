@@ -28,6 +28,7 @@ import { Folder, FolderOpen, FolderPlus, GitBranch, type LucideIcon } from 'luci
 import { showInputPrompt } from '@src/components/ui/input-prompt-modal';
 import { useFavorites } from '@src/hooks/use-favorites';
 import { useCallback, useMemo, useState, type ComponentType } from 'react';
+import { projectRecencyMs } from '@src/lib/project-recency';
 import { QUICK_CREATE_REGISTRY } from './registry';
 
 interface QuickCreateModalProps {
@@ -191,6 +192,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
         name: p.displayName,
         path: p.fs_storage_mount_path ?? '',
         modifiedAt: p.updated_date ?? null,
+        recencyMs: projectRecencyMs({ last_active_at: p.last_active_at, modified_at: p.updated_date }),
       })),
     [projects],
   );

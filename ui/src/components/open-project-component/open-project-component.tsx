@@ -24,6 +24,7 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Loader2, Lock, Search, Sparkles } from 'lucide-react';
+import { projectRecencyMs } from '@src/lib/project-recency';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -435,9 +436,13 @@ function CompactProjectSelectDialog({
   const q = search.trim().toLowerCase();
 
   const filtered = useMemo(() => {
-    const byRecent = [...projects].sort(
-      (a, b) => effectiveModifiedAt(b.modified_at).getTime() - effectiveModifiedAt(a.modified_at).getTime(),
-    );
+    // `last_active_at` (UI-open recency) wins; session `modified_at` is the
+    // fallback; fully-unknown recency sorts as "now" (new project → top).
+    const now = Date.now();
+    const byRecent = projects
+      .map((p) => ({ p, ms: projectRecencyMs(p) ?? now }))
+      .sort((a, b) => b.ms - a.ms)
+      .map((r) => r.p);
     // No query → show only the most-recent slice; querying searches all projects.
     return q ? byRecent.filter((p) => matchesProjectQuery(p, q)) : byRecent.slice(0, COMPACT_PROJECT_LIMIT);
   }, [projects, q]);
