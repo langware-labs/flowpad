@@ -19,7 +19,24 @@ class BookmarkType(StrEnum):
     NOTIFICATION_FAILED = "notification_failed"
     TERMINAL_ANNOTATION = "terminal_annotation"
     FAVORITE = "favorite"
+    FAVORITE_FOLDER = "favorite_folder"
     PLAN = "plan"
+
+
+async def _promote_folder_children(folder_id: str) -> None:
+    """Null ``parent_id`` on every bookmark filed under a deleted favorite
+    folder — deleting a grouping must never delete (or strand) its members.
+    Best-effort per child, mirroring tab.py's ``_clear_parent_refs``."""
+    try:
+        children = await Bookmark.get_all({"parent_id": folder_id})
+    except Exception:
+        return
+    for child in children:
+        child.parent_id = ""
+        try:
+            await child.save()
+        except Exception:
+            continue
 
 
 class Bookmark(Entity):
@@ -34,6 +51,12 @@ class Bookmark(Entity):
     status: str = APIField(BookmarkStatus.OPEN)
     closed_at: Optional[str] = APIField(None)
     remind_at: Optional[str] = APIField(None)
+    # Grouping edge to a containing FAVORITE_FOLDER bookmark ("" = root).
+    # Same parent-pointer idea as Tab.parent_tab_id, but deliberately an empty
+    # string rather than Tab's Optional[None]: API responses drop None fields
+    # and the frontend store merge never removes keys, so un-filing could not
+    # propagate as None. Folder deletion promotes children to root.
+    parent_id: str = APIField("")
 
     @property
     def display_name(self) -> str:
@@ -45,3 +68,21 @@ class Bookmark(Entity):
         if self.title:
             return self.title.strip()
         return self.name or ""
+
+    async def delete(self):
+        if self.bookmark_type == BookmarkType.FAVORITE_FOLDER and self.id:
+            await _promote_folder_children(str(self.id))
+        return await super().delete()
+
+    @classmethod
+    async def delete_by_id(cls, eid: str):
+        # The HTTP delete path (handle_delete_by_id) bypasses the instance
+        # delete(), so child promotion must fire here too — same reason
+        # EntityModel.delete_by_id does its orphan-Tab cleanup.
+        try:
+            bm = await cls.get_by_id(eid)
+        except Exception:
+            bm = None
+        if bm is not None and bm.bookmark_type == BookmarkType.FAVORITE_FOLDER:
+            await _promote_folder_children(str(eid))
+        return await super().delete_by_id(eid)

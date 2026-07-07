@@ -2,18 +2,18 @@ import { IncomingTaskDialog } from '@src/components/task-receive/IncomingTaskDia
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
-import { NotificationFeed, notify } from '@src/notifications';
+import { NotificationFeed } from '@src/notifications';
 import { RecentConversationsStrip } from '@src/components/project-activity-strip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
 import { MiniDesktop } from '@src/components/quick-create';
 import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
-import { ViewMode } from '@src/contexts/view-mode-context';
 import { useProjects } from '@src/hooks/use-projects';
-import { apiClient, ComputeNode, dataContext, isCompleteGitOrigin, PrefKey, ProcessKind, Project, TypeId } from '@sdk';
+import { isCompleteGitOrigin, PrefKey } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
-import { useAuth, useProject } from '@sdk/react/hooks';
+import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
+import { useAuth } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
@@ -27,23 +27,9 @@ import { HomeFeedColumn } from './feed';
 import { X, CheckCircle2 } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GitOrigin, LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-
-// The vibe agent's asset_ref is stable for the app's lifetime — resolve once,
-// reuse across builds. Raw graph route (not useEntitiesQuery) because system
-// (SDK-shipped) agents only surface with include_system=true. Failed lookups
-// are NOT cached so a late-indexed agent is picked up on the next submit.
-let vibeAgentRefCache: string | null = null;
-async function resolveVibeAgentRef(): Promise<string | null> {
-  if (vibeAgentRefCache) return vibeAgentRefCache;
-  const rows = await apiClient.get<{ name?: string; asset_ref?: string }[]>(
-    '/graph/agent?include_system=true',
-  );
-  vibeAgentRefCache = (rows ?? []).find((r) => r.name === 'vibe')?.asset_ref ?? null;
-  return vibeAgentRefCache;
-}
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -117,7 +103,6 @@ export function HomeLanding() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const { project: currentProject } = useProject();
   const { resetAndRescan, scanInfo, lastScanResult } = useSystemTools();
   const [showWelcome, setShowWelcome] = useState(false);
   const [indexApproved, setIndexApproved] = usePreference<boolean>(PrefKey.INDEXING_APPROVED);
@@ -176,76 +161,11 @@ export function HomeLanding() {
     void navigateToResult(result, navigation);
   }, [navigation]);
 
-  // Get paths from desktop_info
-  const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
-
-  // Home submit opens its session in the vibe workspace (see the viewMode flag
-  // on openShellProcess below), which hosts a HEADLESS project-Chat process —
-  // not a PTY terminal. So the home session must BE that process model, else
-  // the vibe chat can't attach to it and the prompt never runs. Delegate to
-  // the vibe seed rather than the old PTY `createAndStartSession` path.
-  const handleSessionSubmit = (message: string) => handleVibeSubmit(message);
-
-  // Vibe submit — seed a HEADLESS chat process that the VibeWorkspace's side
-  // chat attaches to (by the project-TypeId target), with the Flowpad Assistant
-  // mounted so the web-app-builder skill is discoverable. Navigating to the
-  // process's SHELL/agentic_process dock activates it (loader sets the active
-  // process) and flow-page renders the chat↔display split.
-  //
-  // The session is bound to the SDK-shipped `vibe` agent (single embedded
-  // agent ⇒ the driver's persona directive on every turn) — the agent body
-  // carries the creator routing + the `flow show` presentation contract that
-  // drives the vibe display. Best-effort: an un-indexed agent just means a
-  // plain assistant session.
-  const handleVibeSubmit = (message: string) => {
-    if (!currentProject?.id) {
-      notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
-      return;
-    }
-    const projectId = currentProject.id;
-    // Key the build session to the project's id-based TypeId (NOT currentProject.typeId,
-    // which is the uname form `project-@local` — VibeWorkspace's chat target must match
-    // this exact string to attach to the same process).
-    const target = new TypeId(Project.type, projectId).toString();
-    const workdir = currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
-
-    void (async () => {
-      try {
-        const computeNode = await ComputeNode.getById('@local');
-        if (!computeNode) throw new Error('No local compute node');
-        const proc = await computeNode.createProcess(
-          {
-            workdir: workdir ?? undefined,
-            projectId,
-            targetVfsPath: target,
-            processType: ProcessKind.Chat,
-            loadFlowpadAssistant: true,
-            outputFormat: 'stream-json',
-          },
-          // Headless JSON-stream transport — the vibe chat is a side panel, not
-          // a terminal; PTY transport would pre-fill (not run) the first prompt.
-          { pty_mode: false },
-        );
-        // Embed the vibe agent (persona) before the first turn.
-        try {
-          const vibeRef = await resolveVibeAgentRef();
-          if (vibeRef) await proc.loadEmbeddedAgent(vibeRef);
-          else console.warn('[Vibe] vibe agent not indexed; continuing without persona');
-        } catch (e) {
-          console.warn('[Vibe] failed to embed vibe agent; continuing without persona', e);
-        }
-        // Open the workspace FIRST — a headless prompt() resolves only when the
-        // whole turn finishes, and the display must be mounted to catch the
-        // agent's live `flow show` (on_show). Then fire the message verbatim —
-        // it's a chat; the vibe persona routes building on its own.
-        void navigation.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
-        proc.prompt(message).catch((e) => console.error('[Vibe] prompt failed', e));
-      } catch (error) {
-        console.error('[HomeLanding] Failed to start vibe session:', error);
-        notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
-      }
-    })();
-  };
+  // Both home inputs seed the same headless vibe build session (create the
+  // chat process, embed the `vibe` persona, open the workspace, prompt —
+  // uploading any attachments to the process input dir first). Same shared
+  // path as flow-page's "New chat" starter.
+  const handleVibeSubmit = useStartVibeSession();
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -274,7 +194,8 @@ export function HomeLanding() {
                   placeholder={t`What would you like to build, ${firstName}?`}
                   value={draftPrompt}
                   onChange={setDraftPrompt}
-                  onSubmit={(msg) => void handleVibeSubmit(msg)}
+                  allowAttachments
+                  onSubmit={(msg, files) => void handleVibeSubmit(msg, files)}
                 />
               </div>
             </div>
@@ -340,7 +261,7 @@ export function HomeLanding() {
                 placeholder={t`What would you like to work on?`}
                 value={draftPrompt}
                 onChange={setDraftPrompt}
-                onSubmit={(msg) => void handleSessionSubmit(msg)}
+                onSubmit={(msg) => void handleVibeSubmit(msg)}
               />
             </div>
           </div>

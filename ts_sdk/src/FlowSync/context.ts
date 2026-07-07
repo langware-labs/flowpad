@@ -841,6 +841,14 @@ class DataContext extends EventEmitter {
     // Load compute node when project is set
     if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId && newTypeId) {
       void this.refreshProject();
+      // Open-recency stamp: `Project.last_active_at` (server clock, epoch-ms)
+      // via the generic `activate` action — the project pickers' primary sort
+      // key. This is the single choke point every "user is now in this
+      // project" path funnels through (loaders, pickers, quick-create,
+      // startup restore), and the equality guard above means it fires only on
+      // an actual project switch — never on same-project re-navigation.
+      // Fire-and-forget: context writes must stay fast.
+      void Project.activateById(newTypeId.id).catch(() => {});
     }
 
     // Emit CONTEXT_CHANGED event AFTER observable update so components get the updated values

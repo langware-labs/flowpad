@@ -3,6 +3,7 @@ import { useProject } from '@sdk/react/hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
+import { uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
 
@@ -34,13 +35,13 @@ async function resolveVibeAgentRef(): Promise<string | null> {
  * only when the whole turn finishes, and the display must be mounted to catch
  * the agent's live `flow show`), then prompt.
  */
-export function useStartVibeSession(): (message: string) => void {
+export function useStartVibeSession(): (message: string, files?: File[]) => void {
   const { project } = useProject();
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
 
   return useCallback(
-    (message: string) => {
+    (message: string, files?: File[]) => {
       if (!project?.id) {
         notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
         return;
@@ -78,7 +79,21 @@ export function useStartVibeSession(): (message: string) => void {
             console.warn('[Vibe] failed to embed vibe agent; continuing without persona', e);
           }
           void navigation.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
-          proc.prompt(message).catch((e) => console.error('[Vibe] prompt failed', e));
+          // Attachments (if any) must land in the process input dir BEFORE the
+          // first turn starts — the agent reads the referenced paths immediately.
+          // Upload failure degrades to a text-only prompt rather than losing
+          // the user's message after the workspace already opened.
+          let refLines: string[] = [];
+          if (files?.length) {
+            try {
+              refLines = await uploadFilesToProcessInputDir(proc.id, files);
+            } catch (e) {
+              console.error('[Vibe] attachment upload failed', e);
+              notify.error({ title: t`Attachment upload failed`, message: t`Starting the session without the attached files.` });
+            }
+          }
+          const fullMessage = refLines.length ? `${message}\n${refLines.join('\n')}` : message;
+          proc.prompt(fullMessage).catch((e) => console.error('[Vibe] prompt failed', e));
         } catch (error) {
           console.error('[Vibe] Failed to start vibe session:', error);
           notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });

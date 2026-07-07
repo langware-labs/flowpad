@@ -1,7 +1,10 @@
 import { ViewType } from '@sdk';
+import { isMarkdownDocumentPath } from '@src/lib/markdown-path';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
+
+export { isMarkdownDocumentPath } from '@src/lib/markdown-path';
 
 export type DisplayAnnotationKind =
   | 'website'
@@ -31,8 +34,6 @@ export interface DisplayShowTarget {
   port?: number | string;
 }
 
-const MARKDOWN_PATH_RE = /\.(?:md|markdown|mdx|mdo|md\.out)$/i;
-
 function slug(value: string): string {
   return value
     .toLowerCase()
@@ -41,9 +42,6 @@ function slug(value: string): string {
     .slice(0, 48);
 }
 
-export function isMarkdownDocumentPath(path?: string | null): boolean {
-  return Boolean(path && MARKDOWN_PATH_RE.test(path));
-}
 
 export function displayAnnotationContextForWebapp(
   host?: string | null,

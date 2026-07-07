@@ -7,6 +7,7 @@ import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
 import { ComputeNode } from './compute_node';
+import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 
 export interface ProjectMember {
@@ -115,6 +116,20 @@ export class Project extends APIEntity<Project> {
     return computeNode;
   }
 
+  /**
+   * `GitWorkdir` bound to this project's working tree, or null when the
+   * project has no working directory or compute node. Null does NOT mean
+   * "not a git repo" — that stays the async `isInit()` probe on the result.
+   *
+   * Mirror of the backend `Project.git_workdir()` (same null semantics).
+   */
+  async getGitWorkdir(): Promise<GitWorkdir | null> {
+    if (!this.fs_storage_mount_path) return null;
+    const computeNode = await this.getComputeNode();
+    if (!computeNode) return null;
+    return new GitWorkdir(this.fs_storage_mount_path, computeNode.id);
+  }
+
   /** Add a context folder to this project's `include_dirs` (auto-added to every
    *  agentic worker's --add-dir set). Idempotent; the backend canonicalizes the
    *  path and kicks a one-shot index so the folder's assets become discoverable. */
@@ -219,6 +234,17 @@ export class Project extends APIEntity<Project> {
     >(actionInfo);
 
     return response || { workspace: null, agent: null, compute_node: null };
+  }
+
+  /** POST /graph/project/<id>/activate — stamp `last_active_at` (server clock,
+   *  epoch-ms) via the generic `activate` action. Fired FIRE-AND-FORGET by
+   *  `dataContext.setContextEntityTypeId` whenever the current project
+   *  actually switches (the choke point every open-project path funnels
+   *  through); the project pickers sort by it (recency wins over session
+   *  `modified_at`). Static form mirrors `Tab.activateById`. */
+  static async activateById(id: string): Promise<void> {
+    const info = new ActionInfo('activate', Project.type, id, 'POST');
+    await dataManager.callAction<undefined, unknown>(info);
   }
 
   // ── Collaboration overlay (merged from CollaborationSpace) ───────────────

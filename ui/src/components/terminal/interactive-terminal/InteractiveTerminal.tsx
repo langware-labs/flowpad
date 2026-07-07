@@ -181,7 +181,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // pane is the ONLY view. Force it on regardless of the chat/terminal skin
   // override, and (in the render) skip mounting the xterm container entirely so
   // no PtySync attach is attempted for a process that has no shell.
-  const isHeadless = !embedded && !!process && process.pty_mode === false;
+  const isHeadless = !embedded && !!process && process.isHeadless;
   const showSimpleChat = isHeadless || (wantChat && !embedded && !!process);
   const canToggleView = !embedded && !!process;
   const [searchParams] = useSearchParams();
@@ -501,13 +501,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // the "Open Doc" affordance, mirroring ``plan_path`` / Open Plan. The list is
   // a persisted entity field, so it restores after a reload via ``useEntity``.
   const markdownDocs = process?.markdown_docs ?? EMPTY_DOCS;
-  // Open via the markdown asset editor (renders the .md), addressing the file by
-  // its absolute path through the canonical VFS grammar — the same opener the
-  // collaboration Docs sidebar uses (DockPointer.forAssetEditor('markdown', …)).
-  // navigation.openDocs() is wrong here: the DOCS view parses its arg as a
-  // typeId/docs-space id and crashes ("Invalid typeId") on a raw fs path.
+  // Open via the shared file dispatch (an .md routes to the markdown asset
+  // editor, rendered — the same chokepoint every "open this file" surface uses).
   const handleOpenMarkdown = useCallback(
-    (path: string) => navigation.openDock(DockPointer.forAssetEditor('markdown', path)),
+    (path: string) => navigation.openFile(path),
     [navigation],
   );
 
@@ -1554,7 +1551,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         <GitPanel
           computeNodeId={shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? ''}
           workdir={shellRef.current?.workdir ?? process?.workdir ?? ''}
-          sidecarShellId={sidecarShellId}
         />
       ),
       [SideTabId.Prompts]: (

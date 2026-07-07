@@ -8,8 +8,11 @@ export interface ProjectSelectorItem {
   name: string;
   /** Full filesystem path, shown as the row's sub-line. */
   path?: string;
-  /** ISO timestamp used for sorting and the "ago" label. */
+  /** ISO timestamp used for the "ago" label. */
   modifiedAt?: string | null;
+  /** Epoch-ms sort key, precomputed at the mapping boundary via
+   *  `projectRecencyMs` (UI-open recency wins, `modifiedAt` falls back). */
+  recencyMs?: number | null;
 }
 
 export interface ProjectSelectorProps {
@@ -49,7 +52,7 @@ function timeAgo(iso?: string | null): string | null {
 /**
  * Concise project picker: filter input on top, then a list of `name` rows with
  * the full `path` as a sub-line and an "X ago" label aligned to the right.
- * Sorted by `modifiedAt` desc. Renders no card chrome — the host controls the
+ * Sorted by `recencyMs` desc. Renders no card chrome — the host controls the
  * outer container (panel, modal, popover).
  */
 export function ProjectSelector({
@@ -72,11 +75,7 @@ export function ProjectSelector({
         if (!q) return true;
         return p.name.toLowerCase().includes(q) || (p.path ?? '').toLowerCase().includes(q);
       })
-      .sort((a, b) => {
-        const ta = a.modifiedAt ? new Date(a.modifiedAt).getTime() : 0;
-        const tb = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
-        return tb - ta;
-      });
+      .sort((a, b) => (b.recencyMs ?? 0) - (a.recencyMs ?? 0));
   }, [projects, filter, excludeIds]);
 
   return (

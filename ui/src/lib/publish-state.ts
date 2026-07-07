@@ -6,14 +6,14 @@
  * `lib/` (peer to scope-filter / color-palette), not in a components dir.
  */
 
+import type { PushKind } from '@sdk';
 import { ViewMode } from '@src/components/view-mode';
 
 export type PublishState = 'no-repo' | 'local-only' | 'aligned' | 'unpublished';
 
-/** Typed push outcome from the backend (`GitRepo._classify_push_error`). */
-export type PushKind =
-  | 'pushed' | 'nothing' | 'conflict' | 'permission'
-  | 'no_remote' | 'network' | 'no_repo' | 'generic';
+// Typed push outcome — the SDK's mirror of `PushKind` in git_repo.py.
+// Re-exported for existing importers of this module.
+export type { PushKind } from '@sdk';
 
 export interface PublishStatusInput {
   hasRepo: boolean;

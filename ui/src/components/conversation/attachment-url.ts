@@ -1,6 +1,7 @@
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 
 /**
  * True for a FILE attachment the user can download as a chip — i.e. any FILE
@@ -68,16 +69,9 @@ export function editorPathForLocalFile(localPath: string): string {
  * editor** (the assets `editor/markdown` surface — rich Milkdown rendering with
  * working internal-link navigation), every other file in the code editor.
  * Both address the bytes against the **@local** compute node via
- * {@link editorPathForLocalFile}; only the editor differs by extension.
- *
- * Previously every attachment went through `openEditor` → the code editor, so a
- * shared `.md` rendered as raw source with dead links.
+ * {@link editorPathForLocalFile}; the viewer dispatch is the shared
+ * `dockPointerForFile` chokepoint.
  */
 export function dockPointerForLocalFile(localPath: string): DockPointer {
-  const vfsPath = editorPathForLocalFile(localPath);
-  const ext = localPath.split('.').pop()?.toLowerCase();
-  if (ext === 'md' || ext === 'markdown') {
-    return DockPointer.forAssetEditor('markdown', vfsPath);
-  }
-  return DockPointer.forFile(vfsPath);
+  return dockPointerForFile(editorPathForLocalFile(localPath));
 }

@@ -34,6 +34,7 @@ class ProjectInfo:
     worker_types: list[str] = field(default_factory=list) # worker provenance keys
     is_new: bool = False                                  # entity was created by THIS call
     modified_at: str | None = None                        # entity updated_date, when known
+    last_active_at: int | None = None                     # entity last_active_at (epoch-ms), when known
 
 
 # ── GET vs FETCH ──────────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ def _entity_to_project_info(proj, cwd: str) -> ProjectInfo:
         record_project_id=Project.derive_id_for_path(cwd) or "",
         worker_types=[],
         modified_at=getattr(proj, "updated_date", None),
+        last_active_at=getattr(proj, "last_active_at", None),
     )
 
 
@@ -254,6 +256,7 @@ async def get_all_projects(
             info.project_id = proj.id
             info.record_project_id = Project.derive_id_for_path(cwd) or info.record_project_id
             info.modified_at = getattr(proj, "updated_date", None)
+            info.last_active_at = getattr(proj, "last_active_at", None)
             # Prefer entity name when set (user may have renamed)
             if getattr(proj, "name", None):
                 info.name = proj.name  # type: ignore[assignment]

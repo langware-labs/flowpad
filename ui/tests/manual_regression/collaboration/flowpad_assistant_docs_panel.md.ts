@@ -40,12 +40,26 @@ test.describe('Flowpad Assistant project space', () => {
   test('test 2: The seeded hello-flowpad doc is indexed and searchable', async () => {
     test.setTimeout(60_000);
     const rq = await apiContext();
-    // Index markdown once (the action under test), then poll the search
-    // (include_system to reach the seeded system doc) until the FTS commit
-    // settles and the seeded hello-flowpad doc surfaces — within the 15s cap.
-    // Re-issuing the (multi-thousand-file) index inside the poll made a single
-    // iteration exceed the cap; the index only needs to run once here.
-    await rq.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=markdown`);
+    // Index markdown once (the action under test), scoped to the
+    // @flowpad_assistant system project — the seeded hello-flowpad doc lives
+    // there. Scoping matters: an UNSCOPED `index?type=markdown` still WALKS
+    // every registered root (the whole home tree) to discover markdown before
+    // filtering, which on a real machine is a ~150s operation that blows this
+    // test's 60s cap. The claim under test is only that the SEEDED doc indexes
+    // and becomes searchable, so we index exactly that doc's project (one small
+    // system-project subtree, ~0.4s) — same action, correct scope. Then poll
+    // the search (include_system to reach the seeded system doc) until the FTS
+    // commit settles and hello-flowpad surfaces — within the 15s cap.
+    // force=true is required, not incidental: the per-file harness reset uses
+    // `desktop-db/clear`, which wipes the entity DB + FTS but leaves the on-disk
+    // `.hash` index sentinels intact. A plain index then hits skip-fresh (hash
+    // still matches) and re-creates the entity rows WITHOUT repopulating FTS, so
+    // a search finds nothing. force bypasses skip-fresh and re-writes FTS. (The
+    // production rebuild path clears the sentinels itself, so real users never
+    // hit this; it is specific to the clear-then-bare-index sequence here.)
+    await rq.post(
+      `${API}/api/v1/graph/compute_node/@local/fs-records/index?type=markdown&user=false&projects=@flowpad_assistant&force=true`,
+    );
     await expect(async () => {
       const res = await rq.get(`${API}/api/v1/search?record_type=markdown&q=hello&include_system=true`);
       expect(res.status()).toBe(200);
