@@ -1479,6 +1479,9 @@ def setup_desktop_filesystem() -> None:
         "preferences.notifications.sound_key": "supershort-ping",
         "preferences.advanced.scrollback_lines": 1000,
         "preferences.advanced.experimental_flags": {},
+        # Indexer engine: "python" (FSIndexer) | "rust" (external RSIndexer via
+        # FLOWPAD_RS_INDEXER_BIN; falls back to python when unavailable).
+        "preferences.advanced.indexer_backend": "python",
         # Onboarding gate: true (or missing) → seed onboarding assets on start, then
         # the seeder flips it to false. Flip back on to re-seed on the next start.
         _ONBOARDING_WELCOME_KEY: _ONBOARDING_WELCOME_DEFAULT,

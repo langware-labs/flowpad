@@ -1,7 +1,7 @@
 import { APIEntity, FSRef, apiClient, dataManager, systemTools } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 const stripLeadingSlash = (p: unknown): string => {
   if (typeof p !== 'string' || p.length === 0) return '';
@@ -57,6 +57,19 @@ export interface UseEntityByPathResult<T> {
  */
 const NOT_FOUND = Symbol('discover-not-found');
 type NotFound = typeof NOT_FOUND;
+
+/**
+ * Test-only: seed the session cache with a discover miss for (type, path) —
+ * the poisoned state a stale session accumulates when a file appears on disk
+ * after discover already 404'd. Keeps the sentinel + query-key shape private.
+ */
+export function __seedDiscoverMissForTests(
+  queryClient: import('@tanstack/react-query').QueryClient,
+  type: string,
+  path: string,
+): void {
+  queryClient.setQueryData([`${type}-discover`, type, path], NOT_FOUND);
+}
 
 /**
  * Resolve the first-class entity whose `asset_ref` matches `fsRef`.
@@ -207,6 +220,25 @@ export function useEntityByPath<T extends APIEntity<T>>(
     void queryClient.invalidateQueries({ queryKey: bulkKey });
     void queryClient.invalidateQueries({ queryKey: discoverKey });
   }, [queryClient, bulkKey, discoverKey]);
+
+  // "Load on open" semantics: opening an asset must always (re-)attempt the
+  // backend discover — the endpoint that scans the file, creates the doc
+  // record, and indexes it — when the doc isn't already resolved. A NOT_FOUND
+  // cached earlier in the session (``staleTime: Infinity``) would otherwise
+  // permanently mask a file that has since appeared on disk (e.g. written by
+  // an agent — no WS entity op ever fires for it, so the self-heal below
+  // never triggers). Dropping the cached miss when a consumer mounts for this
+  // path makes the discover re-run exactly once per open; a still-missing
+  // file just re-caches NOT_FOUND for the lifetime of that mount (no loop).
+  useEffect(() => {
+    if (!enabled || !autoDiscover) return;
+    if (queryClient.getQueryData(discoverKey) === NOT_FOUND) {
+      queryClient.removeQueries({ queryKey: discoverKey });
+    }
+    // Run once per path-key mount — NOT on data changes, so a fresh NOT_FOUND
+    // produced by this very re-run is kept, not dropped again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, autoDiscover, queryClient, discoverKey]);
 
   // Self-heal when a matching entity row arrives over the WS after we
   // already settled on ``missing_asset``. The discover query caches
