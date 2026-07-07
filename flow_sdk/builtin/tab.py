@@ -48,15 +48,23 @@ _UNSET: object = object()
 
 
 def _pointer_to_hash(pointer: str) -> str:
-    """Extract the canonical 'viewType|sub' identity string from either format:
-    - new: JSON {"viewType": ..., "pointer": ...}
+    """Extract the canonical identity string from either format:
+    - new: JSON {"viewType": ..., "pointer": ..., ["tabHash": ...]}
     - old: legacy "viewType|sub" string (backward compat during migration)
 
-    This ensures UUID5 remains stable across the format transition.
+    A scope-keyed dock (assets/explorer) normalizes its sub-pointer to '' and
+    carries its real identity in the frontend-computed ``tabHash`` field
+    ("assets|project:<id>") — without honoring it here, EVERY scope of such a
+    view derives the SAME uuid5 and each scope switch steals the one row. Prefer
+    ``tabHash`` when present; pointers without it hash exactly as before, so all
+    existing ids stay stable.
     """
     if pointer.startswith('{'):
         try:
             data = _json.loads(pointer)
+            tab_hash = data.get('tabHash')
+            if tab_hash:
+                return str(tab_hash)
             vt = data.get('viewType', '')
             sub = data.get('pointer', '')
             return f"{vt}|{sub}"

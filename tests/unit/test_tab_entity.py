@@ -617,3 +617,74 @@ async def test_rename_reflects_onto_target_generically() -> None:
     assert tab.name == "my pinned name"  # Tab.name is the source of truth
     reloaded = await _TabTargetProbe.get_one({"id": probe.id})
     assert reloaded is not None and reloaded.name == "my pinned name"
+
+
+# ── Scope-keyed identity (assets/explorer): tabHash drives the uuid5 ─────────
+#
+# A scope-keyed dock normalizes its sub-pointer to '' and carries its identity
+# in the frontend-computed ``tabHash`` field ("explorer|project:<id>"). The id
+# derivation must honor it — otherwise EVERY scope of the view hashes to the
+# same uuid5 ("tab:explorer|") and each scope switch steals the single row
+# (the "one Tab row per scope" contract in DockPointer.toJSON breaks).
+
+import json as _test_json
+
+
+def _scoped_pointer(view: str, project_id: str) -> str:
+    """The exact JSON shape DockPointer.toJSON emits for a project-scoped dock."""
+    return _test_json.dumps(
+        {
+            "viewType": view,
+            "pointer": "",
+            "options": {"scope-mode": "project", "scope-activeProjectId": project_id},
+            "tabHash": f"{view}|project:{project_id}",
+        },
+        separators=(",", ":"),
+    )
+
+
+def test_tab_id_prefers_tab_hash_and_stays_stable_without_it() -> None:
+    pa, pb = str(uuid.uuid4()), str(uuid.uuid4())
+    a = tab_id_for(_scoped_pointer("explorer", pa))
+    b = tab_id_for(_scoped_pointer("explorer", pb))
+    assert a != b, "different scopes must mint different Tab ids"
+    assert a == tab_id_for(f"explorer|project:{pa}"), "id is uuid5 over the tabHash"
+
+    # Stability regression: a pointer WITHOUT tabHash (shells, conversations,
+    # projects…) must hash byte-identically to the pre-change derivation.
+    plain = _test_json.dumps({"viewType": "shell", "pointer": "agentic_process-x"})
+    assert tab_id_for(plain) == tab_id_for("shell|agentic_process-x")
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_scoped_rows_coexist_per_project() -> None:
+    pa, pb = str(uuid.uuid4()), str(uuid.uuid4())
+    a = await ensure_tab(_scoped_pointer("explorer", pa), project_id=pa)
+    b = await ensure_tab(_scoped_pointer("explorer", pb), project_id=pb)
+    assert a.id != b.id, "each scope owns its own row"
+    assert a.visible and b.visible, "opening scope B must not hide/steal scope A's row"
+    assert (a.project_id, b.project_id) == (pa, pb)
+
+    again = await ensure_tab(_scoped_pointer("explorer", pa), project_id=pa)
+    assert again.id == a.id, "reopen of a scope reuses its row"
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_heals_legacy_scope_shared_row() -> None:
+    # A row minted under the old derivation carries id=uuid5("tab:<view>|") even
+    # though its stored pointer already includes the scoped tabHash (the frontend
+    # always persisted it). On next open the same pointer string is re-emitted,
+    # so the same-pointer stray-heal must hide the legacy-id row and mint the
+    # canonical scope-keyed one.
+    pa = str(uuid.uuid4())
+    pointer = _scoped_pointer("assets", pa)
+    legacy = Tab(id=tab_id_for('{"viewType":"assets","pointer":""}'), pointer=pointer, visible=True)
+    await legacy.save()
+
+    tab = await ensure_tab(pointer, project_id=pa)
+    assert tab.id == tab_id_for(pointer) != legacy.id
+
+    visible = [t for t in await Tab.get_all({"pointer": pointer}) if t.visible]
+    assert [t.id for t in visible] == [tab.id], "one visible row: the scope-keyed one"
+    hidden = await Tab.get_one({"id": legacy.id})
+    assert hidden is not None and hidden.visible is False
