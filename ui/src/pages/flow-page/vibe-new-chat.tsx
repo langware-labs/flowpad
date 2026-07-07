@@ -1,4 +1,6 @@
 import { SessionInput } from '@src/components/session-input/session-input';
+import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
+import { FolderOpen } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
@@ -15,6 +17,7 @@ export function VibeNewChat() {
   const { t } = useLingui();
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
 
   return (
     <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4">
@@ -34,10 +37,24 @@ export function VibeNewChat() {
             placeholder={t`What would you like to build?`}
             value={draft}
             onChange={setDraft}
-            onSubmit={(msg) => startVibe(msg)}
+            allowAttachments
+            onSubmit={(msg, files) => startVibe(msg, files)}
           />
         </div>
+        <button
+          type="button"
+          onClick={() => setIsProjectModalOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          data-testid="vibe-open-project-folder"
+        >
+          <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+          <Trans>Open project folder</Trans>
+        </button>
       </div>
+      <OpenProjectComponent
+        open={isProjectModalOpen}
+        onOpenChange={setIsProjectModalOpen}
+      />
     </div>
   );
 }

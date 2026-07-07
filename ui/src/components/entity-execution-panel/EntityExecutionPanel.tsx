@@ -1,10 +1,7 @@
 import {
-  ActionInfo,
   AgenticProcess,
   ComputeNode,
-  dataManager,
   FlowElementTypes,
-  fsStore,
   isBusy,
   ProcessKind,
   type StatusBearingProcess,
@@ -12,6 +9,7 @@ import {
   type FlowData,
 } from '@sdk';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
+import { uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useEntity } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
@@ -284,13 +282,7 @@ export function EntityExecutionPanel({
       if (!procId || !incoming.length) return [];
       const files = await annotateImageFiles(incoming);
       if (!files.length) return [];
-      const dir = await dataManager.callAction<null, { abs_path: string; compute_node_id: string }>(
-        new ActionInfo('input-dir', 'agentic_process', procId, 'GET'),
-      );
-      if (!dir?.abs_path || !dir?.compute_node_id) return [];
-      const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, files);
-      await Promise.all(uploads.map((u) => u.waitForCompletion()));
-      return files.map((file) => `File ${file.name} is available here: ${dir.abs_path}/${file.name}`);
+      return uploadFilesToProcessInputDir(procId, files);
     },
     [activeProcess],
   );
