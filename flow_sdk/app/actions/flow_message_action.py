@@ -3045,6 +3045,11 @@ async def conversation_message_sync() -> ApiResponse:
         local_conv = await Conversation.get_one({"id": conv_id})
         if local_conv is None:
             return ApiFailResponse(message="conversation not found", status_code=404)
+        # A local-only conversation (remote=False) has no hub counterpart —
+        # asking the hub is guaranteed to fail (and its 401 surfaces as a
+        # spurious "Cloud sign-in expired" toast). Nothing to catch up.
+        if not local_conv.remote:
+            return ApiSuccessResponse(data={"conversation_id": conv_id, "skipped": "local-only"})
         await _fetch_conversation_messages(conv_id, request_info.someone_typeid)
         # Recursive-share catch-up: pull shared-context children (e.g. the
         # shared markdown) + their comments so a recipient sees the doc and
