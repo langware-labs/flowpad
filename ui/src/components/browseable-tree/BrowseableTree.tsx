@@ -5,6 +5,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
 import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
+import { hasBrowseableDrag, readBrowseableDrag, writeBrowseableDrag } from './drag';
 import { subscribeRefresh } from './refresh-store';
 import { TreeSelectionContext, type TreeSelectionApi } from './useTreeSelection';
 import { useOpenTabHashes } from '@src/tabs/useTabs';
@@ -304,6 +305,11 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
     [node, tree],
   );
 
+  // Intra-tree drags carry the full payload in lifted state → full canDrop
+  // check during dragover. Foreign drags (started in another Browseable
+  // surface, e.g. the desktop grid) only expose the MIME type during dragover
+  // (HTML5 hides the body pre-drop) — accept optimistically on MIME presence
+  // and run the full canDrop check at drop time via readBrowseableDrag.
   const canAcceptDrop = !!(dragData && node.onDrop && (!node.canDrop || node.canDrop(dragData)));
   // Space reserved (on hover/focus only) so the label clears the
   // absolutely-positioned compact toolbar when it appears
@@ -318,12 +324,10 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
     (e: React.DragEvent) => {
       if (!node.dragData) return;
       e.stopPropagation();
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('application/x-flowpad-browseable', JSON.stringify(node.dragData));
-      e.dataTransfer.setData('text/plain', node.label);
+      writeBrowseableDrag(e, node.dragData);
       onDragStart(node.dragData);
     },
-    [node.dragData, node.label, onDragStart],
+    [node.dragData, onDragStart],
   );
 
   const handleDragEnd = useCallback(() => {
@@ -333,13 +337,14 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
 
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
-      if (!canAcceptDrop) return;
+      const foreign = !dragData && !!node.onDrop && hasBrowseableDrag(e);
+      if (!canAcceptDrop && !foreign) return;
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
       setIsDropTarget(true);
     },
-    [canAcceptDrop],
+    [canAcceptDrop, dragData, node.onDrop],
   );
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
@@ -349,19 +354,25 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
-      if (!canAcceptDrop || !dragData || !node.onDrop) return;
+      // Payload: lifted state for intra-tree drags, MIME body for foreign ones.
+      const payload = dragData ?? readBrowseableDrag(e);
+      if (!payload || !node.onDrop) return;
+      if (node.canDrop && !node.canDrop(payload)) {
+        setIsDropTarget(false);
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       setIsDropTarget(false);
       setIsDropping(true);
       try {
-        await node.onDrop(dragData);
+        await node.onDrop(payload);
       } finally {
         setIsDropping(false);
         onDragEnd();
       }
     },
-    [canAcceptDrop, dragData, node, onDragEnd],
+    [dragData, node, onDragEnd],
   );
 
   return (
