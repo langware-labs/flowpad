@@ -685,6 +685,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Headless transport (`pty_mode === false`): the chat streams over
+   * flowDataStream and the process legitimately has NO shell/xterm — a null
+   * `shell_id` is its normal state, not a failure. The single place views
+   * key "is a shell-less process renderable?" off, so the transport rule
+   * can't drift between the panel gate, InteractiveTerminal, and the plan-
+   * mode toggle.
+   */
+  get isHeadless(): boolean {
+    return this.pty_mode === false;
+  }
+
+  /**
    * Live interactive terminal — `/dock/shell/agentic_process-<id>`.
    * Use this when the user wants to attach to (or launch) the running PTY.
    */
