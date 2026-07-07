@@ -501,13 +501,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // the "Open Doc" affordance, mirroring ``plan_path`` / Open Plan. The list is
   // a persisted entity field, so it restores after a reload via ``useEntity``.
   const markdownDocs = process?.markdown_docs ?? EMPTY_DOCS;
-  // Open via the markdown asset editor (renders the .md), addressing the file by
-  // its absolute path through the canonical VFS grammar — the same opener the
-  // collaboration Docs sidebar uses (DockPointer.forAssetEditor('markdown', …)).
-  // navigation.openDocs() is wrong here: the DOCS view parses its arg as a
-  // typeId/docs-space id and crashes ("Invalid typeId") on a raw fs path.
+  // Open via the shared file dispatch (an .md routes to the markdown asset
+  // editor, rendered — the same chokepoint every "open this file" surface uses).
   const handleOpenMarkdown = useCallback(
-    (path: string) => navigation.openDock(DockPointer.forAssetEditor('markdown', path)),
+    (path: string) => navigation.openFile(path),
     [navigation],
   );
 

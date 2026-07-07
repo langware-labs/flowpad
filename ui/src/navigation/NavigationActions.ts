@@ -16,6 +16,7 @@ import {
 import { NavigateFunction } from 'react-router';
 import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer, HIGHLIGHT_PARAM } from './DockPointer';
+import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
@@ -380,22 +381,13 @@ export class NavigationActions {
   }
 
   /**
-   * Open a file with the appropriate viewer based on file extension
-   * - .md files → docs viewer
-   * - Code files → editor
-   * - Add more as needed
+   * Open a file with the viewer appropriate for its type: markdown documents
+   * in the assets markdown editor (share / chat / rendered view), everything
+   * else in the code editor. Thin wrapper over `dockPointerForFile` — the one
+   * pointer-level dispatch every "open this file" surface shares.
    */
   openFile(path: string, options?: FileOptions): void {
-    const extension = path.split('.').pop()?.toLowerCase();
-
-    // Determine viewer based on file extension
-    if (extension === 'md' || extension === 'markdown') {
-      // Open in docs viewer
-      this.openDocs(path);
-    } else {
-      // Default to code editor for all other files
-      this.openEditor(path, options);
-    }
+    this.openDock(dockPointerForFile(path, options));
   }
 
   /** Navigate to the default shell view (no specific session) */
@@ -558,15 +550,6 @@ export class NavigationActions {
       if (!options?.skipNavigate) this.openShellView();
       return null;
     }
-  }
-
-  /**
-   * Open docs viewer with optional file path
-   * @param filePath - Optional markdown file path, omit for docs list
-   */
-  openDocs(filePath?: string): void {
-    const pointer = DockPointer.forDocs(filePath || '');
-    this.openDock(pointer);
   }
 
   /**

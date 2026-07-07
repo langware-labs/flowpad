@@ -163,18 +163,16 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
   return artifacts;
 }
 
-/** Open an analysis report in the editor. */
+/** Open an analysis report in its type-appropriate viewer (reports are .md). */
 export function openAnalysisReport(analysisPath: string, navigation: NavigationActions): void {
   const computeNodeTypeId = dataContext.computeNode?.typeId;
-  if (computeNodeTypeId) {
-    const vfsPath = VFSPath.fromMachinePath(analysisPath, computeNodeTypeId);
-    navigation.openDock(DockPointer.forFile(vfsPath.absVfsPath));
-  } else {
-    navigation.openDock(DockPointer.forFile(analysisPath));
-  }
+  const path = computeNodeTypeId
+    ? VFSPath.fromMachinePath(analysisPath, computeNodeTypeId).absVfsPath
+    : analysisPath;
+  navigation.openFile(path);
 }
 
-/** Open any file artifact in the editor. */
+/** Open any file artifact in its type-appropriate viewer. */
 export function openArtifact(artifactPath: string, navigation: NavigationActions): void {
   openAnalysisReport(artifactPath, navigation); // Reuse the same logic
 }
