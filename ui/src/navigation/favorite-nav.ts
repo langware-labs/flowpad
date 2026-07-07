@@ -1,7 +1,8 @@
 import type { Bookmark } from '@sdk';
 import type { SearchResult } from '@src/hooks/use-record-search';
+import type { DockPointer } from './DockPointer';
 import type { NavigationActions } from './NavigationActions';
-import { isResultNavigable, navigateToResult } from './record-type-nav';
+import { isResultNavigable, navigateToResult, RECORD_TYPE_NAV } from './record-type-nav';
 
 function asSearchResult(bookmark: Bookmark): SearchResult | null {
   const entityType = bookmark.data?.entity_type as string | undefined;
@@ -20,6 +21,20 @@ function asSearchResult(bookmark: Bookmark): SearchResult | null {
     asset_ref: (nav.asset_ref as string | undefined) ?? (nav.source_path as string | undefined) ?? '',
     session_id: nav.session_id as string | undefined,
   };
+}
+
+/**
+ * Pure DockPointer for a favorite's target, when its record type navigates
+ * via a `dockPointer` arm (URL-first). Returns null for `primaryAction`
+ * types (session-likes needing async resolution) — callers fall back to the
+ * imperative `navigateToFavorite`.
+ */
+export function pointerForFavorite(bookmark: Bookmark): DockPointer | null {
+  const sr = asSearchResult(bookmark);
+  if (!sr) return null;
+  const nav = RECORD_TYPE_NAV[sr.record_type];
+  if (!nav?.dockPointer) return null;
+  return nav.dockPointer(sr) ?? null;
 }
 
 export function canNavigateFavorite(bookmark: Bookmark): boolean {
