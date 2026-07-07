@@ -572,6 +572,25 @@ class FSIndexer:
                 )
                 existing_db_ids.clear()
 
+        # Deepest-project-wins association: snapshot (canonical_mount, id) for
+        # every project once per run. With NESTED project mounts (an umbrella
+        # workspace folder that is itself a Project), the outer root's walk
+        # reaches the inner project's files too — chain-inherited project_id
+        # would stamp them with the umbrella. The snapshot lets the stamp site
+        # re-associate each record to the innermost mount containing its path.
+        from flow_sdk.fs_store.indexer.roots import (  # noqa: PLC0415
+            deepest_project_id_for_path,
+            has_nested_project_mounts,
+            load_project_mounts,
+        )
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+        project_mounts = await load_project_mounts()
+        # No nesting anywhere → every walk root's own project is already the
+        # deepest containing mount, so drop the snapshot and let the stamp
+        # site stay a straight chain-inherit (no per-record realpath).
+        if not has_nested_project_mounts(project_mounts):
+            project_mounts = ()
+
         async def _flush_fts() -> None:
             """Flush the accumulated FTS batch (if any) and reset it."""
             if not fts_batch:
@@ -696,6 +715,19 @@ class FSIndexer:
                         # Loop-invariant — read once, stamp on each record.
                         ref_scope = ref.scope
                         ref_pid = ref.project_id
+                        if ref_pid is not None and project_mounts:
+                            # Association rule: deepest project wins. The walk
+                            # root's project may be an umbrella containing a
+                            # nested project — re-associate to the innermost
+                            # mount that contains this record's path.
+                            try:
+                                ref_pid = deepest_project_id_for_path(
+                                    canonical_posix_path(str(ref._path)),
+                                    project_mounts,
+                                    default=ref_pid,
+                                )
+                            except OSError:
+                                pass
                         for rec in records:
                             if ref_scope is not None:
                                 object.__setattr__(rec, "scope", ref_scope)

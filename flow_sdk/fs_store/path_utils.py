@@ -22,3 +22,17 @@ def canonical_posix_path(p: Path | str) -> str:
       pitfalls; no-op for ASCII paths.
     """
     return unicodedata.normalize("NFC", Path(p).resolve().as_posix())
+
+
+def is_path_under(path: str, root: str) -> bool:
+    """Segment-safe containment: ``path`` IS ``root`` or lives inside it.
+
+    Pure string check over already-canonical posix paths (see
+    ``canonical_posix_path``) — ``/a/bc`` is NOT under ``/a/b``. The single
+    containment predicate shared by the nested-project walk dedup
+    (``real_project_cwd_fn._dedup_nested``) and the deepest-project-wins
+    association (``deepest_project_id_for_path``) so the two can never drift.
+    """
+    r = root.rstrip("/")
+    p = path.rstrip("/")
+    return p == r or p.startswith(r + "/")

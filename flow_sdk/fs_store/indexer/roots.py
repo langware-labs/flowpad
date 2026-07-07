@@ -135,6 +135,71 @@ def resolve_project_id_for_cwd(cwd: str | None) -> str | None:
     return Project.derive_id_for_path(canonical)
 
 
+async def load_project_mounts() -> tuple[tuple[str, str], ...]:
+    """Snapshot every Project's ``(canonical_mount, id)``, deepest mount first.
+
+    The lookup table for the deepest-project-wins association rule: a file
+    inside several nested project mounts belongs to the innermost one. Sorted
+    by mount length descending so the first containment hit IS the deepest.
+    Reads through the entity driver (the same DB the indexer writes with — a
+    raw sqlite side-read here would split-brain under the test harness).
+    Returns an empty tuple when there are no projects / any DB error.
+    """
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    try:
+        projects = await Project.get_all()
+    except Exception:
+        return ()
+    mounts: list[tuple[str, str]] = []
+    for proj in projects or []:
+        mount = proj.fs_storage_mount_path or getattr(proj, "cwd", None)
+        if not mount or not proj.id:
+            continue
+        try:
+            mounts.append((canonical_posix_path(str(mount)).rstrip("/"), str(proj.id)))
+        except OSError:
+            continue
+    mounts.sort(key=lambda m: len(m[0]), reverse=True)
+    return tuple(mounts)
+
+
+def has_nested_project_mounts(mounts: tuple[tuple[str, str], ...]) -> bool:
+    """True when any project mount lives inside another.
+
+    The gate for the deepest-wins re-association: with no nesting, a walk
+    root's own project is always the deepest containing mount, so the stamp
+    site can skip per-record canonicalization entirely.
+    """
+    from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
+
+    return any(
+        inner is not outer and is_path_under(inner[0], outer[0])
+        for inner in mounts
+        for outer in mounts
+    )
+
+
+def deepest_project_id_for_path(
+    path: str,
+    mounts: tuple[tuple[str, str], ...],
+    default: str | None = None,
+) -> str | None:
+    """Association rule: the DEEPEST project whose mount contains ``path`` owns it.
+
+    ``mounts`` is ``load_project_mounts()`` output (canonical, deepest-first);
+    ``path`` must be canonical posix too. Falls back to ``default`` (typically
+    the walk root's project_id) when no mount contains the path.
+    """
+    from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
+
+    for mount, pid in mounts:
+        if is_path_under(path, mount):
+            return pid
+    return default
+
+
 def _lookup_project_id_by_cwd(canonical: str) -> str | None:
     """Sync sqlite scan for the real Project entity id at ``canonical`` posix cwd.
 

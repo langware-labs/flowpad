@@ -2190,7 +2190,24 @@ async def discover_record_by_path(record_type: str, path: str):
                 recs = _from_disk(one_ref)
                 if _asyncio.iscoroutine(recs):
                     recs = await recs
+                # Association rule (deepest project wins) — same stamp the
+                # bulk-walk loop applies. Without it a discover-materialized
+                # record lands project-less (the lone FSRef has no parent
+                # chain) until the next full walk.
+                from flow_sdk.fs_store.indexer.roots import (  # noqa: PLC0415
+                    deepest_project_id_for_path,
+                    load_project_mounts,
+                )
+                from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+                try:
+                    owner_pid = deepest_project_id_for_path(
+                        canonical_posix_path(expanded), await load_project_mounts()
+                    )
+                except OSError:
+                    owner_pid = None
                 for rec in (recs or []):
+                    if owner_pid:
+                        object.__setattr__(rec, "project_id", owner_pid)
                     ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
                     ref_path = getattr(ref, "path", None) if ref is not None else None
                     if ref_path is None:
