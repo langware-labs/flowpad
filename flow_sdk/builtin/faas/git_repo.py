@@ -10,7 +10,7 @@ import logging
 import re
 import shlex
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -34,6 +34,9 @@ class _CamelModel(BaseModel):
 class GitStatusFile(_CamelModel):
     status: str
     path: str
+    # True when the change is in the index (porcelain X column) — the UI's
+    # stage/unstage toggle reads this instead of inferring from the status char.
+    staged: bool = False
     insertions: int | None = None
     deletions: int | None = None
 
@@ -87,6 +90,32 @@ class GitRevisionList(_CamelModel):
 class GitRestoreResult(_CamelModel):
     ok: bool
     message: str
+
+
+# Typed publish outcome — mirrored by ``PushKind`` in ts_sdk git-workdir.ts.
+PushKind = Literal[
+    "pushed", "nothing", "conflict", "permission",
+    "no_remote", "network", "no_repo", "generic",
+]
+
+
+class GitPushResult(_CamelModel):
+    ok: bool
+    conflict: bool
+    nothing: bool
+    kind: PushKind
+    branch: str | None
+    message: str
+
+
+# Config a fresh Flowpad repo gets at init time. Single source shared by
+# GitRepo.init() and ComputeSourceControl._init_git_repository so the two init
+# surfaces can never drift.
+GIT_INIT_CONFIG: tuple[tuple[str, str], ...] = (
+    ("user.name", "Flowpad"),
+    ("user.email", "git@example.com"),
+    ("push.autoSetupRemote", "true"),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +181,23 @@ class GitRepo:
         """Return True if the repo has at least one commit (HEAD exists)."""
         _, rc = await self._run_git("rev-parse", "HEAD")
         return rc == 0
+
+    async def init(self) -> GitRestoreResult:
+        """Initialize a git repository in work_dir (idempotent).
+
+        Mirrors ``ComputeSourceControl._init_git_repository`` but workdir-scoped:
+        ``git init --initial-branch=main`` plus the identity/push config a fresh
+        Flowpad repo needs. Config failures are non-fatal (same as the source-
+        control path) — the repo is usable either way.
+        """
+        if await self.is_init():
+            return GitRestoreResult(ok=True, message="Already a git repository")
+        _, err, rc = await self._run_git_io("init", "--initial-branch=main")
+        if rc != 0:
+            return GitRestoreResult(ok=False, message=(err or "git init failed").strip())
+        for key, value in GIT_INIT_CONFIG:
+            await self._run_git("config", key, shlex.quote(value))
+        return GitRestoreResult(ok=True, message="Initialized git repository")
 
     async def get_branch(self) -> str | None:
         """Return the current branch name, or None if detached / not a repo."""
@@ -277,6 +323,7 @@ class GitRepo:
             files.append(GitStatusFile(
                 status=status,
                 path=display_path,
+                staged=x not in (" ", "?"),
                 insertions=ins,
                 deletions=dels,
             ))
@@ -483,7 +530,7 @@ class GitRepo:
     # for the existing Resolve-agent path; the rest let the UI give state-specific,
     # plain-language guidance instead of one generic "Push failed".
     @staticmethod
-    def _classify_push_error(stderr: str) -> str:
+    def _classify_push_error(stderr: str) -> PushKind:
         """Map raw git/transport stderr to a publish failure kind.
 
         One of: ``permission | no_remote | network | conflict | generic``.
@@ -510,13 +557,14 @@ class GitRepo:
 
     @staticmethod
     def _push_result(branch: str | None, message: str, *, ok: bool = False,
-                     conflict: bool = False, nothing: bool = False, kind: str | None = None) -> dict:
-        """Build the dict the publish UI consumes.
+                     conflict: bool = False, nothing: bool = False,
+                     kind: PushKind | None = None) -> GitPushResult:
+        """Build the ``GitPushResult`` the publish UI consumes.
 
         ``kind`` is the typed outcome (``pushed|nothing|conflict|permission|
-        no_remote|network|generic``). When omitted it's derived from the flags so
-        existing call sites stay correct; the back-compat ``ok/conflict/nothing``
-        keys are kept for the footer button.
+        no_remote|network|no_repo|generic``). When omitted it's derived from the
+        flags so existing call sites stay correct; the back-compat
+        ``ok/conflict/nothing`` flags are kept for the footer button.
         """
         if kind is None:
             if nothing:
@@ -527,15 +575,14 @@ class GitRepo:
                 kind = "pushed"
             else:
                 kind = "generic"
-        return {"ok": ok, "conflict": conflict, "nothing": nothing, "kind": kind, "branch": branch, "message": message}
+        return GitPushResult(ok=ok, conflict=conflict, nothing=nothing, kind=kind,
+                             branch=branch, message=message)
 
-    async def push(self) -> dict:
+    async def push(self) -> GitPushResult:
         """Stage everything, auto-commit, sync with remote, and push.
 
-        Returns a camelCase-ish dict the footer button consumes::
-
-            { ok: bool, conflict: bool, nothing: bool,
-              branch: str | None, message: str }
+        Returns a ``GitPushResult`` (serialized camelCase for the footer button):
+        ``{ ok, conflict, nothing, kind, branch, message }``.
 
         ``conflict=True`` means a rebase conflict is in progress (left in place
         so the resolve agent can finish it) — never auto-aborted here.
@@ -626,7 +673,8 @@ class GitRepo:
             is-linked-worktree  → is_linked_worktree()   → {isLinkedWorktree}
             has-commit          → has_commit()           → {hasCommit}
             diff                → get_file_diff()        → {diff}  (requires ?file=&status=)
-            push  (POST)        → push()                 → {ok, conflict, nothing, branch, message}
+            push  (POST)        → push()                 → GitPushResult {ok, conflict, nothing, kind, branch, message}
+            init  (POST)        → init()                 → {ok, message}  (idempotent)
             discard-file (POST) → discard_file()         → {ok, message}  (requires ?file=&status=)
             stage-file   (POST) → stage_file()           → {ok, message}  (requires ?file=)
             unstage-file (POST) → unstage_file()         → {ok, message}  (requires ?file=)
@@ -638,7 +686,11 @@ class GitRepo:
         if sub == "push":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/push requires POST", status_code=405)
-            return ApiSuccessResponse(data=await self.push())
+            return ApiSuccessResponse(data=(await self.push()).model_dump(by_alias=True))
+        if sub == "init":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/init requires POST", status_code=405)
+            return ApiSuccessResponse(data=(await self.init()).model_dump(by_alias=True))
         if sub == "status":
             return ApiSuccessResponse(data=(await self.get_status()).model_dump(by_alias=True))
         if sub == "branch":

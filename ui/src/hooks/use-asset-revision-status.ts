@@ -1,23 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionInfo, dataManager } from '@sdk';
-
-export interface AssetRevision {
-  hash: string;
-  version: number | null;
-  message: string;
-  date: string;
-  author: string;
-}
-
-interface GitRevisionList {
-  revisions: AssetRevision[];
-  version: number | null;
-  unpushed: number;
-}
+import { GitWorkdir, type GitRevision, type GitRevisionList } from '@sdk';
 
 export interface UseAssetRevisionStatusResult {
   /** Past revisions of this file, newest first. */
-  revisions: AssetRevision[];
+  revisions: GitRevision[];
   /** Current (HEAD) version of this asset, or null. */
   version: number | null;
   /** Local commits to this file not yet pushed (the header "pending" count). */
@@ -50,11 +36,8 @@ export function useAssetRevisionStatus(
       setData(empty);
       return;
     }
-    const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
-    action.subpath = 'file-revisions';
-    action.queryParameters = { workdir, file };
     try {
-      const result = await dataManager.callAction<null, GitRevisionList>(action);
+      const result: GitRevisionList = await new GitWorkdir(workdir, computeNodeId).fileRevisions(file);
       if (!mountedRef.current) return;
       setData({
         revisions: result?.revisions ?? [],

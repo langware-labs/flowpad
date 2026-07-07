@@ -382,6 +382,21 @@ class Project(Entity):
         from flow_sdk.fs_store.fs_ref import FSRef
         return FSRef(Path(self.fs_storage_mount_path))
 
+    async def git_workdir(self):
+        """``GitRepo`` bound to this project's working tree, or ``None`` when the
+        project has no working directory or compute node. ``None`` does NOT mean
+        "not a git repo" — that stays the async ``is_init()`` probe on the result.
+
+        Mirrored by ``Project.getGitWorkdir()`` in ts_sdk.
+        """
+        if not self.fs_storage_mount_path:
+            return None
+        compute_node = await self.get_compute_node()
+        if compute_node is None:
+            return None
+        from flow_sdk.builtin.faas.git_repo import GitRepo
+        return GitRepo(self.fs_storage_mount_path, compute_node)
+
     async def get_compute_node(self):
         from flow_sdk.config import default_service_config
 

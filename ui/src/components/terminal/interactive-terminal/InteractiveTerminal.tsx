@@ -1554,7 +1554,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         <GitPanel
           computeNodeId={shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? ''}
           workdir={shellRef.current?.workdir ?? process?.workdir ?? ''}
-          sidecarShellId={sidecarShellId}
         />
       ),
       [SideTabId.Prompts]: (

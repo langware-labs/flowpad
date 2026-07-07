@@ -1,4 +1,4 @@
-import { ActionInfo, dataManager } from '@sdk';
+import { GitWorkdir, type GitFileDiff } from '@sdk';
 import { DiffContent } from '@src/components/code-editor/DiffContent';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -11,10 +11,6 @@ interface GitFileDiffModalProps {
   status?: string;
   open: boolean;
   onClose: () => void;
-}
-
-interface GitFileDiff {
-  diff: string;
 }
 
 export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
@@ -35,10 +31,8 @@ export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
     setLoading(true);
     setDiffData(null);
     setError(null);
-    const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
-    action.subpath = 'diff';
-    action.queryParameters = { workdir, file: filepath, status };
-    dataManager.callAction<null, GitFileDiff>(action)
+    new GitWorkdir(workdir, computeNodeId)
+      .fileDiff(filepath, status)
       .then((result) => { setDiffData(result ?? null); })
       .catch(() => { setError(t`Failed to fetch diff`); })
       .finally(() => { setLoading(false); });
