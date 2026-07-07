@@ -345,24 +345,24 @@ async def _reap_orphans(
     verified_types: "set[str] | None" = None,
 ) -> list[Tab]:
     """Drop — and hard-delete the rows for — tabs orphaned by a missing project
-    or a missing agentic_process target. Replaces the old pair of per-row reapers
-    (``_delete_tabs_for_missing_projects`` / ``…_targets``).
+    or a missing shell/agentic_process target. Replaces the old pair of per-row
+    reapers (``_delete_tabs_for_missing_projects`` / ``…_targets``).
 
     Orphan detection is in-memory off two batched ``id IN (…)`` loads (projects
-    and the agentic_process targets — the latter shared with the status fill via
-    ``target_map``), so the list READ costs O(1) queries instead of
-    O(distinct-projects + agentic_process-tabs) ``get_one``s. Writes fire ONLY
+    and the shell/agentic_process targets — the latter shared with the status fill
+    via ``target_map``), so the list READ costs O(1) queries instead of
+    O(distinct-projects + live-session-tabs) ``get_one``s. Writes fire ONLY
     when something is genuinely orphaned (rare), so the steady-state read writes
     nothing.
 
     Fail-open preserved: a project lookup that raised reaps no project orphans;
-    an agentic_process type whose batch load raised (absent from
-    ``verified_types``) reaps no target orphans — never mass-delete on a transient
-    read error.
+    a target type whose batch load raised (absent from ``verified_types``) reaps
+    no orphans of that type — never mass-delete on a transient read error.
 
-    ``agentic_process`` is the only target type reaped: those rows are always
-    DB-backed, so absence == orphan, whereas a missing ``markdown``/asset target
-    is a valid unindexed-but-on-disk row (see ``_backfill_tab_projects``).
+    The reaped target types are exactly ``_DB_BACKED_TARGET_TYPES`` (shell +
+    agentic_process): those rows are always DB-backed, so absence == orphan,
+    whereas a missing ``markdown``/asset target is a valid unindexed-but-on-disk
+    row (see ``_backfill_tab_projects``) and is left alone.
     """
     if not tabs:
         return tabs
@@ -383,29 +383,37 @@ async def _reap_orphans(
                 t.id for t in tabs if str(getattr(t, "project_id", None)) == pid
             )
 
-    # Missing TARGET: an agentic_process tab whose entity row is absent.
-    ap_type = EntityType.AGENTIC_PROCESS.value
-    if ap_type in verified_types:
-        target_orphans = [
-            t
-            for t in tabs
-            if t.id not in deleted_ids
-            and t.target_type == ap_type
-            and t.target_id
-            and (ap_type, str(t.target_id)) not in target_map
-        ]
-        reaped_target = False
-        for tab in target_orphans:
-            try:
-                await tab.delete()
-            except Exception:
-                continue
-            deleted_ids.add(tab.id)
-            reaped_target = True
-        if reaped_target:
-            # Background reap (no user navigation) — ping clients so the dangling
-            # chip drops live instead of waiting for the next list fetch.
-            await broadcast_tabs_changed()
+    # Missing TARGET: a shell/agentic_process tab whose entity row is absent.
+    # BOTH live-session target types (``_DB_BACKED_TARGET_TYPES``) are ALWAYS
+    # DB-backed, so a missing row means the session is genuinely gone — never a
+    # valid unindexed-on-disk state (unlike a markdown/asset target, which is why
+    # those are NOT reaped). A ``close``d shell soft-hides its Tab via the generic
+    # orphan-close, but a reload whose active URL points at that now-deleted shell
+    # re-mints the row through ``ensure_tab`` (visible again); reaping shell here —
+    # not just agentic_process — is what finally drops that resurrected chip.
+    # Per-type gate on ``verified_types`` keeps the fail-open: a type whose batch
+    # load raised is omitted, so its tabs are left alone rather than mass-deleted.
+    target_orphans = [
+        t
+        for t in tabs
+        if t.id not in deleted_ids
+        and t.target_type in _DB_BACKED_TARGET_TYPES
+        and t.target_type in verified_types
+        and t.target_id
+        and (t.target_type, str(t.target_id)) not in target_map
+    ]
+    reaped_target = False
+    for tab in target_orphans:
+        try:
+            await tab.delete()
+        except Exception:
+            continue
+        deleted_ids.add(tab.id)
+        reaped_target = True
+    if reaped_target:
+        # Background reap (no user navigation) — ping clients so the dangling
+        # chip drops live instead of waiting for the next list fetch.
+        await broadcast_tabs_changed()
     # Null any child ``parent_tab_id`` pointing at a hard-deleted row so no
     # permanently-dangling group edges accumulate (soft-close leaves them intact
     # by design — the id is deterministic and regroups on reopen; only a real
@@ -458,8 +466,8 @@ async def _project_of_target(target_type: str, target_id: str) -> str | None:
 
 # The two live-session target types: their rows are ALWAYS DB-backed, so absence
 # == the session is gone (never a valid unindexed-on-disk state). They are also
-# the only status-bearing tab targets. (``_reap_orphans`` reaps only
-# ``agentic_process`` — see its docstring.)
+# the only status-bearing tab targets, and (because absence is unambiguous) the
+# exact set ``_reap_orphans`` reaps a missing target for.
 _DB_BACKED_TARGET_TYPES = (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value)
 
 

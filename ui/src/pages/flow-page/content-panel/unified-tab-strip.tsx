@@ -27,6 +27,7 @@ import { closeTabWithLifecycle } from '@src/tabs/tab-lifecycle';
 import { uniqueTabsByDockKey, useCurrentTabs, useSyncContentTabNames } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import React, { useCallback, useEffect, useMemo } from 'react';
+import { useNavigation } from 'react-router';
 
 export interface UnifiedTabStripProps {
   /** `'project'` (default) shows the active project + projectless tabs; `'all'`
@@ -61,6 +62,32 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
 
   // Active highlight is the URL, full stop (every chip is keyed by its tabHash).
   const activeKey = currentDock?.tabHash ?? '';
+
+  // A tab click navigates URL-first (click → navigate → loader → context). Under
+  // load the target route's loader can still be resolving when the user closes
+  // that SAME tab (click, then X a moment later) — so the committed `currentDock`
+  // (hence `activeKey`) still names the PREVIOUS tab, `handleClose`'s active-close
+  // branch is skipped, and the in-flight navigation later commits the URL onto the
+  // tab that was just closed (a dead pointer, no self-heal). React-router's data
+  // router exposes that in-flight target as `navigation.location`; treat the
+  // closing tab as "the one on screen" when it matches EITHER the committed dock
+  // OR that pending target, so the close still heals to a surviving tab. Purely
+  // additive: with no navigation in flight `pendingActiveKey` is null and the
+  // behavior is identical to `key === activeKey`.
+  const routerNavigation = useNavigation();
+  const pendingActiveKey = useMemo(() => {
+    const loc = routerNavigation.location;
+    if (!loc) return null;
+    try {
+      return DockPointer.fromUrl(`${loc.pathname}${loc.search}`).tabHash;
+    } catch {
+      return null;
+    }
+  }, [routerNavigation.location]);
+  const isCurrentTab = useCallback(
+    (key: string) => key !== '' && (key === activeKey || key === pendingActiveKey),
+    [activeKey, pendingActiveKey],
+  );
 
   const handleSelect = useCallback(
     (key: string) => {
@@ -103,19 +130,19 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (key: string) => {
       const tab = tabByKey.get(key);
       if (!tab) return;
-      if (key === activeKey) navigateAfterClose([tab]);
+      if (isCurrentTab(key)) navigateAfterClose([tab]);
       void closeTabWithLifecycle(tab).finally(() => void refreshAllTabs());
     },
-    [tabByKey, activeKey, navigateAfterClose],
+    [tabByKey, isCurrentTab, navigateAfterClose],
   );
 
   const handleCloseMany = useCallback(
     (keys: string[]) => {
       const closing = keys.map((k) => tabByKey.get(k)).filter((t): t is Tab => t != null);
-      if (keys.includes(activeKey)) navigateAfterClose(closing);
+      if (keys.some((k) => isCurrentTab(k))) navigateAfterClose(closing);
       void Promise.allSettled(closing.map((t) => closeTabWithLifecycle(t))).finally(() => void refreshAllTabs());
     },
-    [tabByKey, activeKey, navigateAfterClose],
+    [tabByKey, isCurrentTab, navigateAfterClose],
   );
 
   const handleRename = useCallback(
