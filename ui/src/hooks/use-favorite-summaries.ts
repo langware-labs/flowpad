@@ -78,3 +78,16 @@ export function useFavoriteSummaries(bookmarks: Bookmark[]) {
 export function favoriteSummaryKey(entityType: string, entityId: string): string {
   return `${entityType}:${entityId}`;
 }
+
+/** Resolve a favorite bookmark's live summary from a batch-fetched map;
+ *  undefined for bookmarks without a string entity ref (e.g. folders). */
+export function summaryForBookmark(
+  bookmark: Bookmark,
+  summaries: Map<string, FavoriteSummary>,
+): FavoriteSummary | undefined {
+  const type = bookmark.data?.entity_type;
+  const id = bookmark.data?.entity_id;
+  return typeof type === 'string' && typeof id === 'string'
+    ? summaries.get(favoriteSummaryKey(type, id))
+    : undefined;
+}
