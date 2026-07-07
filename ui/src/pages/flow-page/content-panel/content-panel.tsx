@@ -157,7 +157,9 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   const handleExplorerFileSelect = useCallback(
     (path: string) => {
-      navigation.openDock(DockPointer.forFile(path));
+      // Extension dispatch (md → assets document viewer, else code editor)
+      // lives in openFile — the explorer must not hard-code a viewer.
+      navigation.openFile(path);
     },
     [navigation],
   );
