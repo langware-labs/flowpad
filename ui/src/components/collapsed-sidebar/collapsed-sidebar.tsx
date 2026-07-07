@@ -153,7 +153,13 @@ export function CollapsedSidebar() {
     (viewType: ViewType | null) => {
       if (viewType === null) {
         if (import.meta.env.DEV) (window as Record<string, unknown>).__homeNavT0 = performance.now();
-        if (currentView) void navigate('/');
+        // Guard on the LIVE browser URL: navigation.openDock commits via raw
+        // pushState, which React Router's location can lag — currentView reads
+        // stale-falsy on a real dock URL and would swallow this navigation.
+        // TODO(nav): fix at the root — commit through the router in
+        // NavigationActions (or reconcile currentDock against window.location in
+        // use-navigation-state) so ALL consumers stop seeing stale locations.
+        if (window.location.pathname !== '/') void navigate('/');
       } else {
         if (import.meta.env.DEV && viewType === ViewType.SHELL) {
           (window as Record<string, unknown>).__shellNavT0 = performance.now();
@@ -173,7 +179,7 @@ export function CollapsedSidebar() {
         navigation.openTab(viewType);
       }
     },
-    [currentView, navigate, navigation],
+    [navigate, navigation],
   );
 
   const renderNavItem = (

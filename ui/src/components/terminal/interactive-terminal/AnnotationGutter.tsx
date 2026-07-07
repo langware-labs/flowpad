@@ -838,6 +838,7 @@ function AnnotationCell({
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <div
+              data-testid={isEmpty ? undefined : `annotation-cell-${primaryEl.kind}`}
               className={cn(
                 'group absolute flex cursor-pointer items-center justify-center',
                 isEmpty && 'opacity-0 hover:opacity-100 hover:transition-none',
