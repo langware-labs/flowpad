@@ -181,7 +181,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // pane is the ONLY view. Force it on regardless of the chat/terminal skin
   // override, and (in the render) skip mounting the xterm container entirely so
   // no PtySync attach is attempted for a process that has no shell.
-  const isHeadless = !embedded && !!process && process.pty_mode === false;
+  const isHeadless = !embedded && !!process && process.isHeadless;
   const showSimpleChat = isHeadless || (wantChat && !embedded && !!process);
   const canToggleView = !embedded && !!process;
   const [searchParams] = useSearchParams();
