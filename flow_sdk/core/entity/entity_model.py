@@ -185,11 +185,13 @@ class Entity(DBEntity):
     last_active_at: int | None = APIField(
         default=None,
         description=(
-            "Epoch-ms of this tab's last activation, stamped SERVER-SIDE by "
-            "the generic ``activate`` action (authoritative clock). Resolver "
-            "recency seed only (resolveActive case 3) — never read to "
-            "highlight the active tab; the URL is active truth. ISO-string "
-            "values from legacy rows are parsed tolerantly on load."
+            "Epoch-ms of this entity's last activation, stamped SERVER-SIDE by "
+            "the generic ``activate`` action (authoritative clock). Consumers: "
+            "the tab resolver's recency seed (resolveActive case 3 — never read "
+            "to highlight the active tab; the URL is active truth), and Project "
+            "open-recency (stamped when the user opens the project or one of "
+            "its assets; wins the project-picker sort). ISO-string values from "
+            "legacy rows are parsed tolerantly on load."
         ),
     )
 

@@ -236,6 +236,17 @@ export class Project extends APIEntity<Project> {
     return response || { workspace: null, agent: null, compute_node: null };
   }
 
+  /** POST /graph/project/<id>/activate — stamp `last_active_at` (server clock,
+   *  epoch-ms) via the generic `activate` action. Fired FIRE-AND-FORGET by
+   *  `dataContext.setContextEntityTypeId` whenever the current project
+   *  actually switches (the choke point every open-project path funnels
+   *  through); the project pickers sort by it (recency wins over session
+   *  `modified_at`). Static form mirrors `Tab.activateById`. */
+  static async activateById(id: string): Promise<void> {
+    const info = new ActionInfo('activate', Project.type, id, 'POST');
+    await dataManager.callAction<undefined, unknown>(info);
+  }
+
   // ── Collaboration overlay (merged from CollaborationSpace) ───────────────
 
   /** True when the given member is the host on this project's collaboration. */
