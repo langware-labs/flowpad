@@ -24,7 +24,7 @@ export function MiniDesktop() {
   const [expanded, setExpanded] = useState(false);
   // ONE adapter instance feeds both the compact strip and the Launchpad
   // dialog — mutations refetch through this instance, so both stay coherent.
-  const { roots, onDropToBackground } = useFavoritesRoots();
+  const { roots, onDropToBackground, onReorderRoot } = useFavoritesRoots();
 
   const handlePick = (type: string) => {
     setActiveType(type);
@@ -51,6 +51,7 @@ export function MiniDesktop() {
         activePointer={currentDock}
         leadingChrome={plusTile}
         onDropToBackground={onDropToBackground}
+        onReorder={onReorderRoot}
         className="pr-6"
       />
 
@@ -76,6 +77,7 @@ export function MiniDesktop() {
             size="large"
             leadingChrome={plusTile}
             onDropToBackground={onDropToBackground}
+            onReorder={onReorderRoot}
             className="pt-2"
           />
         </DialogContent>

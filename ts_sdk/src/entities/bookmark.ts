@@ -1,4 +1,5 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
 export enum BookmarkType {
@@ -28,6 +29,10 @@ export interface IBookmark extends IEntity {
    *  string, not null — dropped-None serialization + merge-never-removes
    *  would otherwise strand cleared memberships. */
   parent_id?: string;
+  /** Manual placement within the parent container. 0/unset = unstamped
+   *  (sorts at the END of a stamped container, newest first); stamped values
+   *  are contiguous from 1 via the `bookmark.order` action. */
+  order?: number;
 }
 
 @registerEntity
@@ -43,6 +48,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
   closed_at?: string;
   remind_at?: string;
   parent_id?: string;
+  order?: number;
   static type: string = 'bookmark';
 
   constructor(entity: Partial<IBookmark> = {}) {
@@ -58,5 +64,25 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
     this.closed_at = entity.closed_at;
     this.remind_at = entity.remind_at;
     this.parent_id = entity.parent_id;
+    this.order = entity.order;
+  }
+
+  /** Desktop drag-drop commit — splice a bookmark into the drop gap within
+   *  its container (root '' or a folder id). Mirrors Tab.reorder; the server
+   *  registers the handler type-qualified as `bookmark.order`. */
+  static async reorder(
+    reorderId: string,
+    afterId: string | null,
+    beforeId: string | null,
+    parentId: string = '',
+  ): Promise<void> {
+    const info = new ActionInfo('order', Bookmark.type, null, 'POST');
+    info.bodyParameters = {
+      reorder_bookmark_id: reorderId,
+      after_bookmark_id: afterId,
+      before_bookmark_id: beforeId,
+      parent_id: parentId,
+    };
+    await dataManager.callAction<unknown, { bookmarks: IBookmark[] }>(info);
   }
 }

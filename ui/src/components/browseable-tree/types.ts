@@ -135,6 +135,15 @@ export interface Browseable {
 
   /** Side effect for a successful drop. */
   onDrop?: (dragData: BrowseableDragData) => void | Promise<void>;
+
+  /** Container-owned manual ordering of children: splice `dragId` into the
+   *  gap next to the anchor sibling. Renderers that support reordering (the
+   *  desktop grid's edge drop zones) call this; the anchor ids are siblings
+   *  within THIS container. */
+  reorderChildren?: (
+    dragId: string,
+    anchor: { afterId?: string; beforeId?: string },
+  ) => void | Promise<void>;
 }
 
 /**

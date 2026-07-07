@@ -18,6 +18,21 @@ function isFolderBookmark(b: Bookmark): boolean {
   return b.bookmark_type === BookmarkType.FAVORITE_FOLDER;
 }
 
+/**
+ * Container sort — stamped rows (order >= 1) ascending first, unstamped rows
+ * (order 0/unset) at the END, newest first among themselves. MUST stay in
+ * lockstep with `sort_container` in flow_sdk/builtin/bookmark.py.
+ */
+export function sortContainer(siblings: Bookmark[]): Bookmark[] {
+  const stamped = siblings
+    .filter((b) => (b.order ?? 0) > 0)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || String(a.id).localeCompare(String(b.id)));
+  const unstamped = siblings
+    .filter((b) => !(b.order ?? 0))
+    .sort((a, b) => String(b.created_date ?? '').localeCompare(String(a.created_date ?? '')));
+  return [...stamped, ...unstamped];
+}
+
 function matchesRef(b: Bookmark, entityType: string, entityId: string): boolean {
   return (
     b.data?.entity_type === entityType && b.data?.entity_id === entityId
@@ -40,20 +55,32 @@ export function useFavorites() {
 
   const favorites = useMemo(() => bookmarks.filter(isFavoriteBookmark), [bookmarks]);
 
-  const folders = useMemo(() => bookmarks.filter(isFolderBookmark), [bookmarks]);
+  const folders = useMemo(() => sortContainer(bookmarks.filter(isFolderBookmark)), [bookmarks]);
 
   const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders]);
 
   // A dangling parent_id (folder deleted elsewhere before promotion landed)
   // renders at root rather than hiding the favorite.
   const rootFavorites = useMemo(
-    () => favorites.filter((b) => !b.parent_id || !folderIds.has(b.parent_id)),
+    () => sortContainer(favorites.filter((b) => !b.parent_id || !folderIds.has(b.parent_id))),
     [favorites, folderIds],
   );
 
   const childrenOf = useCallback(
-    (folderId: string): Bookmark[] => favorites.filter((b) => b.parent_id === folderId),
+    (folderId: string): Bookmark[] => sortContainer(favorites.filter((b) => b.parent_id === folderId)),
     [favorites],
+  );
+
+  // Stamp value that lands a new/incoming member at the END of a container
+  // that already has manual ordering (OS behavior); 0 keeps it unstamped in a
+  // never-ordered container (newest-first fallback).
+  const appendOrder = useCallback(
+    (parentId: string): number => {
+      const siblings = [...folders, ...favorites].filter((b) => (b.parent_id ?? '') === parentId);
+      const max = Math.max(0, ...siblings.map((b) => b.order ?? 0));
+      return max > 0 ? max + 1 : 0;
+    },
+    [folders, favorites],
   );
 
   const isFavorited = useCallback(
@@ -68,6 +95,7 @@ export function useFavorites() {
       const bookmark = new Bookmark({
         bookmark_type: BookmarkType.FAVORITE,
         title: ref.title,
+        order: appendOrder(''),
         data: {
           entity_type: ref.entityType,
           entity_id: ref.entityId,
@@ -78,7 +106,7 @@ export function useFavorites() {
       await bookmark.save([]);
       await refetch();
     },
-    [isFavorited, refetch],
+    [isFavorited, refetch, appendOrder],
   );
 
   const removeFavorite = useCallback(
@@ -107,12 +135,13 @@ export function useFavorites() {
         bookmark_type: BookmarkType.FAVORITE_FOLDER,
         name: name.trim(),
         title: name.trim(),
+        order: appendOrder(''),
       });
       await folder.save([]);
       await refetch();
       return folder;
     },
-    [refetch],
+    [refetch, appendOrder],
   );
 
   const moveToFolder = useCallback(
@@ -123,10 +152,12 @@ export function useFavorites() {
       const next = folderId ?? '';
       if ((bookmark.parent_id ?? '') === next) return;
       bookmark.parent_id = next;
+      // Land at the end of the target container (OS behavior).
+      bookmark.order = appendOrder(next);
       await bookmark.save([]);
       await refetch();
     },
-    [refetch],
+    [refetch, appendOrder],
   );
 
   const deleteFolder = useCallback(
@@ -138,6 +169,20 @@ export function useFavorites() {
       await refetch();
     },
     [excludeBookmarks, refetch],
+  );
+
+  const reorder = useCallback(
+    async (bookmark: Bookmark, anchor: { afterId?: string | null; beforeId?: string | null }, parentId: string) => {
+      if (!bookmark.id) return;
+      // Cross-container edge drop: move first, then splice into the gap.
+      if ((bookmark.parent_id ?? '') !== parentId && !isFolderBookmark(bookmark)) {
+        bookmark.parent_id = parentId;
+        await bookmark.save([]);
+      }
+      await Bookmark.reorder(bookmark.id, anchor.afterId ?? null, anchor.beforeId ?? null, parentId);
+      await refetch();
+    },
+    [refetch],
   );
 
   const toggleFavorite = useCallback(
@@ -166,5 +211,6 @@ export function useFavorites() {
     createFolder,
     moveToFolder,
     deleteFolder,
+    reorder,
   };
 }

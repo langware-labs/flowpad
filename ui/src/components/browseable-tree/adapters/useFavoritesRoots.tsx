@@ -1,9 +1,9 @@
-import type { Bookmark } from '@sdk';
+import { BookmarkType, type Bookmark } from '@sdk';
 import {
   summaryForBookmark,
   useFavoriteSummaries,
 } from '@src/hooks/use-favorite-summaries';
-import { useFavorites } from '@src/hooks/use-favorites';
+import { sortContainer, useFavorites } from '@src/hooks/use-favorites';
 import {
   canNavigateFavorite,
   navigateToFavorite,
@@ -95,10 +95,17 @@ function favoriteDragData(b: Bookmark, label: string): BrowseableDragData {
  * `listChildren` closures are rebuilt when the data changes), so no
  * refresh-store wiring is needed.
  */
+export const FOLDER_DRAG_KIND = 'favorite_folder';
+
 export function useFavoritesRoots(): {
   roots: BrowseableRoot[];
   /** Drop on the surface background = un-file back to root. */
   onDropToBackground: (drag: BrowseableDragData) => void;
+  /** Edge-drop reorder within the root container (folders + unfiled tiles). */
+  onReorderRoot: (
+    drag: BrowseableDragData,
+    anchor: { afterId?: string; beforeId?: string },
+  ) => Promise<void>;
 } {
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
@@ -111,6 +118,7 @@ export function useFavoritesRoots(): {
     renameFavorite,
     moveToFolder,
     deleteFolder,
+    reorder,
   } = useFavorites();
   const summaries = useFavoriteSummaries(favorites);
 
@@ -196,6 +204,13 @@ export function useFavoritesRoots(): {
         listChildren: () => Promise.resolve(children.map(asLeaf)),
         pointer: null,
         onRename: (next) => renameFavorite(folder, next),
+        // Draggable for root reordering only — canDrop's kind gate keeps
+        // folders out of folders (one nesting level).
+        dragData: { kind: FOLDER_DRAG_KIND, id: folder.id ?? '', label: title },
+        reorderChildren: async (dragId, anchor) => {
+          const dragged = favorites.find((b) => b.id === dragId);
+          if (dragged) await reorder(dragged, anchor, folder.id ?? '');
+        },
         canDrop: (drag) => drag.kind === FAVORITE_DRAG_KIND && drag.id !== folder.id,
         onDrop: async (drag) => {
           const dragged = favorites.find((b) => b.id === drag.id);
@@ -228,9 +243,24 @@ export function useFavoritesRoots(): {
       if (dragged && dragged.parent_id) void moveToFolder(dragged, null);
     };
 
+    const onReorderRoot = async (
+      drag: BrowseableDragData,
+      anchor: { afterId?: string; beforeId?: string },
+    ) => {
+      const dragged =
+        favorites.find((b) => b.id === drag.id) ?? folders.find((f) => f.id === drag.id);
+      if (dragged) await reorder(dragged, anchor, '');
+    };
+
     return {
-      roots: [...folders.map(asFolder), ...rootFavorites.map(asLeaf)],
+      // One root container, OS-style: folders and unfiled favorites share the
+      // manual order — sort the combined sibling set with the same container
+      // comparator the backend uses, then render each by its shape.
+      roots: sortContainer([...folders, ...rootFavorites]).map((b) =>
+        b.bookmark_type === BookmarkType.FAVORITE_FOLDER ? asFolder(b) : asLeaf(b),
+      ),
       onDropToBackground,
+      onReorderRoot,
     };
   }, [
     favorites,
@@ -243,6 +273,7 @@ export function useFavoritesRoots(): {
     renameFavorite,
     moveToFolder,
     deleteFolder,
+    reorder,
     t,
   ]);
 }
