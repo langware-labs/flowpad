@@ -21,9 +21,10 @@ test.describe('Shell terminals looks empty', () => {
     await gotoShell(page);
 
     // Step 2: open extra terminals (siblings in the strip) and run marker
-    // commands. `addTerminalTab` opens the new tab in the background (it does not
-    // steal the active panel), so the markers land in the currently-active
-    // terminal — capture WHICH session that is from the active panel's
+    // commands. Opening a terminal is URL-first: the new tab becomes the active
+    // panel, and `addTerminalTab` now returns only once that new terminal is the
+    // settled active+ready panel — so each marker lands in the terminal just
+    // opened. Capture WHICH session the markers landed in from the active panel's
     // data-session-id rather than assuming it follows the URL.
     await addTerminalTab(page);
     await sendCommand(page, 'echo qa-marker-one');

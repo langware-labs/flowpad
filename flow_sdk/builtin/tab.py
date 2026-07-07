@@ -183,14 +183,7 @@ class Tab(Entity):
             await target.rename(name)
 
     async def _target_entity(self):
-        if not (self.target_type and self.target_id):
-            return None
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-        entity_cls = SchemaRegistry.get_entity_cls(self.target_type)
-        if entity_cls is None:
-            return None
-        return await entity_cls.get_one({"id": self.target_id})
+        return await _load_target_entity(self.target_type, self.target_id)
 
 
 async def _visible_tabs_sorted_with_targets() -> (
@@ -285,7 +278,7 @@ async def _load_status_targets(
 
     by_type_id: dict[tuple[str, str], object] = {}
     verified: set[str] = set()
-    for t in (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value):
+    for t in _DB_BACKED_TARGET_TYPES:
         ids = sorted(
             {str(tab.target_id) for tab in tabs if tab.target_type == t and tab.target_id}
         )
@@ -463,6 +456,38 @@ async def _project_of_target(target_type: str, target_id: str) -> str | None:
     return await Entity.project_id_of(target_type, target_id)
 
 
+# The two live-session target types: their rows are ALWAYS DB-backed, so absence
+# == the session is gone (never a valid unindexed-on-disk state). They are also
+# the only status-bearing tab targets. (``_reap_orphans`` reaps only
+# ``agentic_process`` — see its docstring.)
+_DB_BACKED_TARGET_TYPES = (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value)
+
+
+async def _load_target_entity(target_type: str | None, target_id: str | None):
+    """Resolve the backing entity row for a tab target (None if unresolvable)."""
+    if not (target_type and target_id):
+        return None
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    entity_cls = SchemaRegistry.get_entity_cls(target_type)
+    if entity_cls is None:
+        return None
+    return await entity_cls.get_one({"id": str(target_id)})
+
+
+async def _target_entity_exists(target_type: str, target_id: str) -> bool:
+    """True iff a live entity row backs ``target_type``/``target_id``.
+
+    Fail-open: a transient read error returns True so a gate built on this never
+    hides/refuses on a hiccup (callers gate on ``_DB_BACKED_TARGET_TYPES``, whose
+    entity classes are always registered).
+    """
+    try:
+        return (await _load_target_entity(target_type, target_id)) is not None
+    except Exception:
+        return True
+
+
 async def ensure_tab(
     pointer: str,
     *,
@@ -492,10 +517,12 @@ async def ensure_tab(
     # though the target HAS a project. When the client didn't supply a usable
     # project, resolve it from the target entity server-side (``reconcile_tab_project``
     # keeps it fresh on later target-project changes).
+    target_row_seen = False
     if (project_id is _UNSET or not project_id) and target_type and target_id:
         resolved = await _project_of_target(target_type, target_id)
         if resolved:
             project_id = resolved
+            target_row_seen = True  # project came off the live row — existence proven
     # Reconcile by the natural key (``pointer``), NOT just the derived id. The id
     # is ``tab_id_for(pointer)`` (uuid5) — a derivation, not the identity. A row
     # minted under the old client-side scheme carries a random uuid4 id that never
@@ -505,6 +532,24 @@ async def ensure_tab(
     # sharing that pointer so a pre-existing duplicate self-heals on next open.
     same_pointer = await Tab.get_all({"pointer": pointer})
     existing = next((t for t in same_pointer if t.id == tid), None)
+    # A DB-backed target with no live row means the session is gone (close only
+    # soft-hides its Tab) — never re-show the hidden row or mint a fresh one, or a
+    # zombie chip that 404s on click resurrects. Return it untouched; the caller's
+    # visible-only re-list excludes it. Content targets (markdown, …) may validly
+    # be unindexed-on-disk, so they are not gated.
+    if (
+        target_type in _DB_BACKED_TARGET_TYPES
+        and target_id
+        and not target_row_seen
+        and not await _target_entity_exists(target_type, str(target_id))
+    ):
+        return existing or Tab(
+            id=tid,
+            pointer=pointer,
+            target_type=target_type,
+            target_id=target_id,
+            visible=False,
+        )
     for stray in same_pointer:
         if stray.id != tid and stray.visible:
             stray.visible = False
@@ -673,7 +718,7 @@ async def _resolve_status(tab: Tab, target: "object" = _UNSET) -> str | None:
     already batch-fetched (or ``None`` when the batch didn't find it) — to skip the
     per-tab ``get_one``. ``_UNSET`` (the default, for callers without a batch) falls
     back to a direct ``_target_entity`` read."""
-    if tab.target_type not in (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value):
+    if tab.target_type not in _DB_BACKED_TARGET_TYPES:
         return None
     if target is _UNSET:
         target = await tab._target_entity()
@@ -711,7 +756,7 @@ async def _populate_tab_statuses(
     Content/target-less tabs (markdown/asset/settings/…) carry no status and
     never touch the DB. ``target_map`` may be supplied by a caller that already
     loaded it, to avoid re-querying."""
-    status_types = (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value)
+    status_types = _DB_BACKED_TARGET_TYPES
     if target_map is None:
         target_map, _ = await _load_status_targets(tabs)
     for tab in tabs:
