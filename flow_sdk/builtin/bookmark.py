@@ -52,9 +52,10 @@ class Bookmark(Entity):
     closed_at: Optional[str] = APIField(None)
     remind_at: Optional[str] = APIField(None)
     # Grouping edge to a containing FAVORITE_FOLDER bookmark ("" = root).
-    # Empty string, not None: API responses drop None fields and the frontend
-    # store merge never removes keys, so un-filing could not propagate.
-    # Mirrors Tab.parent_tab_id; folder deletion promotes children to root.
+    # Same parent-pointer idea as Tab.parent_tab_id, but deliberately an empty
+    # string rather than Tab's Optional[None]: API responses drop None fields
+    # and the frontend store merge never removes keys, so un-filing could not
+    # propagate as None. Folder deletion promotes children to root.
     parent_id: str = APIField("")
 
     @property

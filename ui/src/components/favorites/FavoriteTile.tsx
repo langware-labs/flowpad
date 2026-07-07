@@ -33,8 +33,10 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { FAVORITE_DRAG_MIME } from './favorite-dnd';
+import { InlineRenameInput } from './InlineRenameInput';
+import { useInlineRename } from './use-inline-rename';
 
 const ICON_BY_NAME: Record<string, LucideIcon> = {
   Bookmark: BookmarkIcon,
@@ -105,8 +107,7 @@ export function FavoriteTile({
   onMoveToFolder,
 }: FavoriteTileProps) {
   const { navigation } = useDockNavigation();
-  const { removeFavorite, renameFavorite, moveToFolder } = useFavorites();
-  const moveHandler = onMoveToFolder ?? moveToFolder;
+  const { removeFavorite, renameFavorite } = useFavorites();
   const { t } = useLingui();
 
   const Icon = resolveIcon(bookmark);
@@ -115,28 +116,8 @@ export function FavoriteTile({
   const subtitle = summary?.subtitle ?? null;
   const navigable = canNavigateFavorite(bookmark);
 
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.setSelectionRange(0, inputRef.current.value.length);
-    }
-  }, [editing]);
-
-  const startEditing = useCallback(() => {
-    setDraft(title);
-    setEditing(true);
-  }, [title]);
-
-  const commitRename = useCallback(async () => {
-    const next = draft.trim();
-    setEditing(false);
-    if (!next || next === title) return;
-    await renameFavorite(bookmark, next);
-  }, [draft, title, bookmark, renameFavorite]);
+  const rename = useInlineRename(title, (next) => renameFavorite(bookmark, next));
+  const { editing, startEditing } = rename;
 
   const handleClick = useCallback(() => {
     if (editing || !navigable) return;
@@ -189,24 +170,7 @@ export function FavoriteTile({
     >
       <Icon className="h-6 w-6" />
       {editing ? (
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => void commitRename()}
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              void commitRename();
-            } else if (e.key === 'Escape') {
-              e.preventDefault();
-              setEditing(false);
-            }
-          }}
-          className="w-[58px] rounded border border-border bg-background px-0.5 text-center text-[10px] font-medium leading-none text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-        />
+        <InlineRenameInput rename={rename} />
       ) : (
         <span className="max-w-[56px] truncate text-[10px] font-medium leading-none">{title}</span>
       )}
@@ -249,8 +213,8 @@ export function FavoriteTile({
         </Tooltip>
         <ContextMenuContent>
           <ContextMenuItem onSelect={() => setTimeout(startEditing, 0)}><Trans>Rename</Trans></ContextMenuItem>
-          {inFolder && (
-            <ContextMenuItem onSelect={() => void moveHandler(bookmark, null)}>
+          {inFolder && onMoveToFolder && (
+            <ContextMenuItem onSelect={() => void onMoveToFolder(bookmark, null)}>
               <Trans>Remove from folder</Trans>
             </ContextMenuItem>
           )}

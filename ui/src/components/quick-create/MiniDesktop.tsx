@@ -2,7 +2,7 @@ import { FavoriteTile } from '@src/components/favorites/FavoriteTile';
 import { FolderTile } from '@src/components/favorites/FolderTile';
 import { useFavorites } from '@src/hooks/use-favorites';
 import {
-  favoriteSummaryKey,
+  summaryForBookmark,
   useFavoriteSummaries,
 } from '@src/hooks/use-favorite-summaries';
 import { Plus } from 'lucide-react';
@@ -57,15 +57,9 @@ export function MiniDesktop() {
         />
       ))}
 
-      {rootFavorites.map((fav) => {
-        const type = fav.data?.entity_type;
-        const id = fav.data?.entity_id;
-        const summary =
-          typeof type === 'string' && typeof id === 'string'
-            ? summaries.get(favoriteSummaryKey(type, id))
-            : undefined;
-        return <FavoriteTile key={fav.id} bookmark={fav} summary={summary} draggable />;
-      })}
+      {rootFavorites.map((fav) => (
+        <FavoriteTile key={fav.id} bookmark={fav} summary={summaryForBookmark(fav, summaries)} draggable />
+      ))}
 
       <QuickCreateDialog
         open={dialogOpen}

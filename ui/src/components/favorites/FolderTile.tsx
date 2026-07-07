@@ -8,16 +8,18 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useFavorites } from '@src/hooks/use-favorites';
 import {
-  favoriteSummaryKey,
+  summaryForBookmark,
   type FavoriteSummary,
 } from '@src/hooks/use-favorite-summaries';
 import { cn } from '@src/lib/utils';
 import type { Bookmark } from '@sdk';
 import { Trans } from '@lingui/react/macro';
 import { Folder } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { FavoriteTile } from './FavoriteTile';
 import { favoriteDragActive, readFavoriteDragId } from './favorite-dnd';
+import { InlineRenameInput } from './InlineRenameInput';
+import { useInlineRename } from './use-inline-rename';
 
 interface FolderTileProps {
   folder: Bookmark;
@@ -43,31 +45,10 @@ export function FolderTile({ folder, childFavorites, favorites, summaries, onMov
   const { renameFavorite, deleteFolder } = useFavorites();
 
   const title = folder.name || folder.title || folder.displayName;
-  const [open, setOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.setSelectionRange(0, inputRef.current.value.length);
-    }
-  }, [editing]);
-
-  const startEditing = useCallback(() => {
-    setDraft(title);
-    setEditing(true);
-  }, [title]);
-
-  const commitRename = useCallback(async () => {
-    const next = draft.trim();
-    setEditing(false);
-    if (!next || next === title) return;
-    await renameFavorite(folder, next);
-  }, [draft, title, folder, renameFavorite]);
+  const rename = useInlineRename(title, (next) => renameFavorite(folder, next));
+  const { editing, startEditing } = rename;
 
   const handleDragOver = (e: React.DragEvent) => {
     if (!favoriteDragActive(e)) return;
@@ -91,14 +72,6 @@ export function FolderTile({ folder, childFavorites, favorites, summaries, onMov
     const dragged = favorites.find((b) => b.id === id);
     if (!dragged || dragged.parent_id === folder.id) return;
     void onMoveToFolder(dragged, folder.id ?? null);
-  };
-
-  const summaryFor = (b: Bookmark): FavoriteSummary | undefined => {
-    const type = b.data?.entity_type;
-    const id = b.data?.entity_id;
-    return typeof type === 'string' && typeof id === 'string'
-      ? summaries.get(favoriteSummaryKey(type, id))
-      : undefined;
   };
 
   const tileButton = (
@@ -138,24 +111,7 @@ export function FolderTile({ folder, childFavorites, favorites, summaries, onMov
         )}
       </span>
       {editing ? (
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => void commitRename()}
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              void commitRename();
-            } else if (e.key === 'Escape') {
-              e.preventDefault();
-              setEditing(false);
-            }
-          }}
-          className="w-[58px] rounded border border-border bg-background px-0.5 text-center text-[10px] font-medium leading-none text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-        />
+        <InlineRenameInput rename={rename} />
       ) : (
         <span className="max-w-[56px] truncate text-[10px] font-medium leading-none">{title}</span>
       )}
@@ -163,7 +119,7 @@ export function FolderTile({ folder, childFavorites, favorites, summaries, onMov
   );
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover>
       <ContextMenu>
         <PopoverTrigger asChild>
           <ContextMenuTrigger asChild>{tileButton}</ContextMenuTrigger>
@@ -195,7 +151,7 @@ export function FolderTile({ folder, childFavorites, favorites, summaries, onMov
               <FavoriteTile
                 key={b.id}
                 bookmark={b}
-                summary={summaryFor(b)}
+                summary={summaryForBookmark(b, summaries)}
                 inFolder
                 draggable
                 onMoveToFolder={onMoveToFolder}
