@@ -7,6 +7,7 @@ import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
 import { ComputeNode } from './compute_node';
+import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 
 export interface ProjectMember {
@@ -113,6 +114,20 @@ export class Project extends APIEntity<Project> {
     const computeNode = dataManager.updateEntityFromJson<ComputeNode>(responseComputeNode.compute_node);
     this.computeNode = computeNode;
     return computeNode;
+  }
+
+  /**
+   * `GitWorkdir` bound to this project's working tree, or null when the
+   * project has no working directory or compute node. Null does NOT mean
+   * "not a git repo" — that stays the async `isInit()` probe on the result.
+   *
+   * Mirror of the backend `Project.git_workdir()` (same null semantics).
+   */
+  async getGitWorkdir(): Promise<GitWorkdir | null> {
+    if (!this.fs_storage_mount_path) return null;
+    const computeNode = await this.getComputeNode();
+    if (!computeNode) return null;
+    return new GitWorkdir(this.fs_storage_mount_path, computeNode.id);
   }
 
   /** Add a context folder to this project's `include_dirs` (auto-added to every

@@ -1,7 +1,6 @@
-import { ActionInfo, dataManager } from '@sdk';
+import { GitWorkdir, type GitRevision } from '@sdk';
 import { GitCompare, RotateCcw } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
-import type { AssetRevision } from '@src/hooks/use-asset-revision-status';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { RevisionDiffModal } from './RevisionDiffModal';
 
@@ -10,7 +9,7 @@ interface RevisionsPanelProps {
   workdir: string | null;
   /** Absolute path of the asset file whose history this shows. */
   file: string | null;
-  revisions: AssetRevision[];
+  revisions: GitRevision[];
   hasRepo: boolean;
   /** Re-fetch the revision list (after a restore). */
   refresh: () => void;
@@ -32,18 +31,15 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
   refresh,
   onRestored,
 }) => {
-  const [compare, setCompare] = useState<AssetRevision | null>(null);
+  const [compare, setCompare] = useState<GitRevision | null>(null);
   const [restoringHash, setRestoringHash] = useState<string | null>(null);
 
   const handleRestore = useCallback(
-    async (rev: AssetRevision) => {
+    async (rev: GitRevision) => {
       if (!computeNodeId || !workdir || !file) return;
       setRestoringHash(rev.hash);
       try {
-        const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'POST');
-        action.subpath = 'restore-file';
-        action.bodyParameters = { workdir, file, hash: rev.hash };
-        await dataManager.callAction<null, { ok: boolean; message: string }>(action);
+        await new GitWorkdir(workdir, computeNodeId).restoreFile(file, rev.hash);
         onRestored();
         refresh();
       } catch {

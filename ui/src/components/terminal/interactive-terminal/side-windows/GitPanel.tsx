@@ -1,4 +1,4 @@
-import { ActionInfo, dataManager, Shell } from '@sdk';
+import { GitWorkdir, type GitStatus, type GitStatusFile } from '@sdk';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
   Check,
@@ -13,33 +13,16 @@ import {
   Undo2,
   X,
 } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
 import { GitFileDiffModal } from './GitFileDiffModal';
 
-interface GitFile {
-  status: string;
-  path: string;
-  insertions: number | null;
-  deletions: number | null;
-}
-
-interface GitStatusData {
-  error: string | null;
-  branch: string | null;
-  ahead: number;
-  behind: number;
-  files: GitFile[];
-}
-
 interface GitPanelProps {
   computeNodeId: string;
   workdir: string;
-  sidecarShellId?: string | null;
   /** Called after a push so an outer owner (e.g. the footer) can refresh too. */
   onPushed?: () => void;
 }
@@ -91,7 +74,7 @@ const UNDO_VARIANTS: Record<string, { standard: string; advanced: string; toolti
   default: { standard: 'Undo changes', advanced: 'Discard', tooltip: 'Restore this file to the last saved version — your edits will be lost', icon: Undo2 },
 };
 
-function actionsFor(file: GitFile, mode: GitMode): GitAction[] {
+function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
   const view: GitAction = {
     key: 'diff',
     label: 'View',
@@ -117,11 +100,10 @@ function actionsFor(file: GitFile, mode: GitMode): GitAction[] {
     return [view, undo];
   }
 
-  // Advanced — add stage/unstage and copy-path. 'A'/'R' only exist in the
-  // index, so they're definitively staged → offer Unstage. The single status
-  // char can't tell a staged 'M'/'D' from an unstaged one, so default to Stage
-  // (git add is idempotent, so staging an already-staged file is harmless).
-  const staged = file.status === 'A' || file.status === 'R';
+  // Advanced — add stage/unstage and copy-path. Staged-ness is computed by the
+  // backend from the porcelain X column (GitStatusFile.staged) — the UI never
+  // infers git semantics from the status char.
+  const staged = file.staged;
   const stageAction: GitAction = staged
     ? {
         key: 'unstage',
@@ -172,221 +154,15 @@ const IconBtn: React.FC<{
 );
 
 // ---------------------------------------------------------------------------
-// Shiki singleton
-// ---------------------------------------------------------------------------
-
-let shikiHighlighter: Highlighter | null = null;
-let shikiLoadingPromise: Promise<void> | null = null;
-
-function ensureShiki(): Promise<void> {
-  if (!shikiLoadingPromise) {
-    shikiLoadingPromise = createHighlighter({ themes: ['dark-plus', 'light-plus'], langs: ['text'] })
-      .then((h) => { shikiHighlighter = h; })
-      .catch(() => { shikiLoadingPromise = null; });
-  }
-  return shikiLoadingPromise;
-}
-
-// ---------------------------------------------------------------------------
-// FileDiffModal — simple portal-based modal (avoids Radix Dialog z-index issues)
-// ---------------------------------------------------------------------------
-
-interface FileDiffModalProps {
-  file: GitFile;
-  computeNodeId: string;
-  workdir: string;
-  onClose: () => void;
-}
-
-const FileDiffModal: React.FC<FileDiffModalProps> = ({ file, computeNodeId, workdir, onClose }) => {
-  const { resolvedTheme } = useTheme();
-  const [diff, setDiff] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const editorInstancesRef = useRef<Map<string, editor.IStandaloneDiffEditor>>(new Map());
-
-  // Fetch diff on mount
-  useEffect(() => {
-    const rawPath = file.path.includes(' → ') ? file.path.split(' → ')[1]! : file.path;
-
-    const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
-    action.subpath = 'diff';
-    action.queryParameters = { workdir, file: rawPath, status: file.status };
-
-    dataManager.callAction<null, { diff: string }>(action)
-      .then((result) => { setDiff(result?.diff ?? ''); })
-      .catch((e: unknown) => { setError(String(e)); })
-      .finally(() => setLoading(false));
-  }, [file, computeNodeId, workdir]);
-
-  // Dispose editors on unmount
-  useEffect(() => {
-    const instances = editorInstancesRef.current;
-    return () => {
-      instances.forEach((e) => { try { e.dispose(); } catch { /* ignore */ } });
-      instances.clear();
-    };
-  }, []);
-
-  const parsedDiff: DiffFile[] = React.useMemo(() => {
-    if (!diff) return [];
-    try { return gitDiffParser.parse(diff); } catch { return []; }
-  }, [diff]);
-
-  const handleEditorMount = useCallback(
-    (diffEditor: editor.IStandaloneDiffEditor, monaco: Monaco, key: string) => {
-      editorInstancesRef.current.set(key, diffEditor);
-      void ensureShiki().then(() => {
-        if (!shikiHighlighter) return;
-        monaco.languages.register({ id: 'text' });
-        shikiToMonaco(shikiHighlighter, monaco);
-        monaco.editor.setTheme(resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus');
-      });
-    },
-    [resolvedTheme],
-  );
-
-  const renderHunk = useCallback(
-    (hunk: Hunk, hunkIndex: number, fileIndex: number) => {
-      const key = `f${fileIndex}-h${hunkIndex}`;
-      const originalLines = hunk.changes
-        .filter((c: Change) => c.type === 'delete' || c.type === 'normal')
-        .map((c: Change) => `${c.type === 'delete' ? '-' : ' '}${c.content}`)
-        .join('\n');
-      const modifiedLines = hunk.changes
-        .filter((c: Change) => c.type === 'insert' || c.type === 'normal')
-        .map((c: Change) => `${c.type === 'insert' ? '+' : ' '}${c.content}`)
-        .join('\n');
-      const header = `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
-      const original = `${header}\n${originalLines}`;
-      const modified = `${header}\n${modifiedLines}`;
-      const lineHeight = 20;
-      const padding = 16;
-      const height = Math.max(original.split('\n').length, modified.split('\n').length) * lineHeight + padding * 2;
-
-      return (
-        <div key={key} className="border-t first:border-t-0">
-          <div className="bg-muted/50 px-3 py-1 text-[10px] text-muted-foreground font-mono">
-            {header}
-          </div>
-          <DiffEditor
-            height={`${height}px`}
-            language="text"
-            original={original}
-            modified={modified}
-            onMount={(e, m) => handleEditorMount(e, m, key)}
-            theme={resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus'}
-            options={{
-              renderSideBySide: true,
-              readOnly: true,
-              fontSize: 12,
-              lineHeight,
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              wordWrap: 'on',
-              padding: { top: padding, bottom: padding },
-              lineNumbers: 'on',
-              glyphMargin: false,
-              scrollbar: { alwaysConsumeMouseWheel: false },
-            }}
-          />
-        </div>
-      );
-    },
-    [handleEditorMount, resolvedTheme],
-  );
-
-  const title = file.path.includes(' → ') ? file.path : basename(file.path);
-
-  const modal = (
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 9999 }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      {/* Backdrop */}
-      <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)' }} />
-
-      {/* Panel */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '5%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: '90vw',
-          maxWidth: '1100px',
-          maxHeight: '90vh',
-          display: 'flex',
-          flexDirection: 'column',
-          borderRadius: '8px',
-          overflow: 'hidden',
-          boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
-        }}
-        className="border bg-background"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <div className="flex items-center gap-2">
-            <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-sm font-medium font-mono">{title}</span>
-            <span className={`text-[10px] font-bold ${statusColor(file.status)}`}>
-              {file.status}
-            </span>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded p-1 hover:bg-muted/70 text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loading ? (
-            <div className="flex h-40 items-center justify-center">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-            </div>
-          ) : error ? (
-            <p className="p-4 text-sm text-destructive">{error}</p>
-          ) : parsedDiff.length > 0 ? (
-            <div className="space-y-4 p-4">
-              {parsedDiff.map((fileDiff, fi) => (
-                <div key={fi} className="overflow-hidden rounded-lg border">
-                  <div className="border-b bg-muted px-4 py-2 text-xs font-medium font-mono">
-                    {fileDiff.newPath || fileDiff.oldPath}
-                  </div>
-                  <div>
-                    {fileDiff.hunks.map((hunk, hi) => renderHunk(hunk, hi, fi))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-              <Trans>No diff to display</Trans>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  return createPortal(modal, document.body);
-};
-
-// ---------------------------------------------------------------------------
 // GitPanel
 // ---------------------------------------------------------------------------
 
-export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, sidecarShellId, onPushed }) => {
-  const [data, setData] = useState<GitStatusData | null>(null);
+export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPushed }) => {
+  const [data, setData] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [initing, setIniting] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<GitFile | null>(null);
+  const [selectedFile, setSelectedFile] = useState<GitStatusFile | null>(null);
   const [mode, setMode] = useState<GitMode>('standard');
   // Row currently awaiting destructive confirmation, keyed by `${path}::${key}`.
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
@@ -395,13 +171,14 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
   const [rowError, setRowError] = useState<{ path: string; message: string } | null>(null);
   const mountedRef = useRef(true);
 
+  // The one door to git — every op below goes through the SDK's GitWorkdir
+  // (the client mirror of the backend GitRepo; logic stays backend-only).
+  const git = useMemo(() => new GitWorkdir(workdir, computeNodeId), [workdir, computeNodeId]);
+
   const fetchStatus = useCallback(async () => {
     if (!computeNodeId || !workdir) return;
-    const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
-    action.subpath = 'status';
-    action.queryParameters = { workdir };
     try {
-      const result = await dataManager.callAction<null, GitStatusData>(action);
+      const result = await git.getStatus();
       if (mountedRef.current) {
         setData(result ?? null);
         setLoading(false);
@@ -409,20 +186,22 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
     } catch {
       if (mountedRef.current) setLoading(false);
     }
-  }, [computeNodeId, workdir]);
+  }, [computeNodeId, workdir, git]);
 
   const { push, busy: pushing } = useGitPush(computeNodeId, workdir, () => { void fetchStatus(); onPushed?.(); });
 
   // Run a per-file mutation (discard / stage / unstage), then refresh the list.
-  const runFileOp = useCallback(async (file: GitFile, subpath: NonNullable<GitAction['subpath']>) => {
+  const runFileOp = useCallback(async (file: GitStatusFile, subpath: NonNullable<GitAction['subpath']>) => {
     setConfirmingKey(null);
     setBusyPath(file.path);
     setRowError(null);
     try {
-      const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'POST');
-      action.subpath = subpath;
-      action.queryParameters = { workdir, file: rawPath(file.path), status: file.status };
-      const result = await dataManager.callAction<null, { ok: boolean; message: string }>(action);
+      const ops = {
+        'discard-file': () => git.discardFile(rawPath(file.path), file.status),
+        'stage-file': () => git.stageFile(rawPath(file.path)),
+        'unstage-file': () => git.unstageFile(rawPath(file.path)),
+      } as const;
+      const result = await ops[subpath]();
       if (!mountedRef.current) return;
       if (result && result.ok === false) {
         setRowError({ path: file.path, message: result.message || 'Operation failed' });
@@ -434,9 +213,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
     } finally {
       if (mountedRef.current) setBusyPath(null);
     }
-  }, [computeNodeId, workdir, fetchStatus]);
+  }, [git, fetchStatus]);
 
-  const handleAction = useCallback((file: GitFile, action: GitAction) => {
+  const handleAction = useCallback((file: GitStatusFile, action: GitAction) => {
     if (action.key === 'diff') { setSelectedFile(file); return; }
     if (action.key === 'copyPath') { void navigator.clipboard?.writeText(rawPath(file.path)); return; }
     if (!action.subpath) return;
@@ -460,15 +239,13 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
   }, [fetchStatus]);
 
   const handleGitInit = useCallback(async () => {
-    if (!sidecarShellId || !workdir) return;
+    if (!workdir) return;
     setIniting(true);
     setInitError(null);
     try {
-      const shell = await Shell.getById(sidecarShellId);
-      if (!shell) throw new Error('Sidecar shell not found');
-      const result = await shell.run(`git -C '${workdir}' init`);
-      if (result.exitCode !== 0) {
-        if (mountedRef.current) setInitError(result.stderr.trim() || 'git init failed');
+      const result = await git.init();
+      if (!result.ok) {
+        if (mountedRef.current) setInitError(result.message || 'git init failed');
       } else {
         if (mountedRef.current) {
           setLoading(true);
@@ -480,9 +257,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
     } finally {
       if (mountedRef.current) setIniting(false);
     }
-  }, [sidecarShellId, workdir, fetchStatus]);
+  }, [git, workdir, fetchStatus]);
 
-  const renderFileRow = (f: GitFile, i: number) => {
+  const renderFileRow = (f: GitStatusFile, i: number) => {
     const name = basename(f.path);
     const dir = dirname(f.path);
     const actions = actionsFor(f, mode);
@@ -641,27 +418,16 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
         ) : data?.error ? (
           <div className="flex flex-col items-center gap-3 px-3 py-6">
             <p className="text-center text-xs text-muted-foreground"><Trans>Not a git repository</Trans></p>
-            <TooltipProvider delayDuration={400}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs"
-                    disabled={!sidecarShellId || initing}
-                    onClick={() => { void handleGitInit(); }}
-                  >
-                    <GitBranch className="h-3.5 w-3.5" />
-                    {initing ? <Trans>Initializing…</Trans> : <Trans>Initialize git repo</Trans>}
-                  </Button>
-                </TooltipTrigger>
-                {!sidecarShellId && (
-                  <TooltipContent side="bottom" className="text-xs">
-                    <Trans>Open the sidecar shell first to enable git operations</Trans>
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              disabled={initing}
+              onClick={() => { void handleGitInit(); }}
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              {initing ? <Trans>Initializing…</Trans> : <Trans>Initialize git repo</Trans>}
+            </Button>
             {initError && (
               <p className="text-center text-[10px] text-red-500">{initError}</p>
             )}
