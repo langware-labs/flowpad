@@ -109,11 +109,19 @@ def is_turn_busy(
       2. ``_turn_in_flight`` is set (a worker spinning up before its transcript
          lands), OR
       3. the raw ``worker_status`` is a mid-turn activity state
-         (``_BUSY_WORKER_STATUSES``).
+         (``_BUSY_WORKER_STATUSES``) — **INTERACTIVE (PTY) transport only**.
 
     A native-xterm turn holds no lock and sets no ``_turn_in_flight`` flag, so
     (3) is the only signal that keeps it ``busy`` — that is why the ``switch-mode``
     409 must key on this predicate, not the lock alone.
+
+    Signal (3) is transport-gated: every CLI-mode (headless ``claude -p``) turn
+    already holds the prompt lock or ``_turn_in_flight`` for its whole duration,
+    so for CLI mode the transcript tail adds nothing — and it lies. A killed or
+    crashed print-mode CLI never writes its terminal transcript entry, leaving a
+    mid-turn tail forever; counting it would pin ``busy`` True with no live turn
+    to cancel (the "can't stop the conversation" bug). A live PTY worker, by
+    contrast, is exactly the case the tail signal exists for.
 
     ``worker_status`` is optional — if the caller already resolved it (e.g. the
     serializer), pass it to avoid a second transcript tail-read.
@@ -129,6 +137,8 @@ def is_turn_busy(
         return True
     if getattr(process, "_turn_in_flight", False):
         return True
+    if get_worker_mode(process) is not WorkerMode.INTERACTIVE:
+        return False
     resolved = worker_status if worker_status is not None else process.fetch_worker_status()
     return resolved in _BUSY_WORKER_STATUSES
 

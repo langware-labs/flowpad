@@ -2502,6 +2502,14 @@ class AgenticProcess(Entity):
                 # Signal end-of-stream to downstream consumers.
                 await handler.on_flow_data(None)
                 _PROMPT_WORKERS.pop(self.id, None)
+                # Broadcast the turn's end (busy → False) to entity watchers.
+                # Every exit lands here — complete, crash, AND cancel-prompt
+                # kill — so the UI flips Stop→Send without waiting for a poll.
+                # Runs after the pop, outside the lock scope it matters for.
+                try:
+                    await self.notify_updated()
+                except Exception:
+                    logger.warning("prompt: end-of-turn notify_updated failed", exc_info=True)
 
         turn_task = asyncio.create_task(_run_turn())
 
@@ -2530,12 +2538,29 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="cancel-prompt")
     async def _http_cancel_prompt(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Cancel the in-flight prompt turn. Immediate: SIGTERM → 5s → SIGKILL."""
+        """Cancel the in-flight turn — ONE stop interface for every transport.
+
+        Print-mode (CLI) turn: kill the registered stream worker (SIGTERM → 5s
+        → SIGKILL). PTY-transport turn (native xterm or chat-over-PTY, which
+        never registers in ``_PROMPT_WORKERS``): route Ctrl-C into the live PTY
+        — same effect as the frontend's xterm interrupt, so ``interruptTurn()``
+        behaves identically for every agentic-process flavour.
+        """
         worker = _PROMPT_WORKERS.get(self.id)
-        if worker is None:
-            return ApiFailResponse(message="no in-flight prompt turn")
-        await worker.close_session()
-        return ApiSuccessResponse(data={"cancelled": True})
+        if worker is not None:
+            await worker.close_session()
+            return ApiSuccessResponse(data={"cancelled": True, "transport": "cli"})
+        if self.pty_mode and self.shell_id:
+            try:
+                await self.send(b"\x03")
+            except ValueError:
+                # No shell actually linked — fall through to the no-turn reply.
+                pass
+            except Exception as e:
+                return ApiFailResponse(message=f"PTY interrupt failed: {e}")
+            else:
+                return ApiSuccessResponse(data={"cancelled": True, "transport": "pty"})
+        return ApiFailResponse(message="no in-flight prompt turn")
 
     # ── EXPERIMENT: PTY-transcript streaming prompt ─────────────────────────
     #
