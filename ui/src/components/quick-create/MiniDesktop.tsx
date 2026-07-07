@@ -1,4 +1,5 @@
 import { FavoriteTile } from '@src/components/favorites/FavoriteTile';
+import { FolderTile } from '@src/components/favorites/FolderTile';
 import { useFavorites } from '@src/hooks/use-favorites';
 import {
   favoriteSummaryKey,
@@ -20,7 +21,9 @@ export function MiniDesktop() {
   const [modalOpen, setModalOpen] = useState(false);
   const [activeType, setActiveType] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { favorites } = useFavorites();
+  // Summaries stay keyed off ALL favorites (not just root) so folder children
+  // resolve their tooltips inside the FolderTile popover.
+  const { favorites, folders, rootFavorites, childrenOf, moveToFolder } = useFavorites();
   const summaries = useFavoriteSummaries(favorites);
 
   const handlePick = (type: string) => {
@@ -43,14 +46,25 @@ export function MiniDesktop() {
 
       <QuickCreateModal open={modalOpen} onOpenChange={setModalOpen} onPick={handlePick} />
 
-      {favorites.map((fav) => {
+      {folders.map((folder) => (
+        <FolderTile
+          key={folder.id}
+          folder={folder}
+          childFavorites={folder.id ? childrenOf(folder.id) : []}
+          favorites={favorites}
+          summaries={summaries}
+          onMoveToFolder={moveToFolder}
+        />
+      ))}
+
+      {rootFavorites.map((fav) => {
         const type = fav.data?.entity_type;
         const id = fav.data?.entity_id;
         const summary =
           typeof type === 'string' && typeof id === 'string'
             ? summaries.get(favoriteSummaryKey(type, id))
             : undefined;
-        return <FavoriteTile key={fav.id} bookmark={fav} summary={summary} />;
+        return <FavoriteTile key={fav.id} bookmark={fav} summary={summary} draggable />;
       })}
 
       <QuickCreateDialog

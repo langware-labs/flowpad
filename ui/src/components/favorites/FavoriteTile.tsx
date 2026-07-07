@@ -34,6 +34,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { FAVORITE_DRAG_MIME } from './favorite-dnd';
 
 const ICON_BY_NAME: Record<string, LucideIcon> = {
   Bookmark: BookmarkIcon,
@@ -80,6 +81,14 @@ interface FavoriteTileProps {
   bookmark: Bookmark;
   /** Live tooltip data from the batch summary endpoint. */
   summary?: FavoriteSummary;
+  /** Allow dragging this tile (into a FolderTile drop target). */
+  draggable?: boolean;
+  /** Rendered inside a folder popover — adds "Remove from folder" to the menu. */
+  inFolder?: boolean;
+  /** Move handler from the surface-owning useFavorites instance. WS update ops
+   *  don't notify query watchers (only membership changes do), so mutations must
+   *  run through the instance that renders the grid for it to refresh live. */
+  onMoveToFolder?: (bookmark: Bookmark, folderId: string | null) => void | Promise<void>;
 }
 
 /**
@@ -88,9 +97,16 @@ interface FavoriteTileProps {
  * top-right removes the favorite (hard delete). Right-click opens a context
  * menu with Rename; F2 / double-click also enter rename mode.
  */
-export function FavoriteTile({ bookmark, summary }: FavoriteTileProps) {
+export function FavoriteTile({
+  bookmark,
+  summary,
+  draggable = false,
+  inFolder = false,
+  onMoveToFolder,
+}: FavoriteTileProps) {
   const { navigation } = useDockNavigation();
-  const { removeFavorite, renameFavorite } = useFavorites();
+  const { removeFavorite, renameFavorite, moveToFolder } = useFavorites();
+  const moveHandler = onMoveToFolder ?? moveToFolder;
   const { t } = useLingui();
 
   const Icon = resolveIcon(bookmark);
@@ -144,6 +160,15 @@ export function FavoriteTile({ bookmark, summary }: FavoriteTileProps) {
     <button
       type="button"
       onClick={handleClick}
+      draggable={draggable && !editing}
+      onDragStart={(e) => {
+        if (!bookmark.id) return;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData(FAVORITE_DRAG_MIME, bookmark.id);
+        e.dataTransfer.setData('text/plain', title);
+        // Ghost just the tile, not the Tooltip/ContextMenu wrappers.
+        e.dataTransfer.setDragImage(e.currentTarget, 32, 32);
+      }}
       onDoubleClick={(e) => {
         e.preventDefault();
         startEditing();
@@ -224,6 +249,11 @@ export function FavoriteTile({ bookmark, summary }: FavoriteTileProps) {
         </Tooltip>
         <ContextMenuContent>
           <ContextMenuItem onSelect={() => setTimeout(startEditing, 0)}><Trans>Rename</Trans></ContextMenuItem>
+          {inFolder && (
+            <ContextMenuItem onSelect={() => void moveHandler(bookmark, null)}>
+              <Trans>Remove from folder</Trans>
+            </ContextMenuItem>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => void removeFavorite(bookmark)}>
             <Trans>Remove favorite</Trans>
