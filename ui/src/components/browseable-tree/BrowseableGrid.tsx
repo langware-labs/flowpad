@@ -34,6 +34,13 @@ export interface BrowseableGridProps {
   leadingChrome?: ReactNode;
   /** Drop on the surface background (not on a tile) — e.g. un-file to root. */
   onDropToBackground?: (drag: BrowseableDragData) => void;
+  /** Manual ordering of THIS grid's tiles: a drop on a tile's left/right edge
+   *  splices the dragged item before/after it. Containers own their children's
+   *  ordering via `node.reorderChildren` (used by the folder popover grids). */
+  onReorder?: (
+    drag: BrowseableDragData,
+    anchor: { afterId?: string; beforeId?: string },
+  ) => void | Promise<void>;
   className?: string;
 }
 
@@ -59,6 +66,7 @@ export function BrowseableGrid({
   size = 'default',
   leadingChrome,
   onDropToBackground,
+  onReorder,
   className,
 }: BrowseableGridProps) {
   const { navigation } = useDockNavigation();
@@ -110,11 +118,14 @@ export function BrowseableGrid({
           navigate={navigate}
           activePointer={activePointer}
           size={size}
+          onReorder={onReorder}
         />
       ))}
     </div>
   );
 }
+
+type DropZone = 'before' | 'after' | 'center';
 
 function GridTile({
   node,
@@ -122,18 +133,20 @@ function GridTile({
   navigate,
   activePointer,
   size,
+  onReorder,
 }: {
   node: Browseable;
   bus: DragBus;
   navigate: (pointer: DockPointer) => void;
   activePointer: DockPointer | null;
   size: 'default' | 'large';
+  onReorder?: BrowseableGridProps['onReorder'];
 }) {
   const isContainer = !!node.listChildren;
   const rename = useInlineRename(node.label, (next) => node.onRename?.(next));
   const { editing, startEditing } = rename;
 
-  const [dragOver, setDragOver] = useState(false);
+  const [dragOver, setDragOver] = useState<DropZone | null>(null);
   const [dropping, setDropping] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [children, setChildren] = useState<Browseable[] | null>(null);
@@ -180,7 +193,7 @@ function GridTile({
   };
 
   const handleDragEnd = () => {
-    setDragOver(false);
+    setDragOver(null);
     bus.setDragData(null);
   };
 
@@ -188,37 +201,69 @@ function GridTile({
     !!node.onDrop && !!bus.dragData && (!node.canDrop || node.canDrop(bus.dragData));
   const canAcceptForeign = (e: React.DragEvent) =>
     !!node.onDrop && !bus.dragData && hasBrowseableDrag(e);
+  const canReorder = (e: React.DragEvent) =>
+    !!onReorder && (!!bus.dragData || hasBrowseableDrag(e));
+
+  // Hit zones: tile edges (left/right quarter — or halves on plain leaves)
+  // splice the dragged item before/after this tile; the center is the
+  // container drop (file into folder). Self-drags never register.
+  const zoneFor = (e: React.DragEvent): DropZone | null => {
+    const isSelf = !!bus.dragData && bus.dragData.id === node.id;
+    if (isSelf) return null;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = (e.clientX - rect.left) / Math.max(rect.width, 1);
+    const containerDrop = canAcceptDrop || canAcceptForeign(e);
+    const reorderDrop = canReorder(e);
+    if (containerDrop && reorderDrop) {
+      if (x < 0.25) return 'before';
+      if (x > 0.75) return 'after';
+      return 'center';
+    }
+    if (containerDrop) return 'center';
+    if (reorderDrop) return x < 0.5 ? 'before' : 'after';
+    return null;
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (!canAcceptDrop && !canAcceptForeign(e)) return;
+    const zone = zoneFor(e);
+    if (!zone) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
-    setDragOver(true);
+    setDragOver(zone);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-    setDragOver(false);
+    setDragOver(null);
   };
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
+      const zone = zoneFor(e);
       const payload = bus.dragData ?? readBrowseableDrag(e);
-      setDragOver(false);
-      if (!payload || !node.onDrop) return;
-      if (node.canDrop && !node.canDrop(payload)) return;
+      setDragOver(null);
+      if (!payload || !zone) return;
       e.preventDefault();
       e.stopPropagation();
       setDropping(true);
       try {
-        await node.onDrop(payload);
+        if (zone === 'center') {
+          if (!node.onDrop || (node.canDrop && !node.canDrop(payload))) return;
+          await node.onDrop(payload);
+        } else if (onReorder) {
+          await onReorder(
+            payload,
+            zone === 'before' ? { beforeId: node.id } : { afterId: node.id },
+          );
+        }
       } finally {
         setDropping(false);
         bus.setDragData(null);
       }
     },
-    [bus, node],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bus, node, onReorder],
   );
 
   const tileButton = (
@@ -251,7 +296,9 @@ function GridTile({
           ? 'cursor-pointer hover:border-primary hover:bg-accent hover:text-foreground'
           : 'cursor-not-allowed',
         isSelected && 'border-primary text-foreground',
-        dragOver && 'border-primary bg-primary/10 ring-1 ring-primary/40',
+        dragOver === 'center' && 'border-primary bg-primary/10 ring-1 ring-primary/40',
+        dragOver === 'before' && 'shadow-[inset_3px_0_0_0_hsl(var(--primary))]',
+        dragOver === 'after' && 'shadow-[inset_-3px_0_0_0_hsl(var(--primary))]',
         dropping && 'opacity-60',
         node.rowClassName,
       )}
@@ -324,6 +371,11 @@ function GridTile({
                 navigate={navigate}
                 activePointer={activePointer}
                 size="default"
+                onReorder={
+                  node.reorderChildren
+                    ? (drag, anchor) => node.reorderChildren?.(drag.id, anchor)
+                    : undefined
+                }
               />
             ))}
           </div>

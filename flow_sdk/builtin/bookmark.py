@@ -57,6 +57,12 @@ class Bookmark(Entity):
     # and the frontend store merge never removes keys, so un-filing could not
     # propagate as None. Folder deletion promotes children to root.
     parent_id: str = APIField("")
+    # Manual placement within the parent container (desktop grid). 0 =
+    # unstamped (sorts at the END of a stamped container, newest first);
+    # stamped values are contiguous from 1 — see `sort_container` and the
+    # `bookmark.order` action. DB-only (bookmark has no meta_model), matching
+    # every other custom bookmark field.
+    order: int = APIField(0)
 
     @property
     def display_name(self) -> str:
@@ -86,3 +92,91 @@ class Bookmark(Entity):
         if bm is not None and bm.bookmark_type == BookmarkType.FAVORITE_FOLDER:
             await _promote_folder_children(str(eid))
         return await super().delete_by_id(eid)
+
+
+_FAVORITE_TYPES = {BookmarkType.FAVORITE.value, BookmarkType.FAVORITE_FOLDER.value}
+
+
+def sort_container(siblings: "list[Bookmark]") -> "list[Bookmark]":
+    """Container sort: stamped rows (order >= 1) ascending first, unstamped
+    rows (order == 0) at the END, newest first among themselves. Mirrored by
+    the frontend (`use-favorites.ts`) — keep the two in lockstep."""
+    stamped = sorted(
+        (b for b in siblings if (getattr(b, "order", 0) or 0) > 0),
+        key=lambda b: (b.order, str(b.id)),
+    )
+    unstamped = sorted(
+        (b for b in siblings if not (getattr(b, "order", 0) or 0)),
+        key=lambda b: str(getattr(b, "created_date", "") or ""),
+        reverse=True,
+    )
+    return stamped + unstamped
+
+
+async def _container_siblings(parent_id: str) -> "list[Bookmark]":
+    """The ordered members of one desktop container: root ("") holds folders +
+    unfiled favorites; a folder holds its filed favorites."""
+    rows = await Bookmark.get_all({})
+    siblings = [
+        b
+        for b in rows
+        if b.bookmark_type in _FAVORITE_TYPES and (b.parent_id or "") == (parent_id or "")
+    ]
+    return sort_container(siblings)
+
+
+async def _persist_sibling_order(new_order: "list[str]", by_id: "dict[str, Bookmark]") -> bool:
+    """Stamp ``order = index + 1`` (1-based — 0 is the unstamped sentinel),
+    saving only rows whose value changed. Mirrors tab.py's
+    ``_persist_global_order``."""
+    wrote = False
+    for idx, bid in enumerate(new_order):
+        bm = by_id.get(bid)
+        target = idx + 1
+        if bm is not None and (getattr(bm, "order", 0) or 0) != target:
+            bm.order = target
+            await bm.save()
+            wrote = True
+    return wrote
+
+
+async def _http_order(
+    cls,
+    reorder_bookmark_id: str,
+    after_bookmark_id: str | None = None,
+    before_bookmark_id: str | None = None,
+    parent_id: str = "",
+):
+    """POST /graph/bookmark/order — desktop drag-drop commit. Splices the
+    dragged bookmark into the drop-gap within its container's order (root or a
+    folder, per ``parent_id``), persisting only changed rows. Reuses the pure
+    tab-order algebra (generic over id lists)."""
+    from flow_sdk.builtin.tab_order import compute_reorder  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+    siblings = await _container_siblings(parent_id)
+    by_id = {str(b.id): b for b in siblings}
+    if reorder_bookmark_id in by_id:
+        order_ids = [str(b.id) for b in siblings]
+        new_order = compute_reorder(order_ids, reorder_bookmark_id, after_bookmark_id, before_bookmark_id)
+        await _persist_sibling_order(new_order, by_id)
+    siblings = await _container_siblings(parent_id)
+    return ApiSuccessResponse(data={"bookmarks": [b.model_dump(mode="json") for b in siblings]})
+
+
+def _register_order_action() -> None:
+    from flow_sdk.actions.action_registry import action as _action_registry  # noqa: PLC0415
+
+    # Type-qualified name — the registry keys by bare action_name and tab
+    # already owns bare "order"; get_by_name("order", "bookmark") resolves
+    # "bookmark.order" first.
+    _action_registry.register(
+        action_name="bookmark.order",
+        function_name="order",
+        handler=_http_order,
+        methods="post",
+        types=["bookmark"],
+    )
+
+
+_register_order_action()
