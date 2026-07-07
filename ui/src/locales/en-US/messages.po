@@ -1261,6 +1261,10 @@ msgstr "Attach to reply"
 msgid "Attachment unavailable — no body was uploaded"
 msgstr "Attachment unavailable — no body was uploaded"
 
+#: src/pages/flow-page/use-start-vibe-session.ts
+msgid "Attachment upload failed"
+msgstr "Attachment upload failed"
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Attachments"
 msgstr "Attachments"
@@ -1395,6 +1399,10 @@ msgstr "Bold"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Bookmark"
 msgstr "Bookmark"
+
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Bookmark folder"
+msgstr "Bookmark folder"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Bookmark this plan"
@@ -2617,7 +2625,6 @@ msgid "Could not save changes"
 msgstr "Could not save changes"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
-#: src/pages/home-landing/HomeLanding.tsx
 msgid "Could not start"
 msgstr "Could not start"
 
@@ -3084,6 +3091,10 @@ msgstr "Delete failed"
 msgid "Delete file"
 msgstr "Delete file"
 
+#: src/components/favorites/FolderTile.tsx
+msgid "Delete folder"
+msgstr "Delete folder"
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "Delete for everyone"
@@ -3231,6 +3242,10 @@ msgstr "Description like prepare my daily brief"
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Description:"
 msgstr "Description:"
+
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Desktop"
+msgstr "Desktop"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
@@ -3547,6 +3562,10 @@ msgstr "Drill by"
 #: src/components/project-brief/ContextFolders.tsx
 msgid "Drop a folder here or click to add"
 msgstr "Drop a folder here or click to add"
+
+#: src/components/favorites/FolderTile.tsx
+msgid "Drop favorites here"
+msgstr "Drop favorites here"
 
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/MessageComposer.tsx
@@ -4422,7 +4441,6 @@ msgid "Failed to start session"
 msgstr "Failed to start session"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
-#: src/pages/home-landing/HomeLanding.tsx
 msgid "Failed to start the build session."
 msgstr "Failed to start the build session."
 
@@ -4776,6 +4794,7 @@ msgid "Folder"
 msgstr "Folder"
 
 #: src/components/assets/AssetsNavigator.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Folder name"
 msgstr "Folder name"
@@ -5079,6 +5098,7 @@ msgid "Helpers used"
 msgstr "Helpers used"
 
 #: src/components/greeting/Greeting.tsx
+#: src/pages/flow-page/vibe-new-chat.tsx
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Hey <0>{firstName}</0>"
 msgstr "Hey <0>{firstName}</0>"
@@ -6687,12 +6707,15 @@ msgstr "New analysis"
 msgid "New asset"
 msgstr "New asset"
 
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "New bookmark folder"
+msgstr "New bookmark folder"
+
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "New build"
 msgstr "New build"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
-#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "New chat"
 msgstr "New chat"
 
@@ -7025,8 +7048,8 @@ msgid "No diagnoses recorded."
 msgstr "No diagnoses recorded."
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "No diff to display"
-msgstr "No diff to display"
+#~ msgid "No diff to display"
+#~ msgstr "No diff to display"
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "No differences from the current version."
@@ -8092,6 +8115,10 @@ msgstr "Open process"
 msgid "Open Project"
 msgstr "Open Project"
 
+#: src/pages/flow-page/vibe-new-chat.tsx
+msgid "Open project folder"
+msgstr "Open project folder"
+
 #: src/components/status-bar.tsx
 msgid "Open project view"
 msgstr "Open project view"
@@ -8166,8 +8193,8 @@ msgid "Open the shared terminal where approved prompts run"
 msgstr "Open the shared terminal where approved prompts run"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Open the sidecar shell first to enable git operations"
-msgstr "Open the sidecar shell first to enable git operations"
+#~ msgid "Open the sidecar shell first to enable git operations"
+#~ msgstr "Open the sidecar shell first to enable git operations"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
@@ -8562,7 +8589,6 @@ msgid "Please select a parent folder"
 msgstr "Please select a parent folder"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
-#: src/pages/home-landing/HomeLanding.tsx
 msgid "Please select or create a project first."
 msgstr "Please select or create a project first."
 
@@ -8781,7 +8807,6 @@ msgid "Project renamed"
 msgstr "Project renamed"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
-#: src/pages/home-landing/HomeLanding.tsx
 msgid "Project Required"
 msgstr "Project Required"
 
@@ -9268,6 +9293,10 @@ msgstr "Remove favorite"
 msgid "Remove file"
 msgstr "Remove file"
 
+#: src/components/favorites/FavoriteTile.tsx
+msgid "Remove from folder"
+msgstr "Remove from folder"
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Remove link"
 msgstr "Remove link"
@@ -9301,6 +9330,7 @@ msgstr "Removes it everywhere"
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteTile.tsx
+#: src/components/favorites/FolderTile.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -11062,6 +11092,10 @@ msgstr "Started"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Starting scan…"
 msgstr "Starting scan…"
+
+#: src/pages/flow-page/use-start-vibe-session.ts
+msgid "Starting the session without the attached files."
+msgstr "Starting the session without the attached files."
 
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Starting..."
