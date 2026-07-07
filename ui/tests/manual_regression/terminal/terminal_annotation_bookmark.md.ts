@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, ensureAdvancedView, skipIfPtyExhausted, startClaudeSession } from './helpers';
+import { apiOrigin } from '../_shared/api';
 
 /**
  * Navigate to an agentic process terminal with worker_session_id set.
@@ -65,7 +66,11 @@ test.describe('terminal_annotation_bookmark', () => {
     await expect(gutter).toBeAttached({ timeout: 10_000 });
   });
 
-  test('test 4+5: Create bookmark and verify Open Session navigates to correct process', async ({ page }) => {
+  // test 4 (create bookmark) + test 5 (persists with session linkage; listed by
+  // a live surface). The original test 5's home BookmarkColumn / "Open Session"
+  // `?t=` resume surface was removed in 29e6c667 (2026-06-18); scenario updated
+  // 2026-07-07 to guard the surviving contract instead.
+  test('test 4+5: Create bookmark; it persists with session linkage and is listed', async ({ page }) => {
     test.setTimeout(60_000);
 
     // Navigate to an agentic process and capture its ID
@@ -118,32 +123,53 @@ test.describe('terminal_annotation_bookmark', () => {
     // URL must stay on the same process (no redirect away)
     expect(page.url()).toContain(processId);
 
-    // Brief wait for bookmark to be persisted to backend
-    await page.waitForTimeout(1_500);
+    // ── Step 6: The bookmark ENTITY persists with correct session linkage ──────
+    // Re-read from the backend (proves persistence, not just an optimistic UI
+    // write) and assert it is linked to THIS process's worker session — the data
+    // half of the old "resume the correct process" guard. The process's worker
+    // session id is `agentic_process.session_id`; a terminal-annotation bookmark
+    // carries it as `bookmark.session_id`.
+    const bareProcessId = processId.replace('agentic_process-', '');
+    // The process's worker session id is fixed data once present — resolve it
+    // once, then poll only the bookmark endpoint for the persisted entity.
+    let sessionId = '';
+    await expect
+      .poll(
+        async () => {
+          const procRes = await page.request.get(`${apiOrigin()}/api/v1/graph/agentic_process`);
+          if (!procRes.ok()) return '';
+          const procs = (await procRes.json()).data as Array<{ id: string; session_id?: string }>;
+          sessionId = procs.find((p) => p.id === bareProcessId)?.session_id ?? '';
+          return sessionId;
+        },
+        { timeout: 15_000, message: `agentic_process ${bareProcessId} persisted with a worker session id` },
+      )
+      .not.toBe('');
 
-    // ── Step 6: Navigate to home landing page ────────────────────────────────
-    // Use /dock/home explicitly — navigating to '/' can redirect to the active
-    // agentic process shell, bypassing the home page bookmark column entirely.
-    await page.goto('/dock/home');
-    await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
+    // Find the bookmark bound to THIS process's worker session (there may be
+    // other processes' bookmarks with the same content in an accumulated DB —
+    // the session_id linkage is exactly what makes this one the right one).
+    await expect(async () => {
+      const bmRes = await page.request.get(`${apiOrigin()}/api/v1/graph/bookmark`);
+      expect(bmRes.ok()).toBeTruthy();
+      const bms = (await bmRes.json()).data as Array<{ session_id?: string; bookmark_type?: string; content?: string }>;
+      const linked = bms.find((b) => b.session_id === sessionId && b.bookmark_type === 'terminal_annotation');
+      expect(linked, `a terminal-annotation bookmark is linked to process session ${sessionId}`).toBeTruthy();
+      expect(linked?.content, 'the linked bookmark carries the content we saved').toBe('e2e test bookmark');
+    }).toPass({ timeout: 15_000 });
 
-    // Dismiss WelcomeModal if it appears (shows after DB reset when never_indexed=true)
-    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-    if (await skipForNow.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await skipForNow.click();
-      await page.waitForTimeout(500);
-    }
-
-    // ── Step 7: Find and click "Open Session" on the bookmark card ────────────
-    const openSessionBtn = page.getByRole('button', { name: /open session/i }).first();
-    await expect(openSessionBtn).toBeVisible({ timeout: 15_000 });
-    await openSessionBtn.click();
-
-    // ── Step 8: Verify navigation goes to the CORRECT existing process ────────
-    await page.waitForURL(new RegExp(processId), { timeout: 30_000 });
-    expect(page.url()).toContain(processId);
-
-    // Must include ?t= timestamp parameter
-    expect(page.url()).toContain('?t=');
+    // ── Step 7: A live surface lists the bookmark ─────────────────────────────
+    // Reload the process page so the annotation gutter re-fetches bookmarks from
+    // the backend (a full round-trip, not the in-memory state from creation) and
+    // assert the persisted bookmark is rendered as a gutter marker cell. Hovering
+    // it surfaces the stored content, confirming it is THIS bookmark.
+    await page.goto(processUrl);
+    await ensureAdvancedView(page);
+    const gutterAfter = page.locator('[data-testid="annotation-gutter"]').first();
+    await expect(gutterAfter).toBeAttached({ timeout: 30_000 });
+    const bookmarkMarker = page.locator('[data-testid="annotation-cell-bookmark"]').first();
+    await expect(bookmarkMarker).toBeVisible({ timeout: 15_000 });
+    await bookmarkMarker.hover();
+    await expect(page.getByText('e2e test bookmark').first()).toBeVisible({ timeout: 5_000 });
   });
 });

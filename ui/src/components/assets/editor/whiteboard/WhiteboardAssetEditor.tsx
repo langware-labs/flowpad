@@ -176,6 +176,12 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
   );
   const apiRef = useRef<ExcalidrawAPI | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The serialized board.json bytes we last wrote. Excalidraw emits spurious
+  // onChange callbacks after mount (font-load / internal re-renders) that carry
+  // an identical scene; without this guard each one re-arms the debounce and
+  // re-writes byte-identical board.json, churning the file (and its mtime) with
+  // no real change. Skip the write when the payload matches the last one.
+  const lastWrittenRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,7 +220,10 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
       const cleanAppState = stripEphemeralAppState(appState);
       const data = { elements, appState: cleanAppState, files };
       const wrapped: WrappedBoard = { kind: 'excalidraw', version: 1, data };
-      await boardRef.write(JSON.stringify(wrapped, null, 2));
+      const serialized = JSON.stringify(wrapped, null, 2);
+      if (serialized === lastWrittenRef.current) return;
+      lastWrittenRef.current = serialized;
+      await boardRef.write(serialized);
 
       const mermaid = excalidrawToMermaid(data);
       let currentDoc = '';

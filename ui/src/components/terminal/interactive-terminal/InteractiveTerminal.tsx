@@ -111,6 +111,18 @@ import {
   openTerminalLink,
   registerOsc52ClipboardWrite,
 } from './terminalConfig';
+import { isTextInputTarget } from '@src/utils/isTextInputTarget';
+
+// Focus the terminal WITHOUT yanking focus from a text field the user is editing
+// OUTSIDE it (e.g. the tab-strip rename input — an automatic blur auto-commits
+// and cancels the rename). Only the AUTOMATIC focus paths (init, activate) use
+// this; explicit user clicks still focus unconditionally.
+function focusTerminalUnlessEditingElsewhere(term: XTerm | null, container: HTMLElement | null) {
+  if (!term) return;
+  const ae = document.activeElement;
+  if (ae && ae !== document.body && !container?.contains(ae) && isTextInputTarget(ae)) return;
+  term.focus();
+}
 
 interface InteractiveTerminalProps {
   sessionId: string;
@@ -864,7 +876,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                 console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms setTerminalReady(true) (active)`);
             }
             setTerminalReady(true);
-            term.focus();
+            focusTerminalUnlessEditingElsewhere(term, xtermContainerRef.current);
 
             requestAnimationFrame(() => {
               if (!disposed) {
@@ -1405,7 +1417,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         fit.fit();
         if (!targetTimestamp) term.scrollToBottom();
         term.refresh(0, Math.max(0, term.rows - 1));
-        term.focus();
+        focusTerminalUnlessEditingElsewhere(term, xtermContainerRef.current);
         handlePtyResize(term.cols, term.rows);
       } catch (e) {
         console.warn('[InteractiveTerminal] activate refresh failed:', e);

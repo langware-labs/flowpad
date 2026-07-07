@@ -259,12 +259,34 @@ export async function openTabViaMenu(page: Page, openerId: 'claude' | 'terminal'
 }
 
 /**
- * Click the "+" button to add a new terminal tab.
+ * Click the "+" button to add a new terminal tab, then wait until the
+ * BRAND-NEW panel is `data-active="true"` with its prompt rendered — the
+ * mount+activate is async, so never fixed-sleep here (commands would race into
+ * the still-active old panel).
  */
 export async function addTerminalTab(page: Page) {
+  const priorSids = new Set(
+    await page
+      .locator('[data-testid="terminal-panel"]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('data-session-id') ?? '')),
+  );
   await openTabViaMenu(page, 'terminal');
-  // Wait for the new tab and terminal to initialise
-  await page.waitForTimeout(1_000);
+  await expect
+    .poll(
+      async () =>
+        activePanel(page).evaluateAll(
+          (els, prior) =>
+            els.some((el) => {
+              const sid = el.getAttribute('data-session-id') ?? '';
+              if (!sid || prior.includes(sid)) return false;
+              const rows = el.querySelector('.xterm-rows');
+              return !!rows && (rows.textContent ?? '').trim().length > 0;
+            }),
+          [...priorSids],
+        ),
+      { timeout: 15_000, message: 'a brand-new terminal panel is active with its prompt rendered' },
+    )
+    .toBe(true);
 }
 
 /**

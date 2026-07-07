@@ -186,28 +186,37 @@ async function tabIds(page: Page): Promise<string[]> {
 }
 
 /**
- * After a close-all the strip auto-switches off the now-empty project to one that
- * still has tabs. Poll for that SETTLED state (the switch lands a beat after the
- * closed project's tabs drop to 0): none of `closedIds` remain, every shown tab
- * belongs to `survivorIds`, and the count equals `expected`.
+ * Switch the active project via the projects-counter chip popover. The chip
+ * stays mounted even when the current project has zero open tabs (it labels the
+ * ambient current project + the counts of projects that still own tabs), so it
+ * is the affordance the matrix uses to move OFF an emptied project.
  */
-async function expectSwitchedAfterCloseAll(
-  page: Page,
-  closedIds: string[],
-  survivorIds: string[],
-  expected: number,
-) {
+async function openProjectsChipPopover(page: Page) {
+  await page.locator('[data-testid="projects-counter-chip"]').first().click();
+  const popover = page.locator('[data-testid="projects-counter-popover"]');
+  await popover.waitFor({ state: 'visible', timeout: 10_000 });
+  return popover;
+}
+
+async function switchToProjectViaChip(page: Page, projectName: string) {
+  const popover = await openProjectsChipPopover(page);
+  await popover.getByText(new RegExp(projectName, 'i')).first().click();
+}
+
+/**
+ * Poll until the strip shows EXACTLY `ids` (count + membership), regardless of
+ * order. Used after a project switch to assert the destination project's tabs.
+ */
+async function expectStripTabs(page: Page, ids: string[]) {
   await expect
     .poll(
       async () => {
         const t = await tabIds(page);
-        const closedLeft = t.filter((x) => closedIds.some((id) => x.includes(id))).length;
-        const survivorsShown = t.filter((x) => survivorIds.some((id) => x.includes(id))).length;
-        return closedLeft === 0 && survivorsShown === t.length ? t.length : -1;
+        return t.length === ids.length && t.every((x) => ids.some((id) => x.includes(id))) ? t.length : -1;
       },
       { timeout: 15_000 },
     )
-    .toBe(expected);
+    .toBe(ids.length);
 }
 
 /** Click a left-rail icon button (Home or the Chats/shell view). */
@@ -508,10 +517,13 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     await expect(page.locator('[data-testid="close-all-tabs-button"]')).toContainText('3', { timeout: 10_000 });
     await page.locator('[data-testid="close-all-tabs-button"]').click();
-    // Close-all closes ONLY the current project's (Proj-A) tabs; the strip then
-    // auto-switches to a project that still has tabs (Proj-B) rather than
-    // stranding on an empty project.
-    await expectSwitchedAfterCloseAll(page, aIds, bIds, 2);
+    // Close-all closes ONLY the current project's (Proj-A) tabs and leaves the
+    // strip on the now-empty Proj-A (its project home) — it does NOT auto-jump to
+    // another project (the .md: "validate Proj-A strip is now empty"). Proj-B's
+    // tabs are untouched: switch to it via the chip and both are intact.
+    await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(0);
+    await switchToProjectViaChip(page, 'Proj-B');
+    await expectStripTabs(page, bIds);
     await rq.dispose();
   });
 
@@ -733,16 +745,23 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 2; i++) await createShell(rq, b);
     const shells = await pureShells(rq);
     const aIds = shells.filter((s) => s.project_id === a).map((s) => s.id);
-    const bIds = shells.filter((s) => s.project_id === b).map((s) => s.id);
     await gotoUrl(page, `/dock/shell/shell-${aIds[0]}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     await page.locator('[data-testid="close-all-tabs-button"]').click();
-    // Proj-A ends with zero tabs; rather than strand on the now-empty project the
-    // strip auto-switches to Proj-B (which still has its 2 tabs).
-    await expectSwitchedAfterCloseAll(page, aIds, bIds, 2);
-    await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-b/i, { timeout: 10_000 });
+    // Proj-A ends with zero tabs; the strip stays on the now-empty Proj-A (does
+    // NOT auto-switch away). The footer keeps showing Proj-A as the current
+    // project (.md: "validate footer still shows Proj-A as current project").
+    await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(0);
+    await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-a/i, { timeout: 10_000 });
+    // Open the chip: Proj-A's row is gone (0 open tabs), Proj-B is still listed
+    // with count 2 (.md: "Proj-A row gone OR shows 0" / "Proj-B still listed count 2").
+    const popover = await openProjectsChipPopover(page);
+    const bRow = popover.locator('button').filter({ hasText: 'Proj-B' });
+    await expect(bRow).toBeVisible({ timeout: 10_000 });
+    await expect(bRow).toContainText('2'); // the row's count badge
+    await expect(popover.getByText(/Proj-A/)).toHaveCount(0);
     await rq.dispose();
   });
 
