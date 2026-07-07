@@ -1103,12 +1103,13 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.chrome === 'fullbleed') return null;
     // A bare shell is the terminal host; only a session-pointer shell is a tab.
     if (this.viewType === ViewType.SHELL && !this.pointer) return null;
-    // Assets is a SINGLE tab per scope: every type/folder/editor sub-pointer of
-    // one scope folds into ONE tab. Identity = the scope filter (global when
-    // unset), NOT the sub-pointer. scopeFilterKey: 'all' | 'user' |
-    // 'project:<id>' | 'filter:<0|1>:p1,p2'.
-    if (this.viewType === ViewType.ASSETS) {
-      return `${ViewType.ASSETS}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
+    // A scope-keyed view (Assets, Explorer) is a SINGLE tab per scope: every
+    // sub-pointer (asset type/folder/editor, explorer folder) of one scope folds
+    // into ONE tab. Identity = the scope filter (global when unset), NOT the
+    // sub-pointer. scopeFilterKey: 'all' | 'user' | 'project:<id>' |
+    // 'filter:<0|1>:p1,p2'.
+    if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
+      return `${this.viewType}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
     }
     // Pointer-folding views (e.g. Preferences) collapse all their category/field
     // sub-pointers into ONE tab: identity is the viewType, pointer dropped. The
@@ -1124,15 +1125,15 @@ export class DockPointer implements IDockPointer {
    *  This is what Tab.pointer stores in the DB. Returns null if tabHash is null. */
   toJSON(): string | null {
     if (!this.tabHash) return null;
-    // Assets identity is the SCOPE, not the sub-pointer. Normalize the pointer to
+    // Scope-keyed identity is the SCOPE, not the sub-pointer. Normalize the pointer to
     // '' and persist the scope (options) + the computed tabHash so: (a) the stored
     // JSON is constant for a given scope regardless of which type was last viewed
     // → the backend mints ONE Tab row per scope; (b) `Tab.dockPointer` rebuilds the
     // same tabHash directly from the stored field; (c) clicking the chip reopens the
     // scoped browser root.
-    if (this.viewType === ViewType.ASSETS) {
+    if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
       return JSON.stringify({
-        viewType: ViewType.ASSETS,
+        viewType: this.viewType,
         pointer: '',
         options: this.scopeFilter ? scopeFilterToDockOptions(this.scopeFilter) : undefined,
         tabHash: this.tabHash,
