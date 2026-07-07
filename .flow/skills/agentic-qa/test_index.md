@@ -1,7 +1,7 @@
-# Test Index — generated 2026-07-07T00:29:53
+# Test Index — generated 2026-07-07T17:13:14 (post 2026-07-07 cycle)
 
 ## agentic-process (playwright.config: yes)
-- agentic-process/conversation_view_three_spawn_branches.md — md.ts: NO
+- agentic-process/conversation_view_three_spawn_branches.md — md.ts: yes
 - agentic-process/embedded_close_preserves_process.md — md.ts: NO
 - agentic-process/fork_action_from_search_dock.md — md.ts: yes
 - agentic-process/new_claude_session_no_console_errors.md — md.ts: yes
@@ -173,3 +173,5 @@
 - workflow/workflow_entity_create.md — md.ts: yes
 - workflow/workflow_run_button.md — md.ts: yes
 
+## Parked specs (no .md.ts by design)
+- agentic-process/embedded_close_preserves_process.md — embedded ProcessToolbar has no live host (re-verified 2026-07-07 on 0.2.93); invariant's reachable half covered by terminal/terminal_persistence_on_tab_switch.md.ts
