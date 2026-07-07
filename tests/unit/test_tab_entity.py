@@ -120,9 +120,17 @@ async def test_close_is_soft_and_reopen_reshows() -> None:
 
 @pytest.mark.asyncio
 async def test_visible_query_over_mixed_kinds() -> None:
+    from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+
     tag = uuid.uuid4()
+    # A shell tab must point at a live Shell row: the list/order reap now treats a
+    # shell target with no DB row as a dead session (same rule as agentic_process)
+    # and drops the chip. Back the terminal-kind tab with a real Shell so this
+    # "mixed kinds" query tests membership, not orphan reaping.
+    live_shell = Shell(id=str(uuid.uuid4()))
+    await live_shell.save()
     opened = [
-        await ensure_tab(f"dock/shell#{tag}", target_type="shell", target_id=f"shell-{tag}"),
+        await ensure_tab(f"dock/shell#{tag}", target_type="shell", target_id=live_shell.id),
         await ensure_tab(f"editor/markdown#{tag}", target_type="markdown", target_id=f"md-{tag}"),
         await ensure_tab(f"editor/skill#{tag}", target_type="skill", target_id=f"sk-{tag}"),
         await ensure_tab(f"dock/settings#{tag}"),  # target-less transient surface
@@ -427,17 +435,90 @@ async def test_orphan_agentic_process_tab_is_reaped_when_target_missing() -> Non
 
 
 @pytest.mark.asyncio
+async def test_orphan_shell_tab_is_reaped_when_target_missing() -> None:
+    # Sibling of the agentic_process reap above, proven via the interactive-tabs
+    # matrix "External REST DELETE/close removes a session" RCA: a shell is ALWAYS
+    # DB-backed, so a shell tab whose Shell row is gone (the session was closed)
+    # is a dead chip — not a valid unindexed-on-disk target. The generic
+    # orphan-close soft-hides it on delete, but a reload whose active URL points at
+    # that now-deleted shell re-mints the row through ensure_tab (visible again);
+    # the list-path reap must drop it exactly like an agentic_process orphan, or
+    # the closed session's chip resurrects and never leaves the strip.
+    from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    ghost_id = str(uuid.uuid4())  # a shell id with NO DB row
+    assert await Shell.get_one({"id": ghost_id}) is None, "precondition: target absent"
+
+    tab = await ensure_tab(
+        f"shell/shell-{ghost_id}",
+        target_type="shell",
+        target_id=ghost_id,
+        project_id=None,  # projectless: the missing-PROJECT reaper must NOT mask this
+    )
+    assert tab.visible is True
+
+    listed = await _build_tab_list(None)
+    assert tab.id not in {t.id for t in listed}, (
+        "a tab whose shell target has no resolvable entity must be reaped from the "
+        "list, not rendered as a chip for a closed session"
+    )
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is None or reloaded.visible is False, (
+        "the dangling shell tab row must be removed/hidden"
+    )
+
+
+@pytest.mark.asyncio
+async def test_activate_is_noop_on_a_soft_closed_tab() -> None:
+    # Recency (`last_active_at`) is the close-resolver's tier-3 seed. `activate` is
+    # fired fire-and-forget on select; a click immediately followed by a close can
+    # let that stamp land AFTER the close (late under load), re-seeding the dead tab
+    # as most-recent and dragging the self-heal back onto it. A soft-closed tab is
+    # never a resolver candidate and activate never re-shows membership (reopen goes
+    # through ensure_tab), so activate on a `visible=False` tab must be a strict
+    # no-op: recency unchanged, still hidden.
+    from flow_sdk.core.entity.entity_model import _http_activate
+
+    tab = await ensure_tab(
+        f"dock/activate-noop#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=str(uuid.uuid4()),
+    )
+    await tab.close()
+    assert tab.visible is False
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is not None
+    before = reloaded.last_active_at
+
+    await _http_activate(reloaded)
+
+    after = await Tab.get_one({"id": tab.id})
+    assert after is not None
+    assert after.last_active_at == before, "activate must NOT stamp recency on a closed tab"
+    assert after.visible is False, "activate must NOT re-show a soft-closed tab"
+
+
+@pytest.mark.asyncio
 async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
     # `list_all` is the GLOBAL projection (every visible tab, all projects) that the
     # footer chip + sessions view need; the project-scoped `list(pid)` is
     # `{that project} + projectless`, and `list(None)` is projectless-only.
     from flow_sdk.builtin.tab import _build_list, _http_list_all
 
+    from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+
     tag = uuid.uuid4()
     pa = f"proj-a-{tag}"
     pb = f"proj-b-{tag}"
-    a = await ensure_tab(f"shell|a#{tag}", target_type="shell", target_id=f"sa-{tag}", project_id=pa)
-    b = await ensure_tab(f"shell|b#{tag}", target_type="shell", target_id=f"sb-{tag}", project_id=pb)
+    # Live Shell rows so the target reap keeps these terminal tabs (a shell tab
+    # whose Shell is absent is now reaped as a dead session, same as agentic_process).
+    sa = Shell(id=str(uuid.uuid4()))
+    sb = Shell(id=str(uuid.uuid4()))
+    await sa.save()
+    await sb.save()
+    a = await ensure_tab(f"shell|a#{tag}", target_type="shell", target_id=sa.id, project_id=pa)
+    b = await ensure_tab(f"shell|b#{tag}", target_type="shell", target_id=sb.id, project_id=pb)
     free = await ensure_tab(f"dock/settings#{tag}")  # projectless
 
     res = await _http_list_all(Tab)
