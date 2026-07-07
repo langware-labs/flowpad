@@ -185,11 +185,13 @@ class Entity(DBEntity):
     last_active_at: int | None = APIField(
         default=None,
         description=(
-            "Epoch-ms of this tab's last activation, stamped SERVER-SIDE by "
-            "the generic ``activate`` action (authoritative clock). Resolver "
-            "recency seed only (resolveActive case 3) — never read to "
-            "highlight the active tab; the URL is active truth. ISO-string "
-            "values from legacy rows are parsed tolerantly on load."
+            "Epoch-ms of this entity's last activation, stamped SERVER-SIDE by "
+            "the generic ``activate`` action (authoritative clock). Consumers: "
+            "the tab resolver's recency seed (resolveActive case 3 — never read "
+            "to highlight the active tab; the URL is active truth), and Project "
+            "open-recency (stamped when the user opens the project or one of "
+            "its assets; wins the project-picker sort). ISO-string values from "
+            "legacy rows are parsed tolerantly on load."
         ),
     )
 
@@ -2636,6 +2638,18 @@ async def _http_activate(self: Entity):
     membership promotion is explicit-only (``tabs/open``)."""
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.utils.serialization import now_epoch_ms  # noqa: PLC0415
+
+    # A soft-closed (``visible=False``) Tab is not a resolver candidate, and
+    # activation is recency-only — it NEVER re-shows membership (reopen goes
+    # through ``tabs/open`` → ``ensure_tab``, which is the sole re-show path). So
+    # stamping a hidden tab has no legitimate consumer and one real hazard: a late,
+    # out-of-order recency stamp. The activate is fired fire-and-forget on select
+    # (``stampTabRecencyForTarget``); when a tab is clicked and then closed a moment
+    # later, that stamp can arrive AFTER the close (seconds late under backend load)
+    # and re-seed the just-closed tab as most-recent, pulling the close self-heal
+    # back onto a dead tab. No-op it — a closed tab's recency is meaningless.
+    if self.get_type() == "tab" and getattr(self, "visible", True) is False:
+        return ApiSuccessResponse(data={"last_active_at": self.last_active_at})
 
     self.last_active_at = now_epoch_ms()
     await self.save()

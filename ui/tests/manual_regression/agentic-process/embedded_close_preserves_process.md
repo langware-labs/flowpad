@@ -13,6 +13,15 @@ id: 5f60991e-d10f-5b95-a1fb-08d34e2b2a66
 > (embedded close = pure onClose callback, no process.exit/close) still holds in
 > the code, but there is no host to exercise it end-to-end. Re-enable this
 > scenario once an embedded ProcessToolbar host ships again.
+>
+> PARKED — RE-VERIFIED 2026-07-07 (QA cycle, v0.2.93): still zero live callers
+> pass `embedded` (grep: the only `embedded={...}` site is InteractiveTerminal's
+> own pass-through at InteractiveTerminal.tsx:1633). No `.md.ts` is authored on
+> purpose: a test for an unreachable surface would be a fake green or a
+> non-covering canary. The invariant's REACHABLE half (a viewing-surface change
+> never terminates the process) is covered by
+> `terminal/terminal_persistence_on_tab_switch.md.ts`. Design owner decision
+> needed: ship an embedded host or delete the dead `embedded` plumbing.
 
 test 1: Close button in embedded ProcessToolbar hides the sidecar without terminating the process
 - open a context where ProcessToolbar is rendered in embedded mode (the sidecar / side-window surfaces — e.g. collaboration page, EntityChatPanel side view, or any caller that passes embedded={true})

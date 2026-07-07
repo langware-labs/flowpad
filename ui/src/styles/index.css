@@ -119,13 +119,60 @@
      The simplest "creator" skin — a Lovable lookalike-DNA palette. Because every
      primitive resolves its color through `hsl(var(--token))`, overriding the
      tokens here re-skins ALL shadcn components (buttons, cards, inputs, dialogs…)
-     at once with zero component edits. Vibe is a dark, warm-black canvas with a
-     vivid brand-blue accent and pill-soft geometry. Activated by the
-     `data-view="vibe"` attribute the ViewMode system writes on <html>.
-     See docs/viewmodes.md (pure-visual-tweak lever). */
+     at once with zero component edits. Activated by the `data-view="vibe"`
+     attribute the ViewMode system writes on <html>. See docs/viewmodes.md
+     (pure-visual-tweak lever).
+
+     Vibe follows the app's light/dark theme (next-themes class on <html>),
+     matching the hub graph micro-app: light = white canvas + the hub's brand
+     blue (#0f52d7 → #3474fa) as the only accent; dark = neutral near-black
+     canvas with the same blue. Only the geometry (pill radius) and the blue
+     accent are vibe-constant. */
   [data-view='vibe'] {
-    /* Palette matched to the hub micro-app: a NEUTRAL near-black canvas (no warm
-       tint) with the hub's brand blue (#0f52d7 → #3474fa) as the only accent. */
+    /* Light vibe — hub graph app's white canvas with brand-blue accents. */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 6%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 6%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 6%;
+
+    /* Hub brand blue (~#0f52d7) as the primary CTA color */
+    --primary: 221 87% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 42%;
+
+    --accent: 221 60% 94%;
+    --accent-foreground: 221 87% 30%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 89%;
+    --input: 0 0% 89%;
+    --ring: 221 87% 45%;
+
+    --radius: 0.875rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 221 87% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 221 87% 45%;
+  }
+
+  .dark[data-view='vibe'] {
+    /* Dark vibe — neutral near-black canvas (no warm tint), same hub blue. */
     --background: 0 0% 4.5%;
     --foreground: 0 0% 98%;
 
@@ -135,7 +182,6 @@
     --popover: 0 0% 6.5%;
     --popover-foreground: 0 0% 98%;
 
-    /* Hub brand blue (~#0f52d7) as the primary CTA color */
     --primary: 221 87% 52%;
     --primary-foreground: 0 0% 100%;
 
@@ -240,8 +286,15 @@
 
   /* Vibe hero glow — matched to the hub micro-app's ParallaxBackground: subtle
      monochrome-blue radial washes (#0f52d7 / #0a348a), not the Lovable rainbow.
-     Slightly stronger alpha than the hub's 0.03 so it reads behind the hero. */
+     Stronger alpha than the hub's 0.03 so it reads behind the hero; lighter on
+     the light canvas where blue washes carry further. */
   .vibe-hero-gradient {
+    background:
+      radial-gradient(circle at 25% 25%, hsl(221 87% 45% / 0.07), transparent 45%),
+      radial-gradient(circle at 78% 80%, hsl(221 87% 29% / 0.08), transparent 48%);
+  }
+
+  .dark .vibe-hero-gradient {
     background:
       radial-gradient(circle at 25% 25%, hsl(221 87% 45% / 0.14), transparent 45%),
       radial-gradient(circle at 78% 80%, hsl(221 87% 29% / 0.16), transparent 48%);

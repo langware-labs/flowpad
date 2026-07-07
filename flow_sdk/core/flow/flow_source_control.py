@@ -1,5 +1,6 @@
 import base64
 import logging
+import shlex
 import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -92,30 +93,18 @@ class ComputeSourceControl:
             )
             return False
 
-        # Git config user name
-        git_config_cmd = await self.compute_node.run_command("git config user.name 'Flowpad'")
-        await git_config_cmd.wait()
-        if git_config_cmd.exit_code != 0:
-            logging.error(
-                f"Failed to set git user name (exit code: {git_config_cmd.exit_code}): {git_config_cmd.all_stderr}"
-            )
+        # Identity + push config for a fresh Flowpad repo — one shared spec with
+        # GitRepo.init() (the GitPanel "Initialize git repo" path) so the two
+        # init surfaces can't drift. Failures are non-fatal, same as before.
+        from flow_sdk.builtin.faas.git_repo import GIT_INIT_CONFIG
 
-        # Git config user email
-        git_config_cmd = await self.compute_node.run_command("git config user.email 'git@example.com'")
-        await git_config_cmd.wait()
-        if git_config_cmd.exit_code != 0:
-            logging.error(
-                f"Failed to set git user email (exit code: {git_config_cmd.exit_code}): {git_config_cmd.all_stderr}"
-            )
-
-        # Set push.autoSetupRemote to automatically set upstream on push
-        # This avoids "no upstream branch" errors when pushing
-        git_config_push_cmd = await self.compute_node.run_command("git config push.autoSetupRemote true")
-        await git_config_push_cmd.wait()
-        if git_config_push_cmd.exit_code != 0:
-            logging.warning(
-                f"Failed to set git push.autoSetupRemote (exit code: {git_config_push_cmd.exit_code}): {git_config_push_cmd.all_stderr}"
-            )
+        for key, value in GIT_INIT_CONFIG:
+            git_config_cmd = await self.compute_node.run_command(f"git config {key} {shlex.quote(value)}")
+            await git_config_cmd.wait()
+            if git_config_cmd.exit_code != 0:
+                logging.error(
+                    f"Failed to set git config {key} (exit code: {git_config_cmd.exit_code}): {git_config_cmd.all_stderr}"
+                )
 
         return True
 

@@ -27,6 +27,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FolderOpen, FolderPlus, GitBranch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
+import { projectRecencyMs } from '@src/lib/project-recency';
 import { QUICK_CREATE_REGISTRY } from './registry';
 
 interface QuickCreateMenuProps {
@@ -114,6 +115,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
         name: p.displayName,
         path: p.fs_storage_mount_path ?? '',
         modifiedAt: p.updated_date ?? null,
+        recencyMs: projectRecencyMs({ last_active_at: p.last_active_at, modified_at: p.updated_date }),
       })),
     [projects],
   );

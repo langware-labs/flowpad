@@ -21,7 +21,7 @@ function formatSize(bytes: number): string {
  * (mirrors the composer's PendingFileChip) so an attached image reads as an
  * image, not a nameless binary; everything else shows a small file icon.
  */
-function PickedFileRow({
+export function PickedFileRow({
   file,
   disabled,
   onRemove,
@@ -80,6 +80,39 @@ function PickedFileRow({
   );
 }
 
+/**
+ * Size-guarded, deduped merge of incoming files into an existing selection.
+ * Returns the merged list plus the names that were rejected for size, so any
+ * composer can share the same attach semantics and format (or localize) the
+ * rejection copy itself.
+ */
+export function mergePickedFiles(
+  existing: File[],
+  incoming: FileList | File[] | null,
+): { files: File[]; rejectedNames: string[] } {
+  if (!incoming) return { files: existing, rejectedNames: [] };
+  const next = [...existing];
+  const rejectedNames: string[] = [];
+  for (const f of Array.from(incoming)) {
+    if (f.size > MAX_FILE_SIZE_BYTES) {
+      rejectedNames.push(f.name);
+      continue;
+    }
+    if (!next.some((x) => x.name === f.name && x.size === f.size)) {
+      next.push(f);
+    }
+  }
+  return { files: next, rejectedNames };
+}
+
+/** Default (unlocalized) rejection copy for `mergePickedFiles` results. */
+export function rejectedFilesNotice(rejectedNames: string[]): string | null {
+  if (rejectedNames.length === 0) return null;
+  return rejectedNames.length === 1
+    ? `"${rejectedNames[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
+    : `${rejectedNames.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${rejectedNames.join(', ')}.`;
+}
+
 export function FileAttachmentPicker({ files, onChange, disabled }: FileAttachmentPickerProps) {
   const inputId = useId();
   const [dragging, setDragging] = useState(false);
@@ -87,27 +120,9 @@ export function FileAttachmentPicker({ files, onChange, disabled }: FileAttachme
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return;
-    const next = [...files];
-    const tooBig: string[] = [];
-    for (const f of Array.from(incoming)) {
-      if (f.size > MAX_FILE_SIZE_BYTES) {
-        tooBig.push(f.name);
-        continue;
-      }
-      if (!next.some((x) => x.name === f.name && x.size === f.size)) {
-        next.push(f);
-      }
-    }
-    if (tooBig.length > 0) {
-      setRejected(
-        tooBig.length === 1
-          ? `"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
-          : `${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
-      );
-    } else {
-      setRejected(null);
-    }
-    onChange(next);
+    const merged = mergePickedFiles(files, incoming);
+    setRejected(rejectedFilesNotice(merged.rejectedNames));
+    onChange(merged.files);
   };
 
   const remove = (index: number) => {

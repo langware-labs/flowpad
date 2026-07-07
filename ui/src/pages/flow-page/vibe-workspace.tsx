@@ -17,10 +17,8 @@ import { isMcpAppPath } from '@src/lib/mcp-app-resources';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath, editorForType } from '@src/navigation/asset-doc-types';
 import {
-  ActionInfo,
   AgenticProcess,
   dataContext,
-  dataManager,
   FlowData,
   fsStore,
   ProcessKind,
@@ -28,6 +26,7 @@ import {
   TypeId,
   ViewType,
 } from '@sdk';
+import { resolveProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { setActiveTabParent } from '@src/tabs/tab-parent-context';
 import { notify } from '@src/notifications/notify';
@@ -200,10 +199,8 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const submitAnnotatedDisplay = useCallback(async (file: File, context: DisplayAnnotationContext) => {
     if (!activeProcess?.id) throw new Error('No active Vibe session');
 
-    const dir = await dataManager.callAction<null, { abs_path: string; compute_node_id: string }>(
-      new ActionInfo('input-dir', AgenticProcess.type, activeProcess.id, 'GET'),
-    );
-    if (!dir?.abs_path || !dir?.compute_node_id) throw new Error('Could not resolve the chat input directory');
+    const dir = await resolveProcessInputDir(activeProcess.id);
+    if (!dir) throw new Error('Could not resolve the chat input directory');
 
     const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, [file]);
     await Promise.all(uploads.map((upload) => upload.waitForCompletion()));

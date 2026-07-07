@@ -563,7 +563,7 @@ class _FakeProcess:
 
     _counter = 0
 
-    def __init__(self, status: ProcessStatus, worker: WorkerStatus | None = None, session_id: str | None = None, turn_in_flight: bool = False):
+    def __init__(self, status: ProcessStatus, worker: WorkerStatus | None = None, session_id: str | None = None, turn_in_flight: bool = False, pty_mode: bool = True):
         # Unique id so ``is_turn_busy`` → ``_prompt_lock_locked`` reads a fresh
         # (unlocked) per-process lock and never a lock a prior case left held.
         _FakeProcess._counter += 1
@@ -572,6 +572,10 @@ class _FakeProcess:
         self._worker = worker
         self.session_id = session_id
         self._turn_in_flight = turn_in_flight
+        # Transport: the mid-turn-tail busy signal (3) applies to INTERACTIVE
+        # (pty_mode=True) only — default True so the worker-status truth-table
+        # rows exercise it; CLI-mode rows pass pty_mode=False explicitly.
+        self.pty_mode = pty_mode
 
     def fetch_worker_status(self) -> WorkerStatus | None:
         return self._worker
@@ -659,9 +663,21 @@ def test_is_turn_busy_signal_priority():
     p_turn = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.COMPLETE, turn_in_flight=True)
     assert is_turn_busy(p_turn, WorkerStatus.COMPLETE) is True
 
-    # (3) A mid-turn worker status → busy with no lock / no turn flag.
+    # (3) A mid-turn worker status → busy with no lock / no turn flag —
+    #     INTERACTIVE (PTY) transport only. A native-xterm turn holds no lock,
+    #     so the transcript tail is its only busy signal.
     p_worker = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.THINKING)
     assert is_turn_busy(p_worker, WorkerStatus.THINKING) is True
+
+    # (3-gated) CLI mode (pty_mode=False): every real turn holds the lock or
+    #     _turn_in_flight, so a bare mid-turn tail means a dead turn (killed /
+    #     crashed print-mode CLI that never wrote its terminal entry) → NOT
+    #     busy. Counting it pinned ``busy`` True forever after cancel-prompt
+    #     ("can't stop the conversation").
+    p_dead_cli = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.THINKING, pty_mode=False)
+    assert is_turn_busy(p_dead_cli, WorkerStatus.THINKING) is False
+    p_live_cli = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.THINKING, pty_mode=False, turn_in_flight=True)
+    assert is_turn_busy(p_live_cli, WorkerStatus.THINKING) is True
 
     # api_error is re-promptable → NOT busy (maps to a ready process status).
     p_api = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.API_ERROR)
