@@ -1261,6 +1261,10 @@ msgstr "צרף לתשובה"
 msgid "Attachment unavailable — no body was uploaded"
 msgstr "ההצורף אינו זמין — לא הועלה קובץ"
 
+#: src/pages/flow-page/use-start-vibe-session.ts
+msgid "Attachment upload failed"
+msgstr ""
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Attachments"
 msgstr "קבצים מצורפים"
@@ -1395,6 +1399,10 @@ msgstr "מודגש"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Bookmark"
 msgstr "סימנייה"
+
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Bookmark folder"
+msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Bookmark this plan"
@@ -2617,7 +2625,6 @@ msgid "Could not save changes"
 msgstr "לא היה ניתן לשמור את השינויים"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
-#: src/pages/home-landing/HomeLanding.tsx
 msgid "Could not start"
 msgstr ""
 
@@ -3084,6 +3091,10 @@ msgstr "המחיקה נכשלה"
 msgid "Delete file"
 msgstr "מחק קובץ"
 
+#: src/components/favorites/FolderTile.tsx
+msgid "Delete folder"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "Delete for everyone"
@@ -3231,6 +3242,10 @@ msgstr "תיאור, למשל: הכנת התקציר היומי שלי"
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Description:"
 msgstr "תיאור:"
+
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Desktop"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
@@ -3546,6 +3561,10 @@ msgstr "התמקד לפי"
 
 #: src/components/project-brief/ContextFolders.tsx
 msgid "Drop a folder here or click to add"
+msgstr ""
+
+#: src/components/favorites/FolderTile.tsx
+msgid "Drop favorites here"
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
@@ -4422,7 +4441,6 @@ msgid "Failed to start session"
 msgstr "כישלון בהתחלת הפגישה"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
-#: src/pages/home-landing/HomeLanding.tsx
 msgid "Failed to start the build session."
 msgstr ""
 
@@ -4776,6 +4794,7 @@ msgid "Folder"
 msgstr "תיקייה"
 
 #: src/components/assets/AssetsNavigator.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Folder name"
 msgstr "שם התיקייה"
@@ -5079,6 +5098,7 @@ msgid "Helpers used"
 msgstr "עוזרים ששימשו"
 
 #: src/components/greeting/Greeting.tsx
+#: src/pages/flow-page/vibe-new-chat.tsx
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Hey <0>{firstName}</0>"
 msgstr "היי <0>{firstName}</0>"
@@ -6687,12 +6707,15 @@ msgstr "ניתוח חדש"
 msgid "New asset"
 msgstr "נכס חדש"
 
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "New bookmark folder"
+msgstr ""
+
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "New build"
 msgstr ""
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
-#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "New chat"
 msgstr "צ'אט חדש"
 
@@ -7025,8 +7048,8 @@ msgid "No diagnoses recorded."
 msgstr "לא נרשמו אבחנות."
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "No diff to display"
-msgstr "אין הבדלים להצגה"
+#~ msgid "No diff to display"
+#~ msgstr "אין הבדלים להצגה"
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "No differences from the current version."
@@ -8092,6 +8115,10 @@ msgstr "פתח תהליך"
 msgid "Open Project"
 msgstr "פתח פרויקט"
 
+#: src/pages/flow-page/vibe-new-chat.tsx
+msgid "Open project folder"
+msgstr ""
+
 #: src/components/status-bar.tsx
 msgid "Open project view"
 msgstr "פתח תצוגת פרויקט"
@@ -8166,8 +8193,8 @@ msgid "Open the shared terminal where approved prompts run"
 msgstr "פתח את הטרמינל המשותף בו פועלות הודעות אושרות"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Open the sidecar shell first to enable git operations"
-msgstr "פתח תחילה את ה-sidecar shell כדי להפעיל פעולות git"
+#~ msgid "Open the sidecar shell first to enable git operations"
+#~ msgstr "פתח תחילה את ה-sidecar shell כדי להפעיל פעולות git"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
@@ -8562,7 +8589,6 @@ msgid "Please select a parent folder"
 msgstr "אנא בחר תיקייה אב"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
-#: src/pages/home-landing/HomeLanding.tsx
 msgid "Please select or create a project first."
 msgstr "אנא בחר או צור פרויקט תחילה."
 
@@ -8781,7 +8807,6 @@ msgid "Project renamed"
 msgstr "שם הפרויקט שונה"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
-#: src/pages/home-landing/HomeLanding.tsx
 msgid "Project Required"
 msgstr "פרויקט נדרש"
 
@@ -9268,6 +9293,10 @@ msgstr "הסר מהמועדפים"
 msgid "Remove file"
 msgstr "הסר קובץ"
 
+#: src/components/favorites/FavoriteTile.tsx
+msgid "Remove from folder"
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Remove link"
 msgstr "הסר קישור"
@@ -9301,6 +9330,7 @@ msgstr "הסר אותו בכל מקום"
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteTile.tsx
+#: src/components/favorites/FolderTile.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -11062,6 +11092,10 @@ msgstr "החל"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Starting scan…"
 msgstr "מתחיל סריקה…"
+
+#: src/pages/flow-page/use-start-vibe-session.ts
+msgid "Starting the session without the attached files."
+msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Starting..."
