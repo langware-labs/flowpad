@@ -14,7 +14,7 @@ from starlette.websockets import WebSocketDisconnect
 from flow_sdk import service_log
 from flow_sdk.actions import action
 from flow_sdk.api.type_id import TypeId
-from flow_sdk.builtin.user import User
+from flow_sdk.builtin.user import User, normalize_email
 from flow_sdk.core.auth.custom import local_signin
 from flow_sdk.core.auth.models import SignupInfo
 from flow_sdk.core.entity.entity_model import Entity
@@ -42,7 +42,7 @@ async def handle_reset_action(request: Request):
     user: User | None = request_info.user
     if user is None:
         raise HTTPException(status_code=571, detail="Server Error")
-    if user.email != local_signup_info.email:
+    if normalize_email(user.email) != normalize_email(local_signup_info.email):
         raise HTTPException(status_code=572, detail="Server Error")
     if user.name != local_signup_info.name:
         raise HTTPException(status_code=573, detail="Server Error")

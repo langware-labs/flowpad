@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.api_key import ApiKey
 
 from fastapi import HTTPException
+from pydantic import field_validator
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.type_id import TypeId
@@ -18,6 +19,18 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_model import Entity
 
 char_set = string.ascii_lowercase + string.digits
+
+
+def normalize_email(email: str | None) -> str | None:
+    """Canonical form for any email we adopt, store, compare, or send.
+
+    Emails are case-insensitive in practice; a mixed-case copy that leaks into
+    storage or a hub payload breaks exact-match lookups downstream (e.g. an
+    invitation addressed to ``Tzahi@…`` never shows up for ``tzahi@…``). Every
+    email entering the system goes through here: strip + lowercase, empty → None.
+    """
+    normalized = (email or "").strip().lower()
+    return normalized or None
 
 
 def hash_password(salt: str, password: str) -> str:
@@ -55,6 +68,18 @@ class User(Entity):
     hashed_password_: str | None = None
     _unique: ClassVar[list[str]] = ["email"]
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, v):
+        # The canonical chokepoint: email is the ``_unique`` identity key, so
+        # storing it lowercase-by-construction makes every write path (signup,
+        # upsert, hub materialization, cloud-login mirror) dedup case-variants
+        # for free. Hashing is salt-based (email not in the hash), so this is
+        # safe. Non-str passes through untouched for pydantic to type-error.
+        if v is None or isinstance(v, str):
+            return normalize_email(v)
+        return v
+
     def __init__(self, **data):
         super().__init__(**data)
         if not self.salt_:
@@ -76,7 +101,7 @@ class User(Entity):
         return {
             "user_id": self.id or "",
             "name": name,
-            "email": self.email or "",
+            "email": normalize_email(self.email) or "",
         }
 
     @classmethod
@@ -89,7 +114,7 @@ class User(Entity):
             if is_logged_in():
                 cloud_user = get_user()
                 if isinstance(cloud_user, dict) and cloud_user.get("id"):
-                    email = str(cloud_user.get("email") or "")
+                    email = normalize_email(str(cloud_user.get("email") or "")) or ""
                     return {
                         "user_id": str(cloud_user.get("id") or ""),
                         "name": override or str(cloud_user.get("name") or email),
@@ -130,7 +155,7 @@ class User(Entity):
 
     @classmethod
     async def get_user_by_email(cls, email: str) -> "User | None":
-        return await cls.get_one({"email": email})
+        return await cls.get_one({"email": normalize_email(email)})
 
     @classmethod
     async def get_local(cls) -> "User | None":
@@ -187,7 +212,7 @@ class User(Entity):
         local-origin participants) the local entity ``id``. Returns the first
         match, or None.
         """
-        email = (email or "").strip() or None
+        email = normalize_email(email)
         user_id = (user_id or "").strip() or None
         if email:
             existing = await cls.get_one({"email": email})
@@ -221,7 +246,7 @@ class User(Entity):
         re-scan of the same participant never duplicates. Returns the contact,
         or None when there is no usable identity at all.
         """
-        email = (email or "").strip() or None
+        email = normalize_email(email)
         user_id = (user_id or "").strip() or None
         name = (name or "").strip() or None
         picture = (picture or "").strip() or None

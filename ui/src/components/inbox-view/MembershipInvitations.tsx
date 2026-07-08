@@ -4,6 +4,7 @@ import {
   QueryRequest,
   acceptInvitation,
   declineInvitation,
+  normalizeEmail,
 } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
@@ -26,13 +27,13 @@ export function MembershipInvitations({ recipientEmail }: { recipientEmail: stri
   const { data: invitations = [], refetch } = useEntitiesQuery<Invitation>(request);
 
   const pending = useMemo(() => {
-    const email = (recipientEmail || '').toLowerCase();
+    const email = normalizeEmail(recipientEmail);
     return invitations.filter((inv) => {
       const i = inv as any;
       if (!i.target_type || !i.target_id) return false; // conversation invites handled elsewhere
       if (i.accepted) return false;
       // Only show invitations addressed to the current user (when we know them).
-      if (email && (i.recipient_email || '').toLowerCase() !== email) return false;
+      if (email && normalizeEmail(i.recipient_email) !== email) return false;
       return true;
     });
   }, [invitations, recipientEmail]);

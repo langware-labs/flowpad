@@ -1,4 +1,4 @@
-import { ConversationParticipant, User } from '@sdk';
+import { ConversationParticipant, normalizeEmail, User } from '@sdk';
 import { Input } from '@src/components/ui/input';
 import { X } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -69,7 +69,7 @@ export function ContactPicker({
   };
 
   const addFreeFormEmail = () => {
-    const v = filterText.trim();
+    const v = normalizeEmail(filterText) || '';
     if (!v || !EMAIL_RE.test(v) || alreadyAdded({ email: v }) || isFull) return;
     onChange([...value, { email: v, name: null }]);
     setFilterText('');

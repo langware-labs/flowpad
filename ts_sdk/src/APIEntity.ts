@@ -12,6 +12,7 @@ import { DockPointerData } from './models/DockPointer';
 import { editorForType } from './models/asset-editor';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
+import { normalizeEmail } from './utils/utils';
 import { Callable } from './types';
 
 /**
@@ -724,7 +725,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public async share(recipients?: string[]): Promise<T> {
     const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
-    info.bodyParameters = { ...this.toJSON(), ...(recipients ? { recipients } : {}) };
+    const cleaned = recipients
+      ?.map((r) => normalizeEmail(r))
+      .filter((r): r is string => !!r);
+    info.bodyParameters = { ...this.toJSON(), ...(cleaned?.length ? { recipients: cleaned } : {}) };
     await dataManager.callAction<unknown, unknown>(info);
     (this as any).remote = true;
     return this as unknown as T;
@@ -779,7 +783,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
-      recipient_email: email,
+      recipient_email: normalizeEmail(email) ?? '',
       invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);

@@ -23,7 +23,7 @@ from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.organization import Organization
 from flow_sdk.builtin.team import Team
-from flow_sdk.builtin.user import User
+from flow_sdk.builtin.user import User, normalize_email
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.conversation import (
     append_message_pointer,
@@ -69,9 +69,11 @@ def _normalize_participants(participants: list[dict]) -> list[dict]:
         if not isinstance(participant, dict):
             continue
         item = dict(participant)
-        email = _participant_value(participant, "email", "user_email")
+        email = normalize_email(_participant_value(participant, "email", "user_email"))
         name = _participant_value(participant, "name", "user_name")
         picture = _participant_value(participant, "picture", "user_picture")
+        if isinstance(item.get("email"), str):
+            item["email"] = normalize_email(item["email"]) or ""
         if email and not item.get("email"):
             item["email"] = email
         if name and not item.get("name"):
@@ -2000,7 +2002,7 @@ async def _materialize_membership_invitation(
         logger.warning("[inv-materialize] membership target mirror failed: %s", e)
 
     fields = {
-        "recipient_email": hub_inv.get("recipient_email") or "",
+        "recipient_email": normalize_email(hub_inv.get("recipient_email")) or "",
         "accepted": bool(hub_inv.get("accepted") or False),
         "sent": bool(hub_inv.get("sent") or False),
         "message": hub_inv.get("message"),
@@ -2067,7 +2069,7 @@ async def _materialize_invitation(
     )
     inv_fields = {
         "id": inv_id,
-        "recipient_email": hub_inv.get("recipient_email") or "",
+        "recipient_email": normalize_email(hub_inv.get("recipient_email")) or "",
         "accepted": bool(hub_inv.get("accepted") or False),
         "sent": bool(hub_inv.get("sent") or False),
         "message": hub_inv.get("message"),
