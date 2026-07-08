@@ -2,7 +2,6 @@ import {
   describeToolInput,
   describeToolName,
 } from '@src/components/flowdata-renderer/ToolCallMessageComponent';
-import { useIsAdvanced } from '@src/components/view-mode';
 import { cn } from '@src/lib/utils';
 import { FlowData, FlowElementTypes } from '@sdk';
 import {
@@ -93,23 +92,24 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
 
 /**
  * The per-event list for one turn's dense events: paired TOOL_CALL/TOOL_RESULT
- * rows, other events (reasoning / status / error), then orphan results. Raw
- * payload JSON is gated behind Advanced (`useIsAdvanced`). Shared by the inline
- * {@link ToolEntryRow} (its expanded state) and the vibe footer's
- * `TurnEventChip` popover so both open to an identical list. Renders nothing
- * when the turn has no dense events.
+ * rows, other events (reasoning / status / error), then orphan results. Every
+ * row is click-expandable to its pretty-printed payload (JSON-string payloads
+ * are parsed and re-indented — the one-liner detail is truncated, so the
+ * expansion is the only way to actually read an init / rate-limit event).
+ * Shared by the inline {@link ToolEntryRow} (its expanded state) and the vibe
+ * footer's `TurnEventChip` popover so both open to an identical list. Renders
+ * nothing when the turn has no dense events.
  */
 export function TurnEventList({ events }: { events: FlowData[] }) {
-  const isAdvanced = useIsAdvanced();
   const { pairs, others, orphanResults, total } = useMemo(() => pairToolEvents(events), [events]);
   if (total === 0) return null;
   return (
     <ul className="flex max-w-full flex-col gap-0.5">
       {pairs.map((pair, i) => (
-        <ToolPairItem key={`pair-${i}`} pair={pair} showPayload={isAdvanced} />
+        <ToolPairItem key={`pair-${i}`} pair={pair} />
       ))}
       {others.map((evt, i) => (
-        <OtherEventItem key={`other-${i}`} event={evt} showPayload={isAdvanced} />
+        <OtherEventItem key={`other-${i}`} event={evt} />
       ))}
       {orphanResults.map((evt, i) => (
         <OrphanResultItem key={`orphan-${i}`} event={evt} />
@@ -131,23 +131,17 @@ function OneLinerIcon({ kind, inFlight }: { kind: OneLiner['icon']; inFlight: bo
 }
 
 /**
- * One expandable event row: a friendly icon+label line that, in Advanced
- * (`showPayload`), becomes a chevron toggle revealing the raw payload below.
- * Standard renders the same line as a plain (non-interactive) row.
+ * One expandable event row: a friendly icon+label line with a chevron toggle
+ * revealing the pretty-printed payload below.
  */
 function ExpandableRow({
-  showPayload,
   children,
   payload,
 }: {
-  showPayload: boolean;
   children: React.ReactNode;
   payload: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  if (!showPayload) {
-    return <div className="flex w-full items-center gap-1.5 px-1.5 py-1">{children}</div>;
-  }
   return (
     <>
       <button
@@ -167,7 +161,7 @@ function ExpandableRow({
   );
 }
 
-function ToolPairItem({ pair, showPayload }: { pair: ToolPair; showPayload: boolean }) {
+function ToolPairItem({ pair }: { pair: ToolPair }) {
   const toolName = pair.call.attributes['tool-name'] || 'Tool';
   const summary = describeToolInput(pair.call.data);
   const inFlight = pair.result === null;
@@ -180,7 +174,6 @@ function ToolPairItem({ pair, showPayload }: { pair: ToolPair; showPayload: bool
       className="rounded border border-transparent text-[13px] hover:border-border/60"
     >
       <ExpandableRow
-        showPayload={showPayload}
         payload={
           <>
             <PayloadBlock label="input" value={(pair.call.data as Record<string, unknown> | undefined)?.args ?? (pair.call.data as Record<string, unknown> | undefined)?.input} />
@@ -203,7 +196,7 @@ function ToolPairItem({ pair, showPayload }: { pair: ToolPair; showPayload: bool
   );
 }
 
-function OtherEventItem({ event, showPayload }: { event: FlowData; showPayload: boolean }) {
+function OtherEventItem({ event }: { event: FlowData }) {
   const { icon, label } = describeOther(event);
   const detail = extractText(event);
 
@@ -214,7 +207,6 @@ function OtherEventItem({ event, showPayload }: { event: FlowData; showPayload: 
       className="rounded border border-transparent text-[13px] hover:border-border/60"
     >
       <ExpandableRow
-        showPayload={showPayload}
         payload={
           <>
             <PayloadBlock label="data" value={event.data} />
@@ -247,11 +239,24 @@ function OrphanResultItem({ event }: { event: FlowData }) {
 
 function PayloadBlock({ label, value }: { label: string; value: unknown }) {
   if (value === null || value === undefined) return null;
+  // Status-style events (init, rate-limit, …) carry their payload as a JSON
+  // *string* — parse it back so the block shows indented JSON, not one long line.
+  let parsed = value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        /* not JSON — render the string as-is */
+      }
+    }
+  }
   let text: string;
   try {
-    text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    text = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
   } catch {
-    text = String(value);
+    text = String(parsed);
   }
   if (!text.trim()) return null;
   return (
