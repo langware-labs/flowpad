@@ -1,20 +1,19 @@
-"""Bug #1 — a markdown shared in a conversation and received locally must be
-stamped with the CONVERSATION's project_id, but isn't.
+"""Bug #1 — a markdown shared in a conversation and installed locally must be
+stamped with the chosen project's project_id, but wasn't.
 
-Drives exactly the receiver-side unpack sequence ``unpack_bundle`` runs for a
-file-backed markdown entry, with the conversation→project resolution that the
-stamp depends on:
+Drives exactly the install sequence ``handle_attachment_install`` runs for a
+staged file-backed markdown entry:
 
-  1. ``_resolve_project_root_for_conv(conv.id)`` — reads ``conv.project_id``,
-     loads the Project, returns its ``fs_storage_mount_path`` (DISCARDS the id).
-  2. ``_restore_file_backed_entry`` — copies the bundle's ``docs/<leaf>.md``
+  1. Resolve the target project's mount root + id (the explicit project_id the
+     user picked in the review modal — ``Project.fs_storage_mount_path``).
+  2. ``_restore_file_backed_entry`` — copies the staged ``docs/<leaf>.md``
      into the project root.
-  3. ``_reindex_received_assets(project_root, {MARKDOWN})`` — reindexes WITHOUT
-     a project_id (the FSRef at flow_message_bundle.py:541 carries none), so the
-     markdown row lands with ``project_id=None`` instead of the conversation's.
+  3. ``_reindex_received_assets(project_root, {MARKDOWN}, project_id=...)`` —
+     the project_id MUST be threaded onto the reindex root, or the markdown row
+     lands with ``project_id=None`` instead of the chosen project's.
 
-No mocks: real test DB + real FSIndexer + real Conversation/Project rows,
-exercising the same functions unpack_bundle calls in sequence.
+No mocks: real test DB + real FSIndexer + real Project rows, exercising the
+same functions the install action calls in sequence.
 """
 from __future__ import annotations
 
@@ -25,10 +24,8 @@ import pytest
 # Ensure MARKDOWN TypeInfo (main_subdir/extractor/owns) is registered.
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
-from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message_bundle import (
     _reindex_received_assets,
-    _resolve_project_root_for_conv,
     _restore_file_backed_entry,
 )
 from flow_sdk.builtin.project import Project
@@ -55,43 +52,35 @@ def _markdown_bundle_entry_dir(tmp_path: Path) -> Path:
     return entry_dir
 
 
-async def test_received_markdown_inherits_conversation_project_id(tmp_path: Path) -> None:
-    # A real project — the conversation's owning project (the receiver maps one).
+async def test_received_markdown_inherits_chosen_project_id(tmp_path: Path) -> None:
+    # A real project — the install target the user picked in the review modal.
     project_root = tmp_path / "ziv-shared-project"
     project_root.mkdir(parents=True)
     pid = Project.derive_id_for_path(str(project_root))
     proj = Project(id=pid, name="ziv-shared-project", fs_storage_mount_path=str(project_root))
     await proj.save()
 
-    # A real conversation scoped to that project (Ziv's shared-md conversation).
-    conv = Conversation(project_id=pid)
-    await conv.save()
+    # 1. The install action resolves the explicit project's mount root + id.
+    resolved_root = Path(proj.fs_storage_mount_path)
+    assert resolved_root == project_root
 
-    # 1. Receiver resolves the conversation's project root — the exact function
-    #    unpack_bundle calls at flow_message_bundle.py:989.
-    resolved = await _resolve_project_root_for_conv(conv.id)
-    assert resolved is not None and Path(resolved[0]) == project_root and resolved[1] == pid, (
-        "precondition: conversation resolves to its project root + id"
-    )
-    resolved_root = resolved[0]
-
-    # 2. Restore the bundle's markdown into the project, exactly as unpack_bundle does.
+    # 2. Restore the staged markdown into the project, exactly as install does.
     assert _restore_file_backed_entry(_markdown_bundle_entry_dir(tmp_path), resolved_root, overwrite=False)
     assert (project_root / "docs" / "shared-note.md").exists()
 
-    # 3. Reindex the received asset — the exact call at flow_message_bundle.py:1199,
-    #    threading the conversation's project_id (the half the receive path resolves).
-    await _reindex_received_assets(resolved_root, (RecordType.MARKDOWN,), project_id=resolved[1])
+    # 3. Reindex the installed asset, threading the chosen project_id — the
+    #    exact call handle_attachment_install makes.
+    await _reindex_received_assets(resolved_root, (RecordType.MARKDOWN,), project_id=pid)
 
     md_cls = SchemaRegistry.get_entity_cls("markdown")
     assert md_cls is not None, "markdown entity class not registered"
     md = await md_cls.get_one({"id": MD_ID})
     assert md is not None, "reindex did not materialize the received markdown row"
 
-    # THE BUG: the received markdown must carry the conversation's project_id, so
-    # opening it lands in the conversation's project. It is stamped None instead,
-    # because the receive path discards the resolved project_id (the FSRef has none).
+    # THE BUG: the installed markdown must carry the chosen project_id, so
+    # opening it lands in that project. Without the project_id threading it is
+    # stamped None instead (the FSRef would carry none).
     assert md.project_id == pid, (
-        f"received markdown not stamped with conversation project_id: "
+        f"installed markdown not stamped with chosen project_id: "
         f"got {md.project_id!r}, expected {pid!r}"
     )

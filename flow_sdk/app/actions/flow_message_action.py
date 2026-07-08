@@ -387,16 +387,14 @@ async def handle_download_body(fm_id: str, *, overwrite: bool = False) -> ApiRes
     ``asset_conflict`` + the conflicting paths so the UI can prompt the user and
     re-POST with ``overwrite=True``."""
     from flow_sdk.builtin.flow_message import BodyNotReadyError
-    from flow_sdk.builtin.flow_message_bundle import (
-        FlowMessageExistsError, FlowMessageNoProjectError,
-    )
+    from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
     from flow_sdk.core.network.resource_tracker import make_flow_message_progress_emitter
     fm = await _load_fm_local_or_hub(fm_id)
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
-    # File-backed assets unpack into the conversation's mapped PROJECT (the
-    # destination is resolved inside unpack_bundle from the conversation). No
-    # asset_dest_root to pass — the project is the single source of placement.
+    # File-backed assets unpack into the message's STAGING area (record-data
+    # dir) and surface as MessageAttachment rows — no project needed here;
+    # placement happens in the explicit message_attachment install action.
     try:
         await fm.download_body(
             overwrite=overwrite,
@@ -411,14 +409,6 @@ async def handle_download_body(fm_id: str, *, overwrite: bool = False) -> ApiRes
             message="asset already exists — overwrite?",
             status_code=409,
             data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
-        )
-    except FlowMessageNoProjectError as e:
-        # The conversation isn't mapped to a project — nowhere to land the
-        # assets. Tell the UI to prompt project selection then re-download.
-        return ApiFailResponse(
-            message="map a project to this conversation first",
-            status_code=409,
-            data={"needs_project": True, "pending_types": getattr(e, "pending_types", None)},
         )
     except Exception as e:
         logger.error("[flow_message_action] download_body fm=%s: %s", fm_id, e, exc_info=True)
@@ -716,9 +706,13 @@ async def _hard_delete_local_conversation(conv: Conversation) -> None:
         from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
         flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value, conversation_id=cid)
         msgs = await FlowMessage.get_all(flt)
+        from flow_sdk.fs_store.operations.flow_message import purge_flow_message_local_data  # noqa: PLC0415
         for fm in msgs:
             try:
                 await fm.delete()
+                # Staging data + MessageAttachment rows go with the message
+                # (installed copies are the user's assets — kept).
+                await purge_flow_message_local_data(fm.id)
             except Exception as e:  # noqa: BLE001
                 logger.warning("[conv-hard-delete] %s fm delete failed: %s", cid[:8], e)
     except Exception as e:  # noqa: BLE001
@@ -1050,6 +1044,14 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
         await fm.destroy()
     except Exception as e:  # noqa: BLE001
         logger.warning("[remove-message] local destroy failed fm=%s: %s", fm_id, e)
+
+    # Purge the message's staging data (download/ + unpacked/) + its
+    # MessageAttachment rows. Installed copies are the user's assets — kept.
+    try:
+        from flow_sdk.fs_store.operations.flow_message import purge_flow_message_local_data  # noqa: PLC0415
+        await purge_flow_message_local_data(fm_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[remove-message] staging purge failed fm=%s: %s", fm_id, e)
 
     # Drop the conversation pointer + re-project (notify so the open view updates).
     if conv_id:
@@ -1416,7 +1418,6 @@ async def _download_and_unpack_bundle(
     body_status: "str | BodyStatus | None" = None,
     overwrite: bool = False,
     raise_on_conflict: bool = False,
-    raise_on_no_project: bool = False,
     on_progress=None,
 ) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
@@ -1432,17 +1433,15 @@ async def _download_and_unpack_bundle(
     explicit ``download_body`` path forwards its own READY status. ``None`` means
     "caller did not supply a status" and proceeds unchanged (back-compat).
 
-    File-backed assets in the bundle are copied into the conversation's mapped
-    PROJECT and indexed there (``unpack_bundle``). When no project is mapped the
-    assets are parked; ``raise_on_no_project`` (the explicit ``download_body``
-    path) then re-raises ``FlowMessageNoProjectError`` so the caller can prompt
-    "map a project first" and re-download. Implicit callers swallow it (parked).
+    File-backed assets in the bundle are STAGED under the message's record-data
+    dir and surfaced as MessageAttachment rows (``unpack_bundle``) — no project
+    mapping is needed to download; installing is a separate explicit action.
 
     ``on_progress`` — optional async callback fired as download bytes land;
     when set the hub GET is streamed instead of buffered whole.
     """
     from flow_sdk.builtin.flow_message_bundle import (
-        FlowMessageExistsError, FlowMessageNoProjectError, unpack_bundle,
+        FlowMessageExistsError, unpack_bundle,
     )
 
     if body_status is not None:
@@ -1466,10 +1465,7 @@ async def _download_and_unpack_bundle(
         tmp_path = Path(tmp.name)
         tmp.write(bundle_bytes)
     try:
-        await unpack_bundle(
-            tmp_path, local_user_id, overwrite=overwrite,
-            raise_on_no_project=raise_on_no_project,
-        )
+        await unpack_bundle(tmp_path, local_user_id, overwrite=overwrite)
         # Bundle bytes are on disk now. The FM's ``attachment[].local_path``
         # is computed lazily by the model serializer from disk state, so the
         # cached browser entity still reads ``local_path=null`` from the
@@ -1519,16 +1515,6 @@ async def _download_and_unpack_bundle(
             "[bundle] unpack conflict fm=%s — asset already exists at target; "
             "not materialized (retry with overwrite to replace)", fm_id,
         )
-        return False
-    except FlowMessageNoProjectError:
-        # File-backed assets were extracted but the conversation isn't mapped to
-        # a project — they're parked (the FM still materialized). The explicit
-        # download path re-raises so the UI can prompt "map a project first" and
-        # re-download; implicit auto-callers leave the asset parked and report
-        # not-fully-materialized (False) without crashing the sync.
-        if raise_on_no_project:
-            raise
-        logger.info("[bundle] assets parked fm=%s — no project mapped yet", fm_id)
         return False
     except ValueError as e:
         # Legacy bundles (pre-header.json) raise "Invalid .flowmsg: missing

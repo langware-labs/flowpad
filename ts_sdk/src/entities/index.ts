@@ -40,6 +40,7 @@ export * from './feed-entry';
 export * from './message-suggest';
 export * from './user-note';
 export * from './flow-message';
+export * from './message-attachment';
 export * from './invitation';
 export * from './spec';
 export * from './group';

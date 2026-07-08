@@ -151,6 +151,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import FeedEntry: {e}")
 
 try:
+    from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import MessageAttachment: {e}")
+
+try:
     from flow_sdk.builtin.message_suggest import MessageSuggest  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import MessageSuggest: {e}")

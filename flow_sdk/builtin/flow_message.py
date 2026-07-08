@@ -138,7 +138,7 @@ def is_image_filename(name: str) -> bool:
     return Path(name).suffix.lower() in IMAGE_FILE_EXTENSIONS
 
 # TYPE_ID attachment types that ride in the body bundle but never materialize a
-# standard local record folder (which is what ``_type_id_record_materialized``
+# standard local record folder (which is what ``_type_id_attachment_present``
 # probes) — either conversation plumbing (conversation/flow_message/task, the
 # UI's STRUCTURAL_ATTACHMENT_TYPES), or an indexer-owned type whose bundle
 # unpack creates only an entity ROW, never a records folder (claude_session —
@@ -157,40 +157,47 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
 _BODY_BEARING_TYPE_IDS = frozenset({"spec", "markdown", "plan"})
 
 
-def _type_id_record_materialized(data: str) -> bool:
-    """Sync disk probe: does the entity referenced by a TYPE_ID attachment have
-    a materialized record folder on local disk?
+def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
+    """Sync disk probe: is the entity referenced by a TYPE_ID attachment
+    locally present — either STAGED under the owning message's unpacked/ dir,
+    or materialized as a record folder (pre-staging installs / DB-record types)?
 
-    Disk is the source of truth (docs/CLAUDE.md rule 1): a materialized record
-    is a folder at ``<records_root>/<type>/<type>-@<id>/`` with a
-    ``metadata.json``. The body-bundle unpack reindexes assets *before* it fans
-    the entity UPDATE, so by the time a re-serialize observes this the folder
-    exists. Structural plumbing types are treated as always-present (they don't
-    render and may not have a standard folder).
+    The staged check comes first: since reception stages file-backed assets
+    instead of materializing them, a staged entry counts as "downloaded" (the
+    catch-up loop must NOT re-pull the bundle forever waiting for a record
+    folder that install — a user choice — may never create). The record-folder
+    check is kept as an OR so pre-staging messages whose assets were already
+    materialized into a project still count without a data migration.
 
     Body-bearing types (spec/markdown/plan) additionally require their
-    ``asset_ref`` source file to exist — a metadata-only stub does not count, so
-    a body-less spec re-pulls its bundle instead of being stranded blank."""
+    ``asset_ref`` source file to exist on the record-folder path — a
+    metadata-only stub does not count, so a body-less spec re-pulls its bundle
+    instead of being stranded blank."""
     if "-" not in data:
         return True
     etype, eid = data.split("-", 1)
     if etype in _NON_MATERIALIZING_TYPE_IDS:
         return True
     try:
+        # Record-folder (installed / pre-staging) check FIRST: for an installed
+        # asset it short-circuits without paying the staged-dir stat — this
+        # runs per TYPE_ID attachment on every serialize (hot path).
         from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
-        folder = get_default_records_root() / etype / record_stem(etype, eid)
-        meta = folder / "metadata.json"
-        if not meta.exists():
-            return False
-        if etype in _BODY_BEARING_TYPE_IDS:
+        meta = get_default_records_root() / etype / record_stem(etype, eid) / "metadata.json"
+        if meta.exists():
+            if etype not in _BODY_BEARING_TYPE_IDS:
+                return True
             import json  # noqa: PLC0415
-            # A metadata-only stub has no resolvable asset_ref → not "downloaded"
-            # (so the bundle re-pulls). Malformed metadata falls through to the
-            # outer except → False, same effect.
+            # A metadata-only stub has no resolvable asset_ref → fall through
+            # to the staged check (a staged body still counts as downloaded).
             asset_ref = (json.loads(meta.read_text(encoding="utf-8")) or {}).get("asset_ref")
-            if not asset_ref or not Path(asset_ref).exists():
-                return False
-        return True
+            if asset_ref and Path(asset_ref).exists():
+                return True
+        if fm_id:
+            from flow_sdk.fs_store.operations.flow_message import staged_entry_dir
+            if staged_entry_dir(fm_id, f"{etype}-@{eid}").exists():
+                return True
+        return False
     except Exception:
         return False
 
@@ -398,6 +405,14 @@ class FlowMessage(Entity):
         # message between a single Download button and rendered chips off this
         # one flag, so the transcript and the context panel share state.
         data["body_downloaded"] = self._compute_body_downloaded(data.get("attachment") or [])
+        # Unpack signal (transient, API-only): the bundle's extracted tree
+        # persists under the message's staging dir. Distinct from
+        # ``body_downloaded`` (which also covers pre-staging record folders):
+        # this one specifically says "staged content exists for review".
+        # Gated on has_body() — this serializer runs for EVERY message dump
+        # (conversation lists, WS fanout), so bodyless messages must not pay a
+        # disk stat.
+        data["body_unpacked"] = self.has_body() and self.is_body_unpacked()
         return data
 
     def _compute_body_downloaded(self, atts: list[dict[str, Any]]) -> bool:
@@ -414,9 +429,26 @@ class FlowMessage(Entity):
                 ):
                     return False
             elif atype == AttachmentType.TYPE_ID.value:
-                if not _type_id_record_materialized(att.get("data") or ""):
+                if not _type_id_attachment_present(self.id, att.get("data") or ""):
                     return False
         return True
+
+    def is_body_file_downloaded(self) -> bool:
+        """True when the raw ``.flowmsg`` bundle sits in this message's
+        record-data ``download/`` dir (staging layout — see
+        ``fs_store/operations/flow_message.py``)."""
+        if not self.id:
+            return False
+        from flow_sdk.fs_store.operations.flow_message import is_downloaded
+        return is_downloaded(self.id)
+
+    def is_body_unpacked(self) -> bool:
+        """True when the bundle's extracted tree persists under this message's
+        record-data ``unpacked/`` dir (the staging area install reads from)."""
+        if not self.id:
+            return False
+        from flow_sdk.fs_store.operations.flow_message import is_unpacked
+        return is_unpacked(self.id)
 
     def is_body_downloaded(self) -> bool:
         """Disk-probe twin of the serializer's ``body_downloaded`` flag for
@@ -431,7 +463,7 @@ class FlowMessage(Entity):
         for att in self.attachment or []:
             t = att.attachment_type
             if t == AttachmentType.TYPE_ID:
-                if not _type_id_record_materialized(att.data or ""):
+                if not _type_id_attachment_present(self.id, att.data or ""):
                     return False
                 continue
             vfs_subpath: Optional[str] = None
@@ -640,16 +672,15 @@ class FlowMessage(Entity):
         must wait for the hub to fan out the body_status UPDATE first.
         Reuses the standard unpack_bundle path so all attachment kinds
         (FILE, PROMPT-file, TYPE_ID, file-backed records) restore identically
-        to the receive-on-inbox flow. File-backed assets land in the
-        conversation's mapped PROJECT (resolved inside unpack_bundle).
+        to the receive-on-inbox flow. File-backed assets land in the message's
+        STAGING area (record-data dir) as MessageAttachment rows — installing
+        into a project or the user scope is a separate, explicit action, so no
+        project mapping is required to download.
 
         ``overwrite`` — when a different asset already occupies a restored
         record's target path, the unpack raises ``FlowMessageExistsError``
         (surfaced so the caller can prompt "asset already exists — overwrite?").
         Re-invoking with ``overwrite=True`` replaces the on-disk asset.
-
-        Raises ``FlowMessageNoProjectError`` when the conversation has no project
-        mapped (the explicit path) so the caller can prompt + re-download.
 
         ``on_progress`` — optional async callback fired as download bytes
         land; receives (bytes_done, bytes_total). Drives the receiver's bar.
@@ -664,13 +695,12 @@ class FlowMessage(Entity):
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
         filename = self.attachment_filename or BODY_FILENAME
         # This is the explicit download path: a real collision propagates
-        # (FlowMessageExistsError) and a missing project propagates
-        # (FlowMessageNoProjectError) for the caller to handle, rather than being
+        # (FlowMessageExistsError) for the caller to handle, rather than being
         # logged-and-dropped like the implicit sync callers.
         ok = await _download_and_unpack_bundle(
             self.id, filename, body_status=self.body_status,
             overwrite=overwrite, raise_on_conflict=True,
-            raise_on_no_project=True, on_progress=on_progress,
+            on_progress=on_progress,
         )
         if not ok:
             raise RuntimeError(f"download_body failed for fm={self.id}")

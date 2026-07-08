@@ -162,6 +162,9 @@ class EntityType(StrEnum):
     PROCESS_RESULT = "process_result"
     CRON_EVENT = "cron_event"
     FLOW_MESSAGE = "flow_message"
+    # A received, staged bundle attachment awaiting explicit install
+    # (DB-only entity — no TypeInfo/RecordType; see builtin/message_attachment.py).
+    MESSAGE_ATTACHMENT = "message_attachment"
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
     RUN = "run"

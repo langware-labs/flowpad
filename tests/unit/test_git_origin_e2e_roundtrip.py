@@ -24,18 +24,41 @@ import pytest
 # registration) so get_entity_cls('skill') resolves and the reindex materializes.
 import flow_sdk.models.entities  # noqa: F401
 
+from flow_sdk.app.actions.message_attachment_action import handle_attachment_install
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 from flow_sdk.builtin.flow_message_bundle import _resolve_git_checkout, pack_bundle, unpack_bundle
 from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.builtin.message_attachment import MessageAttachment
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.core import Entity
+from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.schema.types import EntityType
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
+
+
+@pytest.fixture(autouse=True)
+def _isolated_records_root(tmp_records_root):
+    """Unpack persists the bundle + staging tree under the records-data root —
+    keep it off the developer's real instance dir."""
+    return tmp_records_root
+
+
+async def _install_staged(fm_id: str, key: str, *, scope: str, project_id: str | None = None) -> MessageAttachment:
+    """Reception is now two-phase: unpack STAGES (MessageAttachment, scope=None)
+    and the user explicitly installs. This drives the install half the way the
+    review modal does, asserting the staged row existed first."""
+    ma_id = MessageAttachment.allocate_deterministic_id(fm_id, key)
+    ma = await MessageAttachment.get_one({"id": ma_id})
+    assert ma is not None, f"unpack did not stage {key}"
+    assert ma.scope is None, f"staged attachment must start uninstalled: {ma.scope}"
+    res = await handle_attachment_install(ma_id, scope, project_id, someone_typeid=None)
+    assert isinstance(res, ApiSuccessResponse), f"install failed: {getattr(res, 'message', res)!r}"
+    return ma
 
 REL_PATH = "tools/kit/.claude/skills/foo"
 SKILL_ID = "a1a1a1a1-0000-4000-8000-000000000111"
@@ -110,8 +133,7 @@ async def test_skill_reflects_same_repo_path_through_real_pack_unpack(tmp_path):
     project = Project(name="reflect-dst", fs_storage_mount_path=str(recv_proj))
     await project.save(notify=False)
     # Local conversation mapped to the receiver project (what the UI's project
-    # selection on an incoming share produces). _resolve_project_root_for_conv
-    # reads conv.project_id → Project.fs_storage_mount_path.
+    # selection on an incoming share produces); install targets it explicitly.
     conv = Conversation(id=CONV_ID, title="reflect", project_id=project.id)
     await conv.save(notify=False)
 
@@ -119,8 +141,10 @@ async def test_skill_reflects_same_repo_path_through_real_pack_unpack(tmp_path):
     # the unpacked bundle (mirrors a clean receiver).
     await sender_skill.delete()
 
-    # --- Unpack: places the skill + reindexes + stamps git_origin -------------
+    # --- Unpack stages; explicit install places + reindexes + stamps ----------
     await unpack_bundle(zip_path, local_user_id="gx8")
+    await _install_staged(FM_ID, f"{EntityType.SKILL.value}-@{SKILL_ID}",
+                          scope="project", project_id=project.id)
 
     # 1) The skill reconstructed at the SAME repo-relative path (not flattened).
     expected = recv_proj / REL_PATH / "SKILL.md"
@@ -186,6 +210,8 @@ async def test_git_transfer_indexes_existing_receiver_worktree_without_copying_b
 
     await sender_skill.delete()
     await unpack_bundle(zip_path, local_user_id="gx8")
+    await _install_staged(GIT_ONLY_FM_ID, f"{EntityType.SKILL.value}-@{GIT_ONLY_SKILL_ID}",
+                          scope="project", project_id=project.id)
 
     recv_skill = await Skill.get_one({"id": GIT_ONLY_SKILL_ID})
     assert recv_skill is not None, "receiver never materialized the git-backed skill"
@@ -241,8 +267,15 @@ async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path
     await sender_skill.delete()
     await unpack_bundle(zip_path, local_user_id="gx8")
 
+    # Consent boundary: NOTHING cloned at download time.
     cloned_root = workspace / "clone-origin"
     expected = cloned_root / REL_PATH / "SKILL.md"
+    assert not expected.exists(), "unpack must not clone anymore — install does"
+
+    # No project mapped → the user installs into the user scope; the git-mode
+    # restore resolves its own checkout (clones into the agent workspace).
+    await _install_staged(GIT_CLONE_FM_ID, f"{EntityType.SKILL.value}-@{GIT_CLONE_SKILL_ID}",
+                          scope="user")
     assert expected.exists(), f"receiver did not clone/index git transfer into {expected}"
     recv_skill = await Skill.get_one({"id": GIT_CLONE_SKILL_ID})
     assert recv_skill is not None
@@ -434,6 +467,8 @@ async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_s
 
     await sender_doc_entity.delete()
     await unpack_bundle(zip_path, local_user_id="gx8")
+    await _install_staged(GIT_MARKDOWN_FM_ID, f"{EntityType.MARKDOWN.value}-@{GIT_MARKDOWN_ID}",
+                          scope="project", project_id=project.id)
 
     received_doc = await Docs.get_one({"id": GIT_MARKDOWN_ID})
     assert received_doc is not None, "receiver never materialized the git-backed markdown doc"
@@ -505,6 +540,13 @@ async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_pat
 
     cloned_root = workspace / "markdown-clone-origin"
     expected = cloned_root / rel_path
+    assert not expected.exists(), "unpack must not clone anymore — install does"
+
+    # Git-mode user-scope install: the checkout resolves itself (no .claude
+    # layout gate — the root is only a clone preference in git mode).
+    await _install_staged(GIT_MARKDOWN_CLONE_FM_ID,
+                          f"{EntityType.MARKDOWN.value}-@{GIT_MARKDOWN_CLONE_ID}",
+                          scope="user")
     assert expected.exists(), f"receiver did not clone/index git markdown transfer into {expected}"
     received_doc = await Docs.get_one({"id": GIT_MARKDOWN_CLONE_ID})
     assert received_doc is not None
