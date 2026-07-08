@@ -133,10 +133,22 @@ def agent_peek_entity_id(ref: FSRef) -> str:
     (validate-on-adopt), else ``mint_uuid(f"{RecordType.AGENT}:{name-or-stem}")``
     — but strictly read-only, so it is safe to call from request handlers
     (``agent_gen_id`` rewrites the source file, which would dirty read-only
-    mounts and trip the dev reload watcher).
+    mounts and trip the dev reload watcher). Single file read.
     """
-    key = agent_id(ref)  # adopted frontmatter UUID, else name, else stem
-    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.AGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    try:
+        text = ref._path.read_text(encoding="utf-8")
+    except OSError:
+        key = ref._path.stem
+    else:
+        fm = _extract_frontmatter(text)
+        fields = (_yaml_load(fm) if fm else None) or {}
+        adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
+        if adopted:
+            return adopted
+        name = fields.get("name")
+        key = name.strip() if isinstance(name, str) and name.strip() else ref._path.stem
+    return mint_uuid(f"{RecordType.AGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
 
 
 def agent_gen_id(ref: FSRef) -> str:
