@@ -38,6 +38,7 @@ INDEXABLE_TYPES: list[RecordType] = [
     RecordType.WHITEBOARD,
     RecordType.DATASET,
     RecordType.USAGE_REPORT,
+    RecordType.ASSET_CLEANUP_REPORT,
 ]
 
 
@@ -103,6 +104,7 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.task import task_fn
     from flow_sdk.fs_store.indexer.functions.todo import todo_fn
     from flow_sdk.fs_store.indexer.functions.usage_report import usage_report_fn
+    from flow_sdk.fs_store.indexer.functions.asset_cleanup_report import asset_cleanup_report_fn
     from flow_sdk.fs_store.indexer.functions.whiteboard import whiteboard_fn
     from flow_sdk.fs_store.indexer.functions.workflow import (
         workflow_fn,
@@ -140,6 +142,7 @@ def build_default_indexer() -> FSIndexer:
     # Workflow run journals live at ~/.claude/projects/<slug>/<sid>/workflows/wf_*.json.
     idx.add_function(RecordType.USER_HOME_FOLDER, workflow_run_fn, RecordType.WORKFLOW_RUN)
     idx.add_function(RecordType.USER_HOME_FOLDER, usage_report_fn, RecordType.USAGE_REPORT)
+    idx.add_function(RecordType.USER_HOME_FOLDER, asset_cleanup_report_fn, RecordType.ASSET_CLEANUP_REPORT)
     idx.add_function(RecordType.USER_HOME_FOLDER, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.USER_HOME_FOLDER, workflow_fn, RecordType.WORKFLOW)
     # Dynamic workflows (.js) live beside the .md AMD workflows in .claude/workflows/.
@@ -178,6 +181,7 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, whiteboard_fn, RecordType.WHITEBOARD)
     idx.add_function(RecordType.REAL_PROJECT_CWD, agent_trace_fn, RecordType.AGENT_TRACE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, usage_report_fn, RecordType.USAGE_REPORT)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, asset_cleanup_report_fn, RecordType.ASSET_CLEANUP_REPORT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, workflow_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)

@@ -9,13 +9,11 @@ import { useEntitiesQuery } from '@src/hooks/entity-hooks';
  * UPDATEs, both of which re-emit this query and flip the chips live.
  */
 export interface ConversationMessageAttachments {
-  /** All attachments of the conversation, keyed `${flow_message_id}:${asset_type}-${asset_id}`. */
-  byKey: Map<string, MessageAttachment>;
   /** Attachments grouped per message id. */
   byMessage: Map<string, MessageAttachment[]>;
 }
 
-const EMPTY: ConversationMessageAttachments = { byKey: new Map(), byMessage: new Map() };
+const EMPTY: ConversationMessageAttachments = { byMessage: new Map() };
 
 export function useConversationMessageAttachments(
   conversationId: string | null | undefined,
@@ -34,16 +32,14 @@ export function useConversationMessageAttachments(
 
   return useMemo(() => {
     if (!data?.length) return EMPTY;
-    const byKey = new Map<string, MessageAttachment>();
     const byMessage = new Map<string, MessageAttachment[]>();
     for (const ma of data) {
       if (!ma.flow_message_id) continue;
-      byKey.set(`${ma.flow_message_id}:${ma.asset_type}-${ma.asset_id}`, ma);
       const list = byMessage.get(ma.flow_message_id) ?? [];
       list.push(ma);
       byMessage.set(ma.flow_message_id, list);
     }
-    return { byKey, byMessage };
+    return { byMessage };
   }, [data]);
 }
 

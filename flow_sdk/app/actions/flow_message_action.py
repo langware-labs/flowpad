@@ -706,13 +706,11 @@ async def _hard_delete_local_conversation(conv: Conversation) -> None:
         from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
         flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value, conversation_id=cid)
         msgs = await FlowMessage.get_all(flt)
-        from flow_sdk.fs_store.operations.flow_message import purge_flow_message_local_data  # noqa: PLC0415
         for fm in msgs:
             try:
+                # FlowMessage.delete() also purges staging data + the
+                # MessageAttachment rows (installed copies are kept).
                 await fm.delete()
-                # Staging data + MessageAttachment rows go with the message
-                # (installed copies are the user's assets — kept).
-                await purge_flow_message_local_data(fm.id)
             except Exception as e:  # noqa: BLE001
                 logger.warning("[conv-hard-delete] %s fm delete failed: %s", cid[:8], e)
     except Exception as e:  # noqa: BLE001
@@ -1039,19 +1037,12 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
                 message=f"Hub {e.status_code}: {e.reason}",
             )
 
-    # Purge the local existence (DB row + relationships + on-disk record folder).
+    # Purge the local existence (DB row + relationships + on-disk record folder
+    # + staging data/MessageAttachment rows, via the FlowMessage lifecycle).
     try:
         await fm.destroy()
     except Exception as e:  # noqa: BLE001
         logger.warning("[remove-message] local destroy failed fm=%s: %s", fm_id, e)
-
-    # Purge the message's staging data (download/ + unpacked/) + its
-    # MessageAttachment rows. Installed copies are the user's assets — kept.
-    try:
-        from flow_sdk.fs_store.operations.flow_message import purge_flow_message_local_data  # noqa: PLC0415
-        await purge_flow_message_local_data(fm_id)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[remove-message] staging purge failed fm=%s: %s", fm_id, e)
 
     # Drop the conversation pointer + re-project (notify so the open view updates).
     if conv_id:

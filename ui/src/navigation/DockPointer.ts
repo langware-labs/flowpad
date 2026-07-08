@@ -31,6 +31,17 @@ import type { ViewMode } from '@src/contexts/view-mode-context';
 export const HIGHLIGHT_PARAM = 'highlight';
 export const VIEW_MODE_PARAM = 'viewMode';
 
+/**
+ * Canonicalize a compute-node-relative path: forward slashes, collapsed
+ * separators, no leading/trailing slash. Single owner of the rel-path form the
+ * `fs/<relPath>` assets pointer carries (fsFolderRoot re-exports this for the
+ * browse-side consumers).
+ */
+export function normalizeRel(path: string | null | undefined): string {
+  if (!path) return '';
+  return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
 function isViewMode(value: string | undefined): value is ViewMode {
   return value === 'vibe' || value === 'standard' || value === 'advanced' || value === 'dev';
 }
@@ -486,8 +497,7 @@ export class DockPointer implements IDockPointer {
    * URL: /dock/assets/fs/<relPath>
    */
   static forAssetFsFolder(path: string, layout: Layout = Layout.DOCK): DockPointer {
-    const rel = path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
-    return new DockPointer(ViewType.ASSETS, `fs/${rel}`, undefined, layout);
+    return new DockPointer(ViewType.ASSETS, `fs/${normalizeRel(path)}`, undefined, layout);
   }
 
   /**

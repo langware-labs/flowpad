@@ -609,9 +609,12 @@ function AssetRow({
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
   const label = _displayLabelForTypeid(descriptor.typeid);
+  // Entity-less personas (e.g. a name-keyed agents_json entry with no backing
+  // entity) carry a name-form pseudo-typeid — there is nothing to open.
+  const openable = isTypeId(descriptor.typeid);
 
   const onChipClick = useCallback(() => {
-    if (!id) return;
+    if (!openable || !id) return;
     try {
       // Open by the asset's TypeId in the canonical grammar
       // (editor/<editor>/typeid/<type>-<id>). Read-only sources open in viewer
@@ -626,10 +629,10 @@ function AssetRow({
           readOnly ? { readOnly: '1' } : undefined,
         ).toDockPointer(),
       );
-    } catch {
-      // ignore navigation errors
+    } catch (err) {
+      console.error('[AssetRow] failed to open asset', descriptor.typeid, err);
     }
-  }, [navigation, type, id, readOnly]);
+  }, [navigation, type, id, readOnly, openable, descriptor.typeid]);
 
   const sourceLabel = ASSET_SOURCE_LABEL[descriptor.source];
   const sourceDirBasename = descriptor.source_dir ? _basename(descriptor.source_dir) : null;
@@ -650,8 +653,20 @@ function AssetRow({
       <button
         type="button"
         onClick={onChipClick}
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border bg-muted/30 px-1.5 py-0.5 text-xs text-foreground hover:bg-muted"
-        title={readOnly ? t`View ${label} (read-only)` : t`Open ${label}`}
+        disabled={!openable}
+        data-openable={openable ? 'true' : 'false'}
+        className={
+          openable
+            ? 'flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border bg-muted/30 px-1.5 py-0.5 text-xs text-foreground hover:bg-muted'
+            : 'flex min-w-0 flex-1 cursor-default items-center gap-1.5 rounded border border-dashed border-border bg-muted/20 px-1.5 py-0.5 text-xs text-muted-foreground'
+        }
+        title={
+          !openable
+            ? t`Inline persona — no backing entity`
+            : readOnly
+              ? t`View ${label} (read-only)`
+              : t`Open ${label}`
+        }
       >
         <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate">{label}</span>

@@ -58,6 +58,7 @@ export * from './whiteboard';
 export * from './agent-trace';
 export * from './dynamic-workflow';
 export * from './usage-report';
+export * from './asset-cleanup-report';
 export * from './markdown';
 export * from './markdown-index';
 export * from './plan';

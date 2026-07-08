@@ -394,7 +394,10 @@ export function EntityExecutionPanel({
             },
             // pty-poll: spawn the interactive PTY right away (visible=true
             // auto-start) so the first prompt() lands on a live worker.
-            isPtyPoll ? { visible: true } : undefined,
+            // print: declare the headless transport (pty_mode=false) — the
+            // backend defaults pty_mode to true when omitted, which would put
+            // the print-mode chat on a PTY worker.
+            isPtyPoll ? { visible: true } : { pty_mode: false },
           );
           if (onProcessCreated) await onProcessCreated(newProcess);
           for (const ref of pendingAttachedRefs) {

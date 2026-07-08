@@ -50,7 +50,7 @@ export function ChatActivityLine({ process, active, startedAt, status, trailing 
       <DotPulse />
       <span>{label}</span>
       {elapsed && <span className="tabular-nums opacity-70">· {elapsed}</span>}
-      {trailing && <div>{trailing}</div>}
+      {trailing}
     </div>
   );
 }

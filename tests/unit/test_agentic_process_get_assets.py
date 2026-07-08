@@ -286,6 +286,133 @@ async def test_inline_fallback_to_embedded_agent_ids(tree):
     assert any(d.typeid == "agent-legacy_persona" for d in inline)
 
 
+AGENT_MD = """---
+name: {name}
+description: test persona
+---
+
+You are a test persona.
+"""
+
+
+def _write_agent_md(path: Path, name: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(AGENT_MD.format(name=name))
+    return path
+
+
+@pytest.mark.asyncio
+async def test_inline_legacy_name_resolves_to_entity_id(tree):
+    """A legacy embedded_agent_ids NAME whose materialized .md exists resolves
+    to the real entity uuid (openable typeid) with the materialized path."""
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.record_types import RecordType
+
+    proc = _make_proc()
+    assets_dir = await proc._assets_dir_path()
+    md = _write_agent_md(assets_dir / ".claude" / "agents" / "legacy_vibe.md", "legacy_vibe")
+    proc.embedded_agent_ids = ["legacy_vibe"]
+
+    descs = await proc.get_asset_descriptors()
+    inline = _by_source(descs, AssetSource.INLINE)
+    expected_id = agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT))
+    match = [d for d in inline if d.typeid == f"agent-{expected_id}"]
+    assert match, inline
+    assert match[0].posix_path == canonical_posix_path(md)
+    # The raw name-form must be gone.
+    assert not any(d.typeid == "agent-legacy_vibe" for d in inline)
+
+
+@pytest.mark.asyncio
+async def test_inline_resolved_dedups_against_embedded(tree):
+    """A legacy name that resolves to an entity id already in
+    embedded_asset_refs collapses into the EMBEDDED row (no INLINE dup)."""
+    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.record_types import RecordType
+
+    proc = _make_proc()
+    assets_dir = await proc._assets_dir_path()
+    md = _write_agent_md(assets_dir / ".claude" / "agents" / "dup_vibe.md", "dup_vibe")
+    entity_id = agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT))
+    proc.embedded_asset_refs = [TypeId(f"agent-{entity_id}")]
+    proc.embedded_agent_ids = ["dup_vibe"]
+
+    descs = await proc.get_asset_descriptors()
+    matching = [d for d in descs if d.typeid == f"agent-{entity_id}"]
+    sources = {d.source for d in matching}
+    assert AssetSource.EMBEDDED in sources
+    assert AssetSource.INLINE not in sources
+
+
+@pytest.mark.asyncio
+async def test_load_embedded_agent_action_records_entity_ref(tree, tmp_path):
+    """load_embedded_agent_action persists the agent's ENTITY ref (uuid form)
+    in embedded_asset_refs — not a name in embedded_agent_ids — and the
+    descriptor comes out EMBEDDED + openable. A legacy name entry for the
+    same agent is migrated away on touch."""
+    import types
+
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.record_types import RecordType
+
+    src = _write_agent_md(tmp_path / "src_agents" / "fresh_vibe.md", "fresh_vibe")
+    proc = _make_proc()
+    proc.embedded_agent_ids = ["fresh_vibe"]  # legacy leftover → must migrate away
+
+    saved: list[None] = []
+    async def _fake_save(self):
+        saved.append(None)
+        return self
+    object.__setattr__(proc, "save", types.MethodType(_fake_save, proc))
+
+    res = await proc.load_embedded_agent_action(asset_ref=str(src))
+    assert res.status == "SUCCESS", res
+    assert saved
+
+    expected_id = agent_peek_entity_id(FSRef(src, record_type=RecordType.AGENT))
+    refs = [str(r) for r in proc.embedded_asset_refs]
+    assert refs == [f"agent-{expected_id}"]
+    assert res.data["ref"] == f"agent-{expected_id}"
+    assert proc.embedded_agent_ids == []
+
+    assets_dir = await proc._assets_dir_path()
+    assert (assets_dir / ".claude" / "agents" / "fresh_vibe.md").is_file()
+
+    descs = await proc.get_asset_descriptors()
+    matching = [d for d in descs if d.typeid == f"agent-{expected_id}"]
+    assert matching and all(d.source == AssetSource.EMBEDDED for d in matching)
+
+    # Idempotent: re-attach doesn't duplicate the ref.
+    await proc.load_embedded_agent_action(asset_ref=str(src))
+    assert [str(r) for r in proc.embedded_asset_refs] == [f"agent-{expected_id}"]
+
+
+def test_agent_peek_entity_id_matches_gen_id_without_writing(tmp_path):
+    """agent_peek_entity_id returns the same uuid agent_gen_id mints, but
+    leaves the source file byte-identical; an adopted frontmatter UUID wins."""
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.identifier import is_valid_entity_id
+    from flow_sdk.fs_store.indexer.functions.agent import agent_gen_id, agent_peek_entity_id
+    from flow_sdk.fs_store.record_types import RecordType
+
+    md = _write_agent_md(tmp_path / "peek_agent.md", "peeky")
+    before = md.read_bytes()
+    peeked = agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT))
+    assert md.read_bytes() == before, "peek must not write"
+    assert is_valid_entity_id(peeked)
+    # gen_id (the writing variant) mints the identical uuid for the same key.
+    assert agent_gen_id(FSRef(md, record_type=RecordType.AGENT)) == peeked
+
+    adopted = str(uuid.uuid4())
+    md2 = tmp_path / "adopted_agent.md"
+    md2.write_text(f"---\nid: {adopted}\nname: adoptee\n---\n\nBody.\n")
+    assert agent_peek_entity_id(FSRef(md2, record_type=RecordType.AGENT)) == adopted
+
+
 # ── Missing-coverage tests added per debugMCP-validation review ──────────────
 
 

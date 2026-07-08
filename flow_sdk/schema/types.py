@@ -116,6 +116,7 @@ class EntityType(StrEnum):
     # parsed & served like a worker transcript/session (worker_type "workflow").
     WORKFLOW_RUN = "workflow_run"
     USAGE_REPORT = "usage_report"
+    ASSET_CLEANUP_REPORT = "asset_cleanup_report"
     DATASET = "dataset"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     COLLABORATION_ROOM = "collaboration_room"

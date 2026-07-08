@@ -14,15 +14,20 @@ entity; the staged copy persists so the attachment reverts to reviewable.
 from __future__ import annotations
 
 import logging
-import shutil
 from datetime import datetime
 from pathlib import Path
 
 from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
-from flow_sdk.builtin.message_attachment import AttachmentScope, MessageAttachment, TransferMode
+from flow_sdk.builtin.message_attachment import (
+    AttachmentScope,
+    MessageAttachment,
+    TransferMode,
+    user_scope_allowed_for,
+)
 from flow_sdk.builtin.user import User
 from flow_sdk.fs_store.operations.flow_message import default_data_dir, unpacked_dir
+from flow_sdk.fs_store.record_paths import record_stem
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -34,7 +39,7 @@ _STAGED_READ_CAP = 512 * 1024
 
 
 async def _local_owner_typeid():
-    local_user = await User.get_one({"uname": "local"})
+    local_user = await User.get_local()
     return local_user.typeid if local_user else None
 
 
@@ -150,16 +155,15 @@ async def handle_attachment_install(
     else:
         project_id = None
         if ma.transfer_mode != TransferMode.GIT.value:
-            # User scope only makes sense for FS-rooted families (.claude/…) —
-            # project-anchored types (specs/, docs/, plans…) have no home layout.
-            if not str(main_subdir).replace("\\", "/").startswith(".claude"):
+            # Same predicate that stamped `user_scope_allowed` at stage time.
+            if not user_scope_allowed_for(main_subdir, ma.transfer_mode):
                 return ApiFailResponse(
                     message=f"type {ma.asset_type!r} is project-scoped; install into a project instead",
                     status_code=400,
                 )
             root = _user_scope_root()
 
-    entry_key = f"{ma.asset_type}-@{ma.asset_id}"
+    entry_key = record_stem(ma.asset_type, ma.asset_id)
     try:
         record_type = RecordType(ma.asset_type)
     except ValueError:

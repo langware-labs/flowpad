@@ -51,15 +51,19 @@ to Vercel + Supabase without restructuring.
 The skill ships a complete, tested template in `template/` next to this file.
 Bootstrapping a new app is a *copy*, not a *generation*:
 
-**Target directory = the session's current working directory**, unless the
-user explicitly names another location. Do not relocate the app to a Flowpad
-workspace project or any path from `flow context` — the process workdir IS the
-project the user asked to build in.
+**Target directory = `<project root>/assets/apps/<app name>`**, where
+`<project root>` is the session's current working directory and `<app name>` is
+a short kebab-case name derived from what the user asked to build (or the name
+they provided). The user may explicitly name another location, which overrides
+this default. Do not relocate the app to a Flowpad workspace project or any path
+from `flow context` — the process workdir IS the project the user asked to build
+in; the app nests under `assets/apps/` within it, allowing multiple apps to
+coexist.
 
-1. **Copy the template verbatim** into the target project directory:
+1. **Copy the template verbatim** into the target app directory:
 
    ```bash
-   cp -R "<this skill's directory>/template/." "<target>/"
+   cp -R "<this skill's directory>/template/." "<project root>/assets/apps/<app name>/"
    ```
 
    Do NOT scaffold by hand, do NOT run `create-next-app`, `npx shadcn init`, or
@@ -81,16 +85,33 @@ project the user asked to build in.
    fix the environment (missing node, docker down, …), then re-run; it is
    idempotent.
 
-3. **Only after** the app boots do you customize: rename the app, edit pages,
+3. **Update the project root's documentation** — if `README.md`, `CLAUDE.md`, or
+   `AGENTS.md` exist in the project root (session cwd), add a brief note
+   recording that the web app is at `assets/apps/<app name>`, built from the
+   web-app-builder template. Include how to start it:
+
+   ```
+   Backend: cd assets/apps/<app name>/backend && .venv/bin/uvicorn main:app --reload --port 8080
+   Frontend: cd assets/apps/<app name>/frontend && npm run dev
+   ```
+
+   If a note for a previous app is already present in the file, extend it
+   (add a new entry) rather than duplicate. Never create these root files; only
+   edit existing ones. The template's own `CLAUDE.md` and `AGENTS.md` in the app
+   directory are separate and unchanged — this step updates the enclosing
+   project's documentation to record where the app lives.
+
+4. **Only after** the app boots do you customize: rename the app, edit pages,
    add tables/endpoints. Customization guides live in `references/`.
 
 The template ships `CLAUDE.md` + `AGENTS.md` declaring the project as managed
 by this skill — keep them in the copied app (they make every future agent
 session route operations back through this skill and its contracts).
 
-If the target directory already contains an app made from this template
-(`frontend/package.json` + `backend/main.py` present), skip bootstrap and go
-straight to the development guides.
+If `<project root>/assets/apps/<app name>` already contains an app made from this
+template (`frontend/package.json` + `backend/main.py` present), skip bootstrap
+and go straight to the development guides. Multiple apps can coexist under
+`assets/apps/`.
 
 ## Ports
 

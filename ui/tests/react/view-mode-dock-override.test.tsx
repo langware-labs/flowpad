@@ -76,7 +76,7 @@ describe('DockPointer viewMode override', () => {
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
     document.documentElement.classList.remove('view-mode-glow-flicker');
 
-    fireEvent.click(screen.getByTestId('view-toggle'));
+    fireEvent.click(screen.getByTestId('view-toggle-vibe'));
 
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('vibe'));
     expect(screen.getByTestId('location').textContent).toContain('viewMode=vibe');
