@@ -203,8 +203,23 @@ describe('plan share → receiver classification (Alice → Bob)', () => {
 
     const projectRoot = await createAndMapProject(bob, convId);
 
+    // Staged reception: download stages a MessageAttachment (scope=null);
+    // the explicit install action lands + indexes it in the project.
     const dl = await post(bob.apiUrl, `/graph/flow_message/${fmId}/download_body`, {});
     expect(dl.status, `download ok (got ${JSON.stringify(dl.body?.message)})`).toBeLessThan(400);
+    const staged = await pollUntil(async () => {
+      const r = await fetch(`${bob.apiUrl}/api/v1/graph/message_attachment`).then((x) => x.json());
+      return ((r?.data ?? []) as any[]).find(
+        (m) => m.flow_message_id === fmId && m.asset_id === planId,
+      ) ?? null;
+    }, 10_000, 'staged plan MessageAttachment on Bob');
+    expect(staged.asset_type, 'staged row is a plan').toBe('plan');
+    const createdProject = createdProjects[createdProjects.length - 1];
+    const install = await post(bob.apiUrl, `/graph/message_attachment/${staged.id}/install`, {
+      scope: 'project',
+      project_id: createdProject.id,
+    });
+    expect(install.status, `install ok (got ${JSON.stringify(install.body?.message)})`).toBeLessThan(400);
 
     // (a) Bob resolves it by the SENDER's id as type `plan` (id-pin round-trips).
     const asPlan = await pollUntil(

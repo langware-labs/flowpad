@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from enum import Enum
@@ -112,6 +113,20 @@ def delivery_advances(current: Any, incoming: Any) -> bool:
 # Single source of truth for the body filename on the hub blob store.
 # Bodies live under flow_message/<id>/fs/<BODY_FILENAME>.
 BODY_FILENAME = "body.flowmsg"
+
+# Coalesce concurrent ``upload_body`` calls for the same FM id. Two callers can
+# race the body upload for one FM — the auto background upload
+# (``_finalize_message_dispatch`` → ``asyncio.create_task(_upload_body_and_finalize)``)
+# and an explicit ``upload_body`` action — and the hub's ``fs/upload`` is not
+# concurrency-safe for one VFSPath: two concurrent sessions to the same object
+# path clobber each other and the blob is lost (receiver download 404 → 500).
+# So the first caller runs the real upload; a concurrent second caller AWAITS
+# that in-flight upload's result instead of firing its own ``fs/upload``. Keyed
+# by fm.id; the entry is cleared on completion, so a sequential re-call after
+# the first finishes re-uploads exactly as before (retry semantics preserved).
+# Single-process, single-loop: all sends dispatch through the one backend event
+# loop, so a plain dict of Tasks is a correct coalescing point.
+_upload_body_inflight: dict[str, "asyncio.Task[None]"] = {}
 
 
 class BodyNotReadyError(Exception):
@@ -634,12 +649,53 @@ class FlowMessage(Entity):
         On any step failure, the hub-side body_status remains UPLOADING and
         the exception propagates — callers decide retry. Caller is expected
         to gate on has_body() before calling.
+
+        Concurrency: two callers may invoke this for the same FM at once (the
+        auto background upload and an explicit ``upload_body`` action). The hub
+        ``fs/upload`` is not concurrency-safe for one VFSPath, so concurrent
+        calls are coalesced via ``_upload_body_inflight``: the first caller runs
+        the real upload; a concurrent second caller awaits that same in-flight
+        task's result rather than firing a second ``fs/upload``. Both callers
+        then stamp their own instance READY (or, on failure, both see the same
+        exception and leave body_status UPLOADING). A sequential re-call after
+        completion re-uploads as before.
+        """
+        if not self.id:
+            raise ValueError("upload_body requires self.id (FM must exist on hub)")
+
+        inflight = _upload_body_inflight.get(self.id)
+        if inflight is None:
+            # We're the owner: run the real upload. No await between the get()
+            # above and this assignment, so registration is atomic under the
+            # single-threaded event loop — a racing caller sees either no entry
+            # (and becomes the owner) or our task (and awaits it).
+            task = _upload_body_inflight[self.id] = asyncio.ensure_future(
+                self._upload_body_once(on_progress=on_progress, transfer_mode=transfer_mode)
+            )
+            try:
+                await task
+            finally:
+                if _upload_body_inflight.get(self.id) is task:
+                    del _upload_body_inflight[self.id]
+        else:
+            # A concurrent upload for this FM is already running — await its
+            # result instead of firing a second, blob-clobbering fs/upload.
+            await inflight
+
+        self.body_status = BodyStatus.READY
+        self.attachment_filename = BODY_FILENAME
+        return self
+
+    async def _upload_body_once(
+        self, *, on_progress: Optional[ProgressCallback] = None, transfer_mode: str = "copy",
+    ) -> None:
+        """The single real body upload — pack the bundle, POST it to the hub's
+        ``fs/upload``, then flip body_status=READY via ``set_body_status``. Runs
+        exactly once per coalesced ``upload_body`` group (see the guard there);
+        does not stamp ``self`` (each caller stamps its own instance on success).
         """
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
         from flow_sdk.utils.hub import hub_post
-
-        if not self.id:
-            raise ValueError("upload_body requires self.id (FM must exist on hub)")
 
         zip_path = await self.to_file(transfer_mode=transfer_mode)
         try:
@@ -669,9 +725,6 @@ class FlowMessage(Entity):
             },
             action="set_body_status",
         )
-        self.body_status = BodyStatus.READY
-        self.attachment_filename = BODY_FILENAME
-        return self
 
     async def download_body(
         self,

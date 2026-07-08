@@ -86,7 +86,7 @@ beforeAll(async () => {
   // Milkdown/Monaco/Excalidraw bundles on first hit, which would otherwise
   // eat A1/B1's 30s budget. This is fixture warming, not a timeout bump.
   const warm = trackForCleanup(await dev1.sdk.Workflow.createInProject(null, testEntityName('workflow')));
-  await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warm.id}`, {
+  await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warm.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
   const warmShare = p1.page.getByTestId('markdown-editor-share');
@@ -107,12 +107,12 @@ beforeAll(async () => {
   // server, so the first editor open (A3) would otherwise cold-transform the
   // Milkdown/Excalidraw bundles. Route to each editor once to trigger it.
   const warmWf2 = trackForCleanup(await dev2.sdk.Workflow.createInProject(null, testEntityName('workflow')));
-  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warmWf2.id}`, {
+  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warmWf2.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
   await p2.page.locator('[data-testid="md-editor-with-side-panel"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
   const warmWb2 = trackForCleanup(await dev2.sdk.Whiteboard.create(testEntityName('whiteboard')));
-  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${warmWb2.id}`, {
+  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${warmWb2.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
   await p2.page.locator('[data-testid="whiteboard-editor"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
@@ -187,8 +187,44 @@ async function downloadAndOpenAssetClean(
     await inst.page.waitForTimeout(400);
   }
 
+  // STAGED RECEPTION (f1276cd5): download STAGES the asset (MessageAttachment,
+  // scope=null) — the chip renders dashed and opens the review/install modal,
+  // never the editor (consent boundary). Install explicitly into the mapped
+  // project via the modal's backend action, then open the editor at its dock
+  // URL — the same target the context panel's Open resolves. (The chip→modal
+  // UX has its own coverage; this test's assertion target stays "the shared
+  // asset opens cleanly in the receiver's editor".)
+  const chipMatch = /^entity-chip-([a-z_]+)-(.+)$/.exec(chipTestId);
+  if (!chipMatch) throw new Error(`unexpected chip testid ${chipTestId}`);
+  const [, assetType, assetId] = chipMatch;
+  const convRow = await fetch(`${inst.apiUrl}/api/v1/graph/conversation/${conversationId}`)
+    .then((r) => r.json()).catch(() => null);
+  const projectId = convRow?.data?.project_id as string;
+  let staged: any = null;
+  const stagedDeadline = Date.now() + 10_000;
+  while (!staged && Date.now() < stagedDeadline) {
+    const rows = await fetch(`${inst.apiUrl}/api/v1/graph/message_attachment`)
+      .then((r) => r.json()).catch(() => null);
+    staged = ((rows?.data ?? []) as any[]).find(
+      (m) => m.conversation_id === conversationId && m.asset_id === assetId,
+    ) ?? null;
+    if (!staged) await inst.page.waitForTimeout(400);
+  }
+  if (!staged) throw new Error(`staged MessageAttachment for ${assetType}-${assetId} never appeared on ${inst.name}`);
+  const install = await fetch(`${inst.apiUrl}/api/v1/graph/message_attachment/${staged.id}/install`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: 'project', project_id: projectId }),
+  }).then((r) => r.json());
+  if (install?.status !== 'SUCCESS') {
+    throw new Error(`install failed on ${inst.name}: ${JSON.stringify(install?.message)}`);
+  }
+
   resetConsoleErrors(inst);
-  await inst.page.getByTestId(chipTestId).first().click();
+  await inst.page.goto(
+    `${inst.feUrl}/dock/assets/editor/${assetType}/typeid/${assetType}-${assetId}?viewMode=advanced`,
+    { waitUntil: 'domcontentloaded' },
+  );
   // Assert the editor CONTAINER attaches (it mounts when the asset resolves) +
   // a clean console — NOT a late toolbar button or strict dock-tab visibility,
   // which lag the actual open by tens of seconds in the dock split view.
@@ -214,7 +250,7 @@ describe('A. asset-page share: workflow', () => {
   it('A1 share — dev-1 shares from the workflow editor UI', async () => {
     const wf = trackForCleanup(await dev1.sdk.Workflow.createInProject(null, testEntityName('workflow')));
     workflowId = wf.id!;
-    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${workflowId}`, {
+    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${workflowId}?viewMode=advanced`, {
       waitUntil: 'domcontentloaded',
     });
     await p1.page.getByTestId('markdown-editor-share').click({ timeout: 20_000 });
@@ -281,7 +317,7 @@ describe('B. asset-page share: whiteboard', () => {
       );
       await nodeFs.writeFile(`${assetRef}/WHITE_BOARD.md`, `# ${wbName}\n`);
     }
-    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${wbId}`, {
+    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${wbId}?viewMode=advanced`, {
       waitUntil: 'domcontentloaded',
     });
     // Wait for the editor to finish mounting (board.json read settles) before

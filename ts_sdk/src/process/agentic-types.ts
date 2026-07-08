@@ -381,15 +381,26 @@ export function isBusy(p: StatusBearingProcess): boolean {
 }
 
 /**
- * "Can the caller send a new user prompt / switch transport now?" — ⇔ the worker
- * is fully up (``status === RUNNING``, NOT the STARTING/STOPPING bookends) AND no
- * turn is in flight (``!busy``). Mirror of the Python ``is_ready_for_input``. The
- * chat⇄terminal toggle gates on this: "ready" and "busy" are disjoint by
- * construction (``running && !busy`` vs ``busy``), so enabling the toggle on
- * ready can never hit the backend's busy 409.
+ * "Can the caller send a new user prompt / switch transport now?" — ⇔ no turn is
+ * in flight (``!busy``) AND the worker is either fully up (``status === RUNNING``)
+ * OR a **headless-idle** session. Mirror of the Python ``is_ready_from_busy`` /
+ * ``is_ready_for_input``.
+ *
+ * Headless-idle readiness (CLI transport — ``!isPtyTransport`` — with a live
+ * ``session_id`` at ``status === STOPPED``): the CLI transport runs a fresh
+ * ``claude -p`` worker per turn, so between turns a headless session sits at
+ * STOPPED with its ``session_id`` preserved, yet is ready for the next prompt and
+ * to toggle chat⇄terminal back. Without this the toggle wedged permanently off
+ * once a session went headless-idle (RCA #12a: switch→cli ``exit()`` → STOPPED).
+ *
+ * "ready" and "busy" stay disjoint (``!busy`` gates first), so enabling the
+ * toggle on ready can never hit the backend's busy 409.
  */
 export function isReadyForInput(p: StatusBearingProcess): boolean {
-  return resolveStatus(p) === ProcessStatus.RUNNING && !isBusy(p);
+  if (isBusy(p)) return false;
+  const status = resolveStatus(p);
+  if (status === ProcessStatus.RUNNING) return true;
+  return status === ProcessStatus.STOPPED && !isPtyTransport(p) && !!p.session_id;
 }
 
 /**

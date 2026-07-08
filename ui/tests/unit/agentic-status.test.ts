@@ -301,8 +301,9 @@ describe('supportedExecutionModes', () => {
 // ─── isReadyForInput / isBusy — the ONE gate, two orthogonal axes ────────────
 //
 // Realigned: ``isBusy`` reads the separate ``busy`` boolean; ``isReadyForInput``
-// ⇔ ``status === RUNNING && !busy``. They do NOT re-derive from workerStatus.
-// The two are disjoint by construction.
+// ⇔ ``!busy && (status === RUNNING || headless-idle)`` where headless-idle =
+// CLI transport (``!pty_mode``) + STOPPED + a live ``session_id``. They do NOT
+// re-derive from workerStatus. "ready" and "busy" are disjoint by construction.
 
 describe('isReadyForInput', () => {
   it('is true exactly for RUNNING and not busy', () => {
@@ -318,13 +319,13 @@ describe('isReadyForInput', () => {
     ProcessStatus.NEW,
     ProcessStatus.STARTING, // live bookend, but the worker isn't fully up → not ready
     ProcessStatus.STOPPING,
-    ProcessStatus.STOPPED,
+    ProcessStatus.STOPPED, // no session_id here → not headless-idle → not ready
     ProcessStatus.FAILED,
-  ])('is false for %s regardless of busy', (s) => {
+  ])('is false for %s (no live headless session)', (s) => {
     expect(isReadyForInput({ status: s, busy: false })).toBe(false);
   });
 
-  it('ignores workerStatus and session_id — status + busy are the source', () => {
+  it('ignores workerStatus; at RUNNING session_id is irrelevant', () => {
     // A ready process stays ready whatever the raw worker label says.
     expect(
       isReadyForInput({ status: ProcessStatus.RUNNING, busy: false, workerStatus: WorkerStatus.THINKING }),
@@ -338,6 +339,47 @@ describe('isReadyForInput', () => {
   it('is false when there is no status at all', () => {
     expect(isReadyForInput({})).toBe(false);
   });
+});
+
+// ─── isReadyForInput — headless-idle readiness (RCA #12a) ─────────────────────
+//
+// The CLI transport runs a fresh `claude -p` worker per turn, so between turns a
+// headless session sits at STOPPED with its session_id preserved — yet is ready
+// for the next prompt and to toggle chat⇄terminal back. Mirror of the Python
+// is_ready_from_busy headless-idle branch. Without it the toggle wedged off.
+
+describe('isReadyForInput — headless-idle', () => {
+  it('is true for CLI transport (pty_mode=false) + STOPPED + live session_id', () => {
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: false, session_id: 'sess-abc' }),
+    ).toBe(true);
+  });
+
+  it('is false at STOPPED without a session_id (never prompted)', () => {
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: false }),
+    ).toBe(false);
+  });
+
+  it('is false for PTY transport (pty_mode=true) at STOPPED even with a session', () => {
+    // An interactive worker needs a live PID; a stopped PTY is not headless-idle.
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: true, session_id: 'sess-abc' }),
+    ).toBe(false);
+  });
+
+  it('is false when the headless session is busy (a turn is in flight)', () => {
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: true, pty_mode: false, session_id: 'sess-abc' }),
+    ).toBe(false);
+  });
+
+  it.each([ProcessStatus.NEW, ProcessStatus.STARTING, ProcessStatus.FAILED])(
+    'is false for CLI %s + session_id (only STOPPED qualifies as headless-idle)',
+    (s) => {
+      expect(isReadyForInput({ status: s, busy: false, pty_mode: false, session_id: 'sess-abc' })).toBe(false);
+    },
+  );
 });
 
 describe('isBusy', () => {

@@ -299,7 +299,7 @@ async function acceptConversationInvitationInUI(inst: InstancePage, conversation
       body: '{}',
     }).catch(() => undefined);
 
-    await page.goto(`${inst.feUrl}/dock/inbox`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${inst.feUrl}/dock/inbox?viewMode=advanced`, { waitUntil: 'domcontentloaded' });
     await dismissWelcomeModal(page);
 
     const row = page.locator(rowSelector).first();
