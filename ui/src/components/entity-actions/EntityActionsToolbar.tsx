@@ -16,7 +16,7 @@ export interface EntityActionsToolbarProps {
   typeId: TypeId;
   /** Display label for the favorite tile when the user toggles it on. */
   favoriteTitle: string;
-  /** Optional icon key persisted on the bookmark.data; FavoriteTile uses it on home. */
+  /** Optional icon key persisted on the bookmark.data; the home desktop grid uses it. */
   favoriteIcon?: string;
   /**
    * 'prominent' (default for header surfaces) renders Share as a labeled pill.

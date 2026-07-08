@@ -44,7 +44,7 @@ function refsKey(refs: FavoriteRef[]): string {
 /**
  * Batch-fetches live tooltip summaries (name + subtitle) for the given
  * favorited entities. One POST per distinct ref-set; shared across all
- * FavoriteTile consumers via react-query.
+ * desktop tile consumers via react-query.
  */
 export function useFavoriteSummaries(bookmarks: Bookmark[]) {
   const refs = useMemo(() => refsFromBookmarks(bookmarks), [bookmarks]);

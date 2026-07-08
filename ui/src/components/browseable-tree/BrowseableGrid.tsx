@@ -7,8 +7,8 @@ import {
 } from '@src/components/ui/context-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { InlineRenameInput } from '@src/components/favorites/InlineRenameInput';
-import { useInlineRename } from '@src/components/favorites/use-inline-rename';
+import { InlineRenameInput } from './InlineRenameInput';
+import { useInlineRename } from './use-inline-rename';
 import { cn } from '@src/lib/utils';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -373,7 +373,7 @@ function GridTile({
                 size="default"
                 onReorder={
                   node.reorderChildren
-                    ? (drag, anchor) => node.reorderChildren?.(drag.id, anchor)
+                    ? (drag, anchor) => node.reorderChildren!(drag.id, anchor)
                     : undefined
                 }
               />

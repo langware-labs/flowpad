@@ -1,0 +1,51 @@
+{
+  "_doc": "Front/back parity proof for the favorites container sort. Consumed by ui/tests/unit/container-sort.test.ts (sortContainer, ui/src/lib/container-sort.ts) and tests/unit/test_container_sort.py (sort_container, flow_sdk/builtin/bookmark.py). Same JSON, same expectations on both sides. Rows: {id, order, created_date}; expected: id sequence.",
+  "cases": [
+    {
+      "name": "all unstamped: newest first (legacy container behavior)",
+      "rows": [
+        { "id": "a", "order": 0, "created_date": "2026-01-01T00:00:00Z" },
+        { "id": "b", "order": 0, "created_date": "2026-03-01T00:00:00Z" },
+        { "id": "c", "order": 0, "created_date": "2026-02-01T00:00:00Z" }
+      ],
+      "expected": ["b", "c", "a"]
+    },
+    {
+      "name": "all stamped: order ascending",
+      "rows": [
+        { "id": "a", "order": 3, "created_date": "2026-03-01T00:00:00Z" },
+        { "id": "b", "order": 1, "created_date": "2026-01-01T00:00:00Z" },
+        { "id": "c", "order": 2, "created_date": "2026-02-01T00:00:00Z" }
+      ],
+      "expected": ["b", "c", "a"]
+    },
+    {
+      "name": "mixed: stamped ascending first, unstamped at end newest-first",
+      "rows": [
+        { "id": "new1", "order": 0, "created_date": "2026-06-01T00:00:00Z" },
+        { "id": "s2", "order": 2, "created_date": "2026-01-02T00:00:00Z" },
+        { "id": "new2", "order": 0, "created_date": "2026-05-01T00:00:00Z" },
+        { "id": "s1", "order": 1, "created_date": "2026-01-01T00:00:00Z" }
+      ],
+      "expected": ["s1", "s2", "new1", "new2"]
+    },
+    {
+      "name": "stamped tie: id ascending (plain code-unit order, not locale)",
+      "rows": [
+        { "id": "zz", "order": 5, "created_date": "2026-01-01T00:00:00Z" },
+        { "id": "aa", "order": 5, "created_date": "2026-02-01T00:00:00Z" },
+        { "id": "Z9", "order": 5, "created_date": "2026-03-01T00:00:00Z" }
+      ],
+      "expected": ["Z9", "aa", "zz"]
+    },
+    {
+      "name": "missing fields: no order key and no created_date sort as unstamped/empty-date",
+      "rows": [
+        { "id": "bare" },
+        { "id": "dated", "order": 0, "created_date": "2026-01-01T00:00:00Z" },
+        { "id": "stamped", "order": 1, "created_date": "2026-01-01T00:00:00Z" }
+      ],
+      "expected": ["stamped", "dated", "bare"]
+    }
+  ]
+}
