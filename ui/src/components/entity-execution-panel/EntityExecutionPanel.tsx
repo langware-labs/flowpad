@@ -89,8 +89,16 @@ interface EntityExecutionPanelProps {
   emptyStateText?: string;
   /** Optional header label rendered above the panel (e.g. "Agent execution"). Hidden when omitted. */
   headerLabel?: string;
-  /** Optional node rendered on the LEFT of the header action row (e.g. a title / home button). */
-  leadingSlot?: React.ReactNode;
+  /**
+   * Optional content rendered on the LEFT of the header action row. The
+   * function form receives the panel's session actions so the slot can host
+   * the new-session control itself (Vibe's "+ New" pill); when a function is
+   * passed the built-in new-session icon button is hidden — one affordance,
+   * not two.
+   */
+  leadingSlot?:
+    | React.ReactNode
+    | ((actions: { startNewSession: () => void }) => React.ReactNode);
   /** Placeholder for the composer textbox. Defaults to "Ask about this doc…". */
   placeholder?: string;
   /**
@@ -556,12 +564,12 @@ export function EntityExecutionPanel({
         processes={sortedProcesses}
         workerHistoryByProcessId={workerHistoryByProcessId}
         activeId={activeProcess?.id ?? null}
-        onNewSession={startNewSession}
+        onNewSession={typeof leadingSlot === 'function' ? null : startNewSession}
         onPickSession={selectSession}
         onDeleteSession={handleDeleteOne}
         onClearAll={handleClearAll}
         cursorLine={cursorLine ?? null}
-        leadingSlot={leadingSlot}
+        leadingSlot={typeof leadingSlot === 'function' ? leadingSlot({ startNewSession }) : leadingSlot}
         newSessionLabel={newSessionLabel}
         historyLabel={historyLabel}
         pastSessionsLabel={pastSessionsLabel}
@@ -681,7 +689,8 @@ function ExecutionHistoryHeader({
   processes: AgenticProcess[];
   workerHistoryByProcessId: Map<string, WorkerHistoryEntry>;
   activeId: string | null;
-  onNewSession: () => void;
+  /** Null hides the built-in new-session icon (the leadingSlot hosts it instead). */
+  onNewSession: (() => void) | null;
   onPickSession: (id: string) => void;
   onDeleteSession: (id: string, title: string) => void;
   onClearAll: () => void;
@@ -718,15 +727,17 @@ function ExecutionHistoryHeader({
         </span>
       )}
       <div className="flex-1" />
-      <button
-        type="button"
-        onClick={onNewSession}
-        title={newSessionLabel}
-        className={iconBtn}
-        data-testid="entity-execution-new"
-      >
-        <MessageSquarePlus className="h-3.5 w-3.5" />
-      </button>
+      {onNewSession && (
+        <button
+          type="button"
+          onClick={onNewSession}
+          title={newSessionLabel}
+          className={iconBtn}
+          data-testid="entity-execution-new"
+        >
+          <MessageSquarePlus className="h-3.5 w-3.5" />
+        </button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
