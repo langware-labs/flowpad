@@ -15,8 +15,11 @@ from __future__ import annotations
 
 from typing import ClassVar, Optional
 
+from pydantic import field_validator
+
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
 
 
@@ -37,7 +40,7 @@ def _contact_matches(
     if contact_user_id and row.contact_user_id and row.contact_user_id == contact_user_id:
         return True
     if contact_email and row.contact_email:
-        return row.contact_email.strip().lower() == contact_email.strip().lower()
+        return normalize_email(row.contact_email) == normalize_email(contact_email)
     return False
 
 
@@ -49,6 +52,13 @@ class ContactPermission(Entity):
     project_id: Optional[str] = APIField(None)
     # Granted capabilities (``PermissionAction`` values).
     allowed_actions: list[str] = APIField(default_factory=list)
+
+    @field_validator("contact_email", mode="before")
+    @classmethod
+    def _normalize_contact_email(cls, v):
+        if v is None or isinstance(v, str):
+            return normalize_email(v)
+        return v
 
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str | None] = "ShieldCheck"

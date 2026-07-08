@@ -1,5 +1,6 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { normalizeEmail } from '../utils/utils';
 import { sendReply } from './notifications';
 import {
   Conversation,
@@ -136,7 +137,7 @@ export async function createConversationForShare(
       if (!gate.ok) throw new Error(gate.error);
     }
     const emails = params.participants
-      .map((p) => (p.email || '').trim())
+      .map((p) => normalizeEmail(p.email) || '')
       .filter((e): e is string => !!e && e.includes('@'));
     if (emails.length === 0) {
       throw new Error('At least one recipient email is required');

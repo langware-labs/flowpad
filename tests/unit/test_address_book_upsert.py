@@ -128,3 +128,38 @@ async def test_scoped_scan_returns_only_matching_conversations():
     ids = {c["id"] for c in scoped["conversations"]}
     assert "dddddddd-dddd-4ddd-8ddd-dddddddddddd" in ids
     assert "cccccccc-cccc-4ccc-8ccc-cccccccccccc" not in ids
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_upsert_normalizes_email_case_and_dedups():
+    """Mixed-case input (e.g. 'Tzahi@…') must store lowercase and dedup against
+    the lowercase row — the casing mismatch that made a hub invitation
+    invisible to its recipient."""
+    from flow_sdk.builtin.user import User, normalize_email
+
+    assert normalize_email("  Tzahi@Langware.AI ") == "tzahi@langware.ai"
+    assert normalize_email(None) is None
+    assert normalize_email("   ") is None
+
+    a = await User.upsert_contact(email="Mixed.Case@Example.COM", name="Mixy")
+    assert a is not None and a.email == "mixed.case@example.com"
+
+    # Any casing resolves to the same row — no duplicate contact.
+    b = await User.upsert_contact(email="mixed.case@example.com")
+    assert b.id == a.id
+    c = await User.get_user_by_email("MIXED.CASE@EXAMPLE.COM")
+    assert c is not None and c.id == a.id
+    rows = await User.get_all({"email": "mixed.case@example.com"})
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_invitation_recipient_email_normalized():
+    from flow_sdk.builtin.invitation import Invitation
+
+    inv = Invitation(recipient_email=" Tzahi@Langware.AI ")
+    assert inv.recipient_email == "tzahi@langware.ai"
+    via_validate = Invitation.model_validate({"recipient_email": "UPPER@CASE.IO"})
+    assert via_validate.recipient_email == "upper@case.io"

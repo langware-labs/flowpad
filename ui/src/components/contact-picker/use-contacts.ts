@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ConversationParticipant, QueryRequest, User } from '@sdk';
+import { ConversationParticipant, normalizeEmail, QueryRequest, User } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /** Shared email shape check, used by every recipient-entry surface. */
@@ -24,7 +24,7 @@ export function participantKey(p: ConversationParticipant): string {
  */
 export function participantFromContact(u: User): ConversationParticipant {
   const participant: ConversationParticipant = {
-    email: u.email ?? null,
+    email: normalizeEmail(u.email),
     name: u.name ?? null,
   };
   const hubId = u.user_id || (u.remote ? u.id : undefined);
