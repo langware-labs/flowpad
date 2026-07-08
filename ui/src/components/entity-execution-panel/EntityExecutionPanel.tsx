@@ -597,7 +597,7 @@ export function EntityExecutionPanel({
       />
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {showEmptyState && (
-          <div className="p-3 text-[11px] text-muted-foreground">
+          <div className="p-3 text-sm text-muted-foreground">
             {emptyStateText}
           </div>
         )}

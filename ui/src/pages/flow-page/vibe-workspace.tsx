@@ -408,7 +408,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
               {t`New`}
             </button>
           )}
-          emptyStateText={t`Tell the assistant what to build.`}
+          emptyStateText={t`What do you want to work on`}
           newSessionLabel={t`New build`}
           historyLabel={t`Build history`}
           pastSessionsLabel={t`Past builds`}
