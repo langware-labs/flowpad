@@ -67,7 +67,10 @@ EXPECTED = {
     "MICRO_APP": "micro_app", "WEB_DOMAIN": "web_domain", "JOB": "job", "SYSTEM_JOB": "system_job",
     "JOB_EXECUTION": "job_execution", "API_KEY": "api_key", "CODE_REF": "code_ref",
     "AGENT_HOOK": "agent_hook", "TRIGGER": "trigger", "PROCESS_RESULT": "process_result",
-    "CRON_EVENT": "cron_event", "FLOW_MESSAGE": "flow_message", "TEAM_SPACE": "team_space",
+    "CRON_EVENT": "cron_event", "FLOW_MESSAGE": "flow_message",
+    # Staged bundle attachment awaiting explicit install (DB-only entity).
+    "MESSAGE_ATTACHMENT": "message_attachment",
+    "TEAM_SPACE": "team_space",
     "NOTIFICATION": "notification", "RUN": "run",
     "PROMPT_RESULT": "prompt_result", "REMOTE_WORKER_SESSION": "remote_worker_session",
     # SemanticLock file targets (5a19f9e6) — additive member; the commit that

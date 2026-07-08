@@ -51,6 +51,12 @@ interface EntityChipProps {
    * "unavailable" instead of looking clickable or re-fetching.
    */
   muted?: boolean;
+  /**
+   * Staged (downloaded, reviewable, NOT installed/indexed): dashed border but
+   * CLICKABLE — clicking fires `onClick` (the review/install modal), never dock
+   * navigation. Distinct from `muted`, which is inert.
+   */
+  staged?: boolean;
 }
 
 /**
@@ -110,6 +116,10 @@ const DEFAULT_STYLE =
 /** Greyed, non-interactive style for a context ref whose entity 404'd. */
 const MUTED_STYLE =
   'border border-dashed border-border bg-transparent text-muted-foreground line-through';
+/** Staged (downloaded, not installed): dashed + clickable — AttachmentChip's
+ *  "not yet local, click to act" idiom. */
+const STAGED_STYLE =
+  'border border-dashed border-primary/60 bg-background text-foreground hover:bg-muted/40 cursor-pointer';
 
 function resolveTypeAndId(entity: EntityChipEntity): { type: string; id: string } | null {
   if (entity.typeId) {
@@ -138,7 +148,7 @@ function resolveTypeAndId(entity: EntityChipEntity): { type: string; id: string 
  * entity has no id (decorative use, e.g. an "Approve & Execute" prompt
  * chip) the chip looks the same but only fires `onClick`.
  */
-export function EntityChip({ entity, inside, onClick, projectId, title, size = 'chip', muted = false }: EntityChipProps) {
+export function EntityChip({ entity, inside, onClick, projectId, title, size = 'chip', muted = false, staged = false }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
   const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
@@ -146,10 +156,16 @@ export function EntityChip({ entity, inside, onClick, projectId, title, size = '
   const typeWord = resolved
     ? resolved.type.charAt(0).toUpperCase() + resolved.type.slice(1).replace(/_/g, ' ')
     : '';
-  const typeStyle = muted ? MUTED_STYLE : (resolved && STYLE_BY_TYPE[resolved.type]) ?? DEFAULT_STYLE;
+  const typeStyle = muted
+    ? MUTED_STYLE
+    : staged
+      ? STAGED_STYLE
+      : ((resolved && STYLE_BY_TYPE[resolved.type]) ?? DEFAULT_STYLE);
   const tooltip = muted
     ? `${typeWord || 'Entity'} unavailable (not found locally)`
-    : title ?? (resolved ? `Open ${typeWord}: ${label}` : `Open ${label}`);
+    : staged
+      ? (title ?? `Downloaded — click to review & install ${typeWord}: ${label}`)
+      : (title ?? (resolved ? `Open ${typeWord}: ${label}` : `Open ${label}`));
 
   const handleClick = useMemo(() => {
     return () => {
@@ -158,11 +174,13 @@ export function EntityChip({ entity, inside, onClick, projectId, title, size = '
         onClick();
         return;
       }
+      // A staged chip never dock-navigates: its entity has no local row yet.
+      if (staged) return;
       if (!resolved || !resolved.id) return;
       const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
       if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, projectId));
     };
-  }, [muted, onClick, resolved, inside, navigation, projectId]);
+  }, [muted, staged, onClick, resolved, inside, navigation, projectId]);
 
   const baseLayout =
     size === 'chip'

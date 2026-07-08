@@ -19,8 +19,6 @@ import pytest
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 from flow_sdk.builtin.flow_message_bundle import (
     FlowMessageExistsError,
-    FlowMessageNoProjectError,
-    _resolve_project_root_for_conv,
     pack_bundle,
     unpack_bundle,
 )
@@ -48,6 +46,13 @@ def _make_flow_message(fm_id: str = "aaaa1111-0000-0000-0000-000000000001") -> F
     )
     fm.id = fm_id
     return fm
+
+
+@pytest.fixture(autouse=True)
+def _isolated_records_root(tmp_records_root):
+    """Every unpack now persists its bundle + staging tree under the
+    records-data root — keep that off the developer's real instance dir."""
+    return tmp_records_root
 
 
 def _write_flowmsg_zip(tmp_path: Path, fm_data: dict, attachments: dict[str, bytes] | None = None) -> Path:
@@ -522,12 +527,16 @@ class TestPromptAttachmentRoundtrip:
             assert "use_count: 2" in content
 
     @pytest.mark.asyncio
-    async def test_unpack_parks_file_backed_asset_without_project(self, tmp_path):
-        """A file-backed asset (prompt) with no project mapped is PARKED — not
-        copied/indexed — and the FlowMessage still materializes. (The
-        copy-into-project happy path is covered by the hub integration matrix.)"""
+    async def test_unpack_stages_file_backed_asset_without_project(self, tmp_path):
+        """A file-backed asset (prompt) is STAGED — bundle persisted under the
+        message's record-data dir, MessageAttachment row upserted with
+        scope=None — and the FlowMessage still materializes. No project mapping
+        is needed to download anymore. (The install-into-project path is
+        exercised by test_message_attachment_install.py.)"""
         from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.message_attachment import MessageAttachment
         from flow_sdk.builtin.user import User
+        from flow_sdk.fs_store.operations import flow_message as fm_data_ops
 
         fm_id = "abab8888-0000-4000-8000-000000000008"
         prompt_md = (
@@ -552,26 +561,46 @@ class TestPromptAttachmentRoundtrip:
         saved_fm = FlowMessage(text="carrier")
         saved_fm.id = fm_id
 
+        staged_saves: list[MessageAttachment] = []
+
+        async def _ma_save(self, *args, **kwargs):  # noqa: ANN001
+            staged_saves.append(self)
+            return self
+
         with (
             patch.object(User, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
             patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "save", new=_ma_save),
+            patch.object(MessageAttachment, "add_entity_op_notification", new=AsyncMock()),
             patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
         ):
-            # No conversation/project → asset parked; raise_on_no_project defaults
-            # False so unpack returns the FM rather than raising.
             result = await unpack_bundle(zip_path, "local-user-id")
 
         assert result is not None
         assert result.id == fm_id
+        # Bundle persisted into the message's staging area.
+        assert fm_data_ops.is_downloaded(fm_id), "raw bundle missing from download/"
+        assert fm_data_ops.is_unpacked(fm_id), "extracted tree missing from unpacked/"
+        assert fm_data_ops.staged_entry_dir(fm_id, f"prompt-@{_PROMPT_UUID}").is_dir()
+        # Exactly one staged MessageAttachment, deterministic id, scope=None.
+        assert len(staged_saves) == 1
+        ma = staged_saves[0]
+        assert ma.id == MessageAttachment.allocate_deterministic_id(fm_id, f"prompt-@{_PROMPT_UUID}")
+        assert ma.asset_type == "prompt"
+        assert ma.asset_id == _PROMPT_UUID
+        assert ma.scope is None
+        assert ma.unpacked_path == f"unpacked/attachment/prompt-@{_PROMPT_UUID}"
+        assert ma.name == "Fix the bug"
 
     @pytest.mark.asyncio
-    async def test_unpack_raises_no_project_when_requested(self, tmp_path):
-        """The explicit download path (raise_on_no_project=True) surfaces
-        FlowMessageNoProjectError when a file-backed asset can't be placed."""
+    async def test_unpack_never_copies_file_backed_asset_into_project(self, tmp_path):
+        """Even with a conversation that HAS a mapped project, unpack must not
+        copy or index the file-backed asset anymore — install is explicit."""
         from flow_sdk.builtin.conversation import Conversation
-        from flow_sdk.builtin.flow_message_bundle import FlowMessageNoProjectError
+        from flow_sdk.builtin.message_attachment import MessageAttachment
         from flow_sdk.builtin.user import User
 
         fm_id = "cdcd9999-0000-4000-8000-000000000009"
@@ -588,99 +617,35 @@ class TestPromptAttachmentRoundtrip:
             {f"attachment/prompt-@{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
         )
 
-        # Conversation exists but has no project_id → no project root.
         mock_conv = Conversation(shared_context_entities=[])
         mock_conv.id = _CONV_UUID
         saved_fm = FlowMessage.model_validate(fm_data)
+        restore_spy = MagicMock(return_value=True)
 
         with (
             patch.object(User, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
             patch.object(Conversation, "get_one", new=AsyncMock(return_value=mock_conv)),
+            patch.object(MessageAttachment, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "save", new=AsyncMock()),
+            patch.object(MessageAttachment, "add_entity_op_notification", new=AsyncMock()),
+            patch("flow_sdk.builtin.flow_message_bundle._restore_file_backed_entry", new=restore_spy),
             patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
         ):
-            with pytest.raises(FlowMessageNoProjectError):
-                await unpack_bundle(zip_path, "local-user-id", raise_on_no_project=True)
+            result = await unpack_bundle(zip_path, "local-user-id")
 
-
-# ---------------------------------------------------------------------------
-# _resolve_project_root_for_conv precedence (pure-unit, patched get_one)
-# ---------------------------------------------------------------------------
+        assert result is not None
+        restore_spy.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_resolve_project_root_prefers_task_then_project():
-    """_resolve_project_root_for_conv precedence (returns ``(root, project_id)``):
-    (a) a context Task's project_root wins (id = conv.project_id or path-derived);
-    (b) a blank Task project_root falls through to the Project mount;
-    (c) no task → the Project mount path;
-    (d) conversation missing → None;
-    (e) empty conv_id → None (no lookups)."""
+async def test_unpack_stages_before_fm_materializes_and_notifies_after(tmp_path):
+    """Order contract: the MessageAttachment CREATE data-ops fire AFTER the
+    top-level FlowMessage was materialized (saved) — the message bubble must
+    exist before its chips flip from Download to staged."""
     from flow_sdk.builtin.conversation import Conversation
-    from flow_sdk.builtin.project import Project
-    from flow_sdk.builtin.task import Task
-
-    task_id = _TASK_UUID
-    proj_id = "9f9f9f9f-0000-4000-8000-000000000099"
-
-    # --- (a) task.project_root set → returned ---
-    conv_a = Conversation(shared_context_entities=[f"task-{task_id}"])
-    conv_a.id = _CONV_UUID
-    task_a = Task(title="T")
-    task_a.id = task_id
-    task_a.project_root = "/sender/work/proj-a"
-    with (
-        patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv_a)),
-        patch.object(Task, "get_one", new=AsyncMock(return_value=task_a)),
-    ):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) == (
-            Path("/sender/work/proj-a"),
-            Project.derive_id_for_path("/sender/work/proj-a"),
-        )
-
-    # --- (b) task present but blank project_root → Project mount ---
-    conv_b = Conversation(shared_context_entities=[f"task-{task_id}"], project_id=proj_id)
-    conv_b.id = _CONV_UUID
-    task_b = Task(title="T")
-    task_b.id = task_id
-    task_b.project_root = "   "  # blank/whitespace
-    proj_b = Project(name="P", fs_storage_mount_path="/local/projects/p")
-    proj_b.id = proj_id
-    with (
-        patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv_b)),
-        patch.object(Task, "get_one", new=AsyncMock(return_value=task_b)),
-        patch.object(Project, "get_one", new=AsyncMock(return_value=proj_b)),
-    ):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) == (Path("/local/projects/p"), proj_id)
-
-    # --- (c) no task context, project mount set → project mount ---
-    conv_c = Conversation(shared_context_entities=[], project_id=proj_id)
-    conv_c.id = _CONV_UUID
-    proj_c = Project(name="P", fs_storage_mount_path="/local/projects/c")
-    proj_c.id = proj_id
-    with (
-        patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv_c)),
-        patch.object(Project, "get_one", new=AsyncMock(return_value=proj_c)),
-    ):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) == (Path("/local/projects/c"), proj_id)
-
-    # --- (d) conversation missing → None ---
-    with patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) is None
-
-    # --- (e) empty conv_id → None (short-circuits before any lookup) ---
-    assert await _resolve_project_root_for_conv("") is None
-
-
-@pytest.mark.asyncio
-async def test_unpack_raises_no_project_carries_pending_types_after_fm_materializes(tmp_path):
-    """unpack with raise_on_no_project=True, a file-backed asset, and a
-    conversation that maps to NO project: the gate raises
-    FlowMessageNoProjectError whose ``pending_types`` lists the packed type, but
-    only AFTER the top-level FlowMessage was materialized (saved). The asset is
-    PARKED — _restore_file_backed_entry is never invoked (nowhere to copy)."""
-    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.builtin.message_attachment import MessageAttachment
     from flow_sdk.builtin.user import User
 
     fm_id = "abcd0001-0000-4000-8000-000000000001"
@@ -697,35 +662,35 @@ async def test_unpack_raises_no_project_carries_pending_types_after_fm_materiali
         {f"attachment/prompt-@{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
     )
 
-    # Conversation exists but has no project mapped → project_root None.
     mock_conv = Conversation(shared_context_entities=[])
     mock_conv.id = _CONV_UUID
 
-    materialize_calls: list[str] = []
+    order: list[str] = []
 
-    async def _save_shim(self, *args, **kwargs):  # noqa: ANN001
-        materialize_calls.append(self.id)
+    async def _fm_save_shim(self, *args, **kwargs):  # noqa: ANN001
+        order.append(f"fm:{self.id}")
         return self
 
-    restore_spy = MagicMock(return_value=True)
+    async def _ma_notify_shim(self, *args, **kwargs):  # noqa: ANN001
+        order.append(f"ma-create:{self.asset_type}")
 
     with (
         patch.object(User, "get_one", new=AsyncMock(return_value=None)),
         patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
-        patch.object(FlowMessage, "save", new=_save_shim),
+        patch.object(FlowMessage, "save", new=_fm_save_shim),
         patch.object(Conversation, "get_one", new=AsyncMock(return_value=mock_conv)),
-        patch("flow_sdk.builtin.flow_message_bundle._restore_file_backed_entry", new=restore_spy),
+        patch.object(MessageAttachment, "get_one", new=AsyncMock(return_value=None)),
+        patch.object(MessageAttachment, "save", new=AsyncMock()),
+        patch.object(MessageAttachment, "add_entity_op_notification", new=_ma_notify_shim),
         patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
     ):
-        with pytest.raises(FlowMessageNoProjectError) as exc_info:
-            await unpack_bundle(zip_path, "local-user-id", raise_on_no_project=True)
+        await unpack_bundle(zip_path, "local-user-id")
 
-    # The packed type is reported as pending.
-    assert "prompt" in exc_info.value.pending_types
-    # The top-level FlowMessage was materialized BEFORE the gate raised.
-    assert fm_id in materialize_calls
-    # The asset was parked, not copied into any project dir.
-    restore_spy.assert_not_called()
+    assert f"fm:{fm_id}" in order
+    assert "ma-create:prompt" in order
+    assert order.index(f"fm:{fm_id}") < order.index("ma-create:prompt"), (
+        f"MA CREATE fired before the FM materialized: {order}"
+    )
 
 
 # ---------------------------------------------------------------------------

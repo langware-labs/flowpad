@@ -60,6 +60,36 @@ def test_entity_attachment_materialized_is_downloaded(records_root):
     assert fm.model_dump()["body_downloaded"] is True
 
 
+def test_entity_attachment_staged_counts_as_downloaded(records_root, tmp_path, monkeypatch):
+    """Staged reception: an entity attachment whose bytes sit in the message's
+    unpacked/ staging dir counts as downloaded even though NO record folder
+    exists (install may never happen — that's the user's choice, and the
+    catch-up loop must not re-pull the bundle forever). Also asserts the
+    transient ``body_unpacked`` flag flips with the staging dir."""
+    from flow_sdk.fs_store.operations import flow_message as fm_data_ops
+
+    data_root = tmp_path / "records_data"
+    monkeypatch.setattr(record_paths, "get_default_records_data_root", lambda: data_root)
+
+    eid = str(uuid.uuid4())
+    fm_id = str(uuid.uuid4())
+    fm = FlowMessage(id=fm_id, text="here", attachment=[_skill_attachment(eid)])
+    assert fm.model_dump()["body_downloaded"] is False
+    assert fm.model_dump()["body_unpacked"] is False
+
+    # Stage the entry (what unpack_bundle persists) — no record folder minted.
+    fm_data_ops.unpacked_dir(fm_id).mkdir(parents=True)
+    (fm_data_ops.unpacked_dir(fm_id) / "header.json").write_text("{}")
+    entry = fm_data_ops.staged_entry_dir(fm_id, f"skill-@{eid}")
+    entry.mkdir(parents=True)
+    (entry / "SKILL.md").write_text("# staged")
+
+    dumped = fm.model_dump()
+    assert dumped["body_downloaded"] is True
+    assert dumped["body_unpacked"] is True
+    assert fm.is_body_downloaded() is True  # disk-probe twin stays in sync
+
+
 def test_one_unmaterialized_entity_pegs_message_not_downloaded(records_root):
     a, b = str(uuid.uuid4()), str(uuid.uuid4())
     _materialize(records_root, "skill", a)  # only one of the two landed
