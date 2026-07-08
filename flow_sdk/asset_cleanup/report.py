@@ -45,7 +45,7 @@ def render_markdown(result: AssetCleanupResult) -> str:
     return "\n".join(lines) + "\n"
 
 
-async def generate_asset_cleanup_report(result: AssetCleanupResult):
+async def generate_asset_cleanup_report(result: AssetCleanupResult, name: str | None = None):
     """Save an AssetCleanupReport for ``result``; post a Feed entry iff garbage.
 
     Returns the saved report entity. Feed-entry failures are logged, never
@@ -58,7 +58,7 @@ async def generate_asset_cleanup_report(result: AssetCleanupResult):
     generated_at = datetime.now().astimezone().isoformat()
     markdown = render_markdown(result)
     report = AssetCleanupReport.from_result(
-        result, markdown=markdown, generated_at=generated_at
+        result, name=name, markdown=markdown, generated_at=generated_at
     )
     report = await report.save()
 
