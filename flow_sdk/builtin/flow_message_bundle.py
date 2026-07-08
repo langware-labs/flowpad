@@ -1239,19 +1239,22 @@ def _attachment_snapshot(entry_dir: Path, entry_type: str) -> "tuple[str | None,
 
     info = SchemaRegistry.get(entry_type)
     main_file = getattr(info, "main_file", None) if info else None
-    files = [p for p in entry_dir.rglob("*") if p.is_file()]
+    # Early-stop lookups (no full-tree listing): an attachment carrying a large
+    # resource tree must not be walked whole on the sync path.
     main_path = None
     name: str | None = None
     if main_file:
-        main_path = next((p for p in files if p.name == main_file), None)
+        main_path = next((p for p in entry_dir.rglob(main_file) if p.is_file()), None)
         if main_path is not None:
             name = main_path.parent.name
     if main_path is None:
-        main_path = next((p for p in files if p.suffix == ".md"), None)
-        if main_path is not None and name is None:
+        main_path = next((p for p in entry_dir.rglob("*.md") if p.is_file()), None)
+        if main_path is not None:
             name = main_path.stem
-    if name is None and files:
-        name = files[0].stem
+    if name is None:
+        first = next((p for p in entry_dir.rglob("*") if p.is_file()), None)
+        if first is not None:
+            name = first.stem
     description: str | None = None
     if main_path is not None:
         try:
@@ -1289,13 +1292,12 @@ async def _stage_attachment(
     Saved with notify=False — CREATE data_ops are batched after the
     FlowMessage/Conversation sync (see ``_notify_staged_attachments``).
     """
-    from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: PLC0415
+    from flow_sdk.builtin.message_attachment import MessageAttachment, user_scope_allowed_for  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     ma_id = MessageAttachment.allocate_deterministic_id(top_fm_id, entry_key)
     existing = await MessageAttachment.get_one({"id": ma_id})
     ma = existing or MessageAttachment(id=ma_id)
-    ma.id = ma_id
     ma.flow_message_id = top_fm_id
     if conversation_id:
         ma.conversation_id = conversation_id
@@ -1307,12 +1309,10 @@ async def _stage_attachment(
     ma.transfer_mode = transfer_mode
     ma.git_origin = git_origin
     ma.git_transfer = git_transfer
-    # Schema-derived, stamped ONCE here so the UI never re-encodes the policy:
-    # user-scope installs need an FS-rooted (.claude/…) home layout — except in
-    # git mode, where the checkout resolves its own location.
+    # Schema-derived, stamped ONCE here so the UI never re-encodes the policy
+    # (the install action re-enforces it through the same predicate).
     info = SchemaRegistry.get(entry_type)
-    main_subdir = str(getattr(info, "main_subdir", "") or "").replace("\\", "/")
-    ma.user_scope_allowed = transfer_mode == "git" or main_subdir.startswith(".claude")
+    ma.user_scope_allowed = user_scope_allowed_for(getattr(info, "main_subdir", None), transfer_mode)
     await ma.save(owner_typeid, notify=False)
     return ma
 
@@ -1320,10 +1320,11 @@ async def _stage_attachment(
 async def _notify_staged_attachments(mas: list) -> None:
     """Announce staged MessageAttachments to the live UI (one CREATE each).
 
-    Same channel + rationale as ``_notify_received_assets``: rows were saved
-    notify=False during unpack; the chips' query subscription needs a CREATE to
-    flip Download → staged. Fired AFTER the FM CREATE / Conversation UPDATE so
-    the message bubble exists before its chips re-render.
+    Same channel + rationale as ``_notify_received_assets``, but announcing the
+    in-hand rows directly (no by-id re-fetch): rows were saved notify=False
+    during unpack; the chips' query subscription needs a CREATE to flip
+    Download → staged. Fired AFTER the FM CREATE / Conversation UPDATE so the
+    message bubble exists before its chips re-render.
     """
     from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
 
@@ -1722,8 +1723,13 @@ async def unpack_bundle(
         # (which would silently abort the whole unpack). Hardening in depth —
         # the packer already strips the deep `.venv`/cache trees that used to
         # trip this; this keeps a legitimately-deep asset from breaking a share.
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(_extended_length_path(tmp_root))
+        def _extract() -> None:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(_extended_length_path(tmp_root))
+
+        # Off-thread: a multi-MB bundle extraction on the sync path must not
+        # stall the event loop (same rationale as the indexer's I/O-to-threads).
+        await asyncio.to_thread(_extract)
 
         # 2. Read top-level header.json
         msg_data = _read_entity_header(tmp_root)
@@ -1746,12 +1752,15 @@ async def unpack_bundle(
         from flow_sdk.fs_store.operations import flow_message as fm_data_ops  # noqa: PLC0415
         from flow_sdk.builtin.flow_message import BODY_FILENAME as _BODY_FILENAME  # noqa: PLC0415
 
-        dl_dir = fm_data_ops.download_dir(top_fm_id)
-        dl_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(zip_path, dl_dir / _BODY_FILENAME)
-        staged_root = fm_data_ops.unpacked_dir(top_fm_id)
-        shutil.rmtree(staged_root, ignore_errors=True)
-        shutil.copytree(tmp_root, staged_root)
+        def _persist_staging() -> None:
+            dl_dir = fm_data_ops.download_dir(top_fm_id)
+            dl_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(zip_path, dl_dir / _BODY_FILENAME)
+            staged_root = fm_data_ops.unpacked_dir(top_fm_id)
+            shutil.rmtree(staged_root, ignore_errors=True)
+            shutil.copytree(tmp_root, staged_root)
+
+        await asyncio.to_thread(_persist_staging)
 
         attachment_dir = tmp_root / "attachment"
 

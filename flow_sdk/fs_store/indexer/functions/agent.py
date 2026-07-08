@@ -126,6 +126,19 @@ def agent_id(ref: FSRef) -> str:
     return ref._path.stem
 
 
+def agent_peek_entity_id(ref: FSRef) -> str:
+    """Entity UUID for an agent .md WITHOUT writing frontmatter back.
+
+    Same derivation as ``agent_gen_id`` — adopted frontmatter UUID
+    (validate-on-adopt), else ``mint_uuid(f"{RecordType.AGENT}:{name-or-stem}")``
+    — but strictly read-only, so it is safe to call from request handlers
+    (``agent_gen_id`` rewrites the source file, which would dirty read-only
+    mounts and trip the dev reload watcher).
+    """
+    key = agent_id(ref)  # adopted frontmatter UUID, else name, else stem
+    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.AGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
+
+
 def agent_gen_id(ref: FSRef) -> str:
     """Mint+write id into agent .md frontmatter (idempotent), returning a
     stable, filesystem-safe **UUID**.

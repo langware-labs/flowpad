@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -13,6 +14,8 @@ from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.type_id import TypeId
+
+logger = logging.getLogger(__name__)
 
 
 class AttachmentType(str, Enum):
@@ -195,7 +198,7 @@ def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
                 return True
         if fm_id:
             from flow_sdk.fs_store.operations.flow_message import staged_entry_dir
-            if staged_entry_dir(fm_id, f"{etype}-@{eid}").exists():
+            if staged_entry_dir(fm_id, record_stem(etype, eid)).exists():
                 return True
         return False
     except Exception:
@@ -433,15 +436,6 @@ class FlowMessage(Entity):
                     return False
         return True
 
-    def is_body_file_downloaded(self) -> bool:
-        """True when the raw ``.flowmsg`` bundle sits in this message's
-        record-data ``download/`` dir (staging layout — see
-        ``fs_store/operations/flow_message.py``)."""
-        if not self.id:
-            return False
-        from flow_sdk.fs_store.operations.flow_message import is_downloaded
-        return is_downloaded(self.id)
-
     def is_body_unpacked(self) -> bool:
         """True when the bundle's extracted tree persists under this message's
         record-data ``unpacked/`` dir (the staging area install reads from)."""
@@ -449,6 +443,25 @@ class FlowMessage(Entity):
             return False
         from flow_sdk.fs_store.operations.flow_message import is_unpacked
         return is_unpacked(self.id)
+
+    async def _purge_local_data(self) -> None:
+        """Lifecycle cleanup of the message's OWNED local state — the staging
+        dir (``download/`` + ``unpacked/``) and its MessageAttachment rows —
+        so every deletion path inherits it instead of remembering to call the
+        purge. Installed copies are the user's assets and are NOT touched."""
+        from flow_sdk.fs_store.operations.flow_message import purge_flow_message_local_data
+        try:
+            await purge_flow_message_local_data(self.id)
+        except Exception:  # noqa: BLE001 — cleanup must never block deletion
+            logger.warning("[flow_message] staging purge failed fm=%s", self.id, exc_info=True)
+
+    async def delete(self):
+        await super().delete()
+        await self._purge_local_data()
+
+    async def destroy(self) -> None:
+        await super().destroy()
+        await self._purge_local_data()
 
     def is_body_downloaded(self) -> bool:
         """Disk-probe twin of the serializer's ``body_downloaded`` flag for

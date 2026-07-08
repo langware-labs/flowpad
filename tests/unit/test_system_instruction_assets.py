@@ -131,8 +131,16 @@ async def test_load_embedded_agent_materializes_into_instruction_assets(
 
     result = await process.load_embedded_agent_action(str(agent_md))
     assert result.status == "SUCCESS"
-    assert result.data == {"ok": True, "name": "persona-probe"}
-    assert process.embedded_agent_ids == ["persona-probe"]
+    assert result.data["ok"] is True
+    assert result.data["name"] == "persona-probe"
+    # Identity is persisted as the agent's ENTITY ref, not a legacy name entry.
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.record_types import RecordType
+    expected_ref = f"agent-{agent_peek_entity_id(FSRef(agent_md, record_type=RecordType.AGENT))}"
+    assert result.data["ref"] == expected_ref
+    assert [str(r) for r in process.embedded_asset_refs] == [expected_ref]
+    assert not process.embedded_agent_ids
 
     materialized = process.embedded_assets.os_path / ".claude" / "agents" / "persona-probe.md"
     assert materialized.exists()

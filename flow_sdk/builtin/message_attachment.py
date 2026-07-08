@@ -31,6 +31,18 @@ class TransferMode(StrEnum):
     GIT = "git"     # git-transfer entry; install = clone/pull via metadata
 
 
+def user_scope_allowed_for(main_subdir: str | None, transfer_mode: str = TransferMode.COPY.value) -> bool:
+    """SINGLE owner of the user-scope install policy: "Install global" needs an
+    FS-rooted (``.claude/…``) home layout — project-anchored types (specs/,
+    docs/, plans…) have none — except in git mode, where the checkout resolves
+    its own location. Stamped on the row at stage time and re-enforced by the
+    install action through this same predicate.
+    """
+    if transfer_mode == TransferMode.GIT.value:
+        return True
+    return str(main_subdir or "").replace("\\", "/").startswith(".claude")
+
+
 class MessageAttachment(Entity):
     type: str = APIField(default=EntityType.MESSAGE_ATTACHMENT.value)
 

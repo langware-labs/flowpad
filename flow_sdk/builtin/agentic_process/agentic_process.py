@@ -3121,8 +3121,17 @@ class AgenticProcess(Entity):
 
         Materializes the agent markdown into the process asset directory so the
         generated system-instruction files can include it on every launch.
+
+        Identity is persisted as the agent's entity ref (``embedded_asset_refs``,
+        same as ``attach_embedded_asset``) — the name is only the projection used
+        for the materialized filename / CLI payload. ``embedded_agent_ids`` is a
+        legacy name list; we no longer write it, and migrate-on-touch any entry
+        for this agent so attach/detach stays symmetric on old processes.
         """
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id  # noqa: PLC0415
         from flow_sdk.fs_store.operations.agent import extract_agent_from_path, render_agent_markdown  # noqa: PLC0415
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
         abs_path = Path("/" + asset_ref.lstrip("/"))
@@ -3138,10 +3147,14 @@ class AgenticProcess(Entity):
             content=render_agent_markdown(agent),
         )
         self._ensure_assets_dir_in_add_dirs(assets.os_path)
-        if name not in (self.embedded_agent_ids or []):
-            self.embedded_agent_ids = list(self.embedded_agent_ids or []) + [name]
+        ref = TypeId(type="agent", id=agent_peek_entity_id(FSRef(abs_path, record_type=RecordType.AGENT)))
+        refs = list(self.embedded_asset_refs or [])
+        if not any(r.type == ref.type and r.id == ref.id for r in refs):
+            self.embedded_asset_refs = refs + [ref]
+        if name in (self.embedded_agent_ids or []):
+            self.embedded_agent_ids = [n for n in self.embedded_agent_ids if n != name]
         await self.save()
-        return ApiSuccessResponse(data={"ok": True, "name": name})
+        return ApiSuccessResponse(data={"ok": True, "name": name, "ref": str(ref)})
 
     @action.post(action_name="load-embedded-skill")
     async def load_embedded_skill_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
@@ -3537,6 +3550,15 @@ class AgenticProcess(Entity):
             await self._unmaterialize_entity(ref, assets_dir)
             refs = [r for r in (self.embedded_asset_refs or []) if not (r.type == ref.type and r.id == ref.id)]
             self.embedded_asset_refs = refs
+            if ref.type == "agent" and self.embedded_agent_ids:
+                # Legacy processes may still carry the agent by NAME — drop it
+                # too, or the persona file is gone while an INLINE row lingers.
+                from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
+                from flow_sdk.fs_store.operations.agent import load_agent as _load_agent  # noqa: PLC0415
+                agent = get_agent(ref.id) or _load_agent(ref.id)
+                name = agent.name if agent else None
+                if name and name in self.embedded_agent_ids:
+                    self.embedded_agent_ids = [n for n in self.embedded_agent_ids if n != name]
             await self.save()
             return ApiSuccessResponse(data={"ok": True, "ref": entity_ref})
         except Exception as exc:
@@ -3586,13 +3608,13 @@ class AgenticProcess(Entity):
             seen_embedded.add(str(ref))
 
         # 2. INLINE (don't double-count anything already EMBEDDED)
-        for tid in self._iter_inline_agent_typeids():
+        for tid, inline_path in self._iter_inline_agent_descriptors(assets_dir):
             if tid in seen_embedded:
                 continue
             descriptors.append(AssetDescriptor(
                 typeid=tid,
                 source=AssetSource.INLINE,
-                posix_path=None,
+                posix_path=inline_path,
             ))
 
         # 3. Path-discovered
@@ -3755,19 +3777,53 @@ class AgenticProcess(Entity):
             return None
         return None
 
-    def _iter_inline_agent_typeids(self) -> list[str]:
-        """Yield ``agent-<id-or-name>`` strings for inline-attached agents.
+    def _iter_inline_agent_descriptors(self, assets_dir: "Path") -> list[tuple[str, str | None]]:
+        """Return ``(typeid, posix_path)`` pairs for inline-attached agents.
 
-        Primary source: keys of ``cli_config.agents_json``. These are agent
-        names (or ids) injected via ``--agents`` at session launch.
-        Fallback: ``embedded_agent_ids`` when ``cli_config.agents_json`` is
-        absent or empty.
+        Primary source: keys of ``cli_config.agents_json`` (agent names injected
+        via ``--agents`` at session launch). Fallback: ``embedded_agent_ids``
+        (legacy name list written by old ``load_embedded_agent`` calls).
+
+        Each name is resolved to its agent ENTITY id (the same uuid the indexer
+        mints) so the UI can open the row — the materialized copy under
+        ``<assets_dir>/.claude/agents/<name>.md`` first, else
+        ``load_agent(name)`` (project > user > system). A name that resolves
+        nowhere is an entity-less persona: it keeps the legacy
+        ``agent-<name>`` form with no path, and renders non-openable.
         """
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
         cfg = self.cli_config or {}
         agents_json = cfg.get("agents_json") or {}
         if isinstance(agents_json, dict) and agents_json:
-            return [f"agent-{k}" for k in agents_json.keys()]
-        return [f"agent-{name}" for name in (self.embedded_agent_ids or [])]
+            names = list(agents_json.keys())
+        else:
+            names = list(self.embedded_agent_ids or [])
+
+        pairs: list[tuple[str, str | None]] = []
+        for name in names:
+            src_path: "Path | None" = None
+            materialized = assets_dir / ".claude" / "agents" / f"{name}.md"
+            if materialized.is_file():
+                src_path = materialized
+            else:
+                try:
+                    rec = _load_agent(name, project_dir=self.workdir or None)
+                except Exception:
+                    rec = None
+                rec_ref = getattr(rec, "asset_ref", None) if rec else None
+                if rec_ref is not None and rec_ref._path.is_file():
+                    src_path = rec_ref._path
+            if src_path is None:
+                pairs.append((f"agent-{name}", None))
+                continue
+            entity_id = agent_peek_entity_id(FSRef(src_path, record_type=RecordType.AGENT))
+            pairs.append((f"agent-{entity_id}", canonical_posix_path(src_path)))
+        return pairs
 
     # ── Restart-required tracking ─────────────────────────────────────────────
 

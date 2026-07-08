@@ -158,7 +158,7 @@ describe('two SDK clients in one process (realm per instance)', () => {
       `/graph/message_attachment/${stagedMa.id}/install`,
       { scope: 'user' },
     );
-    expect(install.status?.toLowerCase?.() ?? install.status).toMatch(/success/i);
+    expect(String(install.status)).toMatch(/success/i);
     const installedSkill = await pollUntil(
       () => dev2.sdk.Skill.getById(skill.id!).catch(() => null),
       10_000,
@@ -172,7 +172,7 @@ describe('two SDK clients in one process (realm per instance)', () => {
       `/graph/message_attachment/${stagedMa.id}/uninstall`,
       {},
     );
-    expect(uninstall.status?.toLowerCase?.() ?? uninstall.status).toMatch(/success/i);
+    expect(String(uninstall.status)).toMatch(/success/i);
     await pollUntil(async () => {
       const gone = await dev2.sdk.Skill.getById(skill.id!).catch(() => null);
       return gone ? null : true;

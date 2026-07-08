@@ -309,9 +309,32 @@ async def _load_status_targets(
     return by_type_id, verified
 
 
-async def _existing_project_ids(tabs: list[Tab]) -> "tuple[set[str], set[str], bool]":
+def _pointer_project_id(pointer: str | None) -> str | None:
+    """The project id NAMED by a project-scoped dock pointer — pure parse, no
+    existence check (``viewType:"project"`` → leading ``<project_id>/`` segment).
+    Returns the id only when UUID-shaped (same reap-eligibility rule as
+    ``_existing_project_ids``); any other pointer shape → ``None``."""
+    if not pointer:
+        return None
+    try:
+        data = _json.loads(pointer)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or data.get("viewType") != "project":
+        return None
+    candidate = str(data.get("pointer") or "").split("/", 1)[0].strip()
+    return candidate if is_valid_uuid(candidate) else None
+
+
+async def _existing_project_ids(
+    tabs: list[Tab], pointer_pids: "dict[str, str | None]"
+) -> "tuple[set[str], set[str], bool]":
     """Resolve which of the tabs' project ids still exist, via ONE ``id IN (…)``
     query (vs a ``get_by_id`` per distinct project).
+
+    ``pointer_pids`` is the caller's per-tab ``_pointer_project_id`` parse
+    (tab id → pointer-named project id), computed once and shared with the
+    pointer-orphan reap so each pointer is parsed a single time per list call.
 
     Returns ``(existing_ids, candidate_ids, ok)`` where ``candidate_ids`` is the
     set of distinct UUID-shaped ``project_id``s (the only ones eligible for
@@ -326,6 +349,10 @@ async def _existing_project_ids(tabs: list[Tab]) -> "tuple[set[str], set[str], b
         for t in tabs
         if getattr(t, "project_id", None) and is_valid_uuid(str(t.project_id))
     }
+    # Also validate the project id NAMED BY a project-scoped dock pointer: a tab
+    # can carry a live (target-healed) ``project_id`` while its URL still names a
+    # deleted project — that fossil must be detected here to be reapable at all.
+    candidates |= {pid for pid in pointer_pids.values() if pid is not None}
     if not candidates:
         return set(), candidates, True
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
@@ -376,7 +403,8 @@ async def _reap_orphans(
         return tabs
     if target_map is None or verified_types is None:
         target_map, verified_types = await _load_status_targets(tabs)
-    existing_projects, candidate_projects, projects_ok = await _existing_project_ids(tabs)
+    pointer_pids = {t.id: _pointer_project_id(t.pointer) for t in tabs}
+    existing_projects, candidate_projects, projects_ok = await _existing_project_ids(tabs, pointer_pids)
 
     deleted_ids: set[str] = set()
 
@@ -390,6 +418,32 @@ async def _reap_orphans(
             deleted_ids.update(
                 t.id for t in tabs if str(getattr(t, "project_id", None)) == pid
             )
+
+    # Dead-URL POINTER: a project-scoped tab whose dock URL names a project that
+    # no longer exists. ``_backfill_tab_projects`` may still heal such a tab's
+    # ``project_id`` from its TARGET — so the projects chip advertises a live
+    # project — but opening the tab, or entering that project via the chip
+    # (``dockForProjectEntry`` resolves the tab's stored pointer VERBATIM), can
+    # only ever land on ``/dock/project/<dead>/…`` → "Project not found", forever
+    # (RCA 2026-07-08). A tab addressing a dead project is removed, not healed
+    # half-way. Same fail-open as the project reap above: only when the batched
+    # existence lookup succeeded.
+    reaped_pointer = False
+    if projects_ok:
+        pointer_orphans = [
+            t
+            for t in tabs
+            if t.id not in deleted_ids
+            and (pid := pointer_pids.get(t.id)) is not None
+            and pid not in existing_projects
+        ]
+        for tab in pointer_orphans:
+            try:
+                await tab.delete()
+            except Exception:
+                continue
+            deleted_ids.add(tab.id)
+            reaped_pointer = True
 
     # Missing TARGET: a shell/agentic_process tab whose entity row is absent.
     # BOTH live-session target types (``_DB_BACKED_TARGET_TYPES``) are ALWAYS
@@ -418,7 +472,7 @@ async def _reap_orphans(
             continue
         deleted_ids.add(tab.id)
         reaped_target = True
-    if reaped_target:
+    if reaped_target or reaped_pointer:
         # Background reap (no user navigation) — ping clients so the dangling
         # chip drops live instead of waiting for the next list fetch.
         await broadcast_tabs_changed()
@@ -759,15 +813,9 @@ async def _project_from_pointer(pointer: str | None) -> str | None:
     is the authority. Returns the id only when it's a valid entity id AND the
     project still exists, so a stale pointer to a deleted project never stamps a
     dangling id."""
-    if not pointer:
+    candidate = _pointer_project_id(pointer)
+    if candidate is None:
         return None
-    try:
-        data = _json.loads(pointer)
-    except (ValueError, TypeError):
-        return None
-    if not isinstance(data, dict) or data.get("viewType") != "project":
-        return None
-    candidate = str(data.get("pointer") or "").split("/", 1)[0].strip()
     from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
 
     if not is_valid_entity_id(candidate):
