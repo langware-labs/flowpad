@@ -382,4 +382,10 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.DESKTOP]: {
+    title: 'Desktop',
+    iconName: 'LayoutGrid',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
 };
