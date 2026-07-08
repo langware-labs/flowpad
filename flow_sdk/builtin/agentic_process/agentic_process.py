@@ -4183,7 +4183,9 @@ class AgenticProcess(Entity):
         data["status"] = self.status
         busy = is_turn_busy(self, computed)
         data["busy"] = busy
-        data["ready_for_input"] = is_ready_from_busy(self.status, busy)
+        data["ready_for_input"] = is_ready_from_busy(
+            self.status, busy, pty_mode=self.pty_mode, session_id=self.session_id
+        )
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
         # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
@@ -4289,7 +4291,9 @@ class AgenticProcess(Entity):
             "status": self.status,
             "busy": busy,
             "worker_status": str(worker_status) if worker_status else None,
-            "ready_for_input": is_ready_from_busy(self.status, busy),
+            "ready_for_input": is_ready_from_busy(
+                self.status, busy, pty_mode=self.pty_mode, session_id=self.session_id
+            ),
         })
 
     @property

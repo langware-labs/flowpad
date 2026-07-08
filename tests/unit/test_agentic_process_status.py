@@ -550,12 +550,16 @@ def test_tail_status_expands_past_envelope_run_beyond_4kb(tmp_path: Path):
 
 # ── is_ready_for_input truth table ───────────────────────────────────────────
 #
-# Contract (realigned): is_ready_for_input(p) ⇔ is_process_running(p.status) AND
-# ¬is_turn_busy(p) ⇔ the process is RUNNING AND ¬busy. busy ⇔ prompt-lock held ∨ _turn_in_flight
+# Contract (realigned): is_ready_for_input(p) ⇔ ¬is_turn_busy(p) AND (
+#   p.status == RUNNING  OR  headless-idle (pty_mode is False ∧ status == STOPPED ∧ session_id)
+# ). busy ⇔ prompt-lock held ∨ _turn_in_flight
 # ∨ worker ∈ {initializing, working, thinking, tool_call, tool_running}.
 # Everything else while RUNNING (idle/complete/interrupted/pending_user AND the
 # fail-open error states error/api_error/api_timeout/inactive/unknown/None) is
 # READY — the user can just re-prompt.
+# The headless-idle case (a CLI session between per-turn `claude -p` workers,
+# STOPPED with a preserved session_id) is READY too — see the dedicated test
+# below (RCA #12a: the chat⇄terminal toggle wedged off at headless-idle).
 
 
 class _FakeProcess:
@@ -614,6 +618,39 @@ class _FakeProcess:
 def test_is_ready_for_input_truth_table(process_status, worker_status, expected):
     proc = _FakeProcess(process_status, worker_status)
     assert is_ready_for_input(proc, worker_status) is expected
+
+
+@pytest.mark.parametrize(
+    "process_status,pty_mode,session_id,turn_in_flight,expected,label",
+    [
+        # Headless-idle: CLI transport, STOPPED between per-turn workers, session
+        # preserved → READY (the fix for RCA #12a — toggle re-enables).
+        (ProcessStatus.STOPPED, False, "sess-abc", False, True, "headless-idle STOPPED+session → ready"),
+        # Headless STOPPED but NO session yet (never prompted) → not ready.
+        (ProcessStatus.STOPPED, False, None, False, False, "headless STOPPED no session → not ready"),
+        # Interactive (PTY) transport STOPPED → not headless-idle (needs a live
+        # PID); stays not-ready as before, even with a preserved session.
+        (ProcessStatus.STOPPED, True, "sess-abc", False, False, "PTY STOPPED+session → not ready"),
+        # Headless-idle signature but a turn is in flight → busy short-circuits.
+        (ProcessStatus.STOPPED, False, "sess-abc", True, False, "headless STOPPED but busy → not ready"),
+        # Other non-running lifecycle states never qualify even for CLI+session.
+        (ProcessStatus.NEW, False, "sess-abc", False, False, "headless NEW+session → not ready"),
+        (ProcessStatus.FAILED, False, "sess-abc", False, False, "headless FAILED+session → not ready"),
+        # RUNNING CLI session is ready regardless of the headless-idle branch.
+        (ProcessStatus.RUNNING, False, "sess-abc", False, True, "CLI RUNNING → ready"),
+    ],
+)
+def test_is_ready_for_input_headless_idle(process_status, pty_mode, session_id, turn_in_flight, expected, label):
+    """Headless-idle readiness: a CLI-transport (pty_mode False) session with a
+    live session_id at STOPPED is ready-for-input, so the chat⇄terminal toggle
+    re-enables between headless turns. busy still gates first; PTY-transport and
+    non-STOPPED/non-RUNNING states do NOT qualify. Mirror of the TS
+    isReadyForInput headless-idle branch."""
+    proc = _FakeProcess(
+        process_status, WorkerStatus.COMPLETE,
+        session_id=session_id, turn_in_flight=turn_in_flight, pty_mode=pty_mode,
+    )
+    assert is_ready_for_input(proc, WorkerStatus.COMPLETE) is expected, label
 
 
 @pytest.mark.parametrize(
