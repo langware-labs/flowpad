@@ -112,6 +112,9 @@ export async function loadShell(shellId: string): Promise<Shell> {
       return systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
     });
   } else {
+    // A workdir inside a project mount adopts the shell into it; otherwise this
+    // is a genuinely global shell and resolveProjectContext clears the active
+    // project to null (the Global scope).
     await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
   }
 

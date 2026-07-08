@@ -54,12 +54,15 @@ export function changedIds(oldOrder: string[], newOrder: string[]): Set<string> 
   return new Set(newOrder.filter((id, i) => oldIdx.get(id) !== i));
 }
 
-/** The project view: global order filtered to tabs in `projectId` plus all
- *  projectless tabs (project == null), preserving global order. */
+/** The scope view: global order filtered to tabs whose project EXACTLY matches
+ *  `projectId` (a project id, or `null` for the Global/no-active-project scope),
+ *  preserving global order. Each tab belongs to exactly one scope — a projectless
+ *  tab (project == null) appears only in the `null` view, never inside a project.
+ *  Backend parity: `flow_sdk/builtin/tab_order.py::filter_for_project`. */
 export function filterForProject(
   order: string[],
   projectOf: Record<string, string | null>,
   projectId: string | null,
 ): string[] {
-  return order.filter((id) => projectOf[id] === projectId || projectOf[id] == null);
+  return order.filter((id) => (projectOf[id] ?? null) === projectId);
 }

@@ -502,8 +502,9 @@ async def test_activate_is_noop_on_a_soft_closed_tab() -> None:
 @pytest.mark.asyncio
 async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
     # `list_all` is the GLOBAL projection (every visible tab, all projects) that the
-    # footer chip + sessions view need; the project-scoped `list(pid)` is
-    # `{that project} + projectless`, and `list(None)` is projectless-only.
+    # footer chip + sessions view need; the project-scoped `list(pid)` is that
+    # project's tabs ONLY (each tab belongs to exactly one scope), and `list(None)`
+    # is the Global/projectless view.
     from flow_sdk.builtin.tab import _build_list, _http_list_all
 
     from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
@@ -525,9 +526,13 @@ async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
     ids = {r["id"] for r in res.data["tabs"]}
     assert {a.id, b.id, free.id} <= ids, "list_all spans every project + projectless"
 
-    # The scoped list of project A excludes project B's tab (proves list_all differs).
+    # The scoped list of project A is project A's tabs ONLY — it excludes project
+    # B's tab AND the projectless/global tab (which lives only in the None view).
     scoped_a = {r["id"] for r in await _build_list(pa)}
-    assert a.id in scoped_a and free.id in scoped_a and b.id not in scoped_a
+    assert a.id in scoped_a and free.id not in scoped_a and b.id not in scoped_a
+    # The Global (None) view is the projectless tab only.
+    scoped_none = {r["id"] for r in await _build_list(None)}
+    assert free.id in scoped_none and a.id not in scoped_none and b.id not in scoped_none
 
 
 @pytest.mark.asyncio

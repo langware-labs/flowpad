@@ -42,6 +42,15 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   }),
 }));
 
+// UnifiedTabStrip reads react-router's `useNavigation()` for the in-flight nav
+// target. This suite renders it outside a data router, so provide the hook's
+// idle shape (no navigation in flight → `location` undefined) while keeping the
+// rest of react-router real.
+vi.mock('react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router')>();
+  return { ...actual, useNavigation: () => ({ location: undefined, state: 'idle' }) };
+});
+
 vi.mock('@src/tabs/useTerminalStripController', () => ({
   useTerminalStripController: () => ({
     tabsProjectId: PROJ_A, // strip is scoped to project A

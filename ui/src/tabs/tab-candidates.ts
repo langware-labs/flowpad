@@ -15,11 +15,13 @@ export function tabTargetKey(tab: Tab): string {
   return `${tab.target_type}-${tab.target_id}`;
 }
 
-/** Whether a tab is in `projectId`'s scope — its own project, or a projectless
- *  tab (`project_id == null`), which belongs to every project (the backend
- *  `filter_for_project` rule). */
+/** Whether a tab is in `projectId`'s scope. A tab belongs to EXACTLY one scope —
+ *  its own project, or the Global scope when it is projectless (`project_id == null`,
+ *  matched only by `projectId === null`). Projectless tabs no longer bleed into
+ *  every project; they live solely in the Global scope (the backend
+ *  `filter_for_project` rule, kept in parity). */
 export function tabInProject(tab: Tab, projectId: string | null): boolean {
-  return tab.project_id === projectId || tab.project_id == null;
+  return tab.project_id === projectId;
 }
 
 /** Epoch ms of a tab's last activation (recency seed), or null. Wire is epoch-ms;
@@ -55,9 +57,9 @@ function pickActiveTab(tabs: Tab[], excludeIds: Set<string>): Tab | null {
 /**
  * Pick the best terminal tab to make active.
  *
- * When `preferProjectId` is given, the pick is confined to that project (+
- * projectless tabs, which belong to every project): closing a tab keeps you
- * inside your project while it still has tabs, and when that project has no tabs
+ * When `preferProjectId` is given, the pick is confined to that scope (a project,
+ * or the Global scope when `preferProjectId` is null): closing a tab keeps you
+ * inside your scope while it still has tabs, and when that scope has no tabs
  * left the pick is `null` (show the empty/no-tabs page) rather than jumping to a
  * tab in another project. Omit `preferProjectId` (or pass an already-scoped
  * `tabs`) for a plain global pick. `null` means no tab is left to make active.

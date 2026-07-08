@@ -160,6 +160,9 @@ export async function loadAgentApp(args: LoaderArgs) {
       if (process?.project_id) {
         await loadProject(new TypeId(Project.type, process.project_id)).catch(() => systemTools.resolveProjectContext(process.workdir, process));
       } else {
+        // Global (projectless) session — a workdir match adopts it into a project;
+        // otherwise resolveProjectContext clears the active project to null (the
+        // Global scope).
         await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
       }
     }

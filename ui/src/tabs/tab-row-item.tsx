@@ -52,9 +52,10 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
   const lifecycleOverlay = lifecycleStatus(lifecycle);
   const isDisabled = lifecycleOverlay.isClosing || tab.is_disabled;
   const statusReason = lifecycleOverlay.statusReason || (tab.is_disabled ? 'Closing...' : '');
-  // Projectless ("global") tabs surface in every project's strip; mark them in
-  // blue so it's clear they don't belong to the active project.
-  const titleClassName = tab.project_id == null ? 'text-blue-500' : undefined;
+  // Projectless ("global") tabs live in the Global scope; mark their title with
+  // the same violet the Global chip uses, so a global tab and its scope chip read
+  // as one visual language.
+  const titleClassName = tab.project_id == null ? 'text-violet-500' : undefined;
 
   if (TERMINAL_TARGET_TYPES.has(tab.target_type ?? '')) {
     const kind = (tab.icon_key && tab.icon_key in PROVIDER_META ? tab.icon_key : 'shell') as keyof typeof PROVIDER_META;

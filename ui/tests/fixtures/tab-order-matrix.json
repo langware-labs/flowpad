@@ -1,5 +1,5 @@
 {
-  "_doc": "Shared tab-ordering contract. Consumed by BOTH ui/tests/unit/tab-order.test.ts (predictOrder) and tests/unit/test_tab_order.py (compute_reorder). Both suites must produce identical results for every case — this is the front/back parity proof. `tabs` is the current GLOBAL order (each id + its project; null = projectless). `op` selects the pure operation; `args` are its inputs (null anchors allowed). `expectedOrder` is the new global order. `expectedWrites` (optional) is the SET of ids whose contiguous index changed (the rows persist_order would write). `expectedFiltered` (optional) maps a project view to its filtered subsequence; the key \"null\" is the projectless (no active project) view; a project view = {id.project == key OR id.project == null}.",
+  "_doc": "Shared tab-ordering contract. Consumed by BOTH ui/tests/unit/tab-order.test.ts (predictOrder) and tests/unit/test_tab_order.py (compute_reorder). Both suites must produce identical results for every case — this is the front/back parity proof. `tabs` is the current GLOBAL order (each id + its project; null = projectless). `op` selects the pure operation; `args` are its inputs (null anchors allowed). `expectedOrder` is the new global order. `expectedWrites` (optional) is the SET of ids whose contiguous index changed (the rows persist_order would write). `expectedFiltered` (optional) maps a scope view to its filtered subsequence; each tab belongs to EXACTLY one scope: a project view = {id.project == key}; the key \"null\" is the Global (no active project) view = {id.project == null}. Projectless tabs appear only in the \"null\" view, never inside a project.",
   "cases": [
     {
       "name": "reorder: move-right within project",
@@ -53,7 +53,7 @@
       "args": {"reorder_id": "a", "after_id": "s", "before_id": "b"},
       "expectedOrder": ["s", "a", "b"],
       "expectedWrites": ["a", "s"],
-      "expectedFiltered": {"p1": ["s", "a", "b"], "null": ["s"]}
+      "expectedFiltered": {"p1": ["a", "b"], "null": ["s"]}
     },
     {
       "name": "reorder: projectless tab moved among project tabs",
@@ -62,7 +62,7 @@
       "args": {"reorder_id": "s", "after_id": "a", "before_id": "b"},
       "expectedOrder": ["a", "s", "b"],
       "expectedWrites": ["b", "s"],
-      "expectedFiltered": {"p1": ["a", "s", "b"], "null": ["s"]}
+      "expectedFiltered": {"p1": ["a", "b"], "null": ["s"]}
     },
     {
       "name": "new_tab: opener inserts right after the opener",
@@ -100,12 +100,12 @@
       "expectedFiltered": {"p1": ["a", "c"]}
     },
     {
-      "name": "filter: per-project view is the global subsequence + projectless",
+      "name": "filter: each scope view is its own tabs only (no projectless bleed)",
       "tabs": [{"id": "a", "project": "p1"}, {"id": "b", "project": "p2"}, {"id": "s", "project": null}, {"id": "c", "project": "p1"}],
       "op": "filter",
       "args": {},
       "expectedOrder": ["a", "b", "s", "c"],
-      "expectedFiltered": {"p1": ["a", "s", "c"], "p2": ["b", "s"], "null": ["s"]}
+      "expectedFiltered": {"p1": ["a", "c"], "p2": ["b"], "null": ["s"]}
     }
   ]
 }
