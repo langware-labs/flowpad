@@ -479,6 +479,27 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for a real-filesystem folder browsed inside the Assets
+   * view (a project context folder or any folder under one).
+   * Pointer format: "fs/<relPath>" — relPath is compute-node-relative (no
+   * leading slash), the same form the Explorer's VFS listing uses.
+   * URL: /dock/assets/fs/<relPath>
+   */
+  static forAssetFsFolder(path: string, layout: Layout = Layout.DOCK): DockPointer {
+    const rel = path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+    return new DockPointer(ViewType.ASSETS, `fs/${rel}`, undefined, layout);
+  }
+
+  /**
+   * Parse an `fs/<relPath>` assets pointer into its compute-node-relative path.
+   * Returns null if the pointer is not an fs pointer.
+   */
+  static parseAssetFsPointer(pointer: string | undefined | null): string | null {
+    if (!pointer || !pointer.startsWith('fs/')) return null;
+    return pointer.slice('fs/'.length);
+  }
+
+  /**
    * Parse a folder pointer into its parts.
    * Returns null if the pointer is not a folder pointer.
    */

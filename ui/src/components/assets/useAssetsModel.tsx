@@ -6,7 +6,7 @@ import {
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, fsManager, fsStore, RecordType, TypeId, VFSPath } from '@sdk';
+import { dataContext, fsManager, fsStore, Project, RecordType, TypeId, VFSPath } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ViewType } from '@src/types/ViewType';
 import { notify } from '@src/notifications';
@@ -14,12 +14,15 @@ import { getDescriptor } from '@src/components/quick-create';
 import { useAssetStats } from '@src/hooks/use-asset-stats';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useAssetTreeRefresh } from '@src/hooks/useAssetTreeRefresh';
+import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { assetScopeBucket, defaultScopeFilter, scopeFilterKey, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
+import { assetContextFoldersRoot } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
+import { normalizeRel } from '@src/components/browseable-tree/adapters/fsFolderRoot';
 import {
   markdownFolderNodeId,
   markdownFolderRoot,
@@ -111,6 +114,24 @@ export function useAssetsModel() {
     [currentDock, projectSeedScope, currentProjectId],
   );
 
+  // The scoped project entity, watched so `include_dirs` edits (add/remove
+  // context folder) re-render the tree. Backs the "Context folders" root.
+  const scopeProjectTypeId = useMemo(
+    () => (scopeProjectId ? new TypeId(Project.type, scopeProjectId) : null),
+    [scopeProjectId],
+  );
+  const { data: scopeProject } = useEntity<Project>(scopeProjectTypeId, {
+    watch: true,
+    enabled: !!scopeProjectTypeId,
+  });
+  const hasScopeProject = !!scopeProject;
+  const {
+    contextDirs,
+    addPaths: handleAddContextPaths,
+    pickAndAdd: handleBrowseContextDir,
+    remove: removeContextDir,
+  } = useProjectContextFolders(scopeProject);
+
   const [assetFilter] = useState<AssetFilter>(() => ({ ...DEFAULT_ASSET_FILTER }));
 
   const openAssetTypeId = useMemo<TypeId | null>(() => {
@@ -184,6 +205,27 @@ export function useAssetsModel() {
       navigation.openDock(p.withScopeFilter(urlScope));
     },
     [navigation, urlScope],
+  );
+
+  // ── Context folders (project include_dirs) ────────────────────────────────
+  // Mutations live in the shared useProjectContextFolders hook (destructured
+  // above); the watched entity re-renders the root's rows. The root's "+"
+  // opens the source-chooser dialog (project folder / open folder), which
+  // funnels back through handleAddContextPaths / handleBrowseContextDir.
+  const [addContextFolderDialogOpen, setAddContextFolderDialogOpen] = useState(false);
+
+  const handleRemoveContextDir = useCallback(
+    async (dir: string) => {
+      await removeContextDir(dir);
+      // If the body is showing the removed folder (or a subfolder of it), fall
+      // back to the plain asset list so the view isn't stranded.
+      const rel = normalizeRel(DockPointer.parseAssetFsPointer(effectivePointer) ?? '');
+      const removed = normalizeRel(dir);
+      if (rel && removed && (rel === removed || rel.startsWith(`${removed}/`))) {
+        navigateAsset(DockPointer.forAssetList('all'));
+      }
+    },
+    [removeContextDir, effectivePointer, navigateAsset],
   );
 
   // Multi-select toolbar resolver. Content adapts to the current selection: every
@@ -407,38 +449,51 @@ export function useAssetsModel() {
     [effectiveFilter.scope, effectivePointer, indexType, navigateAsset],
   );
 
-  const roots = useMemo<BrowseableRoot[]>(
-    () =>
-      visibleTypes.map((t) => {
-        if (t.type_name === 'markdown') {
-          return markdownFolderRoot(t, {
-            indexType,
-            onNew: handleNew,
-            onCreateFolder: handleCreateFolder,
-            onMoveItem: handleMoveMarkdownItem,
-            filter: effectiveFilter,
-            onOpenKnowledgeBrowser: (absPath) =>
-              navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
-          });
-        }
-        return assetTypeRoot(t, {
+  const roots = useMemo<BrowseableRoot[]>(() => {
+    const list: BrowseableRoot[] = visibleTypes.map((t) => {
+      if (t.type_name === 'markdown') {
+        return markdownFolderRoot(t, {
           indexType,
           onNew: handleNew,
-          creatableTypes,
+          onCreateFolder: handleCreateFolder,
+          onMoveItem: handleMoveMarkdownItem,
           filter: effectiveFilter,
+          onOpenKnowledgeBrowser: (absPath) =>
+            navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
         });
-      }),
-    [
-      visibleTypes,
-      indexType,
-      handleNew,
-      handleCreateFolder,
-      handleMoveMarkdownItem,
-      creatableTypes,
-      effectiveFilter,
-      navigation,
-    ],
-  );
+      }
+      return assetTypeRoot(t, {
+        indexType,
+        onNew: handleNew,
+        creatableTypes,
+        filter: effectiveFilter,
+      });
+    });
+    // Context folders (project include_dirs) — shown whenever a project is in
+    // scope (even with no dirs yet, so the "+" add action is reachable).
+    if (hasScopeProject) {
+      list.push(
+        assetContextFoldersRoot({
+          dirs: contextDirs,
+          onAdd: () => setAddContextFolderDialogOpen(true),
+          onRemove: handleRemoveContextDir,
+        }),
+      );
+    }
+    return list;
+  }, [
+    visibleTypes,
+    indexType,
+    handleNew,
+    handleCreateFolder,
+    handleMoveMarkdownItem,
+    creatableTypes,
+    effectiveFilter,
+    navigation,
+    hasScopeProject,
+    contextDirs,
+    handleRemoveContextDir,
+  ]);
 
   return {
     roots,
@@ -463,5 +518,10 @@ export function useAssetsModel() {
     newFolderDialogOpen,
     setNewFolderDialogOpen,
     handleNewFolderConfirm,
+    // context folders
+    addContextFolderDialogOpen,
+    setAddContextFolderDialogOpen,
+    handleAddContextPaths,
+    handleBrowseContextDir,
   } as const;
 }

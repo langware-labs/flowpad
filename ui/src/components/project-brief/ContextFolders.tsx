@@ -2,6 +2,7 @@ import { Project, TypeId } from '@sdk';
 import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useEntity } from '@src/hooks/entity-hooks';
+import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { FolderPlus, X } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -32,30 +33,9 @@ export const ContextFolders: React.FC<ContextFoldersProps> = ({ spawnProjectId }
   const project = (pinnedProject ?? dataCtx.project) as Project | null;
   const computeNode = dataCtx.computeNode;
 
-  const contextDirs = project?.include_dirs ?? [];
+  const { contextDirs, addPaths, pickAndAdd: handlePickFolder, remove: handleRemove } =
+    useProjectContextFolders(project);
   const [dragActive, setDragActive] = useState(false);
-
-  const addFolder = useCallback(
-    async (path: string) => {
-      if (!project || !path) return;
-      await project.addContextDir(path);
-    },
-    [project],
-  );
-
-  const handlePickFolder = useCallback(async () => {
-    if (!project || !computeNode) return;
-    const picked = await computeNode.openPathDialog();
-    if (picked) await addFolder(picked);
-  }, [project, computeNode, addFolder]);
-
-  const handleRemove = useCallback(
-    async (path: string) => {
-      if (!project) return;
-      await project.removeContextDir(path);
-    },
-    [project],
-  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -69,12 +49,12 @@ export const ContextFolders: React.FC<ContextFoldersProps> = ({ spawnProjectId }
         .map((f) => (f as unknown as { path?: string }).path)
         .filter((p): p is string => !!p);
       if (paths.length) {
-        void Promise.all(paths.map((p) => addFolder(p)));
+        void addPaths(paths);
       } else {
         void handlePickFolder();
       }
     },
-    [addFolder, handlePickFolder],
+    [addPaths, handlePickFolder],
   );
 
   if (!project) return null;
