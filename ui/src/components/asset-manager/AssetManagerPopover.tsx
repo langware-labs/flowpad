@@ -7,6 +7,7 @@ import {
   FLOWPAD_ASSISTANT_PROJECT_NAME,
   isReadOnlySource,
   isTypeId,
+  isValidUUIDv4,
   Project,
   QueryRequest,
   TypeId,
@@ -37,6 +38,7 @@ import {
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { cn } from '@src/lib/utils';
 import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, Lock, Plus, Search, Sparkles, X, type LucideIcon } from 'lucide-react';
 
 const READONLY_TOOLTIP_BY_SOURCE: Partial<Record<AssetSource, string>> = {
@@ -610,8 +612,11 @@ function AssetRow({
   const readOnly = isReadOnlySource(descriptor.source);
   const label = _displayLabelForTypeid(descriptor.typeid);
   // Entity-less personas (e.g. a name-keyed agents_json entry with no backing
-  // entity) carry a name-form pseudo-typeid — there is nothing to open.
-  const openable = isTypeId(descriptor.typeid);
+  // entity) carry a name-form pseudo-typeid — there is nothing to open. Entity
+  // ids are always UUIDs (v4/v5 policy), so gate on that rather than the looser
+  // isTypeId grammar: a persona NAME like `team.lead` or `research-2` would
+  // otherwise parse as a well-formed prop_id/key TypeId and render openable.
+  const openable = isTypeId(descriptor.typeid) && isValidUUIDv4(id);
 
   const onChipClick = useCallback(() => {
     if (!openable || !id) return;
@@ -655,11 +660,12 @@ function AssetRow({
         onClick={onChipClick}
         disabled={!openable}
         data-openable={openable ? 'true' : 'false'}
-        className={
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border px-1.5 py-0.5 text-xs',
           openable
-            ? 'flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border bg-muted/30 px-1.5 py-0.5 text-xs text-foreground hover:bg-muted'
-            : 'flex min-w-0 flex-1 cursor-default items-center gap-1.5 rounded border border-dashed border-border bg-muted/20 px-1.5 py-0.5 text-xs text-muted-foreground'
-        }
+            ? 'bg-muted/30 text-foreground hover:bg-muted'
+            : 'cursor-default border-dashed bg-muted/20 text-muted-foreground',
+        )}
         title={
           !openable
             ? t`Inline persona — no backing entity`

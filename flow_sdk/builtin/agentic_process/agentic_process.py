@@ -3128,10 +3128,7 @@ class AgenticProcess(Entity):
         legacy name list; we no longer write it, and migrate-on-touch any entry
         for this agent so attach/detach stays symmetric on old processes.
         """
-        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id  # noqa: PLC0415
         from flow_sdk.fs_store.operations.agent import extract_agent_from_path, render_agent_markdown  # noqa: PLC0415
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
         abs_path = Path("/" + asset_ref.lstrip("/"))
@@ -3147,14 +3144,27 @@ class AgenticProcess(Entity):
             content=render_agent_markdown(agent),
         )
         self._ensure_assets_dir_in_add_dirs(assets.os_path)
-        ref = TypeId(type="agent", id=agent_peek_entity_id(FSRef(abs_path, record_type=RecordType.AGENT)))
+        ref = self._agent_entity_ref(abs_path)
         refs = list(self.embedded_asset_refs or [])
-        if not any(r.type == ref.type and r.id == ref.id for r in refs):
+        if ref not in refs:
             self.embedded_asset_refs = refs + [ref]
-        if name in (self.embedded_agent_ids or []):
-            self.embedded_agent_ids = [n for n in self.embedded_agent_ids if n != name]
+        self._drop_legacy_agent_name(name)
         await self.save()
         return ApiSuccessResponse(data={"ok": True, "name": name, "ref": str(ref)})
+
+    @staticmethod
+    def _agent_entity_ref(path: "Path") -> TypeId:
+        """Entity ref for an agent .md path — the single ``agent path → TypeId``
+        seam (read-only; same uuid the indexer mints for the file)."""
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id  # noqa: PLC0415
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+        return TypeId(type="agent", id=agent_peek_entity_id(FSRef(path, record_type=RecordType.AGENT)))
+
+    def _drop_legacy_agent_name(self, name: str | None) -> None:
+        """Migrate-on-touch: strip a legacy ``embedded_agent_ids`` name entry."""
+        if name and name in (self.embedded_agent_ids or []):
+            self.embedded_agent_ids = [n for n in self.embedded_agent_ids if n != name]
 
     @action.post(action_name="load-embedded-skill")
     async def load_embedded_skill_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
@@ -3554,11 +3564,8 @@ class AgenticProcess(Entity):
                 # Legacy processes may still carry the agent by NAME — drop it
                 # too, or the persona file is gone while an INLINE row lingers.
                 from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
-                from flow_sdk.fs_store.operations.agent import load_agent as _load_agent  # noqa: PLC0415
-                agent = get_agent(ref.id) or _load_agent(ref.id)
-                name = agent.name if agent else None
-                if name and name in self.embedded_agent_ids:
-                    self.embedded_agent_ids = [n for n in self.embedded_agent_ids if n != name]
+                agent = get_agent(ref.id)
+                self._drop_legacy_agent_name(agent.name if agent else None)
             await self.save()
             return ApiSuccessResponse(data={"ok": True, "ref": entity_ref})
         except Exception as exc:
@@ -3791,11 +3798,8 @@ class AgenticProcess(Entity):
         nowhere is an entity-less persona: it keeps the legacy
         ``agent-<name>`` form with no path, and renders non-openable.
         """
-        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id  # noqa: PLC0415
         from flow_sdk.fs_store.operations.agent import load_agent as _load_agent  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
         cfg = self.cli_config or {}
         agents_json = cfg.get("agents_json") or {}
@@ -3821,8 +3825,7 @@ class AgenticProcess(Entity):
             if src_path is None:
                 pairs.append((f"agent-{name}", None))
                 continue
-            entity_id = agent_peek_entity_id(FSRef(src_path, record_type=RecordType.AGENT))
-            pairs.append((f"agent-{entity_id}", canonical_posix_path(src_path)))
+            pairs.append((str(self._agent_entity_ref(src_path)), canonical_posix_path(src_path)))
         return pairs
 
     # ── Restart-required tracking ─────────────────────────────────────────────

@@ -13,7 +13,7 @@
  * Timeout: 180s (real Claude subprocess).
  */
 
-import { AgenticProcess, FlowData, FlowElementTypes, dataManager } from '@sdk';
+import { AgenticProcess, FlowData, FlowElementTypes, TypeId, dataManager, isTypeId, isValidUUIDv4 } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
@@ -84,8 +84,13 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     // reflects it once that WS message lands. Under suite load that can
     // take a beat — poll briefly so the test isn't racing a fan-out we
     // can't observe directly.
-    const isAgentUuidRef = (r: unknown) =>
-      /^agent-[0-9a-f]{8}-[0-9a-f]{4}-[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(r));
+    // Same gate the product code uses: well-formed typeid + uuid-form entity id.
+    const isAgentUuidRef = (r: unknown) => {
+      const s = String(r);
+      if (!isTypeId(s)) return false;
+      const tid = new TypeId(s);
+      return tid.type === 'agent' && isValidUUIDv4(tid.id);
+    };
     const deadline = Date.now() + 5000;
     let refreshed: AgenticProcess | null = null;
     let refs: unknown[] = [];
