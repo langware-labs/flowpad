@@ -18,20 +18,9 @@ function isFolderBookmark(b: Bookmark): boolean {
   return b.bookmark_type === BookmarkType.FAVORITE_FOLDER;
 }
 
-/**
- * Container sort — stamped rows (order >= 1) ascending first, unstamped rows
- * (order 0/unset) at the END, newest first among themselves. MUST stay in
- * lockstep with `sort_container` in flow_sdk/builtin/bookmark.py.
- */
-export function sortContainer(siblings: Bookmark[]): Bookmark[] {
-  const stamped = siblings
-    .filter((b) => (b.order ?? 0) > 0)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || String(a.id).localeCompare(String(b.id)));
-  const unstamped = siblings
-    .filter((b) => !(b.order ?? 0))
-    .sort((a, b) => String(b.created_date ?? '').localeCompare(String(a.created_date ?? '')));
-  return [...stamped, ...unstamped];
-}
+import { sortContainer } from '@src/lib/container-sort';
+
+export { sortContainer };
 
 function matchesRef(b: Bookmark, entityType: string, entityId: string): boolean {
   return (

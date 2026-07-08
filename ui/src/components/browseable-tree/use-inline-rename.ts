@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
- * Inline-rename state machine shared by the desktop tiles (FavoriteTile,
- * FolderTile): editing/draft state, focus-and-select-all on entry, trim +
- * no-op guard on commit. Entered via double-click / F2 / context menu; the
- * caller renders `InlineRenameInput` while `editing`.
+ * Inline-rename state machine for Browseable renderers (BrowseableGrid's
+ * tiles today; a candidate to unify the tree's bespoke rename onto):
+ * editing/draft state, focus-and-select-all on entry, trim + no-op guard on
+ * commit. Entered via double-click / F2 / context menu; the caller renders
+ * `InlineRenameInput` while `editing`.
  */
 export function useInlineRename(currentTitle: string, onCommit: (next: string) => void | Promise<void>) {
   const [editing, setEditing] = useState(false);

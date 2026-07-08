@@ -277,8 +277,13 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
       if (hasChildrenHint) {
         void tree.toggleExpand(node);
       }
+      // Click resolves as `pointer ?? activate` (see types.ts invariant) —
+      // activate is the imperative fallback for nodes whose navigation can't
+      // be a pure DockPointer.
       if (node.pointer) {
         onNavigate(node.pointer);
+      } else if (node.activate) {
+        void node.activate();
       }
     },
     [editing, canSelect, selection, rootId, hasChildrenHint, node, tree, onNavigate],

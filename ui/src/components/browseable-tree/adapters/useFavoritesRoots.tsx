@@ -10,70 +10,29 @@ import {
   pointerForFavorite,
 } from '@src/navigation/favorite-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { lucideByName } from '@src/lib/lucide-by-name';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Bookmark as BookmarkIcon,
-  Box,
-  FileText,
   Folder,
-  FolderKanban,
-  GitBranch,
-  Hammer,
-  Layers,
-  MessageSquare,
-  Package,
   Star,
-  StickyNote,
-  Terminal,
   Trash2,
-  Workflow,
   X,
-  Zap,
   type LucideIcon,
 } from 'lucide-react';
-import { useMemo } from 'react';
-import type { BrowseableDragData, BrowseableRoot } from '../types';
+import { useMemo, useRef } from 'react';
+import type { Browseable, BrowseableDragData } from '../types';
 
-const ICON_BY_NAME: Record<string, LucideIcon> = {
-  Bookmark: BookmarkIcon,
-  Box,
-  FileText,
-  FolderKanban,
-  GitBranch,
-  Hammer,
-  Layers,
-  MessageSquare,
-  Package,
-  StickyNote,
-  Terminal,
-  Workflow,
-  Zap,
-};
-
-const ICON_BY_ENTITY_TYPE: Record<string, LucideIcon> = {
-  project: FolderKanban,
-  asset: Package,
-  skill: Layers,
-  agent: Hammer,
-  task: MessageSquare,
-  workflow: Workflow,
-  agentic_process: Terminal,
-  claude_session: Terminal,
-  collaboration_room: MessageSquare,
-  trigger: Zap,
-  bookmark: BookmarkIcon,
-  plan: FileText,
-  command: Terminal,
-  claude_hook: Zap,
-};
-
+/** Explicit `data.icon` name wins; otherwise the target type's registry icon
+ *  (backend TypeInfo via the bootstrap-loaded SchemaRegistry — never a
+ *  hardcoded per-type map, per the type-icons rule). */
 function resolveIcon(bookmark: Bookmark): LucideIcon {
   const explicit = bookmark.data?.icon as string | undefined;
-  if (explicit && ICON_BY_NAME[explicit]) return ICON_BY_NAME[explicit];
+  if (explicit) return lucideByName(explicit);
   const entityType = bookmark.data?.entity_type as string | undefined;
-  if (entityType && ICON_BY_ENTITY_TYPE[entityType]) return ICON_BY_ENTITY_TYPE[entityType];
-  return BookmarkIcon;
+  return entityType ? iconForType(entityType) : BookmarkIcon;
 }
 
 export const FAVORITE_DRAG_KIND = 'favorite';
@@ -98,7 +57,7 @@ function favoriteDragData(b: Bookmark, label: string): BrowseableDragData {
 export const FOLDER_DRAG_KIND = 'favorite_folder';
 
 export function useFavoritesRoots(): {
-  roots: BrowseableRoot[];
+  roots: Browseable[];
   /** Drop on the surface background = un-file back to root. */
   onDropToBackground: (drag: BrowseableDragData) => void;
   /** Edge-drop reorder within the root container (folders + unfiled tiles). */
@@ -108,6 +67,11 @@ export function useFavoritesRoots(): {
   ) => Promise<void>;
 } {
   const { navigation } = useDockNavigation();
+  // navigation's identity changes on every dock change (it carries
+  // currentDock); read it through a ref inside the activate closures so URL
+  // changes don't rebuild every tile.
+  const navigationRef = useRef(navigation);
+  navigationRef.current = navigation;
   const { t } = useLingui();
   const {
     favorites,
@@ -123,15 +87,15 @@ export function useFavoritesRoots(): {
   const summaries = useFavoriteSummaries(favorites);
 
   return useMemo(() => {
-    const asLeaf = (b: Bookmark): BrowseableRoot => {
+    const asLeaf = (b: Bookmark): Browseable => {
       const summary = summaryForBookmark(b, summaries);
       const title = b.name || summary?.name || b.displayName;
       const navigable = canNavigateFavorite(b);
       const pointer = navigable ? pointerForFavorite(b) : null;
       const Icon = navigable ? resolveIcon(b) : X;
       const createdAgo = formatTimeAgo(b.created_date);
-      const node: BrowseableRoot = {
-        kind: 'root',
+      return {
+        kind: 'favorite',
         id: b.id ?? '',
         label: title,
         icon: <Icon className="h-6 w-6" />,
@@ -141,7 +105,9 @@ export function useFavoritesRoots(): {
         // Session-like types can't be expressed as a pure pointer — fall back
         // to the imperative dispatcher (protocol's documented activate arm).
         activate:
-          !pointer && navigable ? () => navigateToFavorite(b, navigation) : undefined,
+          !pointer && navigable
+            ? () => navigateToFavorite(b, navigationRef.current)
+            : undefined,
         selectionKey: b.id,
         onRename: (next) => renameFavorite(b, next),
         dragData: favoriteDragData(b, title),
@@ -177,21 +143,15 @@ export function useFavoritesRoots(): {
             )}
           </>
         ),
-        ownsPointer: (p) =>
-          !!pointer && p.viewType === pointer.viewType && p.pointer === pointer.pointer,
-        pathFor: () => Promise.resolve([node]),
       };
-      return node;
     };
 
-    const asFolder = (folder: Bookmark): BrowseableRoot => {
+    const asFolder = (folder: Bookmark): Browseable => {
       const title = folder.name || folder.title || folder.displayName;
       const children = folder.id ? childrenOf(folder.id) : [];
-      const node: BrowseableRoot = {
-        kind: 'root',
+      return {
+        kind: 'favorite_folder',
         id: folder.id ?? '',
-        // The grid keys folder behavior off this; kept distinct from leaves.
-        selectionType: 'favorite_folder',
         label: title,
         icon: <Folder className="h-6 w-6" />,
         badge:
@@ -231,10 +191,7 @@ export function useFavoritesRoots(): {
             </Trans>
           </div>
         ),
-        ownsPointer: () => false,
-        pathFor: () => Promise.resolve([node]),
       };
-      return node;
     };
 
     const onDropToBackground = (drag: BrowseableDragData) => {
@@ -268,7 +225,6 @@ export function useFavoritesRoots(): {
     rootFavorites,
     childrenOf,
     summaries,
-    navigation,
     removeFavorite,
     renameFavorite,
     moveToFolder,
