@@ -54,6 +54,7 @@ export function splitLiveGroup(
 export function groupTurnEvents(items: FlowData[]): TurnGroup[] {
   const out: TurnGroup[] = [];
   let buffer: FlowData[] = [];
+  const skillCallIds = new Set<string>();
 
   const flushBuffer = () => {
     if (buffer.length > 0) {
@@ -68,6 +69,12 @@ export function groupTurnEvents(items: FlowData[]): TurnGroup[] {
       flushBuffer();
       out.push({ kind: 'message', flowData: item, index: out.length });
     } else if (DENSE_TYPES.has(t)) {
+      // A `Skill` tool use is already represented in the chat by the skill's
+      // meta-injection chip (MetaMessageChip, "Using skill: <name>") — the
+      // injected body arrives as an isMeta USER_MESSAGE right after the call.
+      // Keeping the TOOL_CALL/TOOL_RESULT in the dense stream too rendered
+      // duplicate "Using Skill" chips around that one, so drop the pair here.
+      if (isSkillToolEvent(item, skillCallIds)) continue;
       buffer.push(item);
     }
     // Anything else (END, RESULT, CHECKPOINT, …) is intentionally dropped from
@@ -77,6 +84,25 @@ export function groupTurnEvents(items: FlowData[]): TurnGroup[] {
   flushBuffer();
 
   return out;
+}
+
+/** The worker-side tool name Claude uses to load a skill. */
+const SKILL_TOOL_NAME = 'Skill';
+
+function isSkillToolEvent(item: FlowData, skillCallIds: Set<string>): boolean {
+  if (
+    item.elementType === FlowElementTypes.TOOL_CALL &&
+    item.attributes['tool-name'] === SKILL_TOOL_NAME
+  ) {
+    const id = getToolUseId(item);
+    if (id) skillCallIds.add(id);
+    return true;
+  }
+  if (item.elementType === FlowElementTypes.TOOL_RESULT) {
+    const id = getToolUseId(item);
+    return !!id && skillCallIds.has(id);
+  }
+  return false;
 }
 
 /**
