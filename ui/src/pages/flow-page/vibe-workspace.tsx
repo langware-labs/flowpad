@@ -390,19 +390,24 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           processType={ProcessKind.Chat}
           className="h-full border-r border-border"
           dense
-          // "New project" (back to VibeHome) sits on the LEFT of the same header
-          // row as the session buttons — Vibe has no left rail.
-          leadingSlot={
+          // "New" starts a fresh build session; the function form of
+          // leadingSlot hides the panel's built-in new-session icon so the
+          // header shows exactly one new-chat affordance.
+          leadingSlot={({ startNewSession }) => (
             <button
               type="button"
-              onClick={() => navigation.openHome()}
-              title={t`New project`}
+              onClick={startNewSession}
+              title={t`New build`}
+              // Carries the panel's new-session testid: this pill replaces the
+              // built-in icon button (hidden by the function-form leadingSlot),
+              // and tests use it as the vibe-workspace mount signal.
+              data-testid="entity-execution-new"
               className="inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
             >
               <Plus className="h-3 w-3" />
               {t`New`}
             </button>
-          }
+          )}
           emptyStateText={t`Tell the assistant what to build.`}
           newSessionLabel={t`New build`}
           historyLabel={t`Build history`}
