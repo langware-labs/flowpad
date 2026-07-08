@@ -12,8 +12,8 @@ interface ChatActivityLineProps {
   startedAt: number | null;
   /** Live worker status for the phase label. */
   status: WorkerStatus | null;
-  /** Optional content pinned to the right of the row. Only rendered while the
-   *  line itself is visible (active). */
+  /** Optional content rendered inline right after the elapsed clock. Only
+   *  rendered while the line itself is visible (active). */
   trailing?: ReactNode;
 }
 
@@ -50,7 +50,7 @@ export function ChatActivityLine({ process, active, startedAt, status, trailing 
       <DotPulse />
       <span>{label}</span>
       {elapsed && <span className="tabular-nums opacity-70">· {elapsed}</span>}
-      {trailing && <div className="ml-auto">{trailing}</div>}
+      {trailing && <div>{trailing}</div>}
     </div>
   );
 }
