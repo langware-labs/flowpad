@@ -43,6 +43,7 @@ import { useIndexStatus } from '@src/hooks/use-index-status';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
+import { ContextFolderBrowser } from './ContextFolderBrowser';
 import { MarkdownIndexPanel } from './MarkdownIndexPanel';
 import { useAssetTypes, type AssetTypeVault } from '@src/hooks/use-asset-types';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -64,7 +65,7 @@ import '@src/components/assets/columns/claudeRulesColumns';
 import '@src/components/assets/filters/taskFilters';
 
 interface ParsedAssetPointer {
-  mode: 'editor' | 'list' | 'folder' | 'wiki' | null;
+  mode: 'editor' | 'list' | 'folder' | 'wiki' | 'fs' | null;
   typeName: string | null;
   /** Only set when mode === 'folder'. */
   folderTypeid: string | null;
@@ -74,15 +75,22 @@ interface ParsedAssetPointer {
   wikiName: string | null;
   /** Only set when mode === 'wiki'. The space the name resolves within (default @local). */
   wikiSpace: string | null;
+  /** Only set when mode === 'fs'. Compute-node-relative folder path. */
+  fsRelPath: string | null;
 }
 
 function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
   const empty: ParsedAssetPointer = {
     mode: null, typeName: null, folderTypeid: null, folderRelPath: null, wikiName: null, wikiSpace: null,
+    fsRelPath: null,
   };
   if (!pointer) return empty;
   if (pointer.startsWith('editor/')) {
     return { ...empty, mode: 'editor' };
+  }
+  const fsRelPath = DockPointer.parseAssetFsPointer(pointer);
+  if (fsRelPath !== null) {
+    return { ...empty, mode: 'fs', fsRelPath };
   }
   if (pointer.startsWith('list/')) {
     return { ...empty, mode: 'list', typeName: pointer.slice('list/'.length) || null };
@@ -435,10 +443,12 @@ export function AssetsPage() {
     folderRelPath,
     wikiName,
     wikiSpace,
+    fsRelPath,
   } = parseAssetPointer(effectivePointer);
   const isEditorMode = mode === 'editor';
   const isFolderMode = mode === 'folder';
   const isWikiMode = mode === 'wiki';
+  const isFsMode = mode === 'fs';
 
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
@@ -630,7 +640,9 @@ export function AssetsPage() {
             header + content router only. */}
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">
-          {isWikiMode && wikiName ? (
+          {isFsMode && fsRelPath !== null ? (
+            <ContextFolderBrowser relPath={fsRelPath} onNavigate={navigateAsset} />
+          ) : isWikiMode && wikiName ? (
             <WikiResolveView name={wikiName} space={wikiSpace ?? DEFAULT_WIKI_SPACE} />
           ) : isEditorMode && effectivePointer ? (
             <AssetEditorRouter pointer={effectivePointer} />
