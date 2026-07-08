@@ -8,11 +8,12 @@ and returns the parsed findings. Identify-only — nothing is ever deleted.
 """
 from .report import generate_asset_cleanup_report, render_markdown
 from .run import AssetCleanupFinding, AssetCleanupResult, run_asset_cleanup
-from .scan import collect_scan_roots
+from .scan import collect_project_inventory, collect_scan_roots
 
 __all__ = [
     "AssetCleanupFinding",
     "AssetCleanupResult",
+    "collect_project_inventory",
     "collect_scan_roots",
     "generate_asset_cleanup_report",
     "render_markdown",

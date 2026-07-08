@@ -26,11 +26,12 @@ _JSON_FENCE = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
 @dataclass
 class AssetCleanupFinding:
     path: str
-    kind: str  # "skill" | "agent"
+    kind: str  # skill | agent | workflow | command | plan | settings_backup | project
     name: str
     verdict: str  # "garbage" | "keep" | "unsure"
     reason: str = ""
     root: str = ""
+    entity_id: str = ""  # Flowpad entity id (projects only)
 
 
 @dataclass
@@ -41,14 +42,6 @@ class AssetCleanupResult:
     session_id: str | None = None
     models_used: list[str] = field(default_factory=list)
     raw_text: str = ""
-
-    @property
-    def garbage(self) -> list[AssetCleanupFinding]:
-        return self.by_verdict()["garbage"]
-
-    @property
-    def keep(self) -> list[AssetCleanupFinding]:
-        return self.by_verdict()["keep"]
 
     def by_verdict(self) -> dict[str, list[AssetCleanupFinding]]:
         """Findings grouped by verdict — the one tallying authority (markdown
@@ -112,12 +105,15 @@ async def run_asset_cleanup(
     roots: Sequence[str | Path] | None = None,
     hours: int = 24,
     workdir: str | None = None,
+    projects: list[dict] | None = None,
 ) -> AssetCleanupResult:
     """Run the ``asset_cleanup`` agent over ``roots`` and return its findings.
 
     ``roots=None`` collects the default set (user home + projects active in
-    the last ``hours``). Raises RuntimeError when the agent asset is missing
-    or the worker reply carries no parseable report.
+    the last ``hours``) AND the full project inventory for junk-project
+    classification. Pass explicit ``roots`` (tests, targeted scans) to skip
+    projects unless ``projects`` is also given. Raises RuntimeError when the
+    agent asset is missing or the worker reply carries no parseable report.
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
@@ -133,9 +129,15 @@ async def run_asset_cleanup(
     model = agent.data.get("model") or "haiku"
 
     if roots is None:
-        from .scan import collect_scan_roots  # noqa: PLC0415
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-        roots = await collect_scan_roots(hours)
+        from .scan import collect_project_inventory, collect_scan_roots  # noqa: PLC0415
+
+        # One enumeration shared by both collectors.
+        all_projects = await Project.get_all()
+        roots = await collect_scan_roots(hours, projects=all_projects)
+        if projects is None:
+            projects = await collect_project_inventory(projects=all_projects)
     root_strs = [str(r) for r in roots]
     if not root_strs:
         raise RuntimeError("no scan roots to inspect")
@@ -151,6 +153,8 @@ async def run_asset_cleanup(
         "end with the fenced ```json report.\n\n"
         "## Scan roots\n\n" + "\n".join(root_strs) + "\n"
     )
+    if projects:
+        instruction += "\n## Projects\n\n" + json.dumps(projects, indent=2) + "\n"
 
     # The headless driver resolves the claude binary from the discovered
     # harness capability; outside a booted server no sweep has run yet and the
@@ -209,6 +213,7 @@ async def run_asset_cleanup(
             verdict=str(f.get("verdict", "unsure")),
             reason=str(f.get("reason", "")),
             root=str(f.get("root", "")),
+            entity_id=str(f.get("entity_id") or ""),
         )
         for f in report.get("findings", [])
         if isinstance(f, dict)
