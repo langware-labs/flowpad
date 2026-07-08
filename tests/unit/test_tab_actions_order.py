@@ -77,16 +77,18 @@ async def test_order_action_reorders_globally() -> None:
     assert await _order("p1") == [c.id, a.id, b.id]
 
 
-async def test_list_filters_to_project_plus_projectless() -> None:
+async def test_list_scopes_each_tab_to_exactly_one_view() -> None:
+    # Each tab belongs to EXACTLY one scope — a projectless ("global") tab appears
+    # only in the None (no active project) view, never inside a project's strip.
     a = await ensure_tab("f/a", project_id="pA")
     s = await ensure_tab("f/s", project_id=None)  # projectless (settings-like)
     bproj = await ensure_tab("f/b", project_id="pB")
     pa = await _order("pA")
     pb = await _order("pB")
     none_view = await _order(None)
-    assert a.id in pa and s.id in pa and bproj.id not in pa
-    assert bproj.id in pb and s.id in pb and a.id not in pb
-    assert none_view == [s.id]  # only projectless when no active project
+    assert a.id in pa and s.id not in pa and bproj.id not in pa  # projectless no longer bleeds in
+    assert bproj.id in pb and s.id not in pb and a.id not in pb
+    assert none_view == [s.id]  # only projectless in the Global (no active project) view
 
 
 async def test_close_action_drops_from_list() -> None:

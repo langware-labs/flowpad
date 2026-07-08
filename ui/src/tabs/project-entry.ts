@@ -1,21 +1,31 @@
 import { DockPointer } from '@src/navigation/DockPointer';
 import { refreshAllTabs } from '@src/tabs/all-tabs-store';
-import { resolveNextTab } from '@src/tabs/tab-candidates';
+import { resolveNextTab, tabInProject } from '@src/tabs/tab-candidates';
 
 /**
- * The dock to navigate to when ENTERING a project — the single "switch to a
- * project" resolver shared by every project switcher (the strip's
- * `ProjectsCounterChip`, the footer `OpenProjectComponent` modal).
+ * The dock to navigate to when ENTERING a scope — a project (`projectId`) or the
+ * Global scope (`projectId === null`). The single "switch scope" resolver shared
+ * by every switcher (the strip's `ProjectsCounterChip`, the footer
+ * `OpenProjectComponent` modal).
  *
- * Resolves the project's most-recently-active open tab via `resolveNextTab`
- * and returns the dock that tab opens — i.e. navigating to it is identical to
- * clicking that tab in the strip. Falls back to the project landing when the
- * project has no open tab (the discovered-but-not-yet-opened case the modal
- * can hit; the chip's list only contains projects with ≥1 open tab, so it
- * always resolves a tab).
+ * Resolves the scope's most-recently-active open tab via `resolveNextTab` (over
+ * the canonical one-scope `tabInProject` filter) and returns the dock that tab
+ * opens — i.e. navigating to it is identical to clicking that tab in the strip.
+ * Falls back to the project landing (or Home for the Global scope) when the scope
+ * has no open tab.
  */
-export async function dockForProjectEntry(projectId: string): Promise<DockPointer> {
-  const tabs = (await refreshAllTabs()).filter((t) => t.project_id === projectId);
-  const tab = resolveNextTab(tabs);
-  return (tab ? tab.dockPointer : null) ?? DockPointer.forProject(projectId);
+export async function dockForScopeEntry(projectId: string | null): Promise<DockPointer> {
+  const tabs = (await refreshAllTabs()).filter((t) => tabInProject(t, projectId));
+  const dock = resolveNextTab(tabs)?.dockPointer ?? null;
+  return dock ?? (projectId == null ? DockPointer.forHome() : DockPointer.forProject(projectId));
+}
+
+/** Enter a project scope. Thin alias of {@link dockForScopeEntry}. */
+export function dockForProjectEntry(projectId: string): Promise<DockPointer> {
+  return dockForScopeEntry(projectId);
+}
+
+/** Enter the Global (projectless) scope. Thin alias of {@link dockForScopeEntry}. */
+export function dockForGlobalEntry(): Promise<DockPointer> {
+  return dockForScopeEntry(null);
 }

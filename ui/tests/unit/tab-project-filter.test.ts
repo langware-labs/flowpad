@@ -1,8 +1,9 @@
 /**
  * `terminalRowsForScope` (useTabs.ts) — the scope filter for the terminal strip +
- * body. `'project'` shows the active project's terminals PLUS projectless ones
- * (the backend `filter_for_project` view, decision 3); `'all'` shows every
- * project's terminals (the developer sessions view). Only terminal target types
+ * body. Each tab belongs to EXACTLY one scope: `'project'` shows only the active
+ * project's terminals (projectless terminals no longer bleed in — they live in
+ * the Global scope, `projectId === null`); `'all'` shows every project's
+ * terminals (the developer sessions view). Only terminal target types
  * (shell / agentic_process) are kept; content tabs are dropped.
  */
 import { describe, expect, it } from 'vitest';
@@ -35,11 +36,17 @@ const rows: TabRow[] = [
 ];
 
 describe('terminalRowsForScope', () => {
-  it("scope='project' keeps the project's terminals + projectless, drops other projects", () => {
+  it("scope='project' keeps ONLY the project's terminals — projectless are excluded (no bleed)", () => {
     const names = terminalRowsForScope(rows, 'project', 'projA').map((r) => r.name);
-    expect(names).toEqual(['shellA', 'procA', 'shellFree']);
+    expect(names).toEqual(['shellA', 'procA']);
+    expect(names).not.toContain('shellFree'); // projectless lives in the Global scope only
     expect(names).not.toContain('shellB'); // other project excluded
     expect(names).not.toContain('mdA'); // content tab dropped
+  });
+
+  it("scope='project' with null projectId is the Global scope — ONLY projectless terminals", () => {
+    const names = terminalRowsForScope(rows, 'project', null).map((r) => r.name);
+    expect(names).toEqual(['shellFree']);
   });
 
   it("scope='all' keeps every project's terminals", () => {

@@ -39,7 +39,10 @@ export async function loadLensRoute(pointer: string | undefined): Promise<void> 
     await loadProject(new TypeId(Project.type, session.project_id)).catch(() =>
       systemTools.resolveProjectContext(session.cwd ?? undefined),
     );
-  } else if (session.cwd) {
-    await systemTools.resolveProjectContext(session.cwd);
+  } else {
+    // No project_id: a cwd inside a project mount adopts the session; otherwise
+    // (no cwd, or cwd outside every project) this is a global transcript and
+    // resolveProjectContext clears the active project to null (the Global scope).
+    await systemTools.resolveProjectContext(session.cwd ?? undefined);
   }
 }
