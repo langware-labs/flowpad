@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
-import { AlertCircle, Download, File, FileText, Loader2, X } from 'lucide-react';
+import { AlertCircle, Download, File, FileText, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { MessageContextButton } from './MessageContextButton';
 import { MessageRunStatus } from './MessageRunStatus';
@@ -15,6 +15,8 @@ import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { chipStateFor } from './useMessageAttachments';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
+import { TESTABLE_TYPES } from './asset-review/test-prompt';
+import { useRunReceivedSkill } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
@@ -652,11 +654,29 @@ function MessageEntityChip({
   attachment?: MessageAttachment;
 }) {
   const { navigation } = useDockNavigation();
+  const runSkill = useRunReceivedSkill();
   const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useEntity<APIEntity<any>>(typeId);
   const state = chipStateFor(!!data, attachment, forceShow);
   if (state === 'hidden') return null;
+  // "Run icon near the skill": one-click install-if-needed + run in a Vibe
+  // session (see useRunReceivedSkill). Only for skills with a staged/installed
+  // attachment — not artifacts or plain shares.
+  const runnable = !!attachment && TESTABLE_TYPES.has(typeId.type);
+  const runButton = runnable ? (
+    <button
+      type="button"
+      title="Run skill"
+      data-testid="skill-run-icon"
+      onClick={() =>
+        runSkill({ attachment, conversationProjectId: projectId ?? null })
+      }
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/50 bg-background text-primary transition-colors hover:bg-primary/10"
+    >
+      <Play className="h-3 w-3" />
+    </button>
+  ) : null;
   // The dialog is hoisted ABOVE the staged/installed branch: installing from
   // the open modal flips the chip staged → installed, and the modal must stay
   // mounted mid-session so its header can flip to Uninstall (not vanish).
@@ -672,11 +692,14 @@ function MessageEntityChip({
   if (state === 'staged') {
     return (
       <>
-        <EntityChip
-          entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
-          staged
-          onClick={() => setReviewOpen(true)}
-        />
+        <span className="inline-flex items-center gap-1">
+          <EntityChip
+            entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
+            staged
+            onClick={() => setReviewOpen(true)}
+          />
+          {runButton}
+        </span>
         {dialog}
       </>
     );
@@ -693,18 +716,21 @@ function MessageEntityChip({
   // (plain shares, artifacts) keep their navigation behavior.
   return (
     <>
-      <ContextEntityChip
-        typeId={typeId}
-        inside={{ type: 'conversation', id: conversationId }}
-        onClick={
-          artifact
-            ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
-            : attachment
-              ? () => setReviewOpen(true)
-              : undefined
-        }
-        projectId={projectId}
-      />
+      <span className="inline-flex items-center gap-1">
+        <ContextEntityChip
+          typeId={typeId}
+          inside={{ type: 'conversation', id: conversationId }}
+          onClick={
+            artifact
+              ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
+              : attachment
+                ? () => setReviewOpen(true)
+                : undefined
+          }
+          projectId={projectId}
+        />
+        {runButton}
+      </span>
       {dialog}
     </>
   );

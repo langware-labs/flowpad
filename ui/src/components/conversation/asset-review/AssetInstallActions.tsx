@@ -1,7 +1,7 @@
 import { dataManager, MessageAttachment, Project, TypeId } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FlaskConical, FolderDown, Globe, Loader2, Trash2 } from 'lucide-react';
+import { FolderDown, Globe, Loader2, Play, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@src/components/ui/button';
 import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
@@ -10,7 +10,7 @@ import { useAllProjects } from '@src/hooks/use-all-projects';
 import { notify } from '@src/notifications';
 import { TESTABLE_TYPES } from './test-prompt';
 import { TestPromptDialog } from './TestPromptDialog';
-import { useTestStagedAsset } from './useTestStagedAsset';
+import { useRunReceivedSkill } from './useRunReceivedSkill';
 
 /** One install-scope toggle: shows Uninstall when THIS scope is installed,
  *  Install (disabled while the other scope holds the install) otherwise. */
@@ -70,13 +70,11 @@ function ScopeButton({
  */
 export function AssetInstallActions({
   attachment,
-  installedAssetRef,
   conversationProjectId,
 }: {
   attachment: MessageAttachment;
-  /** asset_ref of the installed entity when it resolves locally (Test-it path). */
-  installedAssetRef?: string | null;
-  /** The conversation's mapped project — the picker's preselected default. */
+  /** The conversation's mapped project — the picker's preselected default and
+   *  the default install+run target. */
   conversationProjectId?: string | null;
 }) {
   const { t } = useLingui();
@@ -87,7 +85,7 @@ export function AssetInstallActions({
   const projectItems = useMemo(() => projectListToSelectorItems(projects), [projects]);
   const ensureProject = useEnsureProject();
   const { project: currentProject } = useProject();
-  const runTest = useTestStagedAsset();
+  const runSkill = useRunReceivedSkill();
 
   const installedScope = attachment.effectiveScope;
   // Schema-derived, stamped backend-side at stage time — no type list here.
@@ -193,8 +191,8 @@ export function AssetInstallActions({
       )}
       {testable && (
         <Button size="sm" variant="outline" disabled={busy} onClick={() => setTestOpen(true)} data-testid="asset-test-it">
-          <FlaskConical className="h-3.5 w-3.5" />
-          <Trans>Test it</Trans>
+          <Play className="h-3.5 w-3.5" />
+          <Trans>Run</Trans>
         </Button>
       )}
       <ProjectSelectorModal
@@ -212,11 +210,10 @@ export function AssetInstallActions({
           onClose={() => setTestOpen(false)}
           assetName={attachment.name ?? attachment.asset_type ?? ''}
           onRun={(prompt) =>
-            runTest({
+            runSkill({
               attachment,
-              prompt,
-              installedAssetRef,
-              projectId: conversationProjectId ?? currentProject?.id ?? null,
+              userPrompt: prompt,
+              conversationProjectId: conversationProjectId ?? currentProject?.id ?? null,
             })
           }
         />

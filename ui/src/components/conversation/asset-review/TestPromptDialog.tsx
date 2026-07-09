@@ -11,9 +11,9 @@ import {
 import { Button } from '@src/components/ui/button';
 
 /**
- * "Test it" prompt popup: one optional textarea. Run is always enabled —
- * an empty prompt tests the skill with its generic "run the skill <path>"
- * instruction (see buildSkillTestPrompt).
+ * "Run" prompt popup: one optional textarea. Run is always enabled — an empty
+ * prompt runs the skill with its generic "run the skill <name>" instruction
+ * (see buildSkillTestPrompt).
  */
 export function TestPromptDialog({
   open,
@@ -37,9 +37,9 @@ export function TestPromptDialog({
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle><Trans>Test “{assetName}”</Trans></DialogTitle>
+          <DialogTitle><Trans>Run “{assetName}”</Trans></DialogTitle>
           <DialogDescription>
-            <Trans>A new build session opens and runs the skill. Optionally describe what to use it for.</Trans>
+            <Trans>A new Vibe session opens and runs the skill. Optionally describe what to use it for.</Trans>
           </DialogDescription>
         </DialogHeader>
         <div className="py-2">
