@@ -98,7 +98,8 @@ ProcessIndex = dict[str, tuple[str, Optional[str]]]
 # (the active scope). ``None`` means "no scope" → the legacy global top-N walk.
 ScopeProjectIds = Optional[set[str]]
 WorkerHistoryProvider = Callable[
-    [int, ProcessIndex, ScopeProjectIds], Awaitable[list[WorkerHistoryEntry]]
+    [int, ProcessIndex, ScopeProjectIds, Optional[dict[str, str]]],
+    Awaitable[list[WorkerHistoryEntry]],
 ]
 
 
@@ -185,20 +186,43 @@ def _pick_last_prompt(value: Optional[str]) -> Optional[str]:
     return f"{v[:120]}…" if len(v) > 120 else v
 
 
-def _project_id_for(cwd: Optional[str], encoded: Optional[str]) -> Optional[str]:
-    """Compute a project_id that the Entity layer also uses.
+async def _cwd_to_project_id() -> dict[str, str]:
+    """Canonical project cwd → Project **entity** id.
 
-    ``Project.allocate_id`` (flow_sdk/builtin/project.py) keys on the real mount
-    path: ``uuid5(DNS, f"project:{mount_path}")``. We mirror that here so the
-    id we return matches the Project entity that gets materialized for the same
-    cwd — the tab-strip filter in ``useActiveTerminals`` checks Project entity
-    ids, not the ``ClaudeProjectFsRecord`` (encoded-name) ids.
+    Lets history entries carry the real entity id (not the path-derived alias),
+    so they match the entity ids clients send and the per-project cap buckets by
+    one key per project. Best-effort; a cwd with no Project entity is absent.
+    """
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
-    Fallback to the encoded form only when no real cwd is known (rare — empty
-    or never-touched session). That fallback id won't equal a Project entity id
-    but is still a stable identifier for the row.
+    out: dict[str, str] = {}
+    for proj in await Project.get_all():
+        mount = getattr(proj, "fs_storage_mount_path", None)
+        if mount:
+            out[canonical_posix_path(mount)] = proj.id
+    return out
+
+
+def _project_id_for(
+    cwd: Optional[str],
+    encoded: Optional[str],
+    cwd_to_pid: Optional[dict[str, str]] = None,
+) -> Optional[str]:
+    """The owning project's entity id for a session cwd.
+
+    When ``cwd_to_pid`` (canonical cwd → entity id) resolves the cwd, returns the
+    real Project **entity** id — so entries match the ids clients send and bucket
+    by one key per project. Falls back to the path-derived record **alias**
+    (``uuid5(DNS, "project:"+cwd)`` == ``Project.derive_id_for_path``) when no
+    Project entity exists for the cwd, and to the encoded form when there's no cwd.
     """
     if cwd:
+        if cwd_to_pid:
+            from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+            rid = cwd_to_pid.get(canonical_posix_path(cwd))
+            if rid:
+                return rid
         return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{cwd}"))
     if encoded:
         return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{encoded}"))
@@ -310,7 +334,8 @@ def _claude_dir_cwd(path: Path) -> Optional[str]:
 
 
 def _collect_claude_entries_sync(
-    limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None
+    limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Blocking body of ``get_claude_worker_history``. Runs under ``to_thread``."""
     from flow_sdk.fs_store.indexer.functions.claude_sessions import extract_claude_session_from_path
@@ -346,7 +371,7 @@ def _collect_claude_entries_sync(
             continue
         if scoped:
             newest = max(dir_files, key=lambda x: x[0])[1]
-            pid = _project_id_for(_claude_dir_cwd(newest), proj_dir.name)
+            pid = _project_id_for(_claude_dir_cwd(newest), proj_dir.name, cwd_to_pid)
             if pid not in project_ids:
                 continue
             # Per-scope cap: only the newest ``limit`` files of a matched dir can
@@ -420,7 +445,7 @@ def _collect_claude_entries_sync(
             WorkerHistoryEntry(
                 worker_type=WorkerType.CLAUDE,
                 worker_id=sid,
-                project_id=_project_id_for(cwd, project_encoded),
+                project_id=_project_id_for(cwd, project_encoded, cwd_to_pid),
                 project_name=_basename(cwd) or (project_encoded or None),
                 project_cwd=cwd,
                 last_active_time=_last_content_timestamp(jsonl_path, mtime),
@@ -436,7 +461,8 @@ def _collect_claude_entries_sync(
 
 
 def _collect_codex_entries_sync(
-    limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None
+    limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Blocking body of ``get_codex_worker_history``. Runs under ``to_thread``."""
     from flow_sdk.fs_store.indexer.functions.codex_sessions import extract_codex_session_from_path
@@ -492,7 +518,7 @@ def _collect_codex_entries_sync(
         cwd = sd.get("cwd") or None
         if _is_scratch_cwd(cwd):
             continue
-        pid = _project_id_for(cwd, None)
+        pid = _project_id_for(cwd, None, cwd_to_pid)
         if scoped and pid not in project_ids:
             continue
         if scoped:
@@ -532,7 +558,8 @@ def _collect_codex_entries_sync(
 
 
 def _collect_copilot_entries_sync(
-    limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None
+    limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Blocking body of ``get_copilot_worker_history``. Runs under ``to_thread``."""
     from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
@@ -573,7 +600,7 @@ def _collect_copilot_entries_sync(
         cwd = meta.get("cwd") or None
         if _is_scratch_cwd(cwd):
             continue
-        pid = _project_id_for(cwd, None)
+        pid = _project_id_for(cwd, None, cwd_to_pid)
         if scoped and pid not in project_ids:
             continue
         if scoped:
@@ -629,6 +656,7 @@ async def get_claude_worker_history(
     limit: int,
     process_index: Optional[ProcessIndex] = None,
     project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Return the most-recent N Claude sessions, newest first.
 
@@ -642,13 +670,14 @@ async def get_claude_worker_history(
     under-active project's sessions aren't truncated behind busier ones.
     """
     idx = process_index if process_index is not None else {}
-    return await asyncio.to_thread(_collect_claude_entries_sync, limit, idx, project_ids)
+    return await asyncio.to_thread(_collect_claude_entries_sync, limit, idx, project_ids, cwd_to_pid)
 
 
 async def get_codex_worker_history(
     limit: int,
     process_index: Optional[ProcessIndex] = None,
     project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Return the most-recent N Codex sessions, newest first.
 
@@ -657,17 +686,18 @@ async def get_codex_worker_history(
     Claude provider's stat-then-parse pattern.
     """
     idx = process_index if process_index is not None else {}
-    return await asyncio.to_thread(_collect_codex_entries_sync, limit, idx, project_ids)
+    return await asyncio.to_thread(_collect_codex_entries_sync, limit, idx, project_ids, cwd_to_pid)
 
 
 async def get_copilot_worker_history(
     limit: int,
     process_index: Optional[ProcessIndex] = None,
     project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Return the most-recent N Copilot sessions, newest first."""
     idx = process_index if process_index is not None else {}
-    return await asyncio.to_thread(_collect_copilot_entries_sync, limit, idx, project_ids)
+    return await asyncio.to_thread(_collect_copilot_entries_sync, limit, idx, project_ids, cwd_to_pid)
 
 
 WORKER_HISTORY_PROVIDERS: dict[WorkerType, WorkerHistoryProvider] = {
@@ -681,6 +711,7 @@ def _agentic_process_only_entries(
     processes: list["AgenticProcess"],
     seen: set[tuple[WorkerType, str]],
     project_ids: ScopeProjectIds = None,
+    cwd_to_pid: Optional[dict[str, str]] = None,
 ) -> list[WorkerHistoryEntry]:
     """Surface AgenticProcess entities whose session is absent from any worker's history file."""
     extra: list[WorkerHistoryEntry] = []
@@ -695,7 +726,7 @@ def _agentic_process_only_entries(
 
         if project_ids is not None:
             workdir_for_scope = getattr(proc, "workdir", None) or None
-            proc_pid = proc.project_id or _project_id_for(workdir_for_scope, None)
+            proc_pid = proc.project_id or _project_id_for(workdir_for_scope, None, cwd_to_pid)
             if proc_pid not in project_ids:
                 continue
 
@@ -726,7 +757,7 @@ def _agentic_process_only_entries(
             WorkerHistoryEntry(
                 worker_type=worker_type,
                 worker_id=sid,
-                project_id=proc.project_id or _project_id_for(workdir, None),
+                project_id=proc.project_id or _project_id_for(workdir, None, cwd_to_pid),
                 project_name=_basename(workdir),
                 project_cwd=workdir,
                 last_active_time=last_active,
@@ -763,6 +794,13 @@ async def get_worker_history(
     and is threaded into the providers so under-active projects aren't truncated
     at the disk-walk layer either.
     """
+    # Stamp entries with the real Project entity id (not the path-derived alias)
+    # so they match the entity ids clients scope by and the per-project cap
+    # buckets one key per project. A cwd with no Project entity falls back to the
+    # alias (and simply won't match an entity-id scope — the active scope is
+    # always a materialized project).
+    cwd_to_pid = await _cwd_to_project_id()
+
     processes = await _load_agentic_processes()
     process_index = _build_agentic_process_index(processes)
 
@@ -771,7 +809,7 @@ async def get_worker_history(
 
     for worker_type, provider in WORKER_HISTORY_PROVIDERS.items():
         try:
-            entries = await provider(limit, process_index, project_ids)
+            entries = await provider(limit, process_index, project_ids, cwd_to_pid)
         except NotImplementedError:
             continue
         except Exception as e:
@@ -784,7 +822,7 @@ async def get_worker_history(
             seen.add(key)
             collected.append(entry)
 
-    collected.extend(_agentic_process_only_entries(processes, seen, project_ids))
+    collected.extend(_agentic_process_only_entries(processes, seen, project_ids, cwd_to_pid))
     collected.sort(key=lambda e: e.last_active_time, reverse=True)
 
     if project_ids is not None:

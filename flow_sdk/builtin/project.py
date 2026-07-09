@@ -124,17 +124,9 @@ class Project(Entity):
         description="Collaboration participants: [{member_id, name, joined_at, last_seen_at}]",
     )
     # ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
-    # Opaque cloud id, minted ONCE at first ``share()`` (uuid4, NOT the
-    # path-derived local id). The shared identity every member's instance binds
-    # to: the hub row and the recipient's local mirror both live under this id,
-    # while the sharer keeps their path-derived ``id`` as a local alias. Decouples
-    # the shared identity from the sharer's local filesystem path (two users
-    # never share a cwd; two users with the same cwd would otherwise collide).
-    cloud_id: str | None = APIField(
-        default=None,
-        description="Opaque hub identity for a shared project; minted at first share. "
-                    "The sharer's local id stays the path-derived alias.",
-    )
+    # The project's own (uuid4) id IS the shared hub identity: on share the hub
+    # row and the recipient's local mirror both live under it (no separate cloud
+    # id). This works because project ids are opaque uuid4, not path-derived.
     # Hub-authoritative role roster: [{user_id, email, name, role}] with roles
     # owner/admin/member/reader. Distinct from the local presence ``members``
     # overlay (session-code join, no roles). Written by the reflected ``members``
@@ -288,33 +280,32 @@ class Project(Entity):
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
-        """Return a stable id for this Project.
+        """Return an opaque uuid4 entity id for this Project.
 
-        The canonical ``fs_storage_mount_path`` is the natural key, so the
-        path-derived uuid5 wins when a path is supplied. Clients that pre-mint
-        an optimistic uuid4 still resolve to the same row, and legacy Project
-        records that only have ``cwd`` repair to the path-derived id.
+        Project entity ids are random uuid4, like every other entity — so a
+        project can be shared under its own id (the Conversation model). The
+        canonical ``fs_storage_mount_path`` is still the natural key, but dedup
+        is the job of ``find_by_cwd`` (a lookup), NOT of a path-derived id.
+        ``derive_id_for_path`` lives on only as a record-match *alias* (records
+        stamped with it still resolve via ``record_projects``); it must never
+        become the entity id again.
 
         Order of precedence:
-          1. uuid5 over canonical path when ``fs_storage_mount_path`` or
-             record ``cwd`` is supplied.
-          2. ``data['id']`` if it's a valid uuid (no path supplied).
-          3. Random uuid4 fallback.
+          1. ``data['id']`` if it's a valid entity id (v4/v5 — a caller/materialize
+             pre-mint, or an existing v5 project being reconstructed pre-migration).
+          2. Random uuid4.
+
+        Uses ``is_valid_entity_id`` (the v4/v5 mint/adopt gate), NOT ``is_valid_uuid``:
+        a foreign non-v4/v5 id (e.g. a client-supplied v7) must not be adopted as an
+        entity id. Deliberately keeps this override rather than inheriting the base —
+        the base derives ``uuid5(type:id)`` from a non-uuid slug, which would
+        reintroduce a v5 project id.
         """
         import uuid
 
-        from flow_sdk.fs_store.identifier import is_valid_uuid
-        mount_path = data.get("fs_storage_mount_path") or data.get("cwd") or data.get("real_path")
-        if not mount_path:
-            name = data.get("name", "")
-            if name and os.path.isabs(name):
-                mount_path = name
-        if mount_path:
-            derived = cls.derive_id_for_path(mount_path)
-            if derived:
-                return derived
+        from flow_sdk.fs_store.identifier import is_valid_entity_id
         rid = data.get("id") or ""
-        if rid and is_valid_uuid(rid):
+        if rid and is_valid_entity_id(rid):
             return rid
         return str(uuid.uuid4())
 
@@ -347,9 +338,10 @@ class Project(Entity):
 
         Phase 1 — exact-match an existing Project by canonical mount_path
                   (delegates to ``find_by_cwd``).
-        Phase 2 — construct a fresh Project from the path with a deterministic
-                  uuid5 id (``derive_id_for_path``) so any indexer-stamped
-                  ``project_id`` references on records resolve to the same row.
+        Phase 2 — construct a fresh Project with an opaque uuid4 id. Records
+                  stamped with the path-derived alias still resolve via
+                  ``record_projects`` (injected by ``resolve_project_scope``), so
+                  the entity id need not equal the alias.
 
         Returns ``None`` only when ``path`` is empty/falsy.
         """
@@ -363,12 +355,11 @@ class Project(Entity):
         if existing is not None:
             return existing
 
-        # Phase 2: construct a fresh Project. Identity is derived from the
-        # canonical path so it matches what the indexer would have stamped
-        # on records via ``derive_id_for_path``.
-        derived_id = cls.derive_id_for_path(canonical)
+        # Phase 2: construct a fresh Project with an opaque uuid4 id. Records
+        # stamped with the path-derived alias still resolve via ``record_projects``
+        # (``derive_id_for_path`` is injected server-side by resolve_project_scope),
+        # so the entity id no longer needs to equal the alias.
         proj = cls.model_validate({
-            "id": derived_id,
             "fs_storage_mount_path": canonical,
             "name": os.path.basename(canonical.rstrip(os.sep)) or canonical,
         })
@@ -448,16 +439,12 @@ class Project(Entity):
             await existing.save(notify=notify)
             return existing
 
-        # Net-new project: id is derived from the canonical mount path so it
-        # matches whatever the indexer already stamped on records (via
-        # ``derive_id_for_path``). Falls back to opaque uuid4 only when no
-        # path is available.
+        # Net-new project: opaque uuid4 entity id (via ``allocate_id``). Records
+        # stamped with ``derive_id_for_path(cwd)`` still resolve via the record
+        # alias, so the entity id no longer needs to equal that derived value.
         create_kwargs = {k: v for k, v in data.items() if k != "id"}
         if canonical_mp:
             create_kwargs["fs_storage_mount_path"] = canonical_mp
-            derived_id = cls.derive_id_for_path(canonical_mp)
-            if derived_id:
-                create_kwargs["id"] = derived_id
         # Drop record-only fields the Project entity doesn't carry — provenance
         # flags stay on ProjectFsRecord (backend only). Only denormalized
         # activity hints surface on the entity.
@@ -469,28 +456,16 @@ class Project(Entity):
         await proj.save(notify=notify)
         return proj
 
-    @property
-    def hub_id(self) -> str:
-        """The opaque ``cloud_id`` once shared, else the path-derived local id.
-
-        The sharer's local id is derived from their filesystem path, so reflected
-        member actions must target ``cloud_id`` (the shared hub identity). On the
-        recipient side ``id == cloud_id`` so both agree. See ``Entity.hub_id``.
-        """
-        return self.cloud_id or self.id
-
     def _hub_body(self) -> dict:
         """Hub POST body for a shared project.
 
-        Overrides the generic body to (1) publish under the opaque ``cloud_id``
-        so the path-derived local id never becomes the shared identity, (2) map
-        the local ``name`` to the hub's ``title`` field, and (3) strip local-only
-        project fields the hub doesn't host (the working-dir path, the presence
-        overlay, indexer hints, the binding itself).
+        The project's own (uuid4) id is the shared identity — the base body
+        already emits ``id = self.id`` (same-id invariant), so no id swap. This
+        override only (1) maps the local ``name`` to the hub's ``title`` field
+        and (2) strips local-only project fields the hub doesn't host (the
+        working-dir path, the presence overlay, indexer hints).
         """
         body = super()._hub_body()
-        if self.cloud_id:
-            body["id"] = self.cloud_id
         # Hub Project uses ``title``; local Project uses ``name``.
         if self.name:
             body["title"] = self.name
@@ -504,7 +479,6 @@ class Project(Entity):
             "include_dirs",
             "session_count",
             "last_session_at",
-            "cloud_id",
         ):
             body.pop(local_only, None)
         return body
@@ -512,34 +486,27 @@ class Project(Entity):
     async def share(self, recipients: Optional[List[str]] = None) -> "Project":
         """Publish this project to the hub as a shared unit + invite recipients.
 
-        Mirrors ``Conversation.share`` (the working precedent), with one added
-        step: a project's local id is derived from the sharer's filesystem path,
-        so it cannot be the shared identity. We mint an opaque ``cloud_id`` once
-        (uuid4) and publish the hub row under it via ``_hub_body``; the local id
-        stays a path alias. Persisting ``cloud_id`` + ``remote=True`` on the local
-        row is the caller's responsibility (``share_action.share_entity``).
+        Mirrors ``Conversation.share``: the project's own (uuid4) id is the shared
+        identity, so ``super().share()`` publishes the hub row under ``self.id`` —
+        no separate cloud id. Persisting ``remote=True`` on the local row is the
+        caller's responsibility (``share_action.share_entity``).
 
         Without ``recipients``: just the hub create. The hub stamps the creator
         as ``owner`` on create (``save(owner=...)`` → literal 'owner' role edge;
         ``project`` relies on the hub's default ``owner:["*"]`` policy chain), so
         no explicit join is needed — the roster derives from role edges.
         With ``recipients`` (emails): one ``MembershipRequest`` per recipient
-        targets ``project-<cloud_id>`` with role ``member`` via
-        ``POST /graph/project/<cloud_id>/members`` — the recipient discovers it
-        via ``GET /graph/invitation/pending`` and accepts via the standard flow
+        targets ``project-<id>`` with role ``member`` via
+        ``POST /graph/project/<id>/members`` — the recipient discovers it via
+        ``GET /graph/invitation/pending`` and accepts via the standard flow
         (``flow_message_action.handle_invitation_accept`` →
         ``_membership_cls('project')`` → local ``remote=True`` Project mirror).
         """
-        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
-        if not self.cloud_id:
-            # Opaque uuid4 (no key) — a valid v4 entity id, decoupled from cwd.
-            self.cloud_id = mint_uuid()
-
-        await super().share()  # POSTs _hub_body() (id == cloud_id); flips remote=True
+        await super().share()  # POSTs _hub_body() (id == self.id); flips remote=True
         if not recipients:
             return self
 
@@ -555,11 +522,11 @@ class Project(Entity):
                 if not email:
                     continue
                 await client.post(
-                    f"/graph/project/{self.cloud_id}/members",
+                    f"/graph/project/{self.id}/members",
                     {
                         "recipient_email": email,
                         "invitation_targets": [
-                            {"typeid": f"project-{self.cloud_id}", "role": "member"},
+                            {"typeid": f"project-{self.id}", "role": "member"},
                         ],
                     },
                 )

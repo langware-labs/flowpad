@@ -1383,19 +1383,6 @@ class Entity(DBEntity):
             raise RuntimeError("cloud_watch requires entity.id; save first")
         return CloudWatch(self.id)
 
-    @property
-    def hub_id(self) -> str:
-        """The id the hub knows this entity by — usually ``self.id``.
-
-        A shared entity keeps the same id on the hub, so the default is ``self.id``.
-        Subclasses whose local id differs from the shared hub identity override
-        this (Project derives its local id from the sharer's filesystem path and
-        publishes under an opaque ``cloud_id``). This is the read-side twin of
-        ``_hub_body`` setting ``body["id"]`` — hub identity lives on the entity,
-        not in the dispatch layer.
-        """
-        return self.id
-
     async def share(self: EntityType, *, recursive: bool = False) -> EntityType:
         """Create this entity on the hub (POST /api/v1/graph/<type>).
 

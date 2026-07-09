@@ -1,43 +1,58 @@
-"""Project-as-shared-unit identity + membership wiring.
+"""Project identity + share invariants after the uuid4 switch.
 
-Covers the load-bearing invariant of making Project a shareable collaboration
-unit (members/roles/invites, mirroring Conversation): the sharer's local id is
-derived from their filesystem path and must NEVER become the shared hub
-identity — an opaque ``cloud_id`` does. Also covers the recipient-side pieces:
-a project invitation is a membership invitation (like org/team), and a remote
-project mirror must not materialize a local folder.
+Project entity ids are opaque uuid4 (no longer path-derived), so a project is
+shared under its own id (the Conversation model) with no separate cloud id. The
+path-derived value survives only as a record-match alias (``derive_id_for_path``).
 """
+import uuid
+
 from flow_sdk.builtin.project import Project
 
 
-def test_hub_body_publishes_under_cloud_id_not_path_id():
-    """``_hub_body`` must POST under ``cloud_id`` and never leak the path id."""
+def test_new_project_id_is_uuid4_not_path_derived():
+    """A project with a cwd still gets a random uuid4 entity id, != the alias."""
     p = Project(name="demo", fs_storage_mount_path="/tmp/demo_proj_identity")
-    path_id = p.id  # uuid5 of the canonical path
-    p.cloud_id = "cloud-abc-123"
+    assert uuid.UUID(p.id).version == 4, f"entity id must be v4, got {p.id}"
+    alias = Project.derive_id_for_path("/tmp/demo_proj_identity")
+    assert uuid.UUID(alias).version == 5, "the record alias stays v5-of-path"
+    assert p.id != alias, "the entity id must not equal the path-derived alias"
 
+
+def test_allocate_id_honors_valid_supplied_id_else_uuid4():
+    """allocate_id keeps a caller-supplied valid uuid, else mints uuid4 — never derives."""
+    supplied = str(uuid.uuid4())
+    assert Project.allocate_id({"id": supplied, "fs_storage_mount_path": "/tmp/x"}) == supplied
+    got = Project.allocate_id({"fs_storage_mount_path": "/tmp/x"})
+    assert uuid.UUID(got).version == 4
+    assert got != Project.derive_id_for_path("/tmp/x"), "must not fall back to the path alias"
+
+
+def test_hub_body_publishes_under_own_id():
+    """_hub_body posts under self.id (no cloud id), maps name->title, strips local fields."""
+    p = Project(name="demo", fs_storage_mount_path="/tmp/demo_proj_hub")
     body = p._hub_body()
-
-    assert body["id"] == "cloud-abc-123", "hub row must be keyed by cloud_id"
-    assert body["id"] != path_id, "the path-derived id must never be the hub identity"
-    # ``name`` maps to the hub's ``title`` field.
+    assert body["id"] == p.id, "hub row is keyed by the project's own id"
     assert body["title"] == "demo"
     assert "name" not in body
-    # Local-only fields never cross to the hub.
-    for leaked in ("fs_storage_mount_path", "members", "cloud_id", "session_code",
-                   "include_dirs"):
+    for leaked in ("fs_storage_mount_path", "members", "session_code", "include_dirs"):
         assert leaked not in body, f"{leaked} must be stripped from the hub body"
 
 
-def test_share_mints_cloud_id_and_invites_via_members(monkeypatch):
-    """``share(recipients)`` mints an opaque cloud_id and invites each recipient
-    at ``/graph/project/<cloud_id>/members`` — never calls a project ``/join``."""
+def test_cloud_id_and_hub_id_machinery_removed():
+    """The dual-id sharing indirection is gone — project.id is the shared identity."""
+    p = Project(name="demo", fs_storage_mount_path="/tmp/demo_proj_gone")
+    assert not hasattr(p, "cloud_id"), "cloud_id field should be removed"
+    assert not hasattr(Project, "hub_id"), "hub_id property should be removed"
+
+
+def test_share_invites_under_own_id():
+    """share(recipients) targets project-<self.id> — no /join, no cloud id."""
     import inspect
 
     src = inspect.getsource(Project.share)
     assert "/join" not in src, "projects derive the roster from role edges — no /join"
-    assert "project-{self.cloud_id}" in src, "invite target is project-<cloud_id>"
-    assert "/members" in src
+    assert "cloud_id" not in src, "no cloud id"
+    assert "project-{self.id}" in src and "/members" in src
 
 
 def test_membership_cls_maps_project():
@@ -46,23 +61,12 @@ def test_membership_cls_maps_project():
     from flow_sdk.builtin.team import Team
 
     assert _membership_cls("project") is Project
-    # Registry lookup with the back-compat Team fallback for None/empty/unknown.
     assert _membership_cls(None) is Team
     assert _membership_cls("") is Team
 
 
 def test_remote_mirror_has_no_local_folder():
     """A project shared TO this instance is a cloud mirror — no cwd, no mkdir."""
-    rec = Project.model_validate({"id": "cloud-abc-123", "name": "demo", "remote": True})
+    rec = Project.model_validate({"id": str(uuid.uuid4()), "name": "demo", "remote": True})
     assert rec.remote is True
     assert rec.fs_storage_mount_path is None, "a remote mirror must not derive a mount path"
-
-
-def test_hub_id_property_prefers_cloud_id():
-    """Reflected member actions target the hub identity (`entity.hub_id`)."""
-    sharer = Project(name="demo", fs_storage_mount_path="/tmp/demo_proj_hubid")
-    sharer.cloud_id = "cloud-xyz"
-    assert sharer.hub_id == "cloud-xyz", "sharer resolves to cloud_id"
-
-    recipient = Project.model_validate({"id": "cloud-xyz", "remote": True})
-    assert recipient.hub_id == "cloud-xyz", "recipient id == cloud_id (no cloud_id field set)"
