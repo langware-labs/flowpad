@@ -520,6 +520,38 @@ marker.
 
 ## Known pitfalls
 
+### Watching the pre-deploy test gate (it can run 40+ minutes)
+
+The script's test step tees its output to a timestamped log and announces the
+path up front (`Running tests... (live log: tail -f /tmp/deploy-tests-*.log)`),
+with `--durations=20` so the slowest tests are listed at the end. To watch
+progress from another shell: `tail -f <that path>`. If you wrap the deploy (or
+a manual pytest gate) yourself, do NOT pipe it through `tail`/`head` — that
+buffers everything until the run ends and the gate looks hung. Run it with
+output flowing to a file (`| tee run.log`) and `PYTHONUNBUFFERED=1` so lines
+stream live.
+
+### Windows: `python3: command not found` / long_tests break pytest collection
+
+Two Windows-specific failures in the script's gate, both fatal before any test
+runs:
+
+- **`python3` doesn't exist in Git Bash** (only `python`). Put a shim on PATH
+  that execs the *project* env's python (plain `python` may resolve to the
+  uv-tool flowpad install, which has no pytest):
+
+  ```bash
+  printf '#!/bin/bash\nexec uv run --project /c/projects/flowpad python "$@"\n' > /tmp/bin/python3
+  chmod +x /tmp/bin/python3; export PATH=/tmp/bin:$PATH
+  ```
+
+- **`tests/long_tests/` files `import pty`** (unix-only; no `termios` on
+  Windows), which aborts pytest **collection** for the whole suite — the gate
+  fails without running anything. Run the gate manually with
+  `--ignore=tests/long_tests`, confirm green, then deploy with `--skip-tests`
+  (CI's PR gate covers the fast tiers). Don't `--skip-tests` without that
+  manual green run.
+
 ### `flow start` silently no-ops when another instance backend is alive
 
 `flow start` runs a singleton check and **exits without binding 9007** if it
