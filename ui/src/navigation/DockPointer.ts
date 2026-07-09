@@ -763,7 +763,7 @@ export class DockPointer implements IDockPointer {
   static forHome(
     tab?: string,
     item?: string,
-    options?: { scope?: string; project?: string; expand?: boolean },
+    options?: { scope?: string; project?: string; expand?: boolean; vibeNoProcess?: boolean },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const queryOptions: Record<string, string> = {};
@@ -771,6 +771,7 @@ export class DockPointer implements IDockPointer {
     if (options?.scope && options.scope !== 'all') queryOptions.scope = options.scope;
     if (options?.project) queryOptions.project = options.project;
     if (options?.expand) queryOptions.expand = 'true';
+    if (options?.vibeNoProcess) queryOptions.vibeNoProcess = 'true';
     return new DockPointer(ViewType.HOME, tab, queryOptions, layout);
   }
 

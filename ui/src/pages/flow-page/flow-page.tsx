@@ -12,6 +12,7 @@ import { useEffect, useMemo } from 'react';
 import { ContentPanel } from './content-panel/content-panel';
 import { VibeWorkspace } from './vibe-workspace';
 import { VibeNewChat } from './vibe-new-chat';
+import { VibeNoProcessWorkspace } from './vibe-no-process-workspace';
 import { useVibeWorkspaceSession } from './use-vibe-workspace-session';
 
 export default function FlowPage() {
@@ -53,6 +54,7 @@ export default function FlowPage() {
   // never opened.
   const { isDockUrl, currentDock } = useDockNavigation();
   const isVibeHome = !isDockUrl || currentDock?.viewType === ViewType.HOME;
+  const isVibeNoProcess = currentDock?.viewType === ViewType.HOME && currentDock.options?.vibeNoProcess === 'true';
 
   // Vibe mode: a stripped Lovable-style skin that still carries the left rail in
   // its already-reserved footprint. CollapsedSidebar renders a minimal rail in
@@ -70,6 +72,8 @@ export default function FlowPage() {
             <div className="flex-1 overflow-hidden">
               {vibeSession ? (
                 <VibeWorkspace session={vibeSession} />
+              ) : isVibeNoProcess ? (
+                <VibeNoProcessWorkspace />
               ) : isVibeHome ? (
                 <VibeNewChat />
               ) : (

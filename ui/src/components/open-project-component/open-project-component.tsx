@@ -5,6 +5,7 @@ import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import {
+  ContextEntitiesEnum,
   dataContext,
   type ProjectListItem,
   Project,
@@ -14,10 +15,11 @@ import {
 import { usePreference } from '@src/hooks/use-preference';
 import { selectProjectContext } from '@src/components/project-selector';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForProjectEntry } from '@src/tabs/project-entry';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
-import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { useIsAdvanced, useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -709,6 +711,7 @@ export function OpenProjectComponent({
   const [showSystem, setShowSystem] = usePreference<boolean>(PrefKey.SHOW_SYSTEM_PROJECTS);
   const devMode = useDevMode();
   const isAdvanced = useIsAdvanced();
+  const isVibe = useIsVibe();
 
   // The detailed picker (search + time pills + system toggle + per-row metadata)
   // is an Advanced-view affordance. In Standard view the footer "Switch Project"
@@ -758,6 +761,20 @@ export function OpenProjectComponent({
           // continuation errors shouldn't break the picker
         }
       } else {
+        if (isVibe) {
+          await selectProjectContext(project);
+          const processId = project.id ? await agenticProcessIdForProjectEntry(project.id) : null;
+          if (processId) {
+            void navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+            return;
+          }
+          await dataContext.setActiveEntityTypeId(null);
+          await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
+          navigation.openDock(
+            DockPointer.forHome(undefined, undefined, { vibeNoProcess: true }).withViewMode(ViewMode.Vibe),
+          );
+          return;
+        }
         // Plain switch (footer Switch Project included): navigate to the
         // project's tab — the same path as clicking that tab in the strip
         // (dockForProjectEntry → fromTabHash → openDock). Resumes the
@@ -767,7 +784,7 @@ export function OpenProjectComponent({
         navigation.openDock(await dockForProjectEntry(project.id));
       }
     },
-    [onProjectChanged, onPicked, navigation],
+    [isVibe, onProjectChanged, onPicked, navigation],
   );
 
   const ensureProjectAndSetContext = useCallback(

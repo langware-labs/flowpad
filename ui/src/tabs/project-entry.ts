@@ -1,6 +1,6 @@
 import { DockPointer } from '@src/navigation/DockPointer';
 import { refreshAllTabs } from '@src/tabs/all-tabs-store';
-import { resolveNextTab, tabInProject } from '@src/tabs/tab-candidates';
+import { resolveNextTab, tabInProject, tabIsProcess } from '@src/tabs/tab-candidates';
 
 /**
  * The dock to navigate to when ENTERING a scope — a project (`projectId`) or the
@@ -23,6 +23,15 @@ export async function dockForScopeEntry(projectId: string | null): Promise<DockP
 /** Enter a project scope. Thin alias of {@link dockForScopeEntry}. */
 export function dockForProjectEntry(projectId: string): Promise<DockPointer> {
   return dockForScopeEntry(projectId);
+}
+
+/** Pick the active AgenticProcess tab for a project, or null when the project
+ *  has no process tab. Vibe project switching uses this instead of
+ *  dockForProjectEntry because its fallback must be a Vibe empty state, never
+ *  project home. */
+export async function agenticProcessIdForProjectEntry(projectId: string): Promise<string | null> {
+  const tabs = (await refreshAllTabs()).filter((t) => tabInProject(t, projectId) && tabIsProcess(t));
+  return resolveNextTab(tabs)?.target_id ?? null;
 }
 
 /** Enter the Global (projectless) scope. Thin alias of {@link dockForScopeEntry}. */
