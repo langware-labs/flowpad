@@ -533,7 +533,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
               value={normalizeVibeModelTier(value)}
               onChange={(next) => onChange(next)}
               disabled={disabled}
-              triggerClassName="h-9 w-[112px]"
             />
           )}
           // Keep the chat bound to the workspace's process as the user browses
