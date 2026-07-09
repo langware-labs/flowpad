@@ -25,7 +25,10 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
     _yaml_load,
-    merge_frontmatter,
+)
+from flow_sdk.fs_store.indexer.functions._folder_capsule import (
+    folder_capsule_gen_id,
+    read_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -62,9 +65,14 @@ def skill_fn(
 
 
 def read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
-    """Pick `id` (or legacy `asset_id`) from a parsed yaml/frontmatter dict."""
-    raw = yaml_fields.get("id") or yaml_fields.get("asset_id")
-    return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
+    """Pick a VALID (v4/v5) `id`/`asset_id` from a parsed yaml/frontmatter dict.
+
+    Routes through ``adopt_entity_id`` (validate-on-adopt) so a non-uuid /
+    foreign frontmatter id (a v7, a hand-typed token) is rejected → ``None`` and
+    the caller mints a fresh v4 into the capsule instead of adopting garbage.
+    """
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    return adopt_entity_id(yaml_fields.get("id") or yaml_fields.get("asset_id"))
 
 
 def resolve_skill_name(yaml_fields: dict, folder_name: str) -> str:
@@ -95,9 +103,13 @@ def parse_skill_yaml_from_dir(skill_dir: Path) -> dict[str, Any]:
 
 
 def skill_id(ref: FSRef) -> str:
-    """Cheap id: frontmatter id; else uuid5(name)."""
+    """Cheap id (no write): `.flow/id` capsule, else valid frontmatter id, else
+    the transitional uuid5(name) read fallback for legacy rows."""
     path = ref._path
     if path.is_dir():
+        cap = read_folder_capsule_id(path)
+        if cap:
+            return cap
         yaml_fields = parse_skill_yaml_from_dir(path)
         fm_id = read_frontmatter_id_from_yaml(yaml_fields)
         if fm_id:
@@ -107,39 +119,20 @@ def skill_id(ref: FSRef) -> str:
 
 
 def skill_gen_id(ref: FSRef) -> str:
-    """Mint+write id into SKILL.md frontmatter (idempotent).
+    """Adopt the skill's id from its capsule, else mint a fresh v4 (idempotent).
 
-    For yaml-based skills (skill.yaml/.yml present), skip the write and
-    return the derived id — touching arbitrary yaml files belongs to a
-    separate change. For SKILL.md-only skills, write the derived id into
-    the frontmatter so future scans return the same id.
+    Read precedence: (1) the `.flow/id` folder capsule (authoritative, portable);
+    (2) a VALID (v4/v5) `id:` in SKILL.md / skill.yaml frontmatter — adopted and
+    BACKFILLED into `.flow/id` (migrates the skill onto the capsule without
+    changing its id); (3) miss → a fresh random **v4** written to `.flow/id`.
+    No longer name-derives (`uuid5("skill:name")` collided across machines), and
+    now persists for yaml-based skills too (the old code skipped the write).
     """
     path = ref._path
     if not path.is_dir():
         return skill_id(ref)
     yaml_fields = parse_skill_yaml_from_dir(path)
-    existing = read_frontmatter_id_from_yaml(yaml_fields)
-    if existing:
-        return existing
-    skill_name = resolve_skill_name(yaml_fields, path.name)
-    new_id = skill_id_from_name(skill_name)
-    if (path / "skill.yaml").exists() or (path / "skill.yml").exists():
-        return new_id
-    skill_md = path / "SKILL.md"
-    if not skill_md.exists():
-        return new_id
-    try:
-        text = skill_md.read_text(encoding="utf-8")
-    except OSError:
-        return new_id
-    try:
-        skill_md.write_text(
-            merge_frontmatter(text, {"id": new_id}, drop_keys=("asset_id",), prepend=True),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return new_id
+    return folder_capsule_gen_id(path, yaml_fields.get("id"), yaml_fields.get("asset_id"))
 
 
 def skill_asset_hash(ref: FSRef) -> float:
@@ -166,7 +159,11 @@ def extract_skill(ref: FSRef) -> list[FSRecord]:
     path = ref._path
     yaml_fields = parse_skill_yaml_from_dir(path) if path.is_dir() else {}
     skill_name = resolve_skill_name(yaml_fields, path.name)
-    rec_id = read_frontmatter_id_from_yaml(yaml_fields) or skill_id_from_name(skill_name)
+    rec_id = (
+        (read_folder_capsule_id(path) if path.is_dir() else None)
+        or read_frontmatter_id_from_yaml(yaml_fields)
+        or skill_id_from_name(skill_name)  # transitional read fallback for legacy rows
+    )
     description = ""
     if isinstance(yaml_fields.get("description"), str):
         description = yaml_fields["description"]

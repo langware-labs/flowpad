@@ -23,12 +23,12 @@ from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
+    adopt_or_mint_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -129,11 +129,15 @@ def agent_id(ref: FSRef) -> str:
 def agent_peek_entity_id(ref: FSRef) -> str:
     """Entity UUID for an agent .md WITHOUT writing frontmatter back.
 
-    Same derivation as ``agent_gen_id`` — adopted frontmatter UUID
-    (validate-on-adopt), else ``mint_uuid(f"{RecordType.AGENT}:{name-or-stem}")``
-    — but strictly read-only, so it is safe to call from request handlers
+    Strictly read-only, so it is safe to call from request handlers
     (``agent_gen_id`` rewrites the source file, which would dirty read-only
     mounts and trip the dev reload watcher). Single file read.
+
+    Reads the adopted frontmatter UUID capsule when present. On a miss it returns
+    the stable ``mint_uuid(f"{RecordType.AGENT}:{name-or-stem}")`` derive — it
+    CANNOT predict the random v4 that ``agent_gen_id`` will mint into a
+    not-yet-stamped agent (the documented capsule-v4 asymmetry); once gen_id has
+    stamped the capsule, this peek reads and returns that same v4.
     """
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
     try:
@@ -152,45 +156,15 @@ def agent_peek_entity_id(ref: FSRef) -> str:
 
 
 def agent_gen_id(ref: FSRef) -> str:
-    """Mint+write id into agent .md frontmatter (idempotent), returning a
-    stable, filesystem-safe **UUID**.
+    """Adopt the frontmatter capsule id, else mint a fresh v4 and write it.
 
-    The frontmatter still stores the raw derived key (frontmatter name or
-    filename stem); the returned id hashes that key into a uuid5 with the same
-    ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so the probe's
-    shadow-home id matches the DB id. An already-conforming adopted id is kept
-    as-is.
+    Fixes the prior bug where the raw NAME/stem (not a UUID) was written into
+    ``id:`` — the adopt-on-next-index gate rejected it, so agents never
+    self-healed and re-derived ``uuid5("agent:name")`` (a cross-machine collision
+    source) every pass. Now a random **v4** is minted into the ``id:`` capsule;
+    a stable uuid5(path) survives only as the read-only-file fallback.
     """
-    try:
-        text = ref._path.read_text(encoding="utf-8")
-    except OSError:
-        key = agent_id(ref)
-        return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.AGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
-    fm = _extract_frontmatter(text)
-    fields: dict = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-    adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
-    if adopted:  # validate-on-adopt — already a conforming UUID, keep it
-        return adopted
-    name = fields.get("name")
-    if isinstance(name, str) and name.strip():
-        new_id = name.strip()
-    else:
-        new_id = ref._path.stem
-    body = _extract_body(text)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
-    try:
-        ref._path.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return mint_uuid(f"{RecordType.AGENT}:{new_id}", namespace=uuid.NAMESPACE_DNS)
+    return adopt_or_mint_id(ref._path, write_back=True)
 
 
 # ── Parse + extract ──────────────────────────────────────────────────────────

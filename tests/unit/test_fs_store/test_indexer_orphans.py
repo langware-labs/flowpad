@@ -97,13 +97,17 @@ async def test_orphan_clears_when_source_returns(tmp_path: Path) -> None:
 
     idx = _build_indexer(root)
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
+    # The first index stamped a v4 id into a.md's frontmatter capsule. Capture it
+    # — under capsule-v4 an entity's identity is its capsule id, not its path, so
+    # "the source returns" means the SAME capsule id returns.
+    stamped = md.read_text(encoding="utf-8")
 
     md.unlink()
     result = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
     assert result.per_type[RecordType.MARKDOWN].orphans_found >= 1
 
-    # Restore the source — it's seen again, so no orphan is reported.
-    md.write_text("# a back\n", encoding="utf-8")
+    # Restore the SAME entity (its capsule id) — it's seen again, so no orphan.
+    md.write_text(stamped, encoding="utf-8")
     result2 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN], force=True))
     assert result2.per_type[RecordType.MARKDOWN].orphans_found == 0
 

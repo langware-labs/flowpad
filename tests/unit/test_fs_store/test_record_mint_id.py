@@ -84,21 +84,21 @@ def test_getId_reads_id_from_frontmatter(tmp_path: Path) -> None:
     assert MarkdownRecord.getId(FSRef(p)) == known
 
 
-def test_genId_mints_path_uuid5_when_no_frontmatter(tmp_path: Path) -> None:
-    """Migration-safe: writes the derived id (uuid5 of path), not a fresh uuid4.
-
-    This is what guarantees existing DB rows (keyed by that derived value)
-    keep resolving after the first scan.
+def test_genId_mints_v4_capsule_when_no_frontmatter(tmp_path: Path) -> None:
+    """Capsule-v4 policy: on a miss, genId mints a RANDOM v4 into the frontmatter
+    capsule — NOT uuid5(path). A shared/copied doc carries a portable id in its
+    bytes; deriving from the local path is the cross-machine collision source.
     """
     p = tmp_path / "d.md"
     p.write_text("# body only\nnothing else", encoding="utf-8")
     before_mtime = p.stat().st_mtime
-    expected_derived = str(_uuid.uuid5(_uuid.NAMESPACE_URL, str(p.resolve())))
+    path_uuid5 = str(_uuid.uuid5(_uuid.NAMESPACE_URL, str(p.resolve())))
 
     minted = MarkdownRecord.genId(FSRef(p))
 
     assert _UUID_RE.match(minted), f"not a uuid: {minted!r}"
-    assert minted == expected_derived, "genId must preserve the derived id"
+    assert _uuid.UUID(minted).version == 4, "miss must mint a random v4"
+    assert minted != path_uuid5, "genId must NOT derive uuid5(path) anymore"
     text = p.read_text(encoding="utf-8")
     fm = _extract_frontmatter(text)
     assert fm is not None, "frontmatter must be present after mint"

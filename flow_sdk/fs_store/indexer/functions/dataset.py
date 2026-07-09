@@ -48,6 +48,10 @@ from flow_sdk.builtin.dataset import (
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid
+from flow_sdk.fs_store.indexer.functions._folder_capsule import (
+    folder_capsule_gen_id,
+    read_folder_capsule_id,
+)
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -133,12 +137,17 @@ def _id_from_manifest(manifest: dict[str, Any], path: Path) -> str:
 
 
 def dataset_gen_id(ref: FSRef) -> str:
-    """Resolve a dataset's id. Idempotent — re-running yields the same id."""
+    """Resolve a dataset's id. Idempotent.
+
+    Precedence: the `.flow/id` capsule → a VALID `dataset.json` `id` (adopted +
+    backfilled into the capsule) → a fresh random **v4** into the capsule. The
+    uuid5(path) derive survives only as a read-only / transitional fallback.
+    """
     path = ref._path
     if not path.is_dir():
         return _dataset_id_from_path(path)
     meta, _ = _load_manifest(path)
-    return _id_from_manifest(meta, path)
+    return folder_capsule_gen_id(path, meta.get("id"))
 
 
 # ── parser (shared by both layouts) ───────────────────────────────────────────
@@ -402,7 +411,9 @@ def extract_dataset(ref: FSRef) -> list[FSRecord]:
         return []
     ds_meta, ds_data = _load_manifest(path)
 
-    ds_id = _id_from_manifest(ds_meta, path)
+    # Capsule wins (gen_id stamped it), else manifest id, else uuid5(path) — the
+    # same precedence dataset_gen_id uses, so extract and gen agree.
+    ds_id = read_folder_capsule_id(path) or _id_from_manifest(ds_meta, path)
     layout = _coerce_enum(ds_meta.get("data_layout"), DataLayoutEnum, DataLayoutEnum.CSV)
     field_spec = ds_meta.get("field_spec") if isinstance(ds_meta.get("field_spec"), dict) else {}
     delimiter = ds_meta.get("delimiter") or ","

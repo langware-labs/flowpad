@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 
@@ -148,6 +149,63 @@ def merge_frontmatter(
         merged.update(updates)
     tail = "\n" if body and not body.endswith("\n") else ""
     return _render_frontmatter(merged) + "\n\n" + body + tail
+
+
+def adopt_or_mint_id(
+    path: Path,
+    *,
+    write_back: bool = True,
+    derive_key: str | None = None,
+) -> str:
+    """Resolve a file-backed entity's id from its frontmatter capsule.
+
+    The universal miss-policy for shareable file entities: adopt a valid v4/v5 id
+    from the file's frontmatter (the capsule) if present; otherwise **mint a random
+    v4 and write it into the frontmatter** so a re-index adopts it. Deriving
+    ``uuid5(path)`` is NOT the miss behavior — it survives only as the read-only
+    fallback (``derive_key``) for a file we cannot write, so repeated scans of an
+    un-writable file stay idempotent.
+
+    - ``write_back`` — ``True`` on the gen path (mint + persist); ``False`` for cheap
+      read-only peeks (never touches disk; returns the derived value on a miss).
+    - ``derive_key`` — overrides the read-only/miss fallback seed; when omitted it
+      defaults to ``str(path.resolve())`` (computed lazily, only when the fallback
+      is actually reached, so the common stamped path pays no ``resolve()`` syscall).
+    """
+    from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
+
+    # Single read: the frontmatter id AND (on the write path) the body to merge.
+    try:
+        text: str | None = path.read_text(encoding="utf-8")
+    except OSError:
+        text = None
+    raw_id = None
+    if text is not None:
+        fm = _extract_frontmatter(text)
+        if fm:
+            fields = _yaml_load(fm) or {}
+            raw_id = fields.get("id") or fields.get("asset_id")
+    adopted = adopt_entity_id(raw_id)
+    if adopted:
+        return adopted
+
+    def _fallback() -> str:
+        # Stable uuid5 — the ONLY surviving derive, reached only for a read-only
+        # file (or a peek on a not-yet-stamped one).
+        return mint_uuid(derive_key or str(path.resolve()))
+
+    if not write_back:
+        return _fallback()
+
+    new_id = mint_uuid()  # no key → uuid4
+    try:
+        path.write_text(
+            merge_frontmatter(text or "", {"id": new_id}, drop_keys=("asset_id",), prepend=True),
+            encoding="utf-8",
+        )
+    except OSError:
+        return _fallback()  # read-only file: can't persist a v4
+    return new_id
 
 
 def _render_frontmatter(fields: dict[str, Any]) -> str:
