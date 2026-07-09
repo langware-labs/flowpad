@@ -166,11 +166,21 @@ async def test_folder_walker_on_flowpad_oss(tmp_path: Path, capsys) -> None:
 
 @pytest.mark.asyncio
 async def test_folder_is_transient_not_persisted(tmp_path: Path) -> None:
-    """FOLDER must have no SchemaRegistry record_cls — never persisted to DB."""
+    """Walked FOLDER refs must stay transient — never persisted by the indexer.
+
+    The persistence gate is ``_has_dispatch`` (``from_disk_fn is not None``):
+    a walked ref only materializes a record when its TypeInfo declares a
+    disk parser. The Folder ENTITY type is registered (minted on demand via
+    ``Folder.mint_for_path`` for project context folders) but deliberately
+    declares NO ``from_disk_fn``/``gen_uuid_fn`` — otherwise every directory
+    the project walker visits would be mass-persisted.
+    """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     info = SchemaRegistry.get(str(RecordType.FOLDER))
     if info is not None:
-        assert info.record_cls is None or not hasattr(
-            info.record_cls, "from_fsref",
-        ), "FOLDER must not be backed by a Record subclass — would get persisted"
+        assert info.from_disk_fn is None, (
+            "FOLDER must not declare from_disk_fn — the indexer would persist "
+            "every walked directory"
+        )
+        assert info.gen_uuid_fn is None

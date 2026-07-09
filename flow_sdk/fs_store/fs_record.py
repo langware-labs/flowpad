@@ -307,6 +307,35 @@ class FSRecord(Generic[M]):
         """Write a single metadata field (partial-merge convenience)."""
         return self.save_metadata({key: val})
 
+    def remove_metadata_keys(self, *keys: str) -> Path | None:
+        """Delete keys from metadata.json (the merge-writer can't remove).
+
+        ``save_metadata`` partial-merges — an obsolete key (e.g. a stored
+        field promoted to a computed one) would otherwise live on disk
+        forever and re-hydrate on every adopt. Returns the metadata path, or
+        None when there is no metadata file / nothing to remove.
+        """
+        meta_path = self.shadow_dir / _METADATA_JSON
+        if not meta_path.exists():
+            return None
+        try:
+            merged = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        removed = False
+        for k in keys:
+            if k in merged:
+                merged.pop(k)
+                self.__dict__.pop(k, None)  # keep the in-memory view consistent
+                removed = True
+        if not removed:
+            return None
+        meta_path.write_text(
+            json.dumps(merged, indent=2, ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
+        return meta_path
+
     @classmethod
     def load(cls, type: str, id: str) -> "FSRecord":
         """Load by identity. Reads <records_root>/<type>/<type>-@<id>/metadata.json"""

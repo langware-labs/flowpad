@@ -22,6 +22,18 @@ class ProjectMeta(BaseMeta):
     host_member_id: Optional[str] = None
     artifacts: Optional[list] = None
     members: Optional[list] = None
+    # Context-entity buckets + per-entry sidecars: a project's context folders
+    # (Folder entity links, the derived ``include_dirs``) live here. Declared
+    # in the meta model so the links survive a DB rebuild — without disk
+    # persistence a re-index would silently drop every context folder. The
+    # TypeId lists serialize as "<type>-<id>" strings (json ``default=str``)
+    # and re-validate on hydration; the sidecars are plain dicts. All four are
+    # DISK-persistence only — the wire/hub exclusions in ``Entity.share()`` /
+    # ``_hub_body`` are unaffected.
+    shared_context_entities: Optional[list] = None
+    private_context_entities_: Optional[list] = None
+    shared_context_entity_data: Optional[dict] = None
+    private_context_entity_data: Optional[dict] = None
 
 
 PROJECT = TypeMetadata(
