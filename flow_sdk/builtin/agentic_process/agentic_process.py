@@ -36,6 +36,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     WorkerCLIOptions,
     WorkerDriver,
     apply_worker_env,
+    apply_worker_secret_env,
     get_driver,
 )
 from flow_sdk.builtin.agentic_process.status_predicates import (
@@ -93,6 +94,17 @@ INSTANT_EXIT_WINDOW_SECONDS = 5.0
 # decide a refresh can self-heal. Keep them sharing this constant — a reword
 # would otherwise silently break recovery.
 LOCAL_COMPUTE_NODE_MISSING_FAILURE = "Compute node not found for local shell session (@local)"
+
+
+def _shell_compute_is_local(shell: "Shell") -> bool:
+    from flow_sdk.config import ComputeProviderType  # noqa: PLC0415
+
+    node = getattr(shell, "compute_node", None)
+    provider = getattr(node, "node_provider_type", None)
+    return str(provider or "") in {
+        ComputeProviderType.LOCAL.value,
+        ComputeProviderType.LOCAL_MACHINE.value,
+    }
 
 
 # ── Asset descriptors ──────────────────────────────────────────────────────────
@@ -1067,7 +1079,17 @@ class AgenticProcess(Entity):
 
             if self.shell_mode:
                 # Legacy path — zsh intermediary
-                await shell.start_pty(on_exit=on_exit)
+                secret_extra_env = None
+                if _shell_compute_is_local(shell):
+                    secret_env = dict(cmd.env_vars)
+                    explicit_keys = set(secret_env)
+                    await apply_worker_secret_env(secret_env, self)
+                    secret_extra_env = {
+                        key: value
+                        for key, value in secret_env.items()
+                        if key not in explicit_keys
+                    }
+                await shell.start_pty(on_exit=on_exit, extra_env=secret_extra_env or None)
                 worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
                     execution_info = await shell.launch(cmd, instruction=instruction)
@@ -1102,6 +1124,8 @@ class AgenticProcess(Entity):
                         "installation discovered"
                     )
                 spawn_env = {**path_env, **spawn_env}  # explicit worker env wins
+                if _shell_compute_is_local(shell):
+                    await apply_worker_secret_env(spawn_env, self)
                 spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
                 if not spawned:
                     worker_is_alive = await shell.worker_alive()
@@ -2497,6 +2521,7 @@ class AgenticProcess(Entity):
         # Process identity + backend-pinned `flow` CLI — the shared spawn-env
         # chokepoint (without it, worker `flow show` fails with NO_PROCESS).
         apply_worker_env(env_vars, self)
+        await apply_worker_secret_env(env_vars, self)
 
         # Context for the worker, reconstructed from the AgenticProcess entity.
         # Non-resumable sessions start fresh WITH the id (workers that accept a

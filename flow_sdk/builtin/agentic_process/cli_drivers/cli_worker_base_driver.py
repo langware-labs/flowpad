@@ -95,6 +95,58 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
     return env
 
 
+async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
+    """Resolve project SecretOrigin pointers into this transient worker env.
+
+    This must only be called on spawn-time env dicts. It must not mutate
+    WorkerCLIOptions.env_vars because those are persisted and rendered.
+    """
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: PLC0415
+    from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
+
+    project = None
+    project_id = getattr(process, "project_id", None)
+    if project_id:
+        project = await Project.get_by_id(project_id)
+    if project is None:
+        try:
+            project = await Project.get_ancestor(process.typeid)
+        except Exception:
+            project = None
+    if project is None:
+        return env
+
+    seen: set[str] = set()
+    for bucket in ("private", "shared"):
+        for tid in project.context_of_type("secret_origin", bucket=bucket):
+            if str(tid) in seen:
+                continue
+            seen.add(str(tid))
+            entry = project.get_context_entry_data(tid) or {}
+            env_var = (entry.get("env_var") or "").strip()
+            if env_var and env_var in env:
+                continue
+            secret = await SecretOrigin.get_by_id(tid.id)
+            if secret is None:
+                continue
+            env_var = env_var or (secret.env_var or "").strip()
+            if not env_var or env_var in env:
+                continue
+            try:
+                resolved = await get_secret_origin_driver(secret.locator.kind).resolve(
+                    secret.locator,
+                    project=project,
+                    process=process,
+                    secret_origin=secret,
+                )
+            except Exception:
+                continue
+            if resolved is not None:
+                env.setdefault(env_var, resolved.get_secret_value())
+    return env
+
+
 def flow_cli_env_path(existing_path: str | None = None) -> str | None:
     """PATH value that pins the worker's ``flow`` CLI to THIS backend's install.
 

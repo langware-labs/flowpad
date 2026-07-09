@@ -24,6 +24,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Project: {e}")
 
 try:
+    from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import SecretOrigin: {e}")
+
+try:
     from flow_sdk.builtin.workspace import Workspace  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Workspace: {e}")
