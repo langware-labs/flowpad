@@ -1270,7 +1270,11 @@ async def community_start_ticket() -> ApiResponse:
         )
         if not resp or resp.get("status") != "SUCCESS":
             msg = (resp or {}).get("message") or "hub unreachable"
-            return ApiFailResponse(message=f"Could not open support ticket: {msg}")
+            # 502, not the default 500: the failure is the UPSTREAM hub rejecting
+            # or not resolving the community project (e.g. an unseeded community
+            # hub returns 401 "Entity project-<id> not found") — our backend is
+            # healthy, so a 500 Internal Server Error misattributes it to us.
+            return ApiFailResponse(message=f"Could not open support ticket: {msg}", status_code=502)
         conv_data = resp.get("data") or {}
         conv_id = conv_data.get("id")
         if not conv_id:
@@ -1372,7 +1376,18 @@ async def community_tickets_list() -> ApiResponse:
             return ApiFailResponse(message="Community support is unavailable on this hub")
 
         resp = await _hub_action("GET", f"/graph/project/{community_id}/community_conversations")
-        rows = (resp or {}).get("data") or []
+        # Propagate a hub authorization/transport failure instead of synthesizing
+        # an empty success. A non-staff caller gets a FAIL envelope here ("no
+        # valid access for role ['guest']"); collapsing that to {tickets: []}
+        # makes "unauthorized" indistinguishable from "empty queue" — it hid a
+        # real staff-UI robustness gap and defeated the community_two_client
+        # skip-guard (its try/catch never fired on a non-staff hub).
+        if not resp or resp.get("status") != "SUCCESS":
+            msg = (resp or {}).get("message") or "hub unreachable"
+            # 502: upstream hub rejected/could not resolve the community queue
+            # (non-staff caller → "no valid access"), not an internal error here.
+            return ApiFailResponse(message=f"Could not list community tickets: {msg}", status_code=502)
+        rows = resp.get("data") or []
         if not isinstance(rows, list):
             rows = []
         return ApiSuccessResponse(data={"tickets": rows, "project_id": community_id})
