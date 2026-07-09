@@ -16,8 +16,9 @@ import {
   TypeId,
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
-import { setupTab } from '@src/tabs/tab-lifecycle';
+import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
+import { getViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
@@ -49,25 +50,6 @@ async function ensureComputeNodeLoaded(): Promise<void> {
         new TypeId(bootstrapNode.type, bootstrapNode.id),
       );
     }
-  }
-}
-
-async function setupTabAndAdopt(
-  dock: DockPointer,
-  options?: Parameters<typeof setupTab>[1],
-): Promise<void> {
-  const onMaterialized = options?.onMaterialized;
-  let adoptedMaterializedTabs = false;
-  const result = await setupTab(dock, {
-    ...options,
-    onMaterialized: (tabs) => {
-      adoptedMaterializedTabs = true;
-      onMaterialized?.(tabs);
-      applyAllTabs(tabs);
-    },
-  });
-  if (!adoptedMaterializedTabs && result.tabs && result.tabs.length > 0) {
-    applyAllTabs(result.tabs);
   }
 }
 
@@ -126,6 +108,23 @@ export async function loadAgentApp(args: LoaderArgs) {
 
   const { processId, viewType } = params;
   const pointer = params['*'] || '';
+
+  // Mode-canonical process surface: vibe ⇒ /dock/display/<proc>, standard ⇒
+  // /dock/shell/<proc>. Bridges legacy pre-display links and mode toggles —
+  // see canonicalProcessDockPath. Effective mode = URL param ?? preference,
+  // the same resolution the renderer uses (a vibe-preference user's param-less
+  // bookmark must canonicalize to the display too).
+  const canonical = canonicalProcessDockPath(
+    requestUrl.pathname,
+    requestUrl.search,
+    getViewMode() === ViewMode.Vibe,
+  );
+  if (canonical) {
+    t.done(slowThresholdSeconds);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(canonical);
+  }
+
   let dockForSetup: DockPointer | null = null;
 
   // URL-first tab materialization: the loader is the single writer, but it now
