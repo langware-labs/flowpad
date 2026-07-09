@@ -23,7 +23,7 @@ import { ExecutePromptDialog } from './ExecutePromptDialog';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
-import { buildConversationItems, ConversationItemKind } from './conversation-items';
+import { buildConversationItems, ConversationItemKind, shouldShowSoloSendNotice } from './conversation-items';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -65,31 +65,20 @@ export function ConversationView({
   onApproveAndExecuteFired,
 }: ConversationViewProps) {
   const { t } = useLingui();
-  const conversationTypeId = useMemo(
-    () => new TypeId(Conversation.type, conversationId),
-    [conversationId],
-  );
+  const conversationTypeId = useMemo(() => new TypeId(Conversation.type, conversationId), [conversationId]);
   const { data: conversation, refetch } = useEntity<Conversation>(conversationTypeId);
   const { localUser } = useLocalUser();
 
   // Member roster used to resolve a message's hub-authoritative sender_id to
-  // a display name. Precedence is `conversation.participants` (entity-cache,
-  // updated via the live-query whenever the hub pushes a change) FIRST, with
-  // the explicit hub fetch in `useMembers` as the initial-load source while
-  // the entity cache is still cold. This keeps post-kick/role-change updates
-  // visible immediately (the entity update fires before the next user-driven
-  // refresh) while still getting a populated roster on first paint.
+  // a display name. `useMembers` is the single precedence point: the live
+  // entity-cache roster wins once populated (kept fresh by membership-change
+  // fanout frames and list-refresh upserts), with the hook's one-shot hub
+  // fetch as the initial-load source while the cache is cold.
   // `rosterReady` is true once the hub has answered for this conv at least
   // once (success or failure) — FlowMessageBubble uses it to gate the alert
   // glyph so legitimate load windows don't flash UNRESOLVED.
   const { members: memberRoster, ready: rosterReady, refresh: refreshMembers } = useMembers(conversationTypeId);
-  const participants = useMemo(
-    () =>
-      conversation?.participants && conversation.participants.length > 0
-        ? conversation.participants
-        : memberRoster,
-    [conversation?.participants, memberRoster],
-  );
+  const participants = memberRoster;
 
   const pointers = useMemo(
     () => conversation?.conversationMessageIds ?? [],
@@ -131,19 +120,23 @@ export function ConversationView({
   // CONVERSATION_MESSAGES_WINDOW newest rows so long-running conversations
   // don't fetch + watch O(total) entities on every open; older messages
   // load on demand via a `created_date $LT` cursor extension here.
-  const messagesRequest = useMemo(() => new QueryRequest({
-    type: FlowMessage.type,
-    scope: [],
-    name: `messages:${conversationId}`,
-    query: new QueryFilter({
-      match: {
-        op: '$AND',
-        operands: [{ op: '$EQ', operands: ['conversation_id', conversationId] }],
-      } as Record<string, unknown>,
-      limit: CONVERSATION_MESSAGES_WINDOW,
-      order_by: { created_date: 'desc' },
-    }),
-  }), [conversationId]);
+  const messagesRequest = useMemo(
+    () =>
+      new QueryRequest({
+        type: FlowMessage.type,
+        scope: [],
+        name: `messages:${conversationId}`,
+        query: new QueryFilter({
+          match: {
+            op: '$AND',
+            operands: [{ op: '$EQ', operands: ['conversation_id', conversationId] }],
+          } as Record<string, unknown>,
+          limit: CONVERSATION_MESSAGES_WINDOW,
+          order_by: { created_date: 'desc' },
+        }),
+      }),
+    [conversationId],
+  );
   const { data: conversationMessages = [] } = useEntitiesQuery<FlowMessage>(messagesRequest, {
     enabled: !!conversationId,
   });
@@ -241,18 +234,22 @@ export function ConversationView({
     [dockNavigation],
   );
 
-  const orderedItems = useMemo(
-    () => buildConversationItems(pointers, draftMessages),
-    [pointers, draftMessages],
-  );
+  const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
+
+  // "You're the only participant" notice — computed, never persisted. Shown
+  // under the last message when the local user sends into a shared
+  // conversation whose roster has shrunk to just them (everyone else left),
+  // so they know nobody will see it. See shouldShowSoloSendNotice.
+  const lastItem = orderedItems.length > 0 ? orderedItems[orderedItems.length - 1] : null;
+  const lastMessageSenderId =
+    lastItem?.kind === ConversationItemKind.POINTER ? (messagesById.get(lastItem.messageId)?.sender_id ?? null) : null;
 
   // Surface the most-recent message id so the parent's Context tab can default
   // to it when the user hasn't clicked anything yet.
   const mostRecentMessageId = useMemo<string | null>(() => {
     for (let i = orderedItems.length - 1; i >= 0; i--) {
       const item = orderedItems[i];
-      const id =
-        item.kind === ConversationItemKind.POINTER ? item.messageId : item.draft.id ?? null;
+      const id = item.kind === ConversationItemKind.POINTER ? item.messageId : (item.draft.id ?? null);
       if (id) return id;
     }
     return null;
@@ -287,9 +284,7 @@ export function ConversationView({
   useEffect(() => {
     const target = pendingScrollIdRef.current;
     if (!target) return;
-    const el = document.querySelector<HTMLElement>(
-      `[data-testid="message-bubble-${CSS.escape(target)}"]`,
-    );
+    const el = document.querySelector<HTMLElement>(`[data-testid="message-bubble-${CSS.escape(target)}"]`);
     if (!el) return; // bubble not rendered yet — retry on the next data tick
     pendingScrollIdRef.current = null;
     el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -302,9 +297,7 @@ export function ConversationView({
   const ackedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (pointers.length === 0) return;
-    const candidates = pointers
-      .map((p) => p.id)
-      .filter((id) => id && !ackedRef.current.has(id));
+    const candidates = pointers.map((p) => p.id).filter((id) => id && !ackedRef.current.has(id));
     if (candidates.length === 0) return;
     const handle = setTimeout(() => {
       candidates.forEach((id) => ackedRef.current.add(id));
@@ -339,9 +332,7 @@ export function ConversationView({
   const isConversationOwner =
     !!cloudUserId &&
     ((!!conversation?.created_by && conversation.created_by === cloudUserId) ||
-      (participants ?? []).some(
-        (p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner',
-      ));
+      (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
 
   // Delete a message everywhere. The loader/live-query owns the list, so we
   // only fire the SDK action and let the resulting data-op re-render the view
@@ -362,11 +353,7 @@ export function ConversationView({
   const handleRefresh = useCallback(async () => {
     setHubSyncing(true);
     try {
-      await Promise.allSettled([
-        fetchConversations(),
-        syncConversationMessages(conversationId),
-        refreshMembers(),
-      ]);
+      await Promise.allSettled([fetchConversations(), syncConversationMessages(conversationId), refreshMembers()]);
       await refetch();
     } finally {
       setHubSyncing(false);
@@ -378,10 +365,18 @@ export function ConversationView({
   // (the guest initiator is the owner). Joining adds them to the roster so they
   // receive messages and can reply. See pickupConversation / hub Conversation.pickup.
   const [pickingUp, setPickingUp] = useState(false);
-  const isParticipant =
-    !!cloudUserId && (participants ?? []).some((p) => p.user_id === cloudUserId);
-  const canPickup =
-    isCommunityConversation && !!cloudUserId && !isConversationOwner && !isParticipant;
+  const isParticipant = !!cloudUserId && (participants ?? []).some((p) => p.user_id === cloudUserId);
+  const canPickup = isCommunityConversation && !!cloudUserId && !isConversationOwner && !isParticipant;
+
+  const showSoloNotice = shouldShowSoloSendNotice({
+    remote: conversation?.remote === true,
+    community: isCommunityConversation,
+    rosterReady,
+    participants: participants ?? [],
+    cloudUserId,
+    lastItem,
+    lastMessageSenderId,
+  });
   const handlePickup = useCallback(async () => {
     setPickingUp(true);
     try {
@@ -421,7 +416,9 @@ export function ConversationView({
         </button>
       </div>
       {orderedItems.length === 0 ? (
-        <p className="text-xs italic text-muted-foreground/60"><Trans>No messages yet.</Trans></p>
+        <p className="text-xs italic text-muted-foreground/60">
+          <Trans>No messages yet.</Trans>
+        </p>
       ) : (
         <div className="flex flex-col gap-3">
           {orderedItems.map((item) => {
@@ -461,9 +458,11 @@ export function ConversationView({
                 key={item.key}
                 messageId={id}
                 fm={item.draft}
-                timestamp={item.draft.created_date instanceof Date
-                  ? item.draft.created_date.toISOString()
-                  : (item.draft.created_date ?? '')}
+                timestamp={
+                  item.draft.created_date instanceof Date
+                    ? item.draft.created_date.toISOString()
+                    : (item.draft.created_date ?? '')
+                }
                 task={task}
                 participants={participants}
                 rosterReady={rosterReady}
@@ -479,15 +478,18 @@ export function ConversationView({
         </div>
       )}
 
+      {showSoloNotice && (
+        <p data-testid="solo-participant-notice" className="text-[11px] italic text-muted-foreground/70">
+          <Trans>You're the only participant in this conversation — no one else will see this message.</Trans>
+        </p>
+      )}
+
       {/* Always render the reply composer. A pending draft (e.g. an "Approve &
           Execute" auto-reply awaiting review) renders above as its own editable
           bubble with Send/Discard — but it must not block composing a fresh reply.
           The plain composer never auto-creates a draft, so there's no duplication
           loop. */}
-      <MessageComposer
-        conversationId={conversationId}
-        onSent={() => void refetch()}
-      />
+      <MessageComposer conversationId={conversationId} onSent={() => void refetch()} />
 
       {executeTarget && (
         <ExecutePromptDialog

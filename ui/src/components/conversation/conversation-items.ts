@@ -56,3 +56,40 @@ export function buildConversationItems(
   items.sort((a, b) => a.sortAt - b.sortAt);
   return items;
 }
+
+export interface SoloSendNoticeParams {
+  /** ``conversation.remote === true`` — shared / hub-backed. A local-only
+   *  conversation always has exactly one participant; no notice there. */
+  remote: boolean;
+  /** COMMUNITY rosters intentionally mask responders (a guest sees only
+   *  themselves), so "1 participant" would false-positive — never notice. */
+  community: boolean;
+  /** ``useMembers().ready`` — the hub answered at least once. Gates the
+   *  initial-load window where the roster is still unknown. */
+  rosterReady: boolean;
+  participants: ReadonlyArray<{ user_id?: string | null }>;
+  cloudUserId: string | null;
+  /** ``orderedItems.at(-1)`` — a trailing DRAFT (not sent yet) suppresses. */
+  lastItem: ConversationItem | null;
+  /** ``sender_id`` of the last item's FlowMessage when it is a POINTER. */
+  lastMessageSenderId: string | null;
+}
+
+/**
+ * True when the current user just sent a message into a shared conversation
+ * where they are the ONLY remaining participant — i.e. everyone else left and
+ * nobody will see the message. Pure and computed (never persisted): the
+ * notice appears while the condition holds and vanishes when someone rejoins.
+ */
+export function shouldShowSoloSendNotice(p: SoloSendNoticeParams): boolean {
+  return (
+    p.remote &&
+    !p.community &&
+    p.rosterReady &&
+    !!p.cloudUserId &&
+    p.participants.length === 1 &&
+    p.participants[0]?.user_id === p.cloudUserId &&
+    p.lastItem?.kind === ConversationItemKind.POINTER &&
+    p.lastMessageSenderId === p.cloudUserId
+  );
+}

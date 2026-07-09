@@ -118,9 +118,7 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
 
   const addMembers = useCallback(
     async (emails: string[]) => {
-      const cleaned = Array.from(
-        new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean)),
-      );
+      const cleaned = Array.from(new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean)));
       if (!cleaned.length) return;
       if (!entity) throw new Error('useMembers: entity not loaded; cannot invite');
       await entity.share(cleaned);
@@ -160,19 +158,21 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     [entity, refresh],
   );
 
-  // Prefer the freshly-fetched list; fall back to whatever the entity cache
-  // has. Entities without a ``participants`` field surface as the shared
-  // EMPTY_MEMBERS constant so the array identity is stable.
-  const cached: Participant[] = (entity as any)?.participants ?? (EMPTY_MEMBERS as Participant[]);
-  const members = refreshed ?? cached;
+  // Live entity roster wins once it exists — the entity cache is kept fresh
+  // by data_ops (membership-change fanout frames and list-refresh upserts now
+  // carry ``participants``), so it updates on every membership change without
+  // a refetch. The one-shot hub fetch covers the cold cache and roster-less
+  // entity types (org/team keep no local participants). Entities without a
+  // ``participants`` field surface as the shared EMPTY_MEMBERS constant so
+  // the array identity is stable.
+  const cached = (entity as any)?.participants as Participant[] | undefined;
+  const members: Participant[] =
+    Array.isArray(cached) && cached.length > 0 ? cached : (refreshed ?? (EMPTY_MEMBERS as Participant[]));
   // `ready` is "the hub has answered for this typeId at least once" — both
   // success and explicit failure count, so a sustained outage still unblocks
   // UI that gates on rosterReady (e.g. the unresolved-sender alert label)
   // instead of stalling on loading forever.
-  const ready = useMemo(
-    () => refreshed !== null || error !== null,
-    [refreshed, error],
-  );
+  const ready = useMemo(() => refreshed !== null || error !== null, [refreshed, error]);
 
   return { members, loading, ready, error, refresh, addMembers, removeMember, setRole };
 }

@@ -5576,7 +5576,7 @@ msgstr "Join conversation"
 msgid "Join existing"
 msgstr "Join existing"
 
-#: src/components/conversation/ConversationView.tsx:405
+#: src/components/conversation/ConversationView.tsx:400
 msgid "Join this support ticket so you can reply"
 msgstr "Join this support ticket so you can reply"
 
@@ -7130,7 +7130,7 @@ msgstr "No members yet."
 msgid "No messages yet — context will appear here as they arrive."
 msgstr "No messages yet — context will appear here as they arrive."
 
-#: src/components/conversation/ConversationView.tsx:424
+#: src/components/conversation/ConversationView.tsx:420
 msgid "No messages yet."
 msgstr "No messages yet."
 
@@ -8302,7 +8302,7 @@ msgstr "Pick project…"
 msgid "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
 msgstr "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
 
-#: src/components/conversation/ConversationView.tsx:410
+#: src/components/conversation/ConversationView.tsx:405
 #: src/components/inbox-view/InboxView.tsx:1123
 msgid "Pick up"
 msgstr "Pick up"
@@ -8311,7 +8311,7 @@ msgstr "Pick up"
 msgid "Pick what to do with this invitation."
 msgstr "Pick what to do with this invitation."
 
-#: src/components/conversation/ConversationView.tsx:410
+#: src/components/conversation/ConversationView.tsx:405
 #: src/components/inbox-view/InboxView.tsx:1122
 msgid "Picking up…"
 msgstr "Picking up…"
@@ -8997,7 +8997,7 @@ msgstr "Refresh — git pull and scan for new notifications"
 msgid "Refresh — re-index this project's sessions"
 msgstr "Refresh — re-index this project's sessions"
 
-#: src/components/conversation/ConversationView.tsx:416
+#: src/components/conversation/ConversationView.tsx:411
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx:291
 msgid "Refresh (pulls from hub)"
 msgstr "Refresh (pulls from hub)"
@@ -12275,6 +12275,10 @@ msgstr "You'll be removed from the participant list. Other members keep the conv
 #: src/components/join-room-dialog/JoinRoomDialog.tsx:67
 msgid "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
 msgstr "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
+
+#: src/components/conversation/ConversationView.tsx:483
+msgid "You're the only participant in this conversation — no one else will see this message."
+msgstr "You're the only participant in this conversation — no one else will see this message."
 
 #: src/components/inbox-view/InboxView.tsx:247
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx:498

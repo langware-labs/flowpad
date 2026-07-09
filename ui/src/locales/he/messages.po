@@ -5576,7 +5576,7 @@ msgstr "הצטרף לשיחה"
 msgid "Join existing"
 msgstr "הצטרפות לקיים"
 
-#: src/components/conversation/ConversationView.tsx:405
+#: src/components/conversation/ConversationView.tsx:400
 msgid "Join this support ticket so you can reply"
 msgstr "הצטרף לכרטיס תמיכה זה כדי שתוכל להשיב"
 
@@ -7130,7 +7130,7 @@ msgstr "עדיין אין חברים."
 msgid "No messages yet — context will appear here as they arrive."
 msgstr "אין הודעות עדיין — ההקשר יופיע כאן כשהם יגיעו."
 
-#: src/components/conversation/ConversationView.tsx:424
+#: src/components/conversation/ConversationView.tsx:420
 msgid "No messages yet."
 msgstr "אין הודעות עדיין."
 
@@ -8302,7 +8302,7 @@ msgstr "בחר פרויקט…"
 msgid "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
 msgstr "בחר את תיקיית הפרויקט המקומית בה צריכה לפעול שיחה זו. אנו נשתמש בה כדיוקטוריום העבודה לסשנים של Claude Code."
 
-#: src/components/conversation/ConversationView.tsx:410
+#: src/components/conversation/ConversationView.tsx:405
 #: src/components/inbox-view/InboxView.tsx:1123
 msgid "Pick up"
 msgstr "קבל"
@@ -8311,7 +8311,7 @@ msgstr "קבל"
 msgid "Pick what to do with this invitation."
 msgstr "בחר מה לעשות עם הזמנה זו."
 
-#: src/components/conversation/ConversationView.tsx:410
+#: src/components/conversation/ConversationView.tsx:405
 #: src/components/inbox-view/InboxView.tsx:1122
 msgid "Picking up…"
 msgstr "מקבל…"
@@ -8997,7 +8997,7 @@ msgstr "רענן — git pull וחיפוש הודעות חדשות"
 msgid "Refresh — re-index this project's sessions"
 msgstr "רענן — אנדקס מחדש של פגישות פרויקט זה"
 
-#: src/components/conversation/ConversationView.tsx:416
+#: src/components/conversation/ConversationView.tsx:411
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx:291
 msgid "Refresh (pulls from hub)"
 msgstr "רענן (משוך מה-hub)"
@@ -12275,6 +12275,10 @@ msgstr "תוסר מרשימת המשתתפים. חברים אחרים שומרי
 #: src/components/join-room-dialog/JoinRoomDialog.tsx:67
 msgid "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
 msgstr "אתה עומד לפתוח חדר בפרויקט זה. אתה יכול להזמין אחרים באמצעות קוד השיתוף שיופיע בכותרת כשהחדר יתחיל."
+
+#: src/components/conversation/ConversationView.tsx:483
+msgid "You're the only participant in this conversation — no one else will see this message."
+msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx:247
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx:498
