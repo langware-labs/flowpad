@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field, model_validator
 from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
@@ -26,6 +26,9 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+
+log = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -95,15 +98,17 @@ class Project(Entity):
     fs_storage_mount_path: str | None = APIField(
         default=None, description="Full path to the project folder"
     )
-    # Project "context folders": extra directories that are auto-added to every
-    # agentic worker's ``--add-dir`` set and browseable in the Explorer as their
-    # own root. persist=TRUE (the ``community`` pattern) so the list round-trips
-    # FS<->DB without needing an entry in ``ProjectMeta``. Entries are canonical
-    # posix paths.
-    include_dirs: list[str] = APIField(
+    # Legacy stash for the removed stored ``include_dirs`` field. Context
+    # folders are now Folder entities linked via the base-Entity context
+    # buckets (see the computed ``include_dirs`` property); any raw
+    # ``include_dirs`` key still arriving from old DB rows / metadata.json is
+    # captured here by ``_stash_legacy_include_dirs`` and converted into
+    # folder links at the next write (``_migrate_legacy_context_dirs``).
+    # persist=FALSE: the stash itself must never be re-persisted.
+    legacy_include_dirs_: list[str] = APIField(
         default_factory=list,
-        persist=Persist.TRUE,
-        description="Project context folders; auto-added to every agentic worker's --add-dir set.",
+        persist=Persist.FALSE,
+        description="Legacy include_dirs values pending migration into Folder context links.",
     )
     # ── Collaboration overlay (merged from the former CollaborationSpace entity) ──
     session_code: str | None = APIField(
@@ -154,6 +159,54 @@ class Project(Entity):
         description="ISO timestamp of the most recent session activity at this project's cwd, "
                     "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _stash_legacy_include_dirs(cls, data):
+        """Capture a raw ``include_dirs`` key into the legacy stash.
+
+        ``include_dirs`` is a computed field now; pydantic would silently drop
+        the raw key on hydration (old DB rows, old metadata.json, or a
+        ``Project(**model_dump())`` round-trip feeding the computed output
+        back in). Stashing keeps the values visible through the computed
+        merge until ``_migrate_legacy_context_dirs`` converts them into
+        Folder context links. Idempotent: post-migration round-trips re-stash
+        already-covered paths, which the migration then no-ops on.
+        """
+        if isinstance(data, dict) and "include_dirs" in data:
+            raw = data.pop("include_dirs")
+            if isinstance(raw, list):
+                merged = list(data.get("legacy_include_dirs_") or [])
+                merged.extend(d for d in raw if isinstance(d, str) and d)
+                data["legacy_include_dirs_"] = list(dict.fromkeys(merged))
+        return data
+
+    @computed_field
+    @property
+    def include_dirs(self) -> list[str]:
+        """Project context folders, derived from Folder context links.
+
+        Walks both context buckets (private links never leave this machine;
+        shared links travel with the project) and reads each folder's
+        canonical path from the per-entry sidecar stamped at link time —
+        strictly sync/in-memory, because the agentic-process spawn path reads
+        this via ``getattr`` (see ``resolved_add_dirs``). Entries without a
+        locally-resolvable sidecar path (e.g. a shared link received from a
+        peer) are skipped. Legacy stashed values are merged until migrated.
+        """
+        out: list[str] = []
+        seen: set[str] = set()
+        for tid in self.context_of_type("folder", bucket="both"):
+            entry = self.get_context_entry_data(tid) or {}
+            p = entry.get("path")
+            if isinstance(p, str) and p and p not in seen:
+                seen.add(p)
+                out.append(p)
+        for p in self.legacy_include_dirs_ or []:
+            if p and p not in seen:
+                seen.add(p)
+                out.append(p)
+        return out
 
     @model_validator(mode="after")
     def set_fs_storage_mount_path(self):
@@ -363,7 +416,24 @@ class Project(Entity):
             for k, v in data.items():
                 if k in ("id", "type"):
                     continue
-                if hasattr(existing, k):
+                # Legacy stored include_dirs (now a computed field): route into
+                # the migration stash instead of a doomed setattr.
+                if k == "include_dirs":
+                    if isinstance(v, list):
+                        stash = list(existing.legacy_include_dirs_ or [])
+                        stash.extend(d for d in v if isinstance(d, str) and d)
+                        existing.legacy_include_dirs_ = list(dict.fromkeys(stash))
+                    continue
+                field = cls.model_fields.get(k)
+                if field is not None:
+                    # Declared fields validate through their annotation —
+                    # metadata.json carries e.g. TypeId lists as plain strings
+                    # (json default=str) and must coerce back on adopt.
+                    try:
+                        setattr(existing, k, TypeAdapter(field.annotation).validate_python(v))
+                    except Exception:
+                        pass
+                elif hasattr(existing, k):
                     try:
                         setattr(existing, k, v)
                     except Exception:
@@ -645,23 +715,93 @@ class Project(Entity):
         sessions = get_worker_sessions()
         return ApiSuccessResponse(data=sessions)
 
-    # ── Context folders (project include_dirs) ──────────────────────────────
+    # ── Context folders (Folder entities linked via context buckets) ────────
+
+    async def _migrate_legacy_context_dirs(self) -> bool:
+        """Convert stashed legacy ``include_dirs`` into Folder context links.
+
+        Each stashed path is minted as a Folder entity (idempotent v5) and
+        linked as PRIVATE context (legacy dirs were always hub-excluded).
+        Clears the stash and neutralizes the stale ``include_dirs`` key in the
+        record's metadata.json — ``save_metadata`` is a merge-writer, so
+        without the explicit empty-list write the old key would resurrect
+        removed dirs after a DB rebuild. Returns True when anything changed;
+        the CALLER persists (this never calls ``self.save()``).
+        """
+        stash = [d for d in (self.legacy_include_dirs_ or []) if d]
+        if not stash:
+            return False
+        from flow_sdk.builtin.folder import Folder
+
+        covered: set[str] = set()
+        for tid in self.context_of_type("folder", bucket="both"):
+            entry = self.get_context_entry_data(tid) or {}
+            if entry.get("path"):
+                covered.add(entry["path"])
+        for path in stash:
+            canonical = canonical_posix_path(path)
+            if canonical in covered:
+                continue
+            folder = await Folder.mint_for_path(canonical)
+            self.add_private_context_entities(folder.typeid, data={"path": canonical})
+            covered.add(canonical)
+        self.legacy_include_dirs_ = []
+        # Drop the stale on-disk key (best-effort): save_metadata is a
+        # merge-writer, so without removal the key would re-hydrate — and
+        # resurrect removed dirs — on every adopt after a DB rebuild.
+        try:
+            import asyncio
+
+            from flow_sdk.fs_store.fs_record import FSRecord
+
+            record = await asyncio.to_thread(FSRecord.load_or_none, self.get_type(), self.id)
+            if record is not None:
+                await asyncio.to_thread(record.remove_metadata_keys, "include_dirs")
+        except Exception:
+            log.debug("[project] legacy include_dirs disk-key removal failed", exc_info=True)
+        return True
+
+    async def save(self, owner=None, notify: bool = True) -> "Project":
+        """Project save — lazy-migration chokepoint for legacy context dirs.
+
+        Any project write converges stashed legacy ``include_dirs`` into
+        Folder context links first (no-op once clean), so old rows migrate on
+        their first save without a dedicated migration run.
+        """
+        if self.legacy_include_dirs_:
+            await self._migrate_legacy_context_dirs()
+        return await super().save(owner, notify=notify)
 
     @action.post(action_name="add-context-dir")
-    async def add_context_dir(self, path: str) -> "ApiResponse":
-        """Add a directory to this project's ``include_dirs`` (context folders).
+    async def add_context_dir(self, path: str, scope: str = "private") -> "ApiResponse":
+        """Attach a directory to this project as a context folder.
 
-        The path is canonicalized; adding is idempotent. On add we kick a
-        one-shot indexer scan over the new path (reusing the AgenticProcess
-        helper) so any skills / agents living under it become discoverable in
-        the Asset Manager without a manual ``flow record index``.
+        Mints (or reuses — deterministic v5 from the canonical path) the
+        ``Folder`` entity and links it into the project's context bucket:
+        ``private`` (default; never leaves this machine) or ``shared``
+        (travels when the project is shared). The canonical path is stamped
+        into the per-entry sidecar so the computed ``include_dirs`` derives
+        synchronously. On a new add we kick a one-shot indexer scan over the
+        path so skills/agents under it become discoverable.
         """
         if not path:
             return ApiFailResponse(message="path is required")
+        if scope not in ("private", "shared"):
+            return ApiFailResponse(message="scope must be 'private' or 'shared'")
+        # No explicit legacy migration here: the computed include_dirs already
+        # merges the stash (so is_new sees legacy dirs), and save() below is
+        # the migration chokepoint.
         canonical = canonical_posix_path(path)
-        if canonical not in (self.include_dirs or []):
-            self.include_dirs = list(self.include_dirs or []) + [canonical]
-            await self.save()
+        is_new = canonical not in self.include_dirs
+        from flow_sdk.builtin.folder import Folder
+
+        folder = await Folder.mint_for_path(canonical)
+        if scope == "shared":
+            self.add_shared_context_entities(folder.typeid, data={"path": canonical})
+        else:
+            self.add_private_context_entities(folder.typeid, data={"path": canonical})
+        await self.save()
+        if is_new:
             from flow_sdk.builtin.agentic_process.agentic_process import (
                 _index_additional_dir,
             )
@@ -670,16 +810,26 @@ class Project(Entity):
 
     @action.post(action_name="remove-context-dir")
     async def remove_context_dir(self, path: str) -> "ApiResponse":
-        """Remove a directory from ``include_dirs``. No-op if not present.
+        """Detach a context folder from this project. No-op if not attached.
 
-        Matches on the canonical form so a caller passing an un-canonical path
-        still removes the stored entry.
+        Matches on the canonical path against the folder links' sidecar
+        entries and unlinks from BOTH buckets. The Folder entity itself is
+        never deleted (it may be linked by other projects) and the directory
+        on disk is never touched.
         """
         if not path:
             return ApiFailResponse(message="path is required")
+        migrated = await self._migrate_legacy_context_dirs()
         canonical = canonical_posix_path(path)
-        if canonical in (self.include_dirs or []):
-            self.include_dirs = [d for d in (self.include_dirs or []) if d != canonical]
+        to_remove = [
+            tid
+            for tid in self.context_of_type("folder", bucket="both")
+            if (self.get_context_entry_data(tid) or {}).get("path") == canonical
+        ]
+        if to_remove:
+            self.remove_shared_context_entities(*to_remove)
+            self.remove_private_context_entities(*to_remove)
+        if to_remove or migrated:
             await self.save()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 

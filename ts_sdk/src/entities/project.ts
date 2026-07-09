@@ -142,24 +142,33 @@ export class Project extends APIEntity<Project> {
     return new GitWorkdir(this.fs_storage_mount_path, computeNode.id);
   }
 
-  /** Add a context folder to this project's `include_dirs` (auto-added to every
-   *  agentic worker's --add-dir set). Idempotent; the backend canonicalizes the
-   *  path and kicks a one-shot index so the folder's assets become discoverable. */
-  async addContextDir(path: string): Promise<void> {
-    const actionInfo = new ActionInfo('add-context-dir', Project.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = { path };
-    await dataManager.callAction(actionInfo);
-    if (!(this.include_dirs ?? []).includes(path)) {
-      this.include_dirs = [...(this.include_dirs ?? []), path];
+  /** Adopt the server-computed `include_dirs` off a context-dir action
+   *  response. The backend derives the list from Folder context links (it
+   *  canonicalizes paths), so the response — not an optimistic local guess —
+   *  is the truth. */
+  private adoptContextDirs(response: unknown): void {
+    const dirs = (response as { include_dirs?: unknown } | null)?.include_dirs;
+    if (Array.isArray(dirs)) {
+      this.include_dirs = dirs.filter((d): d is string => typeof d === 'string');
     }
   }
 
-  /** Remove a context folder from `include_dirs`. No-op if not present. */
+  /** Attach a context folder (auto-added to every agentic worker's --add-dir
+   *  set). Idempotent; the backend mints the Folder entity, links it into the
+   *  requested context bucket — `private` (default, never leaves this machine)
+   *  or `shared` (travels with the project) — and kicks a one-shot index so
+   *  the folder's assets become discoverable. */
+  async addContextDir(path: string, scope: 'private' | 'shared' = 'private'): Promise<void> {
+    const actionInfo = new ActionInfo('add-context-dir', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path, scope };
+    this.adoptContextDirs(await dataManager.callAction(actionInfo));
+  }
+
+  /** Detach a context folder. No-op if not attached. */
   async removeContextDir(path: string): Promise<void> {
     const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { path };
-    await dataManager.callAction(actionInfo);
-    this.include_dirs = (this.include_dirs ?? []).filter((d) => d !== path);
+    this.adoptContextDirs(await dataManager.callAction(actionInfo));
   }
 
   async setupComputeNode(options?: { gitOrigin?: GitOrigin | null }): Promise<ComputeNode | null> {

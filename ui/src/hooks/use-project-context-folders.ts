@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { dataContext, type Project } from '@sdk';
 
+export type ContextFolderScope = 'private' | 'shared';
+
 /**
  * useProjectContextFolders — the shared mutation surface for a project's
  * context folders (`include_dirs`). Consumed by every UI that edits them
- * (the ProjectBrief `ContextFolders` card, the Assets navigator root) so the
+ * (the ProjectHome `ContextFolders` card, the Assets navigator root) so the
  * add / native-pick / remove flows live once.
  *
  * The callbacks read the project through a ref, so their identity is stable
@@ -22,22 +24,24 @@ export function useProjectContextFolders(project: Project | null | undefined) {
     [project?.include_dirs],
   );
 
-  /** Add each given absolute folder path (idempotent server-side). */
-  const addPaths = useCallback(async (paths: string[]) => {
+  /** Add each given absolute folder path (idempotent server-side). The scope
+   *  selects the context bucket: private (default, never leaves this machine)
+   *  or shared (travels with the project). */
+  const addPaths = useCallback(async (paths: string[], scope: ContextFolderScope = 'private') => {
     const p = projectRef.current;
     if (!p) return;
     for (const path of paths) {
-      if (path) await p.addContextDir(path);
+      if (path) await p.addContextDir(path, scope);
     }
   }, []);
 
   /** Native folder picker → add. No-op without a compute node. */
-  const pickAndAdd = useCallback(async () => {
+  const pickAndAdd = useCallback(async (scope: ContextFolderScope = 'private') => {
     const p = projectRef.current;
     const computeNode = dataContext.computeNode;
     if (!p || !computeNode) return;
     const picked = await computeNode.openPathDialog();
-    if (picked) await p.addContextDir(picked);
+    if (picked) await p.addContextDir(picked, scope);
   }, []);
 
   const remove = useCallback(async (dir: string) => {

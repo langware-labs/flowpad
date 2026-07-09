@@ -53,6 +53,7 @@ _REAL_HOME_TEST_MODULES = frozenset({
     "test_context_process",
     "test_system_prompt",
     "test_asset_cleanup_agent",
+    "test_context_folder_worker",
 })
 
 

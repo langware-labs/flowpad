@@ -185,6 +185,11 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import WorkflowRun: {e}")
 
+try:
+    from flow_sdk.builtin.folder import Folder  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Folder: {e}")
+
 # These have more complex dependencies - skip for now
 # from builtin.page import Page  # noqa: F401
 # from builtin.task import Task  # noqa: F401
