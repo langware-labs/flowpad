@@ -326,7 +326,7 @@ export function HomeLanding() {
           </AdvancedOnly>
         </div>
 
-        <div className="hidden lg:block">
+        <div className="hidden min-h-0 lg:block">
           <HomeFeedColumn />
         </div>
 

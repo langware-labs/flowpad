@@ -556,7 +556,11 @@ msgid "80% Alert Threshold"
 msgstr ""
 
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
-msgid "A new build session opens and runs the skill. Optionally describe what to use it for."
+#~ msgid "A new build session opens and runs the skill. Optionally describe what to use it for."
+#~ msgstr ""
+
+#: src/components/conversation/asset-review/TestPromptDialog.tsx
+msgid "A new Vibe session opens and runs the skill. Optionally describe what to use it for."
 msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
@@ -1449,6 +1453,7 @@ msgstr ""
 
 #: src/components/bookmarks-slider/BookmarksSlider.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/project-home/ProjectHome.tsx
 msgid "Bookmarks"
 msgstr ""
 
@@ -2690,7 +2695,8 @@ msgstr ""
 msgid "Could not save changes"
 msgstr ""
 
-#: src/components/conversation/asset-review/useTestStagedAsset.ts
+#: src/components/conversation/asset-review/useRunReceivedSkill.tsx
+#: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
 msgid "Could not start"
 msgstr ""
@@ -4531,9 +4537,13 @@ msgstr ""
 msgid "Failed to start the build session."
 msgstr ""
 
-#: src/components/conversation/asset-review/useTestStagedAsset.ts
-msgid "Failed to start the skill test session."
+#: src/components/conversation/asset-review/useRunReceivedSkill.tsx
+msgid "Failed to start the skill run session."
 msgstr ""
+
+#: src/components/conversation/asset-review/useTestStagedAsset.ts
+#~ msgid "Failed to start the skill test session."
+#~ msgstr ""
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 msgid "Failed to start workflow"
@@ -7974,6 +7984,10 @@ msgstr ""
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr ""
 
+#: src/components/assets/AddContextFolderDialog.tsx
+msgid "Only on this machine — never shared"
+msgstr ""
+
 #: src/components/chat-input.tsx
 msgid "Only one ZIP file can be uploaded at a time"
 msgstr ""
@@ -8839,6 +8853,7 @@ msgstr ""
 msgid "Priority"
 msgstr ""
 
+#: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 msgid "Private"
 msgstr ""
@@ -9232,6 +9247,10 @@ msgstr ""
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Rebuild failed to start"
+msgstr ""
+
+#: src/components/assets/editor/MissingAssetCard.tsx
+msgid "Rebuild file"
 msgstr ""
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -9855,9 +9874,14 @@ msgid "Rules"
 msgstr ""
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
+msgstr ""
+
+#: src/components/conversation/asset-review/TestPromptDialog.tsx
+msgid "Run “{assetName}”"
 msgstr ""
 
 #. placeholder {0}: i + 1
@@ -9922,6 +9946,10 @@ msgstr ""
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Run setup failed."
+msgstr ""
+
+#: src/components/conversation/asset-review/useRunReceivedSkill.tsx
+msgid "Run skill in project"
 msgstr ""
 
 #: src/components/graph-context/RunAutomationPanel.tsx
@@ -10801,6 +10829,7 @@ msgstr ""
 msgid "Share to conversation"
 msgstr ""
 
+#: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Shared"
@@ -11598,8 +11627,8 @@ msgid "test"
 msgstr ""
 
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
-msgid "Test “{assetName}”"
-msgstr ""
+#~ msgid "Test “{assetName}”"
+#~ msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -11607,8 +11636,8 @@ msgid "Test API Access"
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
-msgid "Test it"
-msgstr ""
+#~ msgid "Test it"
+#~ msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Test LM"
@@ -12073,6 +12102,10 @@ msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Transcripts"
+msgstr ""
+
+#: src/components/assets/AddContextFolderDialog.tsx
+msgid "Travels with the project when shared"
 msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
