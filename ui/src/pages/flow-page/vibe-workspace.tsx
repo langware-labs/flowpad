@@ -36,6 +36,8 @@ import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { notify } from '@src/notifications/notify';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { ContentPanel } from './content-panel/content-panel';
+import { launchVibeSessionForProject } from './use-start-vibe-session';
+import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
 import type { VibeWorkspaceSession } from './use-vibe-workspace-session';
 import {
   buildDisplayAnnotationPrompt,
@@ -57,15 +59,6 @@ interface VibeFocus {
   path?: string;
   port?: string;
 }
-
-// Empty-display starter prompts — clicking one submits it to the chat (the
-// agent then drives the first `flow show`).
-const STARTER_PROMPTS = [
-  'Build a landing page',
-  'Make a todo app',
-  'Create a dashboard',
-  'Design a pricing page',
-];
 
 /** The dock pointer a shown target opens as its own tab — the single type/path →
  *  editor rule shared by the current-display render and the history popover. */
@@ -284,6 +277,25 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     }
   }, [currentDock, submitAnnotatedDisplay, t]);
 
+  const submitStarterPrompt = useCallback(
+    async (prompt: string) => {
+      const existing =
+        activeProcess ?? (await AgenticProcess.getById<AgenticProcess>(session.processId).catch(() => null));
+      if (existing) {
+        await existing.prompt(prompt);
+        return;
+      }
+      if (!project?.id) return;
+      await launchVibeSessionForProject({
+        projectId: project.id,
+        workdir: project.fs_storage_mount_path || project.name || undefined,
+        message: prompt,
+        navigation,
+      });
+    },
+    [activeProcess, navigation, project?.fs_storage_mount_path, project?.id, project?.name, session.processId],
+  );
+
   // Display precedence: explicit `flow show` target first (agent-intentional),
   // then stream focus (write/diff noise), then the webapp preview. Each viewer
   // self-resolves its data (WebappViewer from the store, AssetEditorRouter
@@ -340,11 +352,11 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
             <Trans>Nothing to display yet — try one to get started</Trans>
           </p>
           <div className="flex max-w-md flex-wrap justify-center gap-2">
-            {STARTER_PROMPTS.map((p) => (
+            {VIBE_STARTER_PROMPTS.map((p) => (
               <button
                 key={p}
                 type="button"
-                onClick={() => void activeProcess?.prompt(p)}
+                onClick={() => void submitStarterPrompt(p)}
                 data-testid="display-starter-chip"
                 className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
@@ -478,6 +490,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     navigation,
     activeProcess,
     handleAnnotateDisplay,
+    submitStarterPrompt,
   ]);
 
   return (
