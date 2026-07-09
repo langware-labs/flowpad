@@ -376,6 +376,8 @@ class TypeInfo:
             "locations": self.locations,
             "main_subdir": self.main_subdir,
             "main_layout": self.main_layout,
+            "main_file": self.main_file,
+            "main_file_is_asset_ref": self.main_file_is_asset_ref,
             "folder_backed": self.folder_backed,
             # The entity owns its backing file (re-rendered from default_body on
             # every save) → a resolved-but-file-missing row can self-heal with a

@@ -5,6 +5,7 @@ import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import { ArtifactsView } from '@src/components/artifacts';
 import { AssistanceViewer } from '@src/components/assistance-viewer/AssistanceViewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
+import { AssetCompareView } from '@src/components/code-editor/AssetCompareView';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { DocsViewer } from '@src/components/docs-viewer/DocsViewer';
 import EnvVarsManager from '@src/components/EnvVarsManager';
@@ -256,6 +257,9 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
       case ViewType.WEB_APP:
         return <WebappViewer onWebappErrorRetry={onWebappErrorRetry} />;
       case ViewType.DIFF:
+        if (currentDock?.pointer?.startsWith('asset-compare/')) {
+          return <AssetCompareView pointer={currentDock.pointer} />;
+        }
         return checkpointHash ? (
           <DiffViewer checkpoint_hash={checkpointHash} />
         ) : (

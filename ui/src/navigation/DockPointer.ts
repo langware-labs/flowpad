@@ -42,6 +42,40 @@ export function normalizeRel(path: string | null | undefined): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
 }
 
+export const ASSET_COMPARE_POINTER_PREFIX = 'asset-compare/';
+
+export interface AssetComparePointerPayload {
+  computeNodeId: string;
+  workdir: string;
+  file: string;
+  assetPath: string;
+  assetType: string;
+  assetLabel: string;
+}
+
+function encodePointerJson(value: unknown): string {
+  const json = JSON.stringify(value);
+  return btoa(unescape(encodeURIComponent(json)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function decodePointerJson<T>(value: string): T | null {
+  try {
+    const padded = value + '='.repeat((4 - (value.length % 4)) % 4);
+    const json = decodeURIComponent(escape(atob(padded.replace(/-/g, '+').replace(/_/g, '/'))));
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
+}
+
+export function decodeAssetComparePointer(pointer: string | null | undefined): AssetComparePointerPayload | null {
+  if (!pointer?.startsWith(ASSET_COMPARE_POINTER_PREFIX)) return null;
+  return decodePointerJson<AssetComparePointerPayload>(pointer.slice(ASSET_COMPARE_POINTER_PREFIX.length));
+}
+
 function isViewMode(value: string | undefined): value is ViewMode {
   return value === 'vibe' || value === 'standard' || value === 'advanced' || value === 'dev';
 }
@@ -299,6 +333,13 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for an asset working-tree comparison.
+   */
+  static forAssetCompare(payload: AssetComparePointerPayload, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.DIFF, `${ASSET_COMPARE_POINTER_PREFIX}${encodePointerJson(payload)}`, undefined, layout);
+  }
+
+  /**
    * Create dock pointer for filesystem path
    */
   static forFs(path: string, layout: Layout = Layout.DOCK): DockPointer {
@@ -370,10 +411,10 @@ export class DockPointer implements IDockPointer {
     if (DockPointer.isAgenticProcessPointer(pointer)) {
       return { kind: 'legacy', agenticProcessTypeId: new TypeId(method), filePath: `/${value}` };
     }
-    if (method === AssetRoutingMethod.TYPEID) {
+    if (method === String(AssetRoutingMethod.TYPEID)) {
       return { kind: 'typeid', planTypeId: new TypeId(value) };
     }
-    if (method === AssetRoutingMethod.VFS) {
+    if (method === String(AssetRoutingMethod.VFS)) {
       return { kind: 'vfs', vfsValue: value };
     }
     return null;
