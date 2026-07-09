@@ -93,8 +93,10 @@ async def test_local_driver_materialize_no_fetch(tmp_path):
     driver = get_origin_driver("local")
 
     origin = LocalOrigin(base=str(tmp_path), rel_path="docs")
+    # materialize returns the ROOT (base); the caller joins rel_path as placement.
     local_root, project_id = await driver.materialize(origin)
-    assert local_root == tmp_path / "docs"
+    assert local_root == tmp_path
+    assert (local_root / origin.rel_path) == tmp_path / "docs"
     assert project_id is None
     assert driver.matches(origin, tmp_path / "docs")
 

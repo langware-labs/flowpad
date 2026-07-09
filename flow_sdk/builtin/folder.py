@@ -7,19 +7,30 @@ via the base-Entity context buckets (``add_private_context_entities`` /
 ``add_shared_context_entities``) with the canonical path stamped into the
 per-entry sidecar; ``Project.include_dirs`` derives from those links.
 
-Identity is deterministic: v5 ``mint_uuid`` over the canonical posix path, so
-the same directory always resolves to the same entity across projects (and
-re-minting after a DB wipe converges on the same id).
+A Folder's LOCATION is an ``FSOrigin`` (the transportable source of truth):
+- ``LocalOrigin`` (``kind="local"``) — a plain directory on this machine
+  (``base`` = its canonical path). Non-transportable: never shareable.
+- ``GitOrigin`` (``kind="git"``) — a directory inside a git repo (repo coords +
+  ``rel_path``). Transportable: it can be reconstituted on another machine by
+  cloning, so a shared project can carry it.
 
-``git_origin`` (the Artifact pattern) records upstream git provenance for a
-git-backed folder — the transportable identity a future share/materialize flow
-uses. Local-only folders leave it None and are private-context material only.
+``path`` is the LOCAL resolved-path cache (per machine): set at add time on the
+sender (the dir is local), and set on a receiver only after ``resolve_location``
+materializes the origin. It is the local view; ``origin`` is what travels.
+
+Identity: ``origin.key()`` for transportable (git) origins — byte-stable and
+machine-independent, so sender and receiver mint the SAME folder id and a shared
+context ref resolves. Local origins keep the legacy path-derived v5 id
+(``mint_uuid(canonical_posix_path(base))``), so existing local folders + their
+links are untouched (zero migration).
 """
 from typing import Optional
 
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.builtin.git_origin import GitOrigin
-from flow_sdk.core import Entity
+from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
+from flow_sdk.builtin.fs_origin_field import FSOriginField
+from flow_sdk.builtin.local_origin import LocalOrigin
+from flow_sdk.core import Entity, action
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.types import EntityType
@@ -28,41 +39,142 @@ from flow_sdk.schema.types import EntityType
 class Folder(Entity):
     type: str = APIField(default=EntityType.FOLDER.value)
 
-    # Canonical posix path of the referenced directory on THIS machine.
-    # Machine-local by nature; the entity is excluded from hub payloads on the
-    # private-context path, and a shared link without a locally-resolvable
-    # path is skipped by consumers (see Project.include_dirs).
-    path: Optional[str] = APIField(default=None, description="Canonical posix path of the referenced directory")
-
-    # Git provenance for git-backed folders (transportable identity). Same
-    # field shape as Artifact.git_origin.
-    git_origin: Optional[GitOrigin] = APIField(
+    # Where the folder lives — the transportable source of truth (local / git /
+    # future s3/drive). Typed as the discriminated union so the right subclass
+    # (with its locator fields) reconstructs on load.
+    origin: Optional[FSOriginField] = APIField(
         default=None,
-        description="Git provenance for a git-backed folder (upstream repo + branch)",
+        description="FSOrigin locating the directory (local base / git repo+rel_path / …).",
     )
+
+    # LOCAL resolved-path cache on THIS machine (see module docstring). Not the
+    # transportable identity; set at add time (sender) or on resolve (receiver).
+    path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)")
+
+    def __init__(self, **data):
+        # Tolerant backfill: an old row / bundle may carry a legacy ``path`` or
+        # ``git_origin`` (dict, possibly under ``metadata``) but no ``origin``.
+        # Synthesize ``origin`` so it loads without a DB migration. Mirrors
+        # Artifact.__init__'s lift-from-metadata.
+        if not data.get("origin"):
+            metadata = data.get("metadata") or {}
+            legacy_git = data.get("git_origin") or metadata.get("git_origin")
+            if legacy_git:
+                data["origin"] = legacy_git  # discriminated union reads kind→git
+            elif data.get("path"):
+                data["origin"] = LocalOrigin(base=canonical_posix_path(data["path"]))
+        data.pop("git_origin", None)  # dropped field — never let it reach the model
+        super().__init__(**data)
+
+    # ── Identity ─────────────────────────────────────────────────────────────
 
     @staticmethod
     def id_for_path(path: str) -> str:
-        """Deterministic v5 id for a directory path (canonicalized first)."""
+        """Deterministic v5 id for a LOCAL directory path (canonicalized).
+
+        The legacy local-folder identity — kept byte-identical so existing local
+        folders and their context-links never re-key.
+        """
         return mint_uuid(canonical_posix_path(path))
 
-    @classmethod
-    async def mint_for_path(cls, path: str) -> "Folder":
-        """Get-or-create the Folder entity for ``path`` (idempotent).
+    @staticmethod
+    def id_for_origin(origin: FSOrigin) -> str:
+        """Folder id = the origin's own key. Uniform across kinds: git →
+        machine-independent repo key (shared refs resolve); local →
+        ``local_origin_key`` == canonical path == ``id_for_path`` (byte-stable,
+        zero migration). No kind-branch — each origin owns its identity."""
+        return origin.key()
 
-        Canonicalizes the path, derives the v5 id, and returns the existing
-        entity when present — otherwise creates and saves a new one. The
-        single chokepoint for folder identity.
-        """
+    # ── Minting ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    async def detect_origin(path: str) -> FSOrigin:
+        """Classify a local path into an origin: a directory inside a git repo →
+        ``GitOrigin`` (transportable, whole-repo clone + rel_path); otherwise a
+        plain ``LocalOrigin``. Runs a blocking git probe — async only."""
+        from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+
         canonical = canonical_posix_path(path)
-        folder_id = mint_uuid(canonical)
+        try:
+            detected = await get_origin_driver("git").detect(canonical)
+        except Exception:
+            detected = None
+        return detected if detected is not None else LocalOrigin(base=canonical)
+
+    @classmethod
+    async def mint_for_origin(cls, origin: FSOrigin, *, local_path: Optional[str] = None) -> "Folder":
+        """Get-or-create the Folder for ``origin`` (idempotent, keyed by
+        ``id_for_origin``). ``local_path`` is the resolved local dir when known
+        (sender add-time); a bare received origin leaves it None until
+        ``resolve_location`` materializes it."""
+        folder_id = cls.id_for_origin(origin)
         existing = await cls.get_by_id(folder_id)
         if existing is not None:
             return existing
+        # ``path`` (local cache) is set when the caller knows the local dir
+        # (sender add-time); a bare received origin leaves it None until
+        # ``resolve_location`` materializes it.
+        leaf_src = origin.rel_path or getattr(origin, "base", "") or getattr(origin, "name", "") or ""
         folder = cls(
             id=folder_id,
-            path=canonical,
-            name=canonical.rstrip("/").rsplit("/", 1)[-1] or canonical,
+            origin=origin,
+            path=local_path,
+            name=leaf_src.rstrip("/").rsplit("/", 1)[-1] or leaf_src or None,
         )
         await folder.save()
         return folder
+
+    @classmethod
+    async def mint_for_path(cls, path: str) -> "Folder":
+        """Get-or-create the Folder for a LOCAL directory path (idempotent).
+
+        Detects whether the dir is inside a git repo (→ transportable GitOrigin)
+        or plain (→ LocalOrigin), then mints by origin. The single chokepoint
+        the context-folder add path uses; the dir is local here, so the local
+        ``path`` cache is set for both kinds.
+        """
+        canonical = canonical_posix_path(path)
+        origin = await cls.detect_origin(canonical)
+        return await cls.mint_for_origin(origin, local_path=canonical)
+
+    # ── Materialize ──────────────────────────────────────────────────────────
+
+    @action.post(action_name="resolve-location")
+    async def resolve_location(self) -> "object":
+        """Materialize this folder's origin into a local path on THIS machine.
+
+        For a ``local`` origin: verify base+rel exist, set ``path``. For a
+        transportable origin (git/…): clone/pull via the kind's driver, join the
+        guarded ``rel_path``, set ``path``, save. Mirrors
+        ``Artifact.resolve_git_location``; never raises — returns a
+        ``ready``/``error`` envelope so the caller (project resolve) can stamp
+        its own sidecar or surface needs-attention.
+        """
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        origin = self.origin
+        if origin is None:
+            return ApiSuccessResponse(data={"kind": "error", "message": "Folder has no origin"})
+        rel = origin.rel_path or ""
+        if rel and not is_safe_rel_path(rel):
+            return ApiSuccessResponse(data={"kind": "error", "message": "origin has an unsafe rel_path"})
+        try:
+            local_root, _project_id = await get_origin_driver(origin.kind).materialize(origin)
+        except FileNotFoundError as exc:
+            return ApiSuccessResponse(data={"kind": "error", "message": f"not present: {exc}"})
+        except Exception as exc:  # driver/materialize failure (clone error, etc.)
+            return ApiSuccessResponse(data={"kind": "error", "message": str(exc)})
+        # Driver contract: materialize returns the ROOT; join rel_path (guarded)
+        # as the placement step, then confirm it stayed inside the root.
+        root = Path(local_root)
+        target = (root / rel.replace("\\", "/")) if rel else root
+        try:
+            target.resolve().relative_to(root.resolve())
+        except (ValueError, OSError):
+            return ApiSuccessResponse(data={"kind": "error", "message": "resolved path escaped origin root"})
+        self.path = canonical_posix_path(str(target))
+        await self.save()
+        return ApiSuccessResponse(data={"kind": "ready", "path": self.path})

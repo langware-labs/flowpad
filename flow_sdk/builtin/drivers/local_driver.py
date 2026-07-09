@@ -2,8 +2,13 @@
 
 The whole point of this driver is to exercise the FSOrigin seam with a backend
 whose ``materialize`` is shaped nothing like git's clone/pull: the bytes are
-already on disk under ``origin.base``, so materialize just resolves
-``base/rel_path`` (path-traversal-guarded) and returns it. No network, no clone.
+already on disk under ``origin.base``, so there is nothing to fetch.
+
+Contract (shared with the git driver): ``materialize`` returns the origin ROOT —
+the container the origin's ``rel_path`` is joined onto by the caller as a
+placement step (git: the checkout root; local: ``base``). It verifies the
+resolved target (``base``+``rel_path``) exists but returns the root, so every
+consumer joins ``rel_path`` uniformly.
 """
 from __future__ import annotations
 
@@ -28,10 +33,14 @@ class LocalOriginDriver:
         preferred_root: Optional[Path] = None,
         preferred_project_id: Optional[str] = None,
     ) -> tuple[Path, Optional[str]]:
-        local_root = _resolve_local_path(origin)  # base+rel, guarded
-        if not local_root.exists():
-            raise FileNotFoundError(f"local origin not present on this machine: {local_root}")
-        return local_root, preferred_project_id
+        base = getattr(origin, "base", "") or ""
+        if not base:
+            raise ValueError("LocalOrigin.base is required")
+        target = _resolve_local_path(origin)  # base+rel, guarded — the real dir
+        if not target.exists():
+            raise FileNotFoundError(f"local origin not present on this machine: {target}")
+        # Return the ROOT (base); the caller joins rel_path as placement.
+        return Path(base), preferred_project_id
 
     def matches(self, origin: FSOrigin, local_path: Path) -> bool:
         try:

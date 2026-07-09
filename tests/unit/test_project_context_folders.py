@@ -19,6 +19,7 @@ import json
 import pytest
 
 from flow_sdk.builtin.folder import Folder
+from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.path_utils import canonical_posix_path
@@ -37,6 +38,25 @@ def _ctx_dir(tmp_path, name="extra"):
     d = tmp_path / name
     d.mkdir(exist_ok=True)
     return canonical_posix_path(str(d))
+
+
+def _git_origin_for(canonical: str) -> GitOrigin:
+    """A deterministic GitOrigin for a path's leaf — the transportable origin a
+    real git-backed folder would carry (its id == origin.key())."""
+    leaf = canonical.rstrip("/").rsplit("/", 1)[-1] or "root"
+    return GitOrigin(provider="github", owner="acme", name="repo", branch="main", rel_path=leaf)
+
+
+@pytest.fixture
+def stub_git_detect(monkeypatch):
+    """Make ``Folder.detect_origin`` classify any path as git-backed, so
+    shared-scope adds are exercisable without a real repo. Returns a resolver
+    from canonical path → the folder id that will be minted (origin.key())."""
+    async def _detect(path):
+        return _git_origin_for(canonical_posix_path(path))
+
+    monkeypatch.setattr(Folder, "detect_origin", staticmethod(_detect))
+    return lambda canonical: Folder.id_for_origin(_git_origin_for(canonical))
 
 
 @pytest.mark.asyncio
@@ -67,33 +87,47 @@ async def test_add_context_dir_private_default(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_add_context_dir_shared_scope(tmp_path):
+async def test_local_folder_blocked_from_shared_scope(tmp_path):
+    """A plain (non-git) folder is non-transportable → rejected from shared."""
     project = await _make_project(tmp_path)
     ctx = _ctx_dir(tmp_path, "shared-extra")
 
-    await project.add_context_dir(ctx, scope="shared")
-    assert [str(t) for t in project.context_of_type("folder", bucket="shared")]
-    assert project.context_of_type("folder", bucket="private") == []
-    assert project.include_dirs == [ctx]
+    resp = await project.add_context_dir(ctx, scope="shared")
+    assert resp.status == "FAIL"
+    assert project.context_of_type("folder", bucket="shared") == []
 
     bad = await project.add_context_dir(ctx, scope="bogus")
     assert bad.status == "FAIL"
 
 
 @pytest.mark.asyncio
-async def test_remove_context_dir_unlinks_both_buckets(tmp_path):
+async def test_git_folder_allowed_in_shared_scope(tmp_path, stub_git_detect):
+    """A git-backed folder IS transportable → allowed in shared; its id is
+    origin.key() and it derives include_dirs from the local sidecar path."""
+    project = await _make_project(tmp_path)
+    ctx = _ctx_dir(tmp_path, "shared-repo")
+
+    resp = await project.add_context_dir(ctx, scope="shared")
+    assert resp.status == "SUCCESS"
+    tids = project.context_of_type("folder", bucket="shared")
+    assert [str(t) for t in tids] == [f"folder-{stub_git_detect(ctx)}"]
+    assert project.context_of_type("folder", bucket="private") == []
+    assert project.include_dirs == [ctx]
+
+
+@pytest.mark.asyncio
+async def test_remove_context_dir_unlinks(tmp_path):
     project = await _make_project(tmp_path)
     ctx = _ctx_dir(tmp_path)
     (tmp_path / "extra" / "keep.txt").write_text("data")
 
-    await project.add_context_dir(ctx)
-    await project.add_context_dir(ctx, scope="shared")  # same folder in both buckets
+    await project.add_context_dir(ctx)  # local → private
     assert project.include_dirs == [ctx]
 
     await project.remove_context_dir(ctx)
     assert project.include_dirs == []
     assert project.context_of_type("folder", bucket="both") == []
-    # Sidecars pruned.
+    # Sidecar pruned.
     folder_id = Folder.id_for_path(ctx)
     assert project.get_context_entry_data((await Folder.get_by_id(folder_id)).typeid) is None
 
@@ -107,24 +141,39 @@ async def test_remove_context_dir_unlinks_both_buckets(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_private_path_never_on_the_wire(tmp_path):
+async def test_context_paths_never_on_the_wire(tmp_path, stub_git_detect):
+    """Neither a private local folder's path/link nor a shared git folder's
+    local sidecar path appear in the hub push body; only the shared LINK travels."""
     project = await _make_project(tmp_path)
     private_dir = _ctx_dir(tmp_path, "private-secret")
-    shared_dir = _ctx_dir(tmp_path, "shared-pub")
-    await project.add_context_dir(private_dir)
-    await project.add_context_dir(shared_dir, scope="shared")
+    shared_dir = _ctx_dir(tmp_path, "shared-repo")
+    # Private add: force a LOCAL origin (bypass the stub) so it stays private-only.
+    import flow_sdk.builtin.folder as folder_mod
+    from flow_sdk.builtin.local_origin import LocalOrigin
+    orig_detect = folder_mod.Folder.detect_origin
+    folder_mod.Folder.detect_origin = staticmethod(
+        lambda p: _as_coro(LocalOrigin(base=canonical_posix_path(p)))
+    )
+    try:
+        await project.add_context_dir(private_dir)  # local → private
+    finally:
+        folder_mod.Folder.detect_origin = orig_detect
+    await project.add_context_dir(shared_dir, scope="shared")  # git (stub) → shared
 
     body = project._hub_body()
     payload = json.dumps(body, default=str)
-    # The computed list and the private bucket/sidecars are all excluded.
     assert "include_dirs" not in body
-    assert private_dir not in payload
-    assert shared_dir not in payload  # sidecar paths are local-only, both buckets
-    # The shared LINK (folder typeid) travels.
-    shared_tid = str((await Folder.get_by_id(Folder.id_for_path(shared_dir))).typeid)
+    assert private_dir not in payload  # private local path never on the wire
+    assert shared_dir not in payload   # shared folder's LOCAL sidecar path is local-only
+    # The shared LINK (folder typeid == origin.key()) travels via shared_context_entities.
+    shared_tid = f"folder-{stub_git_detect(shared_dir)}"
     assert shared_tid in payload
     private_tid = str((await Folder.get_by_id(Folder.id_for_path(private_dir))).typeid)
     assert private_tid not in payload
+
+
+async def _as_coro(value):
+    return value
 
 
 @pytest.mark.asyncio
