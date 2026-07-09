@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Link, Trash2 } from 'lucide-react';
+import { Home, Link, Trash2 } from 'lucide-react';
 import {
   AssetDocPointer,
 } from '@src/navigation/AssetDocPointer';
@@ -16,12 +16,14 @@ import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useAssetTreeRefresh } from '@src/hooks/useAssetTreeRefresh';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { useSystemTools } from '@src/hooks/use-system-tools';
+import { useIsDev } from '@src/contexts/view-mode-context';
 import { assetScopeBucket, defaultScopeFilter, scopeFilterKey, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import { assetContextFoldersRoot } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
+import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEntityRoot';
 import { normalizeRel } from '@src/components/browseable-tree/adapters/fsFolderRoot';
 import {
   markdownFolderNodeId,
@@ -165,13 +167,46 @@ export function useAssetsModel() {
     return { ...assetFilter, scope };
   }, [assetFilter, urlScope, openAssetBucket, openAssetId, suppressedAssetId]);
 
-  const { stats: assetStats } = useAssetStats(effectiveFilter.scope);
+  const { stats: assetStats, isLoading: statsLoading } = useAssetStats(effectiveFilter.scope);
   const typeCounts = useMemo(
     () => new Map(Object.entries(assetStats.per_type)),
     [assetStats.per_type],
   );
 
+  // Dev mode sees every registered type regardless of count; everyone else only
+  // sees types that actually have items in the current scope.
+  const isDev = useIsDev();
+
   const visibleTypes = useMemo(() => allTypes.filter((t) => !HIDDEN_TYPES.has(t.type_name)), [allTypes]);
+
+  // The set of type names the menu lists, as a stable string key. Non-dev: hide
+  // empty types once counts are in. First load (`statsLoading`, no cached counts)
+  // → empty, so the navigator shows its "Loading…" state; then the list collapses
+  // to the types with content. `null` = dev (show all). Keying on the *set* (not
+  // the count values) means a count changing 3→4 doesn't churn `displayTypes` /
+  // `roots` — only a type appearing/disappearing does.
+  const shownTypesKey = useMemo(() => {
+    if (isDev) return null;
+    if (statsLoading) return '';
+    return visibleTypes
+      .filter((t) => (typeCounts.get(t.type_name) ?? 0) > 0)
+      .map((t) => t.type_name)
+      .join(',');
+  }, [isDev, statsLoading, visibleTypes, typeCounts]);
+
+  // The types the menu actually lists. Derived purely from `shownTypesKey` +
+  // `visibleTypes`, so its array identity is stable while the shown set is.
+  const displayTypes = useMemo(() => {
+    if (shownTypesKey === null) return visibleTypes; // dev: all
+    if (shownTypesKey === '') return []; // loading, or genuinely nothing to show
+    const shown = new Set(shownTypesKey.split(','));
+    return visibleTypes.filter((t) => shown.has(t.type_name));
+  }, [shownTypesKey, visibleTypes]);
+
+  // First-load spinner for the type list: true only until the first counts land
+  // (react-query `isLoading` is first-load-only, so scope refetches with a warm
+  // cache don't re-flash it). Dev mode never gates on counts.
+  const menuLoading = typesLoading || (!isDev && statsLoading);
 
   // Reactivity only: keep each type's tree root live. A created / indexed /
   // scanned entity arrives as a `data_op`; this re-fetches the affected root
@@ -202,7 +237,11 @@ export function useAssetsModel() {
 
   const navigateAsset = useCallback(
     (p: DockPointer) => {
-      navigation.openDock(p.withScopeFilter(urlScope));
+      // Roots emit ASSETS pointers except the cross-view "Project home" entry (a
+      // PROJECT pointer). The project view doesn't read the scope query param, so
+      // only re-stamp scope on asset pointers — otherwise a project jump carries
+      // stray scope params into its URL.
+      navigation.openDock(p.viewType === ViewType.ASSETS ? p.withScopeFilter(urlScope) : p);
     },
     [navigation, urlScope],
   );
@@ -302,10 +341,15 @@ export function useAssetsModel() {
         // forAssetEditor already returns a ViewType.ASSETS editor pointer.
         return DockPointer.forAssetEditor(openAssetTypeId.type, assetRef);
       }
+      // Bare project home (no asset sub-pointer) → address the project pointer so
+      // the "Project home" top entry highlights (it owns exactly this pointer).
+      if (!effectivePointer && scopeProjectId) {
+        return DockPointer.forProject(scopeProjectId);
+      }
       return new DockPointer(ViewType.ASSETS, effectivePointer || undefined);
     }
     return currentDock ?? null;
-  }, [isProjectView, effectivePointer, currentDock, openAsset, openAssetTypeId]);
+  }, [isProjectView, effectivePointer, scopeProjectId, currentDock, openAsset, openAssetTypeId]);
 
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
@@ -450,7 +494,25 @@ export function useAssetsModel() {
   );
 
   const roots = useMemo<BrowseableRoot[]>(() => {
-    const list: BrowseableRoot[] = visibleTypes.map((t) => {
+    const list: BrowseableRoot[] = [];
+    // Special top entry: jump back to the selected project's home (its
+    // collaboration/room view). Only shown when a project is in scope (project
+    // view, or a project-scoped assets view). A plain leaf link-root — it owns
+    // exactly the bare project pointer, so it highlights on the project home but
+    // not while browsing that project's assets.
+    if (scopeProjectId) {
+      list.push(
+        ...flatEntityRoots([
+          {
+            id: `project-home:${scopeProjectId}`,
+            label: 'Project home',
+            icon: <Home className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
+            pointer: DockPointer.forProject(scopeProjectId),
+          },
+        ]),
+      );
+    }
+    list.push(...displayTypes.map((t) => {
       if (t.type_name === 'markdown') {
         return markdownFolderRoot(t, {
           indexType,
@@ -468,7 +530,7 @@ export function useAssetsModel() {
         creatableTypes,
         filter: effectiveFilter,
       });
-    });
+    }));
     // Context folders (project include_dirs) — shown whenever a project is in
     // scope (even with no dirs yet, so the "+" add action is reachable).
     if (hasScopeProject) {
@@ -482,7 +544,7 @@ export function useAssetsModel() {
     }
     return list;
   }, [
-    visibleTypes,
+    displayTypes,
     indexType,
     handleNew,
     handleCreateFolder,
@@ -490,6 +552,7 @@ export function useAssetsModel() {
     creatableTypes,
     effectiveFilter,
     navigation,
+    scopeProjectId,
     hasScopeProject,
     contextDirs,
     handleRemoveContextDir,
@@ -499,7 +562,7 @@ export function useAssetsModel() {
     roots,
     treeActivePointer,
     openAssetId,
-    typesLoading,
+    menuLoading,
     typeCounts,
     isProjectView,
     // scope bar
