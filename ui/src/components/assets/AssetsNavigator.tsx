@@ -27,7 +27,7 @@ export function AssetsNavigator() {
   const descriptor: NavigatorDescriptor = {
     id: 'assets',
     roots: m.roots,
-    isLoading: m.typesLoading && m.roots.length === 0,
+    isLoading: m.menuLoading,
     activePointer: m.treeActivePointer,
     activeKey: m.openAssetId,
     onNavigate: m.navigateAsset,
