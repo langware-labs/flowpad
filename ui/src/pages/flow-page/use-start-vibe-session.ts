@@ -1,4 +1,4 @@
-import { apiClient, ComputeNode, dataContext, ProcessKind, Project, TypeId } from '@sdk';
+import { AgenticProcess, apiClient, ComputeNode, dataContext, ProcessKind, Project, TypeId } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -25,31 +25,16 @@ async function resolveVibeAgentRef(): Promise<string | null> {
 type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMode }) => void };
 
 /**
- * Start a Vibe session bound to a SPECIFIC project (not necessarily the active
- * one): lazily create a headless Chat process, embed the SDK-shipped `vibe`
- * persona agent, open its workspace in Vibe mode, then fire the first prompt.
- * The `vibe` persona rides every turn so the driver's directive (creator
- * routing + the mcp-ui / `flow show` presentation contract) is active; an
- * un-indexed agent degrades to a plain assistant session.
- *
- * The single proven start path shared by: the `/` VibeHome hero prompt, the
- * in-app "New chat" starter, AND running a received skill (useRunReceivedSkill)
- * in the conversation's project. Open the workspace FIRST (a headless prompt()
- * resolves only when the whole turn finishes, and the display must be mounted
- * to catch the agent's live `flow show` — the report and any mcp-ui form).
- * Returns the process id. Throws only on pre-open setup failure; a failed
- * persona embed or first-turn prompt degrades in place (logged).
+ * Create and open a fresh Vibe process for a project without sending a prompt.
+ * Used by the no-process Vibe workspace's "Start new chat" button; callers that
+ * also have an initial message layer prompt/upload behavior on top.
  */
-export async function launchVibeSessionForProject(opts: {
+export async function createVibeProcessForProject(opts: {
   projectId: string;
   workdir?: string;
-  message: string;
-  files?: File[];
   navigation: OpenShell;
-  /** Called when attachment upload fails (session still opens, text-only). */
-  onAttachmentError?: () => void;
-}): Promise<string> {
-  const { projectId, workdir, message, files, navigation, onAttachmentError } = opts;
+}): Promise<AgenticProcess> {
+  const { projectId, workdir, navigation } = opts;
   // Key the session to the project's id-based TypeId (NOT project.typeId, the
   // uname form `project-@local`) — VibeWorkspace's chat target must match this
   // exact string to attach to the same process.
@@ -78,6 +63,36 @@ export async function launchVibeSessionForProject(opts: {
     console.warn('[Vibe] failed to embed vibe agent; continuing without persona', e);
   }
   void navigation.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
+  return proc;
+}
+
+/**
+ * Start a Vibe session bound to a SPECIFIC project (not necessarily the active
+ * one): lazily create a headless Chat process, embed the SDK-shipped `vibe`
+ * persona agent, open its workspace in Vibe mode, then fire the first prompt.
+ * The `vibe` persona rides every turn so the driver's directive (creator
+ * routing + the mcp-ui / `flow show` presentation contract) is active; an
+ * un-indexed agent degrades to a plain assistant session.
+ *
+ * The single proven start path shared by: the `/` VibeHome hero prompt, the
+ * in-app "New chat" starter, AND running a received skill (useRunReceivedSkill)
+ * in the conversation's project. Open the workspace FIRST (a headless prompt()
+ * resolves only when the whole turn finishes, and the display must be mounted
+ * to catch the agent's live `flow show` — the report and any mcp-ui form).
+ * Returns the process id. Throws only on pre-open setup failure; a failed
+ * persona embed or first-turn prompt degrades in place (logged).
+ */
+export async function launchVibeSessionForProject(opts: {
+  projectId: string;
+  workdir?: string;
+  message: string;
+  files?: File[];
+  navigation: OpenShell;
+  /** Called when attachment upload fails (session still opens, text-only). */
+  onAttachmentError?: () => void;
+}): Promise<string> {
+  const { projectId, workdir, message, files, navigation, onAttachmentError } = opts;
+  const proc = await createVibeProcessForProject({ projectId, workdir, navigation });
   // Attachments (if any) must land in the process input dir BEFORE the first
   // turn starts — the agent reads the referenced paths immediately. Upload
   // failure degrades to a text-only prompt rather than losing the message.
