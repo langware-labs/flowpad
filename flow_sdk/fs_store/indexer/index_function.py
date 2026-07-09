@@ -106,6 +106,13 @@ class IndexerOptions:
     # Orphan detection is automatic — happens after the main index loop by
     # walking the record homes on disk (no DB query).
     orphan_action: OrphanAction = OrphanAction.INDEX
+    # Dedup-on-adopt: a capsule id (frontmatter / .flow/id) survives move+rename,
+    # but a local ``cp -r`` duplicates it → two entities collapsing into one row.
+    # When True (default), an adopted id already living at a DIFFERENT still-present
+    # path is re-keyed (fresh v4 into the copy's capsule). Set False on the bundle
+    # RECEIVE/install path, where the same id arriving at a new path is intentional
+    # (a shared asset), not a copy to re-key.
+    dedup_on_adopt: bool = True
     # When set, the orphan candidate set is intersected with this filter
     # before reporting and acting. Orphan-ness is still determined globally
     # (a record is orphan iff its Layer 1 source is missing); the filter
@@ -560,17 +567,29 @@ class FSIndexer:
         # and gate freshness on membership. An empty ``existing_db_ids`` means
         # "couldn't enumerate" → fall back to sentinel-only (prior behaviour).
         existing_db_ids: dict[str, set[str]] = {}
+        # ``{type: {id: asset_ref}}`` — the incumbent path an id already lives at.
+        # Powers dedup-on-adopt (move vs copy). Same lean SELECT as the id set.
+        existing_db_paths: dict[str, dict[str, str]] = {}
         if hasattr(driver, "list_entity_sources_by_type"):
             try:
                 for rt in per_type_totals:
                     rows = await driver.list_entity_sources_by_type(str(rt))
                     existing_db_ids[str(rt)] = set(rows.keys())
+                    existing_db_paths[str(rt)] = {
+                        rid: src[0] for rid, src in rows.items() if src and src[0]
+                    }
             except Exception:
                 logging.warning(
                     "[FSIndexer] could not preload DB ids for skip-fresh row check; "
                     "falling back to sentinel-only freshness", exc_info=True,
                 )
                 existing_db_ids.clear()
+                existing_db_paths.clear()
+
+        # In-run copy detection: the first index after ``cp -r`` sees BOTH copies
+        # in one walk before either is in the DB. ``{id: canonical_path}`` records
+        # which ref first claimed an id this run so the second is caught as a copy.
+        claimed_ids: dict[str, str] = {}
 
         # Deepest-project-wins association: snapshot (canonical_mount, id) for
         # every project once per run. With NESTED project mounts (an umbrella
@@ -624,6 +643,9 @@ class FSIndexer:
         # mint: stable uuid5 of the path, via the single minter
         # (policy-conforming).
         from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
+            write_capsule_id,
+        )
 
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
@@ -643,6 +665,29 @@ class FSIndexer:
                         ref_id = info.gen_uuid_fn(ref)
                     else:
                         ref_id = mint_uuid(str(ref._path))
+                    # Dedup-on-adopt: a capsule id survives move+rename, but a
+                    # local ``cp -r`` duplicates it. If this id already lives at a
+                    # DIFFERENT still-present path (a DB incumbent or an earlier
+                    # ref this run), this ref is a COPY → re-key it (fresh v4 into
+                    # its own capsule) so the two don't collapse. Old path gone →
+                    # a MOVE → keep the id. Missing/errored incumbent stat fails
+                    # safe to MOVE (never spuriously re-key an authored id).
+                    if opts.dedup_on_adopt and ref_id:
+                        cur = canonical_posix_path(str(ref._path))
+                        incumbent = (
+                            existing_db_paths.get(str(ref.record_type), {}).get(ref_id)
+                            or claimed_ids.get(ref_id)
+                        )
+                        if incumbent and canonical_posix_path(incumbent) != cur:
+                            try:
+                                incumbent_present = Path(incumbent).exists()
+                            except OSError:
+                                incumbent_present = False
+                            if incumbent_present:
+                                new_id = mint_uuid()  # v4 for the copy
+                                write_capsule_id(info, ref._path, new_id)
+                                ref_id = new_id
+                        claimed_ids[ref_id] = cur
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
                     # Skip-fresh: on-disk ``.hash`` equality AND a live DB row.
                     # The probe reads its own sentinel (shadow home) and the

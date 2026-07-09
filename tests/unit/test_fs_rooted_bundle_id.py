@@ -258,6 +258,10 @@ async def test_pack_folder_asset_copytree_and_pins_id_into_main_file(tmp_path, m
     fields = _yaml_load(_extract_frontmatter((base / "WHITE_BOARD.md").read_text(encoding="utf-8")))
     assert fields["id"] == ENTITY_ID
     assert fields["name"] == "my-board"  # other frontmatter preserved
+    # …and into the `.flow/id` capsule (folder-backed), so a yaml-only skill or a
+    # main-doc-less folder round-trips its id too. The receiver's gen_uuid_fn
+    # reads `.flow/id` first, so it adopts the sender's id.
+    assert (base / ".flow" / "id").read_text(encoding="utf-8").strip() == ENTITY_ID
 
 
 @pytest.mark.asyncio

@@ -208,6 +208,24 @@ def adopt_or_mint_id(
     return new_id
 
 
+def write_frontmatter_id(path: Path, entity_id: str) -> bool:
+    """Force ``entity_id`` into a file's frontmatter ``id:`` — returns whether it
+    persisted. Preserves body + other keys; drops any legacy ``asset_id``. Used
+    to re-key a copied file entity into a fresh capsule id (dedup-on-adopt)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    try:
+        path.write_text(
+            merge_frontmatter(text, {"id": entity_id}, drop_keys=("asset_id",), prepend=True),
+            encoding="utf-8",
+        )
+        return True
+    except OSError:
+        return False
+
+
 def _render_frontmatter(fields: dict[str, Any]) -> str:
     """Serialize a dict to a ``---\\n...\\n---`` YAML frontmatter block."""
     try:
