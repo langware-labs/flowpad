@@ -1418,6 +1418,19 @@ msgstr "Bash Command *"
 msgid "bash progress"
 msgstr "bash progress"
 
+#: src/components/project-home/Secrets.tsx
+msgid "Bind"
+msgstr "Bind"
+
+#: src/components/project-home/Secrets.tsx
+msgid "Bind an existing app secret to a project environment variable."
+msgstr "Bind an existing app secret to a project environment variable."
+
+#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/Secrets.tsx
+msgid "Bind secret"
+msgstr "Bind secret"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "blocked"
 msgstr "blocked"
@@ -1621,6 +1634,7 @@ msgstr "Can't open terminal"
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/project-home/Secrets.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
@@ -3844,6 +3858,7 @@ msgid "Enable for user"
 msgstr "Enable for user"
 
 #: src/components/account/secrets-section.tsx
+#: src/components/project-home/Secrets.tsx
 msgid "Enable secrets"
 msgstr "Enable secrets"
 
@@ -3976,6 +3991,10 @@ msgstr "Entry"
 msgid "Entry details"
 msgstr "Entry details"
 
+#: src/components/project-home/Secrets.tsx
+msgid "Env var"
+msgstr "Env var"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "error"
 msgstr "error"
@@ -3999,6 +4018,8 @@ msgstr "error"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/Secrets.tsx
 msgid "Error"
 msgstr "Error"
 
@@ -4234,6 +4255,10 @@ msgstr "Failed to add comment"
 msgid "Failed to backup database"
 msgstr "Failed to backup database"
 
+#: src/components/project-home/Secrets.tsx
+msgid "Failed to bind secret"
+msgstr "Failed to bind secret"
+
 #: src/components/lens-viewer/shared/transcript-features/CallStackView.tsx
 msgid "Failed to build call stack: {error}"
 msgstr "Failed to build call stack: {error}"
@@ -4327,6 +4352,7 @@ msgid "Failed to enable MCP"
 msgstr "Failed to enable MCP"
 
 #: src/components/account/secrets-section.tsx
+#: src/components/project-home/Secrets.tsx
 msgid "Failed to enable secrets"
 msgstr "Failed to enable secrets"
 
@@ -7341,6 +7367,10 @@ msgstr "No line changes vs the stamped baseline."
 msgid "No LLM index for this folder yet."
 msgstr "No LLM index for this folder yet."
 
+#: src/components/project-home/Secrets.tsx
+msgid "No local app secrets"
+msgstr "No local app secrets"
+
 #: src/components/account/system-log.tsx
 msgid "No log file found"
 msgstr "No log file found"
@@ -8860,6 +8890,7 @@ msgstr "Priority"
 
 #: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/project-home/Secrets.tsx
 msgid "Private"
 msgstr "Private"
 
@@ -9500,6 +9531,10 @@ msgstr "Remove link"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove queued prompt"
 msgstr "Remove queued prompt"
+
+#: src/components/project-home/Secrets.tsx
+msgid "Remove secret binding"
+msgstr "Remove secret binding"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Removed"
@@ -10406,6 +10441,7 @@ msgid "Searching…"
 msgstr "Searching…"
 
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
+#: src/components/project-home/Secrets.tsx
 msgid "Secret"
 msgstr "Secret"
 
@@ -10420,6 +10456,10 @@ msgstr "Secret Required"
 #: src/components/account/secrets-section.tsx
 msgid "Secret saved"
 msgstr "Secret saved"
+
+#: src/components/project-home/Secrets.tsx
+msgid "Secrets"
+msgstr "Secrets"
 
 #: src/components/account/secrets-section.tsx
 msgid "Secrets enabled"
@@ -10575,6 +10615,10 @@ msgstr "Select Project"
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Select Projects"
 msgstr "Select Projects"
+
+#: src/components/project-home/Secrets.tsx
+msgid "Select secret"
+msgstr "Select secret"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Select session"
@@ -10840,6 +10884,7 @@ msgstr "Share to conversation"
 
 #: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/project-home/Secrets.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Shared"
 msgstr "Shared"
