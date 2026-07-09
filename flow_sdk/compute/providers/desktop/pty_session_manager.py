@@ -240,7 +240,9 @@ class PtyRegistry:
         if len(session.attached_connections) == 0:
             session.last_detached_at = time.time()
 
-        logger.info(f"PTY session detached: pty_key={pty_key} remaining_connections={len(session.attached_connections)}")
+        logger.info(
+            f"PTY session detached: pty_key={pty_key} remaining_connections={len(session.attached_connections)}"
+        )
 
     async def close_for_connection(self, pty_key: PtyKey, connection_id: str) -> None:
         """Remove a connection and only destroy the session if no connections remain.
@@ -263,13 +265,16 @@ class PtyRegistry:
         if len(session.attached_connections) == 0:
             await self.close_session(pty_key)
 
-    async def on_ws_disconnect(self, connection_id: str) -> None:
+    async def on_ws_disconnect(self, connection_id: str, reason: str = "unknown") -> None:
         """WS-lifecycle transition: PARK this connection on every PtyState.
 
         Called from the WebSocket disconnect handler. Moves the connection from
         ATTACHED → DETACHED (it stops receiving output) but KEEPS the
         subscription, so a reconnect of the same connection_id auto-restores
         delivery via ``on_ws_connect``. The PTY process is never touched.
+
+        ``reason`` names how the transport ended (clean close frame vs abort,
+        FLOWPAD-1935) so a long park in a field log carries its own cause.
         """
         now = time.time()
         for pty_key, state in list(self.states.items()):
@@ -280,7 +285,8 @@ class PtyRegistry:
                     state.last_detached_at = now  # arms the orphan TTL
                 logger.info(
                     f"[PtyRegistry] Parked connection {connection_id} on {pty_key} "
-                    f"(attached={len(state.attached_connections)} detached={len(state.detached_connections)})"
+                    f"(attached={len(state.attached_connections)} detached={len(state.detached_connections)} "
+                    f"reason={reason})"
                 )
 
     async def on_ws_connect(self, connection_id: str) -> None:
@@ -314,7 +320,7 @@ class PtyRegistry:
 
         # Transition shell session record to CLOSED
         try:
-            from flow_sdk.builtin.shell import get_shell_record, close_shell_record
+            from flow_sdk.builtin.shell import close_shell_record, get_shell_record
 
             record = get_shell_record(shell_id)
             if record:
@@ -415,9 +421,7 @@ class PtyRegistry:
             return
 
         async def cleanup_loop():
-            logger.info(
-                f"[PtyRegistry] Starting cleanup task (interval: {interval_seconds}s, TTL: {ttl_seconds}s)"
-            )
+            logger.info(f"[PtyRegistry] Starting cleanup task (interval: {interval_seconds}s, TTL: {ttl_seconds}s)")
             while True:
                 try:
                     await asyncio.sleep(interval_seconds)

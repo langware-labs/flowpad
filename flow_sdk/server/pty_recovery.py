@@ -50,12 +50,12 @@ def was_recovered(process_id: str) -> bool:
     return process_id in _RECOVERED_IDS
 
 
-def _recovered_message(process_id: str, shell_id: str | None, worker_pid: int | None) -> str:
+def _recovered_message(process_id: str | None, shell_id: str | None, worker_pid: int | None) -> str:
     return json.dumps(
         {
             "message_type": "recovered_msg",
             "message_id": str(uuid4()),
-            "to_entity": f"agentic_process-{process_id}",
+            "to_entity": f"agentic_process-{process_id}" if process_id else f"shell-{shell_id}",
             "process_id": process_id,
             "shell_id": shell_id,
             "worker_pid": worker_pid,
@@ -65,7 +65,7 @@ def _recovered_message(process_id: str, shell_id: str | None, worker_pid: int | 
 
 
 async def emit_recovered_to_connection(
-    connection_id: str, process_id: str, shell_id: str | None, worker_pid: int | None
+    connection_id: str, process_id: str | None, shell_id: str | None, worker_pid: int | None
 ) -> None:
     from flow_sdk.core.network.connections import get_connection
 
@@ -78,15 +78,15 @@ async def emit_recovered_to_connection(
         logger.exception("pty-recovery: failed to send recovered_msg to %s", connection_id)
 
 
-async def notify_watchers_recovered(
-    process_id: str, shell_id: str | None, worker_pid: int | None
-) -> None:
+async def notify_watchers_recovered(process_id: str | None, shell_id: str | None, worker_pid: int | None) -> None:
     """Push ``recovered`` to every connection currently watching the process
     (or its shell). Called both at recovery time (covers already-connected
-    clients) and from the watch path (covers clients that connect later)."""
+    clients) and from the watch path (covers clients that connect later).
+    ``process_id`` is None for bare shells — the shell watch key still routes
+    the event, and the client re-attach hook keys on ``shell_id``."""
     from flow_sdk.app.actions.watch_registry import get_watched_by
 
-    keys = [f"agentic_process:{process_id}"]
+    keys = [f"agentic_process:{process_id}"] if process_id else []
     if shell_id:
         keys.append(f"shell:{shell_id}")
     seen: set[str] = set()
@@ -298,10 +298,13 @@ async def _recover_bare_shells(agentic_shell_ids: set[str], watched: set[str]) -
             logger.info("pty-recovery: recovering bare shell %s (PTY dead after restart)", shell.id)
             await shell.start_pty()
             logger.info("pty-recovery: recovered bare shell %s", shell.id)
+            # Tell watching clients their shell is back so an already-open pane
+            # re-attaches its output stream (the agentic pass does the same;
+            # without this, a pane whose reconnect-time attach raced ahead of
+            # recovery stays deaf — frozen-terminal RCA, bug A).
+            await notify_watchers_recovered(None, shell.id, None)
         except Exception:
-            logger.exception(
-                "pty-recovery: failed to recover bare shell %s", getattr(shell, "id", "?")
-            )
+            logger.exception("pty-recovery: failed to recover bare shell %s", getattr(shell, "id", "?"))
 
 
 # Background periodic watchdog (mid-session dead-worker respawn). Mirrors
