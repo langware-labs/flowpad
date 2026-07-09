@@ -135,17 +135,12 @@ export function PendingActionsChip() {
   // Stable so `memo(WorkerRow)` only re-renders rows whose data actually changed.
   const bumpNameTick = useCallback(() => setNameTick((t) => t + 1), []);
 
-  // Hide the chip only when there are no supported workers at all. When the user
-  // has narrowed to an empty mode (e.g. External in v1) the chip stays visible
-  // showing 0 so the popover remains reachable to reset the filter.
-  if (allRows.length === 0) return null;
-
-  const count = rows.length;
-  const tooltipText = `${count} active agent${count === 1 ? '' : 's'}`;
-
   // Route per execution mode (shared with the process line on notifications): an
   // Interactive worker attaches its live terminal; a Background / Error worker
   // opens the read-only transcript lens. External rows are never produced.
+  // Declared BEFORE the early return below — a hook after a conditional return
+  // makes the hook count jump when `allRows` goes 0 → non-zero, which throws
+  // "Rendered more hooks than during the previous render".
   const handlePick = useCallback(
     async (processId: string, mode: ExecutionMode) => {
       setOpen(false);
@@ -159,6 +154,15 @@ export function PendingActionsChip() {
     },
     [navigation],
   );
+
+  // Hide the chip only when there are no supported workers at all. When the user
+  // has narrowed to an empty mode (e.g. External in v1) the chip stays visible
+  // showing 0 so the popover remains reachable to reset the filter. MUST come
+  // after every hook above — see the handlePick note.
+  if (allRows.length === 0) return null;
+
+  const count = rows.length;
+  const tooltipText = `${count} active agent${count === 1 ? '' : 's'}`;
 
   const chipClass = [
     'flex h-5 min-w-5 items-center justify-center rounded-md bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-1 focus:ring-ring',
