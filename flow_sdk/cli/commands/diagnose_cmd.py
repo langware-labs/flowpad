@@ -7,6 +7,7 @@ repair-when-safe, and recording the outcome to the app Feed — lives in the ski
 `SKILL.md` (its final step records the report itself, via the SDK, even when the
 backend is down). This command is just the runner: spin up the worker, stream, exit.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -221,14 +222,34 @@ async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
     for _ in range(20):
         try:
             last = await diagnosis_cls.get_by_id(diagnosis_id)
-            if last is not None and (
-                getattr(last, "summary", None) or getattr(last, "title", None)
-            ):
+            if last is not None and (getattr(last, "summary", None) or getattr(last, "title", None)):
                 return last
         except Exception:
             last = None
         await asyncio.sleep(0.25)
     return last
+
+
+def _build_diagnose_process():
+    """The diagnose worker process, exactly as `flow diagnose` launches it.
+
+    A single construction point so tests can exercise the real thing: the
+    process is never persisted, so it MUST select the headless transport —
+    ``prompt()`` routes on ``pty_mode`` and refuses an unsaved process on the
+    PTY branch ("not found in database") before any worker spawns.
+    """
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    ap = AgenticProcess(
+        cli_config={"permission_mode": "bypassPermissions"},
+        workdir=str(Path.cwd()),
+        visible=False,
+        # Headless transport — prompt() routes on pty_mode (NOT visible); the
+        # PTY branch would refuse this never-persisted process outright.
+        pty_mode=False,
+    )
+    ap.enable_assistant()
+    return ap
 
 
 async def _run_diagnose(
@@ -303,13 +324,7 @@ async def _run_diagnose(
         f'sweep:\n"{message}"'
     )
 
-    ap = AgenticProcess(
-        cli_config={"permission_mode": "bypassPermissions"},
-        workdir=str(Path.cwd()),
-        visible=False,
-        name="Diagnostics",
-    )
-    ap.enable_assistant()
+    ap = _build_diagnose_process()
 
     # stream_transcript re-reads the transcript from the start on each call, so
     # track how many entries we've already printed and skip them on the re-stream
@@ -337,9 +352,7 @@ async def _run_diagnose(
                 continue
             raw = block.get("content") if block.get("type") == "tool_result" else block.get("text")
             if isinstance(raw, list):  # tool_result content can be a list of parts
-                raw = " ".join(
-                    p.get("text", "") for p in raw if isinstance(p, dict) and p.get("type") == "text"
-                )
+                raw = " ".join(p.get("text", "") for p in raw if isinstance(p, dict) and p.get("type") == "text")
             if not isinstance(raw, str):
                 continue
             res = _extract_report_result(raw)
@@ -417,15 +430,27 @@ async def _run_diagnose(
             await ap.prompt(prompt_text)
             emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
             if not await await_worker_started(ap, transcript_timeout):
-                emit({"type": "error", "text": (
-                    "  ! The diagnostic agent failed to start — it produced no transcript. "
-                    "Check that the `claude` CLI is installed and on your PATH, then re-run "
-                    "`flow diagnose`."
-                )})
-                emit({
-                    "type": "done", "ok": False, "diagnosis_id": None, "conversation_id": None,
-                    "flow_message_id": None, "feed_posted": False, "feed_entry_id": None,
-                })
+                emit(
+                    {
+                        "type": "error",
+                        "text": (
+                            "  ! The diagnostic agent failed to start — it produced no transcript. "
+                            "Check that the `claude` CLI is installed and on your PATH, then re-run "
+                            "`flow diagnose`."
+                        ),
+                    }
+                )
+                emit(
+                    {
+                        "type": "done",
+                        "ok": False,
+                        "diagnosis_id": None,
+                        "conversation_id": None,
+                        "flow_message_id": None,
+                        "feed_posted": False,
+                        "feed_entry_id": None,
+                    }
+                )
                 return 1
             await _stream()
             # The worker can end its turn early — diagnosing but not recording. Nudge
@@ -507,27 +532,38 @@ async def _run_diagnose(
                 diagnosis_id=did,
             )
             emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
-            emit({
-                "type": "done",
-                "ok": True,
-                "diagnosis_id": did,
-                "conversation_id": conv_id,
-                "flow_message_id": msg_id,
-                "feed_posted": bool(feed_entry_id),
-                "feed_entry_id": feed_entry_id,
-            })
+            emit(
+                {
+                    "type": "done",
+                    "ok": True,
+                    "diagnosis_id": did,
+                    "conversation_id": conv_id,
+                    "flow_message_id": msg_id,
+                    "feed_posted": bool(feed_entry_id),
+                    "feed_entry_id": feed_entry_id,
+                }
+            )
             return 0
-        emit({
-            "type": "error",
-            "text": (
-                "  ! Diagnostic finished but the result was not recorded — see the report "
-                "above; re-run `flow diagnose` to retry."
-            ),
-        })
-        emit({
-            "type": "done", "ok": False, "diagnosis_id": None, "conversation_id": None,
-            "flow_message_id": None, "feed_posted": False, "feed_entry_id": None,
-        })
+        emit(
+            {
+                "type": "error",
+                "text": (
+                    "  ! Diagnostic finished but the result was not recorded — see the report "
+                    "above; re-run `flow diagnose` to retry."
+                ),
+            }
+        )
+        emit(
+            {
+                "type": "done",
+                "ok": False,
+                "diagnosis_id": None,
+                "conversation_id": None,
+                "flow_message_id": None,
+                "feed_posted": False,
+                "feed_entry_id": None,
+            }
+        )
         return 1
     finally:
         await _terminate_worker()
@@ -551,10 +587,7 @@ def diagnose_command(
     # shell mangles free text (apostrophes like "can't", quotes) before we ever
     # see it. A single Enter submits; empty input falls back to a full sweep.
     if sys.stdin.isatty():
-        typer.echo(
-            "Describe the issue or paste the error, then press Enter "
-            "(leave empty for a full diagnostic sweep):"
-        )
+        typer.echo("Describe the issue or paste the error, then press Enter (leave empty for a full diagnostic sweep):")
     try:
         text = sys.stdin.readline().strip()
     except (EOFError, KeyboardInterrupt):
