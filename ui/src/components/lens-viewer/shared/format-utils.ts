@@ -23,6 +23,12 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`;
 }
 
+/** Format a running elapsed duration as a clock (`m:ss`, minutes uncapped). */
+export function formatClock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 /** Format an ISO timestamp as local time-of-day. Returns "--:--" for invalid input. */
 export function formatTime(isoTs: string | null | undefined): string {
   if (!isoTs) return '--:--';

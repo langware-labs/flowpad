@@ -1,8 +1,7 @@
 """FlowpadDiagnosis bundle roundtrip: pack → wipe the local row → unpack
 re-materializes the metadata-only entity from its packed ``header.json`` (same
-create-or-fill-merge contract as task / claude_session / git_branch). A
-diagnosis has no backing source file, so the header IS the record. Real test
-DB, no mocks."""
+create-or-fill-merge contract as task / claude_session). A diagnosis has no
+backing source file, so the header IS the record. Real test DB, no mocks."""
 
 from __future__ import annotations
 

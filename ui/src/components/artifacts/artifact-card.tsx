@@ -3,9 +3,12 @@ import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation';
 import { useFS, useProject } from '@sdk/react/hooks';
-import { Download, ExternalLink, Trash2 } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import { Download, ExternalLink, Share2, Trash2 } from 'lucide-react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { getArtifactTypeConfig } from './artifact-type-config';
+import { openArtifact } from './open-artifact';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { artifactShareSource } from '@src/hooks/share-sources';
 
 interface ArtifactCardProps {
   artifact: Artifact;
@@ -25,6 +28,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
   const { navigation } = useDockNavigation();
   const { project } = useProject();
   const fs = useFS(project?.typeId);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const typeConfig = useMemo(() => {
     return getArtifactTypeConfig(artifact.artifact_type || ArtifactType.FILE);
@@ -35,15 +39,11 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
   const isWebApp = artifact.artifact_type === ArtifactType.WEBAPP;
   const isAppService = artifact.artifact_type === ArtifactType.APP_SERVICE;
   const hasPort = !!(artifact.port || artifact.metadata?.port);
+  const shareSource = useMemo(() => artifactShareSource(artifact), [artifact]);
 
-  const handleClick = useCallback(() => {
-    if (isWebApp && hasPort) {
-      const port = artifact.port || (artifact.metadata?.port as string);
-      navigation.openWebApp(port);
-    } else if (artifact.path) {
-      navigation.openFile(artifact.path);
-    }
-  }, [artifact, isWebApp, hasPort, navigation]);
+  const handleClick = useCallback(async () => {
+    await openArtifact(artifact, { navigation, currentProjectId: project?.id ?? null });
+  }, [artifact, navigation, project?.id]);
 
   const handleDownload = useCallback(
     (e: React.MouseEvent) => {
@@ -64,6 +64,11 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
     },
     [artifact.id, onDelete],
   );
+
+  const handleShare = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShareOpen(true);
+  }, []);
 
   // Filter out internal metadata keys for display
   const displayMetadata = useMemo(() => {
@@ -105,6 +110,23 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Open</TooltipContent>
+            </Tooltip>
+          )}
+
+          {artifact.id && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={handleShare}
+                  data-testid={`artifact-share-${artifact.id}`}
+                >
+                  <Share2 className="h-3 w-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Share</TooltipContent>
             </Tooltip>
           )}
 
@@ -165,6 +187,13 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
             <span className="text-xs text-muted-foreground">+{displayMetadata.length - 3} more</span>
           )}
         </div>
+      )}
+      {shareOpen && (
+        <ShareToConversationDialog
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          source={shareSource}
+        />
       )}
     </div>
   );

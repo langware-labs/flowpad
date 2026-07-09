@@ -39,6 +39,8 @@ scripts/instance_ctl.sh kill qa-cycle          # MUST clean up what you launched
 
 Never raise a timeout to mask host-load slowness, and never kill a process you didn't launch to remove it. Those are the two banned shortcuts.
 
+**Instance reset primitive (`flow instance reset <name>`) — the Phase 11/12 workhorse.** Between browser test units, do NOT rely on `desktop-db/clear` — it only wipes the DB, never the *process*, so a dedicated backend degrades after ~4-5 heavy real-Claude-PTY categories (leaked PTY/subprocess children, connection/memory growth) and manufactures phantom failures. `flow instance reset <name>` fixes this at the root: it **kills the instance's processes** (flushing all leaked children), **wipes its DB** (fresh state), **relaunches**, **re-applies `view_mode=standard`**, and **waits for readiness** — in ~3-4s. It is **surgical**: only ever touches the named instance's own processes/dir/`.env.<name>.local`/keychain slot, and is **safe to run while sibling instances (`dev-1`/`dev-2`/`prod`) are up** — they are never disturbed. Flags: `--backend-only` (~3s; keeps vite + the cloud login up — the default for the sweep), `--no-relaunch` (kill+wipe only), `--keep-keychain`, `--json`. Verify it any time with `scripts/verify_instance_reset.sh`. Use it only on instances the cycle owns.
+
 **Step 0.5 — create the cycle-state file and record every test verdict.** Create `<output-dir>/<timestamp>/cycle-state.md` (phase, per-item dispositions, owners, instance locks, pending validations) and update it at every milestone — see SKILL.md "Durable cycle state". **Critically: before anything else starts (before the next phase work begins), every test attempt must end by recording its verdict** — either the test passed/failed outcome, or an explicit "no verdict: <reason>" — in cycle-state.md. An attempt without a recorded verdict is indistinguishable from an attempt that never ran, leaving the cycle's history incomplete and resumption ambiguous.
 
 ---
@@ -81,12 +83,21 @@ python -m pytest tests/api/ -v
 ## Phase 3 — pytest long tests (backend required)
 
 ```bash
-# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
-DEEP_TESTING=1 FLOWPAD_HUB_URL="http://localhost:${LOCAL_SERVER_PORT}" python -m pytest tests/long_tests/ -v
+# Phase 3 is TIMING-SENSITIVE — run it against a DEDICATED instance you launch,
+# NEVER the main dev backend. The main backend's loaded DB makes createProcess
+# pathologically slow (~32s on a 61-project DB vs ~0.8s on a fresh instance),
+# which times out the real-CLI matrix tests for reasons that are pure
+# environment, not code. (The long tests now REQUIRE an explicit FLOWPAD_HUB_URL
+# and skip if unset — they will no longer silently target localhost:9008.)
+scripts/instance_ctl.sh status | grep -q '^  qa-cycle .*UP' || scripts/instance_ctl.sh launch qa-cycle
+QA_BE=$(grep -oE 'backend :[0-9]+' <(scripts/instance_ctl.sh status) | grep -A0 qa-cycle | grep -oE '[0-9]+' | head -1)
+# (or read the port from the launch output / .env.qa-cycle.local — instance_ctl assigns 600X)
+DEEP_TESTING=1 FLOWPAD_HUB_URL="http://localhost:${QA_BE}" python -m pytest tests/long_tests/ -v
 ```
 
 - Always set `DEEP_TESTING=1` (not `=true` — pydantic BaseSettings parses booleans inconsistently).
-- Some long tests hardcode `FLOWPAD_HUB_URL` default to 8093; pass it explicitly.
+- `FLOWPAD_HUB_URL` MUST point at the dedicated instance you launched, not `${LOCAL_SERVER_PORT}` (the main backend). The matrix/streaming long tests skip cleanly when it is unset.
+- **Cleanup**: `scripts/instance_ctl.sh kill qa-cycle` when Phase 3 (and any later timing phase reusing it) is done.
 - **Gate**: all tests pass → proceed to Phase 4
 
 ## Phase 4 — vitest unit tests
@@ -161,6 +172,9 @@ cd ui && npm run test:vitest:headless
 ## Phase 10 — vitest hub tests (hub + dev-1/dev-2 required)
 
 1. **Hub preflight**: same as Phase 9 (reuse its result if the hub is already up and healthy).
+
+   > **The hub tests run ENTIRELY on cycle-owned instances — never on the user's main dev backend (`localhost:9008` / `FLOW_INSTANCE=oss`), and NEVER by editing the repo's `.env.local`.** Every hub test (both the `getInstance('dev-1'/'dev-2')` two-client files AND the single-backend `setupLiveBackend`/`SHARE_INST_*` files like `asset_share_index_matrix`) resolves its backend per-realm from `.env.<name>.local` and overrides `__FLOWPAD_API_URL__` at import — so the hub `vitest.config`'s `LOCAL_SERVER_PORT` (9008) fallback is a **red herring that is immediately overridden** and is not actually used. If a hub test is failing, do NOT diagnose it as "9008/alice is logged out" and do NOT restart or reconfigure the user's backend or uncomment `FLOWPAD_HUB_URL` in the repo `.env.local` to "fix" it — that is the wrong layer and touches the user's environment. Create whatever you need as your OWN `dev-1`/`dev-2` instances instead.
+
 2. **Instances**: the suite expects the fixed names **dev-1** and **dev-2** (`ui/tests/hub/_instances.ts`). Check first, reuse if already UP — launch only what's missing (`launch` restarts an existing instance, so don't run it against a healthy one):
    ```bash
    scripts/instance_ctl.sh status            # see what's already UP
@@ -168,11 +182,22 @@ cd ui && npm run test:vitest:headless
    scripts/instance_ctl.sh launch dev-2      # only if dev-2 is not UP
    scripts/instance_ctl.sh status            # wait until both report UP
    ```
-3. **Run**:
+   **UP is not enough — verify both are cloud-LOGGED-IN to the local hub before trusting any verdict.** A launched-but-logged-out instance makes the share/poll tests hang to timeout (they wait forever for a hub WS delivery that never comes). `instance_ctl` auto-logs-in on `launch`, but an instance that was already UP may have dropped its session. Check each:
    ```bash
-   cd ui && npm run test:vitest:hub
+   for p in dev-1 dev-2; do
+     port=$(grep LOCAL_SERVER_PORT "$(git rev-parse --show-toplevel)/.env.$p.local" | cut -d= -f2)
+     curl -s "http://localhost:$port/api/v1/cloud/status" \
+       | python3 -c "import sys,json;d=json.load(sys.stdin).get('data',{});print('$p',d.get('login',{}).get('status'),'hub_ws=',d.get('hub_ws_connected'),d.get('cloud_url'))"
+   done
+   # Require: status=logged_in, hub_ws=True, cloud_url=http://localhost:8093/api/v1 for BOTH.
    ```
-4. **On failure**: Debug Mode flow (see `modes/debug.md`). Restart instances between re-runs as needed (`kill` + `launch`). The suite's 30s test timeouts are a hard cap — never raise them. Unresolvable → `flagged`.
+   If either is `logged_out` or points at a non-local `cloud_url`, `kill` + `launch` it (which re-triggers hub signup + cloud login) — do NOT reach for the user's backend.
+3. **Run — always the FULL project, never per-file for the verdict.** Several hub files are **paired sender/receiver tests** (`matrix.alice`/`matrix.bob`, `conversation_messages.test`/`conversation_messages.bob.test`): the two halves run CONCURRENTLY in the same project run and rendezvous over the hub. Running one paired file in isolation **hangs or fails-fast waiting for a counterpart that never runs** — that is a harness artifact, not a real failure. Use the whole-project run for the machine verdict:
+   ```bash
+   cd ui && FLOWPAD_HUB_URL=http://localhost:8093 npm run test:vitest:hub
+   ```
+   Per-file runs are only for RCA of a NON-paired file already known to fail in the full run.
+4. **On failure**: Debug Mode flow (see `modes/debug.md`). First rule out the two artifacts above (logged-out instance; a paired file isolated). Restart instances between re-runs as needed (`kill` + `launch`). The suite's 30s test timeouts are a hard cap — never raise them. A genuine hang/failure with both instances logged-in and the full project running is a REAL bug to RCA. Unresolvable → `flagged`.
 5. **Cleanup (always, even when flagging)**: kill only the instances THIS phase launched:
    ```bash
    scripts/instance_ctl.sh kill dev-1   # only if Phase 10 launched it
@@ -187,41 +212,41 @@ A closed-loop gate over every `.md.ts` Playwright test. **The cycle cannot pass 
 
 **Before launching the sweep, verify system load is low.** Check `uptime` and examine the 1-minute load average. If it exceeds approximately the machine's core count, defer the sweep (run lower-load work or wait) and re-check — timeout-bound Playwright verdicts collected on a saturated host are noise that will require re-running anyway, and raising timeouts is not permitted. A clean run under normal load is far more valuable than a timeout-saturated run under pressure.
 
+**Preflight: force the instance to `view_mode=standard` (NON-OBVIOUS, blocks the whole sweep otherwise).** `instance_ctl` creates a brand-NEW hub account, and a new account is seeded `preferences.ui.view_mode=vibe`. Vibe renders the "Build something amazing" creator homepage — which has NONE of the standard `HomeLanding` surfaces the manual-regression suite asserts (`/dock/home` "Hey <name>" greeting, `[data-testid="recent-conversations-strip"]`, current-activity). On a Vibe-defaulted instance the `general` category fails ~8/13 and many category tests fail systematically — looking like a mass regression when it is purely the view-mode default. The suite targets the STANDARD surface, so set it once before the sweep (preferences.json is separate from the graph DB, so it survives the per-category DB clears):
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home() / ".flow/instances/<INSTANCE>/preferences.json"
+d = json.loads(p.read_text()); d["preferences.ui.view_mode"] = "standard"
+p.write_text(json.dumps(d, indent=2)); print("view_mode -> standard")
+PY
+```
+The frontend reads `preferences.json` fresh via its VFS path at each app boot, so no backend restart is needed. Verified: `general` goes 8-fail → 13/13 pass with this one change. **`flow instance reset` (used per-file in 11a below) re-applies `view_mode=standard` automatically on every relaunch**, so once the sweep uses reset you don't need to re-set it manually — but still confirm it once, and if a NEW category fails wholesale on homepage/greeting locators, re-check this pref first.
+
 **Write integrity while the sweep runs:** The sweep clears the DB and mutates instances repeatedly across 18 categories in the background. While the sweep is running, those instances are exclusively owned by the sweep — **record no other verdicts against them, run no other suites, clear no DBs, restart nothing on them.** A verdict collected while another actor mutates the environment is not a verdict (reference SKILL.md "One writer per instance"); concurrent writes manufacture false failures. Schedule verification work that needs the same instances before the sweep starts or after it completes. The background sweep provides load isolation automatically — do serial verification work on a separate instance or interval, never during.
 
 ### 11a. Sweep — machine verdict (authoritative)
 
-1. Build/refresh the test index. List every category dir under `scenarios-dir` that contains `.md.ts` files.
-2. For each such category, reset the DB then run the category with the JSON reporter (machine-readable per-test results — never scrape list output):
+1. Build/refresh the test index. List every `.md.ts` file under `scenarios-dir` (per file, not just per category).
+2. **Hybrid cadence — `flow instance reset` per CATEGORY + `desktop-db/clear` per FILE.** This is evidence-based (learned the hard way this cycle):
+   - The backend degradation is **cumulative across categories** (leaked PTY/claude children accumulate; `desktop-db/clear` never resets the *process*, so after ~4-5 heavy categories it starts timing out and mass-fails). A **full `flow instance reset` at the START of each category** flushes that accumulation — a fresh, non-degraded backend per category.
+   - But a **cold-booted backend can't surface warm-state-dependent tests** (e.g. an asset picker's self-seeded agent won't appear in the tree on a just-restarted backend — proven: `assets/agent_execution_asset_picker` 8/8 after `desktop-db/clear` vs 9/9 FAIL right after a reset). So **within a category, use `desktop-db/clear` per file** (fresh DB, backend stays warm) — NOT another reset.
    ```bash
-   # Clear the DB and verify success by reading the response body (not discarded to /dev/null)
-   CLEAR_RESPONSE=$(curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear)
-   if ! echo "${CLEAR_RESPONSE}" | grep -q '"backup_path"'; then
-     echo "DB clear failed or backup not verified: ${CLEAR_RESPONSE}"
-     exit 1
+   # --- once at the START of each category (fresh, warm backend) ---
+   if ! uv run flow instance reset <INSTANCE> --keep-keychain --json | tee /dev/stderr | grep -q '"ready": true'; then
+     echo "category reset not ready — aborting category"; exit 1
    fi
-   
-   # Poll bootstrap until health returns valid, verifying re-index completed and records exist
-   BOOTSTRAP_READY=0
-   for i in {1..30}; do
-     if BOOTSTRAP=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap 2>/dev/null); then
-       if echo "${BOOTSTRAP}" | grep -q '"projects"' && ! echo "${BOOTSTRAP}" | grep -q '"projects":\[\]'; then
-         BOOTSTRAP_READY=1
-         break
-       fi
-     fi
-     sleep 1
-   done
-   if [ $BOOTSTRAP_READY -eq 0 ]; then
-     echo "Bootstrap health check failed after DB clear; re-index may have stalled"
-     exit 1
-   fi
+   # --- then, before EACH .md.ts file in the category ---
+   CLR=$(curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear)
+   echo "$CLR" | grep -q '"backup_path"' || { echo "db clear failed: $CLR"; exit 1; }
+   for i in {1..30}; do curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap 2>/dev/null | grep -q '"types"' && break; sleep 1; done
 
    cd ui && VITE_PORT=${VITE_PORT} \
-     PLAYWRIGHT_JSON_OUTPUT_NAME=<abs-results-dir>/<timestamp>/phase11--<category>.json \
-     npx playwright test --config tests/manual_regression/<category>/playwright.config.ts --reporter=json
+     PLAYWRIGHT_JSON_OUTPUT_NAME=<abs-results-dir>/<timestamp>/phase11--<category>--<file>.json \
+     npx playwright test --config tests/manual_regression/<category>/playwright.config.ts <file>.md.ts --reporter=json
    ```
-3. Parse each `phase11--<category>.json` and aggregate into `<output-dir>/<timestamp>/phase11-summary.json`:
+   `flow instance reset` re-applies `view_mode=standard` on relaunch, is surgical (never touches sibling instances), and takes ~3-4s. Gate readiness on `"types"` present (an unauthed dedicated instance shows `projects:[]`, which is normal). If a *single* heavy category (e.g. `terminal`, 31 files) still degrades mid-category, add a per-file reset for that one category only — but a per-file reset universally breaks the warm-state tests, so it is NOT the default. (`<INSTANCE>` = the dedicated instance you launched.)
+3. Parse each `phase11--<category>--<file>.json` and aggregate into `<output-dir>/<timestamp>/phase11-summary.json`:
    - one entry per test: `{ category, file, test_title, status, duration_ms, error_excerpt }`
 4. Print the per-test pass/fail table:
    ```
@@ -238,7 +263,7 @@ For each `.md.ts` file with ≥1 non-passing test (`failed`/`timedOut`/`interrup
 
 - The agent runs the file, and on failure **RCAs the full flow against the sibling `.md`** (the source of truth) using the `rca` skill's on/off-switch method: prove the cause with a toggle, then classify honestly — `fail` → fix the **app**; `test-issue` → fix the **`.md.ts`** (selectors/timing/steps; never weaken or delete an assertion to go green). If the failing `.md.ts` has **no** sibling `.md`, RCA from the test + app directly.
 - The agent re-runs until the file exits 0, then stability-checks with `--repeat-each=3` (a stability check on the just-changed file — `retries` stays 0; this is never a retry mask).
-- **Concurrency follows "one writer per instance":** failing-file agents run in parallel ONLY when each owns a separate instance (the manager grants ownership explicitly); on a single shared instance they run serially, each doing the DB-clear preflight first.
+- **Concurrency follows "one writer per instance":** failing-file agents run in parallel ONLY when each owns a separate instance (the manager grants ownership explicitly); on a single shared instance they run serially, each doing a `flow instance reset <INSTANCE> --backend-only` first (surgical — safe even while sibling agents own other instances).
 - Bounded effort per file = the standard Run Mode attempts (2 fix→re-validate retries; fixer↔debugger 3 iterations). A file still red after that is **not flagged** — it remains a hard block (see gate).
 
 ### 11c. Gate — manager re-runs the FULL sweep
@@ -278,32 +303,13 @@ That list IS Phase 12's complete scope. (A `.md.ts` with no `.md` is fine — Ph
    ```
    (`--repeat-each=3` is a stability check on the just-authored test — it is NOT a retry mask; `retries` stays 0.)
 
-- **Before each scenario**, the tester must reset the DB to a clean state and verify restoration:
+- **Once before the phase** (and any time the backend has degraded), `flow instance reset <INSTANCE> --keep-keychain` for a fresh, non-degraded, warm backend. **Then before each scenario**, `desktop-db/clear` for a fresh DB WITHOUT restarting the backend (a cold backend can't surface warm-state-dependent scenarios — see Phase 11 11a):
   ```bash
-  # Clear the DB and read the response body to confirm success and backup (not discarded to /dev/null)
-  CLEAR_RESPONSE=$(curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear)
-  if ! echo "${CLEAR_RESPONSE}" | grep -q '"backup_path"'; then
-    echo "DB clear failed or backup not verified: ${CLEAR_RESPONSE}"
-    exit 1
-  fi
-  
-  # Poll bootstrap until health returns valid, confirming re-index completed and records are restored
-  BOOTSTRAP_READY=0
-  for i in {1..30}; do
-    if BOOTSTRAP=$(curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap 2>/dev/null); then
-      if echo "${BOOTSTRAP}" | grep -q '"projects"' && ! echo "${BOOTSTRAP}" | grep -q '"projects":\[\]'; then
-        BOOTSTRAP_READY=1
-        break
-      fi
-    fi
-    sleep 1
-  done
-  if [ $BOOTSTRAP_READY -eq 0 ]; then
-    echo "Bootstrap health check failed after DB clear; re-index may have stalled — aborting scenario"
-    exit 1
-  fi
+  CLR=$(curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear)
+  echo "$CLR" | grep -q '"backup_path"' || { echo "db clear failed: $CLR"; exit 1; }
+  for i in {1..30}; do curl -s http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap 2>/dev/null | grep -q '"types"' && break; sleep 1; done
   ```
-  This backs up and wipes the DB + FTS index, verifies the backup succeeded and the re-index completed, then confirms records were restored before the scenario starts. A clear that leaves zero records means the re-index failed — the fixture catches that now, before burning test assertions against an empty DB.
+  Data-dependent scenarios must self-seed via API + `fs-records/index` after the clear (the DB starts empty; the reset re-seeds only system projects).
 - A scenario's task is complete only when all three sub-goals hold (`.md` ✓ AND a newly-authored `.md.ts` ✓ stable).
 - **Gate (hard, no `flagged`):** after authoring, the manager **re-runs the affected categories' full sweep** (11a mechanics); every newly-authored `.md.ts` must exit 0. The only non-green allowed is a documented env-SKIP expressed as a real `test.skip(...)`. A `.md` that cannot be made to pass — or whose authored `.md.ts` stays red after the bounded Run Mode attempts — is a hard **BLOCK** reported in the summary, never quarantined-and-passed. Then print the QA Cycle Summary.
 

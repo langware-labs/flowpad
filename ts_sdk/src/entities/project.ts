@@ -1,12 +1,13 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
-import { ActionInfo, TypeId } from '../models';
+import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
 import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
 import { ComputeNode } from './compute_node';
+import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 
 export interface ProjectMember {
@@ -57,12 +58,17 @@ export class Project extends APIEntity<Project> {
   session_code: string | null = null;
   host_member_id: string | null = null;
   members: ProjectMember[] = [];
+  /** Context folders: extra directories auto-added to every agentic worker's
+   *  --add-dir set and browseable in the Explorer as their own root. Mirrors
+   *  the backend Project.include_dirs. */
+  include_dirs: string[] = [];
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
     this.members = (entity.members as ProjectMember[] | undefined) ?? [];
+    this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
   }
 
   // Land on the project's collaboration/home view at /dock/project/<id>
@@ -110,11 +116,44 @@ export class Project extends APIEntity<Project> {
     return computeNode;
   }
 
-  async setupComputeNode(options?: { gitRemoteRepoUrl?: string; gitBranch?: string }): Promise<ComputeNode | null> {
+  /**
+   * `GitWorkdir` bound to this project's working tree, or null when the
+   * project has no working directory or compute node. Null does NOT mean
+   * "not a git repo" — that stays the async `isInit()` probe on the result.
+   *
+   * Mirror of the backend `Project.git_workdir()` (same null semantics).
+   */
+  async getGitWorkdir(): Promise<GitWorkdir | null> {
+    if (!this.fs_storage_mount_path) return null;
+    const computeNode = await this.getComputeNode();
+    if (!computeNode) return null;
+    return new GitWorkdir(this.fs_storage_mount_path, computeNode.id);
+  }
+
+  /** Add a context folder to this project's `include_dirs` (auto-added to every
+   *  agentic worker's --add-dir set). Idempotent; the backend canonicalizes the
+   *  path and kicks a one-shot index so the folder's assets become discoverable. */
+  async addContextDir(path: string): Promise<void> {
+    const actionInfo = new ActionInfo('add-context-dir', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    await dataManager.callAction(actionInfo);
+    if (!(this.include_dirs ?? []).includes(path)) {
+      this.include_dirs = [...(this.include_dirs ?? []), path];
+    }
+  }
+
+  /** Remove a context folder from `include_dirs`. No-op if not present. */
+  async removeContextDir(path: string): Promise<void> {
+    const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    await dataManager.callAction(actionInfo);
+    this.include_dirs = (this.include_dirs ?? []).filter((d) => d !== path);
+  }
+
+  async setupComputeNode(options?: { gitOrigin?: GitOrigin | null }): Promise<ComputeNode | null> {
     const actionInfo = new ActionInfo('initialize', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = {
-      ...(options?.gitRemoteRepoUrl && { gitRemoteRepoUrl: options.gitRemoteRepoUrl }),
-      ...(options?.gitBranch && { gitBranch: options.gitBranch }),
+      ...(options?.gitOrigin && { gitOrigin: options.gitOrigin }),
     };
     const response = await dataManager.callAction<typeof actionInfo.bodyParameters, { compute_node: any }>(actionInfo);
 
@@ -195,6 +234,17 @@ export class Project extends APIEntity<Project> {
     >(actionInfo);
 
     return response || { workspace: null, agent: null, compute_node: null };
+  }
+
+  /** POST /graph/project/<id>/activate — stamp `last_active_at` (server clock,
+   *  epoch-ms) via the generic `activate` action. Fired FIRE-AND-FORGET by
+   *  `dataContext.setContextEntityTypeId` whenever the current project
+   *  actually switches (the choke point every open-project path funnels
+   *  through); the project pickers sort by it (recency wins over session
+   *  `modified_at`). Static form mirrors `Tab.activateById`. */
+  static async activateById(id: string): Promise<void> {
+    const info = new ActionInfo('activate', Project.type, id, 'POST');
+    await dataManager.callAction<undefined, unknown>(info);
   }
 
   // ── Collaboration overlay (merged from CollaborationSpace) ───────────────
@@ -330,6 +380,7 @@ export class Project extends APIEntity<Project> {
 
   /**
    * Clone a git URL into the desktop workspace and materialize a Project.
+   * The wire contract is GitOrigin; URL/branch inputs are converted locally.
    * Dispatches to the compute_node `create-project-from-git` action.
    *
    * Returns one of:
@@ -347,15 +398,16 @@ export class Project extends APIEntity<Project> {
     | { kind: 'collision'; suggestedName: string; attemptedName: string }
     | { kind: 'error'; message: string }
   > {
+    const gitOrigin = gitOriginFromUrl(projectUrl, branch);
+    if (!gitOrigin) return { kind: 'error', message: 'Invalid Git repository URL' };
     const action = new ActionInfo('create-project-from-git', 'compute_node', computeNodeId, 'POST');
     action.bodyParameters = {
-      project_url: projectUrl,
+      git_origin: gitOrigin,
       ...(targetName ? { target_name: targetName } : {}),
-      ...(branch ? { branch } : {}),
     };
     try {
       const response = await dataManager.callAction<
-        { project_url: string; target_name?: string },
+        { git_origin: GitOrigin; target_name?: string },
         { project: unknown }
       >(action);
       if (!response?.project) return { kind: 'error', message: 'No project returned' };

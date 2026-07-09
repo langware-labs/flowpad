@@ -42,6 +42,16 @@ APP_URL="http://localhost:${VITE_PORT}"
 
 When passing the environment to teammates or tasks, pass these resolved URLs — do not bake literal port numbers into prompts, scenarios, or commands.
 
+### Startup: clean old (mandatory, every job)
+
+**Before any test runs — immediately after identifying the job type — wipe accumulated test-instance scratch.** The pytest suite routes every test through a shared sandbox HOME at `<os-tempdir>/flowpad_test_home` (`tests/conftest.py:_TEST_HOME`). Across runs it accumulates hundreds of `.flow/instances/test-*` dirs and polluted shared singleton DBs (`oss`/`test`/`prod`), which manufacture **non-deterministic, false failures** that masquerade as code bugs — "Multiple rows were found" on @local singletons, empty-scan/orphaned-skill regressions, bootstrap failures. Always start pristine:
+
+```bash
+python .claude/skills/e2e-qa/e2e_qa_cleanup.py
+```
+
+This is filesystem-only and safe: it only ever touches a dir literally named `flowpad_test_home` under the OS temp dir, never the real `~/.flow` / `~/.claude` or any launched instance, and never kills a process. Run it once at startup before Phase 1 (and again any time you suspect cross-run contamination, e.g. the same suite yields different failures on re-run). Use `--dry-run` to preview.
+
 Backend start command:
 ```bash
 LOCAL_SERVER_PORT=${LOCAL_SERVER_PORT} uv run -m flow_sdk.server.run

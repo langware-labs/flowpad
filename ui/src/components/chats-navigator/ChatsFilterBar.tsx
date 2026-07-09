@@ -1,5 +1,5 @@
-import { Search } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { FolderClock } from 'lucide-react';
 import { WorkerIcon } from '@src/components/entity-execution-panel/history-row';
 import { WORKER_TYPES, type WorkerType } from '@src/hooks/useWorkerHistory';
 
@@ -7,39 +7,22 @@ import { WORKER_TYPES, type WorkerType } from '@src/hooks/useWorkerHistory';
 const WORKER_LABELS: Record<WorkerType, string> = { claude: 'Claude', codex: 'Codex', copilot: 'Copilot' };
 
 interface ChatsFilterBarProps {
-  search: string;
-  onSearchChange: (value: string) => void;
   /** Start a fresh chat with the given vendor. */
   onNewChat: (worker: WorkerType) => void;
+  /** Restore a session by pasting its id (UUID). */
+  onResumeById: () => void;
 }
 
 /**
- * The Chats navigator header controls below the title row, stacked one-per-row:
- *   1. search box
- *   2. a "New" launcher row — one icon per vendor that starts a fresh chat
- *      (Claude/Codex/Copilot), replacing the lone "+".
- * The scope filter lives in the title row (`header.headerRight`) like every
- * other navigator. Pure controlled inputs — all state lives in the navigator.
+ * The Chats navigator "New" launcher row below the title — one icon per vendor
+ * that starts a fresh chat (Claude/Codex/Copilot). Search lives in the shared
+ * NavigatorPanel header (the magnifier icon), and the scope filter in the title
+ * row (`header.headerRight`), like every other navigator.
  */
-export function ChatsFilterBar({
-  search,
-  onSearchChange,
-  onNewChat,
-}: ChatsFilterBarProps) {
+export function ChatsFilterBar({ onNewChat, onResumeById }: ChatsFilterBarProps) {
   const { t } = useLingui();
   return (
     <div className="flex flex-col gap-1.5 border-b px-2 py-2">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <input
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder={t`Search chats…`}
-          aria-label={t`Search chats`}
-          className="h-7 w-full rounded-md border bg-background pl-7 pr-2 text-xs outline-none transition-colors focus:border-primary"
-          data-testid="chats-search"
-        />
-      </div>
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground"><Trans>New</Trans></span>
         <div className="flex items-center gap-0.5">
@@ -59,6 +42,18 @@ export function ChatsFilterBar({
               </button>
             );
           })}
+          {/* Generic (vendor-agnostic) "restore from history" — sits alongside the
+              start-new-worker buttons; prompts for a session id and resumes it. */}
+          <button
+            type="button"
+            onClick={onResumeById}
+            title={t`Restore session by id`}
+            aria-label={t`Restore session by id`}
+            className="ml-0.5 flex h-6 w-6 items-center justify-center rounded border-l pl-1.5 transition-colors hover:bg-muted"
+            data-testid="chats-resume-by-id"
+          >
+            <FolderClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          </button>
         </div>
       </div>
     </div>

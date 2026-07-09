@@ -1,4 +1,8 @@
-import { APIEntity, isNonEmptyString, registerEntity } from '../../APIEntity';
+import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../../APIEntity';
+import { ActionInfo } from '../../models/ActionInfo';
+import type { GitOrigin } from '../../models/GitOrigin';
+import { isCompleteGitOrigin } from '../../models/GitOrigin';
+import type { Project } from '../project';
 import { ArtifactTypeInfo, ArtifactTypeMetadata } from './artifact-type-info';
 import { ArtifactReferenceType, ArtifactRelationType, ArtifactType, CodebaseReferenceType } from './artifact-types';
 
@@ -63,6 +67,7 @@ export interface IArtifact extends ICodeRef {
   artifact_type?: ArtifactType;
   project_id?: string;
   generating_flow_id?: string;
+  git_origin?: GitOrigin | null;
   metadata?: Record<string, unknown>;
   // Service control fields (for WEBAPP and APP_SERVICE types)
   /** Port number for services */
@@ -72,6 +77,11 @@ export interface IArtifact extends ICodeRef {
   /** Health check endpoint path */
   health?: string;
 }
+
+export type ArtifactGitResolveResult =
+  | { kind: 'ready'; artifact: Artifact; project: Project | null; localPath: string }
+  | { kind: 'needs_wizard'; artifact: Artifact; gitOrigin: GitOrigin; reason: string }
+  | { kind: 'error'; message: string };
 
 /**
  * Artifact - extends CodeRef with artifact-specific metadata.
@@ -83,6 +93,7 @@ export class Artifact extends CodeRef implements IArtifact {
   artifact_type?: ArtifactType;
   project_id?: string;
   generating_flow_id?: string;
+  git_origin?: GitOrigin | null;
   metadata?: Record<string, unknown>;
   // Service control fields
   port?: string;
@@ -95,6 +106,8 @@ export class Artifact extends CodeRef implements IArtifact {
     this.project_id = entity.project_id;
     this.generating_flow_id = entity.generating_flow_id;
     this.metadata = entity.metadata;
+    const metadataOrigin = entity.metadata?.git_origin as GitOrigin | undefined;
+    this.git_origin = entity.git_origin ?? (isCompleteGitOrigin(metadataOrigin) ? metadataOrigin : null);
     // Extract service fields from entity or metadata (check both underscore and hyphen keys)
     this.port = entity.port ?? (entity.metadata?.port as string | undefined);
     this.start_cmd =
@@ -121,6 +134,56 @@ export class Artifact extends CodeRef implements IArtifact {
   get typeInfo(): ArtifactTypeInfo {
     const artifactType = this.artifact_type || ArtifactType.FILE;
     return ArtifactTypeMetadata.fromArtifactType(artifactType);
+  }
+
+  async resolveGitLocation(options?: {
+    currentProjectId?: string | null;
+    localPath?: string | null;
+    projectId?: string | null;
+  }): Promise<ArtifactGitResolveResult> {
+    const action = new ActionInfo('resolve-git-location', Artifact.type, this.id ?? '', 'POST');
+    action.bodyParameters = {
+      ...(options?.currentProjectId ? { current_project_id: options.currentProjectId } : {}),
+      ...(options?.localPath ? { local_path: options.localPath } : {}),
+      ...(options?.projectId ? { project_id: options.projectId } : {}),
+    };
+    const raw = await dataManager.callAction<
+      { current_project_id?: string },
+      | { kind: 'ready'; artifact?: unknown; project?: unknown; localPath?: string }
+      | { kind: 'needs_wizard'; artifact?: unknown; gitOrigin?: GitOrigin; reason?: string }
+      | { kind: 'error'; message?: string }
+    >(action);
+    if (!raw) return { kind: 'error', message: 'No response returned' };
+    if (raw.kind === 'ready') {
+      const artifact = raw.artifact
+        ? dataManager.updateEntityFromJson<Artifact>(raw.artifact as Record<string, unknown>)
+        : this;
+      const project = raw.project
+        ? dataManager.updateEntityFromJson<Project>(raw.project as Record<string, unknown>)
+        : null;
+      return {
+        kind: 'ready',
+        artifact,
+        project,
+        localPath: raw.localPath ?? artifact.path,
+      };
+    }
+    if (raw.kind === 'needs_wizard') {
+      const artifact = raw.artifact
+        ? dataManager.updateEntityFromJson<Artifact>(raw.artifact as Record<string, unknown>)
+        : this;
+      const gitOrigin = raw.gitOrigin ?? artifact.git_origin ?? null;
+      if (!isCompleteGitOrigin(gitOrigin)) {
+        return { kind: 'error', message: 'Artifact git origin is incomplete' };
+      }
+      return {
+        kind: 'needs_wizard',
+        artifact,
+        gitOrigin,
+        reason: raw.reason ?? 'Git setup is required',
+      };
+    }
+    return { kind: 'error', message: raw.message ?? 'Could not resolve artifact git location' };
   }
 }
 

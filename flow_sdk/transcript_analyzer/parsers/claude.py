@@ -73,6 +73,22 @@ _META_TYPES = frozenset({
 _ATTACHMENT_TYPE_PLAN_MODE_EXIT = "plan_mode_exit"
 
 
+def _is_flowpad_prompt_envelope(text: str) -> bool:
+    """True for Flowpad-composed embedded-agent prompt wrappers.
+
+    Headless Claude receives embedded agents by flattening their instructions
+    into the user prompt, then appending the real user text under
+    ``# User message``. Claude writes that full wrapper to its JSONL as a user
+    message, but it is framework context rather than a human chat turn.
+    """
+    if "\n# User message\n" not in text:
+        return False
+    return (
+        text.startswith("# You are the '")
+        or text.startswith("# Embedded agent specs")
+    )
+
+
 def _resolve_id(raw: dict) -> str:
     """Pick the most stable id for this raw line, with type-specific fallback."""
     uid = raw.get("uuid")
@@ -460,8 +476,9 @@ class ClaudeParser:
                 exit_code=exit_code,
                 **base,
             )
+        text = extract_text(content)
         return UserMessageEntry(
-            text=extract_text(content),
-            is_meta=bool(raw.get("isMeta", False)),
+            text=text,
+            is_meta=bool(raw.get("isMeta", False)) or _is_flowpad_prompt_envelope(text),
             **base,
         )

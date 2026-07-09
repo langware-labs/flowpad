@@ -20,13 +20,21 @@ from flow_sdk.fs_store.record_types import RecordType
 
 
 def _dedup_nested(cwds: list[str]) -> list[str]:
-    """Keep only outermost cwds — drop any path nested under another.
-    Files inside `flowpad-oss/docs` belong to `flowpad-oss`, not the inner project.
+    """WALK-COVERAGE dedup: keep only outermost cwds — an outer root's walk
+    already covers every nested project's files, so walking the inner root too
+    would just double-parse them.
+
+    This is NOT the association rule. Which project a file belongs to is
+    decided at the stamp site (deepest-project-wins via
+    ``roots.deepest_project_id_for_path``) — files inside a nested project keep
+    the INNER project's id even though only the outer root walks them.
     """
+    from flow_sdk.fs_store.path_utils import is_path_under
+
     sorted_cwds = sorted(cwds, key=len)
     kept: list[str] = []
     for cwd in sorted_cwds:
-        if not any(cwd == k or cwd.startswith(k.rstrip("/") + "/") for k in kept):
+        if not any(is_path_under(cwd, k) for k in kept):
             kept.append(cwd)
     return kept
 

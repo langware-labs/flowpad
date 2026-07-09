@@ -11,6 +11,7 @@ TypeId format: ``shell-<uuid>``.
 from __future__ import annotations
 
 import asyncio
+import collections
 import logging
 import os
 from datetime import datetime, timezone
@@ -38,6 +39,15 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.faas.pty_session import Pty
 
 logger = logging.getLogger(__name__)
+
+
+# Per-shell-id PTY-open lock. Serializes ``Shell.start_pty`` so a watchdog
+# recovery tick and a concurrent client open (both entry points into start_pty)
+# can't both slip past the "already alive?" check and each ``create_pty`` — which
+# would leak a second OS PTY over the same shell. Mirrors ``_OPEN_LOCKS`` in
+# agentic_process.py. Process-local (PTYs are process-local), so no cross-process
+# coordination is needed.
+_START_PTY_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
 
 class ShellStatus(StrEnum):
@@ -410,56 +420,62 @@ class Shell(Entity):
         - status == "running" AND PTY alive  →  no-op, returns False
         - status == "running" AND PTY dead   →  cleanup stale session, spawn fresh PTY
         - status in (idle, closed, None)     →  spawn new PTY
+
+        The whole check-and-create runs under a per-shell-id lock so a watchdog
+        recovery tick and a concurrent client open can't both pass the liveness
+        check and each ``create_pty`` (double-spawn). Both callers enter here, so
+        the lock is the single serialization point.
         """
         if self.status not in (None, "idle", "closed", "running"):
             raise RuntimeError(f"Cannot open session in status: {self.status}")
         if not await self.ensure_live_compute_node_binding():
             raise RuntimeError(f"Compute node not found for shell session ({self._compute_node_lookup_hint()})")
 
-        cn = self.compute_node
-        existing = cn.get_pty(self.id)
+        async with _START_PTY_LOCKS[self.id]:
+            cn = self.compute_node
+            existing = cn.get_pty(self.id)
 
-        if existing and existing.is_alive:
-            if spawn_args is not None and not self._live_pty_matches_spawn_args(spawn_args):
+            if existing and existing.is_alive:
+                if spawn_args is not None and not self._live_pty_matches_spawn_args(spawn_args):
+                    await existing.kill()
+                    existing = None
+                else:
+                    if connection_id:
+                        await existing.attach(connection_id)
+                    return False
+
+            if existing and not existing.is_alive:
                 await existing.kill()
-                existing = None
-            else:
+                # A dead PTY handle does not imply a dead worker — sweep the
+                # session before respawning so the fresh ``--resume`` can't
+                # collide with a surviving worker's JSONL session lock.
+                await self.terminate_worker()
+            elif existing:
                 if connection_id:
                     await existing.attach(connection_id)
                 return False
+            elif self.status in ("running", "closed"):
+                await self._cleanup_stale_session()
 
-        if existing and not existing.is_alive:
-            await existing.kill()
-            # A dead PTY handle does not imply a dead worker — sweep the
-            # session before respawning so the fresh ``--resume`` can't
-            # collide with a surviving worker's JSONL session lock.
-            await self.terminate_worker()
-        elif existing:
-            if connection_id:
-                await existing.attach(connection_id)
-            return False
-        elif self.status in ("running", "closed"):
-            await self._cleanup_stale_session()
+            await cn.create_pty(
+                self.id,
+                rows=rows,
+                cols=cols,
+                connection_id=connection_id,
+                name=self.name,
+                working_dir=self.workdir,
+                on_exit=on_exit,
+                spawn_args=spawn_args,
+                extra_env=extra_env,
+            )
 
-        await cn.create_pty(
-            self.id,
-            rows=rows,
-            cols=cols,
-            connection_id=connection_id,
-            name=self.name,
-            working_dir=self.workdir,
-            on_exit=on_exit,
-            spawn_args=spawn_args,
-            extra_env=extra_env,
-        )
-
-        self.status = "running"
-        self.pty_pid = self.id
-        self.last_active_at = now_epoch_ms()
-        self.worker_pid = None
-        self.worker_name = None
-        await self.save()
-        return True
+            self.status = "running"
+            self.pty_pid = self.id
+            self.last_active_at = now_epoch_ms()
+            self.worker_pid = None
+            self.worker_name = None
+            await self.save()
+            return True
 
     async def start(self, *args, **kwargs) -> bool:
         """Back-compat alias for :meth:`start_pty`. Prefer ``start_pty`` —
@@ -603,6 +619,14 @@ class Shell(Entity):
             raise RuntimeError("No PTY session — call start_pty() first")
         await self._wait_for_shell_ready()
         await pty_handle.write(f"{text}\r".encode())
+
+    async def wait_for_input_ready(self, timeout: float = 5.0) -> None:
+        """Public gate: block until the PTY is at its prompt (readline initialised)
+        so an injected write lands. ``write``/``write_then_submit`` gate on this
+        internally; a raw ``write_raw`` (e.g. ``AgenticProcess.input``) must call
+        this FIRST, or a freshly-(re)booted TUI silently drops the keystrokes.
+        """
+        await self._wait_for_shell_ready(timeout=timeout)
 
     async def write_raw(self, data: bytes) -> None:
         """Send raw bytes verbatim to PTY stdin (no \\r, no bracketed paste).

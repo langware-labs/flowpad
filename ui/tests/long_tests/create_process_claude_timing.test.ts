@@ -17,11 +17,12 @@
  * Run: cd ui && npx vitest run --project long create_process_claude_timing
  */
 import { describe, expect, it } from 'vitest';
+import { stressDescribe } from './_stress_gate';
 import { launchInstance, killInstance, prepareCleanRealm } from './_backend_lifecycle';
 
 type SdkRealm = typeof import('@sdk');
 
-describe('createProcess(claude) timing on a fresh instance', () => {
+stressDescribe('createProcess(claude) timing on a fresh instance', () => {
   it('launch fresh instance → createProcess(claude_code) → time it', async () => {
     const name = 'cp-claude-1';
 

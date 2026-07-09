@@ -1,0 +1,231 @@
+---
+id: 12922682-58f0-5476-a77a-4c09a9f820ed
+---
+
+- generic [ref=f3e2]:
+  - region "Notifications alt+T"
+  - generic [ref=f3e6]:
+    - generic [ref=f3e7]:
+      - list [ref=f3e10]:
+        - listitem [ref=f3e11]:
+          - button [disabled]:
+            - img
+          - button [ref=f3e12] [cursor=pointer]:
+            - img [ref=f3e13]
+        - listitem [ref=f3e18]:
+          - button [ref=f3e19] [cursor=pointer]:
+            - img [ref=f3e20]
+        - listitem [ref=f3e23]:
+          - button [ref=f3e24] [cursor=pointer]:
+            - img [ref=f3e25]
+        - listitem [ref=f3e27]:
+          - button "99+" [ref=f3e28] [cursor=pointer]:
+            - img [ref=f3e29]
+            - generic [ref=f3e32]: 99+
+        - listitem [ref=f3e33]:
+          - button [ref=f3e34] [cursor=pointer]:
+            - img [ref=f3e35]
+        - generic [ref=f3e37]:
+          - img [ref=f3e40]
+          - listitem [ref=f3e42]:
+            - button [ref=f3e43] [cursor=pointer]:
+              - img [ref=f3e44]
+          - listitem [ref=f3e46]:
+            - button [ref=f3e47] [cursor=pointer]:
+              - img [ref=f3e48]
+          - listitem [ref=f3e52]:
+            - button [ref=f3e53] [cursor=pointer]:
+              - img [ref=f3e54]
+      - generic [ref=f3e56]:
+        - button "Search (⌘K)" [ref=f3e57] [cursor=pointer]:
+          - img
+        - button "Flowpad Assistant" [ref=f3e58] [cursor=pointer]:
+          - img "Flowpad Assistant" [ref=f3e59]
+        - button "Toggle theme" [ref=f3e60] [cursor=pointer]:
+          - img
+          - generic [ref=f3e61]: Toggle theme
+        - generic [ref=f3e63]:
+          - generic [ref=f3e64]:
+            - heading "Chat Settings" [level=2] [ref=f3e65]
+            - button [ref=f3e66] [cursor=pointer]:
+              - img
+          - generic [ref=f3e69]:
+            - generic [ref=f3e70]: Rules
+            - textbox "Rules" [ref=f3e71]:
+              - /placeholder: Enter chat rules...
+          - button "Save Changes" [ref=f3e73] [cursor=pointer]
+        - img "Eran Shlomo" [ref=f3e77] [cursor=pointer]
+    - generic [ref=f3e79]:
+      - generic [ref=f3e85]:
+        - generic [ref=f3e86]:
+          - generic [ref=f3e88]:
+            - generic [ref=f3e90]:
+              - button "Today" [ref=f3e91] [cursor=pointer]
+              - button "Week" [ref=f3e92] [cursor=pointer]
+              - button "Month" [ref=f3e93] [cursor=pointer]
+              - button "All" [ref=f3e94] [cursor=pointer]
+            - generic [ref=f3e95]:
+              - generic [ref=f3e96]:
+                - img [ref=f3e97]
+                - generic [ref=f3e99]: $582
+                - generic [ref=f3e100]: cost
+              - generic [ref=f3e101]:
+                - img [ref=f3e102]
+                - generic [ref=f3e104]: 771.8M
+                - generic [ref=f3e105]: tokens
+              - application [ref=f3e108]
+          - generic [ref=f3e118]:
+            - img [ref=f3e119]
+            - textbox "Search..." [ref=f3e122]
+            - button "Search" [ref=f3e123] [cursor=pointer]:
+              - img
+        - generic [ref=f3e124]:
+          - generic [ref=f3e127]:
+            - generic [ref=f3e128]:
+              - generic [ref=f3e129]:
+                - img [ref=f3e130]
+                - generic [ref=f3e132]: Inbox
+                - generic [ref=f3e133]: "55"
+              - generic [ref=f3e134]:
+                - button "Upload message" [ref=f3e135] [cursor=pointer]:
+                  - img [ref=f3e136]
+                - button "Dismiss all notifications" [ref=f3e139] [cursor=pointer]:
+                  - img [ref=f3e140]
+                - button "Refresh (pulls from hub)" [ref=f3e143] [cursor=pointer]:
+                  - img [ref=f3e144]
+            - generic [ref=f3e149]:
+              - generic [ref=f3e150] [cursor=pointer]:
+                - generic [ref=f3e151]:
+                  - generic [ref=f3e154]: this-is-not-even-atomic-tiger.md
+                  - generic [ref=f3e155]: "Please run the following prompt:"
+                  - generic [ref=f3e156]:
+                    - generic [ref=f3e157]: 4h ago
+                    - generic [ref=f3e158]: · 1 msg
+                    - generic [ref=f3e159]: ·
+                    - button "2 participants" [ref=f3e160]:
+                      - img [ref=f3e161]
+                      - generic [ref=f3e166]: Ami Levy
+                - button "Hide from Recent conversations" [ref=f3e168]:
+                  - img [ref=f3e169]
+              - generic [ref=f3e174] [cursor=pointer]:
+                - generic [ref=f3e175]:
+                  - generic [ref=f3e178]: New conversation - Jun 30 16:01 GIT PUSH
+                  - generic [ref=f3e179]: hi
+                  - generic [ref=f3e180]:
+                    - generic [ref=f3e181]: 8h ago
+                    - generic [ref=f3e182]: · 6 msgs
+                    - generic [ref=f3e183]: ·
+                    - button "2 participants" [ref=f3e184]:
+                      - img [ref=f3e185]
+                      - generic [ref=f3e190]: Nir Levy
+                - button "Hide from Recent conversations" [ref=f3e192]:
+                  - img [ref=f3e193]
+              - generic [ref=f3e198] [cursor=pointer]:
+                - generic [ref=f3e199]:
+                  - generic [ref=f3e200]:
+                    - generic [ref=f3e202]: firestore_schema_adjustments.md
+                    - 'generic "Project: sapora-streams" [ref=f3e204]': sapora-streams
+                  - generic [ref=f3e205]: good to go, can you update docs/ingestion.md with details once done ?
+                  - generic [ref=f3e206]:
+                    - generic [ref=f3e207]: 1d ago
+                    - generic [ref=f3e208]: · 7 msgs
+                    - generic [ref=f3e209]: ·
+                    - button "2 participants" [ref=f3e210]:
+                      - img [ref=f3e211]
+                      - generic [ref=f3e216]: Ziv Lavy
+                - button "Hide from Recent conversations" [ref=f3e218]:
+                  - img [ref=f3e219]
+              - generic [ref=f3e224] [cursor=pointer]:
+                - generic [ref=f3e225]:
+                  - generic [ref=f3e228]: BUGS
+                  - generic [ref=f3e229]: attaching a file doesnt
+                  - generic [ref=f3e230]:
+                    - generic [ref=f3e231]: 1d ago
+                    - generic [ref=f3e232]: · 19 msgs
+                    - generic [ref=f3e233]: ·
+                    - button "3 participants" [ref=f3e234]:
+                      - img [ref=f3e235]
+                      - generic [ref=f3e240]: Gadi Tunes, Ami Levy
+                - button "Hide from Recent conversations" [ref=f3e242]:
+                  - img [ref=f3e243]
+              - generic [ref=f3e248] [cursor=pointer]:
+                - generic [ref=f3e249]:
+                  - generic [ref=f3e252]: New BUGS
+                  - generic [ref=f3e253]: 👍
+                  - generic [ref=f3e254]:
+                    - generic [ref=f3e255]: 1d ago
+                    - generic [ref=f3e256]: · 7 msgs
+                    - generic [ref=f3e257]: ·
+                    - button "3 participants" [ref=f3e258]:
+                      - img [ref=f3e259]
+                      - generic [ref=f3e264]: Gadi Tunes, Ami Levy
+                - button "Hide from Recent conversations" [ref=f3e266]:
+                  - img [ref=f3e267]
+            - generic [ref=f3e272]:
+              - button "New" [ref=f3e273] [cursor=pointer]:
+                - img [ref=f3e274]
+                - text: New
+              - button "All (55)" [ref=f3e275] [cursor=pointer]:
+                - img [ref=f3e276]
+                - text: All (55)
+          - generic [ref=f3e278]:
+            - generic [ref=f3e279]:
+              - heading "Hey serans1" [level=1] [ref=f3e280]
+              - generic [ref=f3e282]:
+                - textbox "What would you like to work on?" [ref=f3e283]
+                - generic [ref=f3e284]:
+                  - button [disabled]:
+                    - img
+            - generic [ref=f3e287]:
+              - button "Quick create" [ref=f3e288] [cursor=pointer]:
+                - img [ref=f3e289]
+                - generic [ref=f3e290]: New
+              - button "Welcome" [ref=f3e292] [cursor=pointer]:
+                - img [ref=f3e293]
+                - generic [ref=f3e295]: Welcome
+            - generic [ref=f3e297]:
+              - button "debug" [ref=f3e299] [cursor=pointer]:
+                - img [ref=f3e300]
+                - generic [ref=f3e306]: debug
+              - button "Expand sniffer event list" [ref=f3e307] [cursor=pointer]:
+                - img [ref=f3e308]
+              - button "Enable sniffer" [ref=f3e313] [cursor=pointer]:
+                - img
+          - generic [ref=f3e316]:
+            - generic [ref=f3e317]:
+              - generic [ref=f3e318]:
+                - img [ref=f3e319]
+                - heading "Feed" [level=3] [ref=f3e323]
+              - button "Add comment" [ref=f3e324] [cursor=pointer]:
+                - img
+            - generic [ref=f3e325]: No feed items
+      - contentinfo [ref=f3e326]:
+        - generic [ref=f3e327]:
+          - generic [ref=f3e328]:
+            - 'button "View mode: Advanced" [ref=f3e329] [cursor=pointer]': "View: Advanced"
+            - 'button "Data privacy mode: Connected" [ref=f3e330] [cursor=pointer]':
+              - img [ref=f3e331]
+          - generic [ref=f3e333]:
+            - button "Switch Project" [ref=f3e334] [cursor=pointer]:
+              - img [ref=f3e335]
+              - generic [ref=f3e338]: Switch Project
+            - button "my_first_project" [ref=f3e339] [cursor=pointer]
+            - 'button "Open folder: /Users/shlom/Flowpad workspace/my_first_project" [ref=f3e340] [cursor=pointer]':
+              - img [ref=f3e341]
+          - generic [ref=f3e345]:
+            - button "indexed 1d ago — open Records Scanner" [ref=f3e347] [cursor=pointer]:
+              - img [ref=f3e348]
+              - generic [ref=f3e353]: indexed 1d ago
+            - button "Flowpad docs" [ref=f3e354] [cursor=pointer]:
+              - img [ref=f3e355]
+              - generic [ref=f3e357]: Flowpad docs
+            - button "Community assistance" [ref=f3e358] [cursor=pointer]:
+              - img [ref=f3e359]
+              - generic [ref=f3e364]: Community assistance
+            - button "Flowpad version" [ref=f3e365] [cursor=pointer]:
+              - generic [ref=f3e366]: v0.2.88+local4
+            - generic [ref=f3e367]:
+              - generic [ref=f3e368]: Powered by
+              - link "Flowpad.ai Logo" [ref=f3e369] [cursor=pointer]:
+                - /url: https://flowpad.ai
+                - img "Flowpad.ai Logo" [ref=f3e370]

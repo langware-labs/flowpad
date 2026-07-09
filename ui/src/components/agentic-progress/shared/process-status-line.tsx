@@ -128,7 +128,7 @@ export function ProcessStatusLine({
   //     Turn finished (COMPLETE / PENDING_USER) → enabled
   //     Next turn kicked off                 → disabled (executeInstruction
   //                                             optimistically flips workerStatus
-  //                                             to WAITING immediately)
+  //                                             to WORKING immediately)
   //     That next turn finishes              → enabled
   const workerTurnDone =
     worker === WorkerStatus.COMPLETE ||

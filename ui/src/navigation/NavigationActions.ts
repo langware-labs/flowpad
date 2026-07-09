@@ -9,11 +9,14 @@ import {
   Layout,
   QueryRequest,
   Shell,
+  toplog,
   TypeId,
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
+import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer, HIGHLIGHT_PARAM } from './DockPointer';
+import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
@@ -64,6 +67,17 @@ export class NavigationActions {
     return `${window.location.pathname}${window.location.search}`;
   }
 
+  /** The `?viewMode` on the LIVE browser URL, or null. Used for view-mode
+   *  stickiness seeding — always current, unlike the React-state `currentDock`
+   *  mirror which lags during the first navigation after a hard page load. */
+  private static currentBrowserViewMode(): ViewMode | null {
+    try {
+      return DockPointer.fromUrl(NavigationActions.getCurrentBrowserUrl()).viewMode;
+    } catch {
+      return null;
+    }
+  }
+
   private static needsRouterFallback(): boolean {
     return typeof navigator !== 'undefined' && /\bjsdom\b/i.test(navigator.userAgent);
   }
@@ -83,10 +97,25 @@ export class NavigationActions {
     }, 1000);
   }
 
+  // `viewType:pointer` label for the navigation toplog trace.
+  private static dockLabel(d: { viewType: string; pointer?: string | null } | null): string | null {
+    return d ? `${d.viewType}:${d.pointer ?? ''}` : null;
+  }
+
   private commitBrowserNavigation(fullUrl: string, routerUrl: string): void {
     this.markPendingNavigation(fullUrl);
 
-    if (NavigationActions.getCurrentBrowserUrl() !== fullUrl) {
+    const from = NavigationActions.getCurrentBrowserUrl();
+    const willPush = from !== fullUrl;
+    toplog.log('navigation', 'commitBrowserNavigation', {
+      from,
+      to: fullUrl,
+      routerUrl,
+      willPushState: willPush,
+      routerFallback: NavigationActions.needsRouterFallback(),
+      historyLen: window.history.length,
+    });
+    if (willPush) {
       window.history.pushState(null, '', fullUrl);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
@@ -133,8 +162,18 @@ export class NavigationActions {
     const currentPath = window.location.pathname;
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
 
+    toplog.log('navigation', 'openDock', {
+      target: pointer === null ? null : `${(pointer as IDockPointer).viewType ?? '?'}:${(pointer as IDockPointer).pointer ?? ''}`,
+      currentDock: NavigationActions.dockLabel(this.currentDock),
+      currentUrl,
+      extraOptions,
+    });
+
     if (pointer === null) {
-      if (this.currentDock === null) return; // already not on a dock URL
+      if (this.currentDock === null) {
+        toplog.log('navigation', 'openDock(null) no-op (already not on a dock URL)', { currentUrl });
+        return; // already not on a dock URL
+      }
       // Root-level dock URLs strip to '' — and navigate('') is a react-router
       // relative no-op, so close-dock silently did nothing outside the
       // /agent|/flow prefixed namespaces. Normalize to the app root.
@@ -163,7 +202,22 @@ export class NavigationActions {
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
-    if (this.currentDock?.equals(dock)) return; // already at this pointer, no-op
+    // URL-first stickiness: inherit the live URL's ?viewMode unless the target
+    // names its own (mirrors the scope-seed above); explicit target / ViewToggle
+    // mode still wins. `currentBrowserViewMode` reads window.location as a
+    // stopgap for the lagging React `currentDock` — the durable fix (correct
+    // viewMode at hydration) belongs in the view-mode override, not here.
+    if (dock.viewMode === null) {
+      const liveViewMode = NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null;
+      if (liveViewMode) dock = dock.withViewMode(liveViewMode);
+    }
+
+    if (this.currentDock?.equals(dock)) {
+      toplog.log('navigation', 'openDock no-op (currentDock equals target)', {
+        dock: NavigationActions.dockLabel(dock),
+      });
+      return; // already at this pointer, no-op
+    }
 
     const layout = preserveWindowLayout(currentPath, dock.layout);
     const targetDock = layout === dock.layout
@@ -171,7 +225,14 @@ export class NavigationActions {
       : new DockPointer(dock.viewType, dock.pointer, dock.options, layout);
     const fullUrl = targetDock.toUrl(currentPath);
 
-    if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) return;
+    if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) {
+      toplog.log('navigation', 'openDock no-op (URL already current/pending)', {
+        currentUrl,
+        fullUrl,
+        pending: pendingDockNavigationUrl,
+      });
+      return;
+    }
 
     if (import.meta.env.DEV) {
       try {
@@ -195,8 +256,20 @@ export class NavigationActions {
 
   private navigateToBaseUrl(baseUrl: string): void {
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
-    if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) return;
+    if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) {
+      toplog.log('navigation', 'navigateToBaseUrl no-op (already there/pending)', {
+        currentUrl,
+        baseUrl,
+        pending: pendingDockNavigationUrl,
+      });
+      return;
+    }
 
+    toplog.log('navigation', 'navigateToBaseUrl (close dock)', {
+      from: currentUrl,
+      to: baseUrl,
+      historyLen: window.history.length,
+    });
     this.markPendingNavigation(baseUrl);
     if (NavigationActions.getCurrentBrowserUrl() !== baseUrl) {
       window.history.pushState(null, '', baseUrl);
@@ -294,7 +367,7 @@ export class NavigationActions {
 
   openProject(
     projectId?: string,
-    sub?: { roomId?: string | null; tab?: import('@sdk').TypeId | null },
+    sub?: { roomId?: string | null; tab?: import('@sdk').TypeId | null; sessionId?: string | null },
   ): void {
     this.openDock(DockPointer.forProject(projectId, sub));
   }
@@ -308,22 +381,13 @@ export class NavigationActions {
   }
 
   /**
-   * Open a file with the appropriate viewer based on file extension
-   * - .md files → docs viewer
-   * - Code files → editor
-   * - Add more as needed
+   * Open a file with the viewer appropriate for its type: markdown documents
+   * in the assets markdown editor (share / chat / rendered view), everything
+   * else in the code editor. Thin wrapper over `dockPointerForFile` — the one
+   * pointer-level dispatch every "open this file" surface shares.
    */
   openFile(path: string, options?: FileOptions): void {
-    const extension = path.split('.').pop()?.toLowerCase();
-
-    // Determine viewer based on file extension
-    if (extension === 'md' || extension === 'markdown') {
-      // Open in docs viewer
-      this.openDocs(path);
-    } else {
-      // Default to code editor for all other files
-      this.openEditor(path, options);
-    }
+    this.openDock(dockPointerForFile(path, options));
   }
 
   /** Navigate to the default shell view (no specific session) */
@@ -346,7 +410,7 @@ export class NavigationActions {
 
   async openShellProcess(
     agenticProcessId: string,
-    options?: { t?: string; windows?: string; activeWindow?: string },
+    options?: { t?: string; windows?: string; activeWindow?: string; viewMode?: string },
   ): Promise<AgenticProcess | null> {
     const extraOptions = toStringRecord(options);
     const process =
@@ -486,15 +550,6 @@ export class NavigationActions {
       if (!options?.skipNavigate) this.openShellView();
       return null;
     }
-  }
-
-  /**
-   * Open docs viewer with optional file path
-   * @param filePath - Optional markdown file path, omit for docs list
-   */
-  openDocs(filePath?: string): void {
-    const pointer = DockPointer.forDocs(filePath || '');
-    this.openDock(pointer);
   }
 
   /**
@@ -642,6 +697,15 @@ export class NavigationActions {
     this.openDock(pointer);
   }
 
+  /**
+   * Open the user Preferences screen
+   * @param category - Optional category whose tab should be active
+   */
+  openPreferences(category?: string): void {
+    const pointer = DockPointer.forPreferences(category);
+    this.openDock(pointer);
+  }
+
   // ========== Entity Navigation ==========
 
   openEntity(entity: unknown): void {
@@ -662,10 +726,19 @@ export class NavigationActions {
   // ========== History Navigation ==========
 
   goBack(): void {
+    toplog.log('navigation', 'NavigationActions.goBack → navigate(-1)', {
+      currentUrl: NavigationActions.getCurrentBrowserUrl(),
+      currentDock: NavigationActions.dockLabel(this.currentDock),
+      historyLen: window.history.length,
+    });
     void this.navigate(-1);
   }
 
   goForward(): void {
+    toplog.log('navigation', 'NavigationActions.goForward → navigate(1)', {
+      currentUrl: NavigationActions.getCurrentBrowserUrl(),
+      historyLen: window.history.length,
+    });
     void this.navigate(1);
   }
 

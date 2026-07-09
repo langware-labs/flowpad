@@ -15,3 +15,4 @@ export * from './activation';
 export * from './UserWarning';
 export * from './workflow';
 export * from './DockPointer';
+export * from './GitOrigin';

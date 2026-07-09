@@ -5,8 +5,12 @@ import { EnvVar, useEnvVarsStore } from '@src/hooks/use-env-vars-store';
 import { EnvVarType } from '@src/types/envVarTypes';
 import { useEntityEnv } from '@sdk/react/hooks';
 import { SidebarProvider } from '@src/components/ui/sidebar';
+import { useIsVibe } from '@src/components/view-mode';
 import { useEffect, useMemo } from 'react';
 import { ContentPanel } from './content-panel/content-panel';
+import { VibeWorkspace } from './vibe-workspace';
+import { VibeNewChat } from './vibe-new-chat';
+import { useVibeWorkspaceSession } from './use-vibe-workspace-session';
 
 export default function FlowPage() {
   const { flow } = useAgentContext();
@@ -30,6 +34,36 @@ export default function FlowPage() {
       setEnvVars(envVars);
     }
   }, [table, setEnvVars]);
+
+  const isVibe = useIsVibe();
+  // A Vibe "session" = a workspace surface: the process's own dock (the display
+  // URL) OR a child tab opened from inside it. Resolved by one hook so the
+  // "is this a workspace surface" shape lives in one place, reusable by any
+  // future workspace-with-children view. Null on the bare home (centered prompt).
+  const vibeSession = useVibeWorkspaceSession();
+
+  // Vibe mode: a stripped Lovable-style skin that still carries the left rail in
+  // its already-reserved footprint. CollapsedSidebar renders a minimal rail in
+  // Vibe — top navigation (back/refresh) + a Home button, and the shared bottom
+  // cluster (search / assistant / theme / user login) — with the middle nav
+  // (Chats, Inbox, Assets, …) dropped. Same width as Standard/Advanced, so the
+  // content column and footer controls don't shift when the view mode changes.
+  if (isVibe) {
+    return (
+      <SidebarProvider defaultOpen={false} className="h-full !min-h-0">
+        <div data-testid="flow-page" className="flex h-full w-full overflow-hidden bg-background">
+          <CollapsedSidebar />
+
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex-1 overflow-hidden">
+              {vibeSession ? <VibeWorkspace session={vibeSession} /> : <VibeNewChat />}
+            </div>
+            <Footer />
+          </div>
+        </div>
+      </SidebarProvider>
+    );
+  }
 
   // New layout with collapsed sidebar and bottom terminal
   return (

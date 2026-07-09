@@ -268,7 +268,7 @@ export function useTerminalStripController({
     () => [
       {
         id: 'claude',
-        label: t`Start Claude (${modLabel}+C)`,
+        label: t`Start Claude`,
         Icon: PROVIDER_META.claude.Icon,
         iconClassName: PROVIDER_META.claude.iconClassName,
         onActivate: () => void handleStartClaude(),
@@ -388,7 +388,7 @@ export function useTerminalStripController({
 
   const newTabMenuItems = useMemo<TabStripContextMenuItem[]>(
     () => [
-      { label: t`New Claude Session`, shortcut: `${modLabel}+C`, onSelect: () => void handleStartClaude() },
+      { label: t`New Claude Session`, onSelect: () => void handleStartClaude() },
       { label: t`New Terminal`, shortcut: `${modLabel}+T`, onSelect: () => void handleStartTerminal() },
       // Advanced-only: freeze the current context into a GraphContext and open it.
       ...(isAdvanced

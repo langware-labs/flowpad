@@ -3,22 +3,28 @@
 A PTY worker is a child of the backend; on restart the previous process's
 children die (SIGHUP) and the new process starts with an empty in-memory PTY
 registry, leaving entities in a split-brain (``status=running`` + dead
-``worker_pid``). This watchdog reconciles every visible session whose worker PID
-is dead and respawns it through the existing ``AgenticProcess._perform_open``
-path (drops the stale shell, relaunches with scrollback replay + resume — see
+``worker_pid``). This watchdog reconciles a dead visible session's worker and
+respawns it through the existing ``AgenticProcess._perform_open`` path (drops
+the stale shell, relaunches with scrollback replay + resume — see
 agentic_process.py).
 
-It runs once at startup AND periodically (``start_recovery_task``) so a worker
-that dies *mid-session* (e.g. a claude crash while the backend stays up) is also
-respawned — this is the backend home for what used to be the frontend's
-``os-status`` recovery poll. Connection membership (attach/detach on WS
-connect/disconnect) is a separate, fully backend-owned FSM in
-``pty_session_manager.PtyRegistry``; this module only handles a dead *worker*.
+Recovery is **on-demand, never a global sweep.** A session is respawned only
+while a live connection is *watching* it (its process/shell is open in a UI);
+an unopened session stays dead until the user loads it. Respawning every dead
+PTY at startup mass-allocated ptys and exhausted the OS pty device pool
+(``OSError: out of pty devices`` — the crash-loop this guards against). The
+sweep runs periodically (``start_recovery_task``), so a worker that dies
+*mid-session* (a claude crash while an open UI keeps watching) is also
+respawned; at boot nothing is watched yet, so restart recovery lands on the
+first tick after a client re-watches, not before. Connection membership
+(attach/detach on WS connect/disconnect) is a separate, fully backend-owned
+FSM in ``pty_session_manager.PtyRegistry``; this module only handles a dead
+*worker*.
 
-Recovered process ids are recorded for this backend lifetime. The watchdog
-runs before any client has reconnected, so the distinct ``recovered`` event is
-delivered when a client (re)watches a recovered process ("recovered AND a UI
-is connected", per design) — the SDK then re-attaches its PTY stream.
+Recovered process ids are recorded for this backend lifetime, so the distinct
+``recovered`` event is delivered when a client (re)watches a recovered process
+("recovered AND a UI is connected", per design) — the SDK then re-attaches its
+PTY stream.
 """
 
 from __future__ import annotations
@@ -44,12 +50,12 @@ def was_recovered(process_id: str) -> bool:
     return process_id in _RECOVERED_IDS
 
 
-def _recovered_message(process_id: str, shell_id: str | None, worker_pid: int | None) -> str:
+def _recovered_message(process_id: str | None, shell_id: str | None, worker_pid: int | None) -> str:
     return json.dumps(
         {
             "message_type": "recovered_msg",
             "message_id": str(uuid4()),
-            "to_entity": f"agentic_process-{process_id}",
+            "to_entity": f"agentic_process-{process_id}" if process_id else f"shell-{shell_id}",
             "process_id": process_id,
             "shell_id": shell_id,
             "worker_pid": worker_pid,
@@ -59,7 +65,7 @@ def _recovered_message(process_id: str, shell_id: str | None, worker_pid: int | 
 
 
 async def emit_recovered_to_connection(
-    connection_id: str, process_id: str, shell_id: str | None, worker_pid: int | None
+    connection_id: str, process_id: str | None, shell_id: str | None, worker_pid: int | None
 ) -> None:
     from flow_sdk.core.network.connections import get_connection
 
@@ -72,15 +78,15 @@ async def emit_recovered_to_connection(
         logger.exception("pty-recovery: failed to send recovered_msg to %s", connection_id)
 
 
-async def notify_watchers_recovered(
-    process_id: str, shell_id: str | None, worker_pid: int | None
-) -> None:
+async def notify_watchers_recovered(process_id: str | None, shell_id: str | None, worker_pid: int | None) -> None:
     """Push ``recovered`` to every connection currently watching the process
     (or its shell). Called both at recovery time (covers already-connected
-    clients) and from the watch path (covers clients that connect later)."""
+    clients) and from the watch path (covers clients that connect later).
+    ``process_id`` is None for bare shells — the shell watch key still routes
+    the event, and the client re-attach hook keys on ``shell_id``."""
     from flow_sdk.app.actions.watch_registry import get_watched_by
 
-    keys = [f"agentic_process:{process_id}"]
+    keys = [f"agentic_process:{process_id}"] if process_id else []
     if shell_id:
         keys.append(f"shell:{shell_id}")
     seen: set[str] = set()
@@ -118,22 +124,27 @@ async def maybe_emit_recovered_on_watch(connection_id: str, entity_type: str, en
 
 
 async def reconcile_orphaned_workers() -> None:
-    """Stamp dead headless (``visible=false``) RUNNING/STARTING workers to STOPPED.
+    """Stamp dead headless (``pty_mode=false``) RUNNING/STARTING workers to STOPPED.
 
     On restart the previous backend's child workers die (SIGHUP) and the new
     process starts with an empty in-memory PTY registry. ``run_pty_recovery``
-    respawns the *visible* PTYs (with ``--resume``); a *headless* worker
-    (``visible=false``, ``worker_pid``/``worker_status`` already gone) is not
-    resumable in place, so its record would otherwise linger forever as a phantom
-    "Background" agent in the footer chip (whose count keys on
+    respawns the *PTY-transport*, *watched* workers (with ``--resume``); a
+    *headless* worker (``pty_mode=false``, ``worker_pid``/``worker_status`` already
+    gone) is not resumable in place, so its record would otherwise linger forever
+    as a phantom "Background" agent in the footer chip (whose count keys on
     ``ProcessStatus ∈ {RUNNING, STARTING}``). The restart took the worker down —
     a clean stop, not a worker crash — so we stamp ``STOPPED`` (which is
     ``isProcessStartable``, letting the user relaunch).
 
+    The split keys on the *transport* (``pty_mode``), NOT tab visibility: a hidden
+    live PTY (``visible=false`` but ``pty_mode=true``) is still a resumable PTY
+    worker owned by ``run_pty_recovery``, so stamping it STOPPED here would kill a
+    recoverable session.
+
     Pure DB writes — no subprocess spawn — so this is awaited at startup *before*
     serving, leaving the first bootstrap clean. ``save()`` emits the data_op, so
-    already-connected clients also correct reactively. Visible PTYs are untouched
-    here: they belong to ``run_pty_recovery`` (respawn) / ``_on_pty_exit``
+    already-connected clients also correct reactively. PTY-transport workers are
+    untouched here: they belong to ``run_pty_recovery`` (respawn) / ``_on_pty_exit``
     (FAILED), and stamping them at startup would race the respawn.
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess
@@ -148,8 +159,8 @@ async def reconcile_orphaned_workers() -> None:
 
     for proc in procs:
         try:
-            if proc.visible:
-                continue  # owned by run_pty_recovery (respawn) / _on_pty_exit
+            if proc.pty_mode:
+                continue  # PTY transport → run_pty_recovery (respawn) / _on_pty_exit
             if proc.status not in live:
                 continue
             proc.status = ProcessStatus.STOPPED.value
@@ -159,12 +170,35 @@ async def reconcile_orphaned_workers() -> None:
             logger.exception("reconcile: failed on %s", getattr(proc, "id", "?"))
 
 
+def _watched_keys() -> set[str]:
+    """Union of the ``type:id`` entity keys any live connection is currently
+    watching. A watch is registered when a UI loads the process / terminal view
+    (see ``watch_registry.create_watch``), so membership is the "the user has
+    this open" signal that makes recovery ON-DEMAND."""
+    from flow_sdk.app.actions.watch_registry import get_watched_entities
+
+    watched = get_watched_entities()  # {connection_id: {entity_key, ...}}
+    return set().union(*watched.values()) if watched else set()
+
+
 async def run_pty_recovery() -> None:
-    """Reconcile + respawn dead PTYs: agentic workers (with ``--resume``) and bare
-    terminals (a fresh shell). Both kinds are ``Shell``-backed; the only divergence
-    is the liveness signal and the respawn entry, handled per-pass below."""
+    """Reconcile + respawn dead PTYs for the processes/terminals a UI currently has
+    OPEN — agentic workers (with ``--resume``) and bare terminals (a fresh shell).
+    Both kinds are ``Shell``-backed; the only divergence is the liveness signal and
+    the respawn entry, handled per-pass below.
+
+    Recovery is **on-demand, never a global sweep.** Only a session whose process
+    (or its shell) is actively *watched* by a live connection is respawned; an
+    unopened session stays dead until the user loads it. Respawning every dead PTY
+    at startup mass-allocated ptys and exhausted the OS pty device pool
+    (``OSError: out of pty devices`` — the crash-loop this guards against). When
+    nothing is watched (the common idle tick) we skip the DB enumerations entirely."""
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+    watched = _watched_keys()
+    if not watched:
+        return  # nothing open → nothing to recover; skip the get_all() sweeps
 
     try:
         procs = await AgenticProcess.get_all()
@@ -177,11 +211,14 @@ async def run_pty_recovery() -> None:
 
     for proc in procs:
         try:
-            if not proc.visible:
-                continue
+            if not proc.pty_mode:
+                continue  # headless transport → reconcile_orphaned_workers owns it
             if proc.status not in (ProcessStatus.RUNNING.value, ProcessStatus.STARTING.value):
                 continue
             if not proc.shell_id:
+                continue
+            # On-demand gate: only recover a process a UI actually has open.
+            if f"agentic_process:{proc.id}" not in watched and f"shell:{proc.shell_id}" not in watched:
                 continue
             shell = await proc.shell()
             alive = False
@@ -211,19 +248,19 @@ async def run_pty_recovery() -> None:
         except Exception:
             logger.exception("pty-recovery: failed to recover %s", getattr(proc, "id", "?"))
 
-    await _recover_bare_shells({p.shell_id for p in procs if p.shell_id})
+    await _recover_bare_shells({p.shell_id for p in procs if p.shell_id}, watched)
 
 
 # A bare terminal (no agentic worker) is just a Shell with worker_pid=None, so
 # the agentic pass above (keyed on worker_alive) never touches it. Liveness for a
 # bare shell is solely "is the PTY process attachable"; respawn is a fresh
-# Shell.start_pty(). Bound to recently-active shells so a long-dead "running"
-# record (an abandoned tab whose disk row was never closed) isn't resurrected on
-# every restart — only a terminal the user plausibly still has open.
+# Shell.start_pty(). The watched gate (below) is the primary "user has it open"
+# signal; the recency window is a secondary guard against reviving a long-dead
+# "running" record (an abandoned tab whose disk row was never closed).
 _BARE_SHELL_RECOVERY_WINDOW_SECONDS = 3600
 
 
-async def _recover_bare_shells(agentic_shell_ids: set[str]) -> None:
+async def _recover_bare_shells(agentic_shell_ids: set[str], watched: set[str]) -> None:
     from datetime import datetime, timezone
 
     from flow_sdk.builtin.shell import Shell, ShellStatus
@@ -242,6 +279,9 @@ async def _recover_bare_shells(agentic_shell_ids: set[str]) -> None:
             # Agentic-owned shells are handled by the pass above (with --resume).
             if shell.id in agentic_shell_ids:
                 continue
+            # On-demand gate: only recover a terminal a UI actually has open.
+            if f"shell:{shell.id}" not in watched:
+                continue
             # Recency gate — skip a long-dead "running" record; only revive a
             # terminal the user plausibly still has open. A missing/unparseable
             # last_active_at (ts is None) falls through and is treated as recent.
@@ -258,10 +298,13 @@ async def _recover_bare_shells(agentic_shell_ids: set[str]) -> None:
             logger.info("pty-recovery: recovering bare shell %s (PTY dead after restart)", shell.id)
             await shell.start_pty()
             logger.info("pty-recovery: recovered bare shell %s", shell.id)
+            # Tell watching clients their shell is back so an already-open pane
+            # re-attaches its output stream (the agentic pass does the same;
+            # without this, a pane whose reconnect-time attach raced ahead of
+            # recovery stays deaf — frozen-terminal RCA, bug A).
+            await notify_watchers_recovered(None, shell.id, None)
         except Exception:
-            logger.exception(
-                "pty-recovery: failed to recover bare shell %s", getattr(shell, "id", "?")
-            )
+            logger.exception("pty-recovery: failed to recover bare shell %s", getattr(shell, "id", "?"))
 
 
 # Background periodic watchdog (mid-session dead-worker respawn). Mirrors

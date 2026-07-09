@@ -12,5 +12,6 @@ from . import context_resolve_action
 from . import prompt_pin_action
 from . import wiki_action
 from . import members_action
+from . import address_book_action
 from . import diagnose_action
 from . import report_action

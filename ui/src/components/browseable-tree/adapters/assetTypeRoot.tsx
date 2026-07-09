@@ -122,30 +122,28 @@ function assetNodeId(typeName: string, path: string): string {
 /**
  * Build a child Browseable from a SearchResult.
  */
-function assetChild(typeName: string, iconName: string | null, result: SearchResult, folderBacked: boolean, onAfterDelete?: () => void): Browseable {
+function assetChild(typeName: string, iconName: string | null, result: SearchResult, folderBacked: boolean, rootId: string, onAfterDelete?: () => void): Browseable {
   const label = result.name || basename(result.asset_ref) || '(untitled)';
   // Projects open in their collaboration space rather than the asset editor.
   const pointer = typeName === 'project'
     ? DockPointer.forProject(result.record_id)
     : DockPointer.forAssetEditor(typeName, result.asset_ref);
-  const toolbar: ToolbarAction[] = [];
   // Projects open in their collaboration space and aren't deleted from the
   // asset sidebar; everything else (markdown, agent, skill, workflow, plan,
   // claude_md, …) routes through the same /graph/<type>/<id> DELETE endpoint.
-  if (typeName !== 'project') {
+  // The raw delete is defined once and reused by both the hover toolbar (wrapped
+  // in a confirm) and the multi-select `bulkDelete`.
+  const deletable = typeName !== 'project';
+  const deleteRun = async () => {
+    await apiClient.delete(`${config.API_PREFIXES.graph}/${typeName}/${result.record_id}`);
+  };
+  const toolbar: ToolbarAction[] = [];
+  if (deletable) {
     toolbar.push({
       id: `delete:${typeName}:${result.record_id}`,
       icon: <Trash2 />,
       label: `Delete ${label}`,
-      run: () => {
-        showDeleteAssetModal({
-          name: label,
-          onConfirm: async () => {
-            await apiClient.delete(`${config.API_PREFIXES.graph}/${typeName}/${result.record_id}`);
-          },
-          onAfterDelete,
-        });
-      },
+      run: () => showDeleteAssetModal({ name: label, onConfirm: deleteRun, onAfterDelete }),
       showBusyIndicator: false,
     });
   }
@@ -158,8 +156,13 @@ function assetChild(typeName: string, iconName: string | null, result: SearchRes
     pointer,
     // Stable typeid (`<type>-<uuid>`) so a typeid-form active pointer selects this
     // row even though `pointer` is the vfs form. `resultTypeId` handles bare-uuid
-    // vs full-typeid `record_id`.
+    // vs full-typeid `record_id`. Doubles as the multi-select membership key.
     selectionKey: resultTypeId(result)?.toString(),
+    // Multi-select: entity rows participate; a bulk delete refreshes the owning
+    // type root so removed rows drop out.
+    selectable: deletable,
+    selectionType: typeName,
+    bulkDelete: deletable ? { run: deleteRun, refreshId: rootId } : undefined,
     toolbar: toolbar.length > 0 ? toolbar : undefined,
   };
 
@@ -261,7 +264,19 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   };
   const listChildren = async (): Promise<Browseable[]> => {
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
-    return results.map((r) => assetChild(type.type_name, type.icon, r, !!type.folder_backed, onAfterDelete));
+    // A tree node's identity is its asset path (`asset:<type>:<path>`), so the
+    // same file surfaced by more than one search result (e.g. discovered under
+    // multiple scopes, or duplicate DB records for one on-disk asset) must
+    // collapse to a single row — otherwise two children share a React key.
+    const seen = new Set<string>();
+    const children: Browseable[] = [];
+    for (const r of results) {
+      const child = assetChild(type.type_name, type.icon, r, !!type.folder_backed, rootId, onAfterDelete);
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
+      children.push(child);
+    }
+    return children;
   };
 
   const root: BrowseableRoot = {

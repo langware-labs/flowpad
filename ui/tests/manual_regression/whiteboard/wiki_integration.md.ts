@@ -7,7 +7,12 @@ import * as path from 'path';
 import { apiBase } from '../_shared/api';
 
 const API = apiBase();
-const DB = path.join(os.homedir(), '.flow/instances/qa-1/flowpad.db');
+// Per-instance DB (see the .md: `~/.flow/instances/<instance>/flowpad.db`). The
+// instance under test is whichever backend the run targets — FLOW_INSTANCE — not
+// a hardcoded one; a stale hardcoded instance would query a different (or long-
+// dead) DB than the one the API just wrote the whiteboard into.
+const FLOW_INSTANCE = process.env.FLOW_INSTANCE || process.env.QA_FLOW_INSTANCE || 'qa-1';
+const DB = path.join(os.homedir(), '.flow/instances', FLOW_INSTANCE, 'flowpad.db');
 
 async function materialize(page: Page, id: string, assetRef: string) {
   await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
@@ -15,6 +20,13 @@ async function materialize(page: Page, id: string, assetRef: string) {
   await page.waitForFunction(() => typeof (window as any).__whiteboardApi === 'object' && (window as any).__whiteboardApi, null, {
     timeout: 15_000,
   });
+  // Re-wait for the live hooks right before use: the editor can remount (a
+  // data-load re-render) and clear window.__whiteboardApi. Concrete-signal wait.
+  await page.waitForFunction(
+    () => typeof (window as any).__whiteboardApi === 'object' && !!(window as any).__whiteboardApi
+      && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
+    null, { timeout: 15_000 },
+  );
   await page.evaluate(() => {
     const lib = (window as any).__excalidrawLib;
     const api = (window as any).__whiteboardApi;

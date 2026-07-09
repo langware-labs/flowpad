@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { apiBase } from '../_shared/api';
+import { ensureAgentAndSkill } from './_seed';
 
 const API = apiBase();
 
@@ -19,6 +20,15 @@ async function dismissWelcomeModalIfShown(page: Page) {
 // Assets page = collapsible BrowseableTree (asset-type roots) + AssetListView.
 // The older LayoutList/Network mode toggle + type pills never shipped.
 test.describe('Assets Page — BrowseableTree + AssetListView', () => {
+  // After a desktop-db/clear the workspace is "never indexed": the asset tree has
+  // no populated roots and the right panel shows the index-prompt CTA instead of
+  // the "Select a type to browse" placeholder. Indexing is an explicit user
+  // action (never automatic), so the test seeds + indexes one agent and one skill
+  // — exactly what a user would do — before asserting the populated-tree UI.
+  test.beforeEach(async ({ page }) => {
+    await ensureAgentAndSkill(page);
+  });
+
   test('1: /dock/assets renders the tree sidebar + placeholder right panel', async ({ page }) => {
     await dismissSetupModal(page);
     await page.goto('/dock/assets');

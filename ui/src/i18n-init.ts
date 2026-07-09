@@ -20,4 +20,5 @@ import { DEFAULT_LOCALE } from '@src/contexts/locale-context';
  * will not react to later locale changes — those should use the lazy `msg`
  * macro instead. This guard only prevents the crash; see the i18n notes.
  */
+i18n.load(DEFAULT_LOCALE, {});
 i18n.activate(DEFAULT_LOCALE);

@@ -22,6 +22,7 @@ from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.scope import Scope
+from flow_sdk.utils.serialization import iso_to_datetime
 from flow_sdk.instance_settings import get_instance_settings
 
 
@@ -265,6 +266,7 @@ def _merge_project(
             "codex_session_count": 0,
             "copilot_session_count": 0,
             "modified_at": None,
+            "last_active_at": None,
             "scope": ["user"],
             "claude": False,
             "codex": False,
@@ -306,6 +308,22 @@ def _merge_project(
     if item["copilot"]:
         worker_types.append("copilot")
     item["worker_types"] = worker_types
+
+
+def _recency_ms(item: dict[str, Any]) -> float:
+    """Unified recency for the project sort: ``last_active_at`` (epoch-ms,
+    stamped when the user opens the project or one of its assets) wins;
+    ``modified_at`` (ISO, session-file mtimes) is the fallback timescale."""
+    last_active = item.get("last_active_at")
+    if last_active:
+        return float(last_active)
+    iso = item.get("modified_at")
+    if iso:
+        try:
+            return iso_to_datetime(str(iso)).timestamp() * 1000
+        except ValueError:
+            pass
+    return 0.0
 
 
 async def list_projects_from_indexer() -> dict[str, Any]:
@@ -371,9 +389,13 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         row["id"] = info.project_id or row["id"]
         row["record_project_id"] = info.record_project_id or row.get("record_project_id")
         row["name"] = info.name or row["name"]
+        # UI-open recency from the Project entity (stamped by the generic
+        # ``activate`` action on project/asset open). Wins the recency sort
+        # below; ``modified_at`` (session-file mtimes) is the fallback.
+        row["last_active_at"] = info.last_active_at
 
     projects = list(projects_by_cwd.values())
-    projects.sort(key=lambda item: item.get("modified_at") or "", reverse=True)
+    projects.sort(key=_recency_ms, reverse=True)
 
     claude_count = sum(1 for item in projects if item["claude"])
     codex_count = sum(1 for item in projects if item["codex"])

@@ -47,25 +47,28 @@ describe('getAnalysisPath', () => {
 // ---------- openAnalysisReport ----------
 
 describe('openAnalysisReport', () => {
+  // Reports open through navigation.openFile — the shared type-dispatch
+  // chokepoint (an .md report lands in the assets document viewer, not the
+  // raw code editor).
   it('opens via VFS path when computeNode is available', () => {
     const fakeTypeId = { toString: () => 'compute_node-@local' };
     mockDataContext.computeNode = { typeId: fakeTypeId };
     mockFromMachinePath.mockReturnValue({ absVfsPath: 'compute_node-@local/home/analysis.md' });
 
-    const navigation = { openDock: vi.fn() } as any;
+    const navigation = { openFile: vi.fn() } as any;
     openAnalysisReport('/home/analysis.md', navigation);
 
     expect(mockFromMachinePath).toHaveBeenCalledWith('/home/analysis.md', fakeTypeId);
-    expect(navigation.openDock).toHaveBeenCalledTimes(1);
+    expect(navigation.openFile).toHaveBeenCalledWith('compute_node-@local/home/analysis.md');
   });
 
   it('falls back to raw path when computeNode is unavailable', () => {
     mockDataContext.computeNode = null;
 
-    const navigation = { openDock: vi.fn() } as any;
+    const navigation = { openFile: vi.fn() } as any;
     openAnalysisReport('/fallback/path.md', navigation);
 
     expect(mockFromMachinePath).not.toHaveBeenCalled();
-    expect(navigation.openDock).toHaveBeenCalledTimes(1);
+    expect(navigation.openFile).toHaveBeenCalledWith('/fallback/path.md');
   });
 });

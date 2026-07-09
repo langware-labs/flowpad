@@ -116,6 +116,15 @@ def _setup_running_process(tc, worker_type: str) -> str:
     async def _create() -> str:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         proc = AgenticProcess(id=str(uuid.uuid4()), worker_type=worker_type)
+        # Headless baseline. pty_mode defaults to True, but with pty_mode=True the
+        # codex cli_options FORCES json_stream=False/ephemeral=False regardless of
+        # cli_config (commit 624ddb89) — so mutating those cli_config fields would
+        # leave the launch shape (hence the snapshot) unchanged, correctly NOT
+        # flipping restart_required. We test them as tracked fields, so the running
+        # baseline must be headless (pty_mode=False) where they actually drive the
+        # codex exec argv. (claude's snapshot is independent of pty_mode, so this is
+        # a no-op for the claude parametrization.)
+        proc.pty_mode = False
         # NEW state — save-hook is a no-op (gate: status != RUNNING).
         await proc.save()
         # Now force RUNNING and capture the snapshot. The save-hook is
@@ -185,7 +194,13 @@ CODEX_TRACKED_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
     ("cli_config.skill_names",     {"cli_config": {"skill_names": ["reviewer"]}}),
     ("cli_config.json_stream",     {"cli_config": {"json_stream": False}}),
     ("cli_config.ephemeral",       {"cli_config": {"ephemeral": False}}),
-    ("visible",                    {"visible": True}),
+    # pty_mode is now the transport selector that drives codex's argv (commit
+    # 85ec7bb6/624ddb89: `if process.pty_mode: json_stream=False, ephemeral=False`).
+    # The running baseline is headless (pty_mode=False, see _setup_running_process);
+    # flipping it to True changes the launch snapshot → restart_required flips.
+    # (`visible` no longer touches the codex snapshot — it moved to
+    # CODEX_NEGATIVE_MUTATIONS, parity with claude.)
+    ("pty_mode",                   {"pty_mode": True}),
 ]
 
 
@@ -217,6 +232,9 @@ CLAUDE_NEGATIVE_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
 
 
 CODEX_NEGATIVE_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
+    # Tab visibility is decoupled from the worker argv now (commit 624ddb89), so
+    # toggling `visible` must NOT flip restart_required — same as claude.
+    ("visible", {"visible": True}),
     ("cli_config.chrome",        {"cli_config": {"chrome": True}}),
     ("cli_config.debug",         {"cli_config": {"debug": True}}),
     ("cli_config.worktree",      {"cli_config": {"worktree": True}}),

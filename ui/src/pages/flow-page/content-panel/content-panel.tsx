@@ -16,6 +16,7 @@ import { MachineOverview } from '@src/components/machine-overview/machine-overvi
 import { MarkdownViewer } from '@src/components/markdown-viewer';
 import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
+import { PreferencesView } from '@src/components/preferences-view/PreferencesView';
 import { ShowView } from '@src/components/show-view/ShowView';
 import { AppHost } from '@src/components/app-host/AppHost';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
@@ -27,6 +28,7 @@ import { SearchView } from '@src/pages/search-view/SearchView';
 import { ConnectionStatus, dataContext, navigator, type OAuthConnection } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
+import { CollaborationPage } from '@src/components/collaboration';
 import { ConnectionsManager } from '@src/components/connections-manager';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
@@ -54,6 +56,7 @@ import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
 import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
 import { useDockLoadError } from '@src/routes/loaders/dock-load-error-store';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { useIsVibe } from '@src/components/view-mode';
 import { AlertTriangle, LogIn } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -70,7 +73,29 @@ import { UserDropdown } from './user-dropdown/user-dropdown';
 import { UnifiedTabStrip } from './unified-tab-strip';
 import { Trans } from '@lingui/react/macro';
 
-export function ContentPanel() {
+// The curated set of "creator" surfaces that get the chrome-less Lovable-style
+// Vibe treatment (chat + live preview + code/docs). Anything not here keeps the
+// normal Standard chrome even in Vibe so its tabs/navigator remain usable.
+const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
+  ViewType.HOME,
+  ViewType.CONVERSATION,
+  ViewType.SHELL,
+  ViewType.AGENTIC_PROCESS,
+  ViewType.WEB_APP,
+  ViewType.EDITOR,
+  ViewType.DIFF,
+  ViewType.MARKDOWN,
+  ViewType.DOCS,
+  ViewType.PLAN,
+  ViewType.SPEC,
+]);
+
+/** ``minimalChrome`` forces the chrome-less arrangement (no tab strip / navigator
+ *  / border framing) regardless of view mode — used when ContentPanel is embedded
+ *  inside a host layout that owns its own chrome (the vibe workspace mounts it as
+ *  the display for a child tab). Generalizes the vibe-creator-surface suppression
+ *  to any embedded host (future: the win/ layout). */
+export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolean } = {}) {
   // Get navigation instance for URL-first architecture
   const { navigation, currentDock, isDockUrl, windowMode } = useDockNavigation();
   const activeLifecycle = useTabLifecycle(currentDock?.tabHash);
@@ -132,7 +157,9 @@ export function ContentPanel() {
 
   const handleExplorerFileSelect = useCallback(
     (path: string) => {
-      navigation.openDock(DockPointer.forFile(path));
+      // Extension dispatch (md → assets document viewer, else code editor)
+      // lives in openFile — the explorer must not hard-code a viewer.
+      navigation.openFile(path);
     },
     [navigation],
   );
@@ -169,10 +196,27 @@ export function ContentPanel() {
   const bodyViewType = isDockUrl && currentDock?.viewType ? currentDock.viewType : ViewType.HOME;
   const activeOpenFailed = activeLifecycle?.state === TabLifecycleState.OpenFailed;
 
+  // Vibe mode = the simplest creator skin. On the curated creator surfaces (chat,
+  // live preview, code/diff, docs), Vibe strips the tab strip + navigator for a
+  // Lovable-style chrome-less canvas. Every OTHER surface (assets, graph,
+  // triggers, settings…) falls back to the normal Standard chrome so navigation
+  // still works. Skin-layer rule: arrangement/visibility only — never data.
+  // Chrome-less either because the host asked (embedded, e.g. the vibe display
+  // pane) or a Vibe creator surface. No longer vibe-only — hence `suppressChrome`.
+  const isVibe = useIsVibe();
+  const suppressChrome = minimalChrome || (isVibe && VIBE_CREATOR_SURFACES.has(bodyViewType));
+
   // Chrome-less when the surface is full-bleed (Home — a welcome landing, not a
-  // tabbed workspace) or in the win/ focus layout. `chrome` (the registry
-  // "takeover" bit) is separate from `DockPointer.tabHash` (chip-or-not).
-  const hideChrome = windowMode || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
+  // tabbed workspace), in the win/ focus layout, or a Vibe creator surface.
+  // `chrome` (the registry "takeover" bit) is separate from
+  // `DockPointer.tabHash` (chip-or-not).
+  // The tab strip is persistent fixture chrome: it stays mounted on fullbleed
+  // surfaces (Home) so open tabs never vanish; only win/ mode and Vibe creator
+  // surfaces hide it. `hideChrome` (strip conditions + fullbleed) governs the
+  // navigator/border framing — derived from `showTabStrip` so the shared
+  // conditions exist exactly once.
+  const showTabStrip = !windowMode && !suppressChrome;
+  const hideChrome = !showTabStrip || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
 
   // File manager filters
   const [enabledFilters, setEnabledFilters] = useState<FilterName[]>([FilterName.HIDDEN]);
@@ -311,6 +355,8 @@ export function ContentPanel() {
         return <TasksViewer />;
       case ViewType.SETTINGS:
         return <SettingsView />;
+      case ViewType.PREFERENCES:
+        return <PreferencesView />;
       case ViewType.SEARCH:
         return <SearchView />;
       case ViewType.WORKFLOWS:
@@ -322,8 +368,14 @@ export function ContentPanel() {
           <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No process ID specified</Trans></div>
         );
       case ViewType.ASSETS:
-      case ViewType.PROJECT:
         return <AssetsPage />;
+      case ViewType.PROJECT: {
+        // A project dock scoped to a collaboration_room (…/collaboration_room/<id>)
+        // renders the collaboration room; a bare project dock is the assets
+        // workspace. roomId comes from the URL, so the room view is URL-first.
+        const { roomId } = DockPointer.parseProjectPointer(currentDock?.pointer);
+        return roomId ? <CollaborationPage /> : <AssetsPage />;
+      }
       case ViewType.INBOX:
         return <InboxView />;
       case ViewType.CONVERSATION:
@@ -349,9 +401,11 @@ export function ContentPanel() {
         </div>
       )}
 
-      {/* Unified tab strip — hidden in the win/ focus layout and on the Home
-          landing (full-bleed). The body below renders the URL-derived view. */}
-      {!hideChrome && <UnifiedTabStrip />}
+      {/* Unified tab strip — persistent fixture chrome: visible on every
+          surface (including Home/fullbleed, where no chip is active but the
+          open tabs + openers stay reachable). Only the win/ focus layout and
+          Vibe creator surfaces are deliberately chrome-less. */}
+      {showTabStrip && <UnifiedTabStrip />}
 
       {/* Zone B — shared left-menu slot, now nested UNDER the tab strip so the
           active view's navigator (assets tree / workflows / docs / triggers /
@@ -360,13 +414,15 @@ export function ContentPanel() {
           body's top edge; the active chip's `-mb-px border-b-transparent`
           opens its bottom over this line, so the menu + body read as one panel
           hanging from the current tab (the folder-tab continuum). */}
-      <div className={`flex min-h-0 flex-1 overflow-hidden ${!hideChrome ? 'border-t border-border' : ''}`}>
-        <NavigatorSlot />
+      <div className={`flex min-h-0 flex-1 overflow-hidden ${showTabStrip ? 'border-t border-border' : ''}`}>
+        {!suppressChrome && <NavigatorSlot />}
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {/* Matches the proven per-viewType slot layout (plain h-full, no flex-col)
-              so xterm fits on first paint — a flex-col parent broke its initial sizing. */}
-          <div className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg">
+              so xterm fits on first paint — a flex-col parent broke its initial sizing.
+              No entrance animation: a tab switch must be visually instant (a fade
+              reads as page navigation, not a tab switch). */}
+          <div className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">
             {renderBody(bodyViewType)}
           </div>
         </div>

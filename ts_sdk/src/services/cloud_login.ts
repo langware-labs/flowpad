@@ -24,6 +24,7 @@ import {
   HubConnectionStatus,
   HubLoginStatus,
   LoginSlot,
+  isHubConnected,
   makeConnectionSlot,
   makeLoginSlot,
 } from './cloud_status';
@@ -319,7 +320,7 @@ class CloudManager extends EventEmitter {
 
   // Back-compat getters — derived from the slots.
   get hubWsConnected() {
-    return this._connection.status === 'connected' || this._connection.status === 'verified';
+    return isHubConnected(this._connection.status);
   }
   get hubWsVerified() {
     return this._connection.status === 'verified';

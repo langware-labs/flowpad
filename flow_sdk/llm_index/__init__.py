@@ -1,9 +1,12 @@
-"""llm_index — pure-python markdown folder-index library.
+"""llm_index — markdown folder-index library.
 
-Independent of the flow_sdk entity/DB layer: stdlib only, no async, no server.
+Independent of the flow_sdk entity/DB layer: no async, no server, no DB.
 Walks a docs tree, summarises files, and assembles a Merkle tree of ``index.md``
 files — with the LLM injected as two pure functions, so every deterministic step
-(walk, hash, cache, render) is plain Python.
+(walk, hash, cache, render) is plain Python. Walking is delegated to the shared
+gitignore-aware engine (:mod:`flow_sdk.fs_store.indexer.walk`, via ``pathspec``),
+so scan scope matches the FSIndexer: dot-dirs walked, ``.claude/`` force-included
+(minus worktrees), ``.gitignore`` honored.
 
     from flow_sdk.llm_index import LLMIndexer
 
@@ -12,6 +15,7 @@ files — with the LLM injected as two pure functions, so every deterministic st
     stats = idx.rebuild(summarize_file, summarize_folder)
 """
 
+from flow_sdk.llm_index.diff import git_unified_diff, is_binary_bytes
 from flow_sdk.llm_index.folder_note import FolderNote
 from flow_sdk.llm_index.index_document import (
     FileRef,
@@ -19,7 +23,6 @@ from flow_sdk.llm_index.index_document import (
     IndexDocument,
     SubfolderRef,
 )
-from flow_sdk.llm_index.diff import git_unified_diff, is_binary_bytes
 from flow_sdk.llm_index.indexer import (
     DocItem,
     IndexItem,

@@ -9,6 +9,7 @@ export enum BookmarkType {
   NOTIFICATION_FAILED = 'notification_failed',
   TERMINAL_ANNOTATION = 'terminal_annotation',
   FAVORITE = 'favorite',
+  FAVORITE_FOLDER = 'favorite_folder',
   PLAN = 'plan',
 }
 
@@ -23,6 +24,10 @@ export interface IBookmark extends IEntity {
   status?: string;
   closed_at?: string;
   remind_at?: string;
+  /** Containing FAVORITE_FOLDER bookmark id; '' (or unset) = root. Empty
+   *  string, not null — dropped-None serialization + merge-never-removes
+   *  would otherwise strand cleared memberships. */
+  parent_id?: string;
 }
 
 @registerEntity
@@ -37,6 +42,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
   status?: string;
   closed_at?: string;
   remind_at?: string;
+  parent_id?: string;
   static type: string = 'bookmark';
 
   constructor(entity: Partial<IBookmark> = {}) {
@@ -51,5 +57,6 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
     this.status = entity.status;
     this.closed_at = entity.closed_at;
     this.remind_at = entity.remind_at;
+    this.parent_id = entity.parent_id;
   }
 }

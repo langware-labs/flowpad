@@ -21,16 +21,14 @@ from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
-
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
     _yaml_load,
     merge_frontmatter,
 )
+from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+from flow_sdk.fs_store.record_types import RecordType
 
 
 def skill_fn(

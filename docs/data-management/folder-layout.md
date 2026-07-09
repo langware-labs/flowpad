@@ -464,18 +464,18 @@ $HOME/
           scan_log.jsonl                # scan log
           types/
             <type>/
-              type_info.json            # per-type TypeInfo
               scan_log.jsonl            # per-type scan log
               index_log.jsonl           # per-type index log
+                                        # (no type_info.json — TypeInfo is NOT persisted; see schema-registry.md)
         records/                         # owned record shadow folders
           task/
             task-@<uid>/
               metadata.json             # ALL persisted fields (flat)
-              <epoch>_<hexdigest>.hash  # index sentinel (zero-byte)
+              <epoch>_<hash>_<pathdigest>.hash  # index sentinel (zero-byte; legacy 2-part form still reconciles)
           skill/
             skill-@<uid>/
               metadata.json
-              <epoch>_<hexdigest>.hash
+              <epoch>_<hash>_<pathdigest>.hash
           claude_error/
             claude_error-@<fingerprint>/
               metadata.json

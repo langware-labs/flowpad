@@ -1,5 +1,5 @@
 import '@src/i18n-init';
-import { initSentry } from '@sdk';
+import { initSentry, toplog } from '@sdk';
 import { sdkConfig } from '@sdk/config/index';
 import { initDesktopBackend } from '@sdk/config/desktop';
 import '@src/styles/index.css';
@@ -33,11 +33,36 @@ function bindMouseNavButtons() {
   window.addEventListener('mouseup', e => {
     if (e.button === 3) {
       e.preventDefault();
+      toplog.log(
+        'navigation',
+        'mouse X1 (back) → history.back()',
+        { url: location.pathname + location.search, historyLen: window.history.length },
+      );
       window.history.back();
     } else if (e.button === 4) {
       e.preventDefault();
+      toplog.log(
+        'navigation',
+        'mouse X2 (forward) → history.forward()',
+        { url: location.pathname + location.search, historyLen: window.history.length },
+      );
       window.history.forward();
     }
+  });
+}
+
+// Ground-truth trace of every history transition the renderer sees — fires for
+// real back/forward (browser, Electron gesture, mouse buttons) AND for the
+// synthetic popstate that NavigationActions.commitBrowserNavigation dispatches
+// after a pushState. A single "back" gesture that produces two of these (or a
+// did-navigate pair in the Electron `[nav]` log) is the double-navigation bug.
+function bindNavigationTrace() {
+  window.addEventListener('popstate', e => {
+    toplog.log(
+      'navigation',
+      'popstate',
+      { url: location.pathname + location.search, state: e.state, historyLen: window.history.length },
+    );
   });
 }
 
@@ -48,7 +73,13 @@ function bindMouseNavButtons() {
 async function init() {
   defineGlobals();
   bindMouseNavButtons();
+  bindNavigationTrace();
   await initDesktopBackend(sdkConfig);
+  // Seed toplog state + subscribe to live topic toggles. Without this the
+  // frontend `toplog.log(...)` calls (incl. the `navigation` topic) are no-ops
+  // because the in-memory state never mirrors the backend. Idempotent; the GET
+  // runs after the backend URL is resolved by initDesktopBackend above.
+  void toplog.bootstrap();
   // Resolve + activate the locale and set `<html lang/dir>` BEFORE first paint
   // so there's no flash of wrong-language / wrong-direction content.
   await initLocale();

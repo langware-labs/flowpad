@@ -9,11 +9,11 @@ import {
   type ProjectListItem,
   Project,
   QueryRequest,
+  PrefKey,
 } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { selectProjectContext } from '@src/components/project-selector';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { SCOPE_SEEDED_VIEWS } from '@src/navigation/NavigationActions';
-import { projectScope } from '@src/lib/scope-filter';
 import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
@@ -24,18 +24,9 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Loader2, Lock, Search, Sparkles } from 'lucide-react';
+import { projectRecencyMs } from '@src/lib/project-recency';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-
-const SHOW_SYSTEM_PROJECTS_KEY = 'project-list-show-system';
-
-function loadShowSystemFlag(): boolean {
-  try { return localStorage.getItem(SHOW_SYSTEM_PROJECTS_KEY) === 'true'; } catch { return false; }
-}
-
-function saveShowSystemFlag(v: boolean) {
-  try { localStorage.setItem(SHOW_SYSTEM_PROJECTS_KEY, v ? 'true' : 'false'); } catch {}
-}
 
 type TimeFilter = 'today' | 'week' | 'all';
 const TIME_FILTER_KEY = 'project-list-time-filter';
@@ -445,9 +436,13 @@ function CompactProjectSelectDialog({
   const q = search.trim().toLowerCase();
 
   const filtered = useMemo(() => {
-    const byRecent = [...projects].sort(
-      (a, b) => effectiveModifiedAt(b.modified_at).getTime() - effectiveModifiedAt(a.modified_at).getTime(),
-    );
+    // `last_active_at` (UI-open recency) wins; session `modified_at` is the
+    // fallback; fully-unknown recency sorts as "now" (new project → top).
+    const now = Date.now();
+    const byRecent = projects
+      .map((p) => ({ p, ms: projectRecencyMs(p) ?? now }))
+      .sort((a, b) => b.ms - a.ms)
+      .map((r) => r.p);
     // No query → show only the most-recent slice; querying searches all projects.
     return q ? byRecent.filter((p) => matchesProjectQuery(p, q)) : byRecent.slice(0, COMPACT_PROJECT_LIMIT);
   }, [projects, q]);
@@ -690,10 +685,6 @@ interface OpenProjectComponentProps {
   /** Called after the project has been picked + side-effects applied. The
    *  gate uses this to resume the action that opened the dialog. */
   onPicked?: (project: Project) => void | Promise<void>;
-  /** Plain switch only: change the active-project CONTEXT without navigating
-   *  (no project tab/dock is opened). Used by the footer "Switch Project" so
-   *  switching projects doesn't pull focus into a project view. */
-  contextOnly?: boolean;
 }
 
 export function OpenProjectComponent({
@@ -705,18 +696,17 @@ export function OpenProjectComponent({
   remoteProjectName,
   trigger,
   onPicked,
-  contextOnly,
 }: OpenProjectComponentProps) {
   const { t } = useLingui();
   const { project: currentProject } = useProject();
   const { computeNode } = useAgentContext();
-  const { navigation, currentDock } = useDockNavigation();
+  const { navigation } = useDockNavigation();
 
   const [showCreate, setShowCreate] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showSystem, setShowSystem] = useState<boolean>(loadShowSystemFlag);
+  const [showSystem, setShowSystem] = usePreference<boolean>(PrefKey.SHOW_SYSTEM_PROJECTS);
   const devMode = useDevMode();
   const isAdvanced = useIsAdvanced();
 
@@ -736,8 +726,7 @@ export function OpenProjectComponent({
 
   const handleShowSystemChange = useCallback((next: boolean) => {
     setShowSystem(next);
-    saveShowSystemFlag(next);
-  }, []);
+  }, [setShowSystem]);
 
   useEffect(() => {
     if (!open) {
@@ -755,45 +744,30 @@ export function OpenProjectComponent({
 
   const setCurrentProjectContext = useCallback(
     async (project: Project) => {
-      await selectProjectContext(project);
-
       onProjectChanged?.();
       if (onPicked) {
-        // Entity stamping (task/conversation/project_id, mapping table writes,
-        // remap navigation) happens inside `onPicked` — the gate's apply
-        // callback owns it (and its own navigation) so the wasReplacement
-        // signal isn't clobbered by a pre-stamp here.
+        // Gate/map flows don't navigate through a project loader, so adopt the
+        // context here. Entity stamping (task/conversation/project_id, mapping
+        // table writes, remap navigation) happens inside `onPicked` — the
+        // gate's apply callback owns it (and its own navigation) so the
+        // wasReplacement signal isn't clobbered by a pre-stamp here.
+        await selectProjectContext(project);
         try {
           await onPicked(project);
         } catch {
           // continuation errors shouldn't break the picker
         }
-      } else if (!contextOnly) {
-        // Plain switch: select the project by navigating to its tab — the same
-        // path as clicking that tab (dockForProjectEntry → fromTabHash →
-        // openDock). Resumes the last-active tab, or the project landing when it
-        // has no open tab. Without this the active project changed but the URL
-        // stayed on the old project's tab, so nothing was selected.
+      } else {
+        // Plain switch (footer Switch Project included): navigate to the
+        // project's tab — the same path as clicking that tab in the strip
+        // (dockForProjectEntry → fromTabHash → openDock). Resumes the
+        // last-active tab, or the project landing when it has no open tab. No
+        // context pre-write here: the destination dock's loader is the single
+        // writer of project context (URL-first).
         navigation.openDock(await dockForProjectEntry(project.id));
-      } else if (
-        // contextOnly (footer Switch Project) deliberately does NOT open a
-        // project tab — it just flips the active-project context. But a
-        // scope-seeded view (assets/triggers/files) reads its project from the
-        // URL's `scope-*`, which OUTRANKS the active project — so without this
-        // its counts/lists stay pinned to the old project until a manual scope
-        // change. When the current view is project-scoped, re-scope it IN PLACE
-        // to the new project (same view, no focus pull — exactly like the scope
-        // bar) so the URL follows the switch. A deliberate all/user scope is
-        // left untouched; only an already-project-scoped view follows along.
-        currentDock &&
-        SCOPE_SEEDED_VIEWS.has(currentDock.viewType) &&
-        currentDock.scopeFilter?.mode === 'project' &&
-        currentDock.scopeFilter.activeProjectId !== project.id
-      ) {
-        navigation.openDock(currentDock.withScopeFilter(projectScope(project.id)));
       }
     },
-    [onProjectChanged, onPicked, navigation, currentDock, contextOnly],
+    [onProjectChanged, onPicked, navigation],
   );
 
   const ensureProjectAndSetContext = useCallback(

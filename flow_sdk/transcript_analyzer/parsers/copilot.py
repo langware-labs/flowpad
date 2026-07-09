@@ -14,6 +14,7 @@ from ..entries import (
     ToolUseEntry,
     UserMessageEntry,
 )
+from ..entries.usage import UsageEntry
 from ..entry import TranscriptEntry
 
 
@@ -132,6 +133,11 @@ class CopilotParser:
                 **base,
             ))
 
+        # Copilot only reports ``outputTokens`` per assistant message (no
+        # input/cache/reasoning breakdown in the transcript). Emit the one
+        # dim it does carry so ProcessCounters folds it like any other worker.
+        out.extend(self._emit_usage(data, message_id, base))
+
         tool_requests = data.get("toolRequests")
         if isinstance(tool_requests, list):
             for idx, request in enumerate(tool_requests):
@@ -156,6 +162,29 @@ class CopilotParser:
         if out:
             return out
         return [MetaEntry(meta_kind="assistant.message", payload=data, **base)]
+
+    def _emit_usage(self, data: dict, message_id: str, base: dict) -> list[TranscriptEntry]:
+        """One ``io=output`` UsageEntry from ``data.outputTokens`` (>0 only).
+
+        Copilot exposes no input/cache/reasoning token counts, so output is
+        the sole chargeable dim we can fold. ``entry_id = <messageId>:usage``
+        mirrors the Claude/Codex convention; ``id`` is suffixed for uniqueness.
+        """
+        out_toks = _as_int(data.get("outputTokens"))
+        if not out_toks or out_toks <= 0:
+            return []
+        return [UsageEntry(
+            count=out_toks,
+            io="output",
+            unit="token",
+            id=f"{base['id']}:usage",
+            entry_id=f"{message_id}:usage" if message_id else None,
+            session_id=base["session_id"],
+            timestamp=base["timestamp"],
+            worker=base["worker"],
+            parent_id=base["parent_id"],
+            model=self._current_model,
+        )]
 
     def _tool_execution_start(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
         data = _data(raw)

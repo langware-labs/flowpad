@@ -24,8 +24,11 @@ import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { FolderOpen, FolderPlus, GitBranch, type LucideIcon } from 'lucide-react';
+import { Folder, FolderOpen, FolderPlus, GitBranch, type LucideIcon } from 'lucide-react';
+import { showInputPrompt } from '@src/components/ui/input-prompt-modal';
+import { useFavorites } from '@src/hooks/use-favorites';
 import { useCallback, useMemo, useState, type ComponentType } from 'react';
+import { projectRecencyMs } from '@src/lib/project-recency';
 import { QUICK_CREATE_REGISTRY } from './registry';
 
 interface QuickCreateModalProps {
@@ -82,6 +85,7 @@ function DesktopTile({ Icon, label, iconClassName, disabled, onClick }: DesktopT
  */
 export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModalProps) {
   const { t } = useLingui();
+  const { createFolder } = useFavorites();
   const { types: serverTypes } = useAssetTypes();
   const { project: currentProject } = useProject();
   const { projects, isLoading: isLoadingProjects } = useProjects();
@@ -188,6 +192,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
         name: p.displayName,
         path: p.fs_storage_mount_path ?? '',
         modifiedAt: p.updated_date ?? null,
+        recencyMs: projectRecencyMs({ last_active_at: p.last_active_at, modified_at: p.updated_date }),
       })),
     [projects],
   );
@@ -266,6 +271,27 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
     },
   ];
 
+  // Desktop-only grouping for favorite tiles — a Bookmark entity, not a
+  // file/scope asset, so deliberately a hardcoded tile (registry entries
+  // are filtered by server `creatable` types and drive file creation).
+  const desktopTiles: Array<{ key: string; Icon: LucideIcon; label: string; onClick: () => void }> = [
+    {
+      key: 'bookmark-folder',
+      Icon: Folder,
+      label: t`Bookmark folder`,
+      onClick: () => {
+        onOpenChange(false);
+        showInputPrompt({
+          title: t`New bookmark folder`,
+          placeholder: t`Folder name`,
+          onConfirm: async (name) => {
+            await createFolder(name);
+          },
+        });
+      },
+    },
+  ];
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -330,6 +356,15 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
               <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>New project</Trans></h3>
               <div className="flex flex-wrap gap-3">
                 {projectTiles.map((t) => (
+                  <DesktopTile key={t.key} Icon={t.Icon} label={t.label} onClick={t.onClick} />
+                ))}
+              </div>
+            </section>
+
+            <section>
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>Desktop</Trans></h3>
+              <div className="flex flex-wrap gap-3">
+                {desktopTiles.map((t) => (
                   <DesktopTile key={t.key} Icon={t.Icon} label={t.label} onClick={t.onClick} />
                 ))}
               </div>

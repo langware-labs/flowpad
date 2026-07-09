@@ -176,6 +176,8 @@ export function ConversationPanel({
   // Drawer + ribbon state. Drawer is collapsible — toggled via the ribbon.
   const [sideOpen, setSideOpen] = useState<boolean>(true);
   const [activeSideTab, setActiveSideTab] = useState<ConversationSideTab>('context');
+  // The run a message's one-liner asked to open — highlighted in the Runs tab.
+  const [focusedRunId, setFocusedRunId] = useState<string | null>(null);
   // Selection drives the bubble highlight + per-row highlight in the
   // aggregated Context panel. It's a list rather than a single id so that
   // clicking a context entity can light up *every* message the entity was
@@ -276,7 +278,7 @@ export function ConversationPanel({
     drawerChildren.runs = (
       <WorkflowRunsPanel
         entries={runEntries}
-        currentEntry={null}
+        currentEntry={runEntries.find((e) => e.process.id === focusedRunId) ?? null}
         computeNodeId={targetStr || undefined}
       />
     );
@@ -292,11 +294,12 @@ export function ConversationPanel({
     setSideOpen(true);
   };
 
-  // Approve & Execute spawns a new headless AgenticProcess; surface it
-  // immediately by popping the drawer open on the Runs tab. No-op when the
-  // conversation has no Runs target (project-only views, etc.).
-  const revealRunsTab = useCallback(() => {
+  // Clicking a message's run-status one-liner opens that run in the Runs tab,
+  // focused on it. Execution itself no longer pops the drawer — the user opens
+  // it here on demand. No-op when the conversation has no Runs target.
+  const openRun = useCallback((processId: string) => {
     if (!showRuns) return;
+    setFocusedRunId(processId);
     setActiveSideTab('runs');
     setSideOpen(true);
   }, [showRuns]);
@@ -323,7 +326,7 @@ export function ConversationPanel({
                 ensureMapped={ensureMapped}
                 selectedMessageIds={selectedMessageIds}
                 onSelectMessage={selectOneMessage}
-                onApproveAndExecuteFired={revealRunsTab}
+                onOpenRun={openRun}
               />
             </ChipsExcludeProvider>
           </div>

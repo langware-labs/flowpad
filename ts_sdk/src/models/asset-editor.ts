@@ -54,3 +54,14 @@ export function editorForType(type: string): AssetEditor | undefined {
 export function isAssetEditor(v: string): v is AssetEditor {
   return (Object.values(AssetEditor) as string[]).includes(v);
 }
+
+/**
+ * Editor for a RAW file path (no entity): the markdown family by extension,
+ * everything else the plain code editor. The single home of the
+ * "which extensions are markdown" rule — navigate_vfs and the vibe display
+ * both route through this.
+ */
+export function editorForPath(path: string): AssetEditor {
+  const ext = path.split('.').pop()?.toLowerCase();
+  return ext === 'md' || ext === 'markdown' ? AssetEditor.MARKDOWN : AssetEditor.CODE;
+}

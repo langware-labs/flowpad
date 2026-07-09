@@ -11,9 +11,6 @@ import { useVisitorMessageStore } from '@src/store/use-visitor-message-store';
 import { trackEvent } from '@src/utils/analytics';
 import {
   ActionInfo,
-  Artifact,
-  ArtifactReferenceType,
-  ArtifactType,
   config,
   dataContext,
   dataManager,
@@ -24,6 +21,7 @@ import {
   navigator,
   Project,
   TypeId,
+  gitOriginFromUrl,
 } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -31,7 +29,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, D
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
 import { notify } from '@src/notifications';
-import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { FileArchive, GitBranch, Loader2, Paperclip, Send, Settings2, Square } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -67,17 +64,6 @@ interface CodebaseConnection {
   error?: string;
 }
 
-interface ArtifactWithMetadata {
-  artifact_type?: string;
-  created_date?: string;
-  metadata?: {
-    url?: string;
-    name?: string;
-    connected_at?: string;
-    project_id?: string;
-  };
-}
-
 const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
   onCancel,
@@ -96,9 +82,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const { someone, visitor } = useAuth();
   const navigate = useNavigate();
   const { project } = useProject();
-
-  // Get project artifacts using the hook
-  const { data: projectArtifacts, isLoading: isLoadingArtifacts } = useCurrentArtifacts();
 
   const [uploadingToFlowId, setUploadingToFlowId] = useState<string | undefined>(processId);
   const [uploadingToProjectId, setUploadingToProjectId] = useState<string | undefined>();
@@ -301,43 +284,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   }, []);
 
-  // Save repository as project artifact
-  const saveRepoArtifact = useCallback(
-    async (projectTypeId: TypeId, repoUrl: string, repoName: string, processId?: string, branch?: string) => {
-      try {
-        const targetFlowId = processId || currentFlowId;
-
-        if (!targetFlowId) {
-          console.error('No flow ID available for saving artifact');
-          return;
-        }
-
-        // Create artifact using SDK
-        const artifact = new Artifact({
-          name: repoName,
-          path: repoUrl,
-          artifact_type: ArtifactType.GIT_REPO, // Use REPO type as intended
-          description: `Repository connection: ${repoName}`,
-          ref_type: ArtifactReferenceType.URL,
-          generating_flow_id: targetFlowId,
-          metadata: {
-            url: repoUrl,
-            name: repoName,
-            branch: branch,
-            connected_at: new Date().toISOString(),
-            project_id: projectTypeId.id,
-          },
-        });
-
-        // Save the artifact using SDK with project TypeId
-        await artifact.save([projectTypeId]);
-      } catch (error) {
-        console.error('Error saving repository artifact:', error);
-      }
-    },
-    [currentFlowId],
-  );
-
   const addZipUpload = useCallback(
     async (zipFile: File) => {
       try {
@@ -349,7 +295,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         // Mark the connection as connecting
         setCodebaseConnection(connection);
 
-        const { processId: uploadingFlowId, projectId: uploadingProjectId } =
+        const { projectId: uploadingProjectId } =
           currentProjectId && currentFlowId
             ? { processId: currentFlowId, projectId: currentProjectId }
             : await createFlow();
@@ -363,11 +309,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
         // Mark the connection as connected
         setCodebaseConnection((prev) => (prev ? { ...prev, isConnecting: false } : null));
-
-        // Save ZIP as project artifact (remove .zip extension from name)
-        const zipFileNameWithoutExt = zipFile.name.replace(/\.zip$/i, '');
-        const projectTypeId = new TypeId(Project.type, uploadingProjectId);
-        await saveRepoArtifact(projectTypeId, zipFile.name, zipFileNameWithoutExt, uploadingFlowId);
       } catch (error) {
         console.error('Error uploading zip file:', error);
         setCodebaseConnection(null);
@@ -377,7 +318,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         });
       }
     },
-    [createFlow, currentProjectId, currentFlowId, saveRepoArtifact],
+    [createFlow, currentProjectId, currentFlowId],
   );
 
   const handleFilesDrop = useCallback(
@@ -672,44 +613,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
     setCodebaseConnection(null);
   }, [project?.id]);
 
-  // Process project artifacts to restore codebase connection state
-  useEffect(() => {
-    if (!projectArtifacts || isLoadingArtifacts || codebaseConnection) {
-      return;
-    }
-
-    try {
-      // Filter for GIT_REPO artifacts
-      const repoArtifacts = projectArtifacts.filter(
-        (artifact) => (artifact as ArtifactWithMetadata).artifact_type === ArtifactType.GIT_REPO,
-      );
-
-      // Log error if more than one repo artifact found
-      if (repoArtifacts.length > 1) {
-        console.error(`Expected only one repo artifact per project, but found ${repoArtifacts.length}`);
-      }
-
-      if (repoArtifacts.length > 0) {
-        const repoArtifact = repoArtifacts[0];
-        const repoData = (repoArtifact as ArtifactWithMetadata).metadata;
-
-        if (repoData && repoData.url) {
-          // Determine if it's a Git repository or ZIP file
-          const isGitRepo = repoData.url.startsWith('http') || repoData.url.startsWith('git');
-          const connectionType = isGitRepo ? CONNECTION_TYPES.GIT : CONNECTION_TYPES.ZIP;
-
-          setCodebaseConnection({
-            name: repoData.url,
-            type: connectionType,
-            isConnecting: false,
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Error processing project artifacts:', error);
-    }
-  }, [projectArtifacts, isLoadingArtifacts, codebaseConnection]);
-
   const handleZipFileInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
@@ -740,28 +643,24 @@ const ChatInput: React.FC<ChatInputProps> = ({
         };
         setCodebaseConnection(connection);
 
-        const { processId: uploadingFlowId, projectId: uploadingProjectId } =
+        const { projectId: uploadingProjectId } =
           currentProjectId && currentFlowId
             ? { processId: currentFlowId, projectId: currentProjectId }
             : await createFlow();
 
-        // Setup compute node with git URL and optional branch
+        // Setup compute node with a canonical GitOrigin.
         const projectForSetup = dataManager.getByTypeIdFromCache<Project>(new TypeId(Project.type, uploadingProjectId));
         if (!projectForSetup) {
           throw new Error('Project not found');
         }
-        await projectForSetup.setupComputeNode({
-          gitRemoteRepoUrl: url,
-          ...(branch && { gitBranch: branch }),
-        });
+        const gitOrigin = gitOriginFromUrl(url, branch);
+        if (!gitOrigin) {
+          throw new Error('Invalid Git repository URL');
+        }
+        await projectForSetup.setupComputeNode({ gitOrigin });
 
         // Mark the connection as connected
         setCodebaseConnection((prev) => (prev ? { ...prev, isConnecting: false } : null));
-
-        // Save repository as project artifact
-        const repoName = getRepoNameFromUrl(url);
-        const projectTypeId = new TypeId(Project.type, uploadingProjectId);
-        await saveRepoArtifact(projectTypeId, url, repoName, uploadingFlowId, branch);
 
         // Check if we need to refresh the file system or project context
       } catch (error) {
@@ -773,7 +672,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         });
       }
     },
-    [currentProjectId, currentFlowId, createFlow, saveRepoArtifact, getRepoNameFromUrl],
+    [currentProjectId, currentFlowId, createFlow],
   );
 
   const handleGitCloneSubmit = useCallback(async () => {

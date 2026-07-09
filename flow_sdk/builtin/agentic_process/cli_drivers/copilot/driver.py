@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    apply_worker_env,
     AgenticContext,
     AgenticProcessContextKey,
     WorkerCLIOptions,
@@ -53,6 +54,7 @@ class CopilotDriver:
     # Copilot's TUI treats a pasted prompt ending in \r as literal text — needs
     # a discrete Enter after the paste settles (Shell.write_then_submit).
     pty_submits_on_paste = False
+    pins_resume_cwd = False  # no transcript-cwd pinning, no fork
 
     def cli_options(self, process: "AgenticProcess") -> CopilotCliOptions:
         cmd = CopilotCliOptions.from_json(process.cli_config)
@@ -62,7 +64,9 @@ class CopilotDriver:
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.skill_names = list(agents_json.keys())
-        if process.visible:
+        # Transport intent (``pty_mode``), not tab visibility, selects the argv
+        # shape: PTY → interactive (no json-stream); headless → json-stream.
+        if process.pty_mode:
             cmd.json_stream = False
         if process.session_id and self._has_session(process):
             cmd.resume = True
@@ -84,6 +88,7 @@ class CopilotDriver:
             await process.get_project()
         except Exception:
             logger.debug("CopilotDriver.headless_prompt: get_project failed", exc_info=True)
+        instruction_assets = await process.prepare_system_instruction_assets()
         if not process.workdir:
             return ApiFailResponse(message="copilot prompt: workdir is not set")
 
@@ -105,13 +110,14 @@ class CopilotDriver:
         cli_cfg = process.cli_config or {}
         context = AgenticContext(
             workdir=process.workdir,
-            env_vars=dict(cli_cfg.get("env_vars") or {}),
+            env_vars=apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process),
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
             effort=cli_cfg.get("effort"),
             add_dirs=list(process.resolved_add_dirs or []),
             session_id=process.session_id if not resumable else None,
             resume_session_id=process.session_id if resumable else None,
+            **process._instruction_context_kwargs(instruction_assets),
         )
 
         worker = CopilotCLIStreamWorker.for_process(process.id)
@@ -179,10 +185,19 @@ class CopilotDriver:
         return CopilotCLIStreamWorker.for_process(process.id)
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
-        local = self._process_local_descriptor(process)
-        if local is not None:
-            return local
-        return self._session_descriptor(process)
+        """Resolve the Copilot transcript for READING (history / prompts / status).
+
+        Transcript↔output alignment (mirror of codex): the session record
+        (``~/.copilot/session-state/<id>/events.jsonl``) is the canonical, complete
+        transcript — user-message entries AND assistant output. The process-local
+        file is only the tee'd stdout (assistant output, no user-message entry), so
+        ``transcript/prompts`` came back empty for headless. Prefer the session
+        record; fall back to the stdout tee only before the session id resolves.
+        """
+        session = self._session_descriptor(process)
+        if session is not None:
+            return session
+        return self._process_local_descriptor(process)
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
@@ -248,28 +263,7 @@ class CopilotDriver:
         return _copilot_load_session_history(process.session_id or "", process_id=process.id)
 
     def compose_prompt(self, instruction: str, agents_json: dict | None) -> str:
-        agents_json = agents_json or {}
-        if not agents_json:
-            return instruction
-        sections = [
-            "# Inline sub-agent definitions",
-            (
-                "Each ## block below defines a named sub-agent. Do not spawn a "
-                "separate agent; follow the relevant agent instructions yourself "
-                "inside this Copilot CLI turn."
-            ),
-        ]
-        for name, entry in agents_json.items():
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections.append(f"\n## {name}")
-            if desc:
-                sections.append(desc)
-            if body:
-                sections.append(body)
-        sections.append("\n# User instruction")
-        sections.append(instruction)
-        return "\n".join(sections)
+        return instruction
 
     def external_session_dirs(self) -> set[str]:
         root = copilot_session_state_root()

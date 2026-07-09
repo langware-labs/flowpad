@@ -87,7 +87,7 @@ class CodexCLIStreamWorker(AgenticWorker):
         prompt: str,
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
-        argv, env = self._build_spawn(context)
+        argv, env, stdin = self._build_spawn(context, prompt)
         if argv is None:
             yield _error("codex binary not found in PATH")
             return
@@ -121,10 +121,11 @@ class CodexCLIStreamWorker(AgenticWorker):
             yield _error(f"spawn failed: {e}")
             return
 
-        # Pipe the prompt in and close stdin so codex starts processing.
+        # Pipe the prompt (with any system-prompt addition already prepended by
+        # the options' stdin sink) in, and close stdin so codex starts processing.
         try:
             assert self._proc.stdin is not None
-            self._proc.stdin.write(prompt.encode("utf-8"))
+            self._proc.stdin.write((stdin or "").encode("utf-8"))
             await self._proc.stdin.drain()
             self._proc.stdin.close()
         except Exception as e:
@@ -198,12 +199,13 @@ class CodexCLIStreamWorker(AgenticWorker):
     def _build_spawn(
         self,
         context: AgenticContext,
-    ) -> tuple[list[str] | None, dict[str, str]]:
+        prompt: str,
+    ) -> tuple[list[str] | None, dict[str, str], str | None]:
         # Discovered harness capability supplies the CLI's bin folder
         # (terminal-PATH resolution) — None ⇔ codex is not installed.
         path_env = worker_path_env("codex")
         if path_env is None:
-            return None, {}
+            return None, {}, None
 
         opts = CodexCliOptions(
             workdir=context.workdir,
@@ -220,7 +222,13 @@ class CodexCLIStreamWorker(AgenticWorker):
             # turn mints a fresh session_id (the headless multi-turn resume bug).
             ephemeral=False,
         )
-        argv, env_from_opts = opts.to_spawn_args()
+        opts.add_dirs = list(context.add_dirs or [])
+        opts.developer_instructions = context.developer_instructions
+        # Asset-backed system instructions ride developer_instructions; the
+        # legacy system_prompt_append path remains unused for new launches.
+        argv, env_from_opts, stdin = opts.to_spawn(
+            instruction=prompt, system_prompt_append=context.instructions
+        )
 
         # Inherit os.environ so codex can find creds, PATH, ~/.codex; overlay
         # the capability's PATH prepend (argv[0] + `#!/usr/bin/env node`
@@ -228,7 +236,7 @@ class CodexCLIStreamWorker(AgenticWorker):
         env = dict(os.environ)
         env.update(path_env)
         env.update(env_from_opts)
-        return argv, env
+        return argv, env, stdin
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
         if proc.stderr is None:

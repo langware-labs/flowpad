@@ -11,7 +11,6 @@ from flow_sdk.fs_store.indexer.index_function import FSIndexer
 from flow_sdk.fs_store.indexer.roots import default_roots
 from flow_sdk.fs_store.record_types import RecordType
 
-
 # Terminal record types the indexer writes via Record.from_fsref.
 # Used by rebuild mode in the index handler to know what to clear.
 INDEXABLE_TYPES: list[RecordType] = [
@@ -43,54 +42,73 @@ INDEXABLE_TYPES: list[RecordType] = [
 
 
 def build_default_indexer() -> FSIndexer:
-    """Construct an FSIndexer with the canonical root set + all functions registered."""
+    """Construct the canonical indexer: root set + all functions registered.
+
+    Honors the ``indexer_backend`` toggle (env ``FLOWPAD_INDEXER_BACKEND`` >
+    pref ``preferences.advanced.indexer_backend``): ``rust`` returns the
+    RSIndexerAdapter behind the same surface (fail-open to FSIndexer when the
+    binary doesn't resolve). Default is the Python FSIndexer.
+    """
+    rs = _maybe_rs_indexer()
+    if rs is not None:
+        # TypeInfo registry must still be complete — scan-projection callers
+        # run from_disk_fn Python-side on the adapter's FSRefs.
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+        return rs
     # Ensure all TypeInfo metadata (slot fns, post_sync_fn, presentation) is
     # registered before any indexing/sync runs. Type metadata now lives in
     # schema/type_info/<type>_info.py (registered by register_all) rather than
     # self-registering on functions-module import, so building the indexer is
     # the chokepoint that guarantees a complete registry. Idempotent.
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+    from flow_sdk.fs_store.indexer.functions.agent import agent_fn
+    from flow_sdk.fs_store.indexer.functions.agent_trace import agent_trace_fn
+    from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
+    from flow_sdk.fs_store.indexer.functions.claude_hook import (
+        claude_hook_files_extras_fn,
+        claude_hook_files_fn,
+        hooks_in_settings_fn,
+    )
+    from flow_sdk.fs_store.indexer.functions.claude_md import (
+        claude_md_in_claude_subdir_fn,
+        claude_md_in_project_root_fn,
+    )
+    from flow_sdk.fs_store.indexer.functions.claude_memory import claude_memory_fn
+    from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_fn
+
     # Import locally to keep this module import-light at package-init time.
     from flow_sdk.fs_store.indexer.functions.claude_projects import claude_projects_fn
+    from flow_sdk.fs_store.indexer.functions.claude_rules import claude_rules_fn
     from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
-    from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
     from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
-    from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_fn
-    from flow_sdk.fs_store.indexer.functions.claude_md import (
-        claude_md_in_claude_subdir_fn, claude_md_in_project_root_fn,
-    )
-    from flow_sdk.fs_store.indexer.functions.claude_rules import claude_rules_fn
-    from flow_sdk.fs_store.indexer.functions.spec import spec_project_fn
-    from flow_sdk.fs_store.indexer.functions.prompt import prompt_project_fn
-    from flow_sdk.fs_store.indexer.functions.skill import skill_fn
-    from flow_sdk.fs_store.indexer.functions.whiteboard import whiteboard_fn
-    from flow_sdk.fs_store.indexer.functions.agent_trace import agent_trace_fn
-    from flow_sdk.fs_store.indexer.functions.workflow_run import workflow_run_fn
-    from flow_sdk.fs_store.indexer.functions.usage_report import usage_report_fn
-    from flow_sdk.fs_store.indexer.functions.agent import agent_fn
-    from flow_sdk.fs_store.indexer.functions.workflow import (
-        workflow_fn, workflow_frontmatter_fn,
-    )
-    from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
-    from flow_sdk.fs_store.indexer.functions.claude_memory import claude_memory_fn
+    from flow_sdk.fs_store.indexer.functions.dataset import dataset_fn
+    from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
     from flow_sdk.fs_store.indexer.functions.markdown import (
-        markdown_flat_fn, markdown_in_folder_fn,
+        markdown_flat_fn,
+        markdown_in_folder_fn,
     )
+    from flow_sdk.fs_store.indexer.functions.mcp_server import (
+        mcp_servers_in_file_fn,
+        mcp_source_files_fn,
+    )
+    from flow_sdk.fs_store.indexer.functions.plugin import plugin_fn
     from flow_sdk.fs_store.indexer.functions.project_folder_walker import (
         project_folder_walker_fn,
     )
+    from flow_sdk.fs_store.indexer.functions.prompt import prompt_project_fn
+    from flow_sdk.fs_store.indexer.functions.skill import skill_fn
+    from flow_sdk.fs_store.indexer.functions.spec import spec_project_fn
     from flow_sdk.fs_store.indexer.functions.task import task_fn
-    from flow_sdk.fs_store.indexer.functions.dataset import dataset_fn
-    from flow_sdk.fs_store.indexer.functions.claude_hook import (
-        claude_hook_files_fn, claude_hook_files_extras_fn, hooks_in_settings_fn,
-    )
-    from flow_sdk.fs_store.indexer.functions.mcp_server import (
-        mcp_source_files_fn, mcp_servers_in_file_fn,
-    )
-    from flow_sdk.fs_store.indexer.functions.plugin import plugin_fn
     from flow_sdk.fs_store.indexer.functions.todo import todo_fn
+    from flow_sdk.fs_store.indexer.functions.usage_report import usage_report_fn
+    from flow_sdk.fs_store.indexer.functions.whiteboard import whiteboard_fn
+    from flow_sdk.fs_store.indexer.functions.workflow import (
+        workflow_fn,
+        workflow_frontmatter_fn,
+    )
+    from flow_sdk.fs_store.indexer.functions.workflow_run import workflow_run_fn
 
     # Transcript handlers are opt-in (full-JSONL parse is expensive — see
     # flow_sdk/fs_store/transcript_indexer/).
@@ -204,11 +222,48 @@ def build_default_indexer() -> FSIndexer:
     return idx
 
 
+def _maybe_rs_indexer():
+    """Return an RSIndexerAdapter when the instance selects the Rust backend
+    AND the external binary resolves; else None (Python FSIndexer).
+
+    Fail-open by design: a selected-but-unresolvable Rust backend logs one
+    warning and falls back to Python, mirroring ``vendored_flow_rs_enabled``.
+    The custom-slice builders (project_list, single-file self-heal) always
+    build FSIndexer directly and are unaffected by this toggle.
+    """
+    from flow_sdk.fs_store.indexer.rs_adapter import (  # noqa: PLC0415
+        RSIndexerAdapter,
+        resolve_rs_indexer_bin,
+        rs_backend_selected,
+    )
+
+    try:
+        if not rs_backend_selected():
+            return None
+        bin_path = resolve_rs_indexer_bin()
+        if bin_path is None:
+            import logging  # noqa: PLC0415
+            logging.warning(
+                "indexer_backend=rust selected but no usable binary "
+                "(set FLOWPAD_RS_INDEXER_BIN); using the Python FSIndexer"
+            )
+            return None
+        return RSIndexerAdapter(bin_path)
+    except Exception:
+        import logging  # noqa: PLC0415
+        logging.warning("RSIndexer backend selection failed; using FSIndexer", exc_info=True)
+        return None
+
+
 _shared: FSIndexer | None = None
 
 
 def get_shared_indexer() -> FSIndexer:
-    """Return the process-wide indexer, lazily constructed on first call."""
+    """Return the process-wide indexer, lazily constructed on first call.
+
+    The backend toggle lives in ``build_default_indexer`` so every caller —
+    this singleton AND direct ``build_default_indexer()`` users — honors it.
+    """
     global _shared
     if _shared is None:
         _shared = build_default_indexer()

@@ -22,6 +22,7 @@ import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
+import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +53,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     void useGlobalEvents();
     usePresenceReporter();
     useUiCommandListener();
+    useDockViewModeOverrideSync();
     useSpotlightHotkey();
     // Re-report browser_context (incl. the current URL) on every navigation.
     // The reporter's mobx autorun only fires on context-slot changes, so a

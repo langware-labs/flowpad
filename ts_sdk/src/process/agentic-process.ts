@@ -26,8 +26,9 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
+import { PROCESS_STATUS_KIND, ProcessStatusReport, parseStatusReport } from './process-status-report';
 import type { ProcessKind } from './process-types';
-import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isProcessRunning, isReadyForInput, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
   TranscriptSource as TranscriptSourceType,
@@ -43,6 +44,23 @@ import type {
 /**
  * Result returned by AgenticProcess.spawn().
  */
+/**
+ * Resolved `flow show` display target — the payload of the `on_show` entity
+ * event, produced by the backend's `resolve_display_target`
+ * (flow_sdk/core/display_target.py). Discriminated by `kind`.
+ */
+export interface ShowTarget {
+  kind?: 'entity' | 'vfs' | 'webapp' | string;
+  /** entity: canonical `<type>-<id>` string. */
+  typeid?: string;
+  type?: string;
+  id?: string;
+  /** entity (when shown by path) | vfs: the resolved absolute path. */
+  path?: string;
+  /** webapp: the dev-server port. */
+  port?: number | string;
+}
+
 export interface SpawnResult {
   process: AgenticProcess;
   /** Set in PTY mode */
@@ -148,6 +166,8 @@ export interface IAgenticProcess extends IEntity {
   // field is declared here for it (local-only, never on the wire).
   favorite_index?: number | null;
   readonly status?: ProcessStatus;
+  /** Turn-in-flight boolean (``is_turn_busy``) — orthogonal to ``status``. */
+  readonly busy?: boolean;
   readonly worker_status?: WorkerStatus;
   session_id?: string | null;
   /**
@@ -168,9 +188,11 @@ export interface IAgenticProcess extends IEntity {
   shell_id?: string | null;
   /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
   visible?: boolean;
-  /** Transport intent: true → interactive PTY (default, today's behaviour);
-   *  false → headless JSON-stream (no PTY/xterm). Seeds `visible` at launch and
-   *  is kept durable across reload by the loader. Routing stays headless==!visible. */
+  /** Transport intent and the routing key: true → interactive PTY (default,
+   *  today's behaviour); false → headless JSON-stream (no PTY/xterm). Seeds
+   *  `visible` at launch and is kept durable across reload by the loader. All
+   *  routing keys on `pty_mode`, never `visible` (a hidden live PTY is
+   *  visible=false + pty_mode=true). */
   pty_mode?: boolean;
   /** Backend-computed driver capability: this worker supports CLI plan mode
    *  (`--permission-mode plan`). Drives the headless-chat plan toggle. */
@@ -187,14 +209,6 @@ export interface IAgenticProcess extends IEntity {
    * Computed server-side via ``is_ready_for_input``. Read-only on the wire.
    */
   ready_for_input?: boolean;
-  /**
-   * Epoch-ms timestamp approximating when the worker became ready-for-input
-   * (transcript-file mtime). Stable across refresh so the UI pending-action
-   * store can compare against a persisted ack and avoid re-arming the glow
-   * for a transition the user has already seen. Null when not ready or when
-   * the transcript is unavailable.
-   */
-  ready_for_input_since?: number | null;
   /** @internal — use AgenticProcess.cliOptions getter/setter instead */
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
@@ -258,6 +272,12 @@ export interface IAgenticProcess extends IEntity {
    * docs are excluded server-side. Persists across reloads.
    */
   markdown_docs?: MarkdownDoc[];
+  /**
+   * Latest ProcessStatusReport snapshot (counters + focused asset + statuses),
+   * backend-computed and persisted. Mirrored on reload and refreshed live via
+   * the `progress_report` flow_data envelope. Wire shape is a plain object.
+   */
+  status_report?: Record<string, unknown> | null;
   /**
    * Reflected prompt-queue state. Computed server-side from the on-disk
    * `prompt_queue.json` and pushed via `data_op`; never persisted on the
@@ -498,6 +518,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       },
       workdir: options.workdir,
       visible: workerOptions?.visible,
+      // Transport intent (the routing axis): headless → no PTY (one subprocess
+      // per turn); otherwise a long-lived PTY worker. Independent of ``visible``
+      // so a headless spawn stays headless even if a tab later shows it.
+      pty_mode: !workerOptions?.headless,
       shell_mode: options.shellMode,
       ...(options.targetVfsPath ? { target_typeid_str: options.targetVfsPath } : {}),
     }).save(options.scope ?? []);
@@ -518,6 +542,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       ptyTimeout: workerOptions?.ptyTimeout,
     });
     return { process, shell: await process.shell(), workerSessionId: process.session_id };
+  }
+
+  /**
+   * Build (but do not save) a headless AgenticProcess — the single chokepoint
+   * for the "print_mode + stream-json, no PTY" triplet used by background
+   * runs (workflow runner, index rebuild, …). The caller supplies the
+   * entity-specific fields (context_data, workdir, target_typeid_str,
+   * process_type) and owns the `.save([typeId])` linkage.
+   *
+   * All routing/classification keys on `pty_mode`, never `visible` — so the
+   * transport is pinned CLI (`pty_mode=false`) here, independent of `visible`.
+   */
+  static newHeadless(fields: Partial<IAgenticProcess> = {}): AgenticProcess {
+    const cliOptions = new ClaudeCliOptions({
+      permission_mode: 'bypassPermissions',
+      print_mode: true,
+      output_format: 'stream-json',
+      verbose: true,
+    });
+    return new AgenticProcess({
+      cli_config: cliOptions.toJson(),
+      visible: false,
+      pty_mode: false,
+      ...fields,
+    });
   }
 
   /**
@@ -636,6 +685,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Headless transport (`pty_mode === false`): the chat streams over
+   * flowDataStream and the process legitimately has NO shell/xterm — a null
+   * `shell_id` is its normal state, not a failure. The single place views
+   * key "is a shell-less process renderable?" off, so the transport rule
+   * can't drift between the panel gate, InteractiveTerminal, and the plan-
+   * mode toggle.
+   */
+  get isHeadless(): boolean {
+    return this.pty_mode === false;
+  }
+
+  /**
    * Live interactive terminal — `/dock/shell/agentic_process-<id>`.
    * Use this when the user wants to attach to (or launch) the running PTY.
    */
@@ -743,6 +804,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Backend-owned lifecycle status. */
   private _status: ProcessStatus = ProcessStatus.NEW;
 
+  /** Backend-derived turn-in-flight boolean (``is_turn_busy``), orthogonal to status. */
+  private _busy: boolean = false;
+
   /** Granular transcript-derived worker status. */
   private _workerStatus: WorkerStatus = WorkerStatus.INITIALIZING;
 
@@ -753,6 +817,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   private set status(value: ProcessStatus) {
     this._status = value;
+  }
+
+  /** Turn-in-flight. Read-only outside this class. Read via ``isBusy(this)``. */
+  get busy(): boolean {
+    return this._busy;
+  }
+
+  private set busy(value: boolean) {
+    this._busy = value;
   }
 
   /** Transcript-derived worker status. Read-only outside this class. */
@@ -908,6 +981,28 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (!(this.additional_dirs ?? []).includes(path)) {
       this.additional_dirs = [...(this.additional_dirs ?? []), path];
     }
+  }
+
+  /**
+   * Bind a captured `GraphContext` (by id) to this process BEFORE launch — the
+   * backend `set-graph-context` action. Folds the context summary into the
+   * worker's system prompt at launch (see contextProcess.md). Pre-launch only.
+   */
+  async setGraphContext(graphContextId: string): Promise<void> {
+    const actionInfo = new ActionInfo('set-graph-context', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { graph_context_id: graphContextId };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /**
+   * Declare a display-focus target for this process's watchers — the backend
+   * `show` action (same channel as the worker-side `flow show` CLI). The
+   * resolved payload comes back to subscribers via {@link onShow}.
+   */
+  async show(target: { typeid?: string; path?: string; port?: number }): Promise<void> {
+    const actionInfo = new ActionInfo('show', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = target;
+    await dataManager.callAction(actionInfo);
   }
 
   /** Remove a directory from additional_dirs. No-op if not present. */
@@ -1068,7 +1163,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const validate = options.validate ?? false;
 
     const check = async (): Promise<void> => {
-      if (this.status !== ProcessStatus.RUNNING) return;
+      if (!isProcessRunning(this.status)) return;
       const md = await this.getPlan();
       if (validate) {
         handler(md as unknown as T);
@@ -1192,6 +1287,39 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   private _userInitiatedStop: boolean = false;
 
+  /**
+   * Desired-value latch for the transport/visibility fields the client sets
+   * optimistically (`switchMode`/`setVisible`). The backend is the authoritative
+   * writer of `pty_mode`/`visible`, but an in-flight entity broadcast can carry
+   * the PRE-switch value and (via `deepAssign`) clobber the optimistic one — and
+   * such a stale broadcast can arrive even AFTER an agreeing one. So once set,
+   * `onEntityUpdate` HOLDS the latch (stripping any disagreeing wire value) until
+   * the NEXT `switchMode`/`setVisible` overwrites it — these are the only ways
+   * `pty_mode`/`visible` change, so a disagreeing wire value is always stale.
+   * `undefined` = no switch yet on this client, trust the wire.
+   */
+  private _pendingPtyMode?: boolean;
+  private _pendingVisible?: boolean;
+
+  /**
+   * Count of in-flight streaming `prompt()` calls. A definitive, delivery-
+   * agnostic "a turn is running" signal for the chat: it brackets the actual
+   * request lifecycle, so it's reliable even when the transcript arrives in a
+   * post-hoc WS batch (where deriving status from stream deltas would miss the
+   * in-flight window). Emits `'prompting-change'` on every transition.
+   */
+  private _promptingCount = 0;
+
+  /** True while at least one streaming `prompt()` is in flight (turn running). */
+  get isPrompting(): boolean {
+    return this._promptingCount > 0;
+  }
+
+  private _setPromptingDelta(delta: number): void {
+    this._promptingCount = Math.max(0, this._promptingCount + delta);
+    this.emit('prompting-change', this.isPrompting);
+  }
+
   constructor(entity: Partial<IAgenticProcess> = {}) {
     super(entity);
     this.instruction_content = entity.instruction_content;
@@ -1200,6 +1328,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.context_data = entity.context_data;
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessStatus) ?? ProcessStatus.NEW;
+    this.busy = entity.busy ?? false;
     this.workerStatus = (entity.worker_status as WorkerStatus) ?? WorkerStatus.INITIALIZING;
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
@@ -1228,6 +1357,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
     this.plan_path = entity.plan_path ?? null;
     this.markdown_docs = entity.markdown_docs ?? [];
+    // Persisted snapshot mirror — only overwrite when the field is present so a
+    // partial `data_op` (which omits it) doesn't wipe the live-pushed value.
+    if ('status_report' in entity) {
+      this.statusReport = parseStatusReport(entity.status_report) ?? null;
+    }
     this.queue = entity.queue ?? null;
   }
 
@@ -1247,6 +1381,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * the rest when there is more than one. Backend-owned (persisted field).
    */
   markdown_docs: MarkdownDoc[] = [];
+
+  /**
+   * Latest agent-progress snapshot (counters + focused asset + statuses).
+   * Backend-owned projection: mirrored from the persisted `status_report` field
+   * on reload and refreshed live by `handleFlowData` when a `progress_report`
+   * envelope arrives. Null until the first report. Read by the counters
+   * one-liner and the focused-asset chip; never written from the frontend.
+   */
+  statusReport: ProcessStatusReport | null = null;
 
   /**
    * Reflected prompt-queue state (backend-owned). Populated by `deepAssign`
@@ -1502,6 +1645,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           return;
         }
 
+        // A forced reload REPLACES the stream with the on-disk transcript (not
+        // append): clear here so the dedup below starts from empty and re-ingests
+        // the authoritative history. Callers therefore never need a separate
+        // `flowDataStream.clear()` before `loadHistory({ force: true })` — clearing
+        // without also forcing would leave `_historyLoaded` set and no-op the load,
+        // a footgun this removes. Cleared only after a successful fetch so an error
+        // doesn't flash the view empty.
+        if (force) this.flowDataStream.clear();
+
         // Update session info
         this.session_id = response.session_id;
         this.use_worker_history = response.use_worker_history;
@@ -1522,9 +1674,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
             }
           }
           // Mark as ready (historical items are complete) and tag as History
-          // so downstream consumers (e.g. useDerivedWorkerStatus) can distinguish
-          // replayed events from live stream deltas and avoid mis-transitioning
-          // the worker indicator back into THINKING on refresh.
+          // so downstream stream consumers can distinguish replayed events from
+          // live stream deltas.
           flowData.markReady();
           flowData.source = FlowDataSource.History;
           historyItems.push(flowData);
@@ -1550,9 +1701,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         }
         // Coalesce per-item `'data'` emissions into a single one so React
         // consumers (`useSyncExternalStore` via `useAgenticProcessStream` /
-        // `useDerivedWorkerStatus` / `useEntityData`) re-render once per
-        // loadHistory call instead of once per item — prevents 700+
-        // notifications from blowing past React's nested-update budget.
+        // `useEntityData`) re-render once per loadHistory call instead of once
+        // per item — prevents 700+ notifications from blowing past React's
+        // nested-update budget.
         this.flowDataStream.ingestBatch(newItems);
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
@@ -1587,6 +1738,41 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   get historyLoaded(): boolean {
     return this._historyLoaded;
+  }
+
+  /**
+   * Resolve once the process is READY for the next turn/submit — the canonical
+   * "can I send now" gate, so callers never hand-roll status/mode checks. Keyed
+   * on the LIVE transport (headless: idle/stopped; live PTY: RUNNING + awaiting),
+   * reading the watch-updated `status`/`workerStatus`. Requires a live (watched)
+   * process; throws if not ready within `timeout`.
+   *
+   * @example
+   *   await ap.switchMode(WorkerMode.Interactive);
+   *   await ap.waitForReady();     // PTY resumed + at its prompt
+   *   await ap.submit('do the thing');
+   */
+  async waitForReady(options: { timeout?: number; interval?: number } = {}): Promise<void> {
+    const { timeout = 60_000, interval = 300 } = options;
+    // Transport-aware readiness:
+    //  - live PTY: the wire status is READY (live and no turn in flight — the
+    //    same `isReadyForInput` gate the UI toggle uses, so it can't 409). READY
+    //    also ignores the STALE pre-switch BUSY/terminal state right after
+    //    switchMode — the resume hasn't booted yet.
+    //  - headless: no persistent worker, so a submit always enqueues / boots a
+    //    per-turn worker — it's always ready to accept the next turn.
+    const ready = () => !this.pty_mode || isReadyForInput(this);
+    const deadline = Date.now() + timeout;
+    for (;;) {
+      if (ready()) return;
+      if (Date.now() > deadline) {
+        throw new Error(
+          `waitForReady: not ready within ${timeout}ms ` +
+            `(status=${this.status} worker=${this.workerStatus} pty=${this.pty_mode})`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, interval));
+    }
   }
 
   /**
@@ -1747,41 +1933,98 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     const ctrl = abortController ?? new AbortController();
 
-    // Optimistic echo of the user turn into the stream.
-    this.appendUserMessage(text);
+    // Bracket the whole turn as "prompting" (the reliable in-flight signal the
+    // chat activity indicator watches) — set optimistically before the request
+    // and cleared when the stream ends or errors.
+    this._setPromptingDelta(1);
+    try {
+      // Optimistic echo of the user turn into the stream.
+      this.appendUserMessage(text);
 
-    const actionInfo = new ActionInfo(
-      'prompt',
-      AgenticProcess.type,
-      this.id,
-      'POST',
-      false,
-      true, // streaming
-      ctrl.signal,
-    );
-    actionInfo.bodyParameters = {
-      message: text,
-      ...(opts?.permissionMode ? { permission_mode: opts.permissionMode } : {}),
-    };
+      const actionInfo = new ActionInfo(
+        'prompt',
+        AgenticProcess.type,
+        this.id,
+        'POST',
+        false,
+        true, // streaming
+        ctrl.signal,
+      );
+      actionInfo.bodyParameters = {
+        message: text,
+        ...(opts?.permissionMode ? { permission_mode: opts.permissionMode } : {}),
+      };
 
-    const response = await dataManager.callAction<unknown, Response>(actionInfo);
-    if (!response || !response.body) {
-      throw new Error('[AgenticProcess.prompt] no streaming response body');
-    }
-
-    const processor = new FlowStreamProcessor();
-    processor.on(FlowEvents.DATA, (fd: FlowData) => {
-      try {
-        this.flowDataStream.ingest(fd);
-      } catch (err) {
-        console.error('[AgenticProcess.prompt] ingest error', err);
+      const response = await dataManager.callAction<unknown, Response>(actionInfo);
+      if (!response || !response.body) {
+        throw new Error('[AgenticProcess.prompt] no streaming response body');
       }
-    });
-    processor.on(FlowEvents.ERROR, (err) => {
-      console.error('[AgenticProcess.prompt] processor error', err);
-    });
 
-    await processor.ingestStream(response.body.getReader(), ctrl);
+      const processor = new FlowStreamProcessor();
+      processor.on(FlowEvents.DATA, (fd: FlowData) => {
+        try {
+          this.flowDataStream.ingest(fd);
+        } catch (err) {
+          console.error('[AgenticProcess.prompt] ingest error', err);
+        }
+      });
+      processor.on(FlowEvents.ERROR, (err) => {
+        console.error('[AgenticProcess.prompt] processor error', err);
+      });
+
+      await processor.ingestStream(response.body.getReader(), ctrl);
+    } finally {
+      this._setPromptingDelta(-1);
+    }
+  }
+
+  /**
+   * Set ONLY tab-visibility (`visible`) — whether this process shows as a
+   * terminal tab. Decoupled from transport: `visible` does NOT pick PTY vs
+   * headless (that's `pty_mode`). Use this to show/hide the tab without
+   * restarting the worker or flipping the session. The backend broadcasts the
+   * update, so a watched process reflects the new `visible` on the entity.
+   */
+  async setVisible(visible: boolean): Promise<void> {
+    const actionInfo = new ActionInfo('set-visible', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { visible };
+    await dataManager.callAction(actionInfo);
+    this.visible = visible; // optimistic; the broadcast confirms it
+    this._pendingVisible = visible; // latch until the wire agrees (see onEntityUpdate)
+  }
+
+  /**
+   * Stage input WITHOUT submitting — "type" `text` into the input, no Enter.
+   *
+   * Pairs with {@link submit}: `input(x)` then `submit()` ≡ `submit(x)`. On a
+   * live PTY this writes the raw keystrokes (no trailing `\r`); headless, it
+   * enqueues onto the process's PERSISTED prompt queue (so the staged turn
+   * survives a reload / separate `submit` request), which `submit` drains.
+   *
+   * `options` is a generic per-call bag; `options.queueOptions` is passed to the
+   * queue on the headless path (e.g. `{ source }`).
+   */
+  async input(text: string, options?: { queueOptions?: Record<string, unknown> }): Promise<void> {
+    const actionInfo = new ActionInfo('input', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { text, ...(options ? { options } : {}) };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /**
+   * Commit the current input as one turn. `submit(x)` ≡ `input(x)` + `submit()`.
+   *
+   * If `instruction` is given it is {@link input} first; then a live PTY gets a
+   * discrete Enter, while a headless process fires the staged turn. Fire-and-
+   * forget — observe output on the stream. `options` is reserved for per-turn
+   * flags (e.g. permission mode); accepted now so the signature is stable.
+   */
+  async submit(instruction?: string, options?: { permissionMode?: PermissionMode }): Promise<void> {
+    const actionInfo = new ActionInfo('submit', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = {
+      ...(instruction !== undefined ? { instruction } : {}),
+      ...(options ? { options } : {}),
+    };
+    await dataManager.callAction(actionInfo);
   }
 
   /**
@@ -2201,6 +2444,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
     if (mode === WorkerMode.Interactive) {
       this.pty_mode = true;
+      this._pendingPtyMode = true;
+      this._pendingVisible = true;
       await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
       this.emit('restarted', { process: this });
       return;
@@ -2219,6 +2464,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
     this.visible = false;
     this.pty_mode = false;
+    this._pendingVisible = false;
+    this._pendingPtyMode = false;
   }
 
   /**
@@ -2237,6 +2484,47 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (event === 'worker.restarted') {
       this.emit('restarted', { process: this, payload });
     }
+    // Mirror of Python `AgenticProcess.on_show` (the `flow show` verb): the
+    // agent declared a display-focus target. Re-emit as the typed 'show'
+    // event so display surfaces subscribe via `proc.onShow(...)` without
+    // string-matching the generic entity_event channel.
+    if (event === 'on_show') {
+      this.emit('show', payload);
+    }
+  }
+
+  /**
+   * Subscribe to agent-declared display focus (`flow show`). The payload is
+   * the resolved show target from the backend action (see
+   * `flow_sdk/core/display_target.py`). Returns the unsubscribe function.
+   */
+  onShow(handler: (payload: ShowTarget) => void): () => void {
+    return this.on('show', handler);
+  }
+
+  /**
+   * Intercept the live agent-progress push before it enters the flow stream.
+   *
+   * The backend reuses the `progress_report` envelope (attributes.kind ===
+   * 'process_status') to push the ProcessStatusReport on every debounce flush.
+   * It's control-plane, not renderable content, so we update `statusReport`,
+   * emit a `status_report` event for subscribers, and return WITHOUT ingesting
+   * it into `flowDataStream` (keeps it out of history/output). All other
+   * FlowData falls through to the base handler unchanged.
+   */
+  handleFlowData(flowData: FlowData): void {
+    if (
+      flowData.elementType === FlowElementTypes.PROGRESS_REPORT &&
+      flowData.attributes?.kind === PROCESS_STATUS_KIND
+    ) {
+      const report = parseStatusReport(flowData.rawData);
+      if (report) {
+        this.statusReport = report;
+        this.emit('status_report', report);
+      }
+      return;
+    }
+    super.handleFlowData(flowData);
   }
 
   /**
@@ -2427,6 +2715,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       this.queue = q ? { enabled: !!q.enabled, entries: [...(q.entries ?? [])] } : null;
       delete data.queue;
     }
+    // Desired-value latch: once the client optimistically sets the transport /
+    // visibility (`switchMode`/`setVisible`), HOLD that value against every
+    // broadcast until the NEXT client switch overwrites the latch. `pty_mode` /
+    // `visible` only ever change via those client actions, so a wire value that
+    // disagrees is always stale (a pre-switch broadcast, which can arrive even
+    // AFTER an agreeing one) — strip it so the optimistic value survives
+    // `deepAssign`. Do NOT clear on first match: an early agreeing broadcast
+    // followed by a delayed stale one is exactly the desync this guards against.
+    // Same "remove from payload before deepAssign" shape as the `queue` guard.
+    if (this._pendingPtyMode !== undefined && 'pty_mode' in data && data.pty_mode !== this._pendingPtyMode) {
+      delete data.pty_mode;
+    }
+    if (this._pendingVisible !== undefined && 'visible' in data && data.visible !== this._pendingVisible) {
+      delete data.visible;
+    }
     // Skip no-op transitions: castAndDeepAssign() runs this hook for every
     // WS entity-op AND for every REST-response write-through, so the same
     // status often arrives many times. Without the equality guard, downstream
@@ -2447,6 +2750,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       if (this.status === ProcessStatus.FAILED && !isWorkerTerminal(this.workerStatus)) {
         this._handleError(new Error(`Process ended with lifecycle status: ${this.status}`));
       }
+    }
+    // Guard on the value being a real boolean (not truthiness) so a
+    // ``true → false`` turn-end flip still applies and emits — else the
+    // input/toggle gates (isBusy) never re-enable.
+    if (typeof data.busy === 'boolean' && data.busy !== this.busy) {
+      const oldBusy = this.busy;
+      this.busy = data.busy as boolean;
+      this.emit('state_change', {
+        field: 'busy',
+        oldValue: oldBusy,
+        newValue: this.busy,
+      });
     }
     if (data.worker_status && data.worker_status !== this.workerStatus) {
       const oldWorker = this.workerStatus;

@@ -107,6 +107,7 @@ class EntityType(StrEnum):
     MARKDOWN_INDEX = "markdown_index"
     SPEC = "spec"
     PROMPT = "prompt"
+    PROMPT_RESULT = "prompt_result"
     CONVERSATION = "conversation"
     WHITEBOARD = "whiteboard"
     AGENT_TRACE = "agent_trace"
@@ -118,6 +119,10 @@ class EntityType(StrEnum):
     DATASET = "dataset"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     COLLABORATION_ROOM = "collaboration_room"
+    # A host/guest remote-execution session that lives inside a CollaborationRoom
+    # (alongside its files/assets): guest sends Prompts, host's worker returns
+    # PromptResults. See builtin/remote_worker_session.py.
+    REMOTE_WORKER_SESSION = "remote_worker_session"
     # Transient indexer waypoints — fan-out scaffolding, never persisted.
     USER_HOME_FOLDER = "user_home_folder"
     REAL_PROJECT_CWD = "real_project_cwd"
@@ -160,9 +165,6 @@ class EntityType(StrEnum):
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
     RUN = "run"
-    # Git identity split (see builtin/git_remote.py / builtin/git_branch.py).
-    GIT_REMOTE = "git_remote"
-    GIT_BRANCH = "git_branch"
     # A file on disk outside the record store (DB-only; SemanticLock targets).
     FILE = "file"
     # A content-panel tab — DB-only placement record keyed by a DockPointer

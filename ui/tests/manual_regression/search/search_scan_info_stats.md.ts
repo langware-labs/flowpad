@@ -6,6 +6,12 @@ const API_URL = apiBase();
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
+    // On a fresh (never_indexed) DB the search view opens a blocking
+    // "Make your records searchable" modal (guarded by this session flag) that
+    // intercepts the rebuild-index click, so resetAndRescan never fires. Pre-set
+    // the scan-dismissed flag the modal itself honours so the rebuild button is
+    // clickable.
+    sessionStorage.setItem('flowpad-scan-dismissed', '1');
   });
 }
 
@@ -108,7 +114,13 @@ test.describe('Search Scan Info Stats', () => {
 
   // ── Test 6: Rebuild-index button runs archive→clear→scan→index and refreshes the indexed badge ──
   test('rebuild-index button archives, clears, scans, indexes and refreshes indexed badge', async ({ page }) => {
-    test.setTimeout(60_000);
+    // USER-APPROVED timeout exception (per the no-timeout-raise non-negotiable):
+    // a full rebuild reindexes the whole workspace, and on a heavily-used host
+    // (real ~/.claude with thousands of sessions) the index phase legitimately
+    // takes ~130s of linear work — the rebuild button stays busy until it
+    // completes. On a normal install this finishes in seconds. Budget raised to
+    // 180s with explicit user approval so the test can observe real completion.
+    test.setTimeout(180_000);
     await dismissSetupModal(page);
     await page.goto('/dock/search');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
@@ -170,7 +182,11 @@ test.describe('Search Scan Info Stats', () => {
 
     await rebuildButton.click();
 
-    await expect.poll(() => allSeen(), { timeout: 120_000, intervals: [500] }).toBe(true);
+    // The rebuild runs archive→clear→scan→index sequentially (~6+5+17+116 ≈
+    // 145s cumulative on a real ~/.claude); seen.index lands only after the
+    // full reindex completes. Poll ceiling sits under the user-approved 180s
+    // test budget with margin for load variance.
+    await expect.poll(() => allSeen(), { timeout: 165_000, intervals: [500] }).toBe(true);
 
     // Button returns to the enabled state once the orchestration finishes (busy=false).
     await expect(rebuildButton).toBeEnabled({ timeout: 30_000 });

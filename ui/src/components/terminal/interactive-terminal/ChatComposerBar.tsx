@@ -1,14 +1,11 @@
 import {
   AgenticProcess,
-  isWorkerRunning,
-  type StatusBearingProcess,
+  isBusy,
   TypeId,
-  WorkerStatus,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import { CompactExecutionInput } from '@src/components/entity-execution-panel/CompactExecutionInput';
-import { useDerivedWorkerStatus } from '@src/components/entity-execution-panel/hooks/useDerivedWorkerStatus';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications/notify';
 import { ScrollText } from 'lucide-react';
@@ -72,15 +69,13 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
   const { data: liveProcess } = useEntity<AgenticProcess>(processTypeId, { watch: true });
   const reflected = liveProcess ?? process;
 
-  const derivedWorkerStatus = useDerivedWorkerStatus(process);
-  const indicatorProcess: StatusBearingProcess = {
-    status: reflected.status,
-    workerStatus: derivedWorkerStatus ?? reflected.workerStatus,
-    session_id: reflected.session_id,
-  };
-  // Only an actively mid-turn worker blocks the composer — a dead PTY is
-  // relaunched by prompt(), so no status==RUNNING gate here.
-  const busy = isWorkerRunning(indicatorProcess.workerStatus as WorkerStatus);
+  // Headless and PTY turns both broadcast status live now, so the reactive
+  // entity is the single source. One boolean gates the composer: the backend's
+  // turn-in-flight `busy` boolean (serialized alongside `status`; read via
+  // `isBusy`). A dead PTY reads ¬busy and is relaunched by prompt(), so it stays
+  // sendable.
+  const indicatorProcess = reflected;
+  const busy = isBusy(indicatorProcess);
 
   return (
     <CompactExecutionInput

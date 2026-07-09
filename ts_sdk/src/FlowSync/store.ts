@@ -755,20 +755,22 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         return null;
       }
     };
-    // Assets is a single scope-keyed tab — its STORED title follows the SCOPE,
-    // not the (in-tab) sub-pointer: single project → "<project>'s Assets"; user
-    // → "My Assets"; global / all / multi-select → null (chip falls back to the
-    // registry "Assets" title). Runs before the empty-pointer guard because a
-    // scoped assets dock normalizes its pointer to ''. (The strip overlays the
-    // ACTIVE assets tab with the focused asset's own name + icon at render time
-    // — see `useTabStripItems` — so this scope title shows for inactive tabs.)
-    if (dock?.viewType === 'assets') {
+    // A scope-keyed browser (Assets, Explorer) is a single tab per scope — its
+    // STORED title follows the SCOPE, not the (in-tab) sub-pointer: single
+    // project → "<project>'s Assets"/"…'s Files"; user → "My Assets"/"My Files";
+    // global / all / multi-select → null (chip falls back to the registry
+    // title). Runs before the empty-pointer guard because a scoped dock
+    // normalizes its pointer to ''. (The strip overlays the ACTIVE assets tab
+    // with the focused asset's own name + icon at render time — see
+    // `useTabStripItems` — so this scope title shows for inactive tabs.)
+    if (dock?.viewType === 'assets' || dock?.viewType === 'explorer') {
+      const noun = dock.viewType === 'assets' ? 'Assets' : 'Files';
       const scope = dockOptionsToScopeFilter(dock.options);
       if (scope?.mode === 'project' && scope.activeProjectId) {
         const name = nameFromCache('project', scope.activeProjectId);
-        return name ? `${name}'s Assets` : 'Assets';
+        return name ? `${name}'s ${noun}` : noun;
       }
-      if (scope?.mode === 'user') return 'My Assets';
+      if (scope?.mode === 'user') return `My ${noun}`;
       return null;
     }
     const pointer = dock?.pointer ?? '';
@@ -1347,7 +1349,23 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       for (const parent_type_id of scope) {
         const parent_ref = this.entities.get(parent_type_id);
         if (parent_ref && parent_ref.entity && !parent_ref.entity.saved) {
-          return [];
+          try {
+            await this.fetchByTypeId(parent_type_id);
+          } catch (error) {
+            const httpStatus =
+              (error as { response?: { status?: number }; status?: number })?.response?.status ??
+              (error as { status?: number })?.status;
+            if (httpStatus === 404) {
+              parent_ref.status = EntityStatus.ERROR;
+              parent_ref.notFound = true;
+              return [];
+            }
+            throw error;
+          }
+          const refreshedParent = this.getByTypeIdFromCache(parent_type_id);
+          if (refreshedParent && !refreshedParent.saved) {
+            return [];
+          }
         }
       }
 

@@ -36,9 +36,11 @@ export interface ImageAnnotatorProps {
   onClipboard: (blob: Promise<Blob>) => void;
   /** User dismissed without saving — capture is aborted (image dropped). */
   onCancel: () => void;
+  /** Optional label for capture flows that submit directly instead of attaching. */
+  submitLabel?: React.ReactNode;
 }
 
-export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel }: ImageAnnotatorProps) {
+export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel, submitLabel }: ImageAnnotatorProps) {
   const { t } = useLingui();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -283,6 +285,7 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel }: Im
             onClear={handleClear}
             onCancel={requestClose}
             onSave={handleSave}
+            submitLabel={submitLabel}
           />
 
           <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-md bg-muted/30">

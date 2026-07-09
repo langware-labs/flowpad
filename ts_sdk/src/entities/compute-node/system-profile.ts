@@ -858,6 +858,13 @@ export interface ProjectListItem {
   codex_session_count?: number;
   copilot_session_count?: number;
   modified_at: string | null;
+  /**
+   * Epoch-ms of the last time the user OPENED this project (or one of its
+   * assets) in the UI — the Project entity's `last_active_at`, stamped by the
+   * generic `activate` action. Wins the recency sort; `modified_at`
+   * (session-file mtimes) is the fallback.
+   */
+  last_active_at?: number | null;
   claude?: boolean;
   codex?: boolean;
   copilot?: boolean;

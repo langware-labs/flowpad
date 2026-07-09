@@ -60,6 +60,19 @@ async def test_dispatch_status_clean_repo():
     assert result.data["files"] == []
 
 
+async def test_dispatch_status_staged_flag():
+    """Porcelain X column drives GitStatusFile.staged (backend-computed)."""
+    responses = [
+        make_cmd("## main\nM  staged.txt\n M unstaged.txt\n?? new.txt"),
+        make_cmd(""),  # diff --numstat (unstaged)
+        make_cmd(""),  # diff --numstat --staged
+    ]
+    result = await make_repo(responses).dispatch("status")
+    assert result.status == "SUCCESS"
+    staged_by_path = {f["path"]: f["staged"] for f in result.data["files"]}
+    assert staged_by_path == {"staged.txt": True, "unstaged.txt": False, "new.txt": False}
+
+
 async def test_dispatch_status_not_a_repo():
     """Non-git directory returns an error field."""
     responses = [make_cmd("", exit_code=128)]  # rev-parse fails → is_init=False
@@ -202,6 +215,50 @@ async def test_dispatch_unstage_file():
 
 async def test_dispatch_stage_requires_post():
     result = await make_repo([]).dispatch("stage-file", {"file": "a.txt"}, method="GET")
+    assert result.status == "FAIL"
+    assert result.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# dispatch("init") — POST-only, idempotent
+# ---------------------------------------------------------------------------
+
+async def test_dispatch_init_already_a_repo():
+    """Existing repo → ok=True without running git init (idempotent)."""
+    responses = [make_cmd("true", exit_code=0)]  # rev-parse succeeds → is_init
+    result = await make_repo(responses).dispatch("init", method="POST")
+    assert result.status == "SUCCESS"
+    assert result.data["ok"] is True
+    assert "Already" in result.data["message"]
+
+
+async def test_dispatch_init_fresh_dir():
+    """Non-repo → git init + identity/push config, ok=True."""
+    responses = [
+        make_cmd("", exit_code=128),  # rev-parse fails → not a repo
+        make_cmd(""),                 # git init --initial-branch=main
+        make_cmd(""),                 # config user.name
+        make_cmd(""),                 # config user.email
+        make_cmd(""),                 # config push.autoSetupRemote
+    ]
+    result = await make_repo(responses).dispatch("init", method="POST")
+    assert result.status == "SUCCESS"
+    assert result.data["ok"] is True
+
+
+async def test_dispatch_init_failure_surfaces_stderr():
+    responses = [
+        make_cmd("", exit_code=128),  # not a repo
+        make_cmd("", exit_code=1, stderr="fatal: cannot init"),
+    ]
+    result = await make_repo(responses).dispatch("init", method="POST")
+    assert result.status == "SUCCESS"
+    assert result.data["ok"] is False
+    assert "fatal: cannot init" in result.data["message"]
+
+
+async def test_dispatch_init_requires_post():
+    result = await make_repo([]).dispatch("init", method="GET")
     assert result.status == "FAIL"
     assert result.status_code == 405
 
