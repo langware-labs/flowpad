@@ -98,6 +98,12 @@ no clarifying questions, no progress check-ins.** Just write the test, run it, a
 5. **Run the test and confirm it fails for the right reason** (the bug's assertion/error, not an
    import/setup error). Do not edit timeouts/retries/sleeps to make anything pass — that is the
    banned symptom-masking move.
+6. **Never bind a test to a backend via the `__FLOWPAD_API_URL__` runtime override.** That global
+   re-points a hand-rolled SDK realm and skips the client bootstrap the product actually uses.
+   A test that needs a backend is an OFFICIAL api-tier test with the proper client:
+   `apiTestSetup()` + `ConnectionManager.getInstance()`, backend resolved by the tier's own
+   config — target a disposable instance by running the tier with `FLOW_INSTANCE=<name>`
+   (e.g. `FLOW_INSTANCE=dev-1 vitest --project api`), never by overriding the URL in the test.
 
 **Return with exactly one terminal outcome — and nothing in between:**
 
