@@ -24,8 +24,8 @@ import shutil
 import uuid
 from typing import Any, AsyncIterator
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext, AgenticWorker
+from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_MODEL_TIERS, resolve_model_tier
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType, FlowElementType
 
 logger = logging.getLogger(__name__)
@@ -67,8 +67,9 @@ class ClaudeCLIWorker(AgenticWorker):
         if context.permission_mode == "bypassPermissions":
             args.append("--dangerously-skip-permissions")
         args.extend(["--session-id", session_id])
-        if context.model:
-            args.extend(["--model", context.model])
+        model = resolve_model_tier(CLAUDE_MODEL_TIERS, context.model)
+        if model:
+            args.extend(["--model", model])
         if agents_json:
             args.extend(["--agents", json.dumps(agents_json)])
         args.extend(["-p", prompt])

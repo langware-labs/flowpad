@@ -53,6 +53,17 @@ def test_model_add_dirs_resume_and_skills_in_shell_string():
     assert "# skill='bug fixer'" in result
 
 
+def test_model_tier_persists_raw_and_emits_resolved_model():
+    cmd = CodexCliOptions(model="sm", workdir="/repo")
+
+    assert cmd.model == "sm"
+    assert cmd.to_json()["model"] == "sm"
+
+    argv, _env = cmd.to_spawn_args()
+    assert argv[argv.index("-m") + 1] == "gpt-5.4-mini"
+    assert "-m gpt-5.4-mini" in cmd.to_shell_string()
+
+
 def test_json_spawn_args_read_prompt_from_stdin():
     cmd = CodexCliOptions(
         session_id="abc-123",

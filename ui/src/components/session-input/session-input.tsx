@@ -5,7 +5,7 @@ import { mergePickedFiles, PickedFileRow, rejectedFilesNotice } from '@src/compo
 import { cn } from '@src/lib/utils';
 import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
 import { Plus, Send } from 'lucide-react';
-import React, { useCallback, useId, useState } from 'react';
+import React, { useCallback, useId, useState, type ReactNode } from 'react';
 
 interface SessionInputProps {
   placeholder?: string;
@@ -19,6 +19,8 @@ interface SessionInputProps {
    *  chips. Picked files are held locally and handed to onSubmit — the caller
    *  uploads them (there may be no process yet to upload into). */
   allowAttachments?: boolean;
+  /** Optional controls rendered next to the attachment button. */
+  footerSlot?: ReactNode;
 }
 
 export function SessionInput({
@@ -28,17 +30,18 @@ export function SessionInput({
   value,
   onChange,
   allowAttachments = false,
+  footerSlot,
 }: SessionInputProps) {
   const [internal, setInternal] = useState('');
   const controlled = value !== undefined;
   const message = controlled ? (value ?? '') : internal;
-  const setMessage = (next: string) => {
+  const setMessage = useCallback((next: string) => {
     if (controlled) {
       onChange?.(next);
     } else {
       setInternal(next);
     }
-  };
+  }, [controlled, onChange]);
 
   const fileInputId = useId();
   const [files, setFiles] = useState<File[]>([]);
@@ -68,7 +71,7 @@ export function SessionInput({
       setFiles([]);
       setRejected(null);
     },
-    [message, files, canSubmit, disabled, onSubmit],
+    [message, files, canSubmit, disabled, onSubmit, setMessage],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -140,37 +143,43 @@ export function SessionInput({
         disabled={disabled}
         rows={1}
       />
-      <div className={cn('flex items-center', allowAttachments ? 'justify-between' : 'justify-end')}>
-        {allowAttachments && (
-          <>
-            {/* <label htmlFor> so a real native click opens the OS picker
-                reliably (see FileAttachmentPicker for why). */}
-            <label
-              htmlFor={fileInputId}
-              title="Attach files"
-              className={cn(
-                'inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-                disabled && 'pointer-events-none opacity-50',
-              )}
-              data-testid="session-input-attach"
-            >
-              <Plus className="h-4 w-4" />
-            </label>
-            <input
-              id={fileInputId}
-              type="file"
-              multiple
-              className="sr-only"
-              disabled={disabled}
-              onChange={(e) => addFiles(e.target.files)}
-              onClick={(e) => ((e.target as HTMLInputElement).value = '')}
-            />
-          </>
+      <div className={cn('flex items-center gap-2', allowAttachments || footerSlot ? 'justify-between' : 'justify-end')}>
+        {(allowAttachments || footerSlot) && (
+          <div className="flex min-w-0 items-center gap-1.5">
+            {allowAttachments && (
+              <>
+                {/* <label htmlFor> so a real native click opens the OS picker
+                    reliably (see FileAttachmentPicker for why). */}
+                <label
+                  htmlFor={fileInputId}
+                  title="Attach files"
+                  className={cn(
+                    'inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+                    disabled && 'pointer-events-none opacity-50',
+                  )}
+                  data-testid="session-input-attach"
+                >
+                  <Plus className="h-4 w-4" />
+                </label>
+                <input
+                  id={fileInputId}
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  disabled={disabled}
+                  onChange={(e) => addFiles(e.target.files)}
+                  onClick={(e) => ((e.target as HTMLInputElement).value = '')}
+                />
+              </>
+            )}
+            {footerSlot}
+          </div>
         )}
         <Button
           type="submit"
           disabled={!canSubmit || disabled}
           className="rounded-full bg-gradient-to-r from-primary to-primary/80 text-white"
+          data-testid="session-input-submit"
         >
           <Send className="h-4 w-4" />
         </Button>

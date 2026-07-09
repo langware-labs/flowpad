@@ -20,11 +20,12 @@ lines are easy to filter independently of the Claude CLI lines.
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,9 @@ class CodexCliOptions(WorkerCLIOptions):
     property on AgenticProcess returns something inspectable for codex too
     (the ``test_agentic_process_clock_agent`` test asserts on ``cmd_line``).
     """
+
+    # sm/md/lg → gpt-5.4-mini/gpt-5.4/gpt-5.5, applied when emitting command.
+    MODEL_TIERS = CODEX_MODEL_TIERS
 
     def __init__(
         self,
@@ -79,8 +83,8 @@ class CodexCliOptions(WorkerCLIOptions):
         tail: list[str] = []
         if self.workdir:
             tail.extend(["-C", self.workdir])
-        if self.model:
-            tail.extend(["-m", self.model])
+        if self.resolved_model:
+            tail.extend(["-m", self.resolved_model])
         for d in self.add_dirs:
             tail.extend(["--add-dir", d])
         if self.resume and self.session_id:

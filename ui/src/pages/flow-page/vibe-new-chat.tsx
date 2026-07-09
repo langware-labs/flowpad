@@ -5,6 +5,7 @@ import { FolderOpen } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
+import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
 
 /**
  * Vibe fallback shown when no build session is active — i.e. we're in Vibe mode
@@ -19,6 +20,7 @@ export function VibeNewChat() {
   const { user } = useAuth();
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
+  const [model, setModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
@@ -43,7 +45,8 @@ export function VibeNewChat() {
             value={draft}
             onChange={setDraft}
             allowAttachments
-            onSubmit={(msg, files) => startVibe(msg, files)}
+            footerSlot={<VibeModelSelect value={model} onChange={setModel} />}
+            onSubmit={(msg, files) => startVibe(msg, files, model)}
           />
         </div>
         <button

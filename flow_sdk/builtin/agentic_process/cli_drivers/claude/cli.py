@@ -42,7 +42,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
         # → claude ... --resume 'src-uuid' --fork-session --session-id 'new-uuid'
     """
 
-    # sm/md/lg → haiku/sonnet/opus, applied by the base ``model`` setter.
+    # sm/md/lg → haiku/sonnet/opus, applied when emitting the worker command.
     MODEL_TIERS = CLAUDE_MODEL_TIERS
 
     EXECUTABLE = "claude"
@@ -139,8 +139,8 @@ class ClaudeCliOptions(WorkerCLIOptions):
                 flags.extend(["--resume", self.session_id])
         elif self.session_id:
             flags.extend(["--session-id", self.session_id])
-        if self.model:
-            flags.extend(["--model", self.model])
+        if self.resolved_model:
+            flags.extend(["--model", self.resolved_model])
         if self.effort:
             flags.extend(["--effort", self.effort])
         if self.agents_json:

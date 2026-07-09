@@ -17,7 +17,6 @@ import pytest
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.responses.response import ApiSuccessResponse
 
-
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 
@@ -50,6 +49,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
         "context": {
             "workdir": "/tmp/proj",
             "permission_mode": "bypassPermissions",
+            "model": "md",
         },
         "visible": True,
     })
@@ -84,6 +84,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
     assert expected.issubset(captured.keys()), captured.keys()
     assert captured["workdir"] == "/tmp/proj"
     assert captured["visible"] is True
+    assert captured["cli_config"]["model"] == "md"
     assert "source_vfs_path" not in captured
     # Visible processes must be eagerly started so the terminal tab strip
     # gets a fully-attached row in one round-trip.

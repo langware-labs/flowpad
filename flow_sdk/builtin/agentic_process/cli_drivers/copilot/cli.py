@@ -7,12 +7,16 @@ import os
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.model_tiers import COPILOT_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
 
 class CopilotCliOptions(WorkerCLIOptions):
     """Builds Copilot CLI argv for headless JSON streaming or visible PTY mode."""
+
+    # sm/md/lg → gpt-5.4-mini/gpt-5.4/gpt-5.5, applied when emitting command.
+    MODEL_TIERS = COPILOT_MODEL_TIERS
 
     def __init__(
         self,
@@ -56,8 +60,8 @@ class CopilotCliOptions(WorkerCLIOptions):
         tail: list[str] = []
         if self.workdir:
             tail.extend(["-C", self.workdir])
-        if self.model:
-            tail.extend(["--model", self.model])
+        if self.resolved_model:
+            tail.extend(["--model", self.resolved_model])
         if self.effort:
             tail.extend(["--effort", self.effort])
         for directory in self.add_dirs:
