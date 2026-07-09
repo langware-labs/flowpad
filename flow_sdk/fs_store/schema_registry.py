@@ -377,6 +377,10 @@ class TypeInfo:
             "main_subdir": self.main_subdir,
             "main_layout": self.main_layout,
             "folder_backed": self.folder_backed,
+            # The entity owns its backing file (re-rendered from default_body on
+            # every save) → a resolved-but-file-missing row can self-heal with a
+            # single save. The editor uses this to rebuild an orphaned asset.
+            "owns_main_ref": self.owns_main_ref,
             "schema_hash": self.schema_hash,
         }
 

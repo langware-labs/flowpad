@@ -69,6 +69,30 @@ def test_indexer_round_trips_task_md(tmp_path):
     assert rec.asset_ref._path == folder.resolve()
 
 
+def test_orphan_task_self_heals_on_save(tmp_path):
+    """A task with NO asset_ref (old DB-only row, pre-folder-asset) re-materializes
+    its folder + task.md on save — the exact compute_asset_ref → upsert_main_ref
+    path a save runs, and what the editor's "Rebuild file" action triggers."""
+    from flow_sdk.fs_store.fs_record import FSRecord
+    from flow_sdk.builtin.task import Task
+
+    task = Task(title="Orphan Heal", status="to_do")
+    assert task.asset_ref is None  # the orphan state
+    rec = FSRecord(type="task", id=str(task.id))
+    assert rec._asset_ref is None
+
+    # 1) compute the folder asset_ref (owns_main_ref type → main_subdir set)
+    ar = rec.compute_asset_ref(scope_root=tmp_path, entity=task)
+    assert ar is not None, "task must resolve a folder asset_ref"
+    rec._asset_ref = ar
+
+    # 2) materialize the backing file from the default body
+    rec.upsert_main_ref(task)
+    task_md = ar._path / "task.md"
+    assert task_md.is_file(), "save must write task.md into the freshly-created folder"
+    assert f"id: {task.id}" in task_md.read_text(encoding="utf-8")
+
+
 def test_indexer_tolerates_legacy_header_json_without_leak(tmp_path):
     folder = tmp_path / "tasks" / "legacy"
     folder.mkdir(parents=True)
