@@ -1,11 +1,11 @@
 /**
- * useRunReceivedSkill — the install-then-run sequence for a received skill.
+ * useRunReceivedSkill — the low-level install-then-run sequence for a received
+ * skill in a KNOWN project. Project RESOLUTION (conversation → active → prompt)
+ * lives in useRunSkillWithProjectPrompt and is covered via resolveRunProjectId
+ * in skill-test-prompt.test.ts.
  *
- * Contract (plan F2): resolve the run project (installed scope → conversation
- * project → active project), install-if-needed into it, then open a Vibe
- * session there and prompt the skill BY NAME. Asserts the exact ordering +
- * arguments so a regression (running from the staged path, or by path not name,
- * or skipping install) is caught.
+ * Asserts the exact ordering + arguments so a regression (running from the
+ * staged path, by path not name, or skipping install) is caught.
  */
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -16,19 +16,19 @@ vi.mock('@src/pages/flow-page/use-start-vibe-session', () => ({
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openShellProcess: vi.fn() } }),
 }));
-// Project ids must be valid UUIDs — the real TypeId constructor rejects others.
-const CONV_PROJ = '11111111-1111-4111-8111-111111111111';
-const ACTIVE_PROJ = '22222222-2222-4222-8222-222222222222';
-const INSTALLED_PROJ = '33333333-3333-4333-8333-333333333333';
-
-vi.mock('@sdk/react/hooks', () => ({
-  useProject: () => ({ project: { id: '22222222-2222-4222-8222-222222222222' } }),
+// Picker deps pulled in by the .tsx module — stub so the low-level hook renders.
+vi.mock('@sdk/react/hooks', () => ({ useProject: () => ({ project: null }) }));
+vi.mock('@src/components/project-selector', () => ({
+  ProjectSelectorModal: () => null,
+  projectListToSelectorItems: () => [],
 }));
+vi.mock('@src/components/project-selector/use-ensure-project', () => ({ useEnsureProject: () => vi.fn() }));
+vi.mock('@src/hooks/use-all-projects', () => ({ useAllProjects: () => ({ projects: [], isLoading: false }) }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn() } }));
-// NOTE: do NOT mock '@lingui/react/macro' (breaks the lingui Vite plugin's
-// resolveId for the whole run) or '@sdk' wholesale (starves locale-context /
-// i18n-init of real exports). Use the real @sdk and spy on the one method the
-// hook calls.
+// Do NOT mock '@lingui/react/macro' or '@sdk' wholesale (breaks the lingui Vite
+// plugin / starves locale-context). Use the real @sdk + spy the one method.
+
+const RUN_PROJ = '11111111-1111-4111-8111-111111111111';
 
 import { dataManager } from '@sdk';
 import { launchVibeSessionForProject } from '@src/pages/flow-page/use-start-vibe-session';
@@ -36,10 +36,8 @@ import { useRunReceivedSkill } from '@src/components/conversation/asset-review/u
 
 const mockedLaunch = vi.mocked(launchVibeSessionForProject);
 
-/** A staged/installed MessageAttachment stand-in — only the fields the hook reads. */
-function fakeAttachment(over: Partial<{ project_id: string | null; installed: boolean; name: string | null }> = {}) {
+function fakeAttachment(over: Partial<{ installed: boolean; name: string | null }> = {}) {
   return {
-    project_id: over.project_id ?? null,
     installed: over.installed ?? false,
     name: over.name ?? 'find-me-a-product',
     install: vi.fn().mockResolvedValue(undefined),
@@ -51,55 +49,42 @@ function run(args: Parameters<ReturnType<typeof useRunReceivedSkill>>[0]) {
   result.current(args);
 }
 
-describe('useRunReceivedSkill', () => {
+describe('useRunReceivedSkill (low level — known project)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedLaunch.mockResolvedValue('proc-1');
     vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue({ fs_storage_mount_path: '/proj/mount' } as never);
   });
 
-  it('not installed + conversation project → installs into it, then runs BY NAME', async () => {
+  it('not installed → installs into the given project, then runs BY NAME', async () => {
     const attachment = fakeAttachment();
-    run({ attachment: attachment as never, conversationProjectId: CONV_PROJ });
+    run({ attachment: attachment as never, projectId: RUN_PROJ });
 
     await vi.waitFor(() => expect(mockedLaunch).toHaveBeenCalledTimes(1));
-    expect(attachment.install).toHaveBeenCalledWith('project', CONV_PROJ);
+    expect(attachment.install).toHaveBeenCalledWith('project', RUN_PROJ);
     expect(mockedLaunch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        projectId: CONV_PROJ,
-        workdir: '/proj/mount',
-        message: 'run the skill find-me-a-product',
-      }),
+      expect.objectContaining({ projectId: RUN_PROJ, workdir: '/proj/mount', message: 'run the skill find-me-a-product' }),
     );
   });
 
-  it('already installed → does NOT re-install; runs in the installed project', async () => {
-    const attachment = fakeAttachment({ installed: true, project_id: INSTALLED_PROJ });
-    run({ attachment: attachment as never, conversationProjectId: CONV_PROJ });
+  it('already installed → does NOT re-install; still runs by name', async () => {
+    const attachment = fakeAttachment({ installed: true });
+    run({ attachment: attachment as never, projectId: RUN_PROJ });
 
     await vi.waitFor(() => expect(mockedLaunch).toHaveBeenCalledTimes(1));
     expect(attachment.install).not.toHaveBeenCalled();
     expect(mockedLaunch).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: INSTALLED_PROJ, message: 'run the skill find-me-a-product' }),
+      expect.objectContaining({ projectId: RUN_PROJ, message: 'run the skill find-me-a-product' }),
     );
   });
 
   it('with a user prompt → "use the skill … in order to:" form', async () => {
     const attachment = fakeAttachment();
-    run({ attachment: attachment as never, conversationProjectId: CONV_PROJ, userPrompt: 'find running shoes' });
+    run({ attachment: attachment as never, projectId: RUN_PROJ, userPrompt: 'find running shoes' });
 
     await vi.waitFor(() => expect(mockedLaunch).toHaveBeenCalledTimes(1));
     expect(mockedLaunch).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'use the skill find-me-a-product in order to:\nfind running shoes' }),
     );
-  });
-
-  it('no conversation project → falls back to the active project', async () => {
-    const attachment = fakeAttachment();
-    run({ attachment: attachment as never });
-
-    await vi.waitFor(() => expect(mockedLaunch).toHaveBeenCalledTimes(1));
-    expect(attachment.install).toHaveBeenCalledWith('project', ACTIVE_PROJ);
-    expect(mockedLaunch).toHaveBeenCalledWith(expect.objectContaining({ projectId: ACTIVE_PROJ }));
   });
 });

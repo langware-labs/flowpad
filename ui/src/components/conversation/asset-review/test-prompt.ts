@@ -18,3 +18,18 @@ export function buildSkillTestPrompt(name: string, userPrompt?: string | null): 
   if (!trimmed) return `run the skill ${name}`;
   return `use the skill ${name} in order to:\n${trimmed}`;
 }
+
+/**
+ * The project to install+run a received skill in: an already-installed project
+ * scope wins, then the conversation's project, then the active project. Returns
+ * null when none is resolvable — the caller then prompts for one (a shared
+ * conversation is often projectless on the receiver). `||`, not `??`: the
+ * backend clears project_id with '' (exclude-none saves), so fall through.
+ */
+export function resolveRunProjectId(
+  attachment: { project_id?: string | null },
+  conversationProjectId?: string | null,
+  activeProjectId?: string | null,
+): string | null {
+  return attachment.project_id || conversationProjectId || activeProjectId || null;
+}
