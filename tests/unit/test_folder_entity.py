@@ -14,6 +14,8 @@ Contract under test:
 import pytest
 
 from flow_sdk.builtin.folder import Folder
+from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.builtin.local_origin import LocalOrigin
 from flow_sdk.fs_store.identifier import is_valid_entity_id
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.type_info import register_all
@@ -37,6 +39,46 @@ async def test_mint_for_path_idempotent(tmp_path):
     d2.mkdir()
     c = await Folder.mint_for_path(str(d2))
     assert c.id != a.id
+
+
+@pytest.mark.asyncio
+async def test_non_repo_dir_is_local_origin_with_stable_id(tmp_path):
+    d = tmp_path / "plain"
+    d.mkdir()
+    folder = await Folder.mint_for_path(str(d))
+    canonical = canonical_posix_path(str(d))
+    # A non-repo dir → LocalOrigin(base=canonical).
+    assert folder.origin is not None
+    assert folder.origin.kind == "local"
+    assert folder.origin.base == canonical
+    # ZERO-MIGRATION GUARD: a local folder's id is byte-identical to the legacy
+    # path-derived id, so existing folders + links never re-key.
+    assert Folder.id_for_origin(LocalOrigin(base=canonical)) == Folder.id_for_path(canonical)
+    assert folder.id == Folder.id_for_path(canonical)
+
+
+@pytest.mark.asyncio
+async def test_git_backed_folder_id_is_origin_key(tmp_path, monkeypatch):
+    """A dir inside a git repo → transportable GitOrigin; the Folder id is
+    origin.key() (same on every machine → shared refs resolve), stable across mints."""
+    git_origin = GitOrigin(provider="github", owner="Acme", name="Repo",
+                           branch="main", rel_path="pkg/tools")
+
+    async def _fake_detect(_asset_root):
+        return git_origin
+
+    # Stub the git driver's detect so no real repo is needed.
+    from flow_sdk.builtin.drivers.git_driver import GitOriginDriver
+    monkeypatch.setattr(GitOriginDriver, "detect", staticmethod(lambda _p: None))
+    monkeypatch.setattr(Folder, "detect_origin", staticmethod(_fake_detect))
+
+    d = tmp_path / "repo" / "pkg" / "tools"
+    d.mkdir(parents=True)
+    a = await Folder.mint_for_path(str(d))
+    assert a.origin is not None and a.origin.kind == "git"
+    assert a.id == git_origin.key()
+    b = await Folder.mint_for_path(str(d))
+    assert b.id == a.id  # stable across mints
 
 
 @pytest.mark.asyncio

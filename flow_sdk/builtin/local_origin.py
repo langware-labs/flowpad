@@ -1,32 +1,44 @@
 """LocalOrigin — the ``kind="local"`` member of ``FSOrigin``.
 
-A local origin points at a directory that is ALREADY present on the receiving
-machine — a mounted network share, a synced folder, or any local base path. It
-is the simplest non-git backend and exists to prove the FSOrigin seam is not
+A local origin points at a directory that is ALREADY present on the machine — a
+mounted network share, a synced folder, or any local base path. It is the
+simplest non-git backend and exists to prove the FSOrigin seam is not
 accidentally git-shaped: its ``materialize`` performs NO fetch (no clone, no
-download) — it resolves ``base/rel_path`` and returns it. (Distinct from a git
-repo cloned over ``file://``, which is ``kind="git"`` with ``provider="file"``.)
+download). It is NOT transportable (its ``base`` is a path on one machine), so a
+folder/asset carrying it is never shareable. (Distinct from a git repo cloned
+over ``file://``, which is ``kind="git"`` with ``provider="file"``.)
 """
 from __future__ import annotations
 
-import uuid
 from typing import Literal
 
 from flow_sdk.builtin.fs_origin import FSOrigin
 from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 
 
 class LocalOrigin(FSOrigin):
     kind: Literal["local"] = "local"
-    # Absolute base directory on the receiver (a mount point / synced-folder
-    # root). ``rel_path`` (inherited) descends into it.
+    # Absolute base directory (a mount point / synced-folder root). ``rel_path``
+    # (inherited) descends into it.
     base: str = ""
     # key() is inherited from FSOrigin (delegates to the local driver); only
     # git overrides it, for byte-stability.
 
+    @property
+    def transportable(self) -> bool:
+        return False
+
 
 def local_origin_key(base: str, rel_path: str) -> str:
-    """Deterministic v5 dedup handle for a local origin: uuid5 over base:rel_path."""
-    b = (base or "").strip().replace("\\", "/").rstrip("/")
+    """Deterministic dedup handle for a local origin = its canonical local path.
+
+    Byte-stable to ``Folder.id_for_path`` (``mint_uuid(canonical_posix_path)``):
+    a local folder's identity IS its canonical path, so ``LocalOrigin.key()``
+    equals the legacy path-derived id — this is what lets ``Folder.id_for_origin``
+    be a uniform ``origin.key()`` with no kind-branch and zero migration.
+    """
+    b = (base or "").strip()
     r = (rel_path or "").strip().replace("\\", "/").strip("/")
-    return mint_uuid(key=f"local:{b}:{r}", namespace=uuid.NAMESPACE_URL)
+    full = f"{b.rstrip('/')}/{r}" if r else b
+    return mint_uuid(canonical_posix_path(full))

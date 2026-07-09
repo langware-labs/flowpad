@@ -743,13 +743,16 @@ class Project(Entity):
     async def add_context_dir(self, path: str, scope: str = "private") -> "ApiResponse":
         """Attach a directory to this project as a context folder.
 
-        Mints (or reuses — deterministic v5 from the canonical path) the
-        ``Folder`` entity and links it into the project's context bucket:
-        ``private`` (default; never leaves this machine) or ``shared``
-        (travels when the project is shared). The canonical path is stamped
-        into the per-entry sidecar so the computed ``include_dirs`` derives
-        synchronously. On a new add we kick a one-shot indexer scan over the
-        path so skills/agents under it become discoverable.
+        Mints (or reuses) the ``Folder`` entity — detecting whether the dir is
+        inside a git repo (→ transportable ``GitOrigin``) or plain (→
+        ``LocalOrigin``) — and links it into the project's context bucket:
+        ``private`` (default; never leaves this machine) or ``shared`` (travels
+        when the project is shared). The canonical LOCAL path is stamped into
+        the per-entry sidecar so the computed ``include_dirs`` derives
+        synchronously. On a new add we kick a one-shot indexer scan.
+
+        A ``LocalOrigin`` (non-git) folder cannot be reconstructed on a peer, so
+        it is rejected from ``scope="shared"``.
         """
         if not path:
             return ApiFailResponse(message="path is required")
@@ -759,10 +762,22 @@ class Project(Entity):
         # merges the stash (so is_new sees legacy dirs), and save() below is
         # the migration chokepoint.
         canonical = canonical_posix_path(path)
-        is_new = canonical not in self.include_dirs
         from flow_sdk.builtin.folder import Folder
 
-        folder = await Folder.mint_for_path(canonical)
+        # Detect the origin BEFORE minting so a rejected shared add leaves no
+        # orphan Folder row. A non-transportable origin (local) can't be
+        # reconstructed on a peer, so it can't be shared.
+        origin = await Folder.detect_origin(canonical)
+        if scope == "shared" and not origin.transportable:
+            return ApiFailResponse(
+                message="Only git-backed folders can be shared. Add this folder as private, "
+                        "or use a folder inside a git repository."
+            )
+        is_new = canonical not in self.include_dirs
+        folder = await Folder.mint_for_origin(origin, local_path=canonical)
+        # Idempotent by folder typeid (the bucket dedups); a kind-flip re-add
+        # that mints a new id is harmless — include_dirs path-dedups and remove
+        # matches by sidecar path across both links.
         if scope == "shared":
             self.add_shared_context_entities(folder.typeid, data={"path": canonical})
         else:

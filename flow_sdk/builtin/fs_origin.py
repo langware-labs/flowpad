@@ -80,6 +80,16 @@ class FSOrigin(BaseModel):
     # types, a file for file-layout types. Universal across backends.
     rel_path: str = ""
 
+    @property
+    def transportable(self) -> bool:
+        """Whether this origin can be reconstituted on ANOTHER machine (so a
+        folder/asset carrying it is shareable). Backends whose locator is
+        machine-independent (git repo coords, s3 bucket, …) are transportable;
+        a purely-local origin (an absolute path on one machine) is not and
+        overrides this to False. The share path gates on this, not on ``kind``.
+        """
+        return True
+
     def key(self) -> str:
         """Deterministic, location-independent dedup handle for this origin.
 
