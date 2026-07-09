@@ -4,6 +4,7 @@ These exercise the CLI plumbing only — the agent run (`_run_diagnose`) is mock
 so no worker is spawned and no DB is touched. The SDK reporter's real behavior is
 covered by tests/unit/test_diagnostic_report.py.
 """
+
 import asyncio
 import logging
 from types import SimpleNamespace
@@ -13,9 +14,9 @@ import pytest
 from typer.testing import CliRunner
 
 from flow_sdk.cli.commands.diagnose_cmd import (
+    _extract_report_result,
     _Renderer,
     _TerminalSink,
-    _extract_report_result,
 )
 from flow_sdk.cli.flow_cli import app
 
@@ -47,6 +48,7 @@ def _isolate_cli_side_effects():
 # flow diagnose — message comes from stdin, never argv
 # --------------------------------------------------------------------------- #
 
+
 def test_diagnose_reads_message_from_stdin():
     with patch(_RUN, new=AsyncMock(return_value=0)) as mock_run:
         result = runner.invoke(app, ["diagnose"], input="backend keeps crashing\n")
@@ -66,7 +68,7 @@ def test_diagnose_empty_input_runs_full_sweep():
 def test_diagnose_preserves_quotes_and_apostrophes():
     # The entire reason for reading from stdin: shell-special chars pass through
     # intact (no quoting / no shell mangling).
-    msg = "can't start \"the app\" — is it broken?"
+    msg = 'can\'t start "the app" — is it broken?'
     with patch(_RUN, new=AsyncMock(return_value=0)) as mock_run:
         result = runner.invoke(app, ["diagnose"], input=msg + "\n")
     assert result.exit_code == 0
@@ -107,6 +109,7 @@ def test_diagnose_cli_invokes_runner_without_a_feed_switch():
 # _Renderer — narration lines + inline tool-progress dots
 # --------------------------------------------------------------------------- #
 
+
 def _entry(role, blocks):
     return {"message": {"role": role, "content": blocks}}
 
@@ -120,10 +123,10 @@ def test_renderer_shows_narration_and_pulse_not_tool_noise(capsys):
     r.feed(_entry("user", [{"type": "tool_result", "content": "x"}]))  # ignored
     r.finish()
     out = capsys.readouterr().out
-    assert "▸ Checking port" in out          # narration kept
-    assert "·" in out                         # progress pulse rendered
-    assert "Bash" not in out                  # tool name suppressed
-    assert "tool result" not in out           # tool-result noise suppressed
+    assert "▸ Checking port" in out  # narration kept
+    assert "·" in out  # progress pulse rendered
+    assert "Bash" not in out  # tool name suppressed
+    assert "tool result" not in out  # tool-result noise suppressed
 
 
 def test_renderer_ignores_non_message_entries(capsys):
@@ -136,6 +139,7 @@ def test_renderer_ignores_non_message_entries(capsys):
 # --------------------------------------------------------------------------- #
 # _extract_report_result — completion JSON scraped from report.py's stdout
 # --------------------------------------------------------------------------- #
+
 
 def test_extract_report_result_parses_json_from_text():
     text = 'log line\n```json\n{"diagnosis_id": "abc", "feed_posted": false}\n```\n'
@@ -150,6 +154,7 @@ def test_extract_report_result_none_when_absent_or_no_id():
 # --------------------------------------------------------------------------- #
 # _safe_echo — must not crash on a non-UTF-8 console (Windows cp1252)
 # --------------------------------------------------------------------------- #
+
 
 def test_safe_echo_falls_back_to_ascii_on_unencodable_console(monkeypatch):
     """A cp1252 console can't encode ▸/✓ and ``typer.echo`` raises
@@ -175,6 +180,7 @@ def test_safe_echo_falls_back_to_ascii_on_unencodable_console(monkeypatch):
 # --------------------------------------------------------------------------- #
 # _run_diagnose — must not hang when the transcript stream never self-terminates
 # --------------------------------------------------------------------------- #
+
 
 @pytest.mark.asyncio
 async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
@@ -343,6 +349,7 @@ async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails
 # _await_warmup — liveness-gated start detection (no fixed wall-clock)
 # --------------------------------------------------------------------------- #
 
+
 @pytest.mark.asyncio
 async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
     """If the worker turn ends (crash / ``claude`` binary unresolved) without
@@ -392,14 +399,9 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
     ):
-        rc = await asyncio.wait_for(
-            diagnose_cmd._run_diagnose("", 1800.0, emit=events.append), timeout=5
-        )
+        rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0, emit=events.append), timeout=5)
     assert rc == 1
-    assert any(
-        e.get("type") == "error" and "produced no transcript" in e.get("text", "")
-        for e in events
-    )
+    assert any(e.get("type") == "error" and "produced no transcript" in e.get("text", "") for e in events)
 
 
 @pytest.mark.asyncio
@@ -493,12 +495,51 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
 
 
 # --------------------------------------------------------------------------- #
+# Transport routing — the diagnose process must take the HEADLESS path
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_diagnose_process_prompt_routes_headless_not_pty():
+    """Regression (0.2.93 "produced no transcript" failure): ``prompt()`` routes
+    on the transport ``pty_mode`` (default True) — not ``visible``. The diagnose
+    runner builds an in-memory process that is never saved to the DB, so if it
+    doesn't select the headless transport, ``prompt()`` takes the PTY branch and
+    refuses it with "AgenticProcess … not found in database" BEFORE any worker
+    spawns — surfacing to the user as "the diagnostic agent failed to start —
+    it produced no transcript".
+
+    Real AgenticProcess and the runner's real construction; nothing mocked. The
+    assertion is on the routing decision itself: prompt() must not be refused.
+    """
+    from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
+    from flow_sdk.cli.commands.diagnose_cmd import _build_diagnose_process
+    from flow_sdk.responses.response import ApiFailResponse
+
+    ap = _build_diagnose_process()
+    try:
+        resp = await ap.prompt("routing probe — end the turn immediately")
+        assert not isinstance(resp, ApiFailResponse), (
+            f"prompt() refused the diagnose process before spawning a worker: "
+            f"{resp.message!r} — the process selected the PTY transport "
+            f"(pty_mode={ap.pty_mode}) instead of headless"
+        )
+    finally:
+        # If the headless path DID start a worker turn, shut it down so the
+        # test leaves no live subprocess behind.
+        worker = ap_mod._PROMPT_WORKERS.pop(ap.id, None)
+        if worker is not None:
+            await worker.close_session()
+
+
+# --------------------------------------------------------------------------- #
 # Home-Feed card appearance — every completed run posts exactly one card (CLI and
 # UI alike, watched or not): an issue card carrying a support conversation, or a
 # no-issue summary card. Posting funnels through the single creator
 # `_post_home_feed_entry` (NOT mocked here), so these assert a real, queryable card
 # lands in the store.
 # --------------------------------------------------------------------------- #
+
 
 async def _bootstrap_local_user():
     from flow_sdk.server.routes.bootstrap import (
@@ -603,8 +644,7 @@ async def test_feed_card_always_appears(label, has_issue, expect_conversation):
     else:
         conv_id = msg_id = None
         report_json = (
-            f'{{"diagnosis_id": "{diag_id}", "conversation_id": null, '
-            f'"flow_message_id": null, "has_issue": false}}'
+            f'{{"diagnosis_id": "{diag_id}", "conversation_id": null, "flow_message_id": null, "has_issue": false}}'
         )
 
     _tf = tempfile.NamedTemporaryFile(prefix="diag_card_", suffix=".jsonl", delete=False)
