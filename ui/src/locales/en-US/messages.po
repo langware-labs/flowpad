@@ -784,8 +784,8 @@ msgid "Agent"
 msgstr "Agent"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Agent is taking a long time to respond"
-msgstr "Agent is taking a long time to respond"
+#~ msgid "Agent is taking a long time to respond"
+#~ msgstr "Agent is taking a long time to respond"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Agent not found"
@@ -5735,8 +5735,8 @@ msgid "Keep editing"
 msgstr "Keep editing"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Keep Waiting"
-msgstr "Keep Waiting"
+#~ msgid "Keep Waiting"
+#~ msgstr "Keep Waiting"
 
 #: src/pages/keychain-approval.tsx
 msgid "Keychain access is required to finish signing in to Flowpad."
@@ -11406,8 +11406,8 @@ msgid "Terminal Sessions"
 msgstr "Terminal Sessions"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Terminate"
-msgstr "Terminate"
+#~ msgid "Terminate"
+#~ msgstr "Terminate"
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "test"
@@ -11451,8 +11451,8 @@ msgid "The agent you're looking for doesn't exist or is not available."
 msgstr "The agent you're looking for doesn't exist or is not available."
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "The Anthropic API may be slow or unresponsive."
-msgstr "The Anthropic API may be slow or unresponsive."
+#~ msgid "The Anthropic API may be slow or unresponsive."
+#~ msgstr "The Anthropic API may be slow or unresponsive."
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "The artifact has been removed successfully."
