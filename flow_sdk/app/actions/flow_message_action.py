@@ -21,7 +21,6 @@ from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, DeliverySt
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.builtin.task import Task
-from flow_sdk.builtin.organization import Organization
 from flow_sdk.builtin.team import Team
 from flow_sdk.builtin.user import User, normalize_email
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -1990,8 +1989,17 @@ async def inbox_bulk_update() -> ApiResponse:
 
 
 def _membership_cls(target_type: str | None):
-    """Entity class for a membership target type (organization → Organization, else Team)."""
-    return Organization if target_type == BuiltinEntityType.ORGANIZATION.value else Team
+    """Entity class for a membership target type (organization / team / project / …).
+
+    A project shared as a collaboration unit rides the SAME membership-invitation
+    path as org/team (target descriptor, no backing conversation): the recipient
+    materializes a ``remote=True`` mirror keyed by the sharer's opaque ``cloud_id``.
+    Resolves via the schema registry — the codebase's single type→class lookup (as
+    used by ``share_action``); unknown/None falls back to Team for back-compat.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    return (SchemaRegistry.get_entity_cls(target_type) if target_type else None) or Team
 
 
 async def _materialize_membership_invitation(

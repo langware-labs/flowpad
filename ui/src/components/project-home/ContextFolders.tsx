@@ -13,10 +13,10 @@ interface ContextFoldersProps {
 }
 
 /**
- * ContextFolders — the ProjectBrief section for managing a project's context
+ * ContextFolders — the ProjectHome section for managing a project's context
  * folders (`include_dirs`): dirs auto-added to every agentic worker's --add-dir
  * set and browseable in the Explorer as their own root. Owns its own project
- * resolution, handlers, and drag state so ProjectBrief stays a thin landing
+ * resolution, handlers, and drag state so ProjectHome stays a thin landing
  * surface. Renders nothing until a project resolves.
  */
 export const ContextFolders: React.FC<ContextFoldersProps> = ({ spawnProjectId }) => {
