@@ -134,6 +134,10 @@ class Project(Entity):
         default_factory=list,
         description="Hub role roster: [{user_id, email, name, role}]. Distinct from presence ``members``.",
     )
+    shared_secret_origins: dict[str, dict[str, Any]] = APIField(
+        default_factory=dict,
+        description="Hub-side value-free secret pointer metadata keyed by SecretOrigin typeid.",
+    )
     shared_context_origins: dict[str, dict[str, Any]] = APIField(
         default_factory=dict,
         persist=Persist.FALSE,
@@ -202,6 +206,34 @@ class Project(Entity):
             if p and p not in seen:
                 seen.add(p)
                 out.append(p)
+        return out
+
+    @computed_field
+    @property
+    def secret_origins(self) -> list[dict[str, Any]]:
+        """Project secret pointer summaries, derived from SecretOrigin links.
+
+        This read surface is intentionally value-free. It is sync-only because
+        workers and the UI read it from serialized project state.
+        """
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for scope, bucket in (("shared", "shared"), ("private", "private")):
+            for tid in self.context_of_type("secret_origin", bucket=bucket):
+                key = str(tid)
+                if key in seen:
+                    continue
+                seen.add(key)
+                entry = dict(self.get_context_entry_data(tid) or {})
+                locator = entry.get("locator") if isinstance(entry.get("locator"), dict) else {}
+                out.append({
+                    "typeid": key,
+                    "name": entry.get("name") or "",
+                    "env_var": entry.get("env_var") or "",
+                    "kind": entry.get("kind") or locator.get("kind") or "",
+                    "locator": locator,
+                    "scope": entry.get("scope") or scope,
+                })
         return out
 
     @model_validator(mode="after")
@@ -481,6 +513,8 @@ class Project(Entity):
             "host_member_id",
             "members",
             "include_dirs",
+            "secret_origins",
+            "shared_secret_origins",
             "shared_context_origins",
             "session_count",
             "last_session_at",
@@ -499,6 +533,33 @@ class Project(Entity):
             if origin is None or not origin.transportable:
                 continue
             payload[str(tid)] = origin.model_dump(mode="json")
+        return payload
+
+    async def _shared_secret_origin_payload(self) -> dict[str, dict[str, Any]]:
+        """Build the value-free hub payload for shared secret pointers."""
+        payload: dict[str, dict[str, Any]] = {}
+        from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: PLC0415
+
+        for tid in self.context_of_type("secret_origin", bucket="shared"):
+            entry = dict(self.get_context_entry_data(tid) or {})
+            locator = entry.get("locator") if isinstance(entry.get("locator"), dict) else None
+            name = entry.get("name") or ""
+            env_var = entry.get("env_var") or ""
+            if not locator or not name or not env_var:
+                secret = await SecretOrigin.get_by_id(tid.id)
+                if secret is None:
+                    continue
+                locator = secret.locator.model_dump(mode="json")
+                name = secret.name or ""
+                env_var = secret.env_var
+            if (locator or {}).get("kind") == "local":
+                continue
+            payload[str(tid)] = {
+                "name": name,
+                "env_var": env_var,
+                "kind": (locator or {}).get("kind"),
+                "locator": locator,
+            }
         return payload
 
     async def share(self, recipients: Optional[List[str]] = None) -> "Project":
@@ -547,6 +608,7 @@ class Project(Entity):
             )
         if shared_context_origins:
             body["shared_context_origins"] = shared_context_origins
+        body["shared_secret_origins"] = await self._shared_secret_origin_payload()
 
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             await client.post(build_hub_url(self.get_type()), body)
@@ -720,6 +782,105 @@ class Project(Entity):
         """Get worker sessions for current directory."""
         sessions = get_worker_sessions()
         return ApiSuccessResponse(data=sessions)
+
+    # ── Secret pointers (SecretOrigin entities linked via context buckets) ──
+
+    @action.post(action_name="add-secret-pointer")
+    async def add_secret_pointer(
+        self,
+        name: str = "",
+        env_var: str = "",
+        scope: str = "private",
+        kind: str = "local",
+        locator: dict[str, Any] | None = None,
+        sod_name: str | None = None,
+        secret_id: str | None = None,
+    ) -> "ApiResponse":
+        """Attach a value-free secret pointer to this project."""
+        from flow_sdk.builtin.hub_secret_ref import HubSecretRef  # noqa: PLC0415
+        from flow_sdk.builtin.local_secret_ref import LocalSecretRef  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin import (  # noqa: PLC0415
+            SecretOrigin,
+            is_valid_secret_origin_env_var,
+        )
+        from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
+
+        name = (name or "").strip()
+        env_var = (env_var or "").strip()
+        scope = (scope or "private").strip().lower()
+        if not env_var:
+            return ApiFailResponse(message="env_var is required")
+        if not is_valid_secret_origin_env_var(env_var):
+            return ApiFailResponse(message="env_var must be a valid environment variable name")
+        if scope not in ("private", "shared"):
+            return ApiFailResponse(message="scope must be 'private' or 'shared'")
+
+        raw_locator = dict(locator or {})
+        resolved_kind = normalize_secret_origin_kind(
+            raw_locator.get("kind") or kind or ("flowpad-hub" if secret_id else "local")
+        )
+        if resolved_kind == "local":
+            if scope == "shared":
+                return ApiFailResponse(message="Local secret pointers can only be private")
+            local_name = (sod_name or raw_locator.get("sod_name") or name or "").strip()
+            if not local_name:
+                return ApiFailResponse(message="sod_name is required for local secret pointers")
+            loc = LocalSecretRef(sod_name=local_name)
+            name = name or local_name
+        elif resolved_kind == "flowpad-hub":
+            hub_id = (secret_id or raw_locator.get("secret_id") or "").strip()
+            if not hub_id:
+                return ApiFailResponse(message="secret_id is required for flowpad-hub secret pointers")
+            loc = HubSecretRef(secret_id=hub_id)
+            name = name or hub_id
+        else:
+            return ApiFailResponse(message=f"Unsupported secret pointer kind: {resolved_kind}")
+
+        candidate_typeid = f"{BuiltinEntityType.SECRET_ORIGIN.value}-{SecretOrigin.id_for_locator(loc)}"
+        for existing in self.secret_origins:
+            if existing.get("env_var") == env_var and existing.get("typeid") != candidate_typeid:
+                return ApiFailResponse(message=f"env_var {env_var} is already bound to another secret pointer")
+
+        secret = await SecretOrigin.mint_for(locator=loc, name=name, env_var=env_var)
+        data = secret.context_data(scope=scope)
+        if scope == "shared":
+            self.add_shared_context_entities(secret.typeid, data=data)
+        else:
+            self.add_private_context_entities(secret.typeid, data=data)
+        await self.save()
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    @action.post(action_name="remove-secret-pointer")
+    async def remove_secret_pointer(
+        self,
+        typeid: str | None = None,
+        name: str | None = None,
+        env_var: str | None = None,
+    ) -> "ApiResponse":
+        """Detach project secret pointers. The SecretOrigin row and secret value remain."""
+        if not typeid and not name and not env_var:
+            return ApiFailResponse(message="typeid, name, or env_var is required")
+        targets: list[TypeId] = []
+        if typeid:
+            try:
+                targets.append(TypeId.to_typeid(typeid))
+            except Exception:
+                targets.append(TypeId(type=BuiltinEntityType.SECRET_ORIGIN.value, id=typeid))
+        else:
+            want_name = (name or "").strip()
+            want_env_var = (env_var or "").strip()
+            for tid in self.context_of_type("secret_origin", bucket="both"):
+                entry = self.get_context_entry_data(tid) or {}
+                if want_name and entry.get("name") != want_name:
+                    continue
+                if want_env_var and entry.get("env_var") != want_env_var:
+                    continue
+                targets.append(tid)
+        if targets:
+            self.remove_shared_context_entities(*targets)
+            self.remove_private_context_entities(*targets)
+            await self.save()
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     # ── Context folders (Folder entities linked via context buckets) ────────
 

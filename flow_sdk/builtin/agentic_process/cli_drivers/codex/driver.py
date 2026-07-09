@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     apply_worker_env,
+    apply_worker_secret_env,
     AgenticContext,
     AgenticProcessContextKey,
     WorkerCLIOptions,
@@ -119,9 +120,11 @@ class CodexDriver:
         full_prompt = self.compose_prompt(instruction, process.get_agents_json())
 
         cli_cfg = process.cli_config or {}
+        env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
+        await apply_worker_secret_env(env_vars, process)
         context = AgenticContext(
             workdir=process.workdir,
-            env_vars=apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process),
+            env_vars=env_vars,
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
             # Resume ONLY when codex actually has a rollout for this id. Codex

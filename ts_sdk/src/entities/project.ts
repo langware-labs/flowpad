@@ -26,6 +26,29 @@ export interface ResolveProjectResult {
   members_count: number;
 }
 
+export type SecretPointerScope = 'private' | 'shared';
+
+export interface LocalSecretRef {
+  kind: 'local';
+  sod_name: string;
+}
+
+export interface HubSecretRef {
+  kind: 'flowpad-hub';
+  secret_id: string;
+}
+
+export type SecretOriginLocator = LocalSecretRef | HubSecretRef;
+
+export interface ProjectSecretOriginSummary {
+  typeid: string;
+  name: string;
+  env_var: string;
+  kind: SecretOriginLocator['kind'] | string;
+  locator: Partial<SecretOriginLocator>;
+  scope: SecretPointerScope | string;
+}
+
 export interface ProjectContextFolderResolveResult {
   typeid: string;
   kind: string;
@@ -82,6 +105,9 @@ export class Project extends APIEntity<Project> {
    *  --add-dir set and browseable in the Explorer as their own root. Mirrors
    *  the backend Project.include_dirs. */
   include_dirs: string[] = [];
+  /** Project secret pointers. Value-free metadata only; values are never
+   *  exposed through the SDK and resolve only inside worker launch. */
+  secret_origins: ProjectSecretOriginSummary[] = [];
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
@@ -90,6 +116,7 @@ export class Project extends APIEntity<Project> {
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
     this.members = (entity.members as ProjectMember[] | undefined) ?? [];
     this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
+    this.secret_origins = (entity.secret_origins as ProjectSecretOriginSummary[] | undefined) ?? [];
   }
 
   // Land on the project's collaboration/home view at /dock/project/<id>
@@ -162,6 +189,15 @@ export class Project extends APIEntity<Project> {
     }
   }
 
+  private adoptSecretOrigins(response: unknown): void {
+    const origins = (response as { secret_origins?: unknown } | null)?.secret_origins;
+    if (Array.isArray(origins)) {
+      this.secret_origins = origins.filter((item): item is ProjectSecretOriginSummary => (
+        !!item && typeof item === 'object' && typeof (item as ProjectSecretOriginSummary).typeid === 'string'
+      ));
+    }
+  }
+
   /** Attach a context folder (auto-added to every agentic worker's --add-dir
    *  set). Idempotent; the backend mints the Folder entity, links it into the
    *  requested context bucket — `private` (default, never leaves this machine)
@@ -178,6 +214,30 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { path };
     this.adoptContextDirs(await dataManager.callAction(actionInfo));
+  }
+
+  async addSecretPointer(
+    name: string,
+    envVar: string,
+    options: { locator: SecretOriginLocator; scope?: SecretPointerScope },
+  ): Promise<void> {
+    const actionInfo = new ActionInfo('add-secret-pointer', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = {
+      name,
+      env_var: envVar,
+      scope: options.scope ?? 'private',
+      kind: options.locator.kind,
+      locator: options.locator,
+      ...(options.locator.kind === 'local' ? { sod_name: options.locator.sod_name } : {}),
+      ...(options.locator.kind === 'flowpad-hub' ? { secret_id: options.locator.secret_id } : {}),
+    };
+    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+  }
+
+  async removeSecretPointer(typeid: string): Promise<void> {
+    const actionInfo = new ActionInfo('remove-secret-pointer', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { typeid };
+    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
   }
 
   /** Resolve received shared context folders into receiver-local paths. */

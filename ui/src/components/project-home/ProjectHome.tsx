@@ -10,6 +10,7 @@ import { History, Loader2, SquareTerminal } from 'lucide-react';
 import React, { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { ContextFolders } from './ContextFolders';
+import { Secrets } from './Secrets';
 
 interface ProjectHomeProps {
   /** Pin spawned shells/processes to this project; otherwise the active project. */
@@ -141,6 +142,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
           )}
 
           <ContextFolders spawnProjectId={spawnProjectId} />
+          <Secrets spawnProjectId={spawnProjectId} />
         </div>
       </div>
     </div>
