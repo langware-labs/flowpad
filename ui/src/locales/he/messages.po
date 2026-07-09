@@ -1418,6 +1418,19 @@ msgstr "פקודת Bash *"
 msgid "bash progress"
 msgstr "התקדמות bash"
 
+#: src/components/project-home/Secrets.tsx
+msgid "Bind"
+msgstr ""
+
+#: src/components/project-home/Secrets.tsx
+msgid "Bind an existing app secret to a project environment variable."
+msgstr ""
+
+#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/Secrets.tsx
+msgid "Bind secret"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "blocked"
 msgstr "חסום"
@@ -1621,6 +1634,7 @@ msgstr ""
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/project-home/Secrets.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
@@ -3844,6 +3858,7 @@ msgid "Enable for user"
 msgstr "הפעל עבור משתמש"
 
 #: src/components/account/secrets-section.tsx
+#: src/components/project-home/Secrets.tsx
 msgid "Enable secrets"
 msgstr "הפעל סודות"
 
@@ -3976,6 +3991,10 @@ msgstr "ערך"
 msgid "Entry details"
 msgstr "פרטי כניסה"
 
+#: src/components/project-home/Secrets.tsx
+msgid "Env var"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "error"
 msgstr "שגיאה"
@@ -3999,6 +4018,8 @@ msgstr "שגיאה"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/Secrets.tsx
 msgid "Error"
 msgstr "שגיאה"
 
@@ -4234,6 +4255,10 @@ msgstr "הוספת תגובה נכשלה"
 msgid "Failed to backup database"
 msgstr "גיבוי בסיס הנתונים נכשל"
 
+#: src/components/project-home/Secrets.tsx
+msgid "Failed to bind secret"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/CallStackView.tsx
 msgid "Failed to build call stack: {error}"
 msgstr "כשל בבניית stack של קריאות: {error}"
@@ -4327,6 +4352,7 @@ msgid "Failed to enable MCP"
 msgstr "נכשל בהפעלת MCP"
 
 #: src/components/account/secrets-section.tsx
+#: src/components/project-home/Secrets.tsx
 msgid "Failed to enable secrets"
 msgstr "כשל בהפעלת סודות"
 
@@ -7341,6 +7367,10 @@ msgstr "אין שינויים בשורות בהשוואה לקו הבסיס המ
 msgid "No LLM index for this folder yet."
 msgstr "אין אינדקס LLM לתיקייה זו עדיין."
 
+#: src/components/project-home/Secrets.tsx
+msgid "No local app secrets"
+msgstr ""
+
 #: src/components/account/system-log.tsx
 msgid "No log file found"
 msgstr "לא נמצא קובץ רישום"
@@ -8860,6 +8890,7 @@ msgstr "עדיפות"
 
 #: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/project-home/Secrets.tsx
 msgid "Private"
 msgstr "פרטי"
 
@@ -9500,6 +9531,10 @@ msgstr "הסר קישור"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove queued prompt"
 msgstr "הסר prompt בתור"
+
+#: src/components/project-home/Secrets.tsx
+msgid "Remove secret binding"
+msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Removed"
@@ -10406,6 +10441,7 @@ msgid "Searching…"
 msgstr "מחפש…"
 
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
+#: src/components/project-home/Secrets.tsx
 msgid "Secret"
 msgstr "סוד"
 
@@ -10420,6 +10456,10 @@ msgstr "סוד נדרש"
 #: src/components/account/secrets-section.tsx
 msgid "Secret saved"
 msgstr "סוד נשמר"
+
+#: src/components/project-home/Secrets.tsx
+msgid "Secrets"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "Secrets enabled"
@@ -10575,6 +10615,10 @@ msgstr "בחר פרויקט"
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Select Projects"
 msgstr "בחר פרויקטים"
+
+#: src/components/project-home/Secrets.tsx
+msgid "Select secret"
+msgstr ""
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Select session"
@@ -10840,6 +10884,7 @@ msgstr "שתף לשיחה"
 
 #: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/project-home/Secrets.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Shared"
 msgstr "משותף"
