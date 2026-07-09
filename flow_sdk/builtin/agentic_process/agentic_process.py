@@ -4517,8 +4517,8 @@ class AgenticProcess(Entity):
         Invisible processes: kills the worker (SIGTERM → SIGKILL) so they don't
         linger consuming resources. The JSONL will eventually go stale → INACTIVE.
 
-        Visible processes: worker is left alive (API may recover); the UI shows a
-        toast with Terminate / Keep Waiting options.
+        Visible processes: worker is left alive (API may recover); a warning is
+        logged here and in the browser console.
         """
         if self.visible:
             return
@@ -5022,6 +5022,12 @@ class AgenticProcess(Entity):
             object.__setattr__(self, "_last_broadcast_key", key)
 
             if current == WorkerStatus.API_TIMEOUT:
+                logger.warning(
+                    "AgenticProcess %s: agent is taking a long time to respond — "
+                    "no LLM response since the last prompt; the Anthropic API may "
+                    "be slow or unresponsive",
+                    self.id,
+                )
                 try:
                     await self._on_timeout()
                 except Exception:
