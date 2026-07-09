@@ -362,6 +362,7 @@ export class ConnectionManager extends EventEmitter {
       });
       ws.addEventListener('error', (event) => {
         console.error('WebSocket error:', event);
+        this.reportLifecycle('ws_error', {});
         this.setConnectionStatus('error', 'WebSocket error');
       });
     } catch (e) {
@@ -409,7 +410,21 @@ export class ConnectionManager extends EventEmitter {
     }
   }
 
+  /**
+   * WS lifecycle breadcrumb (FLOWPAD-1935): one console line per transport
+   * event (open, close with code+wasClean, errors, reconnect attempts/
+   * failures). Read next to the backend's own [PtyRegistry] park/resume and
+   * disconnect-reason lines, these name a transport-death mechanism: a
+   * backend park with NO ws_close here proves the close event was never
+   * delivered (zombie socket); ws_reconnect_scheduled with no ws_open /
+   * ws_reconnect_failed after it proves a wedged dial.
+   */
+  private reportLifecycle(event: string, detail: Record<string, unknown> = {}): void {
+    console.info(`[ConnectionManager] lifecycle: ${event}`, { connection_id: this.id, ...detail });
+  }
+
   onOpen(event: Event) {
+    this.reportLifecycle('ws_open', { attempts_used: this.reconnectAttempts });
     // Reset reconnect attempts on successful connection
     this.reconnectAttempts = 0;
     this.emit('on_open');
@@ -418,10 +433,25 @@ export class ConnectionManager extends EventEmitter {
 
   onClose(event: CloseEvent) {
     this.emit('on_close');
-    // Automatically reconnect on unexpected disconnect
-    if (!event.wasClean && !this.isReconnecting) {
-      console.warn('[ConnectionManager] Connection closed unexpectedly, reconnecting...', {
+    const willReconnect = !this.isReconnecting;
+    this.reportLifecycle('ws_close', {
+      code: event.code,
+      was_clean: event.wasClean,
+      reason: event.reason || '',
+      action: willReconnect ? 'reconnect' : 'skip_reconnect_in_flight',
+    });
+    // Reconnect on ANY close, clean or not. Nothing in the product ever
+    // intentionally closes the local WS, so every close is a transport loss —
+    // including a gracefully restarting backend's proper close frame
+    // (1012, wasClean=true). The old `!event.wasClean` guard read that
+    // goodbye as final and permanently disabled reconnection: the app kept
+    // working over HTTP while its WS stayed dead, the backend attached a
+    // connection_id it didn't hold, and PTY output vanished
+    // (frozen-terminal RCA, FLOWPAD-1935 — bug B).
+    if (willReconnect) {
+      console.warn('[ConnectionManager] Connection closed, reconnecting...', {
         code: event.code,
+        wasClean: event.wasClean,
         reason: event.reason,
       });
       void this.reconnect();
@@ -447,6 +477,7 @@ export class ConnectionManager extends EventEmitter {
       Math.random() * 1000; // Add jitter
 
     console.log(`[ConnectionManager] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    this.reportLifecycle('ws_reconnect_scheduled', { attempt: this.reconnectAttempts, delay_ms: Math.round(delay) });
     await new Promise((resolve) => setTimeout(resolve, delay));
 
     try {
@@ -457,6 +488,10 @@ export class ConnectionManager extends EventEmitter {
       console.log('[ConnectionManager] Reconnected successfully');
     } catch (error) {
       console.error('[ConnectionManager] Reconnect failed:', error);
+      this.reportLifecycle('ws_reconnect_failed', {
+        attempt: this.reconnectAttempts,
+        error: error instanceof Error ? error.message : String(error),
+      });
       this.isReconnecting = false;
       // Schedule next attempt without recursive await (avoids Promise chain memory leak)
       setTimeout(() => void this.reconnect(), 0);

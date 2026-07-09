@@ -4,6 +4,7 @@ Mixed into ComputeNode. Accesses self.id, self.node_provider_id,
 self.active_pty_sessions, self.typeid, self.compute_provider via
 normal Python attribute lookup (no dependency injection needed).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
 # Prevents OS PTY device exhaustion (macOS default limit: 511).
 _PTY_CAP = 70
 _PTY_EVICT_COUNT = 10
+
 
 class PtyActionsMixin:
     """PTY session management implementation mixed into ComputeNode.
@@ -365,13 +367,13 @@ class PtyActionsMixin:
 
         # Create or update shell FSRecord and wire PtyStreamFile
         try:
-            from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
-            from flow_sdk.fs_store.fs_record import FSRecord
             from flow_sdk.builtin.shell import (
                 ShellStatus,
                 get_shell_record,
                 shell_pty_stream_path,
             )
+            from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
+            from flow_sdk.fs_store.fs_record import FSRecord
 
             existing_record = get_shell_record(shell_id)
             if not existing_record:
@@ -422,6 +424,7 @@ class PtyActionsMixin:
             # binding lives here — not in a per-type from_record override.
             try:
                 import re as _re
+
                 from flow_sdk.builtin.shell import Shell
                 from flow_sdk.core.entity.entity_model import Entity
 
@@ -588,17 +591,20 @@ class PtyActionsMixin:
             return ApiSuccessResponse(data={"content": "", "session_id": session_id, "jsonl_path": None})
 
         from pathlib import Path as _Path
+
         path = _Path(record.jsonl_path)
         try:
             content = path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             return ApiFailResponse(message=f"failed to read transcript: {exc}")
 
-        return ApiSuccessResponse(data={
-            "content": content,
-            "session_id": session_id,
-            "jsonl_path": str(path),
-        })
+        return ApiSuccessResponse(
+            data={
+                "content": content,
+                "session_id": session_id,
+                "jsonl_path": str(path),
+            }
+        )
 
     async def _pty_discovery_action(self) -> ApiResponse:
         """Run discovery on a record type and return the result.
@@ -636,23 +642,18 @@ class PtyActionsMixin:
                 extract_claude_session_from_path,
                 get_claude_session,
             )
+
             try:
                 if uuid_param:
-                    record = await loop.run_in_executor(
-                        None, lambda: get_claude_session(uuid_param, project=project)
-                    )
+                    record = await loop.run_in_executor(None, lambda: get_claude_session(uuid_param, project=project))
                     if not record:
                         return ApiSuccessResponse(data=None)
                     await loop.run_in_executor(None, lambda: ensure_claude_session_stats(record))
                     return ApiSuccessResponse(data=claude_session_meta_dict(record))
                 else:
-                    paths = await loop.run_in_executor(
-                        None, lambda: list(discover_claude_session_paths_iter())
-                    )
+                    paths = await loop.run_in_executor(None, lambda: list(discover_claude_session_paths_iter()))
                     records = [extract_claude_session_from_path(p) for p in paths]
-                    return ApiSuccessResponse(
-                        data=[claude_session_meta_dict(r) for r in records]
-                    )
+                    return ApiSuccessResponse(data=[claude_session_meta_dict(r) for r in records])
             except Exception as exc:
                 logging.warning("discovery action error for %r uuid=%r: %s", record_type, uuid_param, exc)
                 return ApiSuccessResponse(data=None)
@@ -661,6 +662,7 @@ class PtyActionsMixin:
             return ApiFailResponse(message=f"Unknown record type: {record_type!r}")
 
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+
         try:
             if uuid_param:
                 record = await loop.run_in_executor(None, lambda: FSRecord.load_or_none(record_type, uuid_param))
@@ -851,7 +853,28 @@ class PtyActionsMixin:
             seq: Sequence number (per-session monotonic counter)
             timestamp: Unix timestamp (seconds) when chunk was captured
         """
-        handler = get_connection_handler(TypeId(type=Connection.get_type(), id=request_connection_id))
+        try:
+            handler = get_connection_handler(TypeId(type=Connection.get_type(), id=request_connection_id))
+        except Exception as e:
+            # An invalid connection id must not blow up the pump: in the
+            # broadcast path this coroutine runs under run_coroutine_threadsafe
+            # with nobody reading the future, so a raise here loses the whole
+            # chunk fan-out for this subscriber invisibly.
+            logging.warning(
+                f"[PTY] Dropping output for shell {shell_id}: invalid connection id {request_connection_id!r} ({e})"
+            )
+            return None
+        if not handler:
+            # No live WS for this connection (e.g. its socket died and the
+            # client re-attached over HTTP with an id that never re-dialed).
+            # The drop MUST leave a trace: a frozen pane with a healthy-looking
+            # backend log was the cost of silence here (frozen-terminal RCA,
+            # FLOWPAD-1935).
+            logging.warning(
+                f"[PTY] Dropping output for shell {shell_id}: no live WS for connection "
+                f"{request_connection_id} (seq={seq})"
+            )
+            return None
         if handler:
             try:
                 pty_msg = PtyOutputMessage.from_bytes(provider_node_id, shell_id, data, seq=seq, timestamp=timestamp)
@@ -867,10 +890,15 @@ class PtyActionsMixin:
                 # A closed socket (tab closed mid-stream) is normal, not a
                 # warning — the PTY keeps running and reattach repaints the frame.
                 _m = str(e).lower()
-                if any(s in _m for s in (
-                    "close message has been sent", "websocket.close",
-                    "after sending", "disconnect",
-                )):
+                if any(
+                    s in _m
+                    for s in (
+                        "close message has been sent",
+                        "websocket.close",
+                        "after sending",
+                        "disconnect",
+                    )
+                ):
                     logging.debug(f"PTY output send skipped — client gone: {e}")
                 else:
                     logging.warning(f"Failed to send PTY output to client: {e}")
@@ -888,14 +916,6 @@ class PtyActionsMixin:
 
         shell_id = body.get("shell_id")
         data = body.get("data", "")
-        try:
-            rows = int(body.get("rows", 24))
-        except (TypeError, ValueError):
-            rows = 24
-        try:
-            cols = int(body.get("cols", 80))
-        except (TypeError, ValueError):
-            cols = 80
 
         if not shell_id:
             response_msg = ResponseMessage(

@@ -496,6 +496,12 @@ export class PtyConnection {
 
       this._attachedPtyId = targetPtyId;
       this._attached = true;
+      // Remembered independently of attach state: a FAILED re-attach attempt
+      // (not_found during the recovery gap) nulls _attachedPtyId, but the
+      // self-healing hooks must still know what to re-attach when
+      // on_recovered arrives.
+      this._reattachPtyId = targetPtyId;
+      this._wireReattachHooks();
       this._emitReady();
     })();
 
@@ -509,10 +515,50 @@ export class PtyConnection {
     return this._attachPromise;
   }
 
-  // Note: there is deliberately no WS-close handler here. Connection membership
-  // is backend-owned (PtyRegistry parks/resumes on the WS lifecycle), so the PTY
-  // pipeline stays armed across a transient drop and resumed output renders
-  // without a client re-attach.
+  // ── Self-healing membership (frozen-terminal RCA, bug A) ──────────────────
+  //
+  // Connection membership lives ONLY in the backend's in-memory PtyRegistry.
+  // Park/resume preserves it across a transient WS drop of the SAME backend
+  // process — but a RESTARTED backend has an empty registry, and the recovery
+  // watchdog respawns workers with no attached connections. Route loaders
+  // (the only other attach caller) run on mount only, so an already-open pane
+  // stayed deaf forever. These hooks re-issue the attach whenever the
+  // transport returns (on_reconnected) or the backend reports it revived our
+  // worker (on_recovered). Re-attaching is idempotent — backend membership is
+  // a set, and the repaint is a no-op frame refresh — so firing on a plain
+  // park/resume cycle is harmless.
+
+  /** Un-subscribers for the re-attach hooks; null until first attach. */
+  private _reattachUnhooks: Array<() => void> | null = null;
+
+  /** The PTY id the hooks should re-attach — survives failed attach attempts
+   *  (which null _attachedPtyId). Set on every successful attach. */
+  private _reattachPtyId: string | null = null;
+
+  private _wireReattachHooks(): void {
+    if (this._reattachUnhooks) return;
+    this._reattachUnhooks = []; // claim synchronously; wiring completes async
+    void import('../../websocket.js').then(({ ConnectionManager }) => {
+      if (!this._reattachUnhooks) return; // disposed while the import resolved
+      const connectionManager = ConnectionManager.getInstance();
+      const reattach = () => {
+        if (!this._reattachPtyId) return;
+        void this.attach(this._reattachPtyId, { force: true }).catch(() => {
+          // not_found while recovery is still in flight — the on_recovered
+          // event will re-fire us once the worker is back.
+        });
+      };
+      const onRecovered = (msg: { shell_id?: string }) => {
+        if (msg?.shell_id === this.shellId) reattach();
+      };
+      connectionManager.on('on_reconnected', reattach);
+      connectionManager.on('on_recovered', onRecovered);
+      this._reattachUnhooks.push(
+        () => connectionManager.off('on_reconnected', reattach),
+        () => connectionManager.off('on_recovered', onRecovered),
+      );
+    });
+  }
 
   // ── Fast cross-platform PTY ping ──────────────────────────────────────────
 
@@ -552,6 +598,9 @@ export class PtyConnection {
   }
 
   dispose(): void {
+    this._reattachUnhooks?.forEach((off) => off());
+    this._reattachUnhooks = null;
+    this._reattachPtyId = null;
     this._listeners.clear();
     this._readyListeners.clear();
     this._disconnectListeners.clear();
