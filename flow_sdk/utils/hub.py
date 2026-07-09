@@ -10,9 +10,10 @@ This module re-exports them so existing imports (``from flow_sdk.utils.hub impor
 hub_get``) and test monkeypatches (``patch("flow_sdk.utils.hub.hub_post")``) keep
 working unchanged. Prefer importing from ``flow_sdk.cloud_client`` in new code.
 """
+
 from __future__ import annotations
 
-from flow_sdk.cloud_client.shared.errors import HubError, _extract_reason
+from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode, _extract_reason
 from flow_sdk.cloud_client.transport.hub_http import (
     ProgressCallback,
     _hub_post_streamed_upload,
@@ -27,6 +28,7 @@ from flow_sdk.cloud_client.transport.hub_http import (
 
 __all__ = [
     "HubError",
+    "HubErrorCode",
     "_extract_reason",
     "ProgressCallback",
     "_hub_post_streamed_upload",
