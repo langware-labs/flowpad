@@ -1,4 +1,4 @@
-import { Agent, AgentTrace, AssetCleanupReport, DynamicWorkflow, FSRef, Skill, Task, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
+import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, DynamicWorkflow, FSRef, Skill, Task, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
@@ -123,12 +123,26 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     !entityLoading &&
     (entityError || !assetRef)
   ) {
+    // owns_main_ref types (task/spec) re-render their backing file from the
+    // default body on save, so an orphaned row (no asset_ref / file gone — e.g.
+    // a task created before this checkout was a folder asset) can self-heal
+    // with one save. Offer that; hand-edited types (markdown/skill) get retry
+    // only, since rebuilding from a template would clobber user content.
+    const ownsMainRef = !!dataManager
+      .getAllTypeInfos?.()
+      .find((t) => t.type_name === typeId.type)?.owns_main_ref;
+    const orphan = typeIdEntity as APIEntity<never> | null;
     return (
       <MissingAssetCard
         typeLabel={typeId.type}
         fsRef={new FSRef(typeId.toString(), computeNode?.typeId ?? typeId)}
         onRetry={() => void refetchEntity()}
         entity={typeIdEntity ?? null}
+        onRebuild={
+          ownsMainRef && orphan
+            ? () => void orphan.save().then(() => refetchEntity())
+            : undefined
+        }
       />
     );
   }
