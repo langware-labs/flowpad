@@ -271,6 +271,7 @@ async def _drive_migration(
         cli_config={"permission_mode": "bypassPermissions"},
         workdir=str(Path.cwd()),
         visible=False,
+        name=f"Migration: {version}",
     )
     # Note: NOT calling ap.save([]) — the exist_in_db gate at
     # agentic_process.py:1088-1097 was dropped for visible=False precisely

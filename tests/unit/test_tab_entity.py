@@ -693,3 +693,43 @@ async def test_ensure_tab_heals_legacy_scope_shared_row() -> None:
     assert [t.id for t in visible] == [tab.id], "one visible row: the scope-keyed one"
     hidden = await Tab.get_one({"id": legacy.id})
     assert hidden is not None and hidden.visible is False
+
+
+# ── Synthetic-name backstop: never freeze the FE `<type>-<id>` synthetic ────────
+
+
+def test_is_synthetic_name_matches_only_the_synthetic_shape() -> None:
+    from flow_sdk.builtin.tab import _is_synthetic_name
+
+    tid = "94dbca09-85e6-42c5-b8a7-c2153d26a11d"
+    # The two exact synthetic forms defaultDisplayName produces.
+    assert _is_synthetic_name(f"agentic_process-{tid}", "agentic_process", tid) is True
+    assert _is_synthetic_name("agentic_process-94db…a11d", "agentic_process", tid) is True
+    # A real user name — even one that starts with the type token — is NOT synthetic.
+    assert _is_synthetic_name("agentic_process notes", "agentic_process", tid) is False
+    assert _is_synthetic_name("My run", "agentic_process", tid) is False
+    # Wrong target / prefix / empty.
+    assert _is_synthetic_name(f"shell-{tid}", "agentic_process", tid) is False
+    assert _is_synthetic_name("", "agentic_process", tid) is False
+    assert _is_synthetic_name(None, "agentic_process", tid) is False
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_does_not_persist_synthetic_name() -> None:
+    # A stale/legacy client may send the `<type>-<id>` synthetic as the name.
+    # ensure_tab must drop it so the durable Tab.name stays empty (heals later
+    # once a real name is stamped), never freezing the synthetic.
+    target = str(uuid.uuid4())
+    p = f"shell/agentic_process-{target}"
+    tab = await ensure_tab(
+        p,
+        target_type="agentic_process",
+        target_id=target,
+        name=f"agentic_process-{target}",
+    )
+    assert not tab.name, "synthetic name must not be adopted as the durable label"
+
+    # A real name on the same pointer IS adopted (backfill of the null name).
+    again = await ensure_tab(p, target_type="agentic_process", target_id=target, name="Real title")
+    assert again.id == tab.id
+    assert again.name == "Real title"

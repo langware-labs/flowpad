@@ -307,6 +307,7 @@ async def _run_diagnose(
         cli_config={"permission_mode": "bypassPermissions"},
         workdir=str(Path.cwd()),
         visible=False,
+        name="Diagnostics",
     )
     ap.enable_assistant()
 

@@ -664,6 +664,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     }
   }
 
+  /** POST /graph/agentic_process/<id>/rename {name} — user rename from OUTSIDE the
+   *  tab strip (the footer process list). The backend pins `auto_rename=false` and
+   *  mirrors onto any open tab, so it behaves exactly like a tab rename (updates
+   *  both the process and its chip). Works for a headless worker with no open tab.
+   *  The entity broadcast updates cache so name surfaces re-render. */
+  static async renameById(id: string, name: string): Promise<void> {
+    const info = new ActionInfo('rename', AgenticProcess.type, id, 'POST');
+    info.bodyParameters = { name };
+    await dataManager.callAction<{ name: string }, { id: string; name: string }>(info);
+  }
+
   /**
    * Check if content is already in AMD format.
    * @internal

@@ -1193,8 +1193,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 continue
             try:
                 cmd = ClaudeCliOptions(permission_mode="bypassPermissions")
+                rec_label = (getattr(rec, "name", None) or "").strip()
                 agentic_process = AgenticProcess(
                     cli_config=cmd.to_json(),
+                    name=f"Fix: {rec_label}" if rec_label else "Cloud fix",
                 )
                 await agentic_process.save(owner=request_info.someone_typeid if request_info else None)
                 result = await agentic_process.open(instruction=fix_instruction)  # type: ignore[assignment]

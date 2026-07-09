@@ -748,8 +748,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         // `name` — both for entities with no display override and for plain
         // cached rows that have no `displayName` getter.
         const ent = this.getByTypeIdFromCache(tid) as
-          | { displayName?: string | null; name?: string | null }
+          | { displayName?: string | null; name?: string | null; hasSyntheticDisplayName?: boolean }
           | null;
+        // Never adopt the `<type>-<id>` synthetic as a tab name: returning it here
+        // would freeze `agentic_process-<id>` into the durable `Tab.name` (backfill
+        // only heals a NULL name). Fall back to null so the chip shows the provider
+        // label until a real name is stamped onto the entity (backend
+        // `stamp_default_name`), which then flows through `displayName`.
+        if (ent?.hasSyntheticDisplayName) return null;
         return (ent?.displayName ?? ent?.name) ?? null;
       } catch {
         return null;

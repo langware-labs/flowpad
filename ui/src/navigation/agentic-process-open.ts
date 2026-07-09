@@ -53,6 +53,12 @@ const warmClaudeSession = (sessionId: string): Promise<unknown> | null => {
  */
 export function agenticProcessName(processId: string): string | null {
   const ap = apFromCache(processId);
+  // The AgenticProcess's OWN name wins first: it carries a user rename (footer /
+  // tab) and the backend `stamp_default_name` default, so a rename shows here
+  // immediately. Skip the `<type>-<id>` synthetic (`hasSyntheticDisplayName`) —
+  // that is the "no real name" sentinel, not a title.
+  const apName = ap && !ap.hasSyntheticDisplayName ? ap.name?.trim() : null;
+  if (apName) return apName;
   const sessionId = ap?.session_id;
   // Best-effort title from the session entity (null for non-claude workers,
   // whose v7 session ids aren't claude entity ids — see cachedClaudeSession).

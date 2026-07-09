@@ -43,3 +43,42 @@ describe('getTabName — entity-backed dock with a bare-id pointer (/dock/conver
     expect(dm.getTabName({ viewType: 'conversation', pointer: `conversation-${CONV_ID}` })).toBe(CONV_NAME);
   });
 });
+
+/**
+ * Regression: an un-stamped AgenticProcess whose `displayName` is only the
+ * `<type>-<id>` synthetic must NOT become a tab name — returning it would freeze
+ * `agentic_process-<id>` into the durable `Tab.name`. `getTabName` reads the
+ * entity's `hasSyntheticDisplayName` sentinel and returns null so the chip falls
+ * back to the provider label until a real name is stamped.
+ */
+const AP_ID = '94dbca09-85e6-42c5-b8a7-c2153d26a11d';
+
+describe('getTabName — never adopts the <type>-<id> synthetic as a tab name', () => {
+  it('returns null when the cached process reports a synthetic displayName', () => {
+    const dm = new DataManager<any>();
+    const tid = new TypeId('agentic_process', AP_ID);
+    dm.register_new_entity(tid, {
+      typeId: tid,
+      type: 'agentic_process',
+      id: AP_ID,
+      name: null,
+      displayName: 'agentic_process-94db…a11d',
+      hasSyntheticDisplayName: true,
+    });
+    expect(dm.getTabName({ viewType: 'shell', pointer: `agentic_process-${AP_ID}` })).toBeNull();
+  });
+
+  it('returns the real name once the process carries one (not synthetic)', () => {
+    const dm = new DataManager<any>();
+    const tid = new TypeId('agentic_process', AP_ID);
+    dm.register_new_entity(tid, {
+      typeId: tid,
+      type: 'agentic_process',
+      id: AP_ID,
+      name: 'Base directory spec',
+      displayName: 'Base directory spec',
+      hasSyntheticDisplayName: false,
+    });
+    expect(dm.getTabName({ viewType: 'shell', pointer: `agentic_process-${AP_ID}` })).toBe('Base directory spec');
+  });
+});

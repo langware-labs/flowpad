@@ -1502,12 +1502,17 @@ class AgenticProcess(Entity):
             visible = bool((body or {}).get("visible", False))
             owner = request_info.someone_typeid if request_info else None
 
+            # Inherit the parent's name (+ " (fork)") when it has a real one, so the
+            # fork reads meaningfully immediately; otherwise leave it null (name
+            # defaults to None) and let the fork's own transcript subject stamp it.
+            parent_name = (self.name or "").strip()
             new_proc = AgenticProcess.fork(
                 session_id=self.session_id,
                 workdir=self.workdir,
                 project_id=self.project_id,
                 visible=visible,
                 shared_context_entities=list(self.shared_context_entities or []),
+                name=f"{parent_name} (fork)" if parent_name else None,
             )
             await new_proc.save(owner)
             return ApiSuccessResponse(data={"id": new_proc.id, "type": new_proc.type})
@@ -1752,6 +1757,26 @@ class AgenticProcess(Entity):
             await self.save()
             await self.notify_updated()
         return ApiSuccessResponse(data={"id": self.id, "visible": self.visible})
+
+    @action.post(action_name="rename")
+    async def _rename_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """POST /graph/agentic_process/<id>/rename {name} — user rename from outside
+        the tab strip (the footer process list). The reverse leg of ``Tab.rename`` →
+        ``AgenticProcess.rename``: pins ``auto_rename`` and mirrors onto the chip
+        (see :meth:`_mirror_name_to_tabs`)."""
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        name = (body.get("name") or "").strip()
+        if not name:
+            return ApiFailResponse(message="rename: name is required")
+        await self.rename(name)  # sets self.name + pins auto_rename=False
+        if await self._mirror_name_to_tabs(name):
+            from flow_sdk.builtin.tab import broadcast_tabs_changed  # noqa: PLC0415
+
+            await broadcast_tabs_changed()
+        await self.notify_updated()
+        return ApiSuccessResponse(data={"id": self.id, "name": self.name})
 
     # ── Web app artifacts + Show (display focus) ─────────────────────────────
 
@@ -4366,6 +4391,15 @@ class AgenticProcess(Entity):
         """Bind this process to an existing Claude session before start_pty()."""
         self.session_id = session_id
         await self.save()
+        # Binding an EXISTING session (resume/adopt) means its subject is already
+        # on disk — stamp the history-style default name immediately so the row
+        # reads right before the worker even starts. Non-pinning, best-effort.
+        try:
+            await self.stamp_default_name()
+        except Exception:
+            logger.debug(
+                "AgenticProcess %s: default-name stamp on bind failed", self.id, exc_info=True
+            )
 
     async def inject(self, message: str) -> None:
         """Inject a message directly into the live PTY, bypassing prompt() routing.
@@ -4605,6 +4639,83 @@ class AgenticProcess(Entity):
             self.name = name
             self.auto_rename = False
             await self.save()
+
+    async def _mirror_name_to_tabs(self, name: str) -> bool:
+        """Reflect ``name`` onto any open Tab for this process via ``set_label`` —
+        NOT ``rename`` (set_label sets only ``Tab.name`` and never touches the
+        target's ``auto_rename``). The terminal chip renders ``Tab.name`` (not the
+        live entity), and the generic entity→tab sync deliberately skips terminal
+        types, so without this a stamped/renamed process name never reaches the
+        chip. Best-effort — a headless worker may have no open tab. Cross-project
+        unscoped (the tab can live in another project than the caller's scope).
+        Returns True iff a tab label changed."""
+        from flow_sdk.builtin.tab import _tabs_for_target  # noqa: PLC0415
+
+        changed = False
+        for tab in await _tabs_for_target(self.type, str(self.id)):
+            if tab.name != name:
+                await tab.set_label(name)
+                changed = True
+        return changed
+
+    async def stamp_default_name(self) -> bool:
+        """Give a nameless process the SAME display title the Recent-sessions
+        history list shows — the session subject (Claude ``custom_title``/``slug``,
+        i.e. the auto-summary of the opening prompt) — and persist it, so every
+        surface (tab chip, footer process list, sidebar) reads a real name instead
+        of the ``agentic_process-<id>`` synthetic the FE would otherwise fabricate.
+
+        Unlike :meth:`rename`, this is a STAMP, not a user rename: it leaves
+        ``auto_rename`` untouched (stays True) so a later real OSC/LLM title can
+        still replace it. Idempotent, first-writer-wins — a no-op once the process
+        carries any name, when the user already pinned it (``auto_rename=False``),
+        or before a session/subject exists (``get_worker_session_name`` returns
+        ``None`` until the transcript has a title). Returns True iff it wrote a name.
+        """
+        if (self.name or "").strip():
+            return False
+        if self.auto_rename is False:
+            return False
+        if not self.session_id:
+            return False
+        try:
+            from flow_sdk.builtin.worker_history import (  # noqa: PLC0415
+                WorkerType,
+                _normalize_worker_type,
+                get_worker_session_name,
+            )
+
+            # Only Claude carries an on-file subject; resolving transcript_path is an
+            # O(#project-dirs) scan, so skip it for Codex/Copilot (which would ignore
+            # it anyway — they title only through an owning-process name).
+            jsonl_path = (
+                self.transcript_path
+                if _normalize_worker_type(self.worker_type) is WorkerType.CLAUDE
+                else None
+            )
+            candidate = await get_worker_session_name(
+                self.worker_type, self.session_id, jsonl_path=jsonl_path
+            )
+        except Exception:
+            logger.debug(
+                "AgenticProcess %s: default-name resolve failed", self.id, exc_info=True
+            )
+            return False
+        candidate = (candidate or "").strip()
+        if not candidate:
+            return False
+        self.name = candidate
+        await self.save()
+        # Mirror onto the chip: the terminal tab renders Tab.name, and nothing else
+        # reflects a terminal entity's name change onto it — so heal it here (also
+        # overwrites a legacy frozen `<type>-<id>` Tab.name). set_label keeps
+        # auto_rename intact.
+        if await self._mirror_name_to_tabs(candidate):
+            from flow_sdk.builtin.tab import broadcast_tabs_changed  # noqa: PLC0415
+
+            await broadcast_tabs_changed()
+        logger.info("AgenticProcess %s: stamped default name %r", self.id, candidate[:80])
+        return True
 
     async def close(self) -> bool:
         """Terminate this process and close its linked shell entity.
@@ -5099,6 +5210,18 @@ class AgenticProcess(Entity):
             # transcript that lands here), so no driver coupling.
             if not current_busy and prev_busy:
                 self._schedule_queue_drain("ready")
+                # Same turn-end edge: the transcript just gained a turn's content, so
+                # a nameless process can now adopt its subject as a default name.
+                # Gating here (once per turn) instead of every debounce tick avoids
+                # re-running the subject resolve (a jsonl parse + DB read) on each
+                # flush of an un-stamped worker. Non-pinning; notify on the write.
+                try:
+                    if await self.stamp_default_name():
+                        await self.notify_updated()
+                except Exception:
+                    logger.debug(
+                        "AgenticProcess %s: default-name stamp failed", self.id, exc_info=True
+                    )
         except asyncio.CancelledError:
             raise
         except Exception:

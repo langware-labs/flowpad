@@ -1,5 +1,8 @@
-import { ExecutionMode, Project, supportedExecutionModes, WorkerStatus } from '@sdk';
+import { AgenticProcess, ExecutionMode, Project, supportedExecutionModes, WorkerStatus } from '@sdk';
+import { Pencil } from 'lucide-react';
 import { EntityTypeBar } from '@src/components/asset-manager/EntityTypeBar';
+import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
+import { useInlineRename } from '@src/components/browseable-tree/use-inline-rename';
 import { workerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -11,12 +14,35 @@ import {
   formatTimeAgo,
   useWorkerCountsByMode,
   useWorkerList,
+  type WorkerListEntry,
 } from '@src/store/pending-actions-store';
 import { cn } from '@src/lib/utils';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { executionModeLabel, iconForExecutionMode } from './execution-mode-icons';
 import { useNotificationPulse } from './useNotificationPulse';
 import { workerStatusLabel } from './worker-status-label';
+
+/** A worker-list entry projected to the fields a row renders. Names are read
+ *  from the (non-reactive) entity cache — a `nameTick` bump re-runs this. */
+function projectNameFromCache(projectId: string): string | null {
+  const p = Project.getByIdFromCache<Project>(projectId);
+  return p?.getDisplayName() ?? p?.name ?? null;
+}
+
+function buildWorkerRow(e: WorkerListEntry) {
+  return {
+    processId: e.processId,
+    mode: e.mode,
+    name: agenticProcessName(e.processId) ?? e.processId.slice(0, 8),
+    projectName: e.projectId ? projectNameFromCache(e.projectId) : null,
+    statusLabel: workerStatusLabel(e.workerStatus, e.pending),
+    statusIcon: workerStatusConfig[e.workerStatus as WorkerStatus],
+    lastActive: formatTimeAgo(e.lastStatusChangedAt),
+    pending: e.pending,
+  };
+}
+
+type WorkerRowData = ReturnType<typeof buildWorkerRow>;
 
 /**
  * Footer chip — generic "agents at work" list, grouped by execution mode and
@@ -62,16 +88,6 @@ export function PendingActionsChip() {
     [allRows, effective],
   );
 
-  // A worker's meaningful name (session title → shell label) and the lazy
-  // cache-warm both live in the shared `agentic-process-open` module, reused by
-  // the process line on notifications.
-  // A row's project label (shown on the meta subline, like the history modal).
-  // Reads the warmed Project entity (see the lazy fetch below).
-  const projectNameFromCache = (projectId: string): string | null => {
-    const p = Project.getByIdFromCache<Project>(projectId);
-    return p?.getDisplayName() ?? p?.name ?? null;
-  };
-
   // When the popover opens, lazily fetch each row's process (+ its ClaudeSession
   // / Shell) and its Project so the cached names replace the id fragments. Both
   // the row name and the project name come from `*.getByIdFromCache`, which is
@@ -110,22 +126,14 @@ export function PendingActionsChip() {
   }, [open, allRows]);
 
   const rows = useMemo(
-    () =>
-      filtered.map((e) => ({
-        processId: e.processId,
-        mode: e.mode,
-        name: agenticProcessName(e.processId) ?? e.processId.slice(0, 8),
-        projectName: e.projectId ? projectNameFromCache(e.projectId) : null,
-        statusLabel: workerStatusLabel(e.workerStatus, e.pending),
-        statusIcon: workerStatusConfig[e.workerStatus as WorkerStatus],
-        lastActive: formatTimeAgo(e.lastStatusChangedAt),
-        pending: e.pending,
-      })),
+    () => filtered.map(buildWorkerRow),
     // nameTick forces a re-read of the entity cache after the lazy fetch above
     // resolves (the fetched names aren't otherwise a render dependency).
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [filtered, nameTick],
   );
+  // Stable so `memo(WorkerRow)` only re-renders rows whose data actually changed.
+  const bumpNameTick = useCallback(() => setNameTick((t) => t + 1), []);
 
   // Hide the chip only when there are no supported workers at all. When the user
   // has narrowed to an empty mode (e.g. External in v1) the chip stays visible
@@ -138,16 +146,19 @@ export function PendingActionsChip() {
   // Route per execution mode (shared with the process line on notifications): an
   // Interactive worker attaches its live terminal; a Background / Error worker
   // opens the read-only transcript lens. External rows are never produced.
-  const handlePick = async (processId: string, mode: ExecutionMode) => {
-    setOpen(false);
-    try {
-      await openAgenticProcess(processId, navigation, mode === ExecutionMode.Interactive);
-    } finally {
-      // Ack either way — clears the row's glow if the process was in the
-      // pending set. No-op if it was only burning (no readyAt to mark).
-      acknowledgePending(processId);
-    }
-  };
+  const handlePick = useCallback(
+    async (processId: string, mode: ExecutionMode) => {
+      setOpen(false);
+      try {
+        await openAgenticProcess(processId, navigation, mode === ExecutionMode.Interactive);
+      } finally {
+        // Ack either way — clears the row's glow if the process was in the
+        // pending set. No-op if it was only burning (no readyAt to mark).
+        acknowledgePending(processId);
+      }
+    },
+    [navigation],
+  );
 
   const chipClass = [
     'flex h-5 min-w-5 items-center justify-center rounded-md bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-1 focus:ring-ring',
@@ -216,46 +227,14 @@ export function PendingActionsChip() {
             </div>
           ) : (
             <ul className="flex flex-col">
-              {rows.map((row) => {
-                const rowClass = [
-                  'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted',
-                  row.pending ? 'animate-pending-glow' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ');
-                const StatusIcon = row.statusIcon?.icon;
-                return (
-                  <li key={row.processId}>
-                    <button
-                      type="button"
-                      onClick={() => void handlePick(row.processId, row.mode)}
-                      className={rowClass}
-                      data-pending={row.pending ? 'true' : undefined}
-                      data-mode={row.mode}
-                    >
-                      {StatusIcon && (
-                        <StatusIcon
-                          className={cn(
-                            'h-3.5 w-3.5 shrink-0',
-                            row.statusIcon?.color,
-                            row.statusIcon?.animate && 'animate-spin',
-                          )}
-                        />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium">{row.name}</div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {executionModeLabel(row.mode)} · {row.statusLabel}
-                          {row.projectName ? ` · ${row.projectName}` : ''}
-                        </div>
-                      </div>
-                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                        {row.lastActive}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
+              {rows.map((row) => (
+                <WorkerRow
+                  key={row.processId}
+                  row={row}
+                  onPick={handlePick}
+                  onRenamed={bumpNameTick}
+                />
+              ))}
             </ul>
           )}
           </div>
@@ -264,3 +243,88 @@ export function PendingActionsChip() {
     </TooltipProvider>
   );
 }
+
+/** One worker row (extracted so it can own a per-row `useInlineRename` — a hook
+ *  can't run inside the list `.map` — and be `memo`ized). Primary click
+ *  opens/attaches the worker; the hover pencil (or double-click on the name)
+ *  enters an inline rename that calls `AgenticProcess.renameById` — the same
+ *  bidirectional rename a tab does (pins `auto_rename`, mirrors onto any open tab
+ *  chip). `onRenamed` re-reads the non-reactive name cache. */
+const WorkerRow = memo(function WorkerRow({
+  row,
+  onPick,
+  onRenamed,
+}: {
+  row: WorkerRowData;
+  onPick: (processId: string, mode: ExecutionMode) => void | Promise<void>;
+  onRenamed: () => void;
+}) {
+  const rename = useInlineRename(row.name, async (next) => {
+    await AgenticProcess.renameById(row.processId, next);
+    onRenamed();
+  });
+  const StatusIcon = row.statusIcon?.icon;
+  const statusIconEl = StatusIcon ? (
+    <StatusIcon
+      className={cn('h-3.5 w-3.5 shrink-0', row.statusIcon?.color, row.statusIcon?.animate && 'animate-spin')}
+    />
+  ) : null;
+
+  if (rename.editing) {
+    // No outer <button> while editing (input-in-button is invalid HTML) — a
+    // plain row with the status icon + a full-width input.
+    return (
+      <li className="flex items-center gap-2 rounded px-2 py-1.5" data-mode={row.mode}>
+        {statusIconEl}
+        <InlineRenameInput
+          rename={rename}
+          className="min-w-0 flex-1 rounded border border-border bg-background px-1 py-0.5 text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          testId="worker-rename-input"
+          ariaLabel="Rename worker"
+        />
+      </li>
+    );
+  }
+
+  const rowClass = [
+    'flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm',
+    row.pending ? 'animate-pending-glow' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <li className="group flex items-center rounded pr-1 hover:bg-muted" data-pending={row.pending ? 'true' : undefined}>
+      <button
+        type="button"
+        onClick={() => void onPick(row.processId, row.mode)}
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          rename.startEditing();
+        }}
+        className={rowClass}
+        data-mode={row.mode}
+      >
+        {statusIconEl}
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-medium">{row.name}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {executionModeLabel(row.mode)} · {row.statusLabel}
+            {row.projectName ? ` · ${row.projectName}` : ''}
+          </div>
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={() => rename.startEditing()}
+        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+        aria-label="Rename"
+        title="Rename"
+        data-testid="worker-rename-button"
+      >
+        <Pencil className="h-3 w-3" />
+      </button>
+      <span className="shrink-0 pl-1 text-xs tabular-nums text-muted-foreground">{row.lastActive}</span>
+    </li>
+  );
+});
