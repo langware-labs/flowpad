@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { AppWindow, ExternalLink, ImagePlus } from 'lucide-react';
@@ -16,6 +17,9 @@ interface GenericDisplayToolbarProps {
   onOpenInTab?: () => void;
   /** Capture the active display content and open it in the image annotator. */
   onAnnotate?: () => void;
+  /** Extra control rendered just before the open-in-window button — the
+   *  display-history popover. */
+  historySlot?: ReactNode;
 }
 
 /**
@@ -24,7 +28,7 @@ interface GenericDisplayToolbarProps {
  *   - entities/files → "Open in tab" (in-app dock tab, AppWindow icon);
  *   - webapps        → "Open externally" (real external URL, new browser tab).
  */
-export function GenericDisplayToolbar({ externalUrl, onOpenInTab, onAnnotate }: GenericDisplayToolbarProps) {
+export function GenericDisplayToolbar({ externalUrl, onOpenInTab, onAnnotate, historySlot }: GenericDisplayToolbarProps) {
   const { t } = useLingui();
   const { isDesktop } = useSdkContext();
   const isTab = !!onOpenInTab;
@@ -32,6 +36,7 @@ export function GenericDisplayToolbar({ externalUrl, onOpenInTab, onAnnotate }: 
   return (
     <div className="flex items-center gap-1">
       <TooltipProvider delayDuration={300}>
+        {historySlot}
         {showAnnotate && (
           <Tooltip>
             <TooltipTrigger asChild>

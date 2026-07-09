@@ -114,6 +114,54 @@ async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, 
 
 
 @pytest.mark.asyncio
+async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user):
+    """Each `flow show` APPENDS to ``context_data.display_stack`` (newest last,
+    stamped ``shown_at``); ``last_shown`` mirrors the newest TARGET; a consecutive
+    identical target refreshes the timestamp instead of duplicating."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    r1 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 3000})).json()).data
+    r2 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 4000})).json()).data
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    stack = row["context_data"]["display_stack"]
+    assert len(stack) == 2, "two distinct shows → two entries"
+    assert all("shown_at" in e for e in stack), "every entry is timestamped"
+    # Each entry is the target payload plus shown_at, newest last.
+    assert {k: stack[0][k] for k in r1} == r1
+    assert {k: stack[1][k] for k in r2} == r2
+    # last_shown is the newest TARGET (no shown_at leak).
+    assert row["context_data"]["last_shown"] == r2
+    assert "shown_at" not in row["context_data"]["last_shown"]
+
+    # Re-show the SAME target → dedup: still 2 entries, timestamp refreshed.
+    prev = stack[1]["shown_at"]
+    await bootstrapped_client.post(f"{base}/show", json={"port": 4000})
+    row = await get_agentic_process(bootstrapped_client, pid)
+    stack2 = row["context_data"]["display_stack"]
+    assert len(stack2) == 2, "consecutive identical target must not duplicate"
+    assert stack2[1]["shown_at"] >= prev
+
+
+@pytest.mark.asyncio
+async def test_on_show_unions_concurrent_appends(bootstrapped_client, user):
+    """``on_show`` is read-modify-write against the freshest stack, so two
+    independent process objects showing different targets don't lose each other."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+
+    a = await AgenticProcess.get_by_id(pid)
+    b = await AgenticProcess.get_by_id(pid)
+    assert a is not None and b is not None
+    await a.on_show({"kind": "vfs", "path": "/tmp/a.txt"})
+    await b.on_show({"kind": "vfs", "path": "/tmp/b.txt"})
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    paths = [e.get("path") for e in row["context_data"]["display_stack"]]
+    assert "/tmp/a.txt" in paths and "/tmp/b.txt" in paths, "neither concurrent append is lost"
+
+
+@pytest.mark.asyncio
 async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapped_client, user, tmp_path):
     project = Project(name="app-proj", fs_storage_mount_path=str(tmp_path))
     await project.save()

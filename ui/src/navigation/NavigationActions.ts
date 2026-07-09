@@ -418,7 +418,13 @@ export class NavigationActions {
     if (!process) {
       return null;
     }
-    this.openDock(process.terminalDockPointer, extraOptions);
+    // Vibe mode: the process is the left-side chat — there is no process TAB.
+    // Open its DISPLAY surface (`/dock/display/<proc>`) instead of the shell dock.
+    const dock =
+      extraOptions.viewMode === 'vibe'
+        ? DockPointer.forDisplay(agenticProcessId)
+        : process.terminalDockPointer;
+    this.openDock(dock, extraOptions);
     return process;
   }
 
