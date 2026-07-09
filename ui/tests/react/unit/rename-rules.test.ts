@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allowRename,
   cleanTitle,
+  isProgramIdentityTitle,
   nextTerminalName,
   shouldAutoSaveTitleForTarget,
 } from '@src/components/terminal/rename-rules';
@@ -88,6 +89,37 @@ describe('allowRename', () => {
   it('rejects the generic "Claude Code" banner', () => {
     expect(allowRename('Claude Code')).toBe(false);
     expect(allowRename('Claude Code — my repo')).toBe(false);
+  });
+});
+
+describe('isProgramIdentityTitle', () => {
+  const claude = { worker_type: 'claude' } as any;
+
+  it("rejects the worker's own startup title (case/decoration-insensitive)", () => {
+    expect(isProgramIdentityTitle('claude', claude)).toBe(true);
+    expect(isProgramIdentityTitle('Claude', claude)).toBe(true);
+    expect(isProgramIdentityTitle('claude.exe', claude)).toBe(true);
+    expect(isProgramIdentityTitle('✳ claude', claude)).toBe(true); // spinner variant
+  });
+
+  it('rejects the OS default console title (exe path) even with no process', () => {
+    expect(isProgramIdentityTitle('C:\\WINDOWS\\system32\\cmd.exe ')).toBe(true);
+    expect(isProgramIdentityTitle('c:/users/me/.local/bin/claude.exe', claude)).toBe(true);
+  });
+
+  it('lets topic titles through, including ones mentioning the worker', () => {
+    expect(isProgramIdentityTitle('Fix expired invitation returning HTTP 500', claude)).toBe(false);
+    expect(isProgramIdentityTitle('✳ Fix Windows crash-loop on Claude resume', claude)).toBe(false);
+  });
+
+  it('does not treat unix cwd-style titles as identity (shells title with cwd)', () => {
+    expect(isProgramIdentityTitle('/home/me/projects/flowpad')).toBe(false);
+    expect(isProgramIdentityTitle('me@host: ~/projects')).toBe(false);
+  });
+
+  it("only matches the process's OWN worker name", () => {
+    expect(isProgramIdentityTitle('claude', { worker_type: 'codex' } as any)).toBe(false);
+    expect(isProgramIdentityTitle('claude')).toBe(false); // plain shell: no worker identity
   });
 });
 
