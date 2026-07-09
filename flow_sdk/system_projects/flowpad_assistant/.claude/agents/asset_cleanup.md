@@ -1,5 +1,5 @@
 ---
-id: asset_cleanup
+id: 9b556886-9a6b-4f88-9255-e47f8cc28815
 name: asset_cleanup
 description: Asset-cleanup scanner — inventories skills, agents, workflows, commands,
   plans, and settings backups under the given scan roots, plus the supplied Flowpad

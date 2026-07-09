@@ -7,12 +7,7 @@
  */
 
 import { WorkerCliOptions, shellQuote } from './base'
-
-const CLAUDE_MODEL_TIERS: Record<string, string> = {
-  sm: 'haiku',
-  md: 'sonnet',
-  lg: 'opus',
-}
+import { CLAUDE_MODEL_TIERS, resolveModelTier } from './model-tiers'
 
 export interface ClaudeCliOptionsOptions {
   session_id?: string | null
@@ -72,7 +67,7 @@ export class ClaudeCliOptions extends WorkerCliOptions {
   }
 
   get resolvedModel(): string | undefined {
-    return this.model ? (CLAUDE_MODEL_TIERS[this.model] ?? this.model) : undefined
+    return resolveModelTier(CLAUDE_MODEL_TIERS, this.model)
   }
 
   protected _buildWorkerArgs(): string[] {
