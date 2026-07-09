@@ -1,3 +1,4 @@
+import type { Bookmark } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
@@ -6,17 +7,17 @@ import { useLingui } from '@lingui/react/macro';
 import { DesktopSurface } from './DesktopSurface';
 
 /**
- * MiniDesktop — the compact desktop strip on the home landing. The corner
- * expand affordance navigates to the full-page desktop (/dock/desktop) —
- * URL-first, same surface with more slots.
+ * MiniDesktop — the compact desktop strip on the home landing (and the project
+ * home, scoped via `filter`). The corner expand affordance navigates to the
+ * full-page desktop (/dock/desktop) — URL-first, same surface with more slots.
  */
-export function MiniDesktop() {
+export function MiniDesktop({ filter }: { filter?: (b: Bookmark) => boolean }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
   return (
     <div className="relative rounded-lg border border-border bg-card/50 px-4 py-3">
-      <DesktopSurface className="pr-6" />
+      <DesktopSurface className="pr-6" filter={filter} />
 
       <button
         type="button"

@@ -228,7 +228,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       <div className="flex h-full w-full flex-col">
         <div className="relative flex-1 overflow-hidden" data-testid="terminal-panels">
           {tabs.length === 0 ? (
-            <ProjectHome spawnProjectId={spawnProjectId} />
+            <ProjectHome spawnProjectId={spawnProjectId} showSessionStarters />
           ) : (
             tabs.map((tab) => {
               const tabHash = tabKey(tab);
