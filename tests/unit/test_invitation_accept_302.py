@@ -116,30 +116,35 @@ async def test_handle_invitation_accept_302_to_flow_message_runs_cleanup(monkeyp
 
 @pytest.mark.asyncio
 async def test_learn_address_book_accepts_hub_member_keys(monkeypatch):
-    """Hub rosters may use user_email/user_name; contacts use email/name."""
+    """Hub rosters may use user_email/user_name; contacts use email/name. A
+    participant with only a ``user_id`` (no email) is now ALSO learned — keyed by
+    user_id — instead of being dropped."""
     from flow_sdk.app.actions import flow_message_action
 
     calls = []
 
-    async def fake_get_or_create(email, name=None):
-        calls.append((email, name))
+    async def fake_upsert(*, user_id=None, email=None, name=None, picture=None, remote=False):
+        calls.append((user_id, email, name))
+        return object()  # non-None → counts as upserted
 
     monkeypatch.setattr(
         flow_message_action.User,
-        "get_or_create_by_email",
-        fake_get_or_create,
+        "upsert_contact",
+        fake_upsert,
     )
 
-    await flow_message_action._learn_address_book([
+    upserted = await flow_message_action._learn_address_book([
         {"user_email": "alice@example.com", "user_name": "Alice"},
         {"email": "bob@example.com", "name": "Bob"},
         {"user_id": "no-email", "user_name": "No Email"},
     ])
 
     assert calls == [
-        ("alice@example.com", "Alice"),
-        ("bob@example.com", "Bob"),
+        (None, "alice@example.com", "Alice"),
+        (None, "bob@example.com", "Bob"),
+        ("no-email", None, "No Email"),
     ]
+    assert upserted == 3
 
 
 @pytest.mark.asyncio

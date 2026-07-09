@@ -104,7 +104,7 @@ export function CompactExecutionInput({
   const showStop = running && !!onStop;
 
   return (
-    <div className={cn('flex items-end gap-2', !bare && 'border-t bg-background px-3 py-2.5', className)}>
+    <div className={cn('flex flex-shrink-0 items-end gap-2', !bare && 'border-t bg-background px-3 py-2.5', className)}>
       {leadingSlot}
       <textarea
         ref={taRef}

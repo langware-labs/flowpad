@@ -3,9 +3,8 @@
 Concentrates everything previously expressed as ``if worker_type == CODEX`` in
 ``AgenticProcess`` so the entity stays vendor-pure: cli_options building,
 headless ``codex exec --json`` turn execution, transcript location (process-
-local file the worker tee'd), tail-status mapping, history loading, and
-prompt composition that inlines embedded agents (codex has no native sub-
-agent dispatch in --ephemeral mode).
+local file the worker tee'd), tail-status mapping, history loading, and the
+prompt-composition compatibility hook.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    apply_worker_env,
     AgenticContext,
     AgenticProcessContextKey,
     WorkerCLIOptions,
@@ -58,17 +58,17 @@ class CodexDriver:
     # Codex's TUI needs a discrete Enter after the paste settles, not a
     # trailing \r in the pasted text (Shell.write_then_submit).
     pty_submits_on_paste = False
+    pins_resume_cwd = False  # codex mints its own rollout; no transcript-cwd pinning, no fork
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
     def cli_options(self, process: "AgenticProcess") -> CodexCliOptions:
         """Build a Codex CLI command for ``process``.
 
-        Codex doesn't accept inline ``--agents`` like Claude — it discovers
-        skills from ``~/.codex/skills/``. We surface the embedded agent names
-        as ``skill_names`` so ``cmd_line`` reflects them (some tests assert
-        on this), and the runtime path inlines the agent body via
-        ``compose_prompt`` instead.
+        Codex doesn't accept inline ``--agents`` like Claude. We surface the
+        embedded agent names as ``skill_names`` so ``cmd_line`` reflects them
+        (some tests assert on this); the instruction bodies are delivered via
+        generated process instruction assets.
         """
         cmd = CodexCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
@@ -77,12 +77,13 @@ class CodexDriver:
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.skill_names = list(agents_json.keys())
-        # ``visible=True`` means the entity is wired into a PTY tab — codex's
+        # ``pty_mode=True`` means an interactive PTY transport — codex's
         # interactive TUI is the bare ``codex`` invocation, NOT ``codex exec
         # --json``. Toggle ``json_stream`` so ``to_spawn_args`` emits the right
         # argv. Headless print-mode turns flip back through ``CodexCLIStreamWorker``
-        # which always uses the json-stream shape.
-        if process.visible:
+        # which always uses the json-stream shape. (Keys on the transport intent,
+        # not ``visible`` — tab visibility never changes the worker argv.)
+        if process.pty_mode:
             cmd.json_stream = False
             cmd.ephemeral = False
         return cmd
@@ -111,6 +112,7 @@ class CodexDriver:
             await process.get_project()
         except Exception:
             logger.debug("CodexDriver.headless_prompt: get_project failed", exc_info=True)
+        instruction_assets = await process.prepare_system_instruction_assets()
         if not process.workdir:
             return ApiFailResponse(message="codex prompt: workdir is not set")
 
@@ -119,7 +121,7 @@ class CodexDriver:
         cli_cfg = process.cli_config or {}
         context = AgenticContext(
             workdir=process.workdir,
-            env_vars=dict(cli_cfg.get("env_vars") or {}),
+            env_vars=apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process),
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
             # Resume ONLY when codex actually has a rollout for this id. Codex
@@ -130,6 +132,8 @@ class CodexDriver:
             # fresh lets the worker mint a rollout; its real id is captured from
             # the stream below and persisted back onto ``process.session_id``.
             resume_session_id=process.session_id if self.has_resumable_session(process) else None,
+            add_dirs=list(process.resolved_add_dirs or []),
+            **process._instruction_context_kwargs(instruction_assets),
         )
 
         worker = CodexCLIStreamWorker.for_process(process.id)
@@ -209,17 +213,21 @@ class CodexDriver:
     # ── Transcript discovery ─────────────────────────────────────────────────
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
-        """Resolve the Codex transcript path and native format for ``process``."""
-        if process.visible:
-            rollout = self._rollout_descriptor(process)
-            if rollout is not None:
-                return rollout
+        """Resolve the Codex transcript for READING (history / prompts / status).
 
-        local = self._process_local_descriptor(process)
-        if local is not None:
-            return local
-
-        return self._rollout_descriptor(process)
+        Transcript↔output alignment: the rollout (``~/.codex/sessions/...``) is the
+        canonical, complete record — user-message entries AND assistant output, all
+        turns, one resumed session. The process-local file is only the tee'd
+        ``codex exec --json`` *stdout* — assistant output with NO user-message entry
+        (the headless prompt is an argv, not a stream event), so ``transcript/prompts``
+        came back empty for headless. Prefer the rollout for BOTH transports (visible
+        already did); fall back to the stdout tee only before codex mints/captures
+        its rollout id. (Live streaming reads the worker stdout directly, not this.)
+        """
+        rollout = self._rollout_descriptor(process)
+        if rollout is not None:
+            return rollout
+        return self._process_local_descriptor(process)
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
@@ -294,44 +302,7 @@ class CodexDriver:
         instruction: str,
         agents_json: dict | None,
     ) -> str:
-        """Inline embedded-agent definitions so codex executes them directly.
-
-        Codex has its own collaboration/delegation system but it can't fork the
-        current ``codex exec --ephemeral`` thread, so attempting to delegate
-        causes "thread can't be forked for a sub-agent" errors. Instead, we
-        flatten each embedded agent's instructions into the user prompt and
-        tell codex explicitly to follow them in-process.
-        """
-        agents_json = agents_json or {}
-        if not agents_json:
-            return instruction
-        sections: list[str] = [
-            "# Inline sub-agent definitions",
-            (
-                "Each ## block below defines a named sub-agent. Do NOT try to "
-                "delegate, fork, or spawn a separate agent — there is no "
-                "sub-agent runtime here. When the user instruction asks you "
-                "to use one of these agents, follow that agent's instructions "
-                "yourself, in this same turn."
-            ),
-            (
-                "Be fast: as soon as every required artifact (file, command "
-                "output) exists on disk, end the turn immediately with a one-"
-                "line confirmation. Do NOT write recaps, summaries, "
-                "explanations, verification steps, or follow-up suggestions."
-            ),
-        ]
-        for name, entry in agents_json.items():
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections.append(f"\n## {name}")
-            if desc:
-                sections.append(desc)
-            if body:
-                sections.append(body)
-        sections.append("\n# User instruction")
-        sections.append(instruction)
-        return "\n".join(sections)
+        return instruction
 
     # ── External-session probe ───────────────────────────────────────────────
 

@@ -11,6 +11,7 @@ import {
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { useProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { projectRecencyMs } from '@src/lib/project-recency';
 import type { ProjectListItem } from '@sdk';
 
 interface ProjectPickerModalProps {
@@ -115,7 +116,8 @@ export function ProjectPickerModal({
         raw: p,
         label: getProjectDisplayName(p),
         cwd: p.cwd || '',
-        modifiedMs: p.modified_at ? new Date(p.modified_at).getTime() : 0,
+        // `last_active_at` (UI-open recency) wins; session `modified_at` falls back.
+        modifiedMs: projectRecencyMs(p) ?? 0,
       });
     }
     out.sort((a, b) => b.modifiedMs - a.modifiedMs);

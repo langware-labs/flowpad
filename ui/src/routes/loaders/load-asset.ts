@@ -36,10 +36,16 @@ async function wikiResolve(name: string, space: string): Promise<WikiResolveResu
   }
 }
 
-// The two fields the loader derives context from. `project_id` is a backend
+// The fields the loader derives context from. `project_id` is a backend
 // projection, not a typed field on the base entity, so resolved entities are
 // narrowed to this shape rather than carried as their full type.
-type ContextEntity = { typeId: TypeId; project_id?: string };
+type ContextEntity = { typeId: TypeId; project_id?: string; asset_ref?: string };
+
+/** True when `path` is `mount` or lives inside it (path-segment safe). */
+function mountContains(mount: string, path: string): boolean {
+  const m = mount.replace(/\/+$/, '');
+  return path === m || path.startsWith(`${m}/`);
+}
 
 /**
  * Mark a resolved entity active AND load its owning project into context, so the
@@ -47,16 +53,23 @@ type ContextEntity = { typeId: TypeId; project_id?: string };
  * context — derive project from the entity, never optimistically elsewhere).
  * Project is best-effort: an entity without `project_id` (user/system-scoped)
  * leaves the current project untouched.
+ *
+ * Current-project priority: when the asset's path lives inside the CURRENT
+ * project's mount, opening it must NOT switch the active project — even if the
+ * entity's stamped `project_id` names a different (e.g. nested or umbrella)
+ * project. The switch is for crossing into a genuinely different project, not
+ * for re-deriving ownership of a file the user is already working on.
  */
 async function setEntityContext(entity: ContextEntity | null): Promise<void> {
   if (!entity) return;
   await dataContext.setActiveEntityTypeId(entity.typeId);
-  if (entity.project_id) {
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      new TypeId(Project.type, entity.project_id),
-    );
-  }
+  if (!entity.project_id || entity.project_id === dataContext.project?.id) return;
+  const currentMount = dataContext.project?.fs_storage_mount_path;
+  if (currentMount && entity.asset_ref && mountContains(currentMount, entity.asset_ref)) return;
+  await dataContext.setContextEntityTypeId(
+    ContextEntitiesEnum.CurrentProjectTypeId,
+    new TypeId(Project.type, entity.project_id),
+  );
 }
 
 /** Warm the cache by typeid, then push the resolved entity into context. */

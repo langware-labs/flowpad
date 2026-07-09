@@ -31,7 +31,7 @@ export function DiagnoseIconButton({ data, className }: { data: NotificationData
       aria-label={diagnoseLabel}
       className={
         className ??
-        'flex-shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground'
+        'flex-shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40'
       }
     >
       <Stethoscope className="h-3.5 w-3.5" />

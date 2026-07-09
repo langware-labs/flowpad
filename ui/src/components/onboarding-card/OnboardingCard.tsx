@@ -1,14 +1,13 @@
 import { Trans } from '@lingui/react/macro';
 import { useProjects } from '@src/hooks/use-projects';
-import { ContextEntitiesEnum, dataContext, fsManager, FSItem } from '@sdk';
+import { ContextEntitiesEnum, dataContext, fsManager, FSItem, PrefKey } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { Button } from '@src/components/ui/button';
 import { Card, CardContent } from '@src/components/ui/card';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FileText, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-
-const STORAGE_KEY = 'flowpad-onboarding-dismissed';
 
 export interface OnboardingCardProps {
   /** Called when visibility changes (for layout adjustments) */
@@ -27,9 +26,8 @@ export function OnboardingCard({ onVisibilityChange }: OnboardingCardProps) {
   const { navigation } = useDockNavigation();
   const { projects } = useProjects();
 
-  const [isVisible, setIsVisible] = useState(() => {
-    return localStorage.getItem(STORAGE_KEY) !== 'true';
-  });
+  const [dismissed, setDismissed] = usePreference<boolean>(PrefKey.ONBOARDING_DISMISSED);
+  const isVisible = !dismissed;
 
   const [sampleFiles, setSampleFiles] = useState<FSItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,10 +87,9 @@ export function OnboardingCard({ onVisibilityChange }: OnboardingCardProps) {
 
   // Dismiss onboarding permanently
   const handleDismiss = useCallback(() => {
-    localStorage.setItem(STORAGE_KEY, 'true');
-    setIsVisible(false);
+    setDismissed(true);
     onVisibilityChange?.(false);
-  }, [onVisibilityChange]);
+  }, [onVisibilityChange, setDismissed]);
 
   if (!isVisible) {
     return null;

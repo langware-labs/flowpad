@@ -10,8 +10,10 @@ notification scanner when the manifest arrived:
 
 import asyncio
 import logging
+from typing import Any
 
 from flow_sdk.actions.action_registry import action
+from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.request_context.methods import get_current_request_info
@@ -24,6 +26,22 @@ async def _get_task(task_id: str) -> Task | None:
     return await Task.get_one({"id": task_id})
 
 
+def _git_origin_from_payload(value: Any) -> GitOrigin | None:
+    if isinstance(value, GitOrigin):
+        return value
+    if isinstance(value, dict):
+        try:
+            origin = GitOrigin.model_validate(value)
+            return origin if origin.owner and origin.name else None
+        except Exception:
+            return None
+    return None
+
+
+def _task_git_origin(task: Task | None, body: dict) -> GitOrigin | None:
+    return (task.git_origin if task else None) or _git_origin_from_payload(body.get("git_origin"))
+
+
 @action.post(action_name="find-project", types=["task"])
 async def find_project_for_task() -> ApiResponse:
     """Determine whether the task's source repo exists locally.
@@ -31,8 +49,7 @@ async def find_project_for_task() -> ApiResponse:
     Returns:
       found (bool)          — True if a local clone was found
       local_path (str|null) — filesystem path to the clone
-      repo_url (str)        — origin URL of the repo
-      branch (str)          — branch from manifest
+      git_origin (dict|null) — canonical git provenance/reference
       known_projects (list) — [{name, path}] for all known local Claude projects
     """
     try:
@@ -45,15 +62,14 @@ async def find_project_for_task() -> ApiResponse:
 
         body = await request_info.get_post_data() or {}
 
-        # Use task fields if available, fall back to body params (deep-link before scanner has run)
-        project_url = (task.project_url if task else None) or (body.get("project_url") or "").strip()
-        manifest_repo_id = (task.repo_id if task else None) or (body.get("repo_id") or "").strip()
-        branch = (task.branch if task else None) or (body.get("branch") or "").strip()
+        # Use task fields if available, fall back to body params (deep-link before scanner has run).
+        git_origin = _task_git_origin(task, body)
+        clone_url = git_origin.clone_url() if git_origin else ""
 
         from flow_sdk.utils.git import (
             find_local_repo_for_url,
             git_repo_full_name,
-            repo_id,
+            git_remote_url,
         )
         from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
@@ -69,27 +85,28 @@ async def find_project_for_task() -> ApiResponse:
             except Exception:
                 known_projects.append({"name": project_root.name, "path": str(project_root)})
 
-        # Pass 1: match by repo_id (uuid5 of repo full name)
+        # Pass 1: match by canonical GitOrigin repo key.
         local_path: str | None = None
-        if manifest_repo_id:
+        if git_origin:
+            expected_key = git_origin.key()
             for project_root in iter_claude_project_paths():
                 try:
-                    full_name = git_repo_full_name(str(project_root))
-                    if full_name and repo_id(full_name) == manifest_repo_id:
+                    remote = git_remote_url(str(project_root))
+                    candidate = GitOrigin.from_url(remote, rel_path=git_origin.rel_path or ".") if remote else None
+                    if candidate and candidate.key() == expected_key:
                         local_path = str(project_root)
                         break
                 except Exception:
                     continue
 
         # Pass 2: fall back to URL match
-        if not local_path and project_url:
-            local_path = find_local_repo_for_url(project_url)
+        if not local_path and clone_url:
+            local_path = find_local_repo_for_url(clone_url)
 
         return ApiSuccessResponse(data={
             "found": bool(local_path),
             "local_path": local_path,
-            "repo_url": project_url,
-            "branch": branch,
+            "git_origin": git_origin.model_dump(mode="json") if git_origin else None,
             "known_projects": known_projects,
         })
     except Exception as e:
@@ -118,16 +135,17 @@ async def pull_for_task() -> ApiResponse:
         task = await _get_task(task_id)
 
         body = await request_info.get_post_data() or {}
-        branch = (task.branch if task else None) or (body.get("branch") or "").strip()
-        project_url = (task.project_url if task else None) or (body.get("project_url") or "").strip()
+        git_origin = _task_git_origin(task, body)
+        branch = git_origin.branch if git_origin else ""
+        clone_url = git_origin.clone_url() if git_origin else ""
 
         # Determine local_path: from body override, then task field, then URL lookup
         local_path: str | None = (body.get("local_path") or "").strip() or None
         if not local_path:
             local_path = (task.project_root if task else None) or None
-        if not local_path and project_url:
+        if not local_path and clone_url:
             from flow_sdk.utils.git import find_local_repo_for_url
-            local_path = find_local_repo_for_url(project_url)
+            local_path = find_local_repo_for_url(clone_url)
 
         if not local_path:
             return ApiFailResponse(message="No local repo path found for this task")
@@ -183,22 +201,23 @@ async def clone_for_task() -> ApiResponse:
         if not target_dir:
             return ApiFailResponse(message="target_dir is required")
 
-        project_url = (task.project_url if task else None) or (body.get("project_url") or "").strip()
-        branch = (task.branch if task else None) or (body.get("branch") or "").strip()
+        git_origin = _task_git_origin(task, body)
+        clone_url = git_origin.clone_url() if git_origin else ""
+        branch = git_origin.branch if git_origin else ""
 
-        if not project_url:
-            return ApiFailResponse(message="No project URL found for this task")
+        if not clone_url:
+            return ApiFailResponse(message="No git origin found for this task")
 
         # Derive repo name from URL (e.g. "https://github.com/org/my-repo.git" → "my-repo")
         # and clone into <target_dir>/<repo-name> so the user picks a parent folder.
         import re as _re
         from pathlib import Path as _Path
-        repo_name_match = _re.search(r'/([^/]+?)(?:\.git)?$', project_url)
+        repo_name_match = _re.search(r'/([^/]+?)(?:\.git)?$', clone_url)
         repo_name = repo_name_match.group(1) if repo_name_match else "repo"
         clone_path = str(_Path(target_dir) / repo_name)
 
         from flow_sdk.utils.git import git_clone, git_pull
-        clone_ok, clone_msg = await git_clone(project_url, clone_path, branch=branch or None)
+        clone_ok, clone_msg = await git_clone(clone_url, clone_path, branch=branch or None)
 
         # If clone failed because the directory already exists, pull instead.
         if not clone_ok and "already exists and is not an empty directory" in clone_msg:
@@ -237,5 +256,3 @@ async def clone_for_task() -> ApiResponse:
     except Exception as e:
         logger.error(f"[task_receive] clone-for-task error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Failed to clone: {str(e)}")
-
-

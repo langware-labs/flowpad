@@ -8,15 +8,15 @@ test 1: Git status button appears in agentic process terminal ribbon
 - click the "Start Claude" button if on a plain shell to create an agentic process
 - wait for URL to match /dock/shell/agentic_process-/ (up to 60 seconds)
 - wait for the bottom ribbon to initialize (idle/running LED visible)
-- validate a GitBranch icon button is visible in the ribbon's right section (.ml-auto)
+- validate a git branch icon button is visible in the ribbon's right section (.ml-auto)
 - validate it is the 3rd button (index 2) in the right section: Shell(0), Worktree(1), Git(2), Prompts(3), Queue(4), Files(5)
 - validate no tooltip text says "Git status of the working directory" (tooltip appears on hover, not in DOM by default)
 
 test 2: Git panel opens as a tab in the side window when Git button is clicked
 - navigate to an agentic process with workdir set to a git repository
-- click the GitBranch button (index 2 in .ml-auto)
+- click the git branch button (index 2 in .ml-auto)
 - validate the side window appears on the right: a w-80 flex-col border-l div
-- validate the tab strip (border-b inside the side window) shows a "Git" tab with the GitBranch icon
+- validate the tab strip (border-b inside the side window) shows a "Git" tab with the git branch icon
 - validate the tab has a × close button (aria-label="Close Git")
 - validate the Git panel content is visible below the tab strip
 - validate the panel inner header shows the current branch name or "Not a git repo"
@@ -26,7 +26,7 @@ test 2: Git panel opens as a tab in the side window when Git button is clicked
 test 3: Git panel header shows branch name and ahead/behind indicators
 - navigate to an agentic process with workdir pointing to a git repo that has commits
   ahead of or behind its upstream (or just verify the branch name is correct)
-- open the Git panel (click the GitBranch ribbon button)
+- open the Git panel (click the git branch ribbon button)
 - validate the branch name in the inner panel header matches `git branch --show-current` output
 - if the local branch is ahead of upstream, validate a green "↑N" chip is shown
 - if the local branch is behind upstream, validate an amber "↓N" chip is shown
@@ -45,14 +45,14 @@ test 4: Git panel shows changed files with status badges and line counts
 
 test 5: Git tab closes via the × button in the tab strip
 - navigate to an agentic process terminal with a git repo workdir
-- open the Git panel (click GitBranch ribbon button) — side window appears
+- open the Git panel (click git branch ribbon button) — side window appears
 - validate the "Git" tab is visible in the tab strip
 - click the × button inside the "Git" tab (aria-label="Close Git")
 - validate the side window is no longer visible (w-80 border-l div gone — no tabs remain)
 
 test 6: Opening multiple tabs: Git and Prompts coexist in the same side window
 - navigate to an agentic process terminal
-- click the GitBranch ribbon button → Git tab opens in side window
+- click the git branch ribbon button → Git tab opens in side window
 - click the MessageSquare (Prompts) ribbon button → Prompts tab added to the same side window
 - validate both "Git" and "Prompts" tabs are visible in the tab strip simultaneously
 - validate the Prompts panel is shown (it was the last one opened — it is active)
@@ -63,7 +63,7 @@ test 6: Opening multiple tabs: Git and Prompts coexist in the same side window
 test 7: Git panel shows "Not a git repository" for non-git workdir
 - navigate to an agentic process whose workdir is NOT a git repository
   (e.g. a process whose context_data.workdir is /tmp or a non-versioned folder)
-- click the GitBranch ribbon button
+- click the git branch ribbon button
 - validate the side window opens with a "Git" tab
 - validate the inner panel header shows "Not a git repo"
 - validate the panel body shows "Not a git repository" message and an "Initialize git repo" button
@@ -72,7 +72,7 @@ test 8: Git button is absent for plain shell terminals (no agentic process)
 - navigate to {APP_URL}/dock/shell/new_terminal and wait for the plain shell to load
   (do NOT click Start Claude — stay on the plain shell tab)
 - validate the bottom ribbon (idle LED + icons) is NOT present in the DOM
-- validate no GitBranch button exists in the active terminal panel
+- validate no git branch button exists in the active terminal panel
   (the ribbon only renders when an agentic process is attached to the shell)
 
 test 9: Git panel auto-refreshes — new changes appear within 5 seconds

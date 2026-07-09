@@ -32,7 +32,7 @@ export interface FsFolderRootDeps {
   projectRootPath?: string | null;
 }
 
-function normalizeRel(path: string | null | undefined): string {
+export function normalizeRel(path: string | null | undefined): string {
   if (!path) return '';
   return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
 }
@@ -42,7 +42,7 @@ function toFsPath(rel: string): string {
   return r ? `/${r}` : '/';
 }
 
-function basename(rel: string): string {
+export function basename(rel: string): string {
   const r = normalizeRel(rel);
   const idx = r.lastIndexOf('/');
   return idx >= 0 ? r.slice(idx + 1) : r;
@@ -104,6 +104,20 @@ function folderNode(typeId: TypeId, scope: ScopeFilter, rel: string, label: stri
     pointer: pointerFor(typeId, scope, rel),
     listChildren: (opts) => listChildrenAt(typeId, scope, rel, opts),
   };
+}
+
+/** Public factory: a browseable folder node addressing an absolute compute-node
+ *  path (leading slash stripped to the entity-relative form the VFS uses). Used
+ *  by the Explorer's `context_folders` grouping root, which lists project
+ *  `include_dirs` that may live anywhere on the compute node's VFS. */
+export function fsFolderNode(
+  typeId: TypeId,
+  scope: ScopeFilter,
+  absRel: string,
+  label?: string,
+): Browseable {
+  const rel = normalizeRel(absRel);
+  return folderNode(typeId, scope, rel, label ?? (basename(rel) || rel));
 }
 
 /** Imperative single-folder listing — the same `fsStore` path SimpleFileManager

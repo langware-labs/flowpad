@@ -22,9 +22,10 @@ from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 # walk has the subscriber installed for its first dispatch.
 from flow_sdk.builtin.agentic_process import transcript_subscriber as _transcript_subscriber  # noqa: F401
 
-# Register heartbeat housekeeping tasks (pending_user_to_inactive, …) at
-# package import — the heartbeat trigger fires AFTER set_service_triggers
-# runs at server boot, but the decorator must already be in the registry.
+# Import the AP heartbeat-tasks module at package import so any
+# ``@register_heartbeat_task`` decorators are in the registry before the
+# heartbeat trigger first fires (it fires AFTER set_service_triggers at boot).
+# Currently no tasks are registered — see heartbeat_tasks.py.
 from flow_sdk.builtin.agentic_process import heartbeat_tasks as _heartbeat_tasks  # noqa: F401
 
 __all__ = [

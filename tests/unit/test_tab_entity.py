@@ -120,9 +120,17 @@ async def test_close_is_soft_and_reopen_reshows() -> None:
 
 @pytest.mark.asyncio
 async def test_visible_query_over_mixed_kinds() -> None:
+    from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+
     tag = uuid.uuid4()
+    # A shell tab must point at a live Shell row: the list/order reap now treats a
+    # shell target with no DB row as a dead session (same rule as agentic_process)
+    # and drops the chip. Back the terminal-kind tab with a real Shell so this
+    # "mixed kinds" query tests membership, not orphan reaping.
+    live_shell = Shell(id=str(uuid.uuid4()))
+    await live_shell.save()
     opened = [
-        await ensure_tab(f"dock/shell#{tag}", target_type="shell", target_id=f"shell-{tag}"),
+        await ensure_tab(f"dock/shell#{tag}", target_type="shell", target_id=live_shell.id),
         await ensure_tab(f"editor/markdown#{tag}", target_type="markdown", target_id=f"md-{tag}"),
         await ensure_tab(f"editor/skill#{tag}", target_type="skill", target_id=f"sk-{tag}"),
         await ensure_tab(f"dock/settings#{tag}"),  # target-less transient surface
@@ -176,6 +184,34 @@ async def test_deleting_target_soft_closes_its_tabs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_delete_by_id_soft_closes_its_tabs() -> None:
+    # Regression (proven this session — "Conversation not found" 404 on project
+    # switch): the HTTP delete action (graph_crud_actions.handle_delete_by_id)
+    # removes an entity via the CLASSMETHOD Entity.delete_by_id, NOT the instance
+    # Entity.delete. Only the instance delete() carries the orphan-Tab cleanup, so
+    # a delete through the real API path strands a visible Tab pointing at a now
+    # nonexistent target. The projects switcher then resolves that tab and
+    # navigates to a dead conversation URL that 404s.
+    probe = _TabTargetProbe(id=str(uuid.uuid4()))
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/probe-del-by-id#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+    )
+    assert tab.visible is True
+
+    # The exact method the HTTP delete action calls (graph_crud_actions.py:134).
+    await _TabTargetProbe.delete_by_id(probe.id)
+
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is not None and reloaded.visible is False, (
+        "deleting the target via delete_by_id (the HTTP delete path) must soft-close "
+        "its Tab, not leave a dangling chip that 404s on click"
+    )
+
+
+@pytest.mark.asyncio
 async def test_missing_project_cleanup_deletes_tab_without_target_teardown() -> None:
     # A missing project means the Tab row itself is stale. Clean it with
     # Tab.delete(), not Tab.close(), so the backing target is not torn down.
@@ -225,6 +261,113 @@ async def test_agentic_process_close_hides_its_terminal_tab() -> None:
     assert reloaded is not None and reloaded.visible is False, (
         "closing the process must soft-close its terminal Tab"
     )
+
+
+# ── parent_tab_id (generic tab grouping — the vibe child-tabs feature) ──────────
+
+
+def _jptr(view_type: str, sub: str) -> str:
+    """A realistic JSON DockPointer (what the frontend stores) — a bare string
+    triggers the legacy-heal path on reopen and mutates the pointer, breaking a
+    re-query by the original string. Real pointers are always JSON."""
+    import json as _j
+
+    return _j.dumps({"viewType": view_type, "pointer": f"{sub}#{uuid.uuid4()}"})
+
+
+@pytest.mark.asyncio
+async def test_parent_tab_id_set_on_create() -> None:
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    child = await ensure_tab(
+        _jptr("editor", "markdown"),
+        target_type="markdown",
+        target_id="md-child",
+        parent_tab_id=parent.id,
+    )
+    assert child.parent_tab_id == parent.id
+
+
+@pytest.mark.asyncio
+async def test_parent_tab_id_adopted_on_reopen_and_preserved_on_none() -> None:
+    # A tab already open with no parent gets adopted when reopened from inside a
+    # workspace; a later reopen with no hint (None) preserves the group.
+    p = _jptr("editor", "markdown")
+    first = await ensure_tab(p, target_type="markdown", target_id="md-a")
+    assert first.parent_tab_id is None
+
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    adopted = await ensure_tab(p, parent_tab_id=parent.id)
+    assert adopted.id == first.id
+    assert adopted.parent_tab_id == parent.id
+
+    # No hint → preserve (matches the name/icon hint convention).
+    preserved = await ensure_tab(p)
+    assert preserved.parent_tab_id == parent.id
+
+    # A DIFFERENT parent re-parents (last-writer-wins; a tab is in one group).
+    parent2 = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    reparented = await ensure_tab(p, parent_tab_id=parent2.id)
+    assert reparented.parent_tab_id == parent2.id
+
+
+@pytest.mark.asyncio
+async def test_parent_tab_id_never_self() -> None:
+    # Guard: a tab is never made its own parent (backend defense; the client
+    # registers the display tab as parent and could re-materialize the display).
+    p = _jptr("shell", f"agentic_process-{uuid.uuid4()}")
+    tab = await ensure_tab(p)
+    same = await ensure_tab(p, parent_tab_id=tab.id)
+    assert same.id == tab.id
+    assert same.parent_tab_id is None, "a tab must never be its own parent"
+
+
+@pytest.mark.asyncio
+async def test_parent_soft_close_leaves_children_intact() -> None:
+    # Parent close is soft and never touches children — they stay ordinary
+    # global tabs; the deterministic id regroups them when the parent reopens.
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    child = await ensure_tab(
+        _jptr("editor", "markdown"), target_type="markdown", target_id="md-keep", parent_tab_id=parent.id
+    )
+
+    await parent.close()
+
+    reloaded = await Tab.get_one({"id": child.id})
+    assert reloaded is not None
+    assert reloaded.visible is True, "child stays visible when parent soft-closes"
+    assert reloaded.parent_tab_id == parent.id, "soft-close preserves the group edge"
+
+
+@pytest.mark.asyncio
+async def test_parent_tab_id_in_wire_projection() -> None:
+    # _serialize_row is the actual wire projection for every list action — the
+    # field MUST be there or the whole FE feature is dark.
+    from flow_sdk.builtin.tab import _serialize_row
+
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    child = await ensure_tab(
+        _jptr("editor", "markdown"), target_type="markdown", target_id="md-w", parent_tab_id=parent.id
+    )
+    row = _serialize_row(child)
+    assert "parent_tab_id" in row
+    assert row["parent_tab_id"] == parent.id
+
+
+@pytest.mark.asyncio
+async def test_hard_reap_clears_child_parent_refs() -> None:
+    # A hard delete of the parent must null its children's parent_tab_id (unlike
+    # soft-close) so no permanently-dangling edges accumulate.
+    from flow_sdk.builtin.tab import _clear_parent_refs
+
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    child = await ensure_tab(
+        _jptr("editor", "markdown"), target_type="markdown", target_id="md-reap", parent_tab_id=parent.id
+    )
+
+    await _clear_parent_refs({parent.id})
+
+    reloaded = await Tab.get_one({"id": child.id})
+    assert reloaded is not None and reloaded.parent_tab_id is None
 
 
 @pytest.mark.asyncio
@@ -292,17 +435,90 @@ async def test_orphan_agentic_process_tab_is_reaped_when_target_missing() -> Non
 
 
 @pytest.mark.asyncio
+async def test_orphan_shell_tab_is_reaped_when_target_missing() -> None:
+    # Sibling of the agentic_process reap above, proven via the interactive-tabs
+    # matrix "External REST DELETE/close removes a session" RCA: a shell is ALWAYS
+    # DB-backed, so a shell tab whose Shell row is gone (the session was closed)
+    # is a dead chip — not a valid unindexed-on-disk target. The generic
+    # orphan-close soft-hides it on delete, but a reload whose active URL points at
+    # that now-deleted shell re-mints the row through ensure_tab (visible again);
+    # the list-path reap must drop it exactly like an agentic_process orphan, or
+    # the closed session's chip resurrects and never leaves the strip.
+    from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    ghost_id = str(uuid.uuid4())  # a shell id with NO DB row
+    assert await Shell.get_one({"id": ghost_id}) is None, "precondition: target absent"
+
+    tab = await ensure_tab(
+        f"shell/shell-{ghost_id}",
+        target_type="shell",
+        target_id=ghost_id,
+        project_id=None,  # projectless: the missing-PROJECT reaper must NOT mask this
+    )
+    assert tab.visible is True
+
+    listed = await _build_tab_list(None)
+    assert tab.id not in {t.id for t in listed}, (
+        "a tab whose shell target has no resolvable entity must be reaped from the "
+        "list, not rendered as a chip for a closed session"
+    )
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is None or reloaded.visible is False, (
+        "the dangling shell tab row must be removed/hidden"
+    )
+
+
+@pytest.mark.asyncio
+async def test_activate_is_noop_on_a_soft_closed_tab() -> None:
+    # Recency (`last_active_at`) is the close-resolver's tier-3 seed. `activate` is
+    # fired fire-and-forget on select; a click immediately followed by a close can
+    # let that stamp land AFTER the close (late under load), re-seeding the dead tab
+    # as most-recent and dragging the self-heal back onto it. A soft-closed tab is
+    # never a resolver candidate and activate never re-shows membership (reopen goes
+    # through ensure_tab), so activate on a `visible=False` tab must be a strict
+    # no-op: recency unchanged, still hidden.
+    from flow_sdk.core.entity.entity_model import _http_activate
+
+    tab = await ensure_tab(
+        f"dock/activate-noop#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=str(uuid.uuid4()),
+    )
+    await tab.close()
+    assert tab.visible is False
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is not None
+    before = reloaded.last_active_at
+
+    await _http_activate(reloaded)
+
+    after = await Tab.get_one({"id": tab.id})
+    assert after is not None
+    assert after.last_active_at == before, "activate must NOT stamp recency on a closed tab"
+    assert after.visible is False, "activate must NOT re-show a soft-closed tab"
+
+
+@pytest.mark.asyncio
 async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
     # `list_all` is the GLOBAL projection (every visible tab, all projects) that the
     # footer chip + sessions view need; the project-scoped `list(pid)` is
     # `{that project} + projectless`, and `list(None)` is projectless-only.
     from flow_sdk.builtin.tab import _build_list, _http_list_all
 
+    from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+
     tag = uuid.uuid4()
     pa = f"proj-a-{tag}"
     pb = f"proj-b-{tag}"
-    a = await ensure_tab(f"shell|a#{tag}", target_type="shell", target_id=f"sa-{tag}", project_id=pa)
-    b = await ensure_tab(f"shell|b#{tag}", target_type="shell", target_id=f"sb-{tag}", project_id=pb)
+    # Live Shell rows so the target reap keeps these terminal tabs (a shell tab
+    # whose Shell is absent is now reaped as a dead session, same as agentic_process).
+    sa = Shell(id=str(uuid.uuid4()))
+    sb = Shell(id=str(uuid.uuid4()))
+    await sa.save()
+    await sb.save()
+    a = await ensure_tab(f"shell|a#{tag}", target_type="shell", target_id=sa.id, project_id=pa)
+    b = await ensure_tab(f"shell|b#{tag}", target_type="shell", target_id=sb.id, project_id=pb)
     free = await ensure_tab(f"dock/settings#{tag}")  # projectless
 
     res = await _http_list_all(Tab)
@@ -401,3 +617,74 @@ async def test_rename_reflects_onto_target_generically() -> None:
     assert tab.name == "my pinned name"  # Tab.name is the source of truth
     reloaded = await _TabTargetProbe.get_one({"id": probe.id})
     assert reloaded is not None and reloaded.name == "my pinned name"
+
+
+# ── Scope-keyed identity (assets/explorer): tabHash drives the uuid5 ─────────
+#
+# A scope-keyed dock normalizes its sub-pointer to '' and carries its identity
+# in the frontend-computed ``tabHash`` field ("explorer|project:<id>"). The id
+# derivation must honor it — otherwise EVERY scope of the view hashes to the
+# same uuid5 ("tab:explorer|") and each scope switch steals the single row
+# (the "one Tab row per scope" contract in DockPointer.toJSON breaks).
+
+import json as _test_json
+
+
+def _scoped_pointer(view: str, project_id: str) -> str:
+    """The exact JSON shape DockPointer.toJSON emits for a project-scoped dock."""
+    return _test_json.dumps(
+        {
+            "viewType": view,
+            "pointer": "",
+            "options": {"scope-mode": "project", "scope-activeProjectId": project_id},
+            "tabHash": f"{view}|project:{project_id}",
+        },
+        separators=(",", ":"),
+    )
+
+
+def test_tab_id_prefers_tab_hash_and_stays_stable_without_it() -> None:
+    pa, pb = str(uuid.uuid4()), str(uuid.uuid4())
+    a = tab_id_for(_scoped_pointer("explorer", pa))
+    b = tab_id_for(_scoped_pointer("explorer", pb))
+    assert a != b, "different scopes must mint different Tab ids"
+    assert a == tab_id_for(f"explorer|project:{pa}"), "id is uuid5 over the tabHash"
+
+    # Stability regression: a pointer WITHOUT tabHash (shells, conversations,
+    # projects…) must hash byte-identically to the pre-change derivation.
+    plain = _test_json.dumps({"viewType": "shell", "pointer": "agentic_process-x"})
+    assert tab_id_for(plain) == tab_id_for("shell|agentic_process-x")
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_scoped_rows_coexist_per_project() -> None:
+    pa, pb = str(uuid.uuid4()), str(uuid.uuid4())
+    a = await ensure_tab(_scoped_pointer("explorer", pa), project_id=pa)
+    b = await ensure_tab(_scoped_pointer("explorer", pb), project_id=pb)
+    assert a.id != b.id, "each scope owns its own row"
+    assert a.visible and b.visible, "opening scope B must not hide/steal scope A's row"
+    assert (a.project_id, b.project_id) == (pa, pb)
+
+    again = await ensure_tab(_scoped_pointer("explorer", pa), project_id=pa)
+    assert again.id == a.id, "reopen of a scope reuses its row"
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_heals_legacy_scope_shared_row() -> None:
+    # A row minted under the old derivation carries id=uuid5("tab:<view>|") even
+    # though its stored pointer already includes the scoped tabHash (the frontend
+    # always persisted it). On next open the same pointer string is re-emitted,
+    # so the same-pointer stray-heal must hide the legacy-id row and mint the
+    # canonical scope-keyed one.
+    pa = str(uuid.uuid4())
+    pointer = _scoped_pointer("assets", pa)
+    legacy = Tab(id=tab_id_for('{"viewType":"assets","pointer":""}'), pointer=pointer, visible=True)
+    await legacy.save()
+
+    tab = await ensure_tab(pointer, project_id=pa)
+    assert tab.id == tab_id_for(pointer) != legacy.id
+
+    visible = [t for t in await Tab.get_all({"pointer": pointer}) if t.visible]
+    assert [t.id for t in visible] == [tab.id], "one visible row: the scope-keyed one"
+    hidden = await Tab.get_one({"id": legacy.id})
+    assert hidden is not None and hidden.visible is False

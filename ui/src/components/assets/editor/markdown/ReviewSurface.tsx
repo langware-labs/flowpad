@@ -21,7 +21,7 @@ interface ReviewSurfaceProps {
 
 export function ReviewSurface({ body, docTypeId }: ReviewSurfaceProps) {
   const { body: renderedBody, provider } = useReactMarkdownAnchor(body);
-  const { comments, addComment, deleteComment } = useDocComments(docTypeId);
+  const { comments, addComment, updateComment, deleteComment } = useDocComments(docTypeId);
 
   const track = useMemo(
     () =>
@@ -35,12 +35,13 @@ export function ReviewSurface({ body, docTypeId }: ReviewSurfaceProps) {
               commentId: c.id,
               text: c.text,
               createdAt: c.createdAt,
+              onUpdate: (text: string) => updateComment(c.entity, text),
               onDelete: () => deleteComment(c.entity),
             },
           },
         })),
       ),
-    [comments, deleteComment],
+    [comments, updateComment, deleteComment],
   );
 
   return (

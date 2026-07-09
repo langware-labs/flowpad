@@ -8,6 +8,7 @@ import { sdkConfig } from '@sdk/config/index';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
 import { useContext } from '@sdk/react/hooks';
+import { useMinimizeOnClose } from '@src/hooks/use-minimize-on-close';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Check,
@@ -263,6 +264,8 @@ interface VersionPopoverProps {
 export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
+  // Closing the popover genie-minimizes it into the version button.
+  const { sourceRef, targetRef, handleOpenChange } = useMinimizeOnClose(setOpen);
   const [data, setData] = useState<VersionCheckResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -411,9 +414,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   }, [data?.releases, currentVersion, pypi?.latest, electronVersion, githubLatest]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
+          ref={targetRef}
           type="button"
           className="flex items-center gap-1 rounded-sm px-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           title={t`Flowpad version`}
@@ -426,7 +430,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="w-96 p-3">
+      <PopoverContent ref={sourceRef} side="top" align="end" className="w-96 p-3">
         <div className="space-y-3">
           {/* Header */}
           <div className="flex items-center justify-between">

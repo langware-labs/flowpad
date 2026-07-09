@@ -18,6 +18,7 @@ import {
   withSideWindowsOptions,
   type SideWindowsState,
 } from '@src/lib/side-windows';
+import type { ViewMode } from '@src/contexts/view-mode-context';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -28,6 +29,11 @@ import {
  * which is not a dock URL).
  */
 export const HIGHLIGHT_PARAM = 'highlight';
+export const VIEW_MODE_PARAM = 'viewMode';
+
+function isViewMode(value: string | undefined): value is ViewMode {
+  return value === 'vibe' || value === 'standard' || value === 'advanced' || value === 'dev';
+}
 
 /**
  * Lens pointer structure for sub-routing within lens viewer
@@ -168,6 +174,24 @@ export class DockPointer implements IDockPointer {
       { ...this.options, [HIGHLIGHT_PARAM]: wikiword },
       this.layout,
     );
+  }
+
+  /**
+   * Page-local view-mode override carried by the URL. This never represents the
+   * user's persisted default; consumers combine it with PrefKey.VIEW_MODE in the
+   * view-mode context.
+   */
+  get viewMode(): ViewMode | null {
+    const value = this.options?.[VIEW_MODE_PARAM];
+    return isViewMode(value) ? value : null;
+  }
+
+  /** Clone this dock with a page-local view-mode override, or remove it with null. */
+  withViewMode(mode: ViewMode | null): DockPointer {
+    const nextOptions = { ...(this.options ?? {}) };
+    if (mode) nextOptions[VIEW_MODE_PARAM] = mode;
+    else delete nextOptions[VIEW_MODE_PARAM];
+    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout);
   }
 
   /**
@@ -494,16 +518,18 @@ export class DockPointer implements IDockPointer {
    *   /dock/project/<projectId>
    *   /dock/project/<projectId>/collaboration_room/<roomId>
    *   /dock/project/<projectId>/collaboration_room/<roomId>/tab/<typeid>
+   *   /dock/project/<projectId>/collaboration_room/<roomId>/session/<sessionId>
    *   /dock/project/<projectId>/conversation/<conversationId>
    *
    * `typeid` is the standard TypeId string (e.g. "agentic_process-<uuid>").
    *
    * Precedence: when both `roomId` and `conversationId` are passed, `conversationId`
-   * wins — the room shape is dropped to keep the URL unambiguous.
+   * wins — the room shape is dropped to keep the URL unambiguous. Within a room,
+   * `sessionId` (the active shared session) takes precedence over `tab`.
    */
   static forProject(
     projectId?: string,
-    sub?: { roomId?: string | null; tab?: TypeId | null; conversationId?: string | null },
+    sub?: { roomId?: string | null; tab?: TypeId | null; conversationId?: string | null; sessionId?: string | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     if (!projectId) return new DockPointer(ViewType.PROJECT, undefined, undefined, layout);
@@ -512,7 +538,9 @@ export class DockPointer implements IDockPointer {
       segments.push('conversation', sub.conversationId);
     } else if (sub?.roomId) {
       segments.push('collaboration_room', sub.roomId);
-      if (sub.tab) {
+      if (sub.sessionId) {
+        segments.push('session', sub.sessionId);
+      } else if (sub.tab) {
         segments.push('tab', sub.tab.toString());
       }
     }
@@ -526,14 +554,15 @@ export class DockPointer implements IDockPointer {
    *   <projectId>
    *   <projectId>/collaboration_room/<roomId>
    *   <projectId>/collaboration_room/<roomId>/tab/<type>-<id>
+   *   <projectId>/collaboration_room/<roomId>/session/<sessionId>
    *   <projectId>/conversation/<conversationId>
    *
    * Returns nulls for segments that aren't present or the input is malformed.
    */
   static parseProjectPointer(
     pointer: string | undefined | null,
-  ): { projectTypeId: TypeId | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
-    if (!pointer) return { projectTypeId: null, roomId: null, tabTypeId: null, conversationId: null };
+  ): { projectTypeId: TypeId | null; roomId: string | null; tabTypeId: TypeId | null; sessionId: string | null; conversationId: string | null } {
+    if (!pointer) return { projectTypeId: null, roomId: null, tabTypeId: null, sessionId: null, conversationId: null };
     const parts = pointer.split('/').filter(Boolean);
     // parts[0] identifies the project. It may arrive bare (`<id>`) or as a
     // serialized `<type>-<id>` typeid — route it through TypeId so the type
@@ -542,12 +571,15 @@ export class DockPointer implements IDockPointer {
     const projectTypeId = parts[0] ? DockPointer.projectSegmentToTypeId(parts[0]) : null;
     let roomId: string | null = null;
     let tabTypeId: TypeId | null = null;
+    let sessionId: string | null = null;
     let conversationId: string | null = null;
     if (parts[1] === 'conversation' && parts[2]) {
       conversationId = parts[2];
     } else if (parts[1] === 'collaboration_room' && parts[2]) {
       roomId = parts[2];
-      if (parts[3] === 'tab' && parts[4]) {
+      if (parts[3] === 'session' && parts[4]) {
+        sessionId = parts[4];
+      } else if (parts[3] === 'tab' && parts[4]) {
         try {
           tabTypeId = new TypeId(parts[4]);
         } catch {
@@ -555,7 +587,7 @@ export class DockPointer implements IDockPointer {
         }
       }
     }
-    return { projectTypeId, roomId, tabTypeId, conversationId };
+    return { projectTypeId, roomId, tabTypeId, sessionId, conversationId };
   }
 
   /**
@@ -1025,6 +1057,14 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for the user Preferences screen.
+   * @param category - Optional category whose tab should be active
+   */
+  static forPreferences(category?: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.PREFERENCES, category, {}, layout);
+  }
+
+  /**
    * Check equality with another dock pointer
    */
   equals(other: DockPointer): boolean {
@@ -1063,12 +1103,20 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.chrome === 'fullbleed') return null;
     // A bare shell is the terminal host; only a session-pointer shell is a tab.
     if (this.viewType === ViewType.SHELL && !this.pointer) return null;
-    // Assets is a SINGLE tab per scope: every type/folder/editor sub-pointer of
-    // one scope folds into ONE tab. Identity = the scope filter (global when
-    // unset), NOT the sub-pointer. scopeFilterKey: 'all' | 'user' |
-    // 'project:<id>' | 'filter:<0|1>:p1,p2'.
-    if (this.viewType === ViewType.ASSETS) {
-      return `${ViewType.ASSETS}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
+    // A scope-keyed view (Assets, Explorer) is a SINGLE tab per scope: every
+    // sub-pointer (asset type/folder/editor, explorer folder) of one scope folds
+    // into ONE tab. Identity = the scope filter (global when unset), NOT the
+    // sub-pointer. scopeFilterKey: 'all' | 'user' | 'project:<id>' |
+    // 'filter:<0|1>:p1,p2'.
+    if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
+      return `${this.viewType}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
+    }
+    // Pointer-folding views (e.g. Preferences) collapse all their category/field
+    // sub-pointers into ONE tab: identity is the viewType, pointer dropped. The
+    // flag lives in VIEWER_REGISTRY so this stays declarative (cf. the fullbleed
+    // check above) instead of hardcoding viewTypes here.
+    if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
+      return `${this.viewType}|`;
     }
     return `${this.viewType}|${this.pointer ?? ''}`;
   }
@@ -1077,19 +1125,25 @@ export class DockPointer implements IDockPointer {
    *  This is what Tab.pointer stores in the DB. Returns null if tabHash is null. */
   toJSON(): string | null {
     if (!this.tabHash) return null;
-    // Assets identity is the SCOPE, not the sub-pointer. Normalize the pointer to
+    // Scope-keyed identity is the SCOPE, not the sub-pointer. Normalize the pointer to
     // '' and persist the scope (options) + the computed tabHash so: (a) the stored
     // JSON is constant for a given scope regardless of which type was last viewed
     // → the backend mints ONE Tab row per scope; (b) `Tab.dockPointer` rebuilds the
     // same tabHash directly from the stored field; (c) clicking the chip reopens the
     // scoped browser root.
-    if (this.viewType === ViewType.ASSETS) {
+    if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
       return JSON.stringify({
-        viewType: ViewType.ASSETS,
+        viewType: this.viewType,
         pointer: '',
         options: this.scopeFilter ? scopeFilterToDockOptions(this.scopeFilter) : undefined,
         tabHash: this.tabHash,
       });
+    }
+    // Pointer-folding views (Preferences, …) persist a constant identity: pointer
+    // normalized to '' so the backend mints ONE Tab row regardless of which
+    // category was last viewed (same intent as the ASSETS scope-folding above).
+    if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
+      return JSON.stringify({ viewType: this.viewType, pointer: '' });
     }
     return JSON.stringify({ viewType: this.viewType ?? '', pointer: this.pointer ?? '' });
   }

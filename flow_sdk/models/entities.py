@@ -101,6 +101,16 @@ except ImportError as e:
     print(f"[WARN] Failed to import CollaborationRoom: {e}")
 
 try:
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import RemoteWorkerSession: {e}")
+
+try:
+    from flow_sdk.builtin.prompt_result import PromptResult  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import PromptResult: {e}")
+
+try:
     from flow_sdk.builtin.cron_event import CronEvent  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import CronEvent: {e}")
@@ -195,19 +205,14 @@ except ImportError as e:
     print(f"[WARN] Failed to import DynamicWorkflow: {e}")
 
 try:
+    from flow_sdk.builtin.artifact import Artifact, ArtifactRelation, CodeRef  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Artifact entities: {e}")
+
+try:
     from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import MarkdownIndex: {e}")
-
-try:
-    from flow_sdk.builtin.git_remote import GitRemote  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import GitRemote: {e}")
-
-try:
-    from flow_sdk.builtin.git_branch import GitBranch  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import GitBranch: {e}")
 
 try:
     from flow_sdk.builtin.file import File  # noqa: F401

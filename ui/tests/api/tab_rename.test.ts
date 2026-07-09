@@ -18,7 +18,7 @@
  * Runs against the running backend (LOCAL_SERVER_PORT). Real entities, real
  * HTTP, no mocks.
  */
-import { AgenticProcess, Conversation, Shell, Tab, dataManager } from '@sdk';
+import { AgenticProcess, Conversation, Shell, Tab, TypeId, dataManager } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -32,10 +32,19 @@ async function renameViaTab(
   name: string,
 ): Promise<void> {
   const pointer = `dock/${targetType}-${targetId}`;
-  // Get-or-create the Tab for this pointer (returns the updated list), then
-  // rename it through the exact backend action the strip uses
-  // (POST /graph/tab/<id>/rename), which reflects onto the backing entity.
-  const created = await Tab.newTab(pointer, { targetType, targetId });
+  // Resolve the tab's project the same way the strip's chokepoint
+  // (Tab.getFromDockPointer) does — from the backing entity — and pass it to
+  // newTab. newTab returns the render list filtered to the passed project, so
+  // the just-created tab is always in it: a bare shell defaults to the @local
+  // `my_first_project`, a projectless agentic_process is null. Then rename it
+  // through the exact backend action the strip uses (POST /graph/tab/<id>/rename),
+  // which reflects onto the backing entity.
+  const ent = await dataManager.getByTypeId<any>(new TypeId(targetType, targetId));
+  const created = await Tab.newTab(pointer, {
+    targetType,
+    targetId,
+    projectId: (ent as any)?.project_id ?? null,
+  });
   const tab = created.find((t) => t.target_id === targetId);
   expect(tab).toBeTruthy();
   const updated = await Tab.renameById(tab!.id, name);

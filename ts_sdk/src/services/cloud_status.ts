@@ -43,3 +43,8 @@ export function makeLoginSlot<S>(status: S): LoginSlot<S> {
 export function makeConnectionSlot<S>(status: S): ConnectionSlot<S> {
   return { status, error: null };
 }
+
+/** True when the hub websocket is reachable (a good proxy for "online"). */
+export function isHubConnected(status: HubConnectionStatus): boolean {
+  return status === 'connected' || status === 'verified';
+}

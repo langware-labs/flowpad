@@ -9,25 +9,32 @@
  *     surface first next time.
  *
  * These are the units the full app gates behind auth, so they're proven here at
- * runtime without the app shell. Pure: no SDK, router, or backend — only
- * localStorage (jsdom) and the view-mode setter.
+ * runtime without the app shell. No router or live backend — the last-opener
+ * memory rides the registry-driven `instancePreferences` singleton
+ * (PrefKey.LAST_OPENER), seeded/reset per-test, plus the view-mode setter.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { instancePreferences, PrefKey } from '@sdk';
 import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import {
   openerToWorker,
-  readLastOpenerId,
   useLastWorkerType,
   workerToOpener,
 } from '@src/components/terminal/openers/useLastWorkerType';
 import { renderHook } from '@testing-library/react';
+import { resetOpenerPrefs } from '../utils/opener-prefs';
 
 beforeEach(() => {
+  // The last-opener memory now lives in the registry-driven instancePreferences
+  // singleton (PrefKey.LAST_OPENER), not the legacy `flowpad.terminal.lastOpener`
+  // localStorage key. resetOpenerPrefs() clears it so each test starts with
+  // claude_code primary and no pinned openers.
   localStorage.clear();
+  resetOpenerPrefs();
   setViewMode(ViewMode.Standard);
 });
 
@@ -66,7 +73,7 @@ describe('WorkerToolbar — display modes', () => {
   });
 
   it('leads with the last-used worker', () => {
-    localStorage.setItem('flowpad.terminal.lastOpener', JSON.stringify('codex'));
+    instancePreferences.set(PrefKey.LAST_OPENER, 'codex');
     render(<WorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
     // Primary is codex; claude_code now lives behind the chevron.
     expect(screen.getByTestId('t-launch-codex')).toBeTruthy();
@@ -84,8 +91,8 @@ describe('WorkerToolbar — launch + persistence', () => {
     await user.click(screen.getByTestId('t-launch-codex'));
 
     expect(onLaunch).toHaveBeenCalledWith('codex');
-    // Persisted under the shared opener key in opener form.
-    expect(readLastOpenerId()).toBe('codex');
+    // Persisted under the shared opener preference in opener form.
+    expect(instancePreferences.get(PrefKey.LAST_OPENER)).toBe('codex');
   });
 
   it('hasProcess short-circuits to the Open button', () => {
@@ -121,6 +128,6 @@ describe('useLastWorkerType — opener ⇄ worker coercion', () => {
     act(() => result.current.rememberWorker('copilot'));
 
     expect(result.current.lastWorker).toBe('copilot');
-    expect(localStorage.getItem('flowpad.terminal.lastOpener')).toBe(JSON.stringify('copilot'));
+    expect(instancePreferences.get(PrefKey.LAST_OPENER)).toBe('copilot');
   });
 });

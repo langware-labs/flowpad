@@ -35,22 +35,24 @@ _SANDBOX_HOME = os.environ["HOME"]
 # Test modules whose tests spawn real Claude/Codex CLI subprocesses and need
 # real ``$HOME`` for credentials. Anything not in this set keeps the parent
 # conftest's sandbox HOME.
-_REAL_HOME_TEST_MODULES = frozenset(
-    {
-        "test_agentic_process",
-        "test_agentic_process_prompt_streaming",
-        "test_agentic_cli_shell_mix",
-        "test_claude_cli",
-        "test_clean_claude_pty",
-        "test_clean_claude_pty_stress",
-        "test_markdown_index",
-        "test_prompt_queue_integration",
-        "test_relaunch_kills_session_orphan",
-        "test_agent",
-        "test_debug_log_records",
-        "test_skill_transcript_analysis",
-    }
-)
+_REAL_HOME_TEST_MODULES = frozenset({
+    "test_agentic_process",
+    "test_agentic_process_prompt_streaming",
+    "test_agentic_cli_shell_mix",
+    "test_claude_cli",
+    "test_clean_claude_pty",
+    "test_clean_claude_pty_stress",
+    "test_markdown_index",
+    "test_prompt_queue_integration",
+    "test_process_status_report_stream",
+    "test_relaunch_kills_session_orphan",
+    "test_agent",
+    "test_debug_log_records",
+    "test_skill_transcript_analysis",
+    "test_docs_browse_skill",
+    "test_context_process",
+    "test_system_prompt",
+})
 
 
 @pytest.fixture(autouse=True)
@@ -84,9 +86,9 @@ def _real_home_for_cli_subprocess_tests(request):
     else:
         yield
 
-
 from flow_sdk.builtin.worker_status import ApiErrorTimeoutError  # noqa: E402
 from tests.api.conftest import (  # noqa: F401, E402
+    bootstrap_payload,
     bootstrapped_client,
     clean_db,
     client,
@@ -199,6 +201,7 @@ def allocate_ports(unused_tcp_port_factory):
 _WORKER_PARAMS = [
     pytest.param("claude", id="claude"),
     pytest.param("codex", id="codex"),
+    pytest.param("copilot", id="copilot"),
 ]
 
 
@@ -232,6 +235,7 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
     _DRIVER_TO_ENUM = {
         "claude": WorkerType.CLAUDE_CODE,
         "codex": WorkerType.CODEX,
+        "copilot": WorkerType.COPILOT,
     }
     enum_value = _DRIVER_TO_ENUM[worker_id]
 

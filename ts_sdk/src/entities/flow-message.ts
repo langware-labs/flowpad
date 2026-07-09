@@ -261,9 +261,10 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Pack + upload this message's body via the local backend, which handles
    *  the hub fs/upload and the body_status state transitions.
    *  POSTs /api/v1/graph/flow_message/<id>/upload_body. */
-  async uploadBody(_opts: { onProgress?: (pct: number) => void } = {}): Promise<this> {
+  async uploadBody(_opts: { onProgress?: (pct: number) => void; transferMode?: 'copy' | 'git' } = {}): Promise<this> {
     if (!this.id) throw new Error('uploadBody requires this.id');
     const action = new ActionInfo('upload_body', FlowMessage.type, this.id, 'POST');
+    action.bodyParameters = { transfer_mode: _opts.transferMode ?? 'copy' };
     await dataManager.callAction<unknown, unknown>(action);
     this.body_status = BodyStatus.READY;
     this.attachment_filename = BODY_FILENAME;

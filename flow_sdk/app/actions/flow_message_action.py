@@ -93,13 +93,50 @@ def _participant_label(participant: dict) -> str:
     )
 
 
-async def _learn_address_book(participants: list[dict]) -> None:
-    for participant in _normalize_participants(participants):
+def participant_identity_key(participant: dict) -> str:
+    """Canonical identity key for a participant: ``user_id || email || name``,
+    lowercased. Mirrors the frontend ``participantKey`` (``use-contacts.ts``) so
+    the backend scan/matcher and the UI agree on "the same person".
+    """
+    value = (
+        _participant_value(participant, "user_id", "user_id")
+        or _participant_value(participant, "email", "user_email")
+        or _participant_value(participant, "name", "user_name")
+        or ""
+    )
+    return value.strip().lower()
+
+
+async def _learn_address_book(participants: list[dict]) -> int:
+    """Upsert every participant into the address book. Keyed on user_id OR email
+    (a hub-only participant carries a ``user_id`` and no email). Returns the
+    number of participants that produced/updated a contact. The single per-roster
+    learner — reused by create/receive/share and the address-book scan.
+    """
+    return await _learn_normalized_participants(_normalize_participants(participants))
+
+
+async def _learn_normalized_participants(participants: list[dict]) -> int:
+    """Learner fast-path for callers that already hold a normalized roster —
+    skips the re-normalization. See :func:`_learn_address_book`.
+    """
+    upserted = 0
+    for participant in participants:
         email = _participant_value(participant, "email")
-        if not email:
+        user_id = _participant_value(participant, "user_id")
+        if not email and not user_id:
             continue
         name = _participant_value(participant, "name")
-        await User.get_or_create_by_email(email, name=name)
+        picture = _participant_value(participant, "picture")
+        # remote defaults False: a learned contact is a LOCAL mirror minted at a
+        # local uuid5 id, not a hub entity at the same id — marking it remote
+        # would wrongly route ops through hub-reflection.
+        contact = await User.upsert_contact(
+            user_id=user_id, email=email, name=name, picture=picture
+        )
+        if contact is not None:
+            upserted += 1
+    return upserted
 
 
 async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
@@ -183,22 +220,10 @@ async def upload_flow_message() -> ApiResponse:
 
 async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     """Fetch FlowMessage from hub, materialise bundle if needed, delegate to deep-link handler."""
-    from flow_sdk.builtin.flow_message import AttachmentType
     from flow_sdk.server.routes.notify import handle_notification_deep_link
 
     data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
     meta = (data or {}).get("metadata") or {}
-
-    # The first REPO attachment URL triggers the git pull/clone flow; absence means bundle path.
-    raw_attachments = (data or {}).get("attachment") or []
-    repo_url = next(
-        (
-            a["data"]
-            for a in raw_attachments
-            if isinstance(a, dict) and a.get("attachment_type") == AttachmentType.REPO.value and a.get("data")
-        ),
-        "",
-    )
 
     attachment_filename = ((data or {}).get("attachment_filename") or "").strip()
 
@@ -207,7 +232,7 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     # optional Task), so the UI deep link can navigate directly without
     # needing a separate FM lookup. Scenario B has no Task — only the bundle
     # gates the download.
-    if not repo_url and attachment_filename:
+    if attachment_filename:
         try:
             await _download_and_unpack_bundle(
                 fm_id,
@@ -259,21 +284,15 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
             logger.warning("[open_flow_message] conv sync failed (non-fatal): %s", e, exc_info=True)
 
     logger.warning(
-        "[open_flow_message] fm_id=%s attachment_filename=%r repo_url=%r conv_id=%s task_id=%s",
-        fm_id,
-        attachment_filename,
-        repo_url,
-        conversation_id,
-        task_id,
+        "[open_flow_message] fm_id=%s attachment_filename=%r conv_id=%s task_id=%s",
+        fm_id, attachment_filename, conversation_id, task_id,
     )
 
     return await handle_notification_deep_link(
         fm_id=fm_id,
         conversation_id=conversation_id,
         task_id=task_id,
-        project_url=repo_url,
-        branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
-        repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
+        git_origin=(meta.get("git_origin") or (data or {}).get("git_origin")),
         sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
         title=(meta.get("task_title") or meta.get("spec_title") or (data or {}).get("task_title") or "").strip(),
     )
@@ -338,7 +357,7 @@ async def handle_has_body(fm_id: str) -> ApiResponse:
     return ApiSuccessResponse(data={"has_body": fm.has_body()})
 
 
-async def handle_upload_body(fm_id: str) -> ApiResponse:
+async def handle_upload_body(fm_id: str, *, transfer_mode: str = "copy") -> ApiResponse:
     """Pack + upload this message's body bundle. Idempotent: a second call
     re-uploads (the hub PUT overwrites). On failure the hub-side body_status
     remains UPLOADING and the exception surfaces as an ApiFailResponse."""
@@ -348,7 +367,10 @@ async def handle_upload_body(fm_id: str) -> ApiResponse:
     from flow_sdk.core.network.resource_tracker import make_flow_message_progress_emitter
 
     try:
-        await fm.upload_body(on_progress=make_flow_message_progress_emitter(fm_id, "upload"))
+        await fm.upload_body(
+            on_progress=make_flow_message_progress_emitter(fm_id, "upload"),
+            transfer_mode=transfer_mode,
+        )
     except Exception as e:
         logger.error("[flow_message_action] upload_body fm=%s: %s", fm_id, e, exc_info=True)
         return ApiFailResponse(message=f"upload_body failed: {e}")
@@ -434,7 +456,10 @@ async def upload_body_action() -> ApiResponse:
         request_info = get_current_request_info()
         if not request_info or not request_info.target_entity_typeid:
             return ApiFailResponse(message="No request info found", status_code=400)
-        return await handle_upload_body(str(request_info.target_entity_typeid.id))
+        body = await request_info.get_post_data() or {}
+        # _normalize_transfer_mode (bundle packer) is the single strip/lower/validate point.
+        transfer_mode = (body.get("transfer_mode") if isinstance(body, dict) else None) or "copy"
+        return await handle_upload_body(str(request_info.target_entity_typeid.id), transfer_mode=transfer_mode)
     except Exception as e:
         logger.error(f"[flow_message_action] upload_body error: {e}", exc_info=True)
         return ApiFailResponse(message=f"upload_body failed: {e}")
@@ -1539,6 +1564,26 @@ async def _download_and_unpack_bundle(
         try:
             refreshed = await FlowMessage.get_one({"id": fm_id})
             if refreshed:
+                # Hub-authoritative body_status. The row was just materialized
+                # from the BUNDLE header, whose body_status is the sender's value
+                # AT PACK TIME — still UPLOADING, because ``upload_body`` packs the
+                # .flowmsg BEFORE flipping READY (and ``merge_hub_payload`` treats
+                # body_status as local-only state, so the hub's READY never lands
+                # via the metadata sync). We only reach this success path when the
+                # hub advertised body_status=READY (the gate above) and the body is
+                # now on disk — so the row IS downloadable. Stamp READY so the
+                # receiver reflects that instead of the stale pack-time UPLOADING.
+                target_bs = (
+                    body_status.value if isinstance(body_status, BodyStatus) else body_status
+                ) or BodyStatus.READY.value
+                current_bs = (
+                    refreshed.body_status.value
+                    if isinstance(refreshed.body_status, BodyStatus)
+                    else refreshed.body_status
+                )
+                if current_bs != target_bs:
+                    refreshed.body_status = BodyStatus(target_bs)
+                    await refreshed.save(notify=False)
                 await refreshed.notify_updated()
         except Exception as nerr:
             logger.warning("[bundle] post-unpack notify failed fm=%s: %s", fm_id, nerr)
@@ -2339,11 +2384,6 @@ def _dispatch_conversation_message_fetches(conv_ids: list[str], someone_typeid: 
         pass
 
 
-# Hub-hosted child types pulled during the shared-context catch-up. Comments
-# today; add other shareable is_child types here as they gain hub support.
-_SHARED_CHILD_TYPES = (BuiltinEntityType.COMMENT.value,)
-
-
 async def _materialize_remote_child(cls, data: dict, parent_ref: str, someone_typeid: str | None):
     """Upsert a hub child dict locally as a remote is_child of ``parent_ref``.
 
@@ -2352,14 +2392,16 @@ async def _materialize_remote_child(cls, data: dict, parent_ref: str, someone_ty
     return await cls.upsert_from_hub_child(data, parent_ref, someone_typeid)
 
 
-async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typeid: str | None) -> None:
+async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typeid: str | None) -> set[str]:
     """Pull ``parent_tid``'s hub children of ``child_type`` and materialize the
-    new/changed ones locally (LWW via ``is_stale``). Best-effort."""
+    new/changed ones locally (LWW via ``is_stale``). Best-effort. Returns the set
+    of hub child ids seen, so the caller can reconcile local deletions (children
+    removed on the hub whose row still lingers locally)."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     cls = SchemaRegistry.get_entity_cls(child_type)
     if cls is None:
-        return
+        return set()
     # hub_get expects a BuiltinEntityType for the entity_type arg (it reads
     # ``.value``); parent_tid.type is a plain string, so coerce.
     try:
@@ -2377,9 +2419,11 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
                 child_list = v
                 break
     parent_ref = f"{parent_tid.type}-{parent_tid.id}"
+    hub_ids: set[str] = set()
     for raw in child_list:
         if not isinstance(raw, dict) or not raw.get("id"):
             continue
+        hub_ids.add(raw["id"])
         local = await cls.get_one({"id": raw["id"]})
         if local is not None and not cls.is_stale(local, raw):
             continue
@@ -2387,6 +2431,59 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
             await _materialize_remote_child(cls, raw, parent_ref, someone_typeid)
         except Exception as e:  # noqa: BLE001
             logger.warning("[subtree-sync] materialize %s-%s failed (non-fatal): %s", child_type, raw.get("id"), e)
+    return hub_ids
+
+
+async def _reconcile_deleted_children(
+    conv, child_type: str, hub_ids: set[str], someone_typeid: str | None
+) -> None:
+    """Catch-up's delete half: prune local ``remote`` children of this
+    conversation whose hub row is gone (id not in ``hub_ids``).
+
+    The pull half (``_sync_remote_children``) only adds/updates; without this a
+    comment deleted by a peer lingers forever for anyone who wasn't live-watching.
+    The local ``delete_by_id`` fans the normal delete data-op, so the FE drops it.
+
+    Candidate parents are the conversation itself AND each ``shared_context``
+    doc — a child rides the hub under the conversation but binds locally to its
+    real parent, which is either the conversation (a direct comment) or a shared
+    doc (``parent_type_id`` = the markdown). Only ``remote`` rows are pruned
+    (never a locally-authored, not-yet-shared child)."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    cls = SchemaRegistry.get_entity_cls(child_type)
+    if cls is None:
+        return
+    try:
+        child_etype = BuiltinEntityType(child_type)
+    except ValueError:
+        child_etype = None
+    conv_ref = f"{BuiltinEntityType.CONVERSATION.value}-{conv.id}"
+    candidate_parents = [conv_ref, *(str(r) for r in (conv.shared_context_entities or []))]
+    for parent_ref in candidate_parents:
+        try:
+            local_children = await cls.get_all({"parent_type_id": parent_ref})
+        except Exception:  # noqa: BLE001
+            continue
+        for ent in local_children or []:
+            if not getattr(ent, "remote", False) or ent.id in hub_ids:
+                continue
+            # ``hub_ids`` is the conversation's child LIST, which can momentarily
+            # lag a just-shared comment (eventual consistency). Confirm the row is
+            # REALLY gone with a direct hub GET before pruning — otherwise a fresh
+            # comment, already delivered to a live-watching peer, would be deleted
+            # out from under it on the next catch-up sync (the create/update race).
+            if child_etype is not None:
+                try:
+                    if await hub_get(child_etype, ent.id) is not None:
+                        continue  # still on the hub → a list lag, not a deletion
+                except Exception:  # noqa: BLE001
+                    continue  # couldn't confirm → never prune on uncertainty
+            try:
+                await cls.delete_by_id(ent.id)
+                logger.info("[subtree-sync] reconciled delete %s-%s (confirmed removed on hub)", child_type, ent.id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[subtree-sync] reconcile delete %s-%s failed (non-fatal): %s", child_type, ent.id, e)
 
 
 async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None) -> None:
@@ -2405,24 +2502,31 @@ async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None)
     hasn't arrived yet are simply skipped by the linker and picked up on the
     next sync pass — order no longer decides the outcome.
 
-    This is what lets a recipient who never watched the doc live still see the
-    doc + everyone's comments after a sync. Best-effort; never raises."""
+    This is what lets a recipient who never watched the doc/conversation live
+    still see everyone's comments after a sync. Best-effort; never raises."""
     try:
         conv = await Conversation.get_one({"id": conv_id})
-        if conv is None or not conv.shared_context_entities:
-            return  # nothing shared → no subtree to catch up (skip the hub GET)
-        # 1) Link each locally-present shared-context doc to this conversation
-        #    so its ``effective_remote`` resolves (the doc is NOT a hub entity —
-        #    the hub has no markdown type — its content arrives via the bundle
-        #    unpack). Reuses the same linker the share path runs; missing rows
-        #    are skipped (bundle not downloaded yet).
-        await conv._link_context_to_conversation()
-        # 2) Pull the conversation's hub child entities (comments today; each
-        #    carries its real doc parent in ``parent_type_id``). Materialize
-        #    new/changed ones locally.
+        if conv is None:
+            return
+        # 1) Link each locally-present shared-context doc to this conversation so
+        #    its ``effective_remote`` resolves (the doc is NOT a hub entity — its
+        #    content arrives via the bundle unpack). Only when docs are shared;
+        #    missing rows are skipped (bundle not downloaded yet).
+        if conv.shared_context_entities:
+            await conv._link_context_to_conversation()
+        # 2) ALWAYS pull the conversation's hub child entities (comments) +
+        #    reconcile — a conversation-direct comment needs no shared doc, and a
+        #    comment on a shared doc rides the hub under the conversation either
+        #    way (it carries its real doc parent in ``parent_type_id``). Driven by
+        #    the registry (``shared_child=True``), like the live bridge.
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
         conv_tid = TypeId(f"{BuiltinEntityType.CONVERSATION.value}-{conv_id}")
-        for child_type in _SHARED_CHILD_TYPES:
-            await _sync_remote_children(conv_tid, child_type, someone_typeid)
+        for child_type in SchemaRegistry.get_shared_child_types():
+            hub_ids = await _sync_remote_children(conv_tid, child_type, someone_typeid)
+            # Delete half: prune local children removed on the hub (the pull above
+            # only adds/updates), so a non-watching peer converges on deletions.
+            await _reconcile_deleted_children(conv, child_type, hub_ids, someone_typeid)
     except Exception as e:  # noqa: BLE001
         logger.warning("[subtree-sync] conv=%s failed (non-fatal): %s", conv_id, e)
 
@@ -2726,6 +2830,24 @@ async def _upsert_hub_conversation_metadata(
         return None
     if existing is _UNSET:
         existing = await Conversation.get_one({"id": conv_id})
+    # Receive-side address-book reconcile (rule 3): every conversation that syncs
+    # down from the hub upserts its roster into the address book. This is the
+    # passive path (conversation-list background sync, WS reflection) — the one
+    # that previously wrote participants onto the row but never learned contacts.
+    # Runs outside the remote_reflection() conv-save blocks below (contacts are
+    # independent local rows). Gated to a roster CHANGE (new conv, or the hub
+    # roster differs from what we've stored) so a steady-state re-sync of N
+    # conversations doesn't fan out N×M no-op contact upserts on this hot path.
+    # Best-effort: never fail a conv sync over it.
+    roster = hub_conv.get("participants")
+    if isinstance(roster, list) and roster:
+        norm_roster = _normalize_participants(roster)
+        if existing is None or (existing.participants or []) != norm_roster:
+            try:
+                await _learn_normalized_participants(norm_roster)
+            except Exception as learn_err:  # noqa: BLE001
+                logger.debug("[conv-upsert] address-book learn failed for conv=%s: %s",
+                             conv_id[:8], learn_err)
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
         for k in ("title", "participants", "remote_project_id", "remote_project_name", "shared_context_entities"):

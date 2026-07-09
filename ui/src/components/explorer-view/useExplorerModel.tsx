@@ -5,6 +5,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { allScope, projectScope, userScope, type ScopeFilter } from '@src/lib/scope-filter';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { fsFolderRoot } from '@src/components/browseable-tree/adapters/fsFolderRoot';
+import { contextFoldersRoot } from '@src/components/browseable-tree/adapters/contextFoldersRoot';
 import type { BrowseableRoot } from '@src/components/browseable-tree/types';
 import { useExplorerComputeNode } from './useExplorerComputeNode';
 
@@ -27,7 +28,7 @@ function explorerScopeMode(scope: ScopeFilter): ExplorerScopeMode {
  */
 export function useExplorerModel() {
   const { currentDock, navigation } = useDockNavigation();
-  const { typeId, anchorForScope, projectRootPath, projectAvailable, projectId, projectName } =
+  const { typeId, anchorForScope, projectRootPath, projectAvailable, projectId, projectName, contextDirs } =
     useExplorerComputeNode();
 
   const scope = useMemo<ScopeFilter>(() => currentDock?.scopeFilter ?? allScope(), [currentDock]);
@@ -60,10 +61,16 @@ export function useExplorerModel() {
 
   const roots = useMemo<BrowseableRoot[]>(() => {
     if (!typeId) return [];
-    return [
+    const list: BrowseableRoot[] = [
       fsFolderRoot({ typeId, anchorRelPath, scope, label: rootLabel, rootIcon, projectRootPath }),
     ];
-  }, [typeId, anchorRelPath, scope, rootLabel, rootIcon, projectRootPath]);
+    // Project context folders (include_dirs) get their own grouping root, shown
+    // whenever the current project has any — browseable like any FS root.
+    if (contextDirs.length > 0) {
+      list.push(contextFoldersRoot({ typeId, scope, dirs: contextDirs }));
+    }
+    return list;
+  }, [typeId, anchorRelPath, scope, rootLabel, rootIcon, projectRootPath, contextDirs]);
 
   const activePointer = currentDock ?? null;
 

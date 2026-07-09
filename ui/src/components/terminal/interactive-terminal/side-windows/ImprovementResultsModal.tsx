@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActionInfo, type FSRef, dataManager } from '@sdk';
+import { ActionInfo, GitWorkdir, type FSRef, dataManager } from '@sdk';
 import { extractBody } from '@sdk/fs/FrontMatterFsRef';
 import { Loader2, RotateCcw, Save } from 'lucide-react';
 import { AssetDiffTabs } from '@src/components/assets/editor/revisions/AssetDiffTabs';
@@ -53,19 +53,13 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
     setDiff(null);
     setError(null);
 
-    const gitGet = (subpath: string, params: Record<string, string>) => {
-      const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
-      action.subpath = subpath;
-      action.queryParameters = { workdir, file, ...params };
-      return action;
-    };
-
+    const git = new GitWorkdir(workdir, computeNodeId);
     Promise.all([
-      dataManager.callAction<null, { content: string }>(gitGet('show', { hash: 'HEAD' })),
+      git.show(file, 'HEAD'),
       skillFile.read(),
-      // HEAD-vs-working-tree (the uncommitted improvement); `revision-diff`
-      // only compares committed revisions, so the `diff` subpath is correct here.
-      dataManager.callAction<null, { diff: string }>(gitGet('diff', { status: 'M' })),
+      // HEAD-vs-working-tree (the uncommitted improvement); `revisionDiff`
+      // only compares committed revisions, so `fileDiff` is correct here.
+      git.fileDiff(file, 'M'),
     ])
       .then(([headRes, working, diffRes]) => {
         setOldContent(headRes?.content ?? '');
@@ -81,10 +75,7 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
   const reject = async () => {
     setBusy('reject');
     try {
-      const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'POST');
-      action.subpath = 'discard-file';
-      action.queryParameters = { workdir, file, status: 'M' };
-      const r = await dataManager.callAction<null, { ok: boolean; message: string }>(action);
+      const r = await new GitWorkdir(workdir, computeNodeId).discardFile(file, 'M');
       if (r && r.ok === false) {
         notify.error({ title: 'Could not discard', message: r.message || 'Discard failed' });
         return;

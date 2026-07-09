@@ -2,7 +2,6 @@ import asyncio
 import logging
 import re
 import subprocess
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -84,12 +83,7 @@ def git_repo_full_name(repo_path: str) -> str:
     return m.group(1) if m else ""
 
 
-def repo_id(repo_full_name: str) -> str:
-    """Return uuid5(NAMESPACE_DNS, 'repo:{repo_full_name}') — stable cross-machine repo identity."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"repo:{repo_full_name}"))
-
-
-def derive_repo_leaf_from_url(project_url: str) -> str:
+def derive_repo_leaf_from_url(clone_url: str) -> str:
     """Extract the repo folder name from a git URL.
 
     Handles https / ssh / scp-style git URLs:
@@ -98,9 +92,9 @@ def derive_repo_leaf_from_url(project_url: str) -> str:
       https://example.com/some/repo/   → repo
     Returns empty string when the URL has no usable trailing segment.
     """
-    if not project_url:
+    if not clone_url:
         return ""
-    leaf = project_url.strip().rstrip("/").split("/")[-1]
+    leaf = clone_url.strip().rstrip("/").split("/")[-1]
     # ssh form `git@host:owner/repo.git` leaves "owner/repo.git" or just "repo.git"
     if ":" in leaf and "/" not in leaf:
         leaf = leaf.split(":")[-1]
@@ -109,26 +103,26 @@ def derive_repo_leaf_from_url(project_url: str) -> str:
     return leaf
 
 
-def _url_matches(path: str, project_url: str) -> bool:
-    """Return True if the git repo at path has an origin URL matching project_url."""
+def _url_matches(path: str, clone_url: str) -> bool:
+    """Return True if the git repo at path has an origin URL matching clone_url."""
     try:
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
             cwd=path, capture_output=True, text=True, timeout=5,
         )
-        return result.returncode == 0 and result.stdout.strip() == project_url.strip()
+        return result.returncode == 0 and result.stdout.strip() == clone_url.strip()
     except Exception:
         return False
 
 
-def find_local_repo_for_url(project_url: str) -> Optional[str]:
-    """Find a local repo whose origin URL matches project_url.
+def find_local_repo_for_url(clone_url: str) -> Optional[str]:
+    """Find a local repo whose origin URL matches clone_url.
 
     Pass 1: Claude-registered projects (fast, authoritative).
     Pass 2: Immediate siblings of those projects — covers repos that exist
             on disk but were never opened in Claude.
     """
-    if not project_url:
+    if not clone_url:
         return None
 
     from pathlib import Path as _Path
@@ -138,7 +132,7 @@ def find_local_repo_for_url(project_url: str) -> Optional[str]:
 
     # Pass 1: Claude-registered projects
     for project_root in claude_paths:
-        if _url_matches(str(project_root), project_url):
+        if _url_matches(str(project_root), clone_url):
             return str(project_root)
 
     # Pass 2: siblings — scan one level inside each unique parent directory
@@ -152,7 +146,7 @@ def find_local_repo_for_url(project_url: str) -> Optional[str]:
             for sibling in parent.iterdir():
                 if not sibling.is_dir() or sibling == _Path(project_root):
                     continue
-                if (sibling / ".git").exists() and _url_matches(str(sibling), project_url):
+                if (sibling / ".git").exists() and _url_matches(str(sibling), clone_url):
                     return str(sibling)
         except OSError:
             continue
@@ -192,13 +186,13 @@ async def git_pull(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, 
         return False, f"Git pull error: {e}"
 
 
-async def git_clone(project_url: str, target_dir: str, branch: Optional[str] = None) -> Tuple[bool, str]:
-    """Clone project_url into target_dir, optionally checking out branch.
+async def git_clone(clone_url: str, target_dir: str, branch: Optional[str] = None) -> Tuple[bool, str]:
+    """Clone clone_url into target_dir, optionally checking out branch.
 
     Returns (success, message).
     """
     try:
-        cmd = ["git", "clone", project_url, target_dir]
+        cmd = ["git", "clone", clone_url, target_dir]
         if branch:
             cmd += ["--branch", branch]
 
@@ -208,11 +202,11 @@ async def git_clone(project_url: str, target_dir: str, branch: Optional[str] = N
         result = await asyncio.to_thread(_run, cmd)
         if result.returncode == 0:
             out = (result.stdout or result.stderr or "").strip()
-            logger.info("[git] clone %s into %s succeeded", project_url, target_dir)
+            logger.info("[git] clone %s into %s succeeded", clone_url, target_dir)
             return True, out or "Cloned successfully."
         else:
             err = (result.stderr or result.stdout or "").strip()
-            logger.warning("[git] clone %s FAILED: %s", project_url, err)
+            logger.warning("[git] clone %s FAILED: %s", clone_url, err)
             return False, f"Git clone failed: {err}"
     except Exception as e:
         logger.warning("[git] clone error: %s", e)

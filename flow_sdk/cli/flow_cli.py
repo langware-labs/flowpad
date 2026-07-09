@@ -965,6 +965,12 @@ app.add_typer(compute_app, name="compute")
 from flow_sdk.cli.commands.navigate_cmd import navigate_app
 app.add_typer(navigate_app, name="navigate")
 
+from flow_sdk.cli.commands.show_cmd import show_app
+app.add_typer(show_app, name="show")
+
+from flow_sdk.cli.commands.app_cmd import app_app
+app.add_typer(app_app, name="app")
+
 from flow_sdk.cli.commands.context_cmd import context_app
 app.add_typer(context_app, name="context")
 
@@ -983,8 +989,17 @@ app.add_typer(workflow_app, name="workflow")
 from flow_sdk.cli.commands.process_cmd import process_app
 app.add_typer(process_app, name="process")
 
+from flow_sdk.cli.commands.wizard_cmd import wizard_command
+app.command(
+    "wizard",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)(wizard_command)
+
 from flow_sdk.cli.commands.migrate_cmd import migrate_app
 app.add_typer(migrate_app, name="migrate")
+
+from flow_sdk.cli.commands.instance_cmd import instance_app
+app.add_typer(instance_app, name="instance")
 
 from flow_sdk.cli.commands.diagnose_cmd import diagnose_command
 # No positional MESSAGE arg — the issue is read at a prompt. allow_extra_args so

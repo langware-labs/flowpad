@@ -55,7 +55,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
         self._session_id = context.resume_session_id or context.session_id
-        argv, env = self._build_spawn(context)
+        argv, env, stdin = self._build_spawn(context, prompt)
         if argv is None:
             event = {
                 "type": "flowpad.error",
@@ -102,7 +102,10 @@ class CopilotCLIStreamWorker(AgenticWorker):
 
         try:
             assert self._proc.stdin is not None
-            stdin_prompt = prompt if prompt.endswith("\n") else f"{prompt}\n"
+            # stdin already carries any system-prompt addition (prepended by the
+            # options' sink); copilot just needs a trailing newline to submit.
+            base = stdin or ""
+            stdin_prompt = base if base.endswith("\n") else f"{base}\n"
             self._proc.stdin.write(stdin_prompt.encode("utf-8"))
             await self._proc.stdin.drain()
             self._proc.stdin.close()
@@ -175,12 +178,13 @@ class CopilotCLIStreamWorker(AgenticWorker):
     def _build_spawn(
         self,
         context: AgenticContext,
-    ) -> tuple[list[str] | None, dict[str, str]]:
+        prompt: str,
+    ) -> tuple[list[str] | None, dict[str, str], str | None]:
         # Discovered harness capability supplies the CLI's bin folder
         # (terminal-PATH resolution) — None ⇔ copilot is not installed.
         path_env = worker_path_env("copilot")
         if path_env is None:
-            return None, {}
+            return None, {}, None
 
         opts = CopilotCliOptions(
             workdir=context.workdir,
@@ -194,12 +198,18 @@ class CopilotCLIStreamWorker(AgenticWorker):
             json_stream=True,
             no_ask_user=True,
             allow_all=True,
+            no_custom_instructions=not bool(context.custom_instruction_dirs),
+            custom_instruction_dirs=list(context.custom_instruction_dirs or []),
         )
-        argv, env_from_opts = opts.to_spawn_args()
+        # Asset-backed system instructions ride COPILOT_CUSTOM_INSTRUCTIONS_DIRS;
+        # the legacy system_prompt_append path remains unused for new launches.
+        argv, env_from_opts, stdin = opts.to_spawn(
+            instruction=prompt, system_prompt_append=context.instructions
+        )
         env = dict(os.environ)
         env.update(path_env)  # capability bin-folder PATH prepend
         env.update(env_from_opts)
-        return argv, env
+        return argv, env, stdin
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
         if proc.stderr is None:

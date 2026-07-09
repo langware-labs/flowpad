@@ -1,4 +1,4 @@
-import { Project, TypeId } from '@sdk';
+import { Project, TypeId, type GitOrigin } from '@sdk';
 import { useCallback, useMemo } from 'react';
 import { useEntity } from './entity-hooks';
 import { useContext } from './useContext';
@@ -12,7 +12,7 @@ export function useProject(projectTypeId?: TypeId | null, options?: Parameters<t
   const { data: project, isLoading, error } = useEntity<Project>(effectiveProjectTypeId, { watch: true, ...options });
 
   const setupComputeNode = useCallback(
-    async (options?: { gitRemoteRepoUrl?: string; gitBranch?: string }) => {
+    async (options?: { gitOrigin?: GitOrigin | null }) => {
       if (!project) {
         throw new Error('Project is not available');
       }

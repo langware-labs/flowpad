@@ -24,6 +24,7 @@ export interface AnnotatorToolbarProps {
   onClear: () => void;
   onCancel: () => void;
   onSave: () => void;
+  submitLabel?: React.ReactNode;
 }
 
 export function AnnotatorToolbar({
@@ -37,6 +38,7 @@ export function AnnotatorToolbar({
   onClear,
   onCancel,
   onSave,
+  submitLabel,
 }: AnnotatorToolbarProps) {
   const { t } = useLingui();
 
@@ -97,9 +99,10 @@ export function AnnotatorToolbar({
           type="button"
           onClick={onSave}
           className="flex h-8 items-center gap-1 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+          data-testid="image-annotator-submit"
         >
           <Check className="h-4 w-4" />
-          {isDirty ? <Trans>Save</Trans> : <Trans>Attach</Trans>}
+          {submitLabel ?? (isDirty ? <Trans>Save</Trans> : <Trans>Attach</Trans>)}
         </button>
       </div>
     </div>

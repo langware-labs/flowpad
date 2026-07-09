@@ -136,21 +136,22 @@ Read the matching reference before making that kind of change:
 - **Deploying to Vercel + Supabase, Claude Code GitHub Action** →
   [references/deploy.md](references/deploy.md)
 
-## IMPORTANT: report running services to the user
+## IMPORTANT: show the running app to the user
 
-When running inside FlowPad / a flow workflow, you MUST report the services
-with `flow-result` tags after they are up — otherwise the user cannot see or
-control the app from the FlowPad interface:
+When running inside FlowPad, as soon as the frontend dev server is up, present
+it — this is what renders the live preview in the FlowPad display:
+
+```bash
+flow show webapp --port 3000
+```
+
+Run it exactly once (exit 0 = done). See the `flowpad-navigation` skill for the
+full show/navigate contract. Optionally, ALSO register the services as results
+(the results list / restart controls — not the display driver):
 
 ```
-Your web application is ready!
-
-<flow-result name="Web App" port="3000" ref_type="FOLDER" path="frontend" type="webapp" start-cmd="cd frontend && npm run dev" health="/" description="Next.js 16 frontend with Tailwind v4 + shadcn/ui" focus="web-app"/>
+<flow-result name="Web App" port="3000" ref_type="FOLDER" path="frontend" type="webapp" start-cmd="cd frontend && npm run dev" health="/" description="Next.js 16 frontend with Tailwind v4 + shadcn/ui"/>
 <flow-result name="API Server" port="8080" path="backend/main.py" type="app_service" start-cmd="cd backend && .venv/bin/uvicorn main:app --reload --port 8080" health="/api/health" description="FastAPI backend service"/>
-
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8080
 ```
 
-Attributes: `start-cmd` (restart command), `health` (health-check path),
-`port`. Outside FlowPad, just print the URLs.
+Outside FlowPad, just print the URLs (http://localhost:3000, :8080).

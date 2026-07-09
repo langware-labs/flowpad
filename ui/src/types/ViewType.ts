@@ -84,6 +84,21 @@ export interface ViewerMeta {
    * "is the strip shown?" bit, separate from `DockPointer.tabHash` ("is this a chip?").
    */
   chrome?: 'fullbleed' | 'workspace';
+  /**
+   * When true, every sub-pointer of this viewType folds into ONE tab — the
+   * pointer is dropped from tab identity (`DockPointer.tabHash`/`toJSON`). Use for
+   * views whose pointer is in-view sub-navigation (category/field) rather than a
+   * distinct entity, e.g. Preferences' category tabs. (Scope-keyed views fold
+   * too, but into one tab PER SCOPE — see `scopeKeyed`.)
+   */
+  foldsPointer?: boolean;
+  /**
+   * When true, tab identity is the SCOPE FILTER (one tab per project/user/global
+   * scope), not the sub-pointer: `tabHash` becomes `<viewType>|<scopeKey>` and
+   * `toJSON` persists the scope options so reopen restores it. Use for scoped
+   * browsers (Assets, Explorer) where in-tab navigation must stay in one chip.
+   */
+  scopeKeyed?: boolean;
 }
 
 export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
@@ -213,6 +228,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'FolderOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+    scopeKeyed: true,
   },
   // ViewType.SKILLS removed — Skills folded into the Assets browser
   // (/dock/assets/list/skill). The enum value is retained in the SDK for
@@ -274,6 +290,13 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.PREFERENCES]: {
+    title: 'Preferences',
+    iconName: 'Settings',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
   [ViewType.AGENTIC_PROCESS]: {
     title: 'Process',
     iconName: 'Monitor',
@@ -321,6 +344,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'BookOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+    scopeKeyed: true,
   },
   [ViewType.PROJECT]: {
     title: 'Collaboration',

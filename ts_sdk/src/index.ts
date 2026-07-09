@@ -20,6 +20,7 @@ export * from './main';
 export * from './models/index';
 export * from './resource_management/index';
 export * from './services/index';
+export * from './preferences/prefRegistry';
 export * from './stores/fsStore';
 export * from './stores/ontology-store';
 export * from './utils';

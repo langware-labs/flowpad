@@ -38,8 +38,27 @@ async function ensureAsset(page: Page, type: 'agent' | 'skill', name: string): P
   expect(idx.status(), `index ${type} after seed`).toBe(200);
 }
 
+/**
+ * Mark the workspace as indexed so the assets UI leaves its "never indexed"
+ * state: the project-view right panel then shows the "Select a type to browse"
+ * placeholder (not the "Build Index" CTA) and the tree roots carry populated
+ * counts. The project-view `neverIndexed` reads the PROJECT record's own `.hash`
+ * (AssetsPage: `useIndexStatus(projectScope)`), which a single-TYPE index does
+ * NOT write. A project-scoped index with NO type filter writes it — and since
+ * the default project is empty, it costs ~1s and never touches the machine's
+ * real ~/.claude corpus (a full unscoped rebuild would).
+ */
+async function markWorkspaceIndexed(page: Page): Promise<void> {
+  const projectId = await defaultProjectId(page);
+  const res = await page.request.post(
+    `/api/v1/graph/compute_node/@local/fs-records/index?projects=${projectId}&user=false&force=true`,
+  );
+  expect(res.status(), 'project index to clear never_indexed').toBe(200);
+}
+
 /** Guarantee at least one agent (tree target) and one skill (attach candidate). */
 export async function ensureAgentAndSkill(page: Page): Promise<void> {
   await ensureAsset(page, 'agent', 'qa-seed-agent');
   await ensureAsset(page, 'skill', 'qa-seed-skill');
+  await markWorkspaceIndexed(page);
 }

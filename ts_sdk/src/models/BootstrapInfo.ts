@@ -129,6 +129,25 @@ export interface BootstrapInfo {
   sniffer_hook?: AgentHook;
   scan_info?: ScanInfo;
   records_root?: string;
+  /** Locales the app ships translations for (backend is the source of truth).
+   *  The UI derives its picker from this — it does not hardcode a list. */
+  supported_locales?: SupportedLocale[];
   /** One-time startup notice (e.g. secrets were reset). Absent normally. */
   notice?: BootstrapNotice;
+}
+
+/** A locale the app ships translations for. Mirrors the backend descriptor in
+ *  flow_sdk/i18n/supported_locales.py; the UI aliases this as `LocaleInfo`. */
+export interface SupportedLocale {
+  /** BCP-47-ish code used as the catalog key and `<html lang>`. */
+  code: string;
+  /** English name (for secondary label / search). */
+  englishName: string;
+  /** Endonym — the language's own name. */
+  nativeName: string;
+  /** Text direction; drives `<html dir>`. */
+  dir: 'ltr' | 'rtl';
+  /** ISO 3166-1 alpha-2 region for the flag-icons SVG (language≠country; this
+   *  is a chosen representative region, not a linguistic claim). */
+  flag: string;
 }

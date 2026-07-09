@@ -11,13 +11,21 @@
  * entirely (the image is NOT attached and the caller does nothing further).
  */
 import { useSyncExternalStore } from 'react';
+import type { ReactNode } from 'react';
 import { notify } from '@src/notifications';
 import { ImageAnnotator } from './ImageAnnotator';
+
+interface AnnotateImageOptions {
+  submitLabel?: ReactNode;
+  onSubmit?: (file: File) => Promise<void> | void;
+}
 
 interface AnnotatorState {
   open: boolean;
   file: File | null;
   resolve: ((result: File | null) => void) | null;
+  submitLabel?: ReactNode;
+  onSubmit?: (file: File) => Promise<void> | void;
 }
 
 let state: AnnotatorState = { open: false, file: null, resolve: null };
@@ -49,12 +57,12 @@ function settle(result: File | null) {
  * Open the annotator for `file` and resolve once the user saves or dismisses.
  * Resolves with the flattened PNG on Save, or `null` on Cancel (abort).
  */
-export function annotateImage(file: File): Promise<File | null> {
+export function annotateImage(file: File, options: AnnotateImageOptions = {}): Promise<File | null> {
   // A second call while one is open would orphan the first promise — cancel it
   // (resolve null) so nothing hangs.
   if (state.open) state.resolve?.(null);
   return new Promise<File | null>((resolve) => {
-    state = { open: true, file, resolve };
+    state = { open: true, file, resolve, ...options };
     emit();
   });
 }
@@ -79,13 +87,28 @@ async function writeImageToClipboard(blob: Promise<Blob>): Promise<void> {
 }
 
 export function ImageAnnotatorRoot() {
-  const { open, file } = useSyncExternalStore(subscribe, getSnapshot);
+  const { open, file, submitLabel, onSubmit } = useSyncExternalStore(subscribe, getSnapshot);
   return (
     <ImageAnnotator
       open={open}
       file={file}
+      submitLabel={submitLabel}
       onClipboard={(blob) => void writeImageToClipboard(blob)}
-      onSave={(annotated) => settle(annotated)}
+      onSave={(annotated) => {
+        if (!onSubmit) {
+          settle(annotated);
+          return;
+        }
+        void Promise.resolve(onSubmit(annotated))
+          .then(() => settle(annotated))
+          .catch((err) => {
+            notify.error({
+              title: 'Annotation not submitted',
+              message: err instanceof Error ? err.message : String(err),
+            });
+            settle(null);
+          });
+      }}
       onCancel={() => {
         // Dismissed without saving → abort: resolve null so the capture is
         // dropped entirely (image not attached, caller does nothing further).

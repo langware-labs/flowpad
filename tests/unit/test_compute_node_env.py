@@ -1,105 +1,108 @@
+"""Compute-node environment variables — real tests.
+
+Drives the public Python provider API (`LocalComputeProvider`):
+
+- `run_command(env=[FlowEnv(...)])` injects vars inline for a single command
+  (no persistence, no rc-file writes);
+- `set_env(name, value)` persists a var to the shell rc file, `set_env(name, None)`
+  removes it, and re-setting updates it — verified by reading the rc file back.
+
+The `set_env` tests redirect `$HOME` to a tmp dir so they never touch the real
+`~/.bashrc`. No mocks — real subprocesses via the real provider.
 """
-Compute Node Environment Variable Tests (adapted from FlowPad).
 
-Tests environment variable management on compute nodes including:
-- Setting and reading environment variables
-- Removing variables via None
-- Updating existing variables
-- Special characters in values
-- Cross-platform handling (Windows/Unix)
-
-Original tests from FlowPad:
-<hub checkout>/flowpad/hub/tests/unit/test_compute_node_env.py
-"""
-
-import os
-import sys
 import pytest
 
+from flow_sdk.core.flow.models.execution.env_context import FlowEnv
 
-@pytest.mark.asyncio
-async def test_environment_variable_placeholder():
-    """Placeholder test - environment variable management.
-
-    Tests setting and reading environment variables on compute nodes across different providers.
-
-    Original test from FlowPad (lines 34-76):
-    - Sets a test environment variable
-    - Runs Python to read it back
-    - Verifies the value matches
-    - Handles Windows/Unix differences
-    """
-    assert True  # Placeholder
+from tests.unit.conftest import node, py_command as _py  # noqa: F401
 
 
 @pytest.mark.asyncio
-async def test_run_command_with_env_parameter_placeholder():
-    """Placeholder test - passing environment variables to run_command.
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_run_command_env_visible_to_child(node):
+    """A var passed via `run_command(env=[...])` is visible to the child process."""
+    provider, node_id = node
+    env = [FlowEnv(name="FLOWPAD_ENV_PROBE", value="hello-42")]
+    read_back = _py("import os,sys; sys.stdout.write(os.environ.get('FLOWPAD_ENV_PROBE',''))")
 
-    Tests that run_command correctly passes environment variables to the compute node.
+    cmd = await provider.run_command(node_id, read_back, background=False, env=env)
 
-    Original test from FlowPad (lines 79-85):
-    - Creates a FlowEnv with API_KEY type
-    - Passes it to run_command
-    - Verifies the variable is available in the executed Python process
-    """
-    assert True  # Placeholder
-
-
-@pytest.mark.asyncio
-async def test_set_env_basic_placeholder():
-    """Placeholder test - basic set_env functionality.
-
-    Tests that set_env correctly sets environment variables that persist
-    across command invocations via shell rc file sourcing.
-
-    Original test from FlowPad (lines 88-106):
-    - Calls set_env with a variable and value
-    - Reads it back by sourcing the shell rc file
-    - Verifies persistence
-    - Tests across different compute providers (Local, E2B)
-    """
-    assert True  # Placeholder
+    assert cmd.exit_code == 0
+    assert cmd.all_stdout.strip() == "hello-42"
 
 
 @pytest.mark.asyncio
-async def test_set_env_remove_placeholder():
-    """Placeholder test - removing environment variables via None.
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_run_command_env_does_not_persist(node):
+    """The inline-env prefix affects only that one command, not later ones."""
+    provider, node_id = node
+    env = [FlowEnv(name="FLOWPAD_ENV_ONESHOT", value="present")]
+    read_back = _py("import os,sys; sys.stdout.write(os.environ.get('FLOWPAD_ENV_ONESHOT','<unset>'))")
 
-    Tests that passing None to set_env removes the variable.
+    first = await provider.run_command(node_id, read_back, background=False, env=env)
+    assert first.all_stdout.strip() == "present"
 
-    Original test from FlowPad (lines 109-128):
-    - Sets an environment variable
-    - Removes it by calling set_env with None
-    - Verifies the variable is no longer available
-    """
-    assert True  # Placeholder
-
-
-@pytest.mark.asyncio
-async def test_set_env_update_placeholder():
-    """Placeholder test - updating existing environment variables.
-
-    Tests that set_env can update previously set variables with new values.
-
-    Original test from FlowPad (lines 131-151):
-    - Sets initial environment variable value
-    - Updates it with a new value
-    - Verifies the update persists
-    """
-    assert True  # Placeholder
+    second = await provider.run_command(node_id, read_back, background=False)
+    assert second.all_stdout.strip() == "<unset>"
 
 
 @pytest.mark.asyncio
-async def test_set_env_special_characters_placeholder():
-    """Placeholder test - special characters in environment variable values.
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_set_env_persists_to_rc(node, tmp_path, monkeypatch):
+    """`set_env` writes an `export` line to the (HOME-isolated) rc file."""
+    provider, node_id = node
+    monkeypatch.setenv("HOME", str(tmp_path))
 
-    Tests that environment variables with special characters
-    (spaces, quotes, etc.) are properly handled.
+    await provider.set_env(node_id, "FLOWPAD_PERSIST", "persisted_value")
 
-    Original test from FlowPad (lines 154-172):
-    - Sets variable with spaces and single quotes
-    - Reads it back
-    - Verifies exact value match
-    """
-    assert True  # Placeholder
+    rc = tmp_path / ".bashrc"
+    assert rc.exists()
+    assert "export FLOWPAD_PERSIST='persisted_value'" in rc.read_text()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_set_env_remove(node, tmp_path, monkeypatch):
+    """`set_env(name, None)` removes a previously-set export line."""
+    provider, node_id = node
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    await provider.set_env(node_id, "FLOWPAD_REMOVE_ME", "temp")
+    rc = tmp_path / ".bashrc"
+    assert "export FLOWPAD_REMOVE_ME=" in rc.read_text()
+
+    await provider.set_env(node_id, "FLOWPAD_REMOVE_ME", None)
+    assert "export FLOWPAD_REMOVE_ME=" not in rc.read_text()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_set_env_update(node, tmp_path, monkeypatch):
+    """Re-setting an existing var replaces the old export line, not appends."""
+    provider, node_id = node
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    await provider.set_env(node_id, "FLOWPAD_UPDATE", "v1")
+    await provider.set_env(node_id, "FLOWPAD_UPDATE", "v2")
+
+    rc_text = (tmp_path / ".bashrc").read_text()
+    assert "export FLOWPAD_UPDATE='v2'" in rc_text
+    assert "export FLOWPAD_UPDATE='v1'" not in rc_text
+    assert rc_text.count("export FLOWPAD_UPDATE=") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_set_env_special_characters(node, tmp_path, monkeypatch):
+    """Values with spaces and single quotes round-trip into the rc file."""
+    provider, node_id = node
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    value = "a b 'c' d"
+    await provider.set_env(node_id, "FLOWPAD_SPECIAL", value)
+
+    rc_text = (tmp_path / ".bashrc").read_text()
+    # get_set_env_cmd escapes ' as '\'' inside a single-quoted export.
+    escaped = value.replace("'", "'\\''")
+    assert f"export FLOWPAD_SPECIAL='{escaped}'" in rc_text

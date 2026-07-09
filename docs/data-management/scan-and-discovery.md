@@ -279,6 +279,20 @@ recent = q.apply(all_sessions)
 
 ---
 
+## When Does Indexing Run
+
+There is **no filesystem-watcher-triggered indexer walk** — a file changing on disk does not start a scan. Indexing runs only on these paths:
+
+| Trigger | What runs | Source |
+|---|---|---|
+| **Explicit request** (UI refresh button, `flow record index`, API call) | `FSIndexer.index()` via `POST /fs-records/index` and the sibling scan endpoints below | `flow_sdk/builtin/faas/fs_records_actions.py` |
+| **Server startup** (once per process, detached background task) | System content only: system projects, their markdown docs, and the SDK-shipped assistant assets (hash-gated, skipped if another index is running). Never inline in the bootstrap request. | `flow_sdk/server/app.py` (`_start_system_content_index`) → `flow_sdk/server/routes/bootstrap.py` (`index_system_content`) |
+| **GET-time lazy refresh** (per entity) | If the record's `index_required` says the source changed, re-run `sync_to_db()` + stamp the sentinel — one record, no walk | `Entity.check_and_refresh_record()` (`flow_sdk/core/entity/entity_model.py`) |
+| **404 self-heal** (dock loader) | A single-file, single-type forced index when a navigation carries `?hint_path=` for an entity the DB doesn't have | `_try_self_heal_missing_entity` (`flow_sdk/app/actions/graph.py`) → `flow_sdk/fs_store/transcript_indexer/handlers/single_file_indexers.py` |
+| **Resource-browser scans** | Read-only `FSIndexer.scan()` projections (no DB writes) | `flow_sdk/builtin/faas/scan_indexer.py` |
+
+The deliberate absence of auto-indexing is a product decision: walks are user-visible work (progress pill) and only start on an explicit click or the narrow startup/system scope above.
+
 ## Scan & Index API Endpoints
 
 ### fs-records actions (ComputeNode)

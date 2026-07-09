@@ -117,20 +117,23 @@
  * leaving the quote bar / list bullet on the wrong (visual-left) side
  * inside a mixed-direction document.
  *
- * `:has()` lets the container pick up the inner paragraph's `dir`
- * attribute purely in CSS. The container's `direction` property then
- * cascades through `border-inline-start`, `padding-inline-start`, and
- * `::marker` placement, so the quote bar / bullet flips automatically.
+ * `:has()` + `:dir()` let the container pick up the inner paragraph's
+ * *resolved* direction purely in CSS — covering both an explicit
+ * `dir="rtl"/"ltr"` override and the default `dir="auto"` (resolved from
+ * the paragraph's first strong character). The container's `direction`
+ * property then cascades through `border-inline-start`,
+ * `padding-inline-start`, and `::marker` placement, so the quote bar /
+ * bullet flips automatically.
  *
- * Supported in Chrome 105+, Safari 15.4+, Firefox 121+ — all of our
- * targets. No JS required.
+ * `:has()` in Chrome 105+ / Safari 15.4+ / Firefox 121+, `:dir()` in
+ * Chrome 120+ / Safari 16.4+ / Firefox 49+ — all of our targets. No JS.
  */
-.milkdown-editor-wrapper .ProseMirror blockquote:has(> p[dir="rtl"]),
-.milkdown-editor-wrapper .ProseMirror li:has(> p[dir="rtl"]) {
+.milkdown-editor-wrapper .ProseMirror blockquote:has(> p:dir(rtl)),
+.milkdown-editor-wrapper .ProseMirror li:has(> p:dir(rtl)) {
   direction: rtl;
 }
-.milkdown-editor-wrapper .ProseMirror blockquote:has(> p[dir="ltr"]),
-.milkdown-editor-wrapper .ProseMirror li:has(> p[dir="ltr"]) {
+.milkdown-editor-wrapper .ProseMirror blockquote:has(> p:dir(ltr)),
+.milkdown-editor-wrapper .ProseMirror li:has(> p:dir(ltr)) {
   direction: ltr;
 }
 
@@ -207,11 +210,11 @@
 }
 
 /* Default: hide all floating handles + button groups. */
-.milkdown-editor-wrapper .milkdown-table-block [data-show="false"] {
+.milkdown-editor-wrapper .milkdown-table-block [data-show='false'] {
   display: none !important;
 }
 
-.milkdown-editor-wrapper .milkdown-table-block [data-show="true"] {
+.milkdown-editor-wrapper .milkdown-table-block [data-show='true'] {
   display: flex;
 }
 

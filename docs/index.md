@@ -8,7 +8,7 @@ parent_ref: ''
 vault_root: /Users/alice/Documents/dev/flowpad-oss/docs
 generated_at: '2026-05-24T19:22:27.484827'
 latest_process_ref: agentic_process-synthetic
-file_count: '30'
+file_count: '31'
 subfolder_count: '2'
 ---
 
@@ -56,6 +56,8 @@ subfolder_count: '2'
 
 * [Llm Wiki](llm_wiki.md) — Synthetic placeholder summary for llm\_wiki.md (18562 bytes).
 
+* [MCP UI](mcp-ui.md) — Architecture for rendering `.mcp.html` MCP Apps in the Vibe display, including dock URL vs resource URI vs sandbox URL boundaries.
+
 * [Playwright Usage](playwright-usage.md) — Synthetic placeholder summary for playwright-usage.md (1184 bytes).
 
 * [Pty Sync](pty-sync.md) — Synthetic placeholder summary for pty-sync.md (18850 bytes).
@@ -80,6 +82,10 @@ subfolder_count: '2'
 
 ## Subfolders
 
+* [collab/](collab/index.md) — Collaboration subsystem: conversations, messages, attachments, sharing, invites, participants, sender identity, and hub fan-out.
+
 * [agent-management/](agent-management/index.md) — Subtree under agent-management/ — see drilled-down index for details.
+
+* [interface/](interface/README.md) — Complete interface reference for the agentic-process stack: Python objects & APIs, backend actions → Python mapping, TS objects, rules & invariants, test-derived flows.
 
 * [data-management/](data-management/index.md) — Subtree under data-management/ — see drilled-down index for details.

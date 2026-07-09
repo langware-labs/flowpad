@@ -79,8 +79,10 @@ async function retryStart(processId: string): Promise<boolean> {
  * Explicit user retry of a failed-to-start process. ``retry: true`` is what
  * clears the server-side ``start_failure`` latch — a plain ``start()`` would
  * be refused (that refusal is the loop-breaker; only a user click re-arms).
+ * Exported: the shell-less panel dead-end (`TerminalPanelErrorState`) shares
+ * this exact recovery, so the retry semantics live in one place.
  */
-async function retryFailedStart(processId: string): Promise<boolean> {
+export async function retryFailedStart(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
     notify.error({ title: 'Couldn’t resolve this process.', id: `terminal-recover:${processId}` });

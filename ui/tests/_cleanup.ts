@@ -60,7 +60,20 @@ import { afterAll, afterEach } from 'vitest';
 export const TEST_ENTITY_PREFIX = 'e2etest-';
 
 // Per-process run id so concurrent/sequential files don't collide on names.
-const RUN_ID = Date.now().toString(36);
+//
+// Uniqueness is load-bearing: two files that mint the SAME skill name share ONE
+// on-disk folder (~/.claude/skills/<name>/), and the backend's `POST /graph/skill`
+// is not idempotent by folder path — a second create for an existing folder mints
+// a DUPLICATE entity that neither file's registry tracks, so it survives teardown
+// and reds the leak detector.
+//
+// `Date.now()` ALONE is insufficient: the forks pool (vitest `pool: 'forks'`)
+// pre-warms every child at once, so all setup modules evaluate within the SAME
+// millisecond and every fork gets an identical `Date.now()`. Mix in the pid (unique
+// per fork) plus a random suffix so the run id is unique even under simultaneous
+// same-ms warmup.
+const _pid = typeof process !== 'undefined' && process.pid ? process.pid : 0;
+const RUN_ID = `${Date.now().toString(36)}${_pid.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 let _seq = 0;
 
 /** `e2etest-<kind>-<runId>-<seq>` — unique, sweep-identifiable test entity name. */
@@ -146,11 +159,76 @@ export async function purgeTracked(): Promise<void> {
   }
 }
 
+type Row = { name?: string; title?: string; nodeName?: string; id?: string };
+
+/** Display label a type exposes (skill→name, conversation→title, agentic_process→nodeName). */
+function labelOf(r: Row): string {
+  if (typeof r?.name === 'string') return r.name;
+  if (typeof r?.title === 'string') return r.title;
+  if (typeof r?.nodeName === 'string') return r.nodeName;
+  return '';
+}
+
+/** List a graph type; [] on any hiccup (never fails the caller on the lookup itself). */
+async function listType(sdk: SdkLike, type: string): Promise<Row[]> {
+  try {
+    const data = (await sdk.apiClient.get(`${sdk.GRAPH_API_PREFIX}/${type}`)) as unknown;
+    return (Array.isArray(data) ? data : ((data as { data?: unknown[] })?.data as Row[])) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** The set of types the sweep must cover: tracked ∪ declared sweep ∪ extras. */
+function sweepTypeSet(extraTypes: string[] = []): Set<string> {
+  return new Set<string>([...extraTypes, ..._trackedTypes, ..._sweepTypes]);
+}
+
+/** True iff a label is a test entity minted by THIS file's `testEntityName` (carries our RUN_ID). */
+function isOurRunEntity(label: string): boolean {
+  return label.startsWith(TEST_ENTITY_PREFIX) && label.includes(RUN_ID);
+}
+
 /**
- * Leak detector: query the live backend for any entity whose label carries the
- * test marker and throw if any survive. Sweeps the union of `extraTypes`, every
- * type actually tracked this file, and any declared tripwire types — so it
- * can't be blind to a type just because a hardcoded list wasn't updated.
+ * Purge every backend entity minted by THIS file that survives after the tracked
+ * purge — matched by name (this file's RUN_ID), not by the (now-drained)
+ * registry. This is the real teardown net: it catches entities that were created
+ * but never `trackForCleanup`'d AND rows the backend RE-MATERIALISED after the
+ * tracked delete.
+ *
+ * Why re-materialisation happens: opening a skill/analysis in the app fires
+ * `useEntityByPath` → `discoverByPath`, which kicks a single-type skill re-index.
+ * If that walk read the skill folder BEFORE `afterEach` deleted the row+folder,
+ * it finishes AFTER and `sync_to_db`'s the row back (same frontmatter id). The
+ * per-test `purgeTracked` already ran and drained the registry, so nothing
+ * re-deletes that row — it survives to the leak sweep. Scanning by RUN_ID (not
+ * the registry) and purging in `afterAll` closes that window: the folder is gone,
+ * so no further walk can re-create it once we delete this row.
+ */
+export async function purgeRunScoped(extraTypes: string[] = []): Promise<void> {
+  const sdk = await loadSdk();
+  if (!sdk) return;
+  for (const type of sweepTypeSet(extraTypes)) {
+    for (const r of await listType(sdk, type)) {
+      if (isOurRunEntity(labelOf(r)) && r.id) {
+        await purgeOne(sdk, type, r.id);
+      }
+    }
+  }
+}
+
+/**
+ * Leak detector: query the live backend and throw if any entity minted by THIS
+ * file (test marker + this file's RUN_ID) survived teardown. Sweeps the union of
+ * `extraTypes`, every type tracked this file, and declared tripwire types — so it
+ * can't go blind to a type a hardcoded list forgot.
+ *
+ * Scoped to this file's RUN_ID on purpose: the backend is SHARED across the
+ * per-file forks, so a neighbour file's in-flight or transient-residue entity
+ * must never red — nor be deleted by — an unrelated file. A neighbour is the
+ * single writer of its own entities; we only ever assert on / purge OUR run's.
+ * A genuine un-purgeable leak of THIS file's entities (a delete that doesn't
+ * stick, a product bug) still throws — so it is not a no-op.
  *
  * No-ops silently when no backend/realm is reachable (soft-skipped runs) — a
  * skip must never red the suite.
@@ -158,29 +236,11 @@ export async function purgeTracked(): Promise<void> {
 export async function assertNoLeaks(extraTypes: string[] = []): Promise<void> {
   const sdk = await loadSdk();
   if (!sdk) return;
-  const types = new Set<string>([...extraTypes, ..._trackedTypes, ..._sweepTypes]);
   const leaked: string[] = [];
-  for (const type of types) {
-    let rows: Array<{ name?: string; title?: string; nodeName?: string; id?: string }> = [];
-    try {
-      const data = (await sdk.apiClient.get(`${sdk.GRAPH_API_PREFIX}/${type}`)) as unknown;
-      rows = Array.isArray(data) ? data : ((data as { data?: unknown[] })?.data as typeof rows) ?? [];
-    } catch {
-      continue; // type not listable / backend hiccup — don't fail on the detector itself
-    }
-    for (const r of rows) {
-      // Types label their display field differently (skill→name,
-      // conversation→title, agentic_process→nodeName).
-      const label =
-        typeof r?.name === 'string'
-          ? r.name
-          : typeof r?.title === 'string'
-            ? r.title
-            : typeof r?.nodeName === 'string'
-              ? r.nodeName
-              : '';
-      if (label.startsWith(TEST_ENTITY_PREFIX)) {
-        leaked.push(`${type}:${label} (${r.id ?? '?'})`);
+  for (const type of sweepTypeSet(extraTypes)) {
+    for (const r of await listType(sdk, type)) {
+      if (isOurRunEntity(labelOf(r))) {
+        leaked.push(`${type}:${labelOf(r)} (${r.id ?? '?'})`);
       }
     }
   }
@@ -216,6 +276,11 @@ export function installCleanup(opts: { sweepTypes?: string[] } = {}): void {
 
   afterAll(async () => {
     await purgeTracked(); // anything tracked at file scope (beforeAll creates)
+    // Sweep this file's residue by name (RUN_ID) — catches untracked creates AND
+    // rows the backend re-materialised after the tracked delete (see
+    // purgeRunScoped). Runs BEFORE the assert so the assert only fires on
+    // genuinely un-purgeable leaks.
+    await purgeRunScoped();
     await assertNoLeaks();
   });
 }

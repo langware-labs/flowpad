@@ -17,8 +17,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 
-from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.progress_table import (
     PROGRESS_TEXT_COMPLETE,
     IndexProgressTable,
@@ -27,7 +27,6 @@ from flow_sdk.fs_store.indexer.progress_table import (
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.server.search_filters import SCOPED_RECORD_TYPES, ScopeFilter
-
 
 # DFS waypoints the walker visits to reach leaf record types. Either they
 # don't materialize records at all (USER_HOME_FOLDER, SYSTEM_ROOT, FOLDER,
@@ -191,6 +190,7 @@ def _read_disk_record_scope(
     cross-scope).
     """
     import json  # noqa: PLC0415
+
     from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
         get_default_records_root,
         record_stem,
@@ -431,8 +431,9 @@ class FSIndexer:
             targets = [r for r in refs if r.record_type in target_set]
 
         # Imports localized to break cycles
+        from flow_sdk.db import get_db_driver
+        from flow_sdk.db import session as _db_session
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
-        from flow_sdk.db import get_db_driver, session as _db_session
 
         # Skip-fresh is entirely on-disk: it reads each record's own ``.hash``
         # sentinel (``index_required``). The per-record index loop makes ZERO
@@ -571,6 +572,25 @@ class FSIndexer:
                 )
                 existing_db_ids.clear()
 
+        # Deepest-project-wins association: snapshot (canonical_mount, id) for
+        # every project once per run. With NESTED project mounts (an umbrella
+        # workspace folder that is itself a Project), the outer root's walk
+        # reaches the inner project's files too — chain-inherited project_id
+        # would stamp them with the umbrella. The snapshot lets the stamp site
+        # re-associate each record to the innermost mount containing its path.
+        from flow_sdk.fs_store.indexer.roots import (  # noqa: PLC0415
+            deepest_project_id_for_path,
+            has_nested_project_mounts,
+            load_project_mounts,
+        )
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+        project_mounts = await load_project_mounts()
+        # No nesting anywhere → every walk root's own project is already the
+        # deepest containing mount, so drop the snapshot and let the stamp
+        # site stay a straight chain-inherit (no per-record realpath).
+        if not has_nested_project_mounts(project_mounts):
+            project_mounts = ()
+
         async def _flush_fts() -> None:
             """Flush the accumulated FTS batch (if any) and reset it."""
             if not fts_batch:
@@ -695,6 +715,19 @@ class FSIndexer:
                         # Loop-invariant — read once, stamp on each record.
                         ref_scope = ref.scope
                         ref_pid = ref.project_id
+                        if ref_pid is not None and project_mounts:
+                            # Association rule: deepest project wins. The walk
+                            # root's project may be an umbrella containing a
+                            # nested project — re-associate to the innermost
+                            # mount that contains this record's path.
+                            try:
+                                ref_pid = deepest_project_id_for_path(
+                                    canonical_posix_path(str(ref._path)),
+                                    project_mounts,
+                                    default=ref_pid,
+                                )
+                            except OSError:
+                                pass
                         for rec in records:
                             if ref_scope is not None:
                                 object.__setattr__(rec, "scope", ref_scope)

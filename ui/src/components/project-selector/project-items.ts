@@ -1,5 +1,6 @@
 import type { ProjectListItem } from '@sdk';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { projectRecencyMs } from '@src/lib/project-recency';
 import type { ProjectSelectorItem } from './ProjectSelector';
 import { canonicalPath } from './use-ensure-project';
 
@@ -17,5 +18,6 @@ export function projectListToSelectorItems(projects: ProjectListItem[]): Project
       name: getProjectDisplayName(p),
       path: p.cwd,
       modifiedAt: p.modified_at ?? null,
+      recencyMs: projectRecencyMs(p),
     }));
 }

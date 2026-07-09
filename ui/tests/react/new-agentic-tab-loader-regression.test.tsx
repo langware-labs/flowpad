@@ -24,6 +24,8 @@ import {
   ComputeNode,
   ComputeProviderType,
   connectionManager,
+  ContextEntitiesEnum,
+  dataContext,
   dataManager,
   Project,
   Shell,
@@ -304,12 +306,21 @@ describe('new agentic-process loader handoff', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
     applyAllTabs([]);
     resetTabLifecycleForTests();
     (capabilityManager as unknown as { capabilities: Capability[] }).capabilities = [];
     (connectionManager as unknown as { socket: unknown }).socket = null;
+    // Reset the shared dataContext the loader mutated (active shell/target +
+    // current project). These are process-wide singletons; without clearing them
+    // a following loader-integration test in the SAME worker inherits this test's
+    // active terminal target and its resolveActive picks the stale process instead
+    // of materializing the freshly-opened one (cross-test contamination — each
+    // test passes in isolation but the second-to-run fails in the suite).
+    dataContext.setActiveShellId('');
+    dataContext.setActiveTerminalTargetTypeId(null);
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   });
 
   it('clicking the real Claude opener renders the newly materialized process tab', async () => {

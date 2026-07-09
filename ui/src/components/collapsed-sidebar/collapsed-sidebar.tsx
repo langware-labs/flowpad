@@ -12,6 +12,12 @@ import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, 
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { useLingui } from '@lingui/react/macro';
+
+/**
+ * The collapsed icon rail's fixed width (Tailwind class). Single source of truth so
+ * the Vibe-mode spacer that reserves this footprint (flow-page.tsx) can't drift.
+ */
+export const RAIL_WIDTH_CLASS = 'w-[50px]';
 import {
   ArrowLeft,
   BadgeCheck,
@@ -50,7 +56,11 @@ import { useLocation, useNavigate } from 'react-router';
 // matrix. The hierarchy is dev > advanced > standard; keep each row monotonic
 // (a higher mode never shows less than a lower one).
 type NavVisibility = 'visible' | 'collapsed' | 'hidden';
-type NavVisMap = Record<ViewMode, NavVisibility>;
+// Keyed by the three "core" modes. Vibe (the simplest skin) reuses Standard's
+// already-minimal visibility — see `effectiveMode` below — so the rail needs no
+// per-item Vibe column.
+type CoreViewMode = ViewMode.Standard | ViewMode.Advanced | ViewMode.Dev;
+type NavVisMap = Record<CoreViewMode, NavVisibility>;
 
 const ALL_VISIBLE: NavVisMap = {
   [ViewMode.Standard]: 'visible',
@@ -125,8 +135,16 @@ export function CollapsedSidebar() {
 
   // Partition the nav config by the current view mode: 'visible' items ride the
   // top rail, 'collapsed' items live behind the chevron expander, 'hidden' drop.
-  const visibleItems = navItems.filter((item) => item.vis[viewMode] === 'visible');
-  const collapsedItems = navItems.filter((item) => item.vis[viewMode] === 'collapsed');
+  // Vibe is the stripped creator skin: its rail keeps only the top navigation
+  // (the back/refresh row, always rendered below) + a Home button, plus the
+  // shared bottom cluster (search / assistant / theme / user login). Everything
+  // in between (Chats, Inbox, Assets, …) is dropped.
+  const isVibe = viewMode === ViewMode.Vibe;
+  const effectiveMode: CoreViewMode = isVibe ? ViewMode.Standard : viewMode;
+  const visibleItems = isVibe
+    ? navItems.filter((item) => item.viewType === null) // Home only
+    : navItems.filter((item) => item.vis[effectiveMode] === 'visible');
+  const collapsedItems = isVibe ? [] : navItems.filter((item) => item.vis[effectiveMode] === 'collapsed');
 
   const currentView = currentDock?.viewType;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
@@ -135,7 +153,13 @@ export function CollapsedSidebar() {
     (viewType: ViewType | null) => {
       if (viewType === null) {
         if (import.meta.env.DEV) (window as Record<string, unknown>).__homeNavT0 = performance.now();
-        if (currentView) void navigate('/');
+        // Guard on the LIVE browser URL: navigation.openDock commits via raw
+        // pushState, which React Router's location can lag — currentView reads
+        // stale-falsy on a real dock URL and would swallow this navigation.
+        // TODO(nav): fix at the root — commit through the router in
+        // NavigationActions (or reconcile currentDock against window.location in
+        // use-navigation-state) so ALL consumers stop seeing stale locations.
+        if (window.location.pathname !== '/') void navigate('/');
       } else {
         if (import.meta.env.DEV && viewType === ViewType.SHELL) {
           (window as Record<string, unknown>).__shellNavT0 = performance.now();
@@ -155,7 +179,7 @@ export function CollapsedSidebar() {
         navigation.openTab(viewType);
       }
     },
-    [currentView, navigate, navigation],
+    [navigate, navigation],
   );
 
   const renderNavItem = (
@@ -186,7 +210,7 @@ export function CollapsedSidebar() {
   };
 
   return (
-    <Sidebar collapsible="none" className="flex w-[50px] flex-col border-r">
+    <Sidebar collapsible="none" className={`flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
       <SidebarContent className="flex-1">
         <SidebarGroup className="px-0 py-2">
           <SidebarMenu>
@@ -214,7 +238,7 @@ export function CollapsedSidebar() {
 
             {/* Discover — full-page marketplace; a top-level route, not a dock tab,
                 so it navigates directly rather than via navigation.openTab.
-                Dev-only affordance. */}
+                Dev-only affordance (never shown in Vibe, which is not Dev). */}
             <DevOnly reserve={false}>
               <SidebarMenuItem>
                 <SidebarMenuButton
