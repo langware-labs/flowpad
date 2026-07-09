@@ -6,7 +6,7 @@
  *   2. Create a fresh project on dev-1 and add the folder as a context folder
  *      via the real backend action (`project.addContextDir`) — which persists
  *      include_dirs and indexes the skill.
- *   3. Load the project home in the browser and assert the ProjectBrief
+ *   3. Load the project home in the browser and assert the ProjectHome
  *      "Context folders" section renders the added folder.
  *
  * Backend seeding uses the dev-1 HTTP graph API directly (create project +
@@ -55,7 +55,7 @@ test.beforeAll(async () => {
     '---\nname: ctx_skill\ndescription: dummy context-folder skill\n---\n\nHello from a context folder.\n',
   );
 
-  // Create a fresh project (empty → ProjectBrief shows) then add the folder via
+  // Create a fresh project (empty → ProjectHome shows) then add the folder via
   // the real action (persists include_dirs + indexes the skill).
   const created = await post(`${GRAPH}/project`, { type: 'project', name: `ctx-e2e-${Date.now()}` });
   projectId = created?.data?.id;
@@ -77,10 +77,10 @@ test.afterAll(async () => {
   if (tmpRoot) await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 });
 
-test('ProjectBrief shows the added context folder', async ({ page }) => {
+test('ProjectHome shows the added context folder', async ({ page }) => {
   await page.goto(`/dock/project/${projectId}`);
 
-  // ProjectBrief renders on an empty project home; its context-folders section
+  // ProjectHome renders on an empty project home; its context-folders section
   // + the added folder row must appear.
   const section = page.getByTestId('project-context-folders');
   await expect(section).toBeVisible();

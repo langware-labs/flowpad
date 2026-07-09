@@ -92,7 +92,7 @@ msgstr "(empty line)"
 msgid "(empty)"
 msgstr "(empty)"
 
-#: src/components/favorites/FavoriteTile.tsx
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "(missing)"
 msgstr "(missing)"
 
@@ -182,6 +182,14 @@ msgstr "{0} files over {MAX_FILE_SIZE_LABEL} were not attached: {1}."
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "{0} fix{1} available"
 msgstr "{0} fix{1} available"
+
+#. placeholder {0}: report.garbage_count
+#. placeholder {1}: report.unsure_count
+#. placeholder {2}: report.keep_count
+#. placeholder {3}: report.root_count
+#: src/pages/home-landing/feed/FeedEntryCard.tsx
+msgid "{0} garbage · {1} unsure · {2} keep · {3} roots scanned"
+msgstr "{0} garbage · {1} unsure · {2} keep · {3} roots scanned"
 
 #. placeholder {0}: formState.name
 #: src/components/artifacts/artifact-form.tsx
@@ -326,6 +334,10 @@ msgstr "{minutes}m ago"
 msgid "{remaining} issue{0} need investigation"
 msgstr "{remaining} issue{0} need investigation"
 
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "{removed} assets removed."
+msgstr "{removed} assets removed."
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "{selectedCount} selected"
@@ -334,6 +346,11 @@ msgstr "{selectedCount} selected"
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
 msgstr "{sessionCount} sessions"
+
+#. placeholder {0}: children.length
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
+msgid "{title} — {0} items"
+msgstr "{title} — {0} items"
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "{total} file events"
@@ -538,6 +555,10 @@ msgstr "60"
 msgid "80% Alert Threshold"
 msgstr "80% Alert Threshold"
 
+#: src/components/conversation/asset-review/TestPromptDialog.tsx
+msgid "A new build session opens and runs the skill. Optionally describe what to use it for."
+msgstr "A new build session opens and runs the skill. Optionally describe what to use it for."
+
 #: src/components/triggers-view/TriggersList.tsx
 msgid "About FSOp triggers"
 msgstr "About FSOp triggers"
@@ -699,6 +720,10 @@ msgstr "Add comment at line {activeLine}"
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Add comment..."
 msgstr "Add comment..."
+
+#: src/components/assets/AddContextFolderDialog.tsx
+msgid "Add context folder"
+msgstr "Add context folder"
 
 #: src/components/label-select.tsx
 msgid "Add custom label..."
@@ -905,6 +930,14 @@ msgstr "Already executed — open the run"
 msgid "Already focused"
 msgstr "Already focused"
 
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Already installed globally — uninstall first"
+msgstr "Already installed globally — uninstall first"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Already installed in a project — uninstall first"
+msgstr "Already installed in a project — uninstall first"
+
 #: src/components/account/danger-zone.tsx
 msgid "Also open sidecar OS Terminal"
 msgstr "Also open sidecar OS Terminal"
@@ -1088,8 +1121,6 @@ msgstr "Apply"
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/task-bar/TaskCard.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 msgid "Archive"
 msgstr "Archive"
 
@@ -1102,11 +1133,10 @@ msgid "Archive all todos"
 msgstr "Archive all todos"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "Archive task"
-msgstr "Archive task"
+#~ msgid "Archive task"
+#~ msgstr "Archive task"
 
 #: src/components/inbox-view/InboxView.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 msgid "Archived"
 msgstr "Archived"
 
@@ -1186,6 +1216,15 @@ msgstr "Ask Flowpad to solve..."
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Ask the Flowpad Assistant anything."
 msgstr "Ask the Flowpad Assistant anything."
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "asset"
+msgstr "asset"
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+#: src/pages/home-landing/feed/FeedEntryCard.tsx
+msgid "Asset cleanup"
+msgstr "Asset cleanup"
 
 #: src/components/assets/AssetsPage.tsx
 msgid "Asset has no file on disk"
@@ -1278,8 +1317,8 @@ msgid "auto"
 msgstr "auto"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "Auto-archive after..."
-msgstr "Auto-archive after..."
+#~ msgid "Auto-archive after..."
+#~ msgstr "Auto-archive after..."
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
@@ -1407,6 +1446,11 @@ msgstr "Bookmark folder"
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Bookmark this plan"
 msgstr "Bookmark this plan"
+
+#: src/components/bookmarks-slider/BookmarksSlider.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Bookmarks"
+msgstr "Bookmarks"
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Branch:"
@@ -1549,6 +1593,7 @@ msgstr "Can't open terminal"
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/conversation/asset-review/TestPromptDialog.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -1686,6 +1731,10 @@ msgstr "Chat mode"
 msgid "Chat Settings"
 msgstr "Chat Settings"
 
+#: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
+msgid "Chat tools"
+msgstr "Chat tools"
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
@@ -1766,7 +1815,7 @@ msgid "Claude (restored session)"
 msgstr "Claude (restored session)"
 
 #: src/components/hooks-manager/HookForm.tsx
-#: src/components/project-brief/ProjectBrief.tsx
+#: src/components/project-home/ProjectHome.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
@@ -1799,9 +1848,26 @@ msgstr "clean"
 msgid "Clean run — nothing to reclaim."
 msgstr "Clean run — nothing to reclaim."
 
+#. placeholder {0}: selected.size
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "Clean up ({0})"
+msgstr "Clean up ({0})"
+
 #: src/components/recovery/cleanup-modal.tsx
 msgid "Cleaned invalid sessions"
 msgstr "Cleaned invalid sessions"
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "Cleaning…"
+msgstr "Cleaning…"
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "Cleanup complete"
+msgstr "Cleanup complete"
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "Cleanup failed"
+msgstr "Cleanup failed"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/hooks/EventListPanel.tsx
@@ -2359,7 +2425,7 @@ msgstr "Contents"
 msgid "Context breakdown"
 msgstr "Context breakdown"
 
-#: src/components/project-brief/ContextFolders.tsx
+#: src/components/project-home/ContextFolders.tsx
 msgid "Context folders"
 msgstr "Context folders"
 
@@ -2624,6 +2690,7 @@ msgstr "Could not resolve home directory from bootstrap info"
 msgid "Could not save changes"
 msgstr "Could not save changes"
 
+#: src/components/conversation/asset-review/useTestStagedAsset.ts
 #: src/pages/flow-page/use-start-vibe-session.ts
 msgid "Could not start"
 msgstr "Could not start"
@@ -2696,7 +2763,6 @@ msgstr "CPU:"
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Create"
@@ -2759,7 +2825,7 @@ msgstr "Create New"
 msgid "Create New Project"
 msgstr "Create New Project"
 
-#: src/components/quick-create/MiniDesktop.tsx
+#: src/components/quick-create/DesktopSurface.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Create new…"
 msgstr "Create new…"
@@ -3091,7 +3157,7 @@ msgstr "Delete failed"
 msgid "Delete file"
 msgstr "Delete file"
 
-#: src/components/favorites/FolderTile.tsx
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Delete folder"
 msgstr "Delete folder"
 
@@ -3184,6 +3250,10 @@ msgstr "Deleted {ok}, {0} failed"
 msgid "Deleted 1 conversation"
 msgstr "Deleted 1 conversation"
 
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "Deleting a project is permanent: it removes the project folder and every Flowpad record inside it. Projects are never pre-selected — check them deliberately."
+msgstr "Deleting a project is permanent: it removes the project folder and every Flowpad record inside it. Projects are never pre-selected — check them deliberately."
+
 #: src/components/project-sidebar/ProjectSidebar.tsx
 msgid "Deleting..."
 msgstr "Deleting..."
@@ -3213,8 +3283,8 @@ msgid "Describe the issue or paste the error, then run the diagnosis. Leave it e
 msgstr "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "Describe the task..."
-msgstr "Describe the task..."
+#~ msgid "Describe the task..."
+#~ msgstr "Describe the task..."
 
 #: src/components/conversation/PromptComposerDialog.tsx
 msgid "Describe what you'd like Claude to do…"
@@ -3225,9 +3295,7 @@ msgstr "Describe what you'd like Claude to do…"
 #: src/components/assistance-viewer/TaskDetail.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
-#: src/components/task-bar/SharedTaskView.tsx
 #: src/components/task-bar/TaskDetailPanel.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 msgid "Description"
 msgstr "Description"
 
@@ -3244,6 +3312,7 @@ msgid "Description:"
 msgstr "Description:"
 
 #: src/components/quick-create/QuickCreateModal.tsx
+#: src/pages/desktop/DesktopPage.tsx
 msgid "Desktop"
 msgstr "Desktop"
 
@@ -3453,6 +3522,12 @@ msgstr "Dismiss notification"
 msgid "Display"
 msgstr "Display"
 
+#: src/pages/flow-page/display-history-button.tsx
+#: src/pages/flow-page/display-history-button.tsx
+#: src/pages/flow-page/display-history-button.tsx
+msgid "Display history"
+msgstr "Display history"
+
 #: src/components/ui/sidebar.tsx
 msgid "Displays the mobile sidebar."
 msgstr "Displays the mobile sidebar."
@@ -3483,7 +3558,6 @@ msgstr "done"
 
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 #: src/components/tools/ToolsPanel.tsx
 #: src/components/wizard/WizardHost.tsx
 msgid "Done"
@@ -3559,13 +3633,13 @@ msgstr "Draw with the pen or arrow, add text boxes, then Save to attach the anno
 msgid "Drill by"
 msgstr "Drill by"
 
-#: src/components/project-brief/ContextFolders.tsx
+#: src/components/project-home/ContextFolders.tsx
 msgid "Drop a folder here or click to add"
 msgstr "Drop a folder here or click to add"
 
 #: src/components/favorites/FolderTile.tsx
-msgid "Drop favorites here"
-msgstr "Drop favorites here"
+#~ msgid "Drop favorites here"
+#~ msgstr "Drop favorites here"
 
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/MessageComposer.tsx
@@ -3573,8 +3647,11 @@ msgstr "Drop favorites here"
 msgid "Drop files here"
 msgstr "Drop files here"
 
+#: src/components/browseable-tree/BrowseableGrid.tsx
+msgid "Drop items here"
+msgstr "Drop items here"
+
 #: src/components/task-bar/TaskDetailPanel.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 msgid "Due date"
 msgstr "Due date"
 
@@ -3606,6 +3683,10 @@ msgstr "e.g., \"Read\", \"Edit|Write\", \"*\" (leave empty for all tools)"
 #: src/components/hooks-view/HookEditor.tsx
 msgid "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 msgstr "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
+
+#: src/components/assets/AddContextFolderDialog.tsx
+msgid "Each selected project's folder is added as a context folder."
+msgstr "Each selected project's folder is added as a context folder."
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "edges"
@@ -3640,6 +3721,14 @@ msgstr "Edit anyway"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit attached prompt"
 msgstr "Edit attached prompt"
+
+#: src/components/favorites/FavoriteStar.tsx
+msgid "Edit favorite"
+msgstr "Edit favorite"
+
+#: src/components/favorites/FavoritesEditDialog.tsx
+msgid "Edit favorites"
+msgstr "Edit favorites"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 msgid "Edit file"
@@ -3681,8 +3770,8 @@ msgid "Edit system trigger"
 msgstr "Edit system trigger"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "Edit Task"
-msgstr "Edit Task"
+#~ msgid "Edit Task"
+#~ msgstr "Edit Task"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Edit Trigger"
@@ -4304,6 +4393,7 @@ msgstr "Failed to load markdown file"
 msgid "Failed to load projects"
 msgstr "Failed to load projects"
 
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Failed to load report: {error}"
 msgstr "Failed to load report: {error}"
@@ -4444,6 +4534,10 @@ msgstr "Failed to start session"
 msgid "Failed to start the build session."
 msgstr "Failed to start the build session."
 
+#: src/components/conversation/asset-review/useTestStagedAsset.ts
+msgid "Failed to start the skill test session."
+msgstr "Failed to start the skill test session."
+
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 msgid "Failed to start workflow"
 msgstr "Failed to start workflow"
@@ -4477,8 +4571,8 @@ msgstr "Fast"
 msgid "Fast — delta by hash"
 msgstr "Fast — delta by hash"
 
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #: src/components/favorites/FavoriteStar.tsx
-#: src/components/favorites/FavoriteTile.tsx
 msgid "Favorited {createdAgo}"
 msgstr "Favorited {createdAgo}"
 
@@ -4892,6 +4986,14 @@ msgstr "Full path where your project folder will be created."
 msgid "Full Trust"
 msgstr "Full Trust"
 
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "garbage"
+msgstr "garbage"
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "Garbage"
+msgstr "Garbage"
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Gateway"
 msgstr "Gateway"
@@ -4971,6 +5073,8 @@ msgstr "glob"
 msgid "Glob Pattern"
 msgstr "Glob Pattern"
 
+#: src/components/terminal/ProjectsCounterChip.tsx
+#: src/components/terminal/ProjectsCounterChip.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Global"
 msgstr "Global"
@@ -5155,8 +5259,8 @@ msgstr "Hide panel"
 #~ msgstr "Hide tree"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "High"
-msgstr "High"
+#~ msgid "High"
+#~ msgstr "High"
 
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "High CPU & Memory usage detected"
@@ -5421,7 +5525,6 @@ msgstr "in progress"
 
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 msgid "In Progress"
 msgstr "In Progress"
 
@@ -5446,6 +5549,10 @@ msgstr "Inbox"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Inbox view"
 msgstr "Inbox view"
+
+#: src/components/assets/AddContextFolderDialog.tsx
+msgid "Include another folder in this project's context."
+msgstr "Include another folder in this project's context."
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Index (seq)"
@@ -5487,6 +5594,10 @@ msgstr "Initializing…"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Inline code"
 msgstr "Inline code"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Inline persona — no backing entity"
+msgstr "Inline persona — no backing entity"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Inline remark on this line"
@@ -5530,19 +5641,38 @@ msgstr "Install & restart"
 msgid "install any asset"
 msgstr "install any asset"
 
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Install failed"
+msgstr "Install failed"
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
 msgstr "Install failed."
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Install global"
+msgstr "Install global"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Install in project"
+msgstr "Install in project"
 
 #. placeholder {0}: r.version
 #: src/components/version-popover/version-popover.tsx
 msgid "Install v{0} and restart Flowpad?"
 msgstr "Install v{0} and restart Flowpad?"
 
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Installed"
 msgstr "Installed"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Installed in project"
+msgstr "Installed in project"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Installed Plugins"
@@ -5730,6 +5860,14 @@ msgstr "Just now"
 msgid "Justify"
 msgstr "Justify"
 
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "keep"
+msgstr "keep"
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "Keep"
+msgstr "Keep"
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Keep editing"
 msgstr "Keep editing"
@@ -5745,6 +5883,10 @@ msgstr "Keychain access is required to finish signing in to Flowpad."
 #: src/components/account/secrets-section.tsx
 msgid "Keychain approval was not granted"
 msgstr "Keychain approval was not granted"
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "kind"
+msgstr "kind"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Knowledge Atlas"
@@ -6129,6 +6271,7 @@ msgstr "Loading prompts…"
 msgid "Loading records…"
 msgstr "Loading records…"
 
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Loading report…"
 msgstr "Loading report…"
@@ -6224,7 +6367,6 @@ msgstr "Loading..."
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
@@ -6311,8 +6453,8 @@ msgid "Looking up project…"
 msgstr "Looking up project…"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "Low"
-msgstr "Low"
+#~ msgid "Low"
+#~ msgstr "Low"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Machine ID"
@@ -6421,7 +6563,6 @@ msgstr "MCP tools"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 msgid "Medium"
 msgstr "Medium"
 
@@ -6442,6 +6583,7 @@ msgid "members"
 msgstr "members"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/project-home/ProjectHome.tsx
 msgid "Members"
 msgstr "Members"
 
@@ -6677,7 +6819,7 @@ msgstr "new"
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/quick-create/MiniDesktop.tsx
+#: src/components/quick-create/DesktopSurface.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "New"
 msgstr "New"
@@ -6711,6 +6853,7 @@ msgstr "New asset"
 msgid "New bookmark folder"
 msgstr "New bookmark folder"
 
+#: src/pages/flow-page/vibe-workspace.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "New build"
 msgstr "New build"
@@ -6763,7 +6906,6 @@ msgstr "New name"
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
 msgid "New project"
 msgstr "New project"
 
@@ -6807,8 +6949,8 @@ msgid "New task"
 msgstr "New task"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "New Task"
-msgstr "New Task"
+#~ msgid "New Task"
+#~ msgstr "New Task"
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
@@ -6971,6 +7113,7 @@ msgstr "No comments yet."
 msgid "No community tickets"
 msgstr "No community tickets"
 
+#: src/components/assets/ContextFolderBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/open-project-component/open-project-component.tsx
@@ -7592,7 +7735,7 @@ msgstr "No tasks found for this session."
 msgid "No terminal process was found for session {0}."
 msgstr "No terminal process was found for session {0}."
 
-#: src/components/project-brief/ProjectBrief.tsx
+#: src/components/project-home/ProjectHome.tsx
 msgid "No terminal sessions"
 msgstr "No terminal sessions"
 
@@ -7760,6 +7903,10 @@ msgstr "Nothing shared on this process."
 msgid "Nothing to commit"
 msgstr "Nothing to commit"
 
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "Nothing to display yet — try one to get started"
+msgstr "Nothing to display yet — try one to get started"
+
 #: src/components/ui/bulk-confirm-dialog.tsx
 msgid "Nothing to do."
 msgstr "Nothing to do."
@@ -7848,7 +7995,6 @@ msgstr "open"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 #: src/components/workers/WorkerToolbar.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Open"
@@ -7960,6 +8106,7 @@ msgstr "Open externally: {childPath}"
 msgid "Open Flowpad docs"
 msgstr "Open Flowpad docs"
 
+#: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Open folder"
 msgstr "Open folder"
@@ -7973,12 +8120,17 @@ msgstr "Open Folder"
 msgid "Open folder: {projectPath}"
 msgstr "Open folder: {projectPath}"
 
-#: src/components/project-brief/ProjectBrief.tsx
+#: src/components/project-home/ProjectHome.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open from history"
 msgstr "Open from history"
+
+#: src/components/quick-create/MiniDesktop.tsx
+#: src/components/quick-create/MiniDesktop.tsx
+msgid "Open full desktop"
+msgstr "Open full desktop"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Open full report"
@@ -8522,10 +8674,17 @@ msgid "Pin to prompt library"
 msgstr "Pin to prompt library"
 
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/task-bar/SharedTaskView.tsx
+#: src/components/task-bar/TaskDetailPanel.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Plan"
 msgstr "Plan"
+
+#. placeholder {0}: task.spec_type
+#: src/components/task-bar/TaskDetailPanel.tsx
+msgid "Plan · {0}"
+msgstr "Plan · {0}"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Plan already executed"
@@ -8661,6 +8820,10 @@ msgstr "Preview"
 msgid "Preview {label}"
 msgstr "Preview {label}"
 
+#: src/components/conversation/asset-review/StagedAssetViewer.tsx
+msgid "Preview truncated."
+msgstr "Preview truncated."
+
 #: src/components/ui/pagination.tsx
 msgid "Previous"
 msgstr "Previous"
@@ -8678,7 +8841,6 @@ msgid "primary"
 msgstr "primary"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 msgid "Priority"
 msgstr "Priority"
 
@@ -8772,6 +8934,10 @@ msgstr "Project code"
 msgid "Project Commands (.claude/commands/)"
 msgstr "Project Commands (.claude/commands/)"
 
+#: src/components/assets/AddContextFolderDialog.tsx
+msgid "Project folder"
+msgstr "Project folder"
+
 #: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "Project Folder"
 msgstr "Project Folder"
@@ -8814,6 +8980,7 @@ msgstr "Project Required"
 msgid "projected"
 msgstr "projected"
 
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Projects"
@@ -8981,7 +9148,7 @@ msgstr "Python (flow SDK)"
 msgid "Quick Access"
 msgstr "Quick Access"
 
-#: src/components/quick-create/MiniDesktop.tsx
+#: src/components/quick-create/DesktopSurface.tsx
 msgid "Quick create"
 msgstr "Quick create"
 
@@ -9056,6 +9223,14 @@ msgstr "Ready"
 msgid "Ready to Connect"
 msgstr "Ready to Connect"
 
+#: src/components/favorites/FavoritesEditDialog.tsx
+msgid "Rearrange favorites, create folders, and organize your bookmarks."
+msgstr "Rearrange favorites, create folders, and organize your bookmarks."
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "reason"
+msgstr "reason"
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Rebuild"
 msgstr "Rebuild"
@@ -9071,6 +9246,10 @@ msgstr "Rebuild started"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Rebuilding…"
 msgstr "Rebuilding…"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received attachment — review before installing."
+msgstr "Received attachment — review before installing."
 
 #. placeholder {0}: currentDock?.pointer || 'none'
 #: src/components/app-host/AppHost.tsx
@@ -9274,7 +9453,7 @@ msgstr "Remove attachment"
 msgid "Remove bookmark"
 msgstr "Remove bookmark"
 
-#: src/components/project-brief/ContextFolders.tsx
+#: src/components/project-home/ContextFolders.tsx
 msgid "Remove context folder"
 msgstr "Remove context folder"
 
@@ -9282,10 +9461,8 @@ msgstr "Remove context folder"
 msgid "Remove directory"
 msgstr "Remove directory"
 
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #: src/components/favorites/FavoriteStar.tsx
-#: src/components/favorites/FavoriteTile.tsx
-#: src/components/favorites/FavoriteTile.tsx
-#: src/components/favorites/FavoriteTile.tsx
 msgid "Remove favorite"
 msgstr "Remove favorite"
 
@@ -9293,7 +9470,7 @@ msgstr "Remove favorite"
 msgid "Remove file"
 msgstr "Remove file"
 
-#: src/components/favorites/FavoriteTile.tsx
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "Remove from folder"
 
@@ -9327,10 +9504,9 @@ msgstr "Removed for you; other members keep it"
 msgid "Removes it everywhere"
 msgstr "Removes it everywhere"
 
+#: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
-#: src/components/favorites/FavoriteTile.tsx
-#: src/components/favorites/FolderTile.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -9626,8 +9802,8 @@ msgid "Revisions v{0}"
 msgstr "Revisions v{0}"
 
 #: src/components/favorites/FavoriteTile.tsx
-msgid "Right-click to rename"
-msgstr "Right-click to rename"
+#~ msgid "Right-click to rename"
+#~ msgstr "Right-click to rename"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Right-to-left paragraph"
@@ -9661,6 +9837,10 @@ msgstr "Room started"
 msgid "root"
 msgstr "root"
 
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "roots"
+msgstr "roots"
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Row time range"
 msgstr "Row time range"
@@ -9682,6 +9862,7 @@ msgid "Rules"
 msgstr "Rules"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/conversation/asset-review/TestPromptDialog.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
 msgstr "Run"
@@ -9835,7 +10016,6 @@ msgstr "Sandbox Metrics"
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Save"
@@ -9929,6 +10109,10 @@ msgstr "Scan usage"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "Scanned <0>{totalScanned}</0> open issue{0} against the known-issues database."
 msgstr "Scanned <0>{totalScanned}</0> open issue{0} against the known-issues database."
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "Scanned roots"
+msgstr "Scanned roots"
 
 #. placeholder {0}: resources.scanned_at
 #: src/pages/live-status/LiveStatus.tsx
@@ -10240,6 +10424,10 @@ msgstr "Select a context."
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "Select a document"
 msgstr "Select a document"
+
+#: src/components/conversation/asset-review/StagedAssetViewer.tsx
+msgid "Select a file to preview."
+msgstr "Select a file to preview."
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
 msgid "Select a file to see connected flows"
@@ -10763,6 +10951,10 @@ msgstr "Show system"
 msgid "Show system skills"
 msgstr "Show system skills"
 
+#: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
+msgid "Show tool calls"
+msgstr "Show tool calls"
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #~ msgid "Show tree"
 #~ msgstr "Show tree"
@@ -10854,8 +11046,8 @@ msgid "skill-name"
 msgstr "skill-name"
 
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
-msgid "Skill: {skillName}"
-msgstr "Skill: {skillName}"
+#~ msgid "Skill: {skillName}"
+#~ msgstr "Skill: {skillName}"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "skills"
@@ -10969,14 +11161,12 @@ msgstr "spawns"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
-#: src/components/task-bar/TaskDetailPanel.tsx
 msgid "Spec"
 msgstr "Spec"
 
-#. placeholder {0}: spec.spec_type
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Spec · {0}"
-msgstr "Spec · {0}"
+#~ msgid "Spec · {0}"
+#~ msgstr "Spec · {0}"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Spec created"
@@ -10985,6 +11175,10 @@ msgstr "Spec created"
 #: src/components/agentic-progress/shared/stack-frame-list.tsx
 msgid "Stack Trace"
 msgstr "Stack Trace"
+
+#: src/components/conversation/asset-review/StagedAssetViewer.tsx
+msgid "Staged content is unavailable — re-download the message attachments."
+msgstr "Staged content is unavailable — re-download the message attachments."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Stale"
@@ -11061,8 +11255,8 @@ msgid "Start Copilot"
 msgstr "Start Copilot"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "Start date"
-msgstr "Start date"
+#~ msgid "Start date"
+#~ msgstr "Start date"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -11118,7 +11312,6 @@ msgstr "Stats"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/task-bar/TaskDetailPanel.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
 msgid "Status"
@@ -11349,8 +11542,8 @@ msgid "target"
 msgstr "target"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "Target entity"
-msgstr "Target entity"
+#~ msgid "Target entity"
+#~ msgstr "Target entity"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -11363,8 +11556,8 @@ msgid "Task not found"
 msgstr "Task not found"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "Task title"
-msgstr "Task title"
+#~ msgid "Task title"
+#~ msgstr "Task title"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Tasked"
@@ -11388,8 +11581,8 @@ msgid "Teams across the org"
 msgstr "Teams across the org"
 
 #: src/pages/flow-page/vibe-workspace.tsx
-msgid "Tell the assistant what to build."
-msgstr "Tell the assistant what to build."
+#~ msgid "Tell the assistant what to build."
+#~ msgstr "Tell the assistant what to build."
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -11397,7 +11590,7 @@ msgid "Template:"
 msgstr "Template:"
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
-#: src/components/project-brief/ProjectBrief.tsx
+#: src/components/project-home/ProjectHome.tsx
 msgid "Terminal"
 msgstr "Terminal"
 
@@ -11413,10 +11606,18 @@ msgstr "Terminate"
 msgid "test"
 msgstr "test"
 
+#: src/components/conversation/asset-review/TestPromptDialog.tsx
+msgid "Test “{assetName}”"
+msgstr "Test “{assetName}”"
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Test API Access"
 msgstr "Test API Access"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Test it"
+msgstr "Test it"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Test LM"
@@ -11530,6 +11731,10 @@ msgstr "The web app is not working, please try to fix it."
 #: src/components/persistent-iframe.tsx
 msgid "The webapp server is not running. Start the services to view the app."
 msgstr "The webapp server is not running. Start the services to view the app."
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "The wizard reported an error."
+msgstr "The wizard reported an error."
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
@@ -11688,7 +11893,6 @@ msgstr "Tip: Press Ctrl+Enter to save"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
-#: src/components/tasks-viewer/TasksViewer.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Title"
@@ -11806,6 +12010,7 @@ msgstr "tools"
 #: src/components/chat-input.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
+#: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
 msgid "Tools"
 msgstr "Tools"
 
@@ -11906,8 +12111,8 @@ msgid "Try again"
 msgstr "Try again"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "TTL (hours)"
-msgstr "TTL (hours)"
+#~ msgid "TTL (hours)"
+#~ msgstr "TTL (hours)"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "turn duration"
@@ -11952,8 +12157,8 @@ msgid "Type your first message…"
 msgstr "Type your first message…"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
-msgid "TypeId string"
-msgstr "TypeId string"
+#~ msgid "TypeId string"
+#~ msgstr "TypeId string"
 
 #: src/components/persistent-iframe.tsx
 msgid "Unable to connect to webapp"
@@ -11980,6 +12185,22 @@ msgstr "Under eval"
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 msgid "Undo"
 msgstr "Undo"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Uninstall"
+msgstr "Uninstall"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Uninstall failed"
+msgstr "Uninstall failed"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Uninstall from project"
+msgstr "Uninstall from project"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Uninstalled"
+msgstr "Uninstalled"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Unique identifier for this hook within the settings file."
@@ -12055,6 +12276,14 @@ msgstr "Unsupported Content"
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Unsupported tab type."
 #~ msgstr "Unsupported tab type."
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "unsure"
+msgstr "unsure"
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "Unsure"
+msgstr "Unsure"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Untitled session"
@@ -12196,6 +12425,10 @@ msgstr "uses"
 msgid "Using"
 msgstr "Using"
 
+#: src/components/entity-execution-panel/MetaMessageChip.tsx
+msgid "Using skill: {skillName}"
+msgstr "Using skill: {skillName}"
+
 #: src/components/artifacts/artifact-form.tsx
 msgid "Validation error"
 msgstr "Validation error"
@@ -12232,6 +12465,10 @@ msgstr "Vault root"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Verbose debug output (--debug)"
 msgstr "Verbose debug output (--debug)"
+
+#: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+msgid "verdict"
+msgstr "verdict"
 
 #: src/components/account/user-info.tsx
 msgid "Verified"
@@ -12427,6 +12664,10 @@ msgstr "What can flowpad do for you ?"
 msgid "What do you need help with?"
 msgstr "What do you need help with?"
 
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "What do you want to work on"
+msgstr "What do you want to work on"
+
 #: src/components/account/secrets-section.tsx
 msgid "What is this secret used for?"
 msgstr "What is this secret used for?"
@@ -12434,6 +12675,10 @@ msgstr "What is this secret used for?"
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What it worked on"
 msgstr "What it worked on"
+
+#: src/components/conversation/asset-review/TestPromptDialog.tsx
+msgid "What should the skill be used for? (optional)"
+msgstr "What should the skill be used for? (optional)"
 
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
