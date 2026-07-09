@@ -1623,11 +1623,22 @@ async def _process_single_hub_message(raw: dict) -> str | None:
             success = await _download_and_unpack_bundle(
                 fm_id, attachment_filename, body_status=raw.get("body_status"),
             )
-            if existing is None:
-                # unpack materializes the FM row itself on success; on failure
-                # (body still uploading, transient hub error) leave nothing
-                # behind — the next sync pass retries.
-                return fm_id if success else None
+            if success and existing is None:
+                # unpack materialized the FM row itself (body + the real entity
+                # data carried in the bundle) — nothing left to persist.
+                return fm_id
+            # Download failed (body still uploading, a transient hub error, or —
+            # the receiver pre-accept case — the recipient can't pull the bundle
+            # body yet). Do NOT return empty: fall through to materialize the FM
+            # HEADER from the hub payload (metadata only, no body), exactly like
+            # the bundle-less/text branch below. Without this an artifact- or
+            # git-share message's latest FlowMessage never resolves locally
+            # pre-body, so the inbox's latest-pointer gate hides the whole
+            # invitation row and previews/ordering break — while a plain text
+            # message (no attachment_filename) materialized its header fine. The
+            # body stays un-downloaded (is_body_downloaded()=False), so the next
+            # sync pass re-attempts the bundle through this same branch: the
+            # download gate above is keyed on body-presence, not row existence.
     if existing is not None and not FlowMessage.is_stale(existing, raw):
         # Metadata current (body handled above).
         return fm_id
